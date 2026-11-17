@@ -7,7 +7,7 @@
 set -eu
 
 here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-script="$here/install.sh"
+script=${TEGO_INSTALLER_TEST_SCRIPT:-"$here/install.sh"}
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/install-mac-test.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT INT TERM
 fails=0
@@ -21,9 +21,21 @@ stubs() {
 	printf '#!/bin/sh\n[ "$1" = -s ] && echo Darwin || echo arm64\n' >"$b/uname"
 	printf '#!/bin/sh\necho "${FAKE_MACOS:-15.1}"\n' >"$b/sw_vers"
 	printf '#!/bin/sh\necho "Filesystem 1K-blocks Used Available"\necho "/dev/x 1 1 ${FAKE_FREE_KB:-20971520}"\n' >"$b/df"
+	cat >"$b/stty" <<'EOF'
+#!/bin/sh
+echo "stty $*" >>"$FAKE_LOG"
+if [ "$1" = -g ]; then
+	echo saved-terminal-settings
+	[ "${FAKE_SAVE_SIGNAL:-}" != TERM ] || kill -TERM "$PPID"
+else
+	[ "${FAKE_RESTORE_FAIL:-}" != 1 ]
+fi
+EOF
+	chmod +x "$b/stty"
 	cat >"$b/brew" <<EOF
 #!/bin/sh
 echo "brew \$*" >>"\$FAKE_LOG"
+if [ -n "\${FAKE_BREW_SIGNAL:-}" ]; then kill -"\$FAKE_BREW_SIGNAL" "\$PPID"; exit 1; fi
 [ "\${FAKE_BREW_FAIL:-}" != 1 ] || { echo "brew failure details"; exit 1; }
 cp "$b.lima/limactl" "$b/limactl"
 EOF
@@ -37,7 +49,21 @@ case "$1" in
 		esac ;;
 	shell)
 		echo "limactl $*" >>"$FAKE_LOG"
-		case "$*" in *'grep -o'*) echo 'http://127.0.0.1:8484/?t=test' ;; esac ;;
+		case "$*" in
+			*' version') [ "${FAKE_GUEST_VERSION:-v0.1.3}" != broken ] || exit 126; printf 'tego=%s\n' "${FAKE_GUEST_VERSION:-v0.1.3}"; [ "${FAKE_GUEST_FAIL:-}" != 1 ] ;;
+			*'curl -fsSL'* )
+				[ "${FAKE_UPDATE_FAIL:-}" != 1 ] || exit 42
+				# Execute the update's fixed shell body locally, with downloads still stubbed.
+				shift
+				while [ "$1" != sh ]; do shift; done
+				# limactl does not export the Mac installer environment into the guest.
+				(unset TEGO_BASE_URL; FAKE_CORRUPT_INSTALLER=${FAKE_CORRUPT_GUEST_INSTALLER:-0} "$@") ;;
+			*'TEGO_ON_MAC=1'*' start'|*'TEGO_ON_MAC=1'*' setup') exit "${FAKE_GUIDE_STATUS:-0}" ;;
+			*'grep -o'*) [ "${FAKE_NO_URL:-}" != 1 ] || exit 1; mkdir -p "$HOME/.tego"
+				printf '%s\n' "${FAKE_URL:-http://127.0.0.1:8484/?t=test}" >"$HOME/.tego/dashboard.log"
+				shift
+				while [ "$1" != sh ]; do shift; done
+				"$@" ;; esac ;;
 	start)
 		echo "limactl $*" >>"$FAKE_LOG"
 		for arg do
@@ -49,13 +75,18 @@ case "$1" in
 					echo 'verified local template in private directory' >>"$FAKE_LOG"
 					;;
 			esac
-		done ;;
+		done
+		[ "${FAKE_START_FAIL:-}" != 1 ] || { echo 'Lima start failure details' >&2; exit 1; }
+		case "${FAKE_IMAGE_FAIL:-}" in
+			1) echo 'failed to download "https://cloud-images.ubuntu.com/releases/noble/pinned.img": unexpected HTTP status Not Found' >&2; exit 1 ;;
+			network|digest) echo "failed to download \"https://cloud-images.ubuntu.com/releases/noble/pinned.img\": $FAKE_IMAGE_FAIL failure" >&2; exit 1 ;;
+		esac ;;
 	*) echo "limactl $*" >>"$FAKE_LOG" ;;
 esac
 EOF
 	# All downloads stay in this case's release fixture; no network is used.
 	cp "$here/../examples/lima/tego.yaml" "$b/tego.yaml"
-	printf '#!/bin/sh\necho "guest installed $TEGO_VERSION checksums=${TEGO_CHECKSUMS_SHA256:-missing}" >>"$FAKE_LOG"\n' >"$b/install.sh"
+	printf '#!/bin/sh\necho "guest installed $TEGO_VERSION checksums=${TEGO_CHECKSUMS_SHA256:-missing} base=${TEGO_BASE_URL:-missing}" >>"$FAKE_LOG"\n' >"$b/install.sh"
 	printf 'guest binary fixture\n' >"$b/tego_0.1.3_linux_arm64"
 	printf 'guest control fixture\n' >"$b/tego-control_0.1.3_linux_arm64"
 	(cd "$b" && sha256sum -- tego.yaml install.sh *linux_arm64) >"$b/checksums"
@@ -71,6 +102,7 @@ while [ "$#" -gt 0 ]; do
 	esac
 done
 echo "curl $url" >>"$FAKE_LOG"
+[ "${FAKE_DOWNLOAD_FAIL:-}" != 1 ] || exit 7
 b=${0%/*}
 case "$url" in
 	*/latest) printf '{"tag_name":"v0.1.3"}\n' >"$out" ;;
@@ -127,6 +159,14 @@ absent() { # absent NAME TEXT: the text must not be in the output or the log
 	fi
 }
 
+finish_once() {
+	if [ "$(grep -c 'curl -fsSL .*install.sh |' "$tmp/out")" != 1 ]; then
+		echo "FAIL M4 $1: installer command repeated or missing"; fails=$((fails + 1))
+	else
+		echo "ok   M4 $1: installer command once"
+	fi
+}
+
 # run CASE [VAR=value...]: a fresh set of stubs per case. LIMA=1 puts limactl on PATH; BREW=0 removes brew.
 run() {
 	c=$1
@@ -150,12 +190,50 @@ run() {
 	env -i HOME="$tmp" TMPDIR="$tmp" SHELL=/bin/zsh PATH="$path" FAKE_LOG="$tmp/log" "$@" sh "$script" >"$tmp/out" 2>&1 </dev/null || code=$?
 }
 
+# Give /dev/tty a real terminal while stdin remains the piped install script.
+# Python is test infrastructure only; the Mac installer itself has no new dependency.
+tty_run() {
+	code=0
+	python3 - "$script" "$tmp" "$bin" "$@" <<'PYTTY' >"$tmp/out" 2>&1 || code=$?
+import os, pty, select, sys, time
+script, tmp, bin, answer = sys.argv[1:5]
+pid, fd = pty.fork()
+if pid == 0:
+    env = dict(HOME=tmp, TMPDIR=tmp, SHELL='/bin/zsh', PATH=bin+':/usr/bin:/bin',
+               FAKE_LOG=tmp+'/log', FAKE_VM='Running', FAKE_GUEST_VERSION='v0.1.2')
+    env.update(x.split('=', 1) for x in sys.argv[5:])
+    os.execve('/bin/sh', ['sh', '-c', 'cat "$1" | sh', 'sh', script], env)
+output = b''
+sent = False
+end = time.monotonic() + 10
+while time.monotonic() < end:
+    if select.select([fd], [], [], 0.1)[0]:
+        try:
+            data = os.read(fd, 65536)
+        except OSError:
+            break
+        if not data:
+            break
+        output += data
+        if not sent and (b'? [Y/n]' in output or b'? [y/N]' in output):
+            os.write(fd, answer.encode() + b'\n')
+            sent = True
+else:
+    os.kill(pid, 9)
+    print('FAIL terminal test timed out')
+_, status = os.waitpid(pid, 0)
+os.close(fd)
+sys.stdout.buffer.write(output)
+sys.exit(os.waitstatus_to_exitcode(status))
+PYTTY
+}
+
 latest="https://github.com/Attention-Span-AI/Tego/releases/download/v0.1.3/tego.yaml"
 
 run fresh TEGO_YES=1
-check "fresh Mac: installs Lima, sets up the VM, adds tego" 0 "✗ Lima isn't installed" "brew install lima" \
+check "fresh Mac: installs Lima, sets up the VM, adds tego" 0 "Lima isn't installed. Tego uses this free program to run its Linux VM." "Install Lima now with Homebrew?" "brew install lima" \
 	"limactl start --tty=false --name=tego --mount-none --param=tego_version=v0.1.3" "--param=checksums_sha256=$(sha256sum "$tmp/fresh/bin/checksums" | awk '{print $1}')" "verified local template in private directory" "✓ Lima 2.3.0" "✓ Tego's VM is ready" "✓ tego command added" \
-	"Next steps" "Run   exec zsh -l   (or open a new terminal window), then   tego start"
+	"Next steps" "Open a new Terminal window, then type tego start"
 [ -x "$tmp/.local/bin/tego" ] || { echo "FAIL fresh Mac: no tego command in ~/.local/bin"; fails=$((fails + 1)); }
 grep -q 'added by the Tego installer' "$tmp/.zshrc" 2>/dev/null || { echo "FAIL fresh Mac: PATH line not added to ~/.zshrc"; fails=$((fails + 1)); }
 absent "fresh Mac: hides Lima's own output" "INFO["
@@ -165,7 +243,7 @@ mkdir -p "$tmp/bashhome" && echo '# mine' >"$tmp/bashhome/.profile"
 c=bashprofile; b2="$tmp/$c/bin"; stubs "$b2"; cp "$b2.lima/limactl" "$b2/limactl"; : >"$tmp/log"; code=0
 env -i HOME="$tmp/bashhome" TMPDIR="$tmp" SHELL=/bin/bash PATH="$b2:/usr/bin:/bin" FAKE_LOG="$tmp/log" FAKE_VM=Running TEGO_YES=1 \
 	sh "$script" >"$tmp/out" 2>&1 </dev/null || code=$?
-check "bash with only a .profile: the line goes there" 0 "Run   exec bash -l   (or open a new terminal window)"
+check "bash with only a .profile: the line goes there" 0 "Open a new Terminal window, then type tego start" "exec bash -l"
 grep -q 'added by the Tego installer' "$tmp/bashhome/.profile" || { echo "FAIL bash: PATH line not in .profile"; fails=$((fails + 1)); }
 [ ! -e "$tmp/bashhome/.bash_profile" ] || { echo "FAIL bash: a .bash_profile now hides .profile"; fails=$((fails + 1)); }
 
@@ -218,12 +296,22 @@ run pinned LIMA=1 TEGO_YES=1 TEGO_VERSION=v0.1.3
 check "TEGO_VERSION picks that release's template" 0 \
 	"curl $latest" "--param=tego_version=v0.1.3" "verified local template in private directory"
 
+run imagesgone LIMA=1 TEGO_YES=1 FAKE_IMAGE_FAIL=1
+check "M3 missing image gives deletion before retry" 8 "First remove the incomplete VM: limactl delete tego" "The pinned VM image is no longer available" "Update the installer" "releases/latest/download/install.sh | sh"
+absent "M3 installer leaves deletion to person" "limactl delete --force"
+for failure in network digest; do
+	run "image-$failure" LIMA=1 TEGO_YES=1 "FAKE_IMAGE_FAIL=$failure"
+	check "M3 $failure gets connection advice" 8 "First remove the incomplete VM: limactl delete tego" "The VM image download failed. Check the connection and run this installer again."
+	absent "M3 $failure does not claim missing image" "image is no longer available"
+	absent "M3 $failure does not claim old installer" "Update the installer"
+done
+
 run incompatible LIMA=1 TEGO_YES=1 TEGO_VERSION=v0.1.3 OLD_TEMPLATE=1
 check "old verified template is refused before Lima starts" 7 "v0.2.0 is the first release to support a pinned Mac install" "unset TEGO_VERSION to install the latest"
 absent "old template never starts Lima" "limactl start"
 
 run nobrew BREW=0
-check "no Homebrew: says where to get Lima" 2 "✗ Lima isn't installed" "https://lima-vm.io/docs/installation/"
+check "no Homebrew: says where to get Lima" 2 "✗ Lima isn't installed" "https://lima-vm.io/docs/installation/" "first install Homebrew from https://brew.sh" "Then run: curl"
 
 run brewfail TEGO_YES=1 FAKE_BREW_FAIL=1
 check "failed Lima installation keeps its diagnostic log" 2 "brew failure details" "The full log is in"
@@ -247,13 +335,20 @@ if (: </dev/tty) 2>/dev/null; then
 	echo "skip no terminal: /dev/tty is open here"
 else
 	run notty
+	finish_once "install Lima"
 	check "no terminal: prints the commands, runs none" 2 "To finish, run:" "brew install lima" \
-		"releases/latest/download/install.sh | sh" "Then run this installer again."
+		"releases/latest/download/install.sh | sh" "Then run this installer again: curl"
 	if [ -s "$tmp/log" ]; then
 		echo "FAIL no terminal: ran commands it should only print:"
 		sed 's/^/    /' "$tmp/log"
 		fails=$((fails + 1))
 	fi
+fi
+
+if ! (: </dev/tty) 2>/dev/null; then
+	run nocreate LIMA=1
+	check "M4 no consent to create" 0 "Then run this installer again:"
+	finish_once "create VM"
 fi
 
 run normalized LIMA=1 TEGO_YES=1 TEGO_VERSION=0.1.3 TEGO_VERIFY=gh
@@ -273,7 +368,123 @@ run attestation LIMA=1 TEGO_YES=1 FAKE_VERIFY_FAIL=1 TEGO_VERIFY=gh
 check "explicit gh failure refuses before VM creation" 9 "gh could not verify"
 absent "bad attestation never starts" "limactl start"
 run pinnedexisting LIMA=1 FAKE_VM=Running TEGO_YES=1 TEGO_VERSION=v0.1.3
-check "existing VM explains separate guest upgrade" 0 "updates only the Mac command" "tego shell" "TEGO_VERSION=v0.1.3 sh"
+check "existing VM already at selected release" 0 "Tego v0.1.3 inside the VM is up to date"
+absent "matching guest is not reinstalled" "guest installed"
+for old in v0.1.2 broken; do
+	run "update-$old" LIMA=1 FAKE_VM=Running TEGO_YES=1 TEGO_VERSION=0.1.3 FAKE_GUEST_VERSION="$old"
+	from=$old; [ "$old" != broken ] || from='missing or not working'
+	check "existing guest $old is updated in place" 0 "Update Tego inside the VM from $from to v0.1.3? [Y/n] yes" \
+		"guest installed v0.1.3 checksums=$(sha256sum "$bin/checksums" | awk '{print $1}')" "Existing runs keep running"
+	absent "update does not recreate or stop VM" "limactl start"
+	absent "update does not stop VM" "limactl stop"
+done
+for reply in n ''; do
+	: >"$tmp/log"
+	tty_run "$reply"
+	if [ "$reply" = n ]; then
+		check "terminal no declines only the guest update" 0 "Skipped the VM update"
+		absent "declined update never installs" "guest installed"
+	else
+		check "terminal Enter accepts the guest update by default" 0 "guest installed v0.1.3"
+	fi
+done
+
+# Semantic version precedence, including releases and numeric prerelease identifiers.
+for pair in 'v0.3.0-rc.1 v0.2.0' 'v0.1.3 v0.1.3-rc.1' 'v0.1.3-rc.10 v0.1.3-rc.2' 'v0.1.3-beta v0.1.3-alpha' 'v0.10.0 v0.2.0'; do
+	guest=${pair% *}; selected=${pair#* }
+	: >"$tmp/log"
+	tty_run '' "FAKE_GUEST_VERSION=$guest" "TEGO_VERSION=$selected"
+	check "M8 newer $guest defaults to no for $selected" 0 "Replace Tego $guest inside the VM with older version $selected? [y/N]" "Skipped the VM update"
+	absent "M8 default no keeps newer guest" "guest installed"
+done
+for pair in 'v0.1.3-rc.1 v0.1.3' 'v0.1.3-rc.2 v0.1.3-rc.10' 'v0.1.3-1 v0.1.3-alpha' 'v0.1.2 v0.1.3'; do
+	guest=${pair% *}; selected=${pair#* }
+	: >"$tmp/log"
+	tty_run '' "FAKE_GUEST_VERSION=$guest" "TEGO_VERSION=$selected"
+	check "M8 older $guest still defaults to update $selected" 0 "Update Tego inside the VM from $guest to $selected? [Y/n]" "guest installed $selected"
+done
+: >"$tmp/log"
+tty_run '' FAKE_GUEST_VERSION=v0.1.3-rc.2 TEGO_VERSION=v0.1.3-rc.2
+check "M8 equal prerelease is up to date" 0 "inside the VM is up to date"
+absent "M8 equal prerelease never asks" "Update Tego inside"
+run explicitolder LIMA=1 FAKE_VM=Running TEGO_YES=1 FAKE_GUEST_VERSION=v0.2.0 TEGO_VERSION=v0.1.3
+check "M8 explicit yes replaces newer version" 0 "with older version v0.1.3? [y/N] yes" "guest installed v0.1.3"
+
+run mirrorupdate LIMA=1 FAKE_VM=Running TEGO_YES=1 FAKE_GUEST_VERSION=v0.1.2 TEGO_BASE_URL=https://mirror.example/tego/releases/download
+check "M9 guest receives Mac release base and verified checksums" 0 \
+	"curl https://mirror.example/tego/releases/download/v0.1.3/install.sh" \
+	"guest installed v0.1.3 checksums=$(sha256sum "$bin/checksums" | awk '{print $1}') base=https://mirror.example/tego/releases/download"
+
+run updatebadversion LIMA=1 FAKE_VM=Running TEGO_YES=1 FAKE_GUEST_FAIL=1
+check "failing version command is repaired even if it prints a version" 0 "from missing or not working to v0.1.3?" "guest installed"
+run updateguestcorrupt LIMA=1 FAKE_VM=Running TEGO_YES=1 FAKE_GUEST_VERSION=v0.1.2 FAKE_CORRUPT_GUEST_INSTALLER=1
+check "changed installer is refused again inside guest" 8 "FAILED"
+absent "changed installer never executes inside guest" "guest installed"
+run updateoldtemplate LIMA=1 FAKE_VM=Running TEGO_YES=1 FAKE_GUEST_VERSION=v0.1.2 OLD_TEMPLATE=1
+check "M1 unsupported release leaves guest unchanged normally" 0 "Tego inside the VM was left as it is; updating it from the Mac needs a later release."
+absent "M1 unsupported release never asks" "Update Tego inside"
+absent "M1 unset version is not mentioned" "TEGO_VERSION"
+absent "incompatible update never enters guest" "sha256sum -c -"
+for mode in yes notty pinned; do
+	case "$mode" in
+		yes) run unsupportedyes LIMA=1 FAKE_VM=Running FAKE_GUEST_VERSION=broken OLD_TEMPLATE=1 TEGO_YES=1 ;;
+		notty) run unsupportednotty LIMA=1 FAKE_VM=Running FAKE_GUEST_VERSION=v0.1.2 OLD_TEMPLATE=1 ;;
+		pinned) run unsupportedpinned LIMA=1 FAKE_VM=Running FAKE_GUEST_VERSION=v0.1.2 OLD_TEMPLATE=1 TEGO_VERSION=v0.1.3 TEGO_YES=1 ;;
+	esac
+	check "M1 unsupported $mode finishes normally" 0 "Tego inside the VM was left as it is; updating it from the Mac needs a later release." "Next steps"
+	absent "M1 unsupported $mode never asks" "Update Tego inside"
+	absent "M1 unsupported $mode never downloads installer" "/v0.1.3/install.sh"
+	if [ "$mode" = pinned ]; then
+		check "M1 explicit version identified" 0 "Selected with TEGO_VERSION=v0.1.3."
+	fi
+done
+
+run updatecorrupt LIMA=1 FAKE_VM=Running TEGO_YES=1 FAKE_GUEST_VERSION=v0.1.2 FAKE_CORRUPT_INSTALLER=1
+check "changed update installer is refused on Mac" 7 "checksum mismatch or missing entry for install.sh"
+absent "changed update installer never enters guest" "sha256sum -c -"
+run updateattestation LIMA=1 FAKE_VM=Running TEGO_YES=1 FAKE_GUEST_VERSION=v0.1.2 TEGO_VERIFY=gh FAKE_GH_REFUSE=tego_0.1.3_linux_arm64
+check "guest update requires binary provenance in gh mode" 9 "gh could not verify"
+absent "unattested update never enters guest" "sha256sum -c -"
+run updatefail LIMA=1 FAKE_VM=Running TEGO_YES=1 FAKE_GUEST_VERSION=v0.1.2 FAKE_UPDATE_FAIL=1
+check "failed guest update stops installer" 8 "The full log is in"
+if ! (: </dev/tty) 2>/dev/null; then
+	run updatenotty LIMA=1 FAKE_VM=Running FAKE_GUEST_VERSION=v0.1.2
+	finish_once "guest update"
+	absent "M4 empty finish list has no header" "To finish, run:"
+	check "no terminal prints update retry and stops" 2 "TEGO_YES=1 TEGO_VERSION=v0.1.3 sh"
+	absent "no terminal never installs guest update" "sha256sum -c -"
+fi
+
+# A failed or declined guest update must still leave the refreshed Mac command.
+stale_command() {
+	printf "#!/bin/sh\n# Tego's installer\n# stale-mac-command\n" >"$tmp/.local/bin/tego"
+	chmod +x "$tmp/.local/bin/tego"
+}
+refreshed_command() {
+	if grep -qF stale-mac-command "$tmp/.local/bin/tego"; then
+		echo "FAIL $1: stale Mac command survived"; fails=$((fails + 1))
+	else
+		echo "ok   $1: Mac command refreshed"
+	fi
+}
+for problem in lookup verification update notty; do
+	stale_command
+	case "$problem" in
+		lookup) run refreshlookup LIMA=1 FAKE_VM=Running TEGO_YES=1 FAKE_DOWNLOAD_FAIL=1; want=6 ;;
+		verification) run refreshverify LIMA=1 FAKE_VM=Running TEGO_YES=1 TEGO_VERIFY=cosign FAKE_VERIFY_FAIL=1; want=9 ;;
+		update) run refreshupdate LIMA=1 FAKE_VM=Running TEGO_YES=1 FAKE_GUEST_VERSION=v0.1.2 FAKE_UPDATE_FAIL=1; want=8 ;;
+		notty)
+			if (: </dev/tty) 2>/dev/null; then continue; fi
+			run refreshnotty LIMA=1 FAKE_VM=Running FAKE_GUEST_VERSION=v0.1.2; want=2 ;;
+	esac
+	check "M0 $problem retains update status" "$want" "tego command is up to date"
+	refreshed_command "M0 $problem"
+done
+stale_command
+: >"$tmp/log"
+tty_run n
+check "M0 decline keeps refreshed command" 0 "Skipped the VM update"
+refreshed_command "M0 decline"
 
 # Execute only the extracted provisioning shell against the same download stand-ins.
 # The fixture installer records its selected version; it never runs a Tego binary.
@@ -296,11 +507,13 @@ absent "changed guest installer never executes" "guest installed"
 # Run only the generated shell command, with every external VM, SSH and browser call replaced.
 cat >"$bin/lsof" <<'EOF'
 #!/bin/sh
+echo "lsof $*" >>"$FAKE_LOG"
+case "$*" in *"-iTCP:${FAKE_PORT:-8484}"*) ;; *) exit 1 ;; esac
 [ "${FAKE_LISTENER:-}" != none ] || [ -f "$FAKE_LOG.tunnel" ] || exit 1
 case "$*" in
 	*-Fc*) echo cssh ;;
 	*-Fp*) echo "p${FAKE_PID:-4321}" ;;
-	*-Fn*) echo "n${FAKE_BIND:-127.0.0.1:8484}" ;;
+	*-Fn*) echo "n${FAKE_BIND:-127.0.0.1:${FAKE_PORT:-8484}}" ;;
 esac
 EOF
 # Emulate macOS stat, including lookup failures. Overrides apply to the original
@@ -348,12 +561,17 @@ EOF
 cat >"$bin/open" <<'EOF'
 #!/bin/sh
 echo "open $*" >>"$FAKE_LOG"
+[ "${FAKE_OPEN_FAIL:-}" != 1 ]
 EOF
 chmod +x "$bin/lsof" "$bin/ssh" "$bin/open" "$bin/stat" "$bin/ps"
 shim_call() {
+	shim_command=dashboard
+	for kv in "$@"; do
+		case "$kv" in SHIM_COMMAND=*) shim_command=${kv#*=} ;; esac
+	done
 	code=0
 	env -i HOME="$tmp" TMPDIR="$tmp/shim-tmp" PATH="$bin:/usr/bin:/bin" FAKE_VM=Running FAKE_LOG="$tmp/log" "$@" \
-		sh "$tmp/.local/bin/tego" "${SHIM_COMMAND:-dashboard}" >"$tmp/out" 2>&1 || code=$?
+		sh "$tmp/.local/bin/tego" "$shim_command" >"$tmp/out" 2>&1 || code=$?
 	if [ -n "$(find "$tmp/shim-tmp" -mindepth 1 -print)" ]; then
 		echo 'FAIL tunnel left files in TMPDIR'; fails=$((fails + 1))
 	fi
@@ -370,7 +588,24 @@ shim_run FAKE_LISTENER=none FAKE_SSH_FAIL=1
 check "failed SSH forwarding refuses browser" 1 "dashboard tunnel is not up"
 absent "failed SSH forwarding never opens browser" "open http"
 shim_run SHIM_COMMAND=start FAKE_LISTENER=none FAKE_SSH_FAIL=1
-check "start also refuses a failed tunnel" 1 "dashboard tunnel is not up"
+check "start enters project shell after tunnel failure" 0 "could not open the dashboard at http://127.0.0.1:8484/?t=test. Run tego dashboard to try again." "last-project"
+[ "$(wc -l <"$tmp/out")" -eq 1 ] || { echo 'FAIL start tunnel failure: expected one line'; fails=$((fails + 1)); }
+shim_run SHIM_COMMAND=setup FAKE_OPEN_FAIL=1
+check "setup enters project shell after browser failure" 0 "Run tego dashboard to try again" "last-project"
+shim_run SHIM_COMMAND=start FAKE_NO_URL=1
+check "M5 start without link says dashboard is not running" 0 "tego: the dashboard is not running. Run tego dashboard to start it." "last-project"
+if grep -qF 'http://' "$tmp/out"; then
+	echo 'FAIL M5 missing link names an address'; fails=$((fails + 1))
+fi
+shim_run SHIM_COMMAND=setup FAKE_NO_URL=1
+check "M5 setup without link says dashboard is not running" 0 "tego: the dashboard is not running. Run tego dashboard to start it." "last-project"
+if grep -qF 'http://' "$tmp/out"; then
+	echo 'FAIL M5 setup names an address'; fails=$((fails + 1))
+fi
+shim_run SHIM_COMMAND=start FAKE_GUIDE_STATUS=37
+check "failed guide keeps its exit status" 37
+absent "failed guide opens no project shell" "last-project"
+shim_run SHIM_COMMAND=start FAKE_LISTENER=none FAKE_SSH_FAIL=1
 absent "start never opens browser on tunnel failure" "open http"
 shim_run FAKE_VM_DIR_FAIL=1 FAKE_LISTENER=none
 check "missing VM SSH metadata fails clearly" 1 "dashboard tunnel is not up"
@@ -402,7 +637,7 @@ other_uid=$(($(id -u) + 1))
 for listener in none ssh; do
 	for unsafe in "FAKE_DIR_UID=$other_uid" FAKE_DIR_MODE=770 FAKE_DIR_MODE=707 FAKE_DIR_STAT_FAIL=1; do
 		shim_run "FAKE_LISTENER=$listener" "$unsafe"
-		check "unsafe socket folder ($unsafe, $listener) is refused" 1 "$tmp/.lima/tego" "make it owned by you and remove group and other write permission"
+		check "unsafe socket folder ($unsafe, $listener) is refused" 1 "$tmp/.lima/tego" "it must belong to you" "Fix its ownership and write permissions"
 		absent "unsafe folder never starts a master" "-M -f -N"
 		absent "unsafe folder never opens browser" "open http"
 		[ "$(wc -l <"$tmp/out")" -eq 1 ] || { echo 'FAIL unsafe folder: expected one line'; fails=$((fails + 1)); }
@@ -438,6 +673,34 @@ shim_run FAKE_LISTENER=ssh FAKE_BIND='*:8484'
 check "wildcard listener is not accepted" 1 "dashboard tunnel is not up"
 absent "wildcard listener never opens browser" "open http"
 
+shim_run FAKE_URL='http://127.0.0.1:8599/?t=other' FAKE_PORT=8599 FAKE_LISTENER=none
+check "engine link selects dashboard forward and listener port" 0 "-L 127.0.0.1:8599:127.0.0.1:8599" \
+    "-iTCP:8599" "tego-dashboard-8599.sock" "open http://127.0.0.1:8599/?t=other"
+shim_run FAKE_URL='http://127.0.0.1:8599/?t=other' FAKE_PORT=8599 FAKE_LISTENER=ssh FAKE_PID=9999
+check "M2 foreign listener explains Lima forwarding on nondefault port" 1 "Lima forwards the VM's ports to the Mac itself" "Tego's own tunnel is set up for 8484" "Put the dashboard back on 8484" "limactl edit tego" "- guestPort: 8599" "ignore: true"
+absent "foreign selected-port listener never opens browser" "open http"
+
+: >"$tmp/log"; code=0
+# These literal arguments must be rejected without being executed or entering the VM shell.
+env -i HOME="$tmp" PATH="$bin:/usr/bin:/bin" FAKE_VM=Running FAKE_LOG="$tmp/log" \
+    sh "$tmp/.local/bin/tego" shell 'printf "unexpected"' '; touch should-not-exist' >"$tmp/out" 2>&1 || code=$?
+check "shell rejects trailing arguments with usage" 2 "usage: tego shell (no arguments)"
+absent "shell arguments never reach VM" "limactl shell"
+for state in Stopped missing; do
+	: >"$tmp/log"; code=0
+	env -i HOME="$tmp" PATH="$bin:/usr/bin:/bin" FAKE_VM="$state" FAKE_LOG="$tmp/log" \
+		sh "$tmp/.local/bin/tego" shell extra >"$tmp/out" 2>&1 || code=$?
+	check "M6 shell usage before $state VM work" 2 "usage: tego shell (no arguments)"
+	absent "M6 invalid shell never starts $state VM" "limactl start"
+	absent "M6 invalid shell never enters $state VM" "limactl shell"
+	[ "$(wc -l <"$tmp/out")" -eq 1 ] || { echo "FAIL M6 $state: expected only usage"; fails=$((fails + 1)); }
+done
+shim_run SHIM_COMMAND=shell
+check "shell without arguments still enters project" 0 "last-project" "Type exit to go back to your Mac"
+
+shim_run FAKE_NO_URL=1
+check "missing dashboard link gives a retry and log command" 1 "The dashboard did not start. Run tego dashboard to try again." "cat ~/.tego/dashboard.log"
+
 # Plant the former predictable log path: installation must leave its target unchanged.
 echo keep >"$tmp/outside"
 rm -f "$tmp/tego-install.log"
@@ -445,6 +708,33 @@ ln -s "$tmp/outside" "$tmp/tego-install.log"
 run loglink LIMA=1 FAKE_VM=Running TEGO_YES=1
 check "installer log stays in private temporary directory" 0
 [ "$(cat "$tmp/outside")" = keep ] || { echo 'FAIL installer followed log link'; fails=$((fails + 1)); }
+
+# Every exit after saving settings restores them, even before a VM exists.
+bin="$tmp/terminal/bin"; stubs "$bin"
+for failure in macos brew lima INT TERM saveTERM restore; do
+    : >"$tmp/log"
+    rm -f "$bin/limactl"
+    case "$failure" in
+        macos) tty_run '' TEGO_YES=1 FAKE_MACOS=12.6; want=3 ;;
+        brew) tty_run '' TEGO_YES=1 FAKE_BREW_FAIL=1; want=2 ;;
+        lima)
+            cp "$bin.lima/limactl" "$bin/limactl"
+            tty_run '' TEGO_YES=1 FAKE_VM=Stopped FAKE_START_FAIL=1; want=8 ;;
+        INT|TERM)
+            tty_run '' TEGO_YES=1 "FAKE_BREW_SIGNAL=$failure"
+            want=130; [ "$failure" != TERM ] || want=143 ;;
+        saveTERM) tty_run '' TEGO_YES=1 FAKE_SAVE_SIGNAL=TERM; want=143 ;;
+        restore)
+            cp "$bin.lima/limactl" "$bin/limactl"
+            tty_run '' TEGO_YES=1 FAKE_GUEST_VERSION=v0.1.3 FAKE_RESTORE_FAIL=1; want=0 ;;
+    esac
+    check "terminal settings restored after $failure, preserving exit status" "$want" "stty saved-terminal-settings"
+done
+
+rm -f "$tmp/.local/bin/tego"
+: >"$tmp/log"
+tty_run n FAKE_GUEST_VERSION=v0.1.3
+check "declining Mac command explains how to open the VM" 0 "Skipped adding the Mac command. To open the VM, run: limactl shell tego"
 
 # The VM has no Mac filesystem shares; provisioning and the shim use only VM paths.
 if ! grep -qx 'mounts: \[\]' "$here/../examples/lima/tego.yaml"; then

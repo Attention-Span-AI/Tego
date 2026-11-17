@@ -85,20 +85,29 @@ the selected tag, the verified installer digest and the SHA-256 of the verified 
 the installer digest before executing it and passes the tag and checksums digest to the Linux installation.
 The guest refuses a changed checksums file before checking or installing any binary, even without a verifier in
 the VM. For example, `TEGO_VERSION=v0.2.0` selects that version inside the VM too.
-Pinned Mac creation requires v0.2.0 or later, the first template that consumes these parameters. Older templates
-are refused before Lima starts; unset `TEGO_VERSION` to install the latest instead.
+Pinned Mac creation requires a release template with `# tego-mac-provisioning: 1`; older templates are refused
+before creation. For an existing VM, a release without this marker leaves Tego inside it as it is, without asking
+or failing. Updating it from the Mac needs a later release.
 The initial piped Mac script has the same trust limit as Linux; [verify it first](#check-the-installer-first) if needed.
 
 The template, [examples/lima/tego.yaml](../examples/lima/tego.yaml), boots Ubuntu 24.04 LTS with 4 CPUs, 4 GiB of
 memory and a 20 GiB disk. Tier 1 needs nothing more there: Ubuntu's kernel has Landlock and systemd delegates a
 cgroup to your user.
 
-Rerunning the Mac installer updates only the Mac command for an existing VM. To upgrade Tego inside it, run
-`tego shell`, then run the Linux installer there. For a specific release:
+Rerunning the Mac installer refreshes its Mac command before any release lookup or guest update; a later failure
+keeps that command refreshed and returns its failure status. For a compatible release, a matching guest version
+is up to date. An older, missing or broken installation gets `Update Tego inside the VM from X to Y?`, default yes.
+A newer guest gets `Replace Tego X inside the VM with older version Y?`, default no (including prerelease tags).
+`TEGO_YES=1` explicitly accepts either; without a terminal it prints one retry command and stops. Unsupported
+releases produce one note and finish normally, including with `TEGO_YES=1` or no terminal.
+The update uses the same release base URL and verified checksums digest as the Mac, without recreating the VM
+or changing projects, contracts or records. Existing runs keep their old executable until they finish: the Linux
+installer renames new files into place. New commands use the selected release. Declining leaves the guest as it was.
 
-```sh
-curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/download/v0.1.3/install.sh | TEGO_VERSION=v0.1.3 sh
-```
+If a new VM's image download fails, first run `limactl delete tego` to remove that incomplete instance before
+retrying. The installer leaves deletion to you so you can inspect the instance and log. Only a not-found diagnostic
+says the image is unavailable and suggests updating the installer; other download failures suggest checking the
+connection and running it again.
 
 No Mac folders are mounted in the VM by default: neither your Mac home nor `/tmp/lima` is shared. Programs in
 it cannot read or write Mac files through a filesystem share. Lima stores the VM disk and configuration on the Mac;
@@ -128,16 +137,30 @@ cd ~
 tego test
 ```
 
-The dashboard answers only connections made by its own user, and Lima's default port forwarding connects as root
-inside the VM, so the template does not forward its port. Start `tego serve` in the VM, forward the port over SSH from
-another terminal on the Mac, and open the URL `tego serve` printed:
+The dashboard answers only connections made by its own user. Lima forwards the VM's ports to the Mac itself,
+connecting as root inside the VM; Tego's own tunnel is set up for 8484, which the template excludes from Lima's
+forwarding. For a manual forward of the default dashboard, start `tego serve` in the VM, run this in another Mac
+terminal, and open the URL it printed:
 
 ```sh
 ssh -F ~/.lima/tego/ssh.config -N -o ExitOnForwardFailure=yes -L 127.0.0.1:8484:127.0.0.1:8484 lima-tego
 ```
 
+The Mac command still reads the port from the dashboard link. If another process holds a different dashboard
+port on the Mac, Lima's own forwarding is a likely cause. Put the dashboard back on 8484, or run `limactl stop tego`,
+then `limactl edit tego` and add this rule under `portForwards` (8599 is the example port):
+
+```yaml
+  - guestPort: 8599
+    ignore: true
+```
+
+Then run `limactl start tego` and `tego dashboard`. Other dashboard ports have not yet been verified on a Mac.
+This leaves Lima's forwarding of other VM ports available.
+
 The Mac command keeps its dashboard tunnel at `~/.lima/tego/tego-dashboard.sock`, reuses a confirmed live tunnel,
-and replaces an owned leftover socket when its master no longer answers and port 8484 is free. It leaves a linked
+uses `tego-dashboard-PORT.sock` for a different dashboard port, and replaces an owned leftover socket when its
+master no longer answers and that port is free. A foreign listener on the selected port is refused. It leaves a linked
 or foreign-owned socket untouched. If the socket folder belongs to someone else or is writable by group or others,
 it names the folder and asks you to correct its ownership and write permissions before trying again. These refusals
 start no tunnel and open no browser; they create no temporary socket folder.
