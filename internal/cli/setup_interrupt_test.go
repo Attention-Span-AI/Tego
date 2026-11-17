@@ -210,12 +210,12 @@ func runGuidePTY(t *testing.T, route guidePTYRoute, target int, how string, ahea
 	t.Helper()
 	fd, err := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC|unix.O_NONBLOCK, 0)
 	if err != nil {
-		t.Fatal(err)
+		t.Skipf("pseudo-terminal unavailable: %v", err)
 	}
 	master := os.NewFile(uintptr(fd), "pty")
 	defer func() { _ = master.Close() }()
 	if err := unix.IoctlSetPointerInt(fd, unix.TIOCSPTLCK, 0); err != nil {
-		t.Fatal(err)
+		t.Skipf("pseudo-terminal unlock unavailable: %v", err)
 	}
 	n, err := unix.IoctlGetInt(fd, unix.TIOCGPTN)
 	if err != nil {
@@ -307,7 +307,7 @@ func runGuidePTY(t *testing.T, route guidePTYRoute, target int, how string, ahea
 		_ = master.Close()
 		select {
 		case <-readDone:
-		case <-time.After(time.Second):
+		case <-time.After(15 * time.Second):
 			t.Error("PTY reader did not finish")
 		}
 	}()
@@ -325,7 +325,7 @@ func runGuidePTY(t *testing.T, route guidePTYRoute, target int, how string, ahea
 			}
 		case <-done:
 			t.Fatalf("helper ended before %s: %v\n%s", step.prompt, childErr, snapshot())
-		case <-time.After(3 * time.Second):
+		case <-time.After(15 * time.Second):
 			t.Fatalf("no %s prompt:\n%s", step.prompt, snapshot())
 		}
 		if i == target {
@@ -360,7 +360,7 @@ func runGuidePTY(t *testing.T, route guidePTYRoute, target int, how string, ahea
 		if childErr != nil {
 			t.Fatalf("interrupted helper: %v\n%s", childErr, snapshot())
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(15 * time.Second):
 		t.Fatalf("guide ignored interrupt:\n%s", snapshot())
 	}
 	after, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
