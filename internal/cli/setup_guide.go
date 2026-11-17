@@ -97,11 +97,12 @@ var guideInstall = func(ctx context.Context, line string, log io.Writer) error {
 	if _, err := proc.Start(c); err != nil {
 		return err
 	}
-	done := make(chan error, 1)
-	go func() { done <- c.Wait() }()
+	done := make(chan struct{})
+	var waitErr error
+	go func() { waitErr = c.Wait(); close(done) }()
 	select {
-	case err := <-done:
-		return err
+	case <-done:
+		return waitErr
 	case <-ctx.Done():
 		_ = unix.Kill(-c.Process.Pid, unix.SIGTERM)
 		select {
