@@ -59,14 +59,14 @@ func verbMachine(verb string, stderr io.Writer) *config.Machine {
 }
 
 // allSessions is every run under the ledger root, oldest first, as tego status --all reads them; runs it cannot read
-// are left out (tego status --all names them).
-func allSessions(ctx context.Context, m *config.Machine) (string, []*status.Snapshot) {
+// are reported to the caller.
+func allSessions(ctx context.Context, m *config.Machine) (string, []*status.Snapshot, error) {
 	root, err := ledgerRootOf(m)
 	if err != nil {
-		return "", nil
+		return "", nil, err
 	}
-	snaps, _ := status.DeriveAll(ctx, root, time.Now())
-	return root, snaps
+	snaps, err := status.DeriveAll(ctx, root, time.Now())
+	return root, snaps, err
 }
 
 // sessionRunning reports whether a session is still going.
@@ -79,7 +79,13 @@ func listSessions(ctx context.Context, stdout, stderr io.Writer) int {
 	if m == nil {
 		return identity.ExitError
 	}
-	root, snaps := allSessions(ctx, m)
+	root, snaps, err := allSessions(ctx, m)
+	if err != nil {
+		for _, e := range joinedErrors(err) {
+			message(stderr, "", 0, 0, "tego session list: "+e.Error(), codeIO)
+		}
+		return identity.ExitError
+	}
 	if len(snaps) == 0 {
 		fmt.Fprintln(stdout, "No sessions yet. Start one: tego run AGENT")
 		return identity.ExitOK
