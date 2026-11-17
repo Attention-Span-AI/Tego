@@ -712,6 +712,9 @@ var guideDashboard = func(home string) string {
 	if u := runningDashboard(home); u != "" {
 		return u // restarting it would sign out the tabs already open
 	}
+	if _, err := readGuideFile(home, ".tego/dashboard.log"); err != nil && !errors.Is(err, os.ErrNotExist) {
+		fmt.Fprintf(os.Stderr, "Ignored dashboard log: %v\n", err)
+	}
 	if os.MkdirAll(filepath.Join(home, ".tego"), 0o700) != nil {
 		return ""
 	}
@@ -755,15 +758,7 @@ var guideDashboard = func(home string) string {
 // openDashboardLog creates the log privately before any sign-in link is written. The descriptor is handed to
 // systemd-run --pipe, which passes it to the unit; no shell reopens a pathname.
 func openDashboardLog(home string) (*os.File, error) {
-	if err := replaceGuideFile(home, ".tego/dashboard.log", nil, 0600); err != nil {
-		return nil, err
-	}
-	dir, err := guideParent(home, ".tego/dashboard.log", false)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = dir.Close() }()
-	return openGuideAt(dir, "dashboard.log", unix.O_RDWR|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	return publishGuideFile(home, ".tego/dashboard.log", nil, 0600)
 }
 
 // guideVersion is the version an installed program reports (claude --version), or ""; a variable so a test runs nothing.
@@ -872,8 +867,9 @@ func (g *walk) signIn(ctx context.Context, a guideAgent, home string) (int, erro
 	for _, l := range a.logins {
 		vars = append(vars, l.envVar)
 	}
+	saved := readSavedLogins(home, g.out)
 	for _, l := range a.logins {
-		if savedLogin(home, l.envVar) == "" {
+		if saved[l.envVar] == "" {
 			continue
 		}
 		pick, err := g.chooseOne("Use your saved "+a.label+" login?", []choice{
@@ -889,7 +885,6 @@ func (g *walk) signIn(ctx context.Context, a guideAgent, home string) (int, erro
 		}
 		if err := forgetLogins(home, vars); err != nil {
 			g.bad("Couldn't remove the saved login: " + err.Error())
-			return identity.ExitError, nil
 		}
 		for _, v := range vars {
 			_ = os.Unsetenv(v) // the shell loaded the saved login; this login replaces it
@@ -963,20 +958,6 @@ func validToken(s string) error {
 	return nil
 }
 
-// savedLogin is the saved value of envVar, or "".
-func savedLogin(home, envVar string) string {
-	b, err := readGuideFile(home, agentEnvRel)
-	if err != nil {
-		return ""
-	}
-	for _, l := range strings.Split(string(b), "\n") {
-		if v, ok := strings.CutPrefix(l, envVar+"="); ok {
-			return strings.Trim(v, "'")
-		}
-	}
-	return ""
-}
-
 // forgetLogins removes vars from the agent.env file, leaving the other agents' logins.
 func forgetLogins(home string, vars []string) error {
 	b, err := readGuideFile(home, agentEnvRel)
@@ -1008,10 +989,16 @@ func saveLogin(home, envVar, value string) error {
 	}
 	// Validate both destinations before publishing the secret.
 	old, err := readGuideFile(home, agentEnvRel)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err != nil && !errors.Is(err, os.ErrNotExist) && !errors.Is(err, errUnsafeGuideFile) {
 		return err
 	}
-	rc, err := readGuideFile(home, ".bashrc")
+	rcHome, rcRel := home, ".bashrc"
+	if target, resolveErr := filepath.EvalSymlinks(filepath.Join(home, rcRel)); resolveErr == nil {
+		rcHome, rcRel = filepath.Dir(target), filepath.Base(target)
+	} else if !errors.Is(resolveErr, os.ErrNotExist) {
+		return resolveErr
+	}
+	rc, err := readGuideData(rcHome, rcRel, false)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -1028,62 +1015,47 @@ func saveLogin(home, envVar, value string) error {
 	if strings.Contains(string(rc), bashrcLine) {
 		return nil
 	}
-	return replaceGuideFile(home, ".bashrc", append(rc, []byte("\n"+bashrcLine+"\n")...), 0600)
+	return replaceGuideFile(rcHome, rcRel, append(rc, []byte("\n"+bashrcLine+"\n")...), 0600)
 }
 
-// guideParent pins the destination's directories without following links. The home and its child directories
-// must belong to this user and cannot be writable by another user. Ancestors are opened only for traversal.
+// guideParent resolves the machine's directory layout, then pins the folder that holds the file.
+// Only that folder must belong to the caller; its write permissions do not expose a private file.
 func guideParent(home, rel string, create bool) (*os.File, error) {
 	if !filepath.IsAbs(home) {
 		return nil, errors.New("home must be absolute")
 	}
-	home = filepath.Clean(home)
-	dir, err := os.Open("/")
+	full := filepath.Join(home, filepath.Dir(rel))
+	if create {
+		if err := os.MkdirAll(full, 0700); err != nil {
+			return nil, err
+		}
+	}
+	resolved, err := filepath.EvalSymlinks(full)
 	if err != nil {
 		return nil, err
 	}
-	full := filepath.Join(home, filepath.Dir(rel))
-	at := "/"
-	for _, part := range strings.Split(strings.TrimPrefix(full, "/"), "/") {
-		at = filepath.Join(at, part)
-		var next *os.File
-		err = sys.FileDo(dir, func(fd int) error {
-			if create && (at == home || strings.HasPrefix(at, home+"/")) {
-				if e := unix.Mkdirat(fd, part, 0700); e != nil && !errors.Is(e, unix.EEXIST) {
-					return e
-				}
-			}
-			owned, e := sys.Own(unix.Openat(fd, part, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0))
-			if e != nil {
-				return e
-			}
-			next, e = owned.Release(at)
-			if e != nil {
-				_ = owned.Close()
-			}
-			return e
-		})
+	owned, err := sys.Own(unix.Open(resolved, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0))
+	if err != nil {
+		return nil, err
+	}
+	dir, err := owned.Release(resolved)
+	if err != nil {
+		_ = owned.Close()
+		return nil, err
+	}
+	err = sys.FileDo(dir, func(fd int) error {
+		var st unix.Stat_t
+		if err := unix.Fstat(fd, &st); err != nil {
+			return err
+		}
+		if st.Uid != uint32(os.Geteuid()) {
+			return fmt.Errorf("folder belongs to someone else: %s", full)
+		}
+		return nil
+	})
+	if err != nil {
 		_ = dir.Close()
-		if err != nil {
-			return nil, err
-		}
-		dir = next
-		if at == home || strings.HasPrefix(at, home+"/") {
-			err = sys.FileDo(dir, func(fd int) error {
-				var st unix.Stat_t
-				if e := unix.Fstat(fd, &st); e != nil {
-					return e
-				}
-				if st.Uid != uint32(os.Geteuid()) || st.Mode&0022 != 0 {
-					return errors.New("directory must be yours and writable only by you: " + at)
-				}
-				return nil
-			})
-			if err != nil {
-				_ = dir.Close()
-				return nil, err
-			}
-		}
+		return nil, err
 	}
 	return dir, nil
 }
@@ -1105,14 +1077,23 @@ func openGuideAt(dir *os.File, name string, flags int, mode uint32) (*os.File, e
 	return f, err
 }
 
+var errUnsafeGuideFile = errors.New("unsafe file")
+
 func ownGuideFile(st *unix.Stat_t) error {
-	if st.Mode&unix.S_IFMT != unix.S_IFREG || st.Uid != uint32(os.Geteuid()) || st.Nlink != 1 {
-		return errors.New("file must be your own regular file with no links")
+	if st.Mode&unix.S_IFMT != unix.S_IFREG {
+		return fmt.Errorf("%w: file is not a regular file", errUnsafeGuideFile)
+	}
+	if st.Uid != uint32(os.Geteuid()) {
+		return fmt.Errorf("%w: file belongs to someone else", errUnsafeGuideFile)
 	}
 	return nil
 }
 
 func readGuideFile(home, rel string) ([]byte, error) {
+	return readGuideData(home, rel, true)
+}
+
+func readGuideData(home, rel string, secret bool) ([]byte, error) {
 	dir, err := guideParent(home, rel, false)
 	if err != nil {
 		return nil, err
@@ -1120,6 +1101,9 @@ func readGuideFile(home, rel string) ([]byte, error) {
 	defer func() { _ = dir.Close() }()
 	f, err := openGuideAt(dir, filepath.Base(rel), unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
 	if err != nil {
+		if errors.Is(err, unix.ELOOP) {
+			return nil, fmt.Errorf("%w: %s is a symbolic link", errUnsafeGuideFile, rel)
+		}
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
@@ -1128,7 +1112,13 @@ func readGuideFile(home, rel string) ([]byte, error) {
 		if e := unix.Fstat(fd, &st); e != nil {
 			return e
 		}
-		return ownGuideFile(&st)
+		if err := ownGuideFile(&st); err != nil {
+			return err
+		}
+		if secret && st.Mode&0044 != 0 {
+			return fmt.Errorf("%w: %s is readable by group or others", errUnsafeGuideFile, rel)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -1146,29 +1136,46 @@ func validateGuideDestination(dir *os.File, name string) error {
 		if err != nil {
 			return err
 		}
+		if st.Mode&unix.S_IFMT == unix.S_IFLNK && st.Uid == uint32(os.Geteuid()) {
+			return nil
+		}
 		return ownGuideFile(&st)
 	})
 }
 
 func replaceGuideFile(home, rel string, text []byte, mode os.FileMode) error {
-	dir, err := guideParent(home, rel, true)
+	f, err := publishGuideFile(home, rel, text, mode)
 	if err != nil {
 		return err
+	}
+	return f.Close()
+}
+
+func publishGuideFile(home, rel string, text []byte, mode os.FileMode) (*os.File, error) {
+	dir, err := guideParent(home, rel, true)
+	if err != nil {
+		return nil, err
 	}
 	defer func() { _ = dir.Close() }()
 	name := filepath.Base(rel)
 	if err := validateGuideDestination(dir, name); err != nil {
-		return err
+		return nil, err
 	}
 	var random [16]byte
 	if _, err := rand.Read(random[:]); err != nil {
-		return err
+		return nil, err
 	}
 	tmp := ".tego-save-" + hex.EncodeToString(random[:])
-	f, err := openGuideAt(dir, tmp, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, uint32(mode.Perm()))
+	f, err := openGuideAt(dir, tmp, unix.O_RDWR|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, uint32(mode.Perm()))
 	if err != nil {
-		return err
+		return nil, err
 	}
+	published := false
+	defer func() {
+		if !published {
+			_ = f.Close()
+		}
+	}()
 	defer func() { _ = sys.FileDo(dir, func(fd int) error { return unix.Unlinkat(fd, tmp, 0) }) }()
 	err = f.Chmod(mode)
 	if err == nil {
@@ -1177,16 +1184,17 @@ func replaceGuideFile(home, rel string, text []byte, mode os.FileMode) error {
 	if err == nil {
 		err = f.Sync()
 	}
-	if ce := f.Close(); err == nil {
-		err = ce
-	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := validateGuideDestination(dir, name); err != nil {
-		return err
+		return nil, err
 	}
-	return sys.FileDo(dir, func(fd int) error { return unix.Renameat(fd, tmp, fd, name) })
+	if err := sys.FileDo(dir, func(fd int) error { return unix.Renameat(fd, tmp, fd, name) }); err != nil {
+		return nil, err
+	}
+	published = true
+	return f, nil
 }
 
 // project asks which project the agent works in: the test project, this folder (when tego start runs inside one), or

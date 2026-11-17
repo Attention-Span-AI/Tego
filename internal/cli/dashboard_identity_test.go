@@ -40,14 +40,18 @@ func TestDashboardRejectsUnrelatedListener(t *testing.T) {
 	}
 }
 
-func dashboardStandIn(t *testing.T) *httptest.Server {
+func dashboardStandIn(t *testing.T, tokens ...string) *httptest.Server {
+	token := "0123abcd"
+	if len(tokens) > 0 {
+		token = tokens[0]
+	}
 	t.Helper()
 	_, _, scope, err := dashboardConfiguration()
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mac := hmac.New(sha256.New, []byte("0123abcd"))
+		mac := hmac.New(sha256.New, []byte(token))
 		_, _ = mac.Write([]byte("tego-dashboard-v1\n" + r.URL.Query().Get("challenge") + "\n" + scope))
 		_, _ = io.WriteString(w, hex.EncodeToString(mac.Sum(nil)))
 	}))
