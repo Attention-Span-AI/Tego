@@ -725,14 +725,17 @@ var guideDashboard = func(home string) string {
 	if os.MkdirAll(filepath.Join(home, ".tego"), 0o700) != nil {
 		return ""
 	}
-	quiet := func(argv ...string) error {
+	quiet := func(argv ...string) ([]byte, error) {
+		var out bytes.Buffer
 		c := proc.Command(argv[0], argv[1:]...)
+		c.Stdout = &out
 		if _, err := proc.Start(c); err != nil {
-			return err
+			return nil, err
 		}
-		return c.Wait()
+		err := c.Wait()
+		return out.Bytes(), err
 	}
-	_ = quiet("systemctl", "--user", "stop", "tego-dashboard")
+	_, _ = quiet("systemctl", "--user", "stop", "tego-dashboard")
 	f, err := openDashboardLog(home)
 	if err != nil {
 		return ""
@@ -742,7 +745,19 @@ var guideDashboard = func(home string) string {
 	if err != nil {
 		return ""
 	}
-	c := proc.Command("systemd-run", "--user", "--unit=tego-dashboard", "--quiet", "--pipe", "--setenv=TEGO_CONFIG="+configFile, self, "serve", "--ledger", root)
+	args := []string{"--user", "--unit=tego-dashboard", "--quiet", "--pipe", "--setenv=TEGO_CONFIG=" + configFile}
+	// The option arrived in systemd 254. Probe its presence for backports too;
+	// older service managers use the documented $$ escaping. --setenv is already literal.
+	help, _ := quiet("systemd-run", "--help")
+	command := []string{self, "serve", "--ledger", root}
+	if strings.Contains(string(help), "--expand-environment") {
+		args = append(args, "--expand-environment=no")
+	} else {
+		for i := range command {
+			command[i] = strings.ReplaceAll(command[i], "$", "$$")
+		}
+	}
+	c := proc.Command("systemd-run", append(args, command...)...)
 	c.Stdout, c.Stderr = f, f
 	if _, err := proc.Start(c); err != nil {
 		return ""
