@@ -1561,7 +1561,13 @@ func guideSaveRules(_ context.Context, m *config.Machine, a guideAgent, command,
 		message(stderr, dir, 0, 0, "tego start: "+err.Error(), codeIO)
 		return "", identity.ExitError
 	}
-	if ds, ok := setup.CheckFile(composed.Contract, file, dir, env); !ok {
+	check := func() ([]agent.Diagnostic, bool) { return setup.CheckFile(composed.Contract, file, dir, env) }
+	if po.ReadOnlyProject {
+		check = func() ([]agent.Diagnostic, bool) {
+			return setup.CheckReviewFile(composed.Contract, file, dir, env, reviewState(a))
+		}
+	}
+	if ds, ok := check(); !ok {
 		setup.Remove(made, dir)
 		_ = agent.WriteDiagnostics(stderr, ds)
 		return "", identity.ExitFinding
