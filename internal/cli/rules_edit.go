@@ -3,7 +3,9 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -41,7 +43,14 @@ func cmdRulesEdit() Command {
 				return identity.ExitUsage
 			}
 			path := ref.label()
-			text, err := os.ReadFile(path)
+			original, err := os.Lstat(path)
+			if err == nil && !original.Mode().IsRegular() {
+				err = errors.New("rules file must be a regular file, not a link")
+			}
+			var text []byte
+			if err == nil {
+				text, err = os.ReadFile(path)
+			}
 			if err != nil {
 				message(stderr, path, 0, 0, "tego rules edit: "+err.Error(), codeIO)
 				return identity.ExitError
@@ -56,11 +65,14 @@ func cmdRulesEdit() Command {
 			}
 			if err := checkRules(ctx, m, path, edited, stderr); err != nil {
 				keep := path + ".rejected"
-				_ = os.WriteFile(keep, edited, 0o600)
+				if err := atomicRulesWrite(keep, edited, 0o600, nil); err != nil {
+					message(stderr, keep, 0, 0, "tego rules edit: could not keep the rejected edit: "+err.Error(), codeIO)
+					return identity.ExitError
+				}
 				fmt.Fprintf(stdout, "✗ Not saved: the rules have errors (above). %s is unchanged; your edit is in %s\n", path, keep)
 				return identity.ExitFinding
 			}
-			if err := writeOver(path, edited); err != nil {
+			if err := writeOverUnchanged(path, edited, original, text); err != nil {
 				message(stderr, path, 0, 0, "tego rules edit: "+err.Error(), codeIO)
 				return identity.ExitError
 			}
@@ -108,21 +120,69 @@ func editCopy(path string, text []byte, stderr io.Writer) ([]byte, int) {
 	return edited, identity.ExitOK
 }
 
-// writeOver replaces path's contents with text, keeping its mode: a new file beside it, renamed over it.
-func writeOver(path string, text []byte) error {
-	st, err := os.Stat(path)
+// writeOverUnchanged replaces only the version opened before the editor, keeping its mode.
+func writeOverUnchanged(path string, text []byte, original os.FileInfo, before []byte) error {
+	return atomicRulesWrite(path, text, original.Mode().Perm(), func() error {
+		now, err := os.Lstat(path)
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if !os.SameFile(original, now) || !now.ModTime().Equal(original.ModTime()) || !bytes.Equal(data, before) {
+			return errors.New("the rules file changed while the editor was open; nothing was saved")
+		}
+		return nil
+	})
+}
+
+// atomicRulesWrite publishes only a complete file. Neither a planted destination link nor the old predictable
+// .tego-edit name is followed. The final check detects an edit made while the editor was open.
+func atomicRulesWrite(path string, text []byte, mode os.FileMode, check func() error) error {
+	regular := func() error {
+		st, err := os.Lstat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if !st.Mode().IsRegular() {
+			return errors.New("destination must be a regular file, not a link")
+		}
+		return nil
+	}
+	if err := regular(); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), ".tego-edit-*")
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tego-edit"
-	if err := os.WriteFile(tmp, text, st.Mode().Perm()); err != nil {
+	defer func() { _ = os.Remove(f.Name()) }()
+	if _, err = f.Write(text); err == nil {
+		err = f.Chmod(mode)
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
 		return err
 	}
-	if err := os.Chmod(tmp, st.Mode().Perm()); err != nil {
-		_ = os.Remove(tmp)
+	if check != nil {
+		if err := check(); err != nil {
+			return err
+		}
+	}
+	if err := regular(); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	return os.Rename(f.Name(), path)
 }
 
 // checkRules compiles a rules file's text as the file at path, the way tego learn --save checks what it saves and
