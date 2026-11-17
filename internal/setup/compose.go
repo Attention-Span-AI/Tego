@@ -17,6 +17,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/presets"
+	"golang.org/x/sys/unix"
 )
 
 // Marker opens every contract init writes; internal/cli keeps the same text so a second init recognises its own file.
@@ -183,6 +184,9 @@ func Compose(o Options) (*Result, error) {
 			state = "./.tego/codex/"
 		}
 		o.Writes = []string{state}
+		if err := checkReviewFolders(o.Dir, state); err != nil {
+			return nil, err
+		}
 	}
 	ps, err := ParsePresets(o.Presets)
 	if err != nil {
@@ -192,6 +196,11 @@ func Compose(o Options) (*Result, error) {
 		return slices.ContainsFunc(ps, func(p presets.Preset) bool { return p.Name == name })
 	}
 	res := &Result{}
+	if o.ReadOnlyProject {
+		// Create must walk these names even when they already exist, checking them again before compile.
+		res.makeDir(filepath.Join(o.Dir, state), state)
+		res.makeDir(filepath.Join(o.Dir, state, "tmp"), state+"tmp/")
+	}
 
 	// fs.write: the --write folders, then (when writes are restricted at all) the folders the markers imply and TMPDIR.
 	var writes []entry
@@ -820,4 +829,68 @@ func DashboardScope(machine *config.Machine, ledger string) (root, scope string,
 	}
 	sum := sha256.Sum256(data)
 	return root, hex.EncodeToString(sum[:]), nil
+}
+
+// checkReviewFolders refuses project-controlled links, including an existing tmp grant.
+func checkReviewFolders(dir, state string) error {
+	root, err := openDir(dir)
+	if err != nil {
+		return rootRefusal(dir, err)
+	}
+	defer func() { _ = root.Close() }()
+	for _, rel := range []string{".tego", strings.TrimSuffix(strings.TrimPrefix(state, "./"), "/"), filepath.Join(state, "tmp")} {
+		opened, err := walk(root, rel)
+		if errors.Is(err, unix.ENOENT) {
+			return nil
+		}
+		if err != nil {
+			return usagef("%s must be a real folder for Read-only review; remove the link or file, or choose other rules", filepath.Join(dir, rel))
+		}
+		_ = opened.Close()
+	}
+	return nil
+}
+
+// CheckReviewFile checks the compiled write grants as well as the state folder names.
+// Terminal devices remain available to the interactive programs; every ordinary filesystem write stays in state.
+func CheckReviewFile(contract []byte, label, dir string, env CheckEnv, state string) ([]agent.Diagnostic, bool) {
+	refusal := func(err error) ([]agent.Diagnostic, bool) {
+		return []agent.Diagnostic{{File: label, Code: agent.CodeSchema, Message: err.Error(), Severity: agent.SeverityError}}, false
+	}
+	if err := checkReviewFolders(dir, state); err != nil {
+		return refusal(err)
+	}
+	profiles := env.Profiles
+	if profiles == nil {
+		profiles = (&agent.ProfileChain{}).WithBuiltin(presets.Source{})
+	}
+	c, ds, err := agent.LoadBytes(label, contract, profiles)
+	if err != nil {
+		return ds, false
+	}
+	m := env.Machine
+	if m == nil {
+		m = config.Builtin()
+	}
+	opts := append([]agent.CompileOption{agent.Offline(), agent.WithCwd(dir)}, env.Options...)
+	rt, more, err := agent.Compile(c, m, opts...)
+	ds = append(ds, more...)
+	if err != nil || agent.HasErrors(ds) {
+		return ds, false
+	}
+	expected := filepath.Clean(filepath.Join(dir, state))
+	for _, rule := range rt.FS {
+		if rule.Kind != agent.FSWrite {
+			continue
+		}
+		path := filepath.Clean(rule.Resolved)
+		switch path {
+		case "/dev/null", "/dev/tty", "/dev/ptmx", "/dev/pts", "/dev/pts/ptmx":
+			continue
+		}
+		if path != expected && !strings.HasPrefix(path, expected+string(filepath.Separator)) {
+			return refusal(fmt.Errorf("read-only review write %s resolves outside %s; remove the link, or choose other rules", path, expected))
+		}
+	}
+	return ds, true
 }

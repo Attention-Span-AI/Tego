@@ -67,7 +67,14 @@ func TestReadOnlyGuideCompiledWriteSet(t *testing.T) {
 				if rule.Kind != agent.FSWrite {
 					continue
 				}
-				p := strings.TrimSuffix(rule.Path, "/")
+				p := strings.TrimSuffix(rule.Resolved, "/")
+				switch p {
+				case "/dev/null", "/dev/tty", "/dev/ptmx", "/dev/pts", "/dev/pts/ptmx":
+					continue
+				}
+				if p != state && !strings.HasPrefix(p, state+"/") {
+					t.Errorf("review grants ordinary filesystem write outside state: %s", p)
+				}
 				if p == f.Project || strings.HasPrefix(p, f.Project+"/") {
 					writes++
 					if p != state && !strings.HasPrefix(p, state+"/") {
