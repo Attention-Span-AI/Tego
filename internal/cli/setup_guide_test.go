@@ -470,3 +470,6 @@ func TestDashboardIsOneDashboard(t *testing.T) {
 		t.Fatalf("none: exit %d, %d starts\n%s%s", code, starts, out, errs)
 	}
 }
+
+// savedLogin is the value the guide's data-only reader can use.
+func savedLogin(home, envVar string) string { return readSavedLogins(home, nil)[envVar] }
