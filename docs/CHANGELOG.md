@@ -21,8 +21,10 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
   does not run an agent installer as root. Read-only review keeps the project's content read-only: the agent can
   write only its own state folder under `.tego/`, which also holds its temporary files.
 - The Mac installer checks the VM template and the VM's installer against the selected release before it uses
-  them, installs that same version in the VM, opens the dashboard only after the tunnel to the VM is confirmed,
-  and adds `tego` to fish's PATH in fish's own configuration.
+  them, installs that same version in the VM and binds the VM's binaries to the checksums it verified
+  (`TEGO_CHECKSUMS_SHA256`), opens the dashboard only after a tunnel that belongs to you is confirmed, and adds
+  `tego` to fish's PATH in fish's own configuration. Pinning a version on a Mac (`TEGO_VERSION`) needs a release
+  whose template takes the pin: this one or later; an earlier release is refused before the VM is created.
 
 ### Changed
 
