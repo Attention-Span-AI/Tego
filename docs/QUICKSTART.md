@@ -26,10 +26,14 @@ cgroup:
 
 ```sh
 brew install lima
-limactl start --name=tego https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml
+limactl start --name=tego --mount-none https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml
 limactl shell tego
 systemd-run --user --scope bash
 ```
+
+No Mac folders are shared with the VM by default, including your home and `/tmp/lima`. Keep projects inside the
+VM; [explicit sharing](INSTALL.md#macos) lets an agent read files in a mount, including secrets, and change them if
+the mount is writable and its contract permits it.
 
 On **Windows**, run `wsl --install -d Ubuntu-24.04` in PowerShell, then the Linux line inside Ubuntu.
 

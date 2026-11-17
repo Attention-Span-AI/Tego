@@ -6,7 +6,7 @@ source is the other way.
 | System | Install | Tested on |
 |---|---|---|
 | Linux | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | The published v0.1.1 as a new user, tier landlock: AlmaLinux 9.8, Ubuntu 24.04 and 26.04.1, Debian 13, Fedora 44, Amazon Linux 2023 ([details](TIERS.md#the-published-release-as-a-new-user)) |
-| macOS | `limactl start --name=tego https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml` | Not run on a Mac yet. Lima's `limactl validate` passes on the template |
+| macOS | `limactl start --name=tego --mount-none https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml` | Not run on a Mac yet. Lima's `limactl validate` passes on the template |
 | Windows | `wsl --install -d Ubuntu-24.04`, then the Linux line inside Ubuntu | Not run on Windows yet |
 
 ## Requirements
@@ -66,7 +66,7 @@ Tego runs in an Ubuntu 24.04 VM made by [Lima](https://lima-vm.io), on Apple sil
 
 ```sh
 brew install lima
-limactl start --name=tego https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml
+limactl start --name=tego --mount-none https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml
 limactl shell tego tego doctor
 ```
 
@@ -78,11 +78,24 @@ the release's signed checksums file like `install.sh`. It boots Ubuntu 24.04 LTS
 memory and a 20 GiB disk, and on the first boot runs the Linux line above as your user in the VM, taking `install.sh` from the latest release
 too. Tier 1 needs nothing
 more there: Ubuntu 24.04's kernel has Landlock, and its systemd delegates a cgroup to your user. 
-Your Mac home is visible in the VM read-only, at `/Users/<you>`. Tego's built-in secret paths name the VM user's home,
-not that one, so an agent in the VM can read your Mac's `~/.ssh` unless a contract denies it. To keep the Mac home out,
-create the VM with `limactl start --name=tego --mount-none <the URL above>` (Lima 2.0 or later). Tego's data and the
-projects an agent works on live in the VM's own home: when your Mac's current folder is mounted, `limactl shell` starts
-there, read-only, so run `cd ~` first.
+No Mac folders are mounted in the VM by default: neither your Mac home nor `/tmp/lima` is shared. Programs in
+it cannot read or write Mac files through a filesystem share. Lima stores the VM disk and configuration on the Mac;
+Tego's data and projects live in the VM's own home. The Mac command enters that home or the last project inside the
+VM; `tego start` asks for a project path inside the VM.
+
+To share a folder explicitly, stop the VM with `limactl stop tego`, then run `limactl edit tego` and replace
+`mounts: []` with a limited mount, for example:
+
+```yaml
+mounts:
+  - location: /Users/you/shared-project
+    writable: false
+```
+
+Start it again with `limactl start tego`. An agent in the VM can read files in that mount, including any secrets in
+it; the built-in secret paths refer to the VM home and do not protect secrets in a Mac mount. With `writable: true`,
+an agent can also change Mac files there, subject to its contract. Existing VMs keep their mounts: stop and edit
+one to set `mounts: []` if it was created with an older template.
 
 `limactl shell` logs in over SSH, which starts outside your user's cgroup, so for a run start a shell in it first:
 

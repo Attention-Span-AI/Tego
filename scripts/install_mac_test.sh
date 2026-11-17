@@ -88,7 +88,7 @@ latest="https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.
 
 run fresh TEGO_YES=1
 check "fresh Mac: installs Lima, sets up the VM, adds tego" 0 "✗ Lima isn't installed" "brew install lima" \
-	"limactl start --tty=false --name=tego $latest" "✓ Lima 2.3.0" "✓ Tego's VM is ready" "✓ tego command added" \
+	"limactl start --tty=false --name=tego --mount-none $latest" "✓ Lima 2.3.0" "✓ Tego's VM is ready" "✓ tego command added" \
 	"Next steps" "Run   exec zsh -l   (or open a new terminal window), then   tego start"
 [ -x "$tmp/.local/bin/tego" ] || { echo "FAIL fresh Mac: no tego command in ~/.local/bin"; fails=$((fails + 1)); }
 grep -q 'added by the Tego installer' "$tmp/.zshrc" 2>/dev/null || { echo "FAIL fresh Mac: PATH line not added to ~/.zshrc"; fails=$((fails + 1)); }
@@ -117,7 +117,7 @@ check "VM stopped: starts it" 0 "○ Tego's VM is stopped" "limactl start tego" 
 
 run pinned LIMA=1 TEGO_YES=1 TEGO_VERSION=v0.1.3
 check "TEGO_VERSION picks that release's template" 0 \
-	"limactl start --tty=false --name=tego https://github.com/Attention-Span-AI/Tego/releases/download/v0.1.3/tego.yaml"
+	"limactl start --tty=false --name=tego --mount-none https://github.com/Attention-Span-AI/Tego/releases/download/v0.1.3/tego.yaml"
 
 run nobrew BREW=0
 check "no Homebrew: says where to get Lima" 2 "✗ Lima isn't installed" "https://lima-vm.io/docs/installation/"
@@ -140,7 +140,7 @@ if (: </dev/tty) 2>/dev/null; then
 else
 	run notty
 	check "no terminal: prints the commands, runs none" 2 "To finish, run:" "brew install lima" \
-		"limactl start --name=tego $latest" "Then run this installer again."
+		"limactl start --name=tego --mount-none $latest" "Then run this installer again."
 	if [ -s "$tmp/log" ]; then
 		echo "FAIL no terminal: ran commands it should only print:"
 		sed 's/^/    /' "$tmp/log"
@@ -148,5 +148,10 @@ else
 	fi
 fi
 
+# The VM has no Mac filesystem shares; provisioning and the shim use only VM paths.
+if ! grep -qx 'mounts: \[\]' "$here/../examples/lima/tego.yaml"; then
+	echo "FAIL template: Mac folders must not be mounted by default"
+	fails=$((fails + 1))
+fi
 [ "$fails" -eq 0 ] || { echo "install_mac_test: $fails failed"; exit 1; }
 echo "install_mac_test: all passed"

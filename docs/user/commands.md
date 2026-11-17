@@ -64,3 +64,7 @@ They work as they always have, with the same flags, output and exit codes.
 | `tego stop`, `pause`, `resume` | `tego session stop`, `pause`, `resume` |
 | `tego doctor` | `tego machine check` |
 | `tego test` | `tego machine test` |
+
+On a Mac, the VM shares no Mac folders by default, including your home and `/tmp/lima`. Projects and Tego records
+live in the VM home. [Explicit mounts](../INSTALL.md#macos) let an agent read Mac files there, including secrets;
+a writable mount also lets it change them when its contract permits it.
