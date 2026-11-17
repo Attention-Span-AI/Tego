@@ -144,3 +144,30 @@ func TestTerminalRunKeepsHeldLabelDisclosures(t *testing.T) {
 		t.Errorf("ordinary frozen-directory note became noisy:\n%s", got)
 	}
 }
+
+func TestTerminalRunAlwaysNamesRulesFile(t *testing.T) {
+	old := stderrIsTerminal
+	stderrIsTerminal = func() bool { return true }
+	t.Cleanup(func() { stderrIsTerminal = old })
+	m := config.Builtin()
+	m.Home = t.TempDir()
+	path := filepath.Join(m.Home, "edited.yaml")
+	for _, body := range []string{
+		"version: 0\nname: handmade\n# Chosen in tego start: Base development rules\n",
+		"# Chosen in tego start: Base development rules\nversion: 0\nname: edited\nfs:\n  write: [/other/]\n",
+	} {
+		if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+		q := quietRun(runOptions{}, m, &record.ContractSource{Path: path}, &outputWriter{dst: os.Stderr})
+		if q == nil {
+			t.Fatal("terminal mode not selected")
+		}
+		var b strings.Builder
+		err := sessionStarted(&agent.RuleTable{Contract: &agent.Contract{Name: "helper"}}, &b, q, nil)(tegoruntime.StartedRun{ID: identity.RunID("r-519c2703-0dmw7w54wuixg-naw97n")})
+		want := "\n  ✓ Started session helper-w97n · rules ~/edited.yaml (setup name from file comment: \"Base development rules\")\n      Watch it live: http://127.0.0.1:8484/runs/r-519c2703-0dmw7w54wuixg-naw97n\n\n"
+		if err != nil || b.String() != want {
+			t.Fatalf("start: %v\ngot %q\nwant %q", err, b.String(), want)
+		}
+	}
+}
