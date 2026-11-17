@@ -411,3 +411,5 @@ internal/runtime/observe TestMissCountersFollowAttachedPrograms # untagged: need
 internal/runtime/observe TestMissingActiveMissInstanceIsUncertain # untagged: needs the compiled objects; the tegobpf suite must exercise real active links
 
 internal/cli TestLoginControllingTerminal/* # needs a usable pseudo-terminal and, for script cases, script(1); skips with a reason when either is unavailable
+internal/cli TestLoginCaptureWithSystemScript # needs system script(1); skips with a reason when /usr/bin/script is absent
+internal/cli TestLoginCancellationStopsSystemScriptChild # needs system script(1); skips with a reason when /usr/bin/script is absent

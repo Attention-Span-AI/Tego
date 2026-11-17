@@ -423,3 +423,5 @@ tools/rulecheck TestTicketStatusOnTheTree # required component documents are not
 pkg/spec/agent TestR5ListsEveryMergeClassRow # required component documents are not part of this repository
 
 internal/cli TestLoginControllingTerminal/* # needs a usable pseudo-terminal and, for script cases, script(1); skips with a reason when either is unavailable
+internal/cli TestLoginCaptureWithSystemScript # needs system script(1); skips with a reason when /usr/bin/script is absent
+internal/cli TestLoginCancellationStopsSystemScriptChild # needs system script(1); skips with a reason when /usr/bin/script is absent
