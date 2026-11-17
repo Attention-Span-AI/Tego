@@ -795,7 +795,7 @@ var guideDashboard = func(home string) string {
 	if strings.Contains(string(help), "--expand-environment") {
 		args = append(args, "--expand-environment=no")
 	} else {
-		for i := range command {
+		for i := 1; i < len(command); i++ {
 			command[i] = strings.ReplaceAll(command[i], "$", "$$")
 		}
 	}

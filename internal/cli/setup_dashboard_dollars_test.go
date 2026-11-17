@@ -5,6 +5,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -12,6 +13,26 @@ import (
 )
 
 func TestDashboardLiteralDollars(t *testing.T) {
+	if os.Getenv("DASH_DOLLAR_EXECUTABLE") == "" {
+		self, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(t.TempDir(), "price$old.test")
+		binary, err := os.ReadFile(self)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, binary, 0700); err != nil {
+			t.Fatal(err)
+		}
+		c := exec.Command(path, "-test.run=^TestDashboardLiteralDollars$")
+		c.Env = append(os.Environ(), "DASH_DOLLAR_EXECUTABLE=1")
+		if b, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("literal-dollar executable: %v\n%s", err, b)
+		}
+		return
+	}
 	for _, supported := range []bool{false, true} {
 		t.Run(fmt.Sprint(supported), func(t *testing.T) {
 			t.Setenv("DASH_HELPER_DISABLE_EXPANSION", fmt.Sprint(supported))
@@ -49,6 +70,9 @@ func TestDashboardLiteralDollars(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if !slices.Contains(strings.Split(string(args), "\n"), self) {
+				t.Fatalf("executable path changed: %s", args)
+			}
 			if !strings.Contains(string(args), "--ledger\n"+root+"\n") || !strings.Contains(string(args), "--setenv=TEGO_CONFIG="+configFile+"\n") {
 				t.Fatalf("service expanded literal path: %s", args)
 			}
@@ -71,12 +95,13 @@ func TestDashboardSystemdHelper(t *testing.T) {
 		}
 		return
 	}
-	// systemd.service expands the service command, while --setenv is an environment assignment.
+	// systemd.service(5), Command lines: the executable is separate from
+	// environment-expanded arguments; --setenv is a literal assignment.
 	command := slices.Index(args, "serve") - 1
 	if command < 0 {
 		t.Fatal("service command missing")
 	}
-	for i := command; i < len(args) && !slices.Contains(args, "--expand-environment=no"); i++ {
+	for i := command + 1; i < len(args) && !slices.Contains(args, "--expand-environment=no"); i++ {
 		args[i] = strings.ReplaceAll(args[i], "$$", "\x01")
 		args[i] = os.ExpandEnv(args[i])
 		args[i] = strings.ReplaceAll(args[i], "\x01", "$")
