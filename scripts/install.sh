@@ -316,6 +316,10 @@ EOF
 				*)
 					case "$(basename "${SHELL:-sh}")" in
 						zsh) rcfile="$HOME/.zshrc" ;;
+						fish)
+							rcfile="${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/tego.fish"
+							mkdir -p "$(dirname "$rcfile")"
+							;;
 						bash) # the first of these a login bash reads; a new .bash_profile would hide an existing .profile
 							rcfile="$HOME/.bash_profile"
 							for f in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
@@ -326,7 +330,10 @@ EOF
 					esac
 					if ! grep -qs '# added by the Tego installer' "$rcfile"; then
 						# shellcheck disable=SC2016 # the line is written as is, for the shell to expand when it starts
-						printf '\nexport PATH="$HOME/.local/bin:$PATH" # added by the Tego installer\n' >>"$rcfile"
+						case "$(basename "${SHELL:-sh}")" in
+							fish) printf '\nfish_add_path "$HOME/.local/bin" # added by the Tego installer\n' >>"$rcfile" ;;
+							*) printf '\nexport PATH="$HOME/.local/bin:$PATH" # added by the Tego installer\n' >>"$rcfile" ;;
+						esac
 					fi
 					reopen=1
 					;;
