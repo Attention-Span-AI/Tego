@@ -253,6 +253,10 @@ const (
 
 // walk is the terminal the guide talks on: questions through Huh, results as one line each.
 type walk struct {
+	startPath                                   string
+	startLogins                                 map[string]string
+	pathExport                                  string
+	unsetLogins                                 []string
 	ctx                                         context.Context
 	terminal                                    *guideTerminal
 	in                                          io.Reader
@@ -266,7 +270,14 @@ type walk struct {
 // newWalk talks on in and out. tty is a real terminal: colour and Huh's drawn prompts; otherwise plain prompts that read
 // one line per answer.
 func newWalk(in io.Reader, out io.Writer, tty bool) *walk {
-	g := &walk{in: in, out: out, tty: tty, accessible: !tty || os.Getenv("TERM") == "dumb", col: colStep}
+	g := &walk{startPath: os.Getenv("PATH"), startLogins: make(map[string]string), in: in, out: out, tty: tty, accessible: !tty || os.Getenv("TERM") == "dumb", col: colStep}
+	for _, a := range guideAgents {
+		for _, login := range a.logins {
+			if value, set := os.LookupEnv(login.envVar); set {
+				g.startLogins[login.envVar] = value
+			}
+		}
+	}
 	if f, ok := in.(*os.File); g.accessible && !(ok && isTerminalFile(f)) {
 		// Not a terminal (a test's answers): each plain prompt opens its own scanner, so each gets one line. A
 		// terminal already hands over one line per read, and Huh's hidden input needs the terminal itself.
@@ -742,6 +753,12 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 	g.line("")
 	g.top(g.bold + "Next steps" + g.offEsc)
 	next := func(what, c string) { g.line("%s  %-30s%s%s%s", colTop, what, g.bold, c, g.offEsc) }
+	if g.pathExport != "" {
+		next("Add the agent to this shell", "export PATH="+shellword.Quote(g.pathExport)+":\"$PATH\"")
+	}
+	if len(g.unsetLogins) > 0 {
+		next("Use the saved login", "unset "+strings.Join(g.unsetLogins, " "))
+	}
 	next("Run "+name+" under Tego", "cd "+shellword.Quote(abs)+" && tego run "+agentName)
 	next("List your sessions", "tego session list")
 	next("Show the last session", "tego session show --last")
@@ -882,9 +899,20 @@ func (g *walk) installed(ctx context.Context, a guideAgent, name, program, home 
 	}
 	// The installers put the program in ~/.local/bin, which this shell's PATH may not have yet.
 	_ = os.Setenv("PATH", filepath.Join(home, ".local", "bin")+":"+os.Getenv("PATH"))
-	if _, err := guideLookPath(program); err != nil {
+	resolved, err := guideLookPath(program)
+	if err != nil {
 		g.bad(name + " was installed, but " + program + " isn't on your PATH")
 		return identity.ExitFinding, nil
+	}
+	localBin := filepath.Join(home, ".local", "bin")
+	if filepath.Dir(resolved) == localBin {
+		present := false
+		for _, entry := range filepath.SplitList(g.startPath) {
+			present = present || filepath.Clean(entry) == localBin
+		}
+		if !present {
+			g.pathExport = localBin
+		}
 	}
 	g.ok(strings.TrimSpace("Installed " + name + " " + guideVersion(program)))
 	return identity.ExitOK, nil
@@ -1010,6 +1038,15 @@ func (g *walk) signIn(ctx context.Context, a guideAgent, home string) (int, erro
 		if err := saveLogin(home, login.envVar, token); err != nil {
 			g.bad("Couldn't save the login: " + err.Error())
 			g.detail("Before each session, run: export " + login.envVar + "=<your token>")
+		} else {
+			// The guide can change its own environment, but not the shell's.
+			// An exported old login would still win over this saved replacement.
+			saved := readSavedLogins(home, nil)
+			for _, name := range vars {
+				if old, set := g.startLogins[name]; set && old != saved[name] {
+					g.unsetLogins = append(g.unsetLogins, name)
+				}
+			}
 		}
 	} else {
 		g.detail("Before each session, run: export " + login.envVar + "=<your token>")
