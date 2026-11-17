@@ -98,6 +98,9 @@ func TestGuideNextStepsRepairThisShell(t *testing.T) {
 	}
 	for _, old := range []string{"old-token", "new-token", ""} {
 		t.Run("saved-"+old, func(t *testing.T) {
+			oldShell := guideShell
+			t.Cleanup(func() { guideShell = oldShell })
+			guideShell = func() string { return "bash" }
 			f := onFixture(t, "fresh")
 			noLogins(t)
 			fakeProgram(t, "codex")
@@ -118,5 +121,44 @@ func TestGuideNextStepsRepairThisShell(t *testing.T) {
 				t.Fatalf("unset follows first run: %s", next)
 			}
 		})
+	}
+	// fish has no unset: the line must be one fish runs.
+	t.Run("saved-in-fish", func(t *testing.T) {
+		oldShell := guideShell
+		t.Cleanup(func() { guideShell = oldShell })
+		guideShell = func() string { return "fish" }
+		f := onFixture(t, "fresh")
+		noLogins(t)
+		fakeProgram(t, "codex")
+		t.Chdir(f.Home)
+		if err := saveLogin(f.Home, "CODEX_API_KEY", "saved-token"); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("CODEX_API_KEY", "old-token")
+		code, out, errs := runGuide(t, "2\n2\nnew-token\n1\n1\n1\n")
+		if code != identity.ExitOK {
+			t.Fatalf("%d %s %s", code, out, errs)
+		}
+		_, next, _ := strings.Cut(out, "Next steps")
+		if !strings.Contains(next, "set -e CODEX_API_KEY") || strings.Contains(next, "unset") {
+			t.Fatalf("fish guidance: %s", next)
+		}
+		if strings.Index(next, "set -e CODEX_API_KEY") > strings.Index(next, "tego run") {
+			t.Fatalf("erase follows first run: %s", next)
+		}
+	})
+}
+
+func TestUnsetLine(t *testing.T) {
+	names := []string{"CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"}
+	for shell, want := range map[string]string{
+		"bash": "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY",
+		"zsh":  "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY",
+		"":     "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY",
+		"fish": "set -e CLAUDE_CODE_OAUTH_TOKEN; set -e ANTHROPIC_API_KEY",
+	} {
+		if got := unsetLine(shell, names); got != want {
+			t.Errorf("%q: %q, want %q", shell, got, want)
+		}
 	}
 }

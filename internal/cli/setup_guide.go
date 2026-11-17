@@ -73,6 +73,27 @@ var guideAgents = []guideAgent{
 	{label: "Another program"},
 }
 
+// guideShell names the shell the next steps will be typed in: the guide's parent when that is a shell, otherwise the
+// login shell. A variable so a test chooses.
+var guideShell = func() string {
+	if b, err := os.ReadFile(fmt.Sprintf("/proc/%d/comm", os.Getppid())); err == nil {
+		switch name := strings.TrimSpace(string(b)); name {
+		case "bash", "zsh", "fish", "sh", "dash", "ksh":
+			return name
+		}
+	}
+	return filepath.Base(os.Getenv("SHELL"))
+}
+
+// unsetLine removes exported variables in that shell. fish has no unset, and erases one variable per command in
+// every version.
+func unsetLine(shell string, names []string) string {
+	if shell == "fish" {
+		return "set -e " + strings.Join(names, "; set -e ")
+	}
+	return "unset " + strings.Join(names, " ")
+}
+
 // guideLookPath finds a program on PATH; a variable so a test can say what is installed.
 var guideLookPath = func(name string) (string, error) {
 	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
@@ -793,7 +814,7 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 		next("Add the agent to this shell", "export PATH="+shellword.Quote(g.pathExport)+":\"$PATH\"")
 	}
 	if len(g.unsetLogins) > 0 {
-		next("Use the saved login", "unset "+strings.Join(g.unsetLogins, " "))
+		next("Use the saved login", unsetLine(guideShell(), g.unsetLogins))
 	}
 	next("Run "+name+" under Tego", "cd "+shellword.Quote(abs)+" && tego run "+agentName)
 	next("List your sessions", "tego session list")

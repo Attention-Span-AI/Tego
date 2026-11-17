@@ -29,8 +29,9 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
   `Stopped` instead of `Ready`. Keys that follow a pasted key or a sign-in are dropped, so the rest of a paste
   cannot answer the next question. A terminal with `TERM=dumb` gets numbered questions that end the same way.
 - The guide's Next steps list a `PATH` line when the agent was installed to `~/.local/bin` and the shell that
-  started the guide does not search it, and an `unset` line when that shell still exports the login you just
-  replaced. A rules file of your own is checked against the project you chose, as `tego run` will read it there.
+  started the guide does not search it, and a line that removes the variable (`unset`, or `set -e` in fish) when
+  that shell still exports the login you just replaced. A rules file of your own is checked against the project
+  you chose, as `tego run` will read it there.
 - `tego run` uses a login saved by `tego start` (`~/.config/tego/agent.env`) for each variable that is not already
   set in its environment, so the first session works in the terminal the guide ran in. An exported variable wins;
   a saved file that is not your own private file is ignored with one line that says why.
