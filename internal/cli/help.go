@@ -49,7 +49,7 @@ var advancedGroups = []helpGroup{
 // command's own Summary keeps its detail for the code and tests that read it. (root) marks a command that needs root.
 var commonSummaries = map[string]string{
 	"start":           "Set up Tego and connect your first agent",
-	"dashboard":       "Open the dashboard in your browser",
+	"dashboard":       "Print its link (Mac: open in browser)",
 	"run":             "Run an agent under its rules",
 	"ask":             "List the actions waiting for an answer",
 	"approve":         "Allow a waiting action",

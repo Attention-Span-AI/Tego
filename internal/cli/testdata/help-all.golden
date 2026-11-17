@@ -4,7 +4,7 @@ All Tego commands:
 
 get started
    start            Set up Tego and connect your first agent
-   dashboard        Open the dashboard in your browser
+   dashboard        Print its link (Mac: open in browser)
 
 supervise an agent
    run              Run an agent under its rules
