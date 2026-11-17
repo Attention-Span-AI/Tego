@@ -14,12 +14,19 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
 - `tego start` asks before using a saved login ("Use your saved Claude Code login?"), and logging in again replaces it. The Mac installer's last line says how to use `tego` in the same terminal (`exec zsh`).
 - Sessions have names (`tego-sample-dzfa`) that every command taking a run accepts.
 - One dashboard per configuration: `tego dashboard` and `tego start` reuse a running dashboard only after it proves it
-  holds its sign-in link and serves the same ledger and configuration file; otherwise they start a new one. Its log
-  and a saved agent login are private files (mode 0600) from the moment they exist, and a link planted in their
-  place is refused.
-- The setup guide shows an agent's own install command and where it comes from before it asks to run it, and
-  does not run an agent installer as root. Read-only review keeps the project's content read-only: the agent can
-  write only its own state folder under `.tego/`, which also holds its temporary files.
+  holds its sign-in link and serves the same ledger and machine configuration (every layer of it); otherwise they
+  start a new one. Its log and a saved agent login are private files (mode 0600) from the moment they exist: a
+  link at their name is replaced, never written through, and a copy that others can read is not used.
+- The setup guide shows an agent's own install command and where it comes from before it asks to run it. As root
+  it works as for any user, except that it does not run an agent's installer: it shows the line to run. Read-only
+  review keeps the project's content read-only: the agent can write only its own state folder under `.tego/`,
+  which also holds its temporary files, and a project in which that folder is a link is refused.
+- The guide keeps one reader on the terminal from its first question to its last: a key pressed as a step appears
+  is not lost, and Ctrl-C ends the guide at any point, during an agent's installer included. It works with a home
+  reached through a link and with a `~/.bashrc` or `~/.config` that a dotfile manager links.
+- `tego run` uses a login saved by `tego start` (`~/.config/tego/agent.env`) for each variable that is not already
+  set in its environment, so the first session works in the terminal the guide ran in. An exported variable wins;
+  a saved file that is not your own private file is ignored with one line that says why.
 - The Mac installer checks the VM template and the VM's installer against the selected release before it uses
   them, installs that same version in the VM and binds the VM's binaries to the checksums it verified
   (`TEGO_CHECKSUMS_SHA256`), opens the dashboard only after a tunnel that belongs to you is confirmed, and adds
