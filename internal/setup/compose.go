@@ -3,6 +3,9 @@
 package setup
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/presets"
 )
 
@@ -781,4 +785,39 @@ func agentNeedsOf(o Options, argv []string) agentNeed {
 		}
 	}
 	return n
+}
+
+// DashboardScope binds a dashboard to its loaded effective machine snapshot and canonical ledger.
+// It never rereads configuration files. Resolving the existing prefix also covers a ledger not created yet.
+func DashboardScope(machine *config.Machine, ledger string) (root, scope string, err error) {
+	root, err = filepath.Abs(ledger)
+	if err != nil {
+		return "", "", err
+	}
+	at := root
+	var missing []string
+	for {
+		resolved, resolveErr := filepath.EvalSymlinks(at)
+		if resolveErr == nil {
+			root = resolved
+			for i := len(missing) - 1; i >= 0; i-- {
+				root = filepath.Join(root, missing[i])
+			}
+			break
+		}
+		if !errors.Is(resolveErr, os.ErrNotExist) || filepath.Dir(at) == at {
+			return "", "", resolveErr
+		}
+		missing = append(missing, filepath.Base(at))
+		at = filepath.Dir(at)
+	}
+	data, err := json.Marshal(struct {
+		Machine *config.Machine
+		Ledger  string
+	}{machine, root})
+	if err != nil {
+		return "", "", err
+	}
+	sum := sha256.Sum256(data)
+	return root, hex.EncodeToString(sum[:]), nil
 }

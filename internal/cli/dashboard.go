@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/setup"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
@@ -183,7 +184,7 @@ func probeDashboard(link string) bool {
 	return hmac.Equal(proof, []byte(expected))
 }
 
-// dashboardConfiguration names the shell's intended ledger and config, including that file's current contents.
+// dashboardConfiguration names the shell's intended ledger and loaded effective machine configuration.
 // It is passed to the unit and authenticated in the reuse probe, so the user manager cannot select a different one.
 func dashboardConfiguration() (root, file, scope string, err error) {
 	m, _, err := loadMachine(config.TrustWarn)
@@ -195,17 +196,13 @@ func dashboardConfiguration() (root, file, scope string, err error) {
 		return "", "", "", err
 	}
 	file = os.Getenv(config.EnvConfigVar)
-	var data []byte
 	if file != "" {
 		file, err = filepath.Abs(file)
 		if err != nil {
 			return "", "", "", err
 		}
-		data, err = os.ReadFile(file)
-		if err != nil {
-			return "", "", "", err
-		}
+
 	}
-	sum := sha256.Sum256([]byte(root + "\x00" + file + "\x00" + string(data)))
-	return root, file, hex.EncodeToString(sum[:]), nil
+	root, scope, err = setup.DashboardScope(m, root)
+	return root, file, scope, err
 }

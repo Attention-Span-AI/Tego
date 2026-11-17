@@ -24,6 +24,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/handoff"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/profilesrc"
+	"github.com/attention-span-ai/tego/internal/setup"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -90,14 +91,23 @@ func cmdServe() Command {
 			}
 			root := *ledger
 			if root == "" {
-				if root, err = machineLedgerRoot(); err != nil {
+				if mr.err != nil {
+					diag(stderr, handoff.Name+" serve: machine config: "+mr.err.Error(), codeIO, "check the configuration file")
+					return exits[codeIO]
+				}
+				if root, err = ledgerRootOf(mr.m, mr.secure); err != nil {
 					diag(stderr, handoff.Name+" serve: ledger root: "+err.Error(), codeIO, "pass --ledger DIR")
 					return exits[codeIO]
 				}
 			}
-			if root, err = filepath.Abs(root); err != nil {
-				diag(stderr, handoff.Name+" serve: ledger root: "+err.Error(), codeUsage, "pass --ledger DIR")
-				return exits[codeUsage]
+			var machine *config.Machine
+			if mr.err == nil {
+				machine = mr.m
+			}
+			root, scope, err := setup.DashboardScope(machine, root)
+			if err != nil {
+				diag(stderr, handoff.Name+" serve: dashboard identity: "+err.Error(), codeIO, "check the configuration and ledger folder")
+				return exits[codeIO]
 			}
 			ln, err := net.Listen("tcp", listen)
 			if err != nil {
@@ -108,10 +118,6 @@ func cmdServe() Command {
 			// The chain anchor the run page and the overview verify against; unknown leaves every chain unchecked.
 			anchor, anchorErr := anchorPath()
 			// The machine config the Rules page compiles each run's contract against; unreadable shows them uncompiled.
-			var machine *config.Machine
-			if mr.err == nil {
-				machine = mr.m
-			}
 			rs := ruleService(root, anchor, machine)
 			at := ln.Addr().(*net.TCPAddr) // the links name the address listened on: 127.0.0.1, another 127.x.y.z, or ::1
 			srv, err := web.New(web.Config{Ledger: root, Anchor: anchor, Host: at.IP.String(), Port: at.Port, Machine: machine,
@@ -136,11 +142,6 @@ func cmdServe() Command {
 				if err := openURL(srv.OpenURL(), os.Getenv("BROWSER")); err != nil {
 					_, _ = fmt.Fprintf(stderr, "%s serve: --open: %v; open the URL above\n", handoff.Name, err)
 				}
-			}
-			scope, err := serveDashboardScope(root, mr.envFile)
-			if err != nil {
-				diag(stderr, handoff.Name+" serve: dashboard identity: "+err.Error(), codeIO, "check the configuration file")
-				return exits[codeIO]
 			}
 			if err := web.Serve(ctx, ln, dashboardIdentity(srv, srv.URL(), scope)); err != nil {
 				diag(stderr, handoff.Name+" serve: "+err.Error(), codeIO, "start it again")
@@ -385,21 +386,4 @@ func dashboardIdentity(next http.Handler, link, scope string) http.Handler {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = io.WriteString(w, hex.EncodeToString(mac.Sum(nil)))
 	})
-}
-
-func serveDashboardScope(root, file string) (string, error) {
-	var data []byte
-	var err error
-	if file != "" {
-		file, err = filepath.Abs(file)
-		if err != nil {
-			return "", err
-		}
-		data, err = os.ReadFile(file)
-		if err != nil {
-			return "", err
-		}
-	}
-	sum := sha256.Sum256([]byte(root + "\x00" + file + "\x00" + string(data)))
-	return hex.EncodeToString(sum[:]), nil
 }
