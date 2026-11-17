@@ -2063,6 +2063,10 @@ descriptor. Rejected: an A7 exemption for the two files (a macOS file that later
 unseen) and a separate Go module for maze (the tool imports pkg/spec types and shares the module's release and
 lint). TestCoverage and TestDarwinTermios pin the build and the allowlist.
 
+*Amended 2026-11-17:* maze is no longer in this repository (the last release with it is v0.1.3), so the two macOS
+files named above are gone. The darwin/arm64 build and the two allowlist entries stay and judge any macOS file added
+later; the two tests still pin them.
+
 *Amended 2026-10-24 (implementation note, on the note above):* a darwin build judged against Linux's lists
 passed macOS's own producers: unix.Kqueue, syscall.Kqueue and a raw SYS_KQUEUE, SYS_SHM_OPEN or SYS_OPEN_NOCANCEL
 gave no finding, and a raw SYS_CLOSE_NOCANCEL was no close. F1's list is now generated for darwin on amd64 and
