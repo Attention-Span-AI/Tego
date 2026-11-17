@@ -7,6 +7,7 @@ package cgroup
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -152,10 +153,33 @@ func walkRaceCell(t *testing.T, bin string, uid, gid int, mode string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	var out bytes.Buffer
-	runErr := p.run(ctx, bin, "agent.yaml", mode, &out).Run()
+	// The mover can invalidate compile's mountinfo snapshot before its live statx check. R10 rightly refuses
+	// that start, before the agent runs. Retry only that exact refusal at our moving mount; keep the mover going
+	// throughout, so every completed run still races it. Any other error, or eight refused starts, fails the cell.
+	refusalAt := func(parent string) string {
+		return fmt.Sprintf("error: agent.yaml:5:11: fs.write \"./out/\": mount visibility at %s is unknown "+
+			"(live mount identity disagrees with its parent relationships), so compile cannot show this grant stays off protected files (R10) [contradiction]\n"+
+			"  fix: make the named mount's position and visibility unambiguous, then compile again, or remove the write or ask grant\n",
+			filepath.Join(parent, "m"))
+	}
+	const maxStarts = 8
+	starts, refusals := 0, 0
+	var runErr error
+	for range maxStarts {
+		starts++
+		out.Reset()
+		runErr = p.run(ctx, bin, "agent.yaml", mode, &out).Run()
+		var exit *exec.ExitError
+		if !errors.As(runErr, &exit) || exit.ExitCode() != 125 ||
+			(out.String() != refusalAt(x) && out.String() != refusalAt(y)) {
+			break
+		}
+		refusals++
+		t.Logf("compile refused a mount move (%s), start %d/%d:\n%s", mode, starts, maxStarts, out.String())
+	}
 	close(stop)
 	wg.Wait()
-	t.Logf("tego run (%s): %v, %d mount moves\n%s", mode, runErr, moves, out.String())
+	t.Logf("tego run (%s): %v, %d mount moves, %d starts, %d compile refusals\n%s", mode, runErr, moves, starts, refusals, out.String())
 	if runErr != nil {
 		t.Fatalf("the run did not complete: %v", runErr)
 	}
