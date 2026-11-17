@@ -1287,7 +1287,7 @@ func (g *walk) rules(ctx context.Context, m *config.Machine, name string, a guid
 		rc.presets = append(rc.presets, items[p].name)
 	}
 	if containsString(rc.presets, "no-prod") {
-		hosts, err := g.typeText("Other hosts it may reach", "api.github.com, pypi.org  (enter for none)", false, nil)
+		hosts, err := g.typeText("Other hosts it may reach", "api.github.com, pypi.org  (enter for none)", false, func(s string) error { return setup.ValidateHosts(splitList(s)) })
 		if err != nil {
 			return rulesChoice{}, err
 		}

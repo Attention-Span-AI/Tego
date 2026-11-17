@@ -658,6 +658,22 @@ func hostEntries(h string) ([]entry, error) {
 	return []entry{{host + ":" + port, why}}, nil
 }
 
+// ValidateHosts checks the same expanded endpoint syntax Compose writes, without touching the project or DNS.
+func ValidateHosts(hosts []string) error {
+	for _, h := range hosts {
+		entries, err := hostEntries(h)
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			if _, err := agent.ParseEndpoint(e.value); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // commandArgv is the contract's command for one --command line: its words when it holds no shell syntax, else
 // /bin/sh -c line.
 func commandArgv(line string) []string {
