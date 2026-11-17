@@ -4,12 +4,14 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/attention-span-ai/tego/internal/check/receipt"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
@@ -269,5 +271,60 @@ func TestQuietRunUsesStderrTerminalRule(t *testing.T) {
 	stderrIsTerminal = func() bool { return false }
 	if quietRun(runOptions{}, m, nil, &outputWriter{dst: os.Stderr}) != nil {
 		t.Fatal("piped stderr selected terminal mode")
+	}
+}
+
+// Every qualification of the summary must also prevent an unqualified success footer.
+func TestTerminalFooterSummaryDisclosures(t *testing.T) {
+	zero := 0
+	cases := []struct {
+		name   string
+		change func(*endSummary)
+		want   string
+	}{
+		{"receipt-error", func(s *endSummary) { s.rc = nil; s.err = errors.New("unreadable") }, "summary not available (unreadable)"},
+		{"chain-unchecked", func(s *endSummary) { s.chain = "chain not checked (no anchor)" }, "chain not checked (no anchor)"},
+		{"chain-invalid", func(s *endSummary) { s.chain = "chain does not verify (changed)" }, "chain does not verify (changed)"},
+		{"record-off", func(s *endSummary) { s.recordOff = true }, recordOffClause},
+		{"runtime-outcome", func(s *endSummary) { s.how = "signalled" }, "tego run:"},
+		{"no-end", func(s *endSummary) { s.rc.Ended = false }, "still running"},
+		{"nonzero", func(s *endSummary) { n := 3; s.rc.ExitCode = &n }, "exited with code 3"},
+		{"signal", func(s *endSummary) { s.rc.ExitCode = nil; s.rc.EndReason = record.RunEndSignal; s.rc.Signal = 15 }, "ended by signal 15"},
+		{"reads-unknown", func(s *endSummary) { s.rc.ReadsNotified = nil }, readsLineUnknown},
+		{"reads-off", func(s *endSummary) { s.rc.ReadsNotified = &record.ReadsNotified{Why: record.ReadsNotifiedWhyReasonOff} }, readsLineReasonOff},
+		{"reads-unsupervised", func(s *endSummary) {
+			s.rc.ReadsNotified = &record.ReadsNotified{Why: record.ReadsNotifiedWhyNoSupervisor}
+		}, readsLineNoSupervisor},
+	}
+	// Include an unfamiliar code: new record/refusal gap reasons must not need a second footer guard.
+	for _, gap := range []receipt.CoverageGap{
+		{Field: "record", Code: receipt.CodeMissedActions, Why: "some actions were missed"},
+		{Field: "record", Code: receipt.CodeRecordUncertain, Why: "recording is uncertain"},
+		{Field: "refusals", Code: receipt.CodeRulesUncertain, Why: "the rules may not have held"},
+		{Field: "record", Code: "future-code", Why: "a future qualification\x1b[2J"},
+	} {
+		cases = append(cases, struct {
+			name   string
+			change func(*endSummary)
+			want   string
+		}{
+			gap.Code, func(s *endSummary) { s.rc.Coverage = receipt.Coverage{Gaps: []receipt.CoverageGap{gap}} }, record.Printable(gap.Why),
+		})
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &endSummary{run: "r-519c2703-0dmw7w54wuixg-naw97n", chain: "chain verified", rc: &receipt.Receipt{
+				Ended: true, EndReason: record.RunEndExit, ExitCode: &zero,
+				ReadsNotified: &record.ReadsNotified{Notified: true}, Coverage: receipt.Coverage{Complete: true},
+			}}
+			tc.change(s)
+			var out strings.Builder
+			if (&runTerminal{}).ended(&out, "helper", s) || strings.Contains(out.String(), "✓") {
+				t.Fatalf("qualified run got success footer: %s", out.String())
+			}
+			if want := s.text() + s.readsLine(); out.String() != want || !strings.Contains(out.String(), tc.want) {
+				t.Fatalf("lost disclosure %q:\n%s\nfull summary:\n%s", tc.want, out.String(), want)
+			}
+		})
 	}
 }
