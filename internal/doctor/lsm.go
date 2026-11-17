@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unsafe"
 
+	"github.com/attention-span-ai/tego/internal/platform/tomoyo"
 	"golang.org/x/sys/unix"
 )
 
@@ -284,7 +285,7 @@ func probeLSM(root bool) (Result, LSMState) {
 			Detail: fmt.Sprintf("%v (tier bpflsm cannot be decided safely)", err),
 			Fix:    lsmUnreadFix}, state
 	}
-	detail := fmt.Sprintf("%s via %s", strings.Join(state.Modules, ","), state.Source)
+	detail := fmt.Sprintf("%s via %s", strings.Join(state.Modules, ","), state.Source) + tomoyoHeldOpenDetail(state, tomoyo.ReadFile)
 	if !state.BPFActive {
 		return Result{ID: CheckLSM, Detail: detail + "; bpf is not active: tier 3 (bpflsm) is unavailable, tiers 1 and 2 are not affected",
 			Fix: state.GRUBFix()}, state
@@ -306,4 +307,23 @@ func probeLSM(root bool) (Result, LSMState) {
 		}
 	}
 	return Result{ID: CheckLSM, OK: true, Detail: detail + "; bpf is active"}, state
+}
+
+// tomoyoHeldOpenDetail reports an observation, not a promise about future
+// updates: every held open reads its facts afresh.
+func tomoyoHeldOpenDetail(state LSMState, read func(string) ([]byte, error)) string {
+	for _, name := range state.Modules {
+		if name != "tomoyo" {
+			continue
+		}
+		if err := tomoyo.Check(read); err != nil {
+			detail := fmt.Sprintf("; TOMOYO: held opens are refused on this machine (%v)", err)
+			if strings.Contains(err.Error(), "/sys/kernel/security/tomoyo/") {
+				detail += "; expose readable /sys/kernel/security/tomoyo"
+			}
+			return detail
+		}
+		return "; TOMOYO has no policy update since boot and does not prevent held file opens"
+	}
+	return ""
 }

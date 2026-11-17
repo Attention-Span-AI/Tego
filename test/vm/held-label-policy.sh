@@ -15,5 +15,10 @@ smack)
  mkdir -p /sys/fs/smackfs
  mount -t smackfs none /sys/fs/smackfs
  ;;
-*) echo 'usage: held-label-policy.sh selinux POLICY | smack' >&2; exit 2 ;;
+tomoyo)
+ # The loader path stays absent until the test activates the policy.
+ cp /bin/true /vm/tomoyo-trigger
+ ;;
+apparmor) : ;;
+*) echo 'usage: held-label-policy.sh selinux POLICY | smack | apparmor | tomoyo' >&2; exit 2 ;;
 esac

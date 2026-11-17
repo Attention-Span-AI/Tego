@@ -41,6 +41,8 @@ tego/
 │   ├── ledger/                shared: append-only writer, hash chain, blobs, redaction, reader, gc
 │   ├── bpf/                   bpf2go-generated bindings (go generate)
 │   ├── platform/              Linux helpers: proc, dns, sys
+│   │   ├── kernelconfig/      running-kernel build configuration shared by admission checks
+│   │   └── tomoyo/            bounded domain and policy-update observations shared by the supervisor and doctor (ADR 0041)
 │   ├── testutil/              test-only leak/real-account guards; never in the binary
 │   │   ├── contracttest/      on-disk contracts compiled over private trees; explicit synthetic-fixture inventory
 │   │   ├── ledgertest/        typed validated event fixtures and payload decoding; no invented hash chain

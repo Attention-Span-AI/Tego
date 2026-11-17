@@ -36,7 +36,7 @@
 // The package builds on amd64 and arm64 only: its dispatch table is a compile-time per-architecture syscall
 // table, so an architecture it has no table for fails the build instead of running an inert loop (R26).
 //
-// Imports: golang.org/x/sys/unix, internal/platform/{sys,dns,proc}, internal/liveblock, pkg/spec/{agent,identity,record},
+// Imports: golang.org/x/sys/unix, internal/platform/{sys,dns,proc,tomoyo}, internal/liveblock, pkg/spec/{agent,identity,record},
 // standard library
 // Must not import: internal/ledger, internal/check, internal/serve, internal/runtime/observe,
 // internal/runtime/capture/*, internal/runtime/derive/*, internal/runtime/enforce/*, cilium/ebpf

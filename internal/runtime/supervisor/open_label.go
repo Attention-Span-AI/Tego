@@ -15,6 +15,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/platform/sys"
+	"github.com/attention-span-ai/tego/internal/platform/tomoyo"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -97,6 +98,10 @@ func checkOpenLabelAuthority(tid, opener, flags int, read func(string) ([]byte, 
 		}
 		seen[name] = true
 		switch name {
+		case "tomoyo":
+			if err := tomoyo.Check(read); err != nil {
+				return err
+			}
 		case "apparmor", "selinux", "smack":
 			labels = append(labels, name)
 		case "lockdown", "capability", "landlock", "yama", "bpf", "ima", "evm", "integrity", "loadpin", "safesetid", "ipe":

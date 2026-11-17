@@ -39,7 +39,7 @@ func TestOpenLabelsRequireEveryActiveLabel(t *testing.T) {
 		{name: "unreadable completer", lsms: "apparmor", attr: "apparmor/current", task: "x", opener: "x", fail: "/proc/456/"},
 		{name: "unreadable list", lsms: "apparmor", fail: "/sys/"},
 		{name: "empty list"},
-		{name: "unknown LSM", lsms: "tomoyo"},
+		{name: "unknown LSM", lsms: "future-lsm"},
 		{name: "duplicate LSM", lsms: "apparmor,apparmor"},
 		{name: "empty label", lsms: "apparmor", attr: "apparmor/current"},
 		{name: "hidden label", lsms: "apparmor", attr: "apparmor/current", task: "---", opener: "---"},

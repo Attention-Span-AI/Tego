@@ -4,10 +4,8 @@ package doctor
 
 import (
 	"bufio"
-	"compress/gzip"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"slices"
 	"strconv"
@@ -17,6 +15,7 @@ import (
 	"github.com/cilium/ebpf/btf"
 
 	bpfobj "github.com/attention-span-ai/tego/internal/bpf"
+	"github.com/attention-span-ai/tego/internal/platform/kernelconfig"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
@@ -375,7 +374,7 @@ func parseLockdown(s string) string {
 
 // kernelConfigPaths are where a kernel's build config is read from, the running kernel's own first.
 func kernelConfigPaths(release string) []string {
-	return []string{"/proc/config.gz", "/boot/config-" + release, "/lib/modules/" + release + "/config"}
+	return kernelconfig.Paths(release)
 }
 
 // readLTO decides whether this kernel was built with Clang LTO, where a security_ function can be inlined at a
@@ -395,40 +394,12 @@ func readLTO(release string) (string, string) {
 
 // configLTO reads one kernel config file, gzip or plain.
 func configLTO(path string) (string, bool) {
-	f, err := os.Open(path)
-	if err != nil {
+	cfg, ok := kernelconfig.Read(path)
+	if !ok {
 		return "", false
 	}
-	defer func() { _ = f.Close() }()
-	var r io.Reader = f
-	if strings.HasSuffix(path, ".gz") {
-		gz, err := gzip.NewReader(f)
-		if err != nil {
-			return "", false
-		}
-		defer func() { _ = gz.Close() }()
-		r = gz
-	}
-	return scanConfigLTO(r)
-}
-
-// scanConfigLTO answers from a config's text: CONFIG_LTO_CLANG=y is Clang LTO, any other config read to the end is
-// not. A file with no CONFIG_ line at all (empty, a stub, a placeholder) is no answer, as an empty kallsyms is: the
-// caller then tries the next config and kallsyms rather than reading "no Clang LTO" off a file that says nothing.
-func scanConfigLTO(r io.Reader) (string, bool) {
-	sc := bufio.NewScanner(r)
-	configs := 0
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "CONFIG_LTO_CLANG=y" {
-			return ltoClang, true
-		}
-		if strings.HasPrefix(line, "CONFIG_") || strings.HasPrefix(line, "# CONFIG_") {
-			configs++
-		}
-	}
-	if sc.Err() != nil || configs == 0 {
-		return "", false
+	if cfg["CONFIG_LTO_CLANG"] {
+		return ltoClang, true
 	}
 	return ltoNone, true
 }

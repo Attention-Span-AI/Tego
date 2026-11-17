@@ -19,6 +19,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/doctor"
 	"github.com/attention-span-ai/tego/internal/platform/proc"
 	"github.com/attention-span-ai/tego/internal/platform/startphase"
+	"github.com/attention-span-ai/tego/internal/platform/tomoyo"
 
 	"github.com/attention-span-ai/tego/internal/runtime/cgroup"
 
@@ -168,15 +169,16 @@ func (r *runner) warnHeldLabel(lsm []byte, err error) {
 	if r.deps.Warn == nil {
 		return
 	}
-	if w := heldLabelWarning(r.heldBy(), lsm, err); w != "" {
-		if strings.Contains(","+strings.TrimSpace(string(lsm))+",", ",apparmor,") {
-			assume := r.rt != nil && r.rt.Contract != nil && r.rt.Contract.FS != nil && r.rt.Contract.FS.AppArmorAssumeRootNamespace
-			if assume {
-				w += "; fs.apparmor_assume_root_namespace: true accepts hidden-ancestor risk when namespace depth is unreadable; run_start.best_effort records apparmor/assumed-root-namespace"
-			} else if _, e := os.ReadFile("/sys/kernel/security/apparmor/.ns_level"); e != nil {
-				w += fmt.Sprintf("; AppArmor namespace depth is unreadable (%v): file completions return EACCES / Permission denied (held-label-unavailable); expose readable securityfs from the root AppArmor policy namespace, or have the container administrator accept hidden-ancestor risk with fs.apparmor_assume_root_namespace: true", e)
-			}
-		}
+	var tomoyoErr error
+	if strings.Contains(","+strings.TrimSpace(string(lsm))+",", ",tomoyo,") {
+		tomoyoErr = tomoyo.Check(tomoyo.ReadFile)
+	}
+	assume := r.rt != nil && r.rt.Contract != nil && r.rt.Contract.FS != nil && r.rt.Contract.FS.AppArmorAssumeRootNamespace
+	var depthErr error
+	if !assume && strings.Contains(","+strings.TrimSpace(string(lsm))+",", ",apparmor,") {
+		_, depthErr = os.ReadFile("/sys/kernel/security/apparmor/.ns_level")
+	}
+	if w := heldLabelWarningDetails(r.heldBy(), lsm, err, tomoyoErr, assume, depthErr); w != "" {
 		r.deps.Warn(WarnHeldLabel, w)
 	}
 }
@@ -195,6 +197,36 @@ func (r *runner) heldBy() string {
 		return "gate.completion: held"
 	}
 	return strings.Join(by, " and ")
+}
+
+// heldLabelWarningFor names the fact that prevents completion at launch. A
+// TOMOYO refusal must not be attributed to another active module's label check.
+func heldLabelWarningFor(by string, lsm []byte, err, tomoyoErr error) string {
+	var notes []string
+	if err == nil && tomoyoErr != nil {
+		note := fmt.Sprintf("TOMOYO: held file opens are refused on this machine (%v)", tomoyoErr)
+		if strings.Contains(tomoyoErr.Error(), "/sys/kernel/security/tomoyo/") {
+			note += "; expose readable /sys/kernel/security/tomoyo so its authority facts can be checked"
+		}
+		notes = append(notes, note)
+	}
+	if note := heldLabelWarning(by, lsm, err); note != "" {
+		notes = append(notes, note)
+	}
+	return strings.Join(notes, "; ")
+}
+
+// Each module's disclosure applies independently of another module's refusal.
+func heldLabelWarningDetails(by string, lsm []byte, err, tomoyoErr error, assume bool, depthErr error) string {
+	w := heldLabelWarningFor(by, lsm, err, tomoyoErr)
+	if err == nil && strings.Contains(","+strings.TrimSpace(string(lsm))+",", ",apparmor,") {
+		if assume {
+			w += "; fs.apparmor_assume_root_namespace: true accepts hidden-ancestor risk when namespace depth is unreadable; run_start.best_effort records apparmor/assumed-root-namespace"
+		} else if depthErr != nil {
+			w += fmt.Sprintf("; AppArmor namespace depth is unreadable (%v): file completions return EACCES / Permission denied (held-label-unavailable); expose readable securityfs from the root AppArmor policy namespace, or have the container administrator accept hidden-ancestor risk with fs.apparmor_assume_root_namespace: true", depthErr)
+		}
+	}
+	return w
 }
 
 // heldLabelWarning explains ADR 0041 D2's fail-closed label comparison in plain

@@ -51,7 +51,8 @@
 // Imports: standard library, golang.org/x/{sys/unix,net/bpf}, github.com/cilium/ebpf (D7's own
 // program loads), internal/bpf (the embedded objects D7 loads, and bpf_hash for the run-probe cache's key),
 // internal/platform/proc (every plane-probe process start), internal/platform/startphase (the run-probe phase
-// timings), internal/platform/sys, internal/policy/decide (the known answers' plane rows),
+// timings), internal/platform/kernelconfig (shared running-kernel config reader), internal/platform/sys,
+// internal/platform/tomoyo (fresh held-open facts), internal/policy/decide (the known answers' plane rows),
 // internal/runtime/cgroup, internal/runtime/enforce (Buildable and Select), internal/runtime/enforce/cgroup
 // (UnixConnectSupported, and the known answers' ProbeRows), internal/shellword (the binary's path in the
 // `sudo <path> doctor` fix line), pkg/spec/{agent,backend,config,identity}.

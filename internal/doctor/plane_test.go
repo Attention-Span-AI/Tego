@@ -197,6 +197,14 @@ func TestUnreadLSMListIsNotAnInactiveBPF(t *testing.T) {
 }
 
 func TestParseLockdownAndLTO(t *testing.T) {
+	read := func(text string) (string, bool) {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "config")
+		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return configLTO(path)
+	}
 	for in, want := range map[string]string{"none [integrity] confidentiality\n": "integrity",
 		"[none] integrity confidentiality": "none", "none integrity [confidentiality]\n": "confidentiality"} {
 		if got := parseLockdown(in); got != want {
@@ -205,15 +213,15 @@ func TestParseLockdownAndLTO(t *testing.T) {
 	}
 	for in, want := range map[string]string{"CONFIG_LTO_NONE=y\n# CONFIG_LTO_CLANG is not set\n": ltoNone,
 		"CONFIG_LTO=y\nCONFIG_LTO_CLANG=y\nCONFIG_LTO_CLANG_THIN=y\n": ltoClang} {
-		if got, ok := scanConfigLTO(strings.NewReader(in)); !ok || got != want {
-			t.Errorf("scanConfigLTO(%q) = %q, %v; want %q", in, got, ok, want)
+		if got, ok := read(in); !ok || got != want {
+			t.Errorf("configLTO(%q) = %q, %v; want %q", in, got, ok, want)
 		}
 	}
 	// A config with no CONFIG_ line (empty, a stub, a placeholder) is no answer: readLTO then tries the next config
 	// and kallsyms, rather than reading "no Clang LTO" off a file that says nothing.
 	for _, in := range []string{"", "\n", "# placeholder\n", "stub"} {
-		if got, ok := scanConfigLTO(strings.NewReader(in)); ok {
-			t.Errorf("scanConfigLTO(%q) = %q, answered; want no answer", in, got)
+		if got, ok := read(in); ok {
+			t.Errorf("configLTO(%q) = %q, answered; want no answer", in, got)
 		}
 	}
 	dir := t.TempDir()

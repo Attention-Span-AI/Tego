@@ -115,14 +115,22 @@ func TestDebugfsPreemptMode(t *testing.T) {
 	}
 }
 
-func TestScanConfigPreempt(t *testing.T) {
+func TestConfigPreempt(t *testing.T) {
+	read := func(text string) (map[string]bool, bool) {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "config")
+		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return configPreempt(path)
+	}
 	cfg := "# CONFIG_PREEMPT_NONE is not set\nCONFIG_PREEMPT_VOLUNTARY=y\n# CONFIG_PREEMPT is not set\n" +
 		"CONFIG_PREEMPT_COUNT=y\nCONFIG_PREEMPT_DYNAMIC=y\nCONFIG_PREEMPT_RCU=y\n"
-	got, ok := scanConfigPreempt(strings.NewReader(cfg))
+	got, ok := read(cfg)
 	if !ok || len(got) != 2 || !got["CONFIG_PREEMPT_VOLUNTARY"] || !got["CONFIG_PREEMPT_DYNAMIC"] {
 		t.Errorf("config read as %v (%v)", got, ok)
 	}
-	if _, ok := scanConfigPreempt(strings.NewReader("")); ok {
+	if _, ok := read(""); ok {
 		t.Error("an empty config is an answer")
 	}
 }

@@ -104,3 +104,62 @@ func heldLabelGate(t *testing.T) *gate.Policy {
 	}
 	return g.WithHeldCompletion()
 }
+
+func TestHeldLabelWarningNamesTOMOYORefusal(t *testing.T) {
+	for _, cause := range []string{
+		"TOMOYO observed domain \"child\" prevents held file opens",
+		"TOMOYO /sys/kernel/security/tomoyo/stat: permission denied",
+		"TOMOYO's policy has been updated since boot; held file opens are refused on this machine until TOMOYO is unused again after a restart",
+	} {
+		got := heldLabelWarningFor("fs.reads: held", []byte("apparmor,tomoyo"), nil, errors.New(cause))
+		if !strings.Contains(got, cause) || !strings.Contains(got, "refused on this machine") || !strings.Contains(got, "AppArmor") {
+			t.Errorf("TOMOYO refusal misreported: %q", got)
+		}
+		if strings.Contains(cause, "permission denied") && !strings.Contains(got, "expose readable") {
+			t.Errorf("no securityfs action: %q", got)
+		}
+	}
+	got := heldLabelWarningFor("fs.reads: held", []byte("apparmor,tomoyo"), nil, nil)
+	if got != heldLabelWarning("fs.reads: held", []byte("apparmor"), nil) || strings.Contains(got, "TOMOYO") {
+		t.Errorf("unchanged facts altered AppArmor note: %q", got)
+	}
+	if got := heldLabelWarningFor("fs.reads: held", []byte("tomoyo"), nil, nil); got != "" {
+		t.Errorf("unnecessary TOMOYO note: %q", got)
+	}
+}
+
+func TestHeldLabelWarningModuleCombinations(t *testing.T) {
+	refusal := errors.New("TOMOYO /sys/kernel/security/tomoyo/stat: permission denied")
+	for _, tc := range []struct {
+		name, lsm           string
+		tomoyoErr, depthErr error
+		assume              bool
+	}{
+		{name: "TOMOYO alone", lsm: "tomoyo", tomoyoErr: refusal},
+		{name: "both unreadable", lsm: "tomoyo,apparmor", tomoyoErr: refusal, depthErr: errors.New("depth denied")},
+		{name: "only AppArmor unreadable", lsm: "tomoyo,apparmor", depthErr: errors.New("depth denied")},
+		{name: "opt in with TOMOYO failure", lsm: "tomoyo,apparmor", tomoyoErr: refusal, assume: true},
+		{name: "SELinux independent", lsm: "tomoyo,selinux", tomoyoErr: refusal},
+		{name: "Smack independent", lsm: "tomoyo,smack", tomoyoErr: refusal},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := heldLabelWarningDetails("fs.reads: held", []byte(tc.lsm), nil, tc.tomoyoErr, tc.assume, tc.depthErr)
+			if tc.tomoyoErr != nil && (!strings.HasPrefix(got, "TOMOYO: held file opens are refused on this machine") || !strings.Contains(got, refusal.Error())) {
+				t.Fatalf("missing first TOMOYO refusal: %s", got)
+			}
+			if tc.tomoyoErr == nil && strings.Contains(got, "TOMOYO") {
+				t.Fatalf("unnecessary TOMOYO note: %s", got)
+			}
+			old := heldLabelWarning("fs.reads: held", []byte(tc.lsm), nil)
+			if !strings.Contains(got, old) {
+				t.Fatalf("module note lost: want %q in %q", old, got)
+			}
+			if tc.depthErr != nil && !strings.Contains(got, "AppArmor namespace depth is unreadable (depth denied)") {
+				t.Fatal(got)
+			}
+			if tc.assume && !strings.Contains(got, "run_start.best_effort records apparmor/assumed-root-namespace") {
+				t.Fatal(got)
+			}
+		})
+	}
+}

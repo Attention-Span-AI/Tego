@@ -430,3 +430,4 @@ internal/cli TestGuideInterruptRestoresTerminal/* # requires an available pseudo
 internal/cli TestGuideHandoffBoundary/* # requires an available pseudo-terminal
 internal/cli TestGuideChildrenStop/* # requires an available pseudo-terminal
 internal/cli TestGuideDumbInterrupt/* # requires an available pseudo-terminal
+internal/runtime TestIntegrationHeldOpenTOMOYO # needs the dedicated root TOMOYO activation guest; held-label-tests.sh requires this test without skips
