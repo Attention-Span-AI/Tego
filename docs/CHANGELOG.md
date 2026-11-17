@@ -24,6 +24,13 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
 - The guide keeps one reader on the terminal from its first question to its last: a key pressed as a step appears
   is not lost, and Ctrl-C ends the guide at any point, during an agent's installer included. It works with a home
   reached through a link and with a `~/.bashrc` or `~/.config` that a dotfile manager links.
+- Leaving the guide (Ctrl-C, a terminal that closes, or a signal that ends it) ends every program it started,
+  an agent's installer and the dashboard it was starting included, puts the terminal back as it was and says
+  `Stopped` instead of `Ready`. Keys that follow a pasted key or a sign-in are dropped, so the rest of a paste
+  cannot answer the next question. A terminal with `TERM=dumb` gets numbered questions that end the same way.
+- The guide's Next steps list a `PATH` line when the agent was installed to `~/.local/bin` and the shell that
+  started the guide does not search it, and an `unset` line when that shell still exports the login you just
+  replaced. A rules file of your own is checked against the project you chose, as `tego run` will read it there.
 - `tego run` uses a login saved by `tego start` (`~/.config/tego/agent.env`) for each variable that is not already
   set in its environment, so the first session works in the terminal the guide ran in. An exported variable wins;
   a saved file that is not your own private file is ignored with one line that says why.
@@ -32,11 +39,16 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
   (`TEGO_CHECKSUMS_SHA256`), opens the dashboard only after a tunnel that belongs to you is confirmed, and adds
   `tego` to fish's PATH in fish's own configuration. Pinning a version on a Mac (`TEGO_VERSION`) needs a release
   whose template takes the pin: this one or later; an earlier release is refused before the VM is created.
+- On a Mac, `tego dashboard` keeps its tunnel's socket at one path in the VM's folder: a leftover socket of your
+  own is replaced there, so the next command reuses the tunnel, and a socket folder that others can write, or a
+  socket that is a link or someone else's, is named in one line and nothing is started.
 
 ### Changed
 
 - `tego run` keeps coverage gaps and same-file refusal explanations in the full summary; its short success line appears only when no disclosure qualifies the blocked-action count.
 - `tego session list` reports an unreadable ledger and exits with an error instead of saying there are no sessions.
+- `tego help` says what `tego dashboard` does on each system: it prints the link on Linux and opens the browser
+  on a Mac.
 
 - `tego setup` in a terminal now opens the setup guide; `--json` and `-v` keep the checklist.
 - Next-step fields and `fix` fields in JSON output now name the new commands: `tego machine check`,
