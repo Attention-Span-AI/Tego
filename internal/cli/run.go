@@ -365,7 +365,10 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 		if rt.Contract != nil {
 			name = rt.Contract.Name
 		}
-		quiet.ended(stderr, name, sum)
+		if !quiet.ended(stderr, name, sum) {
+			text, command := sum.runHint(o)
+			writeHint(stderr, text, command)
+		}
 	case !o.watched:
 		// The summary's two lines, then the reads line (a fact, whatever TEGO_HINTS says), then the next step, except
 		// for a run whose record could not be completed: that is tego's own error, exit 125 [ledger], with no next step.
