@@ -66,7 +66,7 @@ their own machine, and the kernel programs.
 | <img src="docs/assets/icons/eye.svg" width="20" height="20" alt=""> **Watch any agent** | `tego watch` runs any command as a black box and records it. `tego agents` lists the agents running here and `tego adopt` governs one already running; both need root. |
 | <img src="docs/assets/icons/layout-dashboard.svg" width="20" height="20" alt=""> **Local dashboard** | `tego serve --open` serves runs, logs, refusals and held requests on `127.0.0.1`, for one person. |
 | <img src="docs/assets/icons/server.svg" width="20" height="20" alt=""> **MCP tool rules** | A relay can allow, hold or deny single tools of an MCP server, and `tego mcp` changes that live ([guide](docs/user/mcp-tools.md)). |
-| <img src="docs/assets/icons/ban.svg" width="20" height="20" alt=""> **Nothing sent home** | No telemetry, no update check, no crash reports. Tego's only traffic is DNS lookups and the connections a contract asks it to make for the agent ([the full list](docs/OPERATIONS.md#tegos-own-network-traffic)). |
+| <img src="docs/assets/icons/ban.svg" width="20" height="20" alt=""> **Nothing sent home** | No telemetry, no update check, no crash reports. Runtime traffic includes DNS lookups and connections for the agent ([details](docs/OPERATIONS.md#tegos-own-network-traffic)); the setup guide also downloads an agent's installer when you agree, and start/dashboard commands make local dashboard probes. |
 
 [examples/agents/](examples/agents/README.md) has contracts for Claude Code, OpenAI Codex, the Claude Agent SDK, the
 Anthropic Python SDK and an agent of your own.
@@ -145,7 +145,7 @@ tego start
 4. **Rules:** Base development, Read-only review, the rules you pick one by one, or a rules file you wrote.
    [Read more about presets](docs/user/presets.md).
 
-It then opens the dashboard and ends with the command that starts your first supervised session. It never starts
+It then starts the dashboard, prints its sign-in link on Linux (opens it in your browser on a Mac), and ends with the command that starts your first supervised session. It never starts
 the agent for you:
 
 ```sh
@@ -174,7 +174,7 @@ Run `tego start` again and pick **My own project**, and **Use my own rules file*
 ```sh
 tego rules create --agent claude-code --preset no-secrets,repo-only-writes --write src/   # a rules file in this project
 tego rules check agent.yaml       # what it enforces
-tego rules edit my-app            # change an agent's rules, checked before they're saved
+tego rules edit agent.yaml        # change the rules, checked before they're saved
 ```
 
 `tego help` lists the common commands, and `tego help -a` every one. [docs/user/commands.md](docs/user/commands.md) explains each one.

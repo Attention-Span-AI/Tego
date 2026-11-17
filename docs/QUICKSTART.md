@@ -108,7 +108,7 @@ cannot load the `inet_diag` and `tcp_diag` modules, which the dashboard needs.
 `sudo "$(command -v tego)" doctor` shows what tiers 2 and 3 would get. Over SSH or on a console login, start a shell in
 your user's cgroup first, or no run starts at all, not even one that only records: `systemd-run --user --scope bash`
 ([INSTALL.md](INSTALL.md#check-the-machine)). From such a login, `machine check` says `Not ready: this shell is outside your
-user manager's cgroup, ...` and its `next:` line is that command. `tego setup` shows where you are in all six steps
+user manager's cgroup, ...` and its `next:` line is that command. `tego setup -v` shows where you are in all six steps
 ([user/setup.md](user/setup.md)).
 
 ## 3. Watch Tego refuse something
@@ -212,17 +212,23 @@ Nothing runs yet. The output above stops before the machine settings; yours prin
 tego run agent.yaml
 ```
 
+The agent prints its own output first. With stderr piped or `-v`, Tego then prints a detailed summary. For example,
+this excerpt from the piped-output fixture has two refusals and one denied ask; the demo's counts will differ.
+`<run>` stands for the full run id:
+
 ```text
-wrote ./out/tego-hello.txt: allowed
-/bin/sh: 2: cannot create ./tego-outside.txt: Permission denied
-write ./tego-outside.txt: refused by repo-only-writes
-no secret variable reached the agent: no-secrets
-tego run: r-40c94c9f-0dmkbl68johzb-hdcxpr ended (exited with code 0) · tier landlock · refused 1 (not allowed by any rule 1) · asked 0 · wrote 1 file · chain verified
-  more: tego session show r-40c94c9f-0dmkbl68johzb-hdcxpr
+tego run: <run> ended (exited with code 0) · tier landlock · refused 2 (fs.ask_read 1, not allowed by any rule 1) · asked 1 (0 approved, 1 denied) · wrote 1 file · chain verified
+  more: tego receipt <run>
 ```
 
+This output is pinned in `internal/cli/testdata/run-421d678-pipe-stderr.golden`. Read-count limitations, missed
+actions or uncertain rules add disclosures. With terminal stderr and no `-v`, Tego prints a session start line with
+the rules path and dashboard page. It uses a short end line only for a successful, verified run with no disclosure;
+otherwise it keeps the detailed summary. This demo's default tier-1 recording does not record refused reads, so its
+end summary says so.
+
 Tego starts the contract's `command:` under the best tier this machine has; as a normal user that is tier 1. The exit code is the
-command's own (124 means Tego stopped the run on a limit, 125 means Tego itself failed). The run ends with a summary: the run
+command's own (124 means Tego stopped the run on a limit, 125 means Tego itself failed). The detailed summary names the run
 id, the tier it ran at (`landlock` is tier 1), the refusals its record holds, the files written, and the chain check.
 
 ## 7. Read the receipt
@@ -359,8 +365,9 @@ connected to. Without `--save` or `--out` it prints the proposal. `--save myagen
 `--out` writes it to a new file you name. A contract `--save` writes records each read it refuses, so a refused read
 shows in `tego run`'s summary; each read open is about 17 µs slower, and `--reads off` leaves it out.
 `--workspace` is the folder writes may be allowed under (default: the folder the run started in). `<run>` may be the
-last characters of the run id (four or more) when they name one run. In a terminal, `tego watch`, `tego rules learn` and
-`tego run` each end with a `next:` line that names the command to type next. Read the proposal before you use it: it
+last characters of the run id (four or more) when they name one run. In a terminal, `tego watch` and `tego rules learn` end with a `next:` line that names the command to type next.
+`tego run` shows `Details: tego session show <session>` after a short end line; when it needs the full summary, its
+next step follows that summary. Read the proposal before you use it: it
 allows only what that run did. Keep it outside the folder the agent writes in, because Tego refuses a contract its
 agent could rewrite. Its
 network entries are the IP addresses that run connected to, not host names. One name often has several addresses and
