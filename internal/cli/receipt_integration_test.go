@@ -325,7 +325,8 @@ func TestIntegrationReceiptOfAScriptedRunAtTierLandlock(t *testing.T) {
 	for _, want := range []string{
 		fmt.Sprintf("tego run: %s ended (exited with code 0) · tier landlock · refused 1 (", runID),
 		fmt.Sprintf(" · asked 1 (1 approved, 0 denied) · wrote %d files · chain verified\n", len(written)),
-		"  more: tego session show " + runID + "\n",
+		// This test reads tego run's stderr through a pipe, which keeps the wording of v0.1.3.
+		"  more: tego receipt " + runID + "\n",
 	} {
 		if !strings.Contains(said.String(), want) {
 			t.Errorf("tego run's end summary has no %q", want)
