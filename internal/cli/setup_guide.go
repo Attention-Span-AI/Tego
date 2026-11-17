@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -27,6 +28,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/internal/registry"
 	"github.com/attention-span-ai/tego/internal/setup"
+	"github.com/attention-span-ai/tego/internal/shellword"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
@@ -93,15 +95,19 @@ var guideInstall = func(_ context.Context, line string, log io.Writer) error {
 
 // guideSetupToken runs the agent's own browser sign-in (claude setup-token) on this terminal and returns the token it
 // printed, or "" when it can't read one (the guide then asks for it). It runs under script(1), which keeps the
-// terminal the sign-in needs and copies what it shows to a file of the person's own (0600, removed at once); the
+// terminal the sign-in needs and copies what it shows to an already-unlinked file (0600); the
 // wide stty keeps the token on one line there. A variable so a test signs in nothing.
-var guideSetupToken = func(_ context.Context, program, home string) (string, error) {
+var guideSetupToken = func(ctx context.Context, program, home string) (string, error) {
 	run := func(c *proc.Cmd) error {
 		c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+		c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if _, err := proc.Start(c); err != nil {
 			return err
 		}
-		return c.Wait()
+		return waitGuideLogin(ctx, c)
 	}
 	script, err := guideLookPath("script")
 	if err != nil {
@@ -117,19 +123,52 @@ var guideSetupToken = func(_ context.Context, program, home string) (string, err
 	if err != nil {
 		return "", err
 	}
-	log := f.Name()
-	_ = f.Close()
-	defer func() { _ = os.Remove(log) }()
-	err = run(proc.Command(script, "-q", "-e", "-c", "stty cols 400 2>/dev/null; exec "+program+" setup-token", log))
+	defer func() { _ = f.Close() }()
+	if err := os.Remove(f.Name()); err != nil {
+		return "", err
+	}
+	var capture unix.Stat_t
+	if err := sys.FstatFile(f, &capture); err != nil {
+		return "", err
+	}
+	if capture.Nlink != 0 {
+		return "", errors.New("login capture is still linked; sign-in was not started")
+	}
+	c := proc.Command(script, "-q", "-e", "-c", "stty cols 400 2>/dev/null; exec "+shellword.Quote(program)+" setup-token", "/proc/self/fd/3")
+	c.ExtraFiles = []*os.File{f}
+	err = run(c)
 	resetTerminal()
 	if err != nil {
 		return "", err
 	}
-	b, err := os.ReadFile(log)
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
+	b, err := io.ReadAll(f)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 	return lastToken(string(b)), nil
+}
+
+// waitGuideLogin lets script restore its terminal and terminate its child on cancellation, then bounds the wait.
+func waitGuideLogin(ctx context.Context, c *proc.Cmd) error {
+	done := make(chan struct{})
+	var waitErr error
+	go func() { waitErr = c.Wait(); close(done) }()
+	select {
+	case <-done:
+		return waitErr
+	case <-ctx.Done():
+		_ = c.Process.Signal(syscall.SIGTERM)
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			_ = unix.Kill(-c.Process.Pid, unix.SIGKILL)
+			<-done
+		}
+		return ctx.Err()
+	}
 }
 
 // resetTerminal undoes what a full-screen program can leave behind when it exits (the kitty keyboard protocol, xterm's
