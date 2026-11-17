@@ -107,4 +107,4 @@ message: |
       tego test                             # watch Tego refuse four harmless actions
       tego serve                            # the dashboard; it prints a URL with a token
   To open the dashboard on the Mac, forward its port over SSH in another terminal, then open that URL:
-    ssh -F {{.Dir}}/ssh.config -N -L 8484:127.0.0.1:8484 lima-{{.Name}}
+    ssh -F {{.Dir}}/ssh.config -N -o ExitOnForwardFailure=yes -L 127.0.0.1:8484:127.0.0.1:8484 lima-{{.Name}}
