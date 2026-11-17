@@ -325,8 +325,9 @@ simpler arrangement that lost keys or left the terminal unusable:
    `systemd-run`): no input, its own process group, ended and joined when the guide is left. Starting the dashboard
    is bounded at twenty seconds, and a start that was interrupted stops the unit.
 5. **Leaving.** Ctrl-C is a key in raw mode; SIGINT, SIGTERM and SIGHUP stay subscribed until the terminal is
-   restored. Each ends the guide with the `Stopped` line and exit 1. What was already saved stays saved: the guide
-   is not a transaction.
+   restored. Each ends the guide with the `Stopped` line and exit 1. A second signal that arrives after the
+   terminal is restored ends the process as it ends any command. What was already saved stays saved: the guide is
+   not a transaction.
 6. **`TERM=dumb`** gets numbered questions read through the same reader, because Huh's plain prompts do not end
    when their context does. Input that is not a terminal (a pipe, a test) keeps Huh's plain prompts, one line per
    answer.
