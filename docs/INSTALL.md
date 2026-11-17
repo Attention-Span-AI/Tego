@@ -26,8 +26,9 @@ curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/in
 
 `install.sh` is an asset of the latest release, listed in its signed checksums file. It downloads that release's `tego`
 and `tego-control` for your architecture, checks each against the release's
-sha256 checksums, and installs both into `~/.local/bin`. When `cosign` is on `PATH`, or a `gh` that is logged in, it
-also checks that the checksums were signed by this repository's release workflow at that tag; without either it says
+sha256 checksums, and installs both into `~/.local/bin`. When available,
+cosign verifies the checksums file's signature; gh verifies each asset's build provenance attestation.
+Both require this repository's release workflow at the selected tag; without either the installer says
 that only the checksum was checked, and how to get cosign
 ([Sigstore's install page](https://docs.sigstore.dev/cosign/system_config/installation/)) or log `gh` in (`gh auth login`). It runs the new `tego` before it replaces anything, and it needs no root. It ends
 with the next steps: the `export PATH` line if `~/.local/bin` is not on your `PATH` yet, over SSH the
