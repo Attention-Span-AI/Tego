@@ -61,6 +61,17 @@ before this record:
    both ways, since a pause stops a run's work and a resume restarts it; a same-uid process outside every run can
    still write the run's `cgroup.freeze` itself). `tego approve` and `tego deny` were already refused by `ask.sock`'s peer check
    (`internal/platform/peer`, `run-member`).
+6. **A listener proves it is this dashboard without being given the link** (*added 2026-11-16*). `GET
+   /_tego/identity?challenge=<64 hex digits>` answers `HMAC-SHA256(sign-in token, "tego-dashboard-v1\n" | challenge |
+   "\n" | scope)` in hex, where the scope is the SHA-256 of the ledger root, the configuration file's path and that
+   file's bytes (`internal/control/cli/serve.go`). `tego dashboard` and `tego start` send a fresh 32-byte challenge
+   to the address in `~/.tego/dashboard.log` and reuse or print that link only when the answer is the one they
+   compute from the logged token and their own ledger and configuration (`internal/cli/dashboard.go`: constant-time
+   compare, no proxy, no redirect followed, 300 ms); otherwise they start a new dashboard. The request carries no
+   secret, so a program that took the port after a dashboard ended is not handed the link, and a dashboard started
+   for another configuration or ledger is not reused. The endpoint answers any local caller that names the
+   dashboard's own address, a governed agent included: the answer is not a credential the dashboard accepts, and
+   with a token of 128 random bits it does not help find one.
 
 ## Why the socket's cgroup and not its holder
 
