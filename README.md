@@ -93,9 +93,8 @@ profile.
 **macOS**, in a Linux VM made by [Lima](https://lima-vm.io):
 
 ```sh
-brew install lima
-limactl start --name=tego --mount-none https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml
-limactl shell tego tego machine check
+curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh | sh
+tego start
 ```
 
 **Windows**, in WSL2. In PowerShell:
@@ -109,8 +108,8 @@ Then open Ubuntu and run the Linux line there.
 What each was tested on: the installer put the published v0.1.1 on AlmaLinux 9.8, Ubuntu 24.04, Debian 13, Fedora 44,
 Amazon Linux 2023 and Ubuntu 26.04.1, and a new user's `tego machine check`, `tego machine test` and a governed run reached tier
 landlock on each
-([docs/TIERS.md](docs/TIERS.md#the-published-release-as-a-new-user)). The macOS template passes Lima's own check
-(`limactl validate`) but has not been booted on a Mac yet, and the Windows steps have not been run yet.
+([docs/TIERS.md](docs/TIERS.md#the-published-release-as-a-new-user)). The macOS installer and template have shell tests with stand-ins on Linux;
+this revision has not been validated by Lima or booted on a Mac here, and the Windows steps have not been run yet.
 [docs/INSTALL.md](docs/INSTALL.md) has the details, and how to check the installer before it runs.
 
 ### Build from source

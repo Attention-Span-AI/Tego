@@ -6,7 +6,7 @@ source is the other way.
 | System | Install | Tested on |
 |---|---|---|
 | Linux | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | The published v0.1.1 as a new user, tier landlock: AlmaLinux 9.8, Ubuntu 24.04 and 26.04.1, Debian 13, Fedora 44, Amazon Linux 2023 ([details](TIERS.md#the-published-release-as-a-new-user)) |
-| macOS | `limactl start --name=tego --mount-none https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml` | Not run on a Mac yet. Lima's `limactl validate` passes on the template |
+| macOS | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | Shell tests with stand-ins on Linux; VM creation on a Mac not run |
 | Windows | `wsl --install -d Ubuntu-24.04`, then the Linux line inside Ubuntu | Not run on Windows yet |
 
 ## Requirements
@@ -65,19 +65,33 @@ check, the piped form and the exit codes.
 Tego runs in an Ubuntu 24.04 VM made by [Lima](https://lima-vm.io), on Apple silicon or Intel.
 
 ```sh
-brew install lima
-limactl start --name=tego --mount-none https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml
-limactl shell tego tego doctor
+curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh | sh
+tego start
 ```
 
-If Lima asks how to go on, choose **Proceed with the current configuration**. `limactl shell tego tego doctor` logs in
-over SSH, so its cgroup check fails until you start a shell in your user's cgroup (below).
+The installer offers to install or upgrade Lima, create or start Tego's VM, and add the Mac `tego` command. Follow
+its printed shell restart line if needed. `tego start` runs the guide inside the VM, opens the dashboard in your
+Mac browser and leaves you in a VM shell in the project. `tego shell` opens that shell again.
 
-The template is a release asset, [examples/lima/tego.yaml](../examples/lima/tego.yaml) in this repository, listed in
-the release's signed checksums file like `install.sh`. It boots Ubuntu 24.04 LTS with 4 CPUs, 4 GiB of
-memory and a 20 GiB disk, and on the first boot runs the Linux line above as your user in the VM, taking `install.sh` from the latest release
-too. Tier 1 needs nothing
-more there: Ubuntu 24.04's kernel has Landlock, and its systemd delegates a cgroup to your user. 
+Before creating a VM, the installer resolves the selected release tag, downloads `tego.yaml` and `install.sh` into
+a private temporary directory, and checks their release checksums. It uses the same `TEGO_VERIFY` setting as Linux:
+cosign verifies the checksums signature at that tag; gh verifies both assets' provenance at that tag. An explicit
+verifier failure stops creation. Lima starts from the verified local template, with no Mac mounts, and receives
+the selected tag and the verified installer digest. Provisioning verifies that digest before executing the installer
+and passes the tag to the Linux installation, so `TEGO_VERSION=v0.1.3` selects that version inside the VM too.
+The initial piped Mac script has the same trust limit as Linux; [verify it first](#check-the-installer-first) if needed.
+
+The template, [examples/lima/tego.yaml](../examples/lima/tego.yaml), boots Ubuntu 24.04 LTS with 4 CPUs, 4 GiB of
+memory and a 20 GiB disk. Tier 1 needs nothing more there: Ubuntu's kernel has Landlock and systemd delegates a
+cgroup to your user.
+
+Rerunning the Mac installer updates only the Mac command for an existing VM. To upgrade Tego inside it, run
+`tego shell`, then run the Linux installer there. For a specific release:
+
+```sh
+curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/download/v0.1.3/install.sh | TEGO_VERSION=v0.1.3 sh
+```
+
 No Mac folders are mounted in the VM by default: neither your Mac home nor `/tmp/lima` is shared. Programs in
 it cannot read or write Mac files through a filesystem share. Lima stores the VM disk and configuration on the Mac;
 Tego's data and projects live in the VM's own home. The Mac command enters that home or the last project inside the
@@ -116,7 +130,9 @@ ssh -F ~/.lima/tego/ssh.config -N -L 8484:127.0.0.1:8484 lima-tego
 
 `limactl stop tego` stops the VM and `limactl delete tego` removes it.
 
-**Tested on** Linux only: Lima 2.2.1's `limactl validate` passes on the template. It has not been booted on a Mac yet.
+**Tested on** Linux with `scripts/install_mac_test.sh` and shellcheck, using stand-ins for Homebrew, Lima, SSH and
+the browser. The earlier template passed Lima 2.2.1's `limactl validate`; this revision has not been validated by
+Lima or booted on a Mac here.
 
 ## Windows
 

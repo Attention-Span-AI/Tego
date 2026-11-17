@@ -56,13 +56,8 @@ repo_name="Tego"
 # own output goes to a log file, shown only when a step fails.
 mac_setup() {
 	vm=tego
-	if [ -n "${TEGO_VERSION:-}" ]; then
-		template="https://github.com/${repo_owner}/${repo_name}/releases/download/${TEGO_VERSION}/tego.yaml"
-	else
-		template="https://github.com/${repo_owner}/${repo_name}/releases/latest/download/tego.yaml"
-	fi
 	install_line="curl -fsSL https://github.com/${repo_owner}/${repo_name}/releases/latest/download/install.sh | sh"
-	log="${TMPDIR:-/tmp}/tego-install.log"
+	log="${workdir}/install.log"
 	: >"$log"
 
 	# Colour and animation only on a terminal, and never with NO_COLOR or TERM=dumb (clig.dev).
@@ -174,7 +169,7 @@ mac_setup() {
 		ask "$question" && rc=0 || rc=$?
 		case $rc in
 			0) quietly brew "$verb" lima || exit 2 ;;
-			2) stop 2 "brew ${verb} lima" "limactl start --name=${vm} --mount-none ${template}" ;;
+			2) stop 2 "brew ${verb} lima" "${install_line}" ;;
 			*) note "Tego needs Lima on a Mac. Nothing was changed."; exit 2 ;;
 		esac
 		done_ "Lima $(limactl --version 2>/dev/null | awk '{print $NF}')"
@@ -195,11 +190,29 @@ mac_setup() {
 		*)
 			todo "Tego's VM isn't set up yet. It takes about 2 minutes, only the first time."
 			ask "Set it up now?" && rc=0 || rc=$?
-			[ "$rc" = 0 ] || stop 0 "limactl start --name=${vm} --mount-none ${template}"
-			quietly limactl start --tty=false --name="$vm" --mount-none "$template" || exit 8
+			[ "$rc" = 0 ] || stop 0 "${install_line}"
+			prepare_release
+			# The VM executes install.sh: verify that asset too, then give the guest its digest.
+			download "${base_url}/${tag}/install.sh" "${workdir}/install.sh" "the installer"
+			[ "$verify" != gh ] || attested "${workdir}/install.sh" install.sh
+			installer_sha256=$(awk '$2=="install.sh" {print $1}' "$checksums_path")
+			[ -n "$installer_sha256" ] && [ "$installer_sha256" = "$(sha256_of "${workdir}/install.sh")" ] ||
+				die "checksum mismatch or missing entry for install.sh; not creating the VM" 7
+			quietly limactl start --tty=false --name="$vm" --mount-none --param="tego_version=$tag" \
+				--param="installer_sha256=$installer_sha256" "$archive_path" || exit 8
 			done_ "Tego's VM is ready"
 			;;
 	esac
+	if [ "$state" = Running ] || [ "$state" = Stopped ]; then
+		note "Rerunning this installer updates only the Mac command, not Tego inside an existing VM."
+		note "To upgrade Tego: tego shell, then run the Linux installer there:"
+		if [ -n "$version" ]; then
+			case "$version" in v*) upgrade_tag=$version ;; *) upgrade_tag=v$version ;; esac
+			note "curl -fsSL ${base_url}/${upgrade_tag}/install.sh | TEGO_VERSION=${upgrade_tag} sh"
+		else
+			note "$install_line"
+		fi
+	fi
 
 	# The tego command on the Mac: it runs tego in the VM, from the VM's home folder, in the user's cgroup, which
 	# a limactl shell login is outside of. It lives in ~/.local/bin, a folder of the user's own, not one another tool
@@ -393,7 +406,7 @@ main() {
 	os_raw=$(uname -s)
 	case "$os_raw" in
 		Linux) os=linux ;;
-		Darwin) mac_setup ;;
+		Darwin) os=darwin ;;
 		*)
 			die "unsupported operating system '${os_raw}': tego ships Linux binaries only. On Windows, install inside WSL2 (a real Linux kernel) and run this script there." 3
 			;;
@@ -411,7 +424,11 @@ main() {
 	tmp_bin=""
 	tmp_control=""
 	cleanup() {
-		rm -rf "$workdir"
+		cleanup_status=$?
+		# Keep a failed Mac step's private diagnostic log at the path shown to the person.
+		if [ "$cleanup_status" -eq 0 ] || [ ! -s "$workdir/install.log" ]; then
+			rm -rf "$workdir"
+		fi
 		[ -n "$tmp_bin" ] && rm -f "$tmp_bin"
 		[ -n "$tmp_control" ] && rm -f "$tmp_control"
 		return 0
@@ -441,161 +458,169 @@ main() {
 		echo "$1" | sed -E 's#(https?://[^/]+).*#\1#'
 	}
 
-	if [ -z "$version" ]; then
-		meta="${workdir}/latest.json"
-		# GitHub answers /releases/latest with 404 while a repository has no release, and with 403 or 429 when
-		# its unauthenticated rate limit is spent, which is common on a shared CI address.
-		got=$(fetch "$api_url" "$meta")
-		case "$got" in
-			0:*) ;;
-			22:404 | 22:410 | 37:*)
-				die "${repo_owner}/${repo_name} has no published release yet (${api_url} names none); set TEGO_VERSION=vX.Y.Z once one exists" 5
-				;;
-			22:*)
-				die "${api_url} answered HTTP ${got#*:} when asked for the latest release (403 and 429 are GitHub's rate limit); try again later, or set TEGO_VERSION=vX.Y.Z to skip the lookup" 6
-				;;
-			*)
-				die "could not reach $(host_of "$api_url") to find the latest release (curl exit ${got%%:*}); check the network, or set TEGO_VERSION=vX.Y.Z to skip the lookup" 6
-				;;
-		esac
-		# No jq dependency: one field, pulled with the tools already required above.
-		version=$(grep -m1 '"tag_name"' "$meta" | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/')
+	# Shared release selection and verification for Linux binaries and the Mac VM template.
+	prepare_release() {
 		if [ -z "$version" ]; then
-			die "${repo_owner}/${repo_name} has no published release yet (GitHub API returned no tag_name); set TEGO_VERSION=vX.Y.Z once one exists" 5
-		fi
-	fi
-	case "$version" in
-		v*) tag="$version" ;;
-		*) tag="v${version}" ;;
-	esac
-	version_no_v="${tag#v}"
-
-	# Matches the archives.name_template in .goreleaser.yaml exactly (one per binary of its tego archive): change one,
-	# change the other.
-	archive="tego_${version_no_v}_${os}_${arch}"
-	control="tego-control_${version_no_v}_${os}_${arch}"
-	checksums="tego_${version_no_v}_checksums.txt"
-	archive_path="${workdir}/${archive}"
-	control_path="${workdir}/${control}"
-	checksums_path="${workdir}/${checksums}"
-
-	# download fetches one release asset. Only an asset that is not there (fetch says which answers mean that)
-	# is a question about the tag, exit 5; the server's own trouble, named by its status, and a network failure
-	# are exit 6, which a retry may cure.
-	download() {
-		url="$1"
-		dest="$2"
-		label="$3"
-		got=$(fetch "$url" "$dest")
-		case "$got" in
-			0:*) return 0 ;;
-			22:404 | 22:410 | 37:*)
-				die "no release found at ${url} — is '${tag}' a real tego release? Check TEGO_VERSION, or unset it to install the latest" 5
-				;;
-			22:*) die "the server answered HTTP ${got#*:} for ${label} at ${url}; try again later" 6 ;;
-			6:* | 7:* | 28:*) die "could not reach $(host_of "$url") to download ${label}; check the network and try again" 6 ;;
-			*) die "download of ${label} failed (curl exit ${got%%:*}): ${url}" 6 ;;
-		esac
-	}
-
-	download "${base_url}/${tag}/${archive}" "$archive_path" "the ${os}/${arch} archive"
-	download "${base_url}/${tag}/${checksums}" "$checksums_path" "the checksums file"
-
-	# ---- who published it ------------------------------------------------------------------------------------
-	# The checksums file is authenticated before anything below trusts it. A verifier that is present and says
-	# no is a finding, never a reason to fall back to the checksum: a bundle stripped from a tampered release
-	# must not be the thing that lets it install. Only its absence falls back, and only in auto mode.
-	verify="${TEGO_VERIFY:-auto}"
-	case "$verify" in
-		auto)
-			if command -v cosign >/dev/null 2>&1; then
-				verify=cosign
-			elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-				verify=gh
-			else
-				verify=none
-			fi
-			;;
-		cosign | gh | sha256) ;;
-		*) die "TEGO_VERIFY must be auto, cosign, gh or sha256, got '${verify}'" 2 ;;
-	esac
-
-	# The identity release.yml signs as: that workflow of this repository, run for this very tag.
-	signer="https://github.com/${repo_owner}/${repo_name}/.github/workflows/release.yml@refs/tags/${tag}"
-	# attested FILE NAME: in gh mode, the binary FILE (the asset NAME) must carry a build provenance attestation by the
-	# release workflow at this tag. --cert-identity is the identity cosign mode checks, the workflow at this tag, and
-	# --source-ref the ref the build ran from: with only the workflow's path, any tag's attested binary would pass as
-	# this one.
-	attested() {
-		if ! gh attestation verify "$1" --repo "${repo_owner}/${repo_name}" \
-			--cert-identity "$signer" --source-ref "refs/tags/${tag}" >"$verifier_out" 2>&1; then
-			show_verifier gh
-			die "gh could not verify a build provenance attestation for $2 by ${signer} from refs/tags/${tag} (its output is above). An attestation for another tag, or none, means this is not the ${tag} tego's release workflow published; a gh without network or not logged in fails here too. Not installing it." 9
-		fi
-	}
-	verifier_out="${workdir}/verifier.out"
-	# show_verifier prints what the verifier itself said, indented under its name: exit 9 below says only that
-	# verification failed, and the verifier's own words are what tell a forged release from an outdated tool or
-	# an unreachable trust root.
-	show_verifier() {
-		sed "s/^/  $1: /" "$verifier_out" >&2
-	}
-	case "$verify" in
-		cosign)
-			command -v cosign >/dev/null 2>&1 || die "TEGO_VERIFY=cosign but cosign is not on PATH; install it or choose another TEGO_VERIFY" 2
-			bundle_path="${checksums_path}.sigstore.json"
-			bundle_url="${base_url}/${tag}/${checksums}.sigstore.json"
-			# A bundle the server says is not there is told apart from one that could not be fetched: the first is
-			# what a stripped release looks like and stops the install as unverifiable (9), the second is the
-			# server's or the network's failure (6) that a retry may cure. Neither falls back to the checksum.
-			got=$(fetch "$bundle_url" "$bundle_path")
+			meta="${workdir}/latest.json"
+			# GitHub answers /releases/latest with 404 while a repository has no release, and with 403 or 429 when
+			# its unauthenticated rate limit is spent, which is common on a shared CI address.
+			got=$(fetch "$api_url" "$meta")
 			case "$got" in
 				0:*) ;;
 				22:404 | 22:410 | 37:*)
-					die "${tag} has no signature bundle (${checksums}.sigstore.json) where its release is; every release tego's release workflow publishes carries one, and a release stripped of it cannot be told from one altered after signing. Not installing it." 9
+					die "${repo_owner}/${repo_name} has no published release yet (${api_url} names none); set TEGO_VERSION=vX.Y.Z once one exists" 5
 					;;
-				22:*) die "the server answered HTTP ${got#*:} for the signature bundle ${bundle_url}; try again later" 6 ;;
-				*) die "could not download the signature bundle ${bundle_url} (curl exit ${got%%:*}); check the network and try again" 6 ;;
+				22:*)
+					die "${api_url} answered HTTP ${got#*:} when asked for the latest release (403 and 429 are GitHub's rate limit); try again later, or set TEGO_VERSION=vX.Y.Z to skip the lookup" 6
+					;;
+				*)
+					die "could not reach $(host_of "$api_url") to find the latest release (curl exit ${got%%:*}); check the network, or set TEGO_VERSION=vX.Y.Z to skip the lookup" 6
+					;;
 			esac
-			if ! cosign verify-blob --bundle "$bundle_path" --certificate-identity "$signer" \
-				--certificate-oidc-issuer https://token.actions.githubusercontent.com "$checksums_path" >"$verifier_out" 2>&1; then
-				show_verifier cosign
-				die "cosign could not verify ${checksums} as signed by ${signer} (its output is above). A signature by another identity, or a file changed after signing, means this is not what tego's release workflow published; a cosign too old to read the bundle, or no network to fetch Sigstore's trust root, fails here too. Not installing it." 9
+			# No jq dependency: one field, pulled with the tools already required above.
+			version=$(grep -m1 '"tag_name"' "$meta" | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/')
+			if [ -z "$version" ]; then
+				die "${repo_owner}/${repo_name} has no published release yet (GitHub API returned no tag_name); set TEGO_VERSION=vX.Y.Z once one exists" 5
 			fi
-			;;
-		gh)
-			command -v gh >/dev/null 2>&1 || die "TEGO_VERIFY=gh but gh is not on PATH; install it or choose another TEGO_VERIFY" 2
-			attested "$archive_path" "$archive"
-			;;
-		none)
-			echo "${prog}: note: neither cosign nor a logged-in gh is on PATH, so only the checksum is checked. It proves the download is intact, not who published it: install cosign (how: https://docs.sigstore.dev/cosign/system_config/installation/) or log gh in (gh auth login) and run this again, or set TEGO_VERIFY=sha256 to silence this." >&2
-			;;
-	esac
-
-	# ---- verify before unpacking ------------------------------------------------------------------------------
-	# The whole reason a release ships checksums is so this step happens; an installer that skips it is worse
-	# than none, because it looks safe.
-	expected=$(awk -v f="$archive" '$2==f {print $1}' "$checksums_path")
-	if [ -z "$expected" ]; then
-		die "${checksums} has no entry for ${archive}; the release for ${tag} looks incomplete" 7
-	fi
-	actual=$(sha256_of "$archive_path")
-	if [ "$expected" != "$actual" ]; then
-		die "checksum mismatch for ${archive}: expected ${expected}, got ${actual}. The download is corrupt or was tampered with — not installing it. Try again, and report it if it repeats." 7
-	fi
-
-	# tego-control, when the release has one: the checksums file, authenticated above, says whether it does (a release
-	# from before tego-control lists none). It is held to the same checks as tego: its provenance in gh mode, and its
-	# checksum.
-	control_expected=$(awk -v f="$control" '$2==f {print $1}' "$checksums_path")
-	if [ -n "$control_expected" ]; then
-		download "${base_url}/${tag}/${control}" "$control_path" "the ${os}/${arch} tego-control"
-		[ "$verify" = gh ] && attested "$control_path" "$control"
-		control_actual=$(sha256_of "$control_path")
-		if [ "$control_expected" != "$control_actual" ]; then
-			die "checksum mismatch for ${control}: expected ${control_expected}, got ${control_actual}. The download is corrupt or was tampered with — not installing it. Try again, and report it if it repeats." 7
 		fi
+		case "$version" in
+			v*) tag="$version" ;;
+			*) tag="v${version}" ;;
+		esac
+		version_no_v="${tag#v}"
+
+		# Matches the archives.name_template in .goreleaser.yaml exactly (one per binary of its tego archive): change one,
+		# change the other.
+		archive="tego_${version_no_v}_${os}_${arch}"
+		[ "$os" != darwin ] || archive=tego.yaml
+		control="tego-control_${version_no_v}_${os}_${arch}"
+		checksums="tego_${version_no_v}_checksums.txt"
+		archive_path="${workdir}/${archive}"
+		control_path="${workdir}/${control}"
+		checksums_path="${workdir}/${checksums}"
+
+		# download fetches one release asset. Only an asset that is not there (fetch says which answers mean that)
+		# is a question about the tag, exit 5; the server's own trouble, named by its status, and a network failure
+		# are exit 6, which a retry may cure.
+		download() {
+			url="$1"
+			dest="$2"
+			label="$3"
+			got=$(fetch "$url" "$dest")
+			case "$got" in
+				0:*) return 0 ;;
+				22:404 | 22:410 | 37:*)
+					die "no release found at ${url} — is '${tag}' a real tego release? Check TEGO_VERSION, or unset it to install the latest" 5
+					;;
+				22:*) die "the server answered HTTP ${got#*:} for ${label} at ${url}; try again later" 6 ;;
+				6:* | 7:* | 28:*) die "could not reach $(host_of "$url") to download ${label}; check the network and try again" 6 ;;
+				*) die "download of ${label} failed (curl exit ${got%%:*}): ${url}" 6 ;;
+			esac
+		}
+
+		download "${base_url}/${tag}/${archive}" "$archive_path" "the ${os}/${arch} archive"
+		download "${base_url}/${tag}/${checksums}" "$checksums_path" "the checksums file"
+
+		# ---- who published it ------------------------------------------------------------------------------------
+		# The checksums file is authenticated before anything below trusts it. A verifier that is present and says
+		# no is a finding, never a reason to fall back to the checksum: a bundle stripped from a tampered release
+		# must not be the thing that lets it install. Only its absence falls back, and only in auto mode.
+		verify="${TEGO_VERIFY:-auto}"
+		case "$verify" in
+			auto)
+				if command -v cosign >/dev/null 2>&1; then
+					verify=cosign
+				elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+					verify=gh
+				else
+					verify=none
+				fi
+				;;
+			cosign | gh | sha256) ;;
+			*) die "TEGO_VERIFY must be auto, cosign, gh or sha256, got '${verify}'" 2 ;;
+		esac
+
+		# The identity release.yml signs as: that workflow of this repository, run for this very tag.
+		signer="https://github.com/${repo_owner}/${repo_name}/.github/workflows/release.yml@refs/tags/${tag}"
+		# attested FILE NAME: in gh mode, the binary FILE (the asset NAME) must carry a build provenance attestation by the
+		# release workflow at this tag. --cert-identity is the identity cosign mode checks, the workflow at this tag, and
+		# --source-ref the ref the build ran from: with only the workflow's path, any tag's attested binary would pass as
+		# this one.
+		attested() {
+			if ! gh attestation verify "$1" --repo "${repo_owner}/${repo_name}" \
+				--cert-identity "$signer" --source-ref "refs/tags/${tag}" >"$verifier_out" 2>&1; then
+				show_verifier gh
+				die "gh could not verify a build provenance attestation for $2 by ${signer} from refs/tags/${tag} (its output is above). An attestation for another tag, or none, means this is not the ${tag} tego's release workflow published; a gh without network or not logged in fails here too. Not installing it." 9
+			fi
+		}
+		verifier_out="${workdir}/verifier.out"
+		# show_verifier prints what the verifier itself said, indented under its name: exit 9 below says only that
+		# verification failed, and the verifier's own words are what tell a forged release from an outdated tool or
+		# an unreachable trust root.
+		show_verifier() {
+			sed "s/^/  $1: /" "$verifier_out" >&2
+		}
+		case "$verify" in
+			cosign)
+				command -v cosign >/dev/null 2>&1 || die "TEGO_VERIFY=cosign but cosign is not on PATH; install it or choose another TEGO_VERIFY" 2
+				bundle_path="${checksums_path}.sigstore.json"
+				bundle_url="${base_url}/${tag}/${checksums}.sigstore.json"
+				# A bundle the server says is not there is told apart from one that could not be fetched: the first is
+				# what a stripped release looks like and stops the install as unverifiable (9), the second is the
+				# server's or the network's failure (6) that a retry may cure. Neither falls back to the checksum.
+				got=$(fetch "$bundle_url" "$bundle_path")
+				case "$got" in
+					0:*) ;;
+					22:404 | 22:410 | 37:*)
+						die "${tag} has no signature bundle (${checksums}.sigstore.json) where its release is; every release tego's release workflow publishes carries one, and a release stripped of it cannot be told from one altered after signing. Not installing it." 9
+						;;
+					22:*) die "the server answered HTTP ${got#*:} for the signature bundle ${bundle_url}; try again later" 6 ;;
+					*) die "could not download the signature bundle ${bundle_url} (curl exit ${got%%:*}); check the network and try again" 6 ;;
+				esac
+				if ! cosign verify-blob --bundle "$bundle_path" --certificate-identity "$signer" \
+					--certificate-oidc-issuer https://token.actions.githubusercontent.com "$checksums_path" >"$verifier_out" 2>&1; then
+					show_verifier cosign
+					die "cosign could not verify ${checksums} as signed by ${signer} (its output is above). A signature by another identity, or a file changed after signing, means this is not what tego's release workflow published; a cosign too old to read the bundle, or no network to fetch Sigstore's trust root, fails here too. Not installing it." 9
+				fi
+				;;
+			gh)
+				command -v gh >/dev/null 2>&1 || die "TEGO_VERIFY=gh but gh is not on PATH; install it or choose another TEGO_VERIFY" 2
+				attested "$archive_path" "$archive"
+				;;
+			none)
+				echo "${prog}: note: neither cosign nor a logged-in gh is on PATH, so only the checksum is checked. It proves the download is intact, not who published it: install cosign (how: https://docs.sigstore.dev/cosign/system_config/installation/) or log gh in (gh auth login) and run this again, or set TEGO_VERIFY=sha256 to silence this." >&2
+				;;
+		esac
+
+		# ---- verify before unpacking ------------------------------------------------------------------------------
+		# The whole reason a release ships checksums is so this step happens; an installer that skips it is worse
+		# than none, because it looks safe.
+		expected=$(awk -v f="$archive" '$2==f {print $1}' "$checksums_path")
+		if [ -z "$expected" ]; then
+			die "${checksums} has no entry for ${archive}; the release for ${tag} looks incomplete" 7
+		fi
+		actual=$(sha256_of "$archive_path")
+		if [ "$expected" != "$actual" ]; then
+			die "checksum mismatch for ${archive}: expected ${expected}, got ${actual}. The download is corrupt or was tampered with — not installing it. Try again, and report it if it repeats." 7
+		fi
+
+		# tego-control, when the release has one: the checksums file, authenticated above, says whether it does (a release
+		# from before tego-control lists none). It is held to the same checks as tego: its provenance in gh mode, and its
+		# checksum.
+		control_expected=$(awk -v f="$control" '$2==f {print $1}' "$checksums_path")
+		if [ -n "$control_expected" ]; then
+			download "${base_url}/${tag}/${control}" "$control_path" "the ${os}/${arch} tego-control"
+			[ "$verify" = gh ] && attested "$control_path" "$control"
+			control_actual=$(sha256_of "$control_path")
+			if [ "$control_expected" != "$control_actual" ]; then
+				die "checksum mismatch for ${control}: expected ${control_expected}, got ${control_actual}. The download is corrupt or was tampered with — not installing it. Try again, and report it if it repeats." 7
+			fi
+		fi
+	}
+	if [ "$os" = darwin ]; then
+		mac_setup
 	fi
+	prepare_release
 
 	# ---- install --------------------------------------------------------------------------------------------
 	mkdir -p "$prefix" || die "could not create install directory ${prefix}" 8
