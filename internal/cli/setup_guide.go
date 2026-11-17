@@ -660,7 +660,7 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 	g.line("")
 	g.top(g.bold + "Next steps" + g.offEsc)
 	next := func(what, c string) { g.line("%s  %-30s%s%s%s", colTop, what, g.bold, c, g.offEsc) }
-	next("Run "+name+" under Tego", "cd "+tildeHome(abs, home)+" && tego run "+agentName)
+	next("Run "+name+" under Tego", "cd "+shellword.Quote(abs)+" && tego run "+agentName)
 	next("List your sessions", "tego session list")
 	next("Show the last session", "tego session show --last")
 	next("Edit the rules", "tego rules edit "+agentName)

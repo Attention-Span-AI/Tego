@@ -89,7 +89,7 @@ func TestStartTestProjectWithClaude(t *testing.T) {
 		"3/4  Project", "Which project should Claude Code work in?", "✓ Created ~/tego-sample", "Files: "+sampleURL,
 		"4/4  Rules", "Which rules should Claude Code follow?", "✓ Created agent tego-sample", "Presets: "+presetsDocURL,
 		"Ready", "Agent       tego-sample · Claude Code", "Rules       Base development", "Dashboard   tego dashboard opens it",
-		"Next steps", "cd ~/tego-sample && tego run tego-sample", "tego session list", "tego session show --last",
+		"Next steps", "cd "+filepath.Join(f.Home, guideSample)+" && tego run tego-sample", "tego session list", "tego session show --last",
 		"tego rules edit tego-sample")
 	if strings.Contains(out, "sk-test-123") {
 		t.Errorf("the token was printed:\n%s", out)
@@ -190,7 +190,7 @@ func TestStartOwnProjectOnMac(t *testing.T) {
 	}
 	wantAll(t, "own project", out, "What command starts it?", "✓ python3 is installed", "Nothing to log in to",
 		"Path to the project", "~/nope isn't in Tego's VM", "✓ Using ~/app",
-		"Which rules?", "✓ Created agent app", "cd ~/app && tego run app",
+		"Which rules?", "✓ Created agent app", "cd "+app+" && tego run app",
 		"Shell       Tego's Linux VM · type exit to return to your Mac")
 	if strings.Contains(out, "How do you want to log in") {
 		t.Errorf("another program was asked to log in:\n%s", out)
