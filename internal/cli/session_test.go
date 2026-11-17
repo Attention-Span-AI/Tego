@@ -116,3 +116,31 @@ func TestTerminalRunEndDisclosures(t *testing.T) {
 		})
 	}
 }
+
+func TestTerminalRunKeepsHeldLabelDisclosures(t *testing.T) {
+	summaryHarness(t)
+	notes := []string{
+		"fs.apparmor_assume_root_namespace: true accepts hidden-ancestor risk when namespace depth is unreadable; run_start.best_effort records apparmor/assumed-root-namespace",
+		"AppArmor namespace depth is unreadable (permission denied): file completions return EACCES / Permission denied (held-label-unavailable); expose readable securityfs from the root AppArmor policy namespace, or have the container administrator accept hidden-ancestor risk with fs.apparmor_assume_root_namespace: true",
+		"the host's security modules could not be read (permission denied); a file open that tego checks and makes for the agent is refused when its security labels cannot be verified; permit lsm_list_modules in the outer seccomp filter or expose readable /sys/kernel/security/lsm",
+	}
+	startRun = func(_ context.Context, _ *agent.RuleTable, _ []string, d tegoruntime.Deps) (tegoruntime.Result, error) {
+		for _, s := range notes {
+			d.Warn(tegoruntime.WarnHeldLabel, s)
+		}
+		d.Warn(tegoruntime.WarnDenyReadFrozen, "frozen-directory informational note")
+		return tegoruntime.Result{}, nil
+	}
+	code, _, got := terminalRunOutput(t, "testdata/minimal.yaml", "--offline")
+	if code != identity.ExitOK {
+		t.Fatalf("exit %d: %s", code, got)
+	}
+	for _, s := range notes {
+		if want := "note: tego run: " + s + " [held-label]\n"; !strings.Contains(got, want) {
+			t.Errorf("missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "frozen-directory informational note") {
+		t.Errorf("ordinary frozen-directory note became noisy:\n%s", got)
+	}
+}

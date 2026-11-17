@@ -318,8 +318,8 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 			// deny_read freezes (GAPS A12): it says what the ruleset is, not that a rule was weakened.
 			lead := "warning: "
 			if code == tegoruntime.WarnHeldLabel || code == tegoruntime.WarnDenyReadFrozen {
-				if quiet != nil {
-					return // a note, not a warning: in a terminal it prints with -v
+				if quiet != nil && code == tegoruntime.WarnDenyReadFrozen {
+					return // Only the ordinary frozen-directory note may stay quiet.
 				}
 				lead = "note: "
 			}
