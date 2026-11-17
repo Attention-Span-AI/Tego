@@ -6,11 +6,18 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/attention-span-ai/tego/internal/shellword"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
+	"golang.org/x/sys/unix"
 )
 
 func TestAgentInstallerConsentAndRoot(t *testing.T) {
@@ -63,5 +70,85 @@ func TestGuideWorksAsRoot(t *testing.T) {
 	code, out, errs := runGuide(t, "1\n2\nsk-test-root\n1\n1\n1\n")
 	if code != identity.ExitOK || !strings.Contains(out, "Ready") {
 		t.Fatalf("root guide: %d\n%s\n%s", code, out, errs)
+	}
+}
+
+// Ctrl-C reaches the guide as a key while it holds the terminal, so the guide must end the installer itself: the
+// whole process group of the install line, and promptly.
+func TestGuideInstallStopsWithTheGuide(t *testing.T) {
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "pid")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	start := time.Now()
+	go func() {
+		result <- guideInstall(ctx, "sleep 300 & echo $$ $! > "+shellword.Quote(pidFile)+"; wait", io.Discard)
+	}()
+	var shell, pid int
+	// Whatever the installer under test does, this test leaves no process behind.
+	t.Cleanup(func() {
+		for _, p := range []int{shell, pid} {
+			if p > 1 {
+				_ = unix.Kill(p, unix.SIGKILL)
+			}
+		}
+	})
+	for deadline := time.Now().Add(15 * time.Second); pid == 0; {
+		if b, err := os.ReadFile(pidFile); err == nil && strings.HasSuffix(string(b), "\n") {
+			if f := strings.Fields(string(b)); len(f) == 2 {
+				shell, _ = strconv.Atoi(f[0])
+				pid, _ = strconv.Atoi(f[1])
+			}
+		}
+		if pid == 0 {
+			if time.Now().After(deadline) {
+				t.Fatal("the install line did not start")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("a stopped install returned %v", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("the installer outlived the guide")
+	}
+	if took := time.Since(start); took > 20*time.Second {
+		t.Fatalf("stopping took %s", took)
+	}
+	// The background member of the line's group is gone too (a zombie of a dead parent is reaped by init).
+	for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if err := unix.Kill(pid, 0); errors.Is(err, unix.ESRCH) {
+			break
+		}
+		if b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)); err != nil || strings.Contains(string(b), ") Z ") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("pid %d of the install line is still running", pid)
+		}
+	}
+}
+
+func TestGuideStopsWhenTheInstallIsInterrupted(t *testing.T) {
+	oldLook, oldInstall, oldUID := guideLookPath, guideInstall, learnEUID
+	t.Cleanup(func() { guideLookPath, guideInstall, learnEUID = oldLook, oldInstall, oldUID })
+	guideLookPath = func(string) (string, error) { return "", errors.New("missing") }
+	learnEUID = func() int { return 1000 }
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	guideInstall = func(ctx context.Context, _ string, _ io.Writer) error { cancel(); return ctx.Err() }
+	var out bytes.Buffer
+	g := newWalk(strings.NewReader("1\n"), &out, false)
+	_, err := g.installed(ctx, guideAgents[0], "Claude Code", "claude", t.TempDir())
+	if !errors.Is(err, errStopped) {
+		t.Fatalf("an interrupted install ended with %v, wanted the guide's stop: %s", err, &out)
+	}
+	if strings.Contains(out.String(), "didn't install") {
+		t.Fatalf("an interrupted install was reported as a failed one: %s", &out)
 	}
 }

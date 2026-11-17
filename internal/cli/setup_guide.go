@@ -83,14 +83,35 @@ var guideLookPath = func(name string) (string, error) {
 	return "", errors.New(name + " is not on PATH")
 }
 
-// guideInstall runs an agent's install line with its output in log; a variable so a test installs nothing.
-var guideInstall = func(_ context.Context, line string, log io.Writer) error {
+// guideInstall runs an agent's install line with its output in log; a variable so a test installs nothing. The line
+// runs in a process group of its own, which ctx ends: the guide holds the terminal with signals off between
+// questions, so Ctrl-C reaches the guide as a key and never the installer. The installer reads no terminal (its
+// input is /dev/null, its output the log), so the background group cannot stop on a terminal read.
+var guideInstall = func(ctx context.Context, line string, log io.Writer) error {
 	c := proc.Command("/bin/sh", "-c", line)
 	c.Stdout, c.Stderr = log, log
+	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if _, err := proc.Start(c); err != nil {
 		return err
 	}
-	return c.Wait()
+	done := make(chan error, 1)
+	go func() { done <- c.Wait() }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		_ = unix.Kill(-c.Process.Pid, unix.SIGTERM)
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+		}
+		// Whatever of the line's pipeline ignored the first signal, or was started after it.
+		_ = unix.Kill(-c.Process.Pid, unix.SIGKILL)
+		return ctx.Err()
+	}
 }
 
 // guideSetupToken runs the agent's own browser sign-in (claude setup-token) on this terminal and returns the token it
@@ -816,7 +837,7 @@ func (g *walk) installed(ctx context.Context, a guideAgent, name, program, home 
 		return identity.ExitFinding, nil
 	}
 	if learnEUID() == 0 {
-		g.bad("An agent installer cannot run as root; install it as yourself, then run tego start again:")
+		g.bad("Tego doesn't run an agent's installer as root. Install " + name + " with this line, then run tego start again:")
 		g.cmd(a.install)
 		return identity.ExitFinding, nil
 	}
@@ -833,6 +854,9 @@ func (g *walk) installed(ctx context.Context, a guideAgent, name, program, home 
 	}
 	g.detail("Installing " + name + "…")
 	if !g.installAgent(ctx, a, home) {
+		if ctx.Err() != nil {
+			return 0, errStopped // Ctrl-C while it installed: the same ending as at a question
+		}
 		return identity.ExitFinding, nil
 	}
 	// The installers put the program in ~/.local/bin, which this shell's PATH may not have yet.
@@ -861,6 +885,9 @@ func (g *walk) installAgent(ctx context.Context, a guideAgent, home string) bool
 	}
 	defer func() { _ = f.Close() }()
 	if err := guideInstall(ctx, a.install, f); err != nil {
+		if ctx.Err() != nil {
+			return false
+		}
 		g.bad(a.label + " didn't install: " + err.Error())
 		if b, err := os.ReadFile(logPath); err == nil {
 			lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
