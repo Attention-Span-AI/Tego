@@ -9,9 +9,9 @@
 # Why capture is `forwarder`: the SDK does not call the model itself. It starts the Claude Code binary it
 # bundles, a Bun executable with BoringSSL linked in statically and no SSL_* symbols, so no uprobe can read
 # its traffic. The forwarder's listener is named in ANTHROPIC_BASE_URL, which the SDK hands on to Claude
-# Code, and every request is recorded as `ssl_request source=forwarder` (docs/p0/capture-derive.md R19).
+# Code, and every request is recorded as `ssl_request source=forwarder` (spec/record/v1/README.md, ssl_request).
 # `net.allow` is present and empty, so a direct connect to the model host around the forwarder is refused
-# (R38); a contract with no `net:` at all would restrict nothing (spec/policy/SEMANTICS.md §1).
+# (spec/policy/SEMANTICS.md §1); a contract with no `net:` at all would restrict nothing.
 #
 # Where the SDK lives: installed into the project with `pip install --target .deps claude-agent-sdk` and
 # run with PYTHONPATH=.deps, which is how the kill test installs it. The bundled Claude Code is then
