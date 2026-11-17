@@ -145,6 +145,10 @@ func dashboardAt(home string) (string, bool) {
 
 // probeDashboard sends a fresh challenge, never the sign-in token, to a listener that has not yet been trusted.
 func probeDashboard(link string) bool {
+	_, _, scope, err := dashboardConfiguration()
+	if err != nil {
+		return false
+	}
 	u, err := url.Parse(link)
 	if err != nil {
 		return false
@@ -174,7 +178,34 @@ func probeDashboard(link string) bool {
 		return false
 	}
 	mac := hmac.New(sha256.New, []byte(token))
-	_, _ = mac.Write([]byte("tego-dashboard-v1\n" + challenge))
+	_, _ = mac.Write([]byte("tego-dashboard-v1\n" + challenge + "\n" + scope))
 	expected := hex.EncodeToString(mac.Sum(nil))
 	return hmac.Equal(proof, []byte(expected))
+}
+
+// dashboardConfiguration names the shell's intended ledger and config, including that file's current contents.
+// It is passed to the unit and authenticated in the reuse probe, so the user manager cannot select a different one.
+func dashboardConfiguration() (root, file, scope string, err error) {
+	m, _, err := loadMachine(config.TrustWarn)
+	if err != nil {
+		return "", "", "", err
+	}
+	root, err = ledgerRootOf(m)
+	if err != nil {
+		return "", "", "", err
+	}
+	file = os.Getenv(config.EnvConfigVar)
+	var data []byte
+	if file != "" {
+		file, err = filepath.Abs(file)
+		if err != nil {
+			return "", "", "", err
+		}
+		data, err = os.ReadFile(file)
+		if err != nil {
+			return "", "", "", err
+		}
+	}
+	sum := sha256.Sum256([]byte(root + "\x00" + file + "\x00" + string(data)))
+	return root, file, hex.EncodeToString(sum[:]), nil
 }

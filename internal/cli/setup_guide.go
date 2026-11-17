@@ -696,7 +696,11 @@ var guideDashboard = func(home string) string {
 		return ""
 	}
 	defer func() { _ = f.Close() }()
-	c := proc.Command("systemd-run", "--user", "--unit=tego-dashboard", "--quiet", "--pipe", self, "serve")
+	root, configFile, _, err := dashboardConfiguration()
+	if err != nil {
+		return ""
+	}
+	c := proc.Command("systemd-run", "--user", "--unit=tego-dashboard", "--quiet", "--pipe", "--setenv=TEGO_CONFIG="+configFile, self, "serve", "--ledger", root)
 	c.Stdout, c.Stderr = f, f
 	if _, err := proc.Start(c); err != nil {
 		return ""
