@@ -7,11 +7,29 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
 
 ## Unreleased
 
+### Added
+
 - `tego start` sets up a first-time user in four steps: the agent (Claude Code, Codex or another program), its login, a project (a test project with a harmlessly poisoned dependency, or their own) and its rules (Base development, Read-only review, rules picked one by one, or their own rules file). It opens the dashboard and ends with the command that starts the first session. On a Mac, the one-line installer sets up Lima and Tego's VM, and `tego start` and `tego dashboard` work from the Mac's terminal.
-- Commands in git's noun-verb shape, over the existing ones: `tego rules create|edit|check|learn`, `tego session list|show|stop|pause|resume`, `tego machine check|test`, and `tego dashboard`. `tego help` lists the common commands and `tego help -a` every one. Every existing command keeps its name, flags and exit codes; only `-h`'s layout changed. Every hint, next step and dashboard page now names the noun-verb commands (`tego session show`, not `tego receipt`).
+- Commands in git's noun-verb shape, over the existing ones: `tego rules create|edit|check|learn`, `tego session list|show|stop|pause|resume`, `tego machine check|test`, and `tego dashboard`. `tego help` lists the common commands and `tego help -a` every one. Every existing command keeps its name, flags and exit codes; only `-h`'s layout changed. Guidance and dashboard pages now name the noun-verb commands, such as `tego session show`; the compatibility exception for `tego run` is listed below.
 - `tego start` asks before using a saved login ("Use your saved Claude Code login?"), and logging in again replaces it. The Mac installer's last line says how to use `tego` in the same terminal (`exec zsh`).
 - Sessions have names (`tego-sample-dzfa`) that every command taking a run accepts.
-- `tego run` in a terminal prints a line when the session starts, with its dashboard page, and one when it ends, with how many actions Tego blocked; `-v` prints the notes and the full summary, and the output to a pipe or a file is unchanged.
+
+### Changed
+
+- `tego setup` in a terminal now opens the setup guide; `--json` and `-v` keep the checklist.
+- Next-step fields and `fix` fields in JSON output now name the new commands: `tego machine check`,
+  `tego rules check`, `tego session show` and `tego rules learn`. Consumers comparing those command strings
+  must accept the new names; the old commands still work.
+- `tego run` in a terminal prints a start line with its session name, rules file and dashboard page, and an end
+  line with the number of actions blocked. The rules file's setup name is shown as a file comment alongside its
+  path. Accepted risks and failed checks remain visible; incomplete or unverified records, record-off runs,
+  abnormal endings and read-count limitations retain the full summary without a success check mark.
+  Terminal mode is selected by stderr being a terminal, with no `-v` or `--cmd`; piping stdout alone keeps this
+  mode. Piped or redirected stderr and `-v` retain the previous run output, including the older command names.
+
+### Removed
+
+- maze is no longer built or released. The release has 13 files instead of 22; the last release with maze is v0.1.3.
 
 ## v0.1.3 - 2026-11-13
 
