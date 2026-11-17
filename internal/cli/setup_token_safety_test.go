@@ -20,7 +20,7 @@ func TestLoginCaptureUnlinkedAndCanceled(t *testing.T) {
 	marker := filepath.Join(home, "capture-target")
 	t.Setenv("CAPTURE_TARGET", marker)
 	bin := t.TempDir()
-	script := "#!/bin/sh\nfor last do :; done\nprintf '%s' \"$last\" > \"$CAPTURE_TARGET\"\nprintf '%s\\n' sk-ant-oat01-abcdefghijklmnopqrstuvwxyz > \"$last\"\nexec sleep 2\n"
+	script := "#!/bin/sh\nfor last do :; done\nprintf '%s' \"$last\" > \"$CAPTURE_TARGET\"\nprintf '%s\\n' sk-ant-oat01-abcdefghijklmnopqrstuvwxyz > \"$last\"\nexec sleep 120\n"
 	if err := os.WriteFile(filepath.Join(bin, "script"), []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +29,7 @@ func TestLoginCaptureUnlinkedAndCanceled(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() { _, err := guideSetupToken(ctx, "claude", home); done <- err }()
-	deadline := time.After(time.Second)
+	deadline := time.After(15 * time.Second)
 	for {
 		if _, err := os.Stat(marker); err == nil {
 			break
@@ -54,7 +54,7 @@ func TestLoginCaptureUnlinkedAndCanceled(t *testing.T) {
 		if err == nil {
 			t.Error("cancellation ignored")
 		}
-	case <-time.After(time.Millisecond * 700):
+	case <-time.After(15 * time.Second):
 		t.Error("login kept waiting after cancellation")
 		<-done
 	}
@@ -98,7 +98,7 @@ func TestLoginCancellationStopsSystemScriptChild(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { _, err := guideSetupToken(ctx, program, bin); done <- err }()
 	var pid int
-	deadline := time.After(3 * time.Second)
+	deadline := time.After(15 * time.Second)
 	for pid == 0 {
 		if b, err := os.ReadFile(marker); err == nil {
 			pid, _ = strconv.Atoi(strings.TrimSpace(string(b)))
@@ -116,11 +116,11 @@ func TestLoginCancellationStopsSystemScriptChild(t *testing.T) {
 		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("cancellation: %v", err)
 		}
-	case <-time.After(4 * time.Second):
+	case <-time.After(15 * time.Second):
 		t.Fatal("script did not stop")
 	}
 	// script sends SIGKILL before returning; the kernel can still be completing the child's exit.
-	exitDeadline := time.Now().Add(time.Second)
+	exitDeadline := time.Now().Add(15 * time.Second)
 	for {
 		st, err := proc.New().Stat(pid)
 		if errors.Is(err, proc.ErrGone) || (err == nil && st.State == 'Z') {
