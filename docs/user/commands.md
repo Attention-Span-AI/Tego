@@ -12,14 +12,14 @@ connect to.
 
 | Command | What it does |
 |---|---|
-| `tego start` | Sets up your first agent in four steps: the agent, its login, its project and its rules. Then it opens the dashboard and shows the command that starts your first session. On a Mac it runs inside Tego's Linux VM and leaves you there, in the project. |
-| `tego dashboard` | Opens the dashboard in your browser. On a Mac it runs the dashboard in Tego's VM and opens it on the Mac. |
+| `tego start` | Sets up your first agent in four steps: the agent, its login, its project and its rules. Then it starts the dashboard, prints its sign-in link on Linux and shows the command that starts your first session. On a Mac it runs inside Tego's Linux VM, opens the dashboard in your Mac browser and leaves you in the VM project. |
+| `tego dashboard` | On Linux it starts or reuses the dashboard and prints its sign-in link for you to open. On a Mac it runs the dashboard in Tego's VM and opens it in your Mac browser. |
 
 ## Supervise an agent
 
 | Command | What it does |
 |---|---|
-| `tego run <agent>` | Runs the agent under its rules. Run it from the agent's project folder. In a terminal it prints two lines, when the session starts and when it ends; `-v` prints everything. |
+| `tego run <agent>` | Runs the agent under its rules. Run it from the agent's project folder. With terminal stderr it prints a start line and a short end line when nothing needs qualification; disclosures retain the full summary. Piped stderr and `-v` keep the detailed output. |
 | `tego session list` | Lists sessions: name, agent, status, when it started and how many actions Tego blocked. |
 | `tego session show <session>` or `--last` | Shows what the session did and what Tego blocked. |
 | `tego session stop`, `pause`, `resume <session>` | Stops, pauses or resumes a running session. |
@@ -31,7 +31,7 @@ connect to.
 | `tego rules create [flags]` | Creates a rules file (`agent.yaml`) in a project, from presets. See [presets.md](presets.md). |
 | `tego rules edit <agent \| file>` | Opens the rules file in `$EDITOR`, checks your edit, and saves it only when it passes. |
 | `tego rules check <agent \| file>` | Checks a rules file and shows what it enforces. |
-| `tego rules learn <session>` | Creates a rules file from what a session did. |
+| `tego rules learn <session>` | Proposes a rules file from what a session did; `--save <name>` saves it as an agent. |
 
 ## Check this machine
 
@@ -53,7 +53,7 @@ connect to.
 
 ## Older names
 
-They work as they always have, with the same flags, output and exit codes.
+The older names keep their flags and exit codes. Guidance uses the new names, including command strings in JSON next-step and `fix` fields. `tego setup` opens the guide in a terminal; `--json` and `-v` keep its checklist. Terminal `tego run` output also changed as described above; piped stderr and `-v` retain its previous output. See [Unreleased](../CHANGELOG.md#unreleased).
 
 | Older name | Same as |
 |---|---|
