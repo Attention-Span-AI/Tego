@@ -5,6 +5,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"flag"
 	"io"
 	"path/filepath"
 	"strings"
@@ -25,6 +26,9 @@ func init() {
 // openControl is handoff.Open; a variable so a test can count the handoffs a command makes.
 var openControl = handoff.Open
 
+// execControl lets handoff tests inspect argv without replacing the test process.
+var execControl = handoff.Exec
+
 // handOffCommand is the engine's command for one of tego-control's nouns. Usage marks it "(tego-control)". A noun this
 // build does not have yet is hidden from the command list (writeUsage names it on its "planned" line); calling it
 // still hands off, and tego-control says it is not built [not-built].
@@ -39,10 +43,24 @@ func handOffCommand(n handoff.Noun) func() Command {
 				if t, ok := treeOf(n.Name); ok && isTreeVerb(t, args) {
 					return runNoun(ctx, t, args, stdout, stderr) // tego rules create|edit|check|learn are the engine's
 				}
-				if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+				pos := 0
+				if n.Name == "rules" {
+					// Control's rules flags are boolean; Parse leaves the positional reference after flags or --.
+					fs := flag.NewFlagSet("rules", flag.ContinueOnError)
+					fs.SetOutput(io.Discard)
+					fs.Bool("json", false, "")
+					fs.Bool("last", false, "")
+					if err := fs.Parse(args); err != nil {
+						pos = len(args) // Let control diagnose unknown flags without interpreting their values.
+					} else {
+						pos = len(args) - fs.NArg()
+					}
+				}
+				if pos < len(args) && !strings.HasPrefix(args[pos], "-") {
 					// A session's name (tego-sample-7f3a), which tego-control does not know, is handed on as its run id.
-					if dir, ok := sessionRunIn(args[0], &machineOnce{stderr: io.Discard}); ok {
-						args = append([]string{filepath.Base(dir)}, args[1:]...)
+					if dir, ok := sessionRunIn(args[pos], &machineOnce{stderr: io.Discard}); ok {
+						args = append([]string(nil), args...)
+						args[pos] = filepath.Base(dir)
 					}
 				}
 				return handOff(n.Name, args, stderr)
@@ -56,7 +74,7 @@ func handOffCommand(n handoff.Noun) func() Command {
 func handOff(noun string, args []string, stderr io.Writer) int {
 	b, err := openControl()
 	if err == nil {
-		err = handoff.Exec(b, append([]string{noun}, args...), nil)
+		err = execControl(b, append([]string{noun}, args...), nil)
 		_ = b.Close()
 	}
 	var e *handoff.Error
