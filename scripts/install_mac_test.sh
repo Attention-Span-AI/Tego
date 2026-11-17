@@ -182,6 +182,26 @@ check "fish configuration is idempotent" 0
 	echo 'FAIL fish: PATH configuration missing or duplicated'; fails=$((fails + 1));
 }
 
+# Dotfile managers commonly link fish itself or conf.d to the caller's own tree.
+# Keep writing the PATH line through those links, once across repeated installs.
+for linked in fish conf.d; do
+	config="$tmp/linked-$linked-config"
+	target="$tmp/linked-$linked-target"
+	mkdir -p "$config" "$target"
+	case "$linked" in
+		fish) mkdir -p "$target/conf.d"; ln -s "$target" "$config/fish"; fishfile="$target/conf.d/tego.fish" ;;
+		conf.d) mkdir -p "$config/fish"; ln -s "$target" "$config/fish/conf.d"; fishfile="$target/tego.fish" ;;
+	esac
+	for pass in first second; do
+		run "linked-$linked-$pass" LIMA=1 FAKE_VM=Running TEGO_YES=1 SHELL=/usr/bin/fish XDG_CONFIG_HOME="$config"
+		check "linked fish $linked receives PATH ($pass install)" 0 "exec fish -l"
+	done
+	# shellcheck disable=SC2016 # this is literal fish code, expanded by fish on startup
+	if ! grep -qF 'fish_add_path "$HOME/.local/bin"' "$fishfile" || [ "$(grep -c 'added by the Tego installer' "$fishfile")" != 1 ]; then
+		echo "FAIL linked fish $linked: PATH line absent or duplicated"; fails=$((fails + 1))
+	fi
+done
+
 run again LIMA=1 FAKE_VM=Running TEGO_YES=1
 check "second run: nothing to redo" 0 "✓ Lima 2.3.0" "✓ Tego's VM is running" "✓ tego command is up to date" "tego start"
 [ "$(grep -c 'added by the Tego installer' "$tmp/.zshrc")" = 1 ] || { echo "FAIL second run: PATH line added twice"; fails=$((fails + 1)); }
