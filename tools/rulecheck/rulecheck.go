@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Command rulecheck reads the rule IDs of the component specs (docs/p0/*.md, kept in the private tree) and checks
-// the references to them: the first step of ADR 0030's tools/rulecheck, before its rename to prefixed IDs. Without
-// docs/p0 it runs the link and bare-name checks only.
+// Command rulecheck requires the public specifications and checks documentation links, citations and cited tests.
+// It also checks rule IDs in component notes (docs/p0/*.md) when present, as described by ADR 0030. Those component
+// notes are not part of this repository.
 //
 // A document defines its rules in three sections: business rules (R) in §5, edge cases (E) in §6 and invariants
 // (I) in §8. A definition is a bold ID at the start of a line (`**R15 — ...**`, `- **R36.**`, `1. **E1**`,

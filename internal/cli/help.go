@@ -67,7 +67,7 @@ var commonSummaries = map[string]string{
 	"measure":         "Show a session's steps, tokens, cost and time",
 	"status":          "Show the state of a session",
 	"gc":              "Remove orphaned and expired sessions",
-	"watch":           "Run any command and record everything it does",
+	"watch":           "Run a command and record program starts, file opens, creates, removals, renames and connections",
 	"adopt":           "(root) Supervise an agent that is already running",
 	"agents":          "(root) List the agent processes running here (observes only)",
 	"mcp":             "Set the MCP tool rules of a running session",

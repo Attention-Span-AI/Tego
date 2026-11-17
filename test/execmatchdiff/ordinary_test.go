@@ -528,7 +528,7 @@ func TestOrdinaryCatalogIncludesProseAndShippedDocs(t *testing.T) {
 		checks[2].source = "docs/CHANGELOG.md"
 	}
 	if _, err := os.Stat(filepath.Join("../..", "docs/p0")); os.IsNotExist(err) {
-		checks[4].source = "historical source: docs/p0/exec-ask-plan.md" // the specs stay in the private tree
+		checks[4].source = "historical source: docs/p0/exec-ask-plan.md" // this component document is not part of this repository
 	}
 	for _, tc := range checks {
 		found := false
