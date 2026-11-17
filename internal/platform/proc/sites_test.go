@@ -208,7 +208,7 @@ var startSites = []startSite{
 			"tego start's guide, a command that starts no run: its process holds no fanotify group, since only enforce/cgroup's listener in a launcher calls proc.Arm",
 	},
 	{
-		file: "internal/cli/setup_guide.go", fn: "guideDashboard", call: "proc.Start", n: 1, rel: guarded,
+		file: "internal/cli/setup_guide.go", fn: "guideDashboard", call: "proc.Start", n: 2, rel: guarded,
 		when: "systemctl and systemd-run, which start the dashboard as a user unit, in " +
 			"tego start's guide, a command that starts no run: its process holds no fanotify group, since only enforce/cgroup's listener in a launcher calls proc.Arm",
 	},
@@ -244,7 +244,7 @@ var startSites = []startSite{
 		when: "the agent's own login, in tego start's guide, a command that starts no run: its process holds no fanotify group",
 	},
 	{
-		file: "internal/cli/setup_guide.go", fn: "guideSetupToken", call: "cli.resetTerminal", n: 2, rel: guarded,
+		file: "internal/cli/setup_login_terminal.go", fn: "foregroundGuideLogin", call: "cli.resetTerminal", n: 2, rel: beforeArm,
 		when: "stty sane after the agent's own login, in tego start's guide, a command that starts no run: its process holds no fanotify group",
 	},
 	{
