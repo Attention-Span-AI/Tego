@@ -66,3 +66,15 @@ func TestForwarderVarNamesIsTheOneList(t *testing.T) {
 		}
 	}
 }
+
+// TestCodexConfigCitesPublicDocumentation keeps the generated forwarder explanation followable.
+func TestCodexConfigCitesPublicDocumentation(t *testing.T) {
+	b := string(CodexConfig("http://127.0.0.1:1234/v1", nil))
+	const doc = "spec/identity/RUN-IDENTITY.md"
+	if !strings.Contains(b, doc) || strings.Contains(b, "docs/p0/") {
+		t.Fatalf("generated explanation does not cite its public specification: %s", b)
+	}
+	if _, err := os.ReadFile(filepath.Join("..", "..", "..", doc)); err != nil {
+		t.Fatal(err)
+	}
+}

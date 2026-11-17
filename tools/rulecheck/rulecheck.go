@@ -673,10 +673,14 @@ func run(root string, verbose, strict bool, w *os.File) int {
 		fmt.Fprintln(w, "rulecheck:", err)
 		return 2
 	}
+	if err := checkPublicSpecs(root); err != nil {
+		fmt.Fprintln(w, "rulecheck:", err)
+		return 2
+	}
+	fmt.Fprintf(w, "rulecheck: %d required public specification documents\n", len(publicSpecs))
 	if len(docs) == 0 {
-		// The specs live only in the private tree; without docs/p0 the link and name checks still run.
-		if _, err := os.Stat(filepath.Join(root, "docs", "p0")); err == nil {
-			fmt.Fprintf(w, "rulecheck: no spec documents (docs/p0/*.md with a \"## 5. \" section) under %s\n", root)
+		if _, err := os.Stat(filepath.Join(root, "docs", "p0")); !os.IsNotExist(err) {
+			fmt.Fprintf(w, "rulecheck: no component spec documents (docs/p0/*.md with a \"## 5. \" section) under %s\n", root)
 			return 2
 		}
 	}

@@ -116,18 +116,14 @@ func TestRepositoryPasses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(root, "docs", "p0")); err != nil {
-		t.Skip("no docs/p0 here")
-	}
-	docs, extra, _, _, err := Load(root)
+	out, err := os.CreateTemp(t.TempDir(), "report")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(docs) < 9 {
-		t.Fatalf("read %d specs, want the nine component specs", len(docs))
-	}
-	for _, f := range Check(docs, extra) {
-		t.Error(f)
+	defer out.Close()
+	if code := run(root, false, false, out); code != 0 {
+		b, _ := os.ReadFile(out.Name())
+		t.Fatalf("rulecheck exit %d:\n%s", code, b)
 	}
 }
 

@@ -3,7 +3,6 @@
 package main
 
 import (
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -58,9 +57,6 @@ func TestRepositoryCitesOnlyMarkdownFilesItHolds(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(root, "docs", "p0")); err != nil {
-		t.Skip("no docs/p0 here")
 	}
 	known, comments, err := loadBareMDInputs(root)
 	if err != nil {

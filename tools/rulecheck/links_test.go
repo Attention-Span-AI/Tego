@@ -3,7 +3,6 @@
 package main
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -63,9 +62,6 @@ func TestRepositoryLinksResolve(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(root, "docs", "p0")); err != nil {
-		t.Skip("no docs/p0 here")
 	}
 	docs, err := LoadLinked(root)
 	if err != nil {

@@ -26,7 +26,7 @@ import (
 func CodexConfig(openaiBaseURL string, user []byte) []byte {
 	var b bytes.Buffer
 	b.WriteString("# Written by tego for one run: the built-in openai provider goes through the run's\n")
-	b.WriteString("# loopback forwarder, which records every model call (docs/p0/capture-derive.md R19).\n")
+	b.WriteString("# loopback forwarder, which records calls sent through it (spec/identity/RUN-IDENTITY.md).\n")
 	fmt.Fprintf(&b, "openai_base_url = %s\n", tomlString(openaiBaseURL))
 	user = bytes.TrimPrefix(user, []byte("\xef\xbb\xbf"))
 	if len(user) > 0 {
