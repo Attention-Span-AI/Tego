@@ -1369,13 +1369,13 @@ func (g *walk) rules(ctx context.Context, m *config.Machine, name string, a guid
 		return rulesChoice{label: "Read-only review", presets: all, summary: "Project content stays read-only · writes state and temporary files only in " + reviewState(a) + " · file attributes can change · reaches only " + host}, nil
 	case 3:
 		file, err := g.typeText("Path to the rules file", "~/code/my-app/agent.yaml", false, func(s string) error {
-			_, err := rulesFile(ctx, m, s)
+			_, err := rulesFile(ctx, m, s, abs)
 			return err
 		})
 		if err != nil {
 			return rulesChoice{}, err
 		}
-		p, _ := rulesFile(ctx, m, file)
+		p, _ := rulesFile(ctx, m, file, abs)
 		return rulesChoice{label: "Your own file", file: p}, nil
 	}
 	items := []choice{
@@ -1419,7 +1419,7 @@ func reviewState(a guideAgent) string {
 
 // rulesFile is a typed rules file's absolute path, once it reads and checks as tego run will compile it; otherwise the
 // first thing wrong with it, in one line.
-func rulesFile(ctx context.Context, m *config.Machine, s string) (string, error) {
+func rulesFile(ctx context.Context, m *config.Machine, s, cwd string) (string, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return "", errors.New("type the rules file's path, for example ~/code/my-app/agent.yaml")
@@ -1437,7 +1437,20 @@ func rulesFile(ctx context.Context, m *config.Machine, s string) (string, error)
 		return "", fmt.Errorf("%s doesn't exist", s)
 	}
 	var diag bytes.Buffer
-	if err := checkRules(ctx, m, p, text, &diag); err != nil {
+	c, ds, err := agent.LoadBytes(p, text, profileSources(m))
+	if err == nil {
+		options := append(learnCompileOptions(ctx, m), agent.Offline(), agent.WithCwd(cwd))
+		_, ds, err = agent.Compile(c, m, options...)
+	}
+	if err != nil {
+		for _, d := range ds {
+			if d.Severity == agent.SeverityError {
+				_ = agent.WriteDiagnostics(&diag, []agent.Diagnostic{d})
+			}
+		}
+		if diag.Len() == 0 {
+			message(&diag, p, 0, 0, err.Error(), agent.CodeSchema)
+		}
 		first, _, _ := strings.Cut(strings.TrimSpace(diag.String()), "\n")
 		if m := diagLine.FindStringSubmatch(first); m != nil {
 			return "", fmt.Errorf("%s line %s: %s", s, m[1], m[2])
