@@ -5,6 +5,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -424,7 +425,16 @@ func runGuidePTY(t *testing.T, route guidePTYRoute, target int, how string, ahea
 	}
 	select {
 	case <-done:
-		if childErr != nil {
+		// The second signal of a pair can arrive after the guide has put the terminal back and released
+		// its signals; it then ends the process as it ends any command. That is not a failure: the
+		// Stopped line and the restored terminal are still required below.
+		late := false
+		var exit *exec.ExitError
+		if how == "double" && errors.As(childErr, &exit) {
+			status, ok := exit.Sys().(syscall.WaitStatus)
+			late = ok && status.Signaled() && status.Signal() == syscall.SIGINT
+		}
+		if childErr != nil && !late {
 			t.Fatalf("interrupted helper: %v\n%s", childErr, snapshot())
 		}
 	case <-time.After(15 * time.Second):
