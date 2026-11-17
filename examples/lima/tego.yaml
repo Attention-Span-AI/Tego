@@ -4,19 +4,18 @@
 # its rules with Linux kernel features (Landlock, cgroups, eBPF) that macOS does not have, so on a Mac it runs inside
 # Linux. Usage, from a Mac (Apple silicon or Intel):
 #
-#   brew install lima
-#   limactl start --name=tego --mount-none https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml
-#   limactl shell tego tego doctor
+#   curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh | sh
+#   tego start
 #
 # This file is a release asset, like install.sh, and both are in the release's signed checksums file. The
 # provisioning below runs the one-line Linux install inside the VM, as the VM's default user, taking install.sh from
-# the latest release, so tego and tego-control land in ~/.local/bin there. Tier 1 (no root) needs Landlock and a cgroup v2 subtree delegated to the
+# the selected release, so tego and tego-control land in ~/.local/bin there. Tier 1 (no root) needs Landlock and a cgroup v2 subtree delegated to the
 # user; Ubuntu 24.04's kernel and systemd give both with no setup, so nothing else is installed. `limactl shell`
 # logs in over SSH, which starts outside the user's cgroup: for a run, start a shell in it first
 # (`systemd-run --user --scope bash`, docs/INSTALL.md "Check the machine"). Tiers 2 and 3 need root (`sudo`), and
 # tier 3 also needs `bpf` in the boot LSM list (docs/TIERS.md).
 #
-# Not tested on a Mac: `limactl validate` passes on this file, and the install it runs is the one tested on Linux.
+# Tested with install_mac_test.sh's stand-ins on Linux. This revision has not been validated by Lima or booted on a Mac.
 minimumLimaVersion: 2.0.0
 
 # Ubuntu 24.04 LTS server cloud images. A dated image with its digest first, then the current release image, which
@@ -55,6 +54,12 @@ containerd:
   system: false
   user: false
 
+# The Mac installer supplies the normalized selected tag and the verified install.sh digest.
+# A direct template start defaults to latest and checks the installer against that release's checksum.
+param:
+  tego_version: latest
+  installer_sha256: ""
+
 provision:
   # Lima runs provisioning at every boot; the install runs only while there is no tego. To upgrade, run the
   # installer again in the VM.
@@ -63,7 +68,23 @@ provision:
       #!/bin/bash
       set -eu -o pipefail
       [ -x "$HOME/.local/bin/tego" ] && exit 0
-      curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh | sh
+      version="$PARAM_tego_version"
+      base=https://github.com/Attention-Span-AI/Tego/releases
+      if [ "$version" = latest ]; then
+        version=$(curl -fsSL https://api.github.com/repos/Attention-Span-AI/Tego/releases/latest | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
+      fi
+      [ -n "$version" ]
+      work=$(mktemp -d)
+      trap 'rm -rf "$work"' EXIT
+      curl -fsSL "$base/download/$version/install.sh" -o "$work/install.sh"
+      expected="$PARAM_installer_sha256"
+      if [ -z "$expected" ]; then
+        curl -fsSL "$base/download/$version/tego_${version#v}_checksums.txt" -o "$work/checksums"
+        expected=$(awk '$2=="install.sh" {print $1}' "$work/checksums")
+      fi
+      [ -n "$expected" ]
+      printf '%s  %s\n' "$expected" "$work/install.sh" | sha256sum -c -
+      TEGO_VERSION="$version" sh "$work/install.sh"
 
 probes:
   - description: "tego to be installed"

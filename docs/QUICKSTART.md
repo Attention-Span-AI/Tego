@@ -21,14 +21,13 @@ The installer does not change your `PATH`. If `~/.local/bin` is not on it yet, i
 `export PATH="/home/<you>/.local/bin:$PATH"`, with your own home folder: run that line, or log in again, or `tego`
 below answers `command not found`.
 
-On **macOS**, Tego runs in a Lima VM. Install it, then do the steps below inside the VM, in a shell in your user's
-cgroup:
+On **macOS**, the installer sets up Lima, verifies the VM template and adds the Mac `tego` command. Follow its
+printed shell restart line if needed, then use `tego start` for the guide, or `tego shell` to do the steps below inside
+the VM in your user's cgroup:
 
 ```sh
-brew install lima
-limactl start --name=tego --mount-none https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml
-limactl shell tego
-systemd-run --user --scope bash
+curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh | sh
+tego shell
 ```
 
 No Mac folders are shared with the VM by default, including your home and `/tmp/lima`. Keep projects inside the

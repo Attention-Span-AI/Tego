@@ -24,6 +24,7 @@ stubs() {
 	cat >"$b/brew" <<EOF
 #!/bin/sh
 echo "brew \$*" >>"\$FAKE_LOG"
+[ "\${FAKE_BREW_FAIL:-}" != 1 ] || { echo "brew failure details"; exit 1; }
 cp "$b.lima/limactl" "$b/limactl"
 EOF
 	cat >"$b.lima/limactl" <<'EOF'
@@ -31,9 +32,59 @@ EOF
 case "$1" in
 	--version) echo "limactl version ${FAKE_LIMA:-2.3.0}" ;;
 	list) [ -n "${FAKE_VM:-}" ] && echo "$FAKE_VM" || exit 1 ;;
+	start)
+		echo "limactl $*" >>"$FAKE_LOG"
+		for arg do
+			case "$arg" in
+				*.yaml)
+					[ -f "$arg" ] || { echo 'template must be local' >&2; exit 1; }
+					[ "$(ls -ld "${arg%/*}" | cut -c1-10)" = drwx------ ] || exit 1
+					cmp "$arg" "${0%/*}/tego.yaml" || exit 1
+					echo 'verified local template in private directory' >>"$FAKE_LOG"
+					;;
+			esac
+		done ;;
 	*) echo "limactl $*" >>"$FAKE_LOG" ;;
 esac
 EOF
+	# All downloads stay in this case's release fixture; no network is used.
+	cp "$here/../examples/lima/tego.yaml" "$b/tego.yaml"
+	printf '#!/bin/sh\necho "guest installed $TEGO_VERSION" >>"$FAKE_LOG"\n' >"$b/install.sh"
+	(cd "$b" && sha256sum tego.yaml install.sh) >"$b/checksums"
+	cat >"$b/curl" <<'EOF'
+#!/bin/sh
+out='' url=''
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		-o) out=$2; shift 2 ;;
+		--proto|--proto-redir|--connect-timeout|--max-time|-w) shift 2 ;;
+		-*) shift ;;
+		*) url=$1; shift ;;
+	esac
+done
+echo "curl $url" >>"$FAKE_LOG"
+b=${0%/*}
+case "$url" in
+	*/latest) printf '{"tag_name":"v0.1.3"}\n' >"$out" ;;
+	*/tego.yaml) cp "$b/tego.yaml" "$out"; [ "${FAKE_CORRUPT:-}" != 1 ] || echo corrupt >>"$out" ;;
+	*/install.sh) cp "$b/install.sh" "$out"; [ "${FAKE_CORRUPT_INSTALLER:-}" != 1 ] || echo corrupt >>"$out" ;;
+	*_checksums.txt) cp "$b/checksums" "$out" ;;
+	*.sigstore.json) echo bundle >"$out" ;;
+	*) echo "unexpected URL: $url" >&2; exit 1 ;;
+esac
+printf 200
+EOF
+	cat >"$b/cosign" <<'EOF'
+#!/bin/sh
+echo "cosign $*" >>"$FAKE_LOG"
+[ "${FAKE_VERIFY_FAIL:-}" != 1 ]
+EOF
+	cat >"$b/gh" <<'EOF'
+#!/bin/sh
+echo "gh $*" >>"$FAKE_LOG"
+[ "${FAKE_VERIFY_FAIL:-}" != 1 ]
+EOF
+	chmod +x "$b/curl" "$b/cosign" "$b/gh"
 	chmod +x "$b/uname" "$b/sw_vers" "$b/df" "$b/brew" "$b.lima/limactl"
 }
 
@@ -84,11 +135,11 @@ run() {
 	env -i HOME="$tmp" TMPDIR="$tmp" SHELL=/bin/zsh PATH="$path" FAKE_LOG="$tmp/log" "$@" sh "$script" >"$tmp/out" 2>&1 </dev/null || code=$?
 }
 
-latest="https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml"
+latest="https://github.com/Attention-Span-AI/Tego/releases/download/v0.1.3/tego.yaml"
 
 run fresh TEGO_YES=1
 check "fresh Mac: installs Lima, sets up the VM, adds tego" 0 "✗ Lima isn't installed" "brew install lima" \
-	"limactl start --tty=false --name=tego --mount-none $latest" "✓ Lima 2.3.0" "✓ Tego's VM is ready" "✓ tego command added" \
+	"limactl start --tty=false --name=tego --mount-none --param=tego_version=v0.1.3" "verified local template in private directory" "✓ Lima 2.3.0" "✓ Tego's VM is ready" "✓ tego command added" \
 	"Next steps" "Run   exec zsh -l   (or open a new terminal window), then   tego start"
 [ -x "$tmp/.local/bin/tego" ] || { echo "FAIL fresh Mac: no tego command in ~/.local/bin"; fails=$((fails + 1)); }
 grep -q 'added by the Tego installer' "$tmp/.zshrc" 2>/dev/null || { echo "FAIL fresh Mac: PATH line not added to ~/.zshrc"; fails=$((fails + 1)); }
@@ -117,10 +168,15 @@ check "VM stopped: starts it" 0 "○ Tego's VM is stopped" "limactl start tego" 
 
 run pinned LIMA=1 TEGO_YES=1 TEGO_VERSION=v0.1.3
 check "TEGO_VERSION picks that release's template" 0 \
-	"limactl start --tty=false --name=tego --mount-none https://github.com/Attention-Span-AI/Tego/releases/download/v0.1.3/tego.yaml"
+	"curl $latest" "--param=tego_version=v0.1.3" "verified local template in private directory"
 
 run nobrew BREW=0
 check "no Homebrew: says where to get Lima" 2 "✗ Lima isn't installed" "https://lima-vm.io/docs/installation/"
+
+run brewfail TEGO_YES=1 FAKE_BREW_FAIL=1
+check "failed Lima installation keeps its diagnostic log" 2 "brew failure details" "The full log is in"
+logpath=$(sed -n 's/^.*The full log is in //p' "$tmp/out" | tail -n 1)
+[ -f "$logpath" ] || { echo 'FAIL diagnostic log disappeared'; fails=$((fails + 1)); }
 
 run oldmac FAKE_MACOS=12.6
 check "macOS too old" 3 "✗ macOS 12.6. Tego's VM needs macOS 13.5 or later."
@@ -140,13 +196,53 @@ if (: </dev/tty) 2>/dev/null; then
 else
 	run notty
 	check "no terminal: prints the commands, runs none" 2 "To finish, run:" "brew install lima" \
-		"limactl start --name=tego --mount-none $latest" "Then run this installer again."
+		"releases/latest/download/install.sh | sh" "Then run this installer again."
 	if [ -s "$tmp/log" ]; then
 		echo "FAIL no terminal: ran commands it should only print:"
 		sed 's/^/    /' "$tmp/log"
 		fails=$((fails + 1))
 	fi
 fi
+
+run normalized LIMA=1 TEGO_YES=1 TEGO_VERSION=0.1.3 TEGO_VERIFY=gh
+check "normalized tag binds template provenance and guest version" 0 "curl $latest" \
+	"--source-ref refs/tags/v0.1.3" "--param=tego_version=v0.1.3"
+run corrupt LIMA=1 TEGO_YES=1 FAKE_CORRUPT=1 TEGO_VERIFY=sha256
+check "corrupt template refuses before VM creation" 7 "checksum mismatch for tego.yaml"
+absent "corrupt template never starts" "limactl start"
+run signature LIMA=1 TEGO_YES=1 FAKE_VERIFY_FAIL=1 TEGO_VERIFY=cosign
+check "explicit cosign failure refuses before VM creation" 9 "cosign could not verify"
+absent "bad signature never starts" "limactl start"
+run attestation LIMA=1 TEGO_YES=1 FAKE_VERIFY_FAIL=1 TEGO_VERIFY=gh
+check "explicit gh failure refuses before VM creation" 9 "gh could not verify"
+absent "bad attestation never starts" "limactl start"
+run pinnedexisting LIMA=1 FAKE_VM=Running TEGO_YES=1 TEGO_VERSION=v0.1.3
+check "existing VM explains separate guest upgrade" 0 "updates only the Mac command" "tego shell" "TEGO_VERSION=v0.1.3 sh"
+
+# Execute only the extracted provisioning shell against the same download stand-ins.
+# The fixture installer records its selected version; it never runs a Tego binary.
+awk '/^    script: \|/ && !seen {seen=1; inside=1; next} /^probes:/ {inside=0} inside {sub(/^      /, ""); print}' \
+	"$here/../examples/lima/tego.yaml" >"$tmp/provision.sh"
+bin="$tmp/normalized/bin"
+digest=$(sha256sum "$bin/install.sh" | awk '{print $1}')
+: >"$tmp/log"; code=0
+env -i PATH="$bin:/usr/bin:/bin" HOME="$tmp/guest" TMPDIR="$tmp" FAKE_LOG="$tmp/log" \
+	PARAM_tego_version=v0.1.3 PARAM_installer_sha256="$digest" bash "$tmp/provision.sh" >"$tmp/out" 2>&1 || code=$?
+check "guest provisioning installs selected release" 0 "guest installed v0.1.3" "releases/download/v0.1.3/install.sh"
+absent "pinned guest never fetches latest" "releases/latest"
+: >"$tmp/log"; code=0
+env -i PATH="$bin:/usr/bin:/bin" HOME="$tmp/guest" TMPDIR="$tmp" FAKE_LOG="$tmp/log" FAKE_CORRUPT_INSTALLER=1 \
+	PARAM_tego_version=v0.1.3 PARAM_installer_sha256="$digest" bash "$tmp/provision.sh" >"$tmp/out" 2>&1 || code=$?
+check "guest refuses changed installer" 1 "FAILED"
+absent "changed guest installer never executes" "guest installed"
+
+# Plant the former predictable log path: installation must leave its target unchanged.
+echo keep >"$tmp/outside"
+rm -f "$tmp/tego-install.log"
+ln -s "$tmp/outside" "$tmp/tego-install.log"
+run loglink LIMA=1 FAKE_VM=Running TEGO_YES=1
+check "installer log stays in private temporary directory" 0
+[ "$(cat "$tmp/outside")" = keep ] || { echo 'FAIL installer followed log link'; fails=$((fails + 1)); }
 
 # The VM has no Mac filesystem shares; provisioning and the shim use only VM paths.
 if ! grep -qx 'mounts: \[\]' "$here/../examples/lima/tego.yaml"; then
