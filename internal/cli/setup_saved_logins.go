@@ -39,3 +39,15 @@ func readSavedLogins(home string, out io.Writer) map[string]string {
 	}
 	return values
 }
+
+// loadRunSavedLogins makes the first session independent of whether the parent shell loaded bashrc.
+func loadRunSavedLogins(o runOptions, home string, out io.Writer) {
+	if o.adopted || o.generated {
+		return
+	}
+	for name, value := range readSavedLogins(home, out) {
+		if _, set := os.LookupEnv(name); !set {
+			_ = os.Setenv(name, value)
+		}
+	}
+}
