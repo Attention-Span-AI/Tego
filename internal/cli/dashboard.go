@@ -63,18 +63,18 @@ func cmdDashboard() Command {
 					return identity.ExitFinding // left the question: nothing changed
 				}
 				if pick == 1 {
-					if u = restartDashboard(m.Home); u == "" {
+					if u = restartDashboard(ctx, m.Home); u == "" {
 						return dashboardFailed(g, m.Home)
 					}
 					g.ok("Started a new dashboard: " + u)
 				}
 			case u != "":
-				if u = restartDashboard(m.Home); u == "" {
+				if u = restartDashboard(ctx, m.Home); u == "" {
 					return dashboardFailed(g, m.Home)
 				}
 				g.ok("Started the dashboard again, on the updated tego: " + u)
 			default:
-				if u = guideDashboard(m.Home); u == "" {
+				if u = guideDashboard(ctx, m.Home); u == "" {
 					return dashboardFailed(g, m.Home)
 				}
 				g.ok("Started the dashboard: " + u)
@@ -89,11 +89,11 @@ func cmdDashboard() Command {
 
 // restartDashboard stops the running dashboard and starts a new one: with its log emptied, guideDashboard finds no
 // dashboard to reuse.
-func restartDashboard(home string) string {
+func restartDashboard(ctx context.Context, home string) string {
 	if err := replaceGuideFile(home, ".tego/dashboard.log", nil, 0o600); err != nil {
 		return ""
 	}
-	return guideDashboard(home)
+	return guideDashboard(ctx, home)
 }
 
 func dashboardFailed(g *walk, home string) int {

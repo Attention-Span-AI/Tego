@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,7 +43,7 @@ func TestDashboardLogFileSafety(t *testing.T) {
 				}
 			}
 			t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
-			got := guideDashboard(home)
+			got := guideDashboard(context.Background(), home)
 			if b, _ := os.ReadFile(outside); string(b) != "unchanged" {
 				t.Fatalf("outside clobbered: %q", b)
 			}
@@ -89,7 +90,7 @@ func TestDashboardRotatesExposedSignIn(t *testing.T) {
 		}
 	}
 	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
-	if got := guideDashboard(home); got != link {
+	if got := guideDashboard(context.Background(), home); got != link {
 		t.Fatalf("exposed link not rotated: %q, want %q", got, link)
 	}
 	if fi, err := os.Stat(dashboardLog(home)); err != nil || fi.Mode().Perm() != 0600 {
