@@ -119,7 +119,7 @@ func TestProvisionRunsTheOneLineInstall(t *testing.T) {
 			`expected="$PARAM_installer_sha256"`,
 			`[ -n "$expected" ]`,
 			`printf '%s  %s\n' "$expected" "$work/install.sh" | sha256sum -c -`,
-			`TEGO_VERSION="$version" sh "$work/install.sh"`,
+			`TEGO_VERSION="$version" TEGO_CHECKSUMS_SHA256="$PARAM_checksums_sha256" sh "$work/install.sh"`,
 		}
 		pos := 0
 		for _, step := range steps {

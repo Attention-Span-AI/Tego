@@ -44,8 +44,10 @@ curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/in
 ```
 
 `TEGO_VERSION` picks a tag (default: the latest release), `TEGO_PREFIX` the folder (default `$HOME/.local/bin`) and
-`TEGO_VERIFY` the check (`auto`, `cosign`, `gh` or `sha256`). The installer exits with 2 for a missing dependency, 3 for
-an unsupported platform, 4 for an unsupported architecture, 5 when there is no such release, 6 for a failed download, 7
+`TEGO_VERIFY` the check (`auto`, `cosign`, `gh` or `sha256`).
+`TEGO_CHECKSUMS_SHA256`, when given, pins the downloaded checksums file to that SHA-256 before any entries are used.
+The Mac installer supplies it from its release verification; a Linux install without it keeps the checks above.
+The installer exits with 2 for a missing dependency, 3 for an unsupported platform, 4 for an unsupported architecture, 5 when there is no such release, 6 for a failed download, 7
 for a checksum mismatch, 8 for a failed install step and 9 when the signature or provenance did not verify. Run it again
 to upgrade.
 
@@ -75,10 +77,13 @@ Mac browser and leaves you in a VM shell in the project. `tego shell` opens that
 
 Before creating a VM, the installer resolves the selected release tag, downloads `tego.yaml` and `install.sh` into
 a private temporary directory, and checks their release checksums. It uses the same `TEGO_VERIFY` setting as Linux:
-cosign verifies the checksums signature at that tag; gh verifies both assets' provenance at that tag. An explicit
+cosign verifies the checksums signature at that tag; gh verifies the template, installer and the guest architecture's
+Linux binaries against their provenance attestations and checks their entries in the checksums file. An explicit
 verifier failure stops creation. Lima starts from the verified local template, with no Mac mounts, and receives
-the selected tag and the verified installer digest. Provisioning verifies that digest before executing the installer
-and passes the tag to the Linux installation, so `TEGO_VERSION=v0.2.0` selects that version inside the VM too.
+the selected tag, the verified installer digest and the SHA-256 of the verified checksums file. Provisioning checks
+the installer digest before executing it and passes the tag and checksums digest to the Linux installation.
+The guest refuses a changed checksums file before checking or installing any binary, even without a verifier in
+the VM. For example, `TEGO_VERSION=v0.2.0` selects that version inside the VM too.
 Pinned Mac creation requires v0.2.0 or later, the first template that consumes these parameters. Older templates
 are refused before Lima starts; unset `TEGO_VERSION` to install the latest instead.
 The initial piped Mac script has the same trust limit as Linux; [verify it first](#check-the-installer-first) if needed.

@@ -55,8 +55,10 @@ esac
 EOF
 	# All downloads stay in this case's release fixture; no network is used.
 	cp "$here/../examples/lima/tego.yaml" "$b/tego.yaml"
-	printf '#!/bin/sh\necho "guest installed $TEGO_VERSION" >>"$FAKE_LOG"\n' >"$b/install.sh"
-	(cd "$b" && sha256sum tego.yaml install.sh) >"$b/checksums"
+	printf '#!/bin/sh\necho "guest installed $TEGO_VERSION checksums=${TEGO_CHECKSUMS_SHA256:-missing}" >>"$FAKE_LOG"\n' >"$b/install.sh"
+	printf 'guest binary fixture\n' >"$b/tego_0.1.3_linux_arm64"
+	printf 'guest control fixture\n' >"$b/tego-control_0.1.3_linux_arm64"
+	(cd "$b" && sha256sum -- tego.yaml install.sh *linux_arm64) >"$b/checksums"
 	cat >"$b/curl" <<'EOF'
 #!/bin/sh
 out='' url=''
@@ -73,6 +75,7 @@ b=${0%/*}
 case "$url" in
 	*/latest) printf '{"tag_name":"v0.1.3"}\n' >"$out" ;;
 	*/tego.yaml) cp "$b/tego.yaml" "$out"; [ "${FAKE_CORRUPT:-}" != 1 ] || echo corrupt >>"$out" ;;
+	*/tego_0.1.3_linux_arm64|*/tego-control_0.1.3_linux_arm64) cp "$b/${url##*/}" "$out" ;;
 	*/install.sh) cp "$b/install.sh" "$out"; [ "${FAKE_CORRUPT_INSTALLER:-}" != 1 ] || echo corrupt >>"$out" ;;
 	*_checksums.txt) cp "$b/checksums" "$out" ;;
 	*.sigstore.json) echo bundle >"$out" ;;
@@ -88,7 +91,8 @@ EOF
 	cat >"$b/gh" <<'EOF'
 #!/bin/sh
 echo "gh $*" >>"$FAKE_LOG"
-[ "${FAKE_VERIFY_FAIL:-}" != 1 ]
+[ "${FAKE_VERIFY_FAIL:-}" != 1 ] || exit 1
+case "$*" in *"${FAKE_GH_REFUSE:-//none//}"*) exit 1 ;; esac
 EOF
 	chmod +x "$b/curl" "$b/cosign" "$b/gh"
 	chmod +x "$b/uname" "$b/sw_vers" "$b/df" "$b/brew" "$b.lima/limactl"
@@ -150,7 +154,7 @@ latest="https://github.com/Attention-Span-AI/Tego/releases/download/v0.1.3/tego.
 
 run fresh TEGO_YES=1
 check "fresh Mac: installs Lima, sets up the VM, adds tego" 0 "✗ Lima isn't installed" "brew install lima" \
-	"limactl start --tty=false --name=tego --mount-none --param=tego_version=v0.1.3" "verified local template in private directory" "✓ Lima 2.3.0" "✓ Tego's VM is ready" "✓ tego command added" \
+	"limactl start --tty=false --name=tego --mount-none --param=tego_version=v0.1.3" "--param=checksums_sha256=$(sha256sum "$tmp/fresh/bin/checksums" | awk '{print $1}')" "verified local template in private directory" "✓ Lima 2.3.0" "✓ Tego's VM is ready" "✓ tego command added" \
 	"Next steps" "Run   exec zsh -l   (or open a new terminal window), then   tego start"
 [ -x "$tmp/.local/bin/tego" ] || { echo "FAIL fresh Mac: no tego command in ~/.local/bin"; fails=$((fails + 1)); }
 grep -q 'added by the Tego installer' "$tmp/.zshrc" 2>/dev/null || { echo "FAIL fresh Mac: PATH line not added to ~/.zshrc"; fails=$((fails + 1)); }
@@ -235,6 +239,10 @@ fi
 run normalized LIMA=1 TEGO_YES=1 TEGO_VERSION=0.1.3 TEGO_VERIFY=gh
 check "normalized tag binds template provenance and guest version" 0 "curl $latest" \
 	"--source-ref refs/tags/v0.1.3" "--param=tego_version=v0.1.3"
+check "gh authenticates guest Linux binaries before digest handoff" 0 "linux_arm64 --repo Attention-Span-AI/Tego" "tego-control_0.1.3_linux_arm64"
+run guestattestation LIMA=1 TEGO_YES=1 TEGO_VERIFY=gh FAKE_GH_REFUSE=tego_0.1.3_linux_arm64
+check "failed guest binary attestation refuses VM creation" 9 "gh could not verify"
+absent "unattested guest binary never starts Lima" "limactl start"
 run corrupt LIMA=1 TEGO_YES=1 FAKE_CORRUPT=1 TEGO_VERIFY=sha256
 check "corrupt template refuses before VM creation" 7 "checksum mismatch for tego.yaml"
 absent "corrupt template never starts" "limactl start"
@@ -252,15 +260,16 @@ check "existing VM explains separate guest upgrade" 0 "updates only the Mac comm
 awk '/^    script: \|/ && !seen {seen=1; inside=1; next} /^probes:/ {inside=0} inside {sub(/^      /, ""); print}' \
 	"$here/../examples/lima/tego.yaml" >"$tmp/provision.sh"
 bin="$tmp/normalized/bin"
+checksums_digest=$(sha256sum "$bin/checksums" | awk '{print $1}')
 digest=$(sha256sum "$bin/install.sh" | awk '{print $1}')
 : >"$tmp/log"; code=0
 env -i PATH="$bin:/usr/bin:/bin" HOME="$tmp/guest" TMPDIR="$tmp" FAKE_LOG="$tmp/log" \
-	PARAM_tego_version=v0.1.3 PARAM_installer_sha256="$digest" bash "$tmp/provision.sh" >"$tmp/out" 2>&1 || code=$?
-check "guest provisioning installs selected release" 0 "guest installed v0.1.3" "releases/download/v0.1.3/install.sh"
+	PARAM_checksums_sha256="$checksums_digest" PARAM_tego_version=v0.1.3 PARAM_installer_sha256="$digest" bash "$tmp/provision.sh" >"$tmp/out" 2>&1 || code=$?
+check "guest provisioning installs selected release" 0 "guest installed v0.1.3 checksums=$checksums_digest" "releases/download/v0.1.3/install.sh"
 absent "pinned guest never fetches latest" "releases/latest"
 : >"$tmp/log"; code=0
 env -i PATH="$bin:/usr/bin:/bin" HOME="$tmp/guest" TMPDIR="$tmp" FAKE_LOG="$tmp/log" FAKE_CORRUPT_INSTALLER=1 \
-	PARAM_tego_version=v0.1.3 PARAM_installer_sha256="$digest" bash "$tmp/provision.sh" >"$tmp/out" 2>&1 || code=$?
+	PARAM_checksums_sha256="$checksums_digest" PARAM_tego_version=v0.1.3 PARAM_installer_sha256="$digest" bash "$tmp/provision.sh" >"$tmp/out" 2>&1 || code=$?
 check "guest refuses changed installer" 1 "FAILED"
 absent "changed guest installer never executes" "guest installed"
 

@@ -38,6 +38,7 @@
 #   TEGO_MAX_TIME   seconds one download may take before it is given up as a network failure (default: 300)
 #   TEGO_API_URL    GitHub API URL used only to resolve "latest" when TEGO_VERSION is unset
 #   TEGO_YES        on macOS, 1 answers yes to every question (install or upgrade Lima, create or start the VM)
+#   TEGO_CHECKSUMS_SHA256  expected SHA-256 of the checksums file (optional, carried from Mac verification)
 #   TEGO_VERIFY     how the release's authenticity is checked (default: auto):
 #                      auto    cosign when it is on PATH, else gh when it is on PATH and logged in, else the
 #                              checksum alone, saying so; a verifier that is present and fails stops the install
@@ -200,8 +201,21 @@ mac_setup() {
 			installer_sha256=$(awk '$2=="install.sh" {print $1}' "$checksums_path")
 			[ -n "$installer_sha256" ] && [ "$installer_sha256" = "$(sha256_of "${workdir}/install.sh")" ] ||
 				die "checksum mismatch or missing entry for install.sh; not creating the VM" 7
+			# Cosign authenticated the whole checksums file. gh attests assets instead:
+			# authenticate the guest binaries and their entries before carrying this file's digest.
+			if [ "$verify" = gh ]; then
+				for guest_asset in "tego_${version_no_v}_linux_${arch}" "tego-control_${version_no_v}_linux_${arch}"; do
+					guest_path="${workdir}/${guest_asset}"
+					download "${base_url}/${tag}/${guest_asset}" "$guest_path" "the guest Linux binary"
+					attested "$guest_path" "$guest_asset"
+					guest_expected=$(awk -v f="$guest_asset" '$2==f {print $1}' "$checksums_path")
+					[ -n "$guest_expected" ] && [ "$guest_expected" = "$(sha256_of "$guest_path")" ] ||
+						die "checksum mismatch or missing entry for ${guest_asset}; not creating the VM" 7
+				done
+			fi
+			checksums_sha256=$(sha256_of "$checksums_path")
 			quietly limactl start --tty=false --name="$vm" --mount-none --param="tego_version=$tag" \
-				--param="installer_sha256=$installer_sha256" "$archive_path" || exit 8
+				--param="installer_sha256=$installer_sha256" --param="checksums_sha256=$checksums_sha256" "$archive_path" || exit 8
 			done_ "Tego's VM is ready"
 			;;
 	esac
@@ -540,6 +554,12 @@ main() {
 
 		download "${base_url}/${tag}/${archive}" "$archive_path" "the ${os}/${arch} archive"
 		download "${base_url}/${tag}/${checksums}" "$checksums_path" "the checksums file"
+
+		# A Mac-verified checksums digest binds guest binaries even without a guest verifier.
+		# Check before interpreting any entries, including the optional control binary.
+		if [ -n "${TEGO_CHECKSUMS_SHA256:-}" ] && [ "$TEGO_CHECKSUMS_SHA256" != "$(sha256_of "$checksums_path")" ]; then
+			die "checksum mismatch for the pinned checksums file; not installing it" 7
+		fi
 
 		# ---- who published it ------------------------------------------------------------------------------------
 		# The checksums file is authenticated before anything below trusts it. A verifier that is present and says
