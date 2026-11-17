@@ -1415,7 +1415,7 @@ func (g *walk) saveAgent(ctx context.Context, m *config.Machine, a guideAgent, c
 }
 
 // saveOwnRules saves a rules file the person wrote as the agent named name, in the user registry where tego run <name>
-// finds it. Its name: line is set to name. replace removes an existing file of that name first.
+// finds it. Its name: line is set to name. replace atomically replaces an existing file.
 func saveOwnRules(m *config.Machine, name, abs, file string, replace bool, stderr io.Writer) (string, int) {
 	text, err := os.ReadFile(file)
 	if err != nil {
@@ -1428,15 +1428,7 @@ func saveOwnRules(m *config.Machine, name, abs, file string, replace bool, stder
 		text = append([]byte("name: "+name+"\n"), text...)
 	}
 	sv := registry.Save{Places: registry.Places{User: m.Registry.Value}, Name: name, Text: text, Writes: []string{abs}}
-	if replace {
-		if p, err := sv.Path(); err == nil {
-			if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
-				message(stderr, p, 0, 0, "tego start: replacing the rules file: "+err.Error(), codeIO)
-				return "", identity.ExitError
-			}
-		}
-	}
-	path, err := sv.Write()
+	path, err := saveGuideRules(sv, replace)
 	if err != nil {
 		message(stderr, path, 0, 0, "tego start: saving the rules file: "+err.Error(), codeIO)
 		return "", identity.ExitError
@@ -1451,7 +1443,7 @@ func agentFile(m *config.Machine, name string) (string, error) {
 
 // guideSaveRules composes an agent's rules file from rc, the way tego init --agent does, with the agent's own
 // interactive program (its own approval prompts kept), and saves it in the user registry, outside the
-// project, where tego run <name> finds it. replace removes an existing file of that name first.
+// project, where tego run <name> finds it. replace atomically replaces an existing file.
 func guideSaveRules(_ context.Context, m *config.Machine, a guideAgent, command, name, abs string, rc rulesChoice, test, replace bool, stderr io.Writer) (string, int) {
 	dir, err := filepath.EvalSymlinks(abs)
 	if err != nil {
@@ -1497,18 +1489,30 @@ func guideSaveRules(_ context.Context, m *config.Machine, a guideAgent, command,
 		_ = agent.WriteDiagnostics(stderr, ds)
 		return "", identity.ExitFinding
 	}
-	if replace {
-		if err := os.Remove(file); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			message(stderr, file, 0, 0, "tego start: replacing the rules file: "+err.Error(), codeIO)
-			return "", identity.ExitError
-		}
-	}
-	path, err := sv.Write()
+	path, err := saveGuideRules(sv, replace)
 	if err != nil {
 		message(stderr, path, 0, 0, "tego start: saving the rules file: "+err.Error(), codeIO)
 		return "", identity.ExitError
 	}
 	return path, identity.ExitOK
+}
+
+// saveGuideRules retains registry validation and publishes a replacement only after every byte is written.
+func saveGuideRules(sv registry.Save, replace bool) (string, error) {
+	if !replace {
+		return sv.Write()
+	}
+	path, err := sv.Check()
+	if err != nil {
+		return path, err
+	}
+	if sv.Compile != nil {
+		if err := sv.Compile(path, sv.Text); err != nil {
+			return path, err
+		}
+	}
+	err = replaceGuideFile(sv.Places.User, filepath.Join(registry.AgentsDir, sv.Name+".yaml"), sv.Text, 0600)
+	return path, err
 }
 
 // unixWritable reports whether this user may create files in dir.
