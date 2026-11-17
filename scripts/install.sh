@@ -255,19 +255,35 @@ if [ "\${1:-}" = shell ]; then
 	echo "In Tego's Linux VM. Type exit to go back to your Mac." >&2
 	exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME"; d=\$(cat "\$HOME/.config/tego/last-project" 2>/dev/null); [ -d "\$d" ] && cd "\$d"; exec systemd-run --user --scope --quiet bash -l'
 fi
-# open_dashboard opens the dashboard at \$1 in the Mac's browser, through an SSH tunnel on 8484 (the dashboard answers
-# only the address it printed, so the port stays the same on both sides). Who holds 8484 on the Mac: nobody, an SSH
-# tunnel from an earlier tego dashboard (Lima's shared SSH connection keeps it), or something else, which the dashboard
-# can't share the port with.
+# The dedicated SSH control socket belongs to this VM. Reuse requires its master's PID to own the
+# only listener on 8484, bound to loopback. A process merely named ssh is not proof of our tunnel.
+tunnel_ready() {
+	master=\$(ssh -F "\$ssh_config" -S "\$control" -O check "lima-\$vm" 2>&1) || return 1
+	master_pid=\$(printf '%s\n' "\$master" | sed -n 's/^Master running (pid=\([0-9][0-9]*\))\r\{0,1\}\$/\1/p')
+	[ -n "\$master_pid" ] || return 1
+	listeners=\$(lsof -nP -iTCP:8484 -sTCP:LISTEN -Fp 2>/dev/null | sed -n 's/^p//p')
+	[ "\$listeners" = "\$master_pid" ] || return 1
+	bound=\$(lsof -nP -a -p "\$master_pid" -iTCP:8484 -sTCP:LISTEN -Fn 2>/dev/null | sed -n 's/^n//p')
+	[ "\$bound" = 127.0.0.1:8484 ]
+}
 open_dashboard() {
-	holder=\$(lsof -nP -iTCP:8484 -sTCP:LISTEN -Fc 2>/dev/null | sed -n 's/^c//p' | head -n 1)
-	if [ -n "\$holder" ] && [ "\$holder" != ssh ]; then
-		echo "✗ Port 8484 on this Mac is in use by \$holder, and the dashboard needs it. Stop it, then try again." >&2
+	vm_dir=\$(limactl list --format '{{.Dir}}' "\$vm") || {
+		echo "tego: the dashboard tunnel is not up. Could not find this VM's SSH configuration." >&2
 		return 1
+	}
+	ssh_config="\$vm_dir/ssh.config"
+	control="\$vm_dir/tego-dashboard.sock"
+	if ! tunnel_ready; then
+		# Never open the URL when some other listener holds the port, or forwarding fails.
+		listeners=\$(lsof -nP -iTCP:8484 -sTCP:LISTEN -Fp 2>/dev/null)
+		if [ -n "\$listeners" ] || ! ssh -F "\$ssh_config" -S "\$control" -M -f -N \
+			-o ExitOnForwardFailure=yes -o ClearAllForwardings=no \
+			-L 127.0.0.1:8484:127.0.0.1:8484 "lima-\$vm" >/dev/null 2>&1 || ! tunnel_ready; then
+			echo "tego: the dashboard tunnel is not up. Port 8484 must be free or held by this VM's dashboard tunnel; try again." >&2
+			return 1
+		fi
 	fi
-	[ "\$holder" = ssh ] ||
-		ssh -F "\$(limactl list --format '{{.Dir}}' "\$vm")/ssh.config" -f -N -L 8484:127.0.0.1:8484 "lima-\$vm"
-	open "\$1" 2>/dev/null || true
+	open "\$1" 2>/dev/null || { echo "tego: could not open the dashboard in your browser." >&2; return 1; }
 }
 # tego start (and tego setup) runs the guide in the VM, which starts the dashboard there; then the dashboard opens in the
 # Mac's browser, and the person is left in the VM, in the project, where the commands the guide printed work. When the
@@ -276,16 +292,11 @@ if { [ "\${1:-}" = start ] || [ "\${1:-}" = setup ]; } && [ \$# -eq 1 ]; then
 	sub=\$1 # start or setup: a fixed word, put into the VM's command line here
 	limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet env TEGO_ON_MAC=1 "\$HOME/.local/bin/tego" '"\$sub" || exit \$?
 	url=\$(limactl shell --workdir / "\$vm" sh -c 'grep -o "http://127.0.0.1:8484/[^ ]*" "\$HOME/.tego/dashboard.log" 2>/dev/null | head -n 1')
-	[ -z "\$url" ] || open_dashboard "\$url" || true
+	[ -z "\$url" ] || open_dashboard "\$url" || exit 1
 	exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME"; d=\$(cat "\$HOME/.config/tego/last-project" 2>/dev/null); [ -d "\$d" ] && cd "\$d"; exec systemd-run --user --scope --quiet bash -l'
 fi
 # tego dashboard (and tego serve --open): the one dashboard runs in the VM and opens in the Mac's browser.
 if { [ "\${1:-}" = dashboard ] && [ \$# -eq 1 ]; } || { [ "\${1:-}" = serve ] && [ "\${2:-}" = --open ] && [ \$# -eq 2 ]; }; then
-	holder=\$(lsof -nP -iTCP:8484 -sTCP:LISTEN -Fc 2>/dev/null | sed -n 's/^c//p' | head -n 1)
-	if [ -n "\$holder" ] && [ "\$holder" != ssh ]; then
-		echo "✗ Port 8484 on this Mac is in use by \$holder, and the dashboard needs it. Stop it, then try again." >&2
-		exit 1
-	fi
 	# the VM's tego dashboard says whether one is running and asks before starting a new one; the Mac opens its link
 	limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet env TEGO_ON_MAC=1 "\$HOME/.local/bin/tego" dashboard' || exit \$?
 	url=\$(limactl shell --workdir / "\$vm" sh -c 'grep -o "http://127.0.0.1:8484/[^ ]*" "\$HOME/.tego/dashboard.log" 2>/dev/null | head -n 1')

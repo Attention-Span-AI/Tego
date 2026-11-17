@@ -31,7 +31,13 @@ EOF
 #!/bin/sh
 case "$1" in
 	--version) echo "limactl version ${FAKE_LIMA:-2.3.0}" ;;
-	list) [ -n "${FAKE_VM:-}" ] && echo "$FAKE_VM" || exit 1 ;;
+	list)
+		case "$*" in *'{{.Dir}}'*) [ "${FAKE_VM_DIR_FAIL:-}" != 1 ] || exit 1; echo "$HOME/.lima/tego" ;;
+			*) [ -n "${FAKE_VM:-}" ] && echo "$FAKE_VM" || exit 1 ;;
+		esac ;;
+	shell)
+		echo "limactl $*" >>"$FAKE_LOG"
+		case "$*" in *'grep -o'*) echo 'http://127.0.0.1:8484/?t=test' ;; esac ;;
 	start)
 		echo "limactl $*" >>"$FAKE_LOG"
 		for arg do
@@ -235,6 +241,58 @@ env -i PATH="$bin:/usr/bin:/bin" HOME="$tmp/guest" TMPDIR="$tmp" FAKE_LOG="$tmp/
 	PARAM_tego_version=v0.1.3 PARAM_installer_sha256="$digest" bash "$tmp/provision.sh" >"$tmp/out" 2>&1 || code=$?
 check "guest refuses changed installer" 1 "FAILED"
 absent "changed guest installer never executes" "guest installed"
+
+# Run only the generated shell command, with every external VM, SSH and browser call replaced.
+cat >"$bin/lsof" <<'EOF'
+#!/bin/sh
+[ "${FAKE_LISTENER:-}" != none ] || [ -f "$FAKE_LOG.tunnel" ] || exit 1
+case "$*" in
+	*-Fc*) echo cssh ;;
+	*-Fp*) echo "p${FAKE_PID:-4321}" ;;
+	*-Fn*) echo "n${FAKE_BIND:-127.0.0.1:8484}" ;;
+esac
+EOF
+cat >"$bin/ssh" <<'EOF'
+#!/bin/sh
+echo "ssh $*" >>"$FAKE_LOG"
+case "$*" in
+	*'ClearAllForwardings=yes'*) exit 255 ;;
+	*'-O check'*) echo 'Master running (pid=4321)' >&2; exit 0 ;;
+esac
+[ "${FAKE_SSH_FAIL:-}" != 1 ] || exit 255
+: >"$FAKE_LOG.tunnel"
+EOF
+cat >"$bin/open" <<'EOF'
+#!/bin/sh
+echo "open $*" >>"$FAKE_LOG"
+EOF
+chmod +x "$bin/lsof" "$bin/ssh" "$bin/open"
+shim_run() {
+	: >"$tmp/log"; rm -f "$tmp/log.tunnel"; code=0
+	env -i HOME="$tmp" PATH="$bin:/usr/bin:/bin" FAKE_VM=Running FAKE_LOG="$tmp/log" "$@" \
+		sh "$tmp/.local/bin/tego" "${SHIM_COMMAND:-dashboard}" >"$tmp/out" 2>&1 || code=$?
+}
+shim_run FAKE_LISTENER=none FAKE_SSH_FAIL=1
+check "failed SSH forwarding refuses browser" 1 "dashboard tunnel is not up"
+absent "failed SSH forwarding never opens browser" "open http"
+shim_run SHIM_COMMAND=start FAKE_LISTENER=none FAKE_SSH_FAIL=1
+check "start also refuses a failed tunnel" 1 "dashboard tunnel is not up"
+absent "start never opens browser on tunnel failure" "open http"
+shim_run FAKE_VM_DIR_FAIL=1 FAKE_LISTENER=none
+check "missing VM SSH metadata fails clearly" 1 "dashboard tunnel is not up"
+absent "missing VM metadata never opens browser" "open http"
+shim_run FAKE_LISTENER=ssh FAKE_PID=9999
+check "unrelated SSH listener is refused" 1 "dashboard tunnel is not up"
+absent "unrelated listener never opens browser" "open http"
+shim_run FAKE_LISTENER=none
+check "new tunnel binds loopback and confirms forwarding" 0 "-o ExitOnForwardFailure=yes" \
+	"-L 127.0.0.1:8484:127.0.0.1:8484" "tego-dashboard.sock" "open http"
+shim_run FAKE_LISTENER=ssh
+check "own VM tunnel can be reused" 0 "-O check lima-tego" "open http"
+absent "own VM tunnel is reused without a second forward" "-L "
+shim_run FAKE_LISTENER=ssh FAKE_BIND='*:8484'
+check "wildcard listener is not accepted" 1 "dashboard tunnel is not up"
+absent "wildcard listener never opens browser" "open http"
 
 # Plant the former predictable log path: installation must leave its target unchanged.
 echo keep >"$tmp/outside"

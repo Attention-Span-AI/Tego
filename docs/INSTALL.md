@@ -125,7 +125,7 @@ inside the VM, so the template does not forward its port. Start `tego serve` in 
 another terminal on the Mac, and open the URL `tego serve` printed:
 
 ```sh
-ssh -F ~/.lima/tego/ssh.config -N -L 8484:127.0.0.1:8484 lima-tego
+ssh -F ~/.lima/tego/ssh.config -N -o ExitOnForwardFailure=yes -L 127.0.0.1:8484:127.0.0.1:8484 lima-tego
 ```
 
 `limactl stop tego` stops the VM and `limactl delete tego` removes it.
