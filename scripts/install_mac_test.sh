@@ -304,7 +304,7 @@ case "$*" in
 esac
 EOF
 # Emulate macOS stat, including lookup failures. Overrides apply to the original
-# VM socket only; a new private tunnel directory has the caller's metadata.
+# VM socket only; other fixture paths have the caller's metadata.
 cat >"$bin/stat" <<'EOF'
 #!/bin/sh
 [ "$1" = -f ] || exit 1
@@ -329,22 +329,42 @@ cat >"$bin/ssh" <<'EOF'
 echo "ssh $*" >>"$FAKE_LOG"
 case "$*" in
 	*'ClearAllForwardings=yes'*) exit 255 ;;
-	*'-O check'*) echo 'Master running (pid=4321)' >&2; exit 0 ;;
+	*'-O check'*)
+		{ [ "${FAKE_STALE:-}" != 1 ] && [ "${FAKE_LISTENER:-}" != none ]; } || [ -f "$FAKE_LOG.tunnel" ] || exit 255
+		echo 'Master running (pid=4321)' >&2; exit 0 ;;
 esac
 [ "${FAKE_SSH_FAIL:-}" != 1 ] || exit 255
-: >"$FAKE_LOG.tunnel"
+# Record the socket path so the next invocation can find this same master.
+while [ "$#" -gt 0 ]; do
+	if [ "$1" = -S ]; then
+		[ ! -e "$2" ] || exit 255
+		printf 'new master\n' >"$2"
+		printf '%s\n' "$2" >"$FAKE_LOG.tunnel"
+		break
+	fi
+	shift
+done
 EOF
 cat >"$bin/open" <<'EOF'
 #!/bin/sh
 echo "open $*" >>"$FAKE_LOG"
 EOF
 chmod +x "$bin/lsof" "$bin/ssh" "$bin/open" "$bin/stat" "$bin/ps"
-shim_run() {
-	: >"$tmp/log"; rm -f "$tmp/log.tunnel"; code=0
-	mkdir -p "$tmp/.lima/tego"
-	: >"$tmp/.lima/tego/tego-dashboard.sock"
-	env -i HOME="$tmp" TMPDIR="$tmp" PATH="$bin:/usr/bin:/bin" FAKE_VM=Running FAKE_LOG="$tmp/log" "$@" \
+shim_call() {
+	code=0
+	env -i HOME="$tmp" TMPDIR="$tmp/shim-tmp" PATH="$bin:/usr/bin:/bin" FAKE_VM=Running FAKE_LOG="$tmp/log" "$@" \
 		sh "$tmp/.local/bin/tego" "${SHIM_COMMAND:-dashboard}" >"$tmp/out" 2>&1 || code=$?
+	if [ -n "$(find "$tmp/shim-tmp" -mindepth 1 -print)" ]; then
+		echo 'FAIL tunnel left files in TMPDIR'; fails=$((fails + 1))
+	fi
+}
+shim_run() {
+	: >"$tmp/log"; rm -f "$tmp/log.tunnel"
+	mkdir -p "$tmp/.lima/tego" "$tmp/shim-tmp"
+	rm -f "$tmp/.lima/tego/tego-dashboard.sock"
+	# Socket contents stand in for the old and replacement masters.
+	printf 'old master\n' >"$tmp/.lima/tego/tego-dashboard.sock"
+	shim_call "$@"
 }
 shim_run FAKE_LISTENER=none FAKE_SSH_FAIL=1
 check "failed SSH forwarding refuses browser" 1 "dashboard tunnel is not up"
@@ -361,16 +381,58 @@ absent "unrelated listener never opens browser" "open http"
 shim_run FAKE_LISTENER=none
 check "new tunnel binds loopback and confirms forwarding" 0 "-o ExitOnForwardFailure=yes" \
 	"-L 127.0.0.1:8484:127.0.0.1:8484" "tego-dashboard.sock" "open http"
+: >"$tmp/log"; rm -f "$tmp/log.tunnel" "$tmp/.lima/tego/tego-dashboard.sock"
+shim_call FAKE_LISTENER=none
+check "missing socket starts a confirmed tunnel at the usual path" 0 "-L 127.0.0.1:8484:127.0.0.1:8484" "open http"
 shim_run FAKE_LISTENER=ssh
 check "own VM tunnel can be reused" 0 "-O check lima-tego" "open http"
 absent "own VM tunnel is reused without a second forward" "-L "
+# A non-answering owned master is replaced at the stable name, then reused.
+shim_run FAKE_LISTENER=none FAKE_STALE=1
+check "leftover socket is replaced and confirmed" 0 "-L 127.0.0.1:8484:127.0.0.1:8484" "open http"
+control="$tmp/.lima/tego/tego-dashboard.sock"
+if [ ! -f "$tmp/log.tunnel" ] || [ "$(cat "$tmp/log.tunnel")" != "$control" ] || [ "$(cat "$control")" != 'new master' ]; then
+	echo 'FAIL leftover socket: replacement did not use the stable path'; fails=$((fails + 1))
+fi
+: >"$tmp/log"
+shim_call FAKE_LISTENER=ssh FAKE_STALE=1
+check "next invocation reuses the replacement master" 0 "-O check lima-tego" "open http"
+absent "replacement master needs no second forward" "-L "
 other_uid=$(($(id -u) + 1))
-for unsafe in "FAKE_SOCKET_UID=$other_uid" "FAKE_DIR_UID=$other_uid" FAKE_DIR_MODE=770 FAKE_DIR_MODE=707 FAKE_DIR_STAT_FAIL=1 "FAKE_PROCESS_UID=$other_uid" FAKE_PS_FAIL=1; do
+for listener in none ssh; do
+	for unsafe in "FAKE_DIR_UID=$other_uid" FAKE_DIR_MODE=770 FAKE_DIR_MODE=707 FAKE_DIR_STAT_FAIL=1; do
+		shim_run "FAKE_LISTENER=$listener" "$unsafe"
+		check "unsafe socket folder ($unsafe, $listener) is refused" 1 "$tmp/.lima/tego" "make it owned by you and remove group and other write permission"
+		absent "unsafe folder never starts a master" "-M -f -N"
+		absent "unsafe folder never opens browser" "open http"
+		[ "$(wc -l <"$tmp/out")" -eq 1 ] || { echo 'FAIL unsafe folder: expected one line'; fails=$((fails + 1)); }
+	done
+	shim_run "FAKE_LISTENER=$listener" "FAKE_SOCKET_UID=$other_uid"
+	check "foreign socket ($listener) is refused" 1 "$control" "move it away yourself"
+	absent "foreign socket never starts a master" "-M -f -N"
+	absent "foreign socket never opens browser" "open http"
+	[ "$(cat "$control")" = 'old master' ] || { echo 'FAIL foreign socket changed'; fails=$((fails + 1)); }
+	[ "$(wc -l <"$tmp/out")" -eq 1 ] || { echo 'FAIL foreign socket: expected one line'; fails=$((fails + 1)); }
+	printf 'keep\n' >"$tmp/socket-target"
+	rm -f "$control"
+	ln -s "$tmp/socket-target" "$control"
+	: >"$tmp/log"; rm -f "$tmp/log.tunnel"
+	shim_call "FAKE_LISTENER=$listener"
+	check "linked socket ($listener) is refused" 1 "$control" "move it away yourself"
+	absent "linked socket never starts a master" "-M -f -N"
+	absent "linked socket never opens browser" "open http"
+	if [ ! -L "$control" ] || [ "$(cat "$tmp/socket-target")" != keep ]; then
+		echo 'FAIL linked socket or target changed'; fails=$((fails + 1))
+	fi
+	[ "$(wc -l <"$tmp/out")" -eq 1 ] || { echo 'FAIL linked socket: expected one line'; fails=$((fails + 1)); }
+done
+for unsafe in "FAKE_PROCESS_UID=$other_uid" FAKE_PS_FAIL=1; do
 	shim_run FAKE_LISTENER=ssh "$unsafe"
-	check "unsafe tunnel metadata ($unsafe) refuses occupied port" 1 "dashboard tunnel is not up"
-	absent "unsafe tunnel ($unsafe) never opens browser" "open http"
-	shim_run FAKE_LISTENER=none "$unsafe"
-	check "unsafe tunnel metadata ($unsafe) makes a new tunnel on a free port" 0 "-L 127.0.0.1:8484:127.0.0.1:8484" "open http"
+	check "unsafe process metadata ($unsafe) refuses occupied port" 1 "dashboard tunnel is not up"
+	absent "unsafe process never starts a master" "-M -f -N"
+	absent "unsafe process never opens browser" "open http"
+	shim_run FAKE_LISTENER=none FAKE_STALE=1 "$unsafe"
+	check "stale master with unavailable process metadata ($unsafe) is replaced" 0 "-L 127.0.0.1:8484:127.0.0.1:8484" "open http"
 done
 shim_run FAKE_LISTENER=ssh FAKE_BIND='*:8484'
 check "wildcard listener is not accepted" 1 "dashboard tunnel is not up"

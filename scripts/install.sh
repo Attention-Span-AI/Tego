@@ -303,19 +303,24 @@ open_dashboard() {
 	}
 	ssh_config="\$vm_dir/ssh.config"
 	control="\$vm_dir/tego-dashboard.sock"
+	if ! control_dir_private; then
+		echo "tego: the dashboard tunnel is not up. Unsafe socket folder \$vm_dir; make it owned by you and remove group and other write permission, then try again." >&2
+		return 1
+	fi
+	if { [ -e "\$control" ] || [ -L "\$control" ]; } && ! control_private; then
+		echo "tego: the dashboard tunnel is not up. Socket \$control is linked or not owned by you; move it away yourself, then try again." >&2
+		return 1
+	fi
 	if ! tunnel_ready; then
 		# Never open the URL when some other listener holds the port, or forwarding fails.
 		listeners=\$(lsof -nP -iTCP:8484 -sTCP:LISTEN -Fp 2>/dev/null)
-		# Do not create a master through an untrusted folder or an existing stale socket.
-		# A missing socket in the usual private VM folder keeps the stable reuse path.
-		if [ -z "\$listeners" ] && { ! control_dir_private || [ -e "\$control" ] || [ -L "\$control" ]; }; then
-			fresh_control=\$(mktemp -d "\${TMPDIR:-/tmp}/tego-dashboard.XXXXXX") || {
-				echo "tego: the dashboard tunnel is not up. Could not create its private socket folder." >&2
-				return 1
-			}
-			control="\$fresh_control/socket"
+		# Only an owned, non-answering socket in our private folder is a leftover.
+		# Keep the stable path so the next invocation can find and reuse the new master.
+		if [ -z "\$listeners" ] && [ -e "\$control" ] &&
+			! ssh -F "\$ssh_config" -S "\$control" -O check "lima-\$vm" >/dev/null 2>&1; then
+			rm -f "\$control" 2>/dev/null
 		fi
-		if [ -n "\$listeners" ] || ! ssh -F "\$ssh_config" -S "\$control" -M -f -N \
+		if [ -n "\$listeners" ] || [ -e "\$control" ] || ! ssh -F "\$ssh_config" -S "\$control" -M -f -N \
 			-o ExitOnForwardFailure=yes -o ClearAllForwardings=no \
 			-L 127.0.0.1:8484:127.0.0.1:8484 "lima-\$vm" >/dev/null 2>&1 || ! tunnel_ready; then
 			echo "tego: the dashboard tunnel is not up. Port 8484 must be free or held by this VM's dashboard tunnel; try again." >&2
