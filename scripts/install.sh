@@ -273,16 +273,30 @@ if [ "\${1:-}" = shell ]; then
 fi
 # The dedicated SSH control socket belongs to this VM. Reuse requires its master's PID to own the
 # only listener on 8484, bound to loopback. A process merely named ssh is not proof of our tunnel.
+control_dir_private() {
+	[ "\$(stat -f '%u' "\${control%/*}" 2>/dev/null)" = "\$caller_uid" ] || return 1
+	dir_mode=\$(stat -f '%Lp' "\${control%/*}" 2>/dev/null) || return 1
+	case "\$dir_mode" in ''|*[!0-7]*) return 1 ;; esac
+	[ \$((0\$dir_mode & 0022)) -eq 0 ]
+}
+control_private() {
+	[ ! -L "\$control" ] || return 1
+	control_dir_private && [ "\$(stat -f '%u' "\$control" 2>/dev/null)" = "\$caller_uid" ]
+}
 tunnel_ready() {
+	control_private || return 1
 	master=\$(ssh -F "\$ssh_config" -S "\$control" -O check "lima-\$vm" 2>&1) || return 1
 	master_pid=\$(printf '%s\n' "\$master" | sed -n 's/^Master running (pid=\([0-9][0-9]*\))\r\{0,1\}\$/\1/p')
 	[ -n "\$master_pid" ] || return 1
 	listeners=\$(lsof -nP -iTCP:8484 -sTCP:LISTEN -Fp 2>/dev/null | sed -n 's/^p//p')
 	[ "\$listeners" = "\$master_pid" ] || return 1
+	process_uid=\$(ps -o uid= -p "\$master_pid" 2>/dev/null | awk '{\$1=\$1; print}')
+	[ "\$process_uid" = "\$caller_uid" ] || return 1
 	bound=\$(lsof -nP -a -p "\$master_pid" -iTCP:8484 -sTCP:LISTEN -Fn 2>/dev/null | sed -n 's/^n//p')
 	[ "\$bound" = 127.0.0.1:8484 ]
 }
 open_dashboard() {
+	caller_uid=\$(id -u)
 	vm_dir=\$(limactl list --format '{{.Dir}}' "\$vm") || {
 		echo "tego: the dashboard tunnel is not up. Could not find this VM's SSH configuration." >&2
 		return 1
@@ -292,6 +306,15 @@ open_dashboard() {
 	if ! tunnel_ready; then
 		# Never open the URL when some other listener holds the port, or forwarding fails.
 		listeners=\$(lsof -nP -iTCP:8484 -sTCP:LISTEN -Fp 2>/dev/null)
+		# Do not create a master through an untrusted folder or an existing stale socket.
+		# A missing socket in the usual private VM folder keeps the stable reuse path.
+		if [ -z "\$listeners" ] && { ! control_dir_private || [ -e "\$control" ] || [ -L "\$control" ]; }; then
+			fresh_control=\$(mktemp -d "\${TMPDIR:-/tmp}/tego-dashboard.XXXXXX") || {
+				echo "tego: the dashboard tunnel is not up. Could not create its private socket folder." >&2
+				return 1
+			}
+			control="\$fresh_control/socket"
+		fi
 		if [ -n "\$listeners" ] || ! ssh -F "\$ssh_config" -S "\$control" -M -f -N \
 			-o ExitOnForwardFailure=yes -o ClearAllForwardings=no \
 			-L 127.0.0.1:8484:127.0.0.1:8484 "lima-\$vm" >/dev/null 2>&1 || ! tunnel_ready; then
