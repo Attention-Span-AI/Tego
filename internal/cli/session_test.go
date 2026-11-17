@@ -4,6 +4,7 @@ package cli
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -169,5 +170,104 @@ func TestTerminalRunAlwaysNamesRulesFile(t *testing.T) {
 		if err != nil || b.String() != want {
 			t.Fatalf("start: %v\ngot %q\nwant %q", err, b.String(), want)
 		}
+	}
+}
+
+// TestRunLegacyOutput pins both streams to 421d678's run.go and runsummary.go output.
+// The fixtures were captured with those files overlaid from git show, with only the minted id normalized.
+func TestRunLegacyOutput(t *testing.T) {
+	for _, verbose := range []bool{false, true} {
+		name := "pipe"
+		if verbose {
+			name = "verbose"
+		}
+		t.Run(name, func(t *testing.T) {
+			root, _ := summaryHarness(t)
+			t.Setenv("TEGO_HINTS", "on")
+			var id string
+			startRun = func(_ context.Context, _ *agent.RuleTable, _ []string, d tegoruntime.Deps) (tegoruntime.Result, error) {
+				id = summaryLedger(t, root, d.AnchorPath)
+				if d.Started != nil {
+					if err := d.Started(tegoruntime.StartedRun{ID: identity.RunID(id)}); err != nil {
+						return tegoruntime.Result{}, err
+					}
+				}
+				d.Warn(tegoruntime.WarnHeldLabel, "label note")
+				d.Warn(tegoruntime.WarnDenyReadFrozen, "frozen-directory note")
+				_, _ = io.WriteString(d.Stdio.Out, "agent stdout\n")
+				_, _ = io.WriteString(d.Stdio.Err, "agent stderr\n")
+				return tegoruntime.Result{RunID: id, Reason: record.RunEndExit}, nil
+			}
+			outR, outW, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			errR, errW, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer outR.Close()
+			defer errR.Close()
+			oldOut, oldErr, oldTTY := os.Stdout, os.Stderr, stderrIsTerminal
+			os.Stdout, os.Stderr = outW, errW
+			stderrIsTerminal = func() bool { return verbose }
+			defer func() { os.Stdout, os.Stderr, stderrIsTerminal = oldOut, oldErr, oldTTY }()
+			args := []string{"tego", "run", "testdata/minimal.yaml", "--offline"}
+			if verbose {
+				args = append(args, "-v")
+			}
+			code := mainWith(t.Context(), args, os.Stdout, os.Stderr, []Command{cmdRun()})
+			_ = outW.Close()
+			_ = errW.Close()
+			out, err := io.ReadAll(outR)
+			if err != nil {
+				t.Fatal(err)
+			}
+			errs, err := io.ReadAll(errR)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if code != identity.ExitOK {
+				t.Fatalf("exit %d: %s", code, errs)
+			}
+			errs = []byte(strings.ReplaceAll(strings.ReplaceAll(string(errs), id, "<run>"), shortRun(root, id), "<short-run>"))
+			streams := map[string]string{"stdout": string(out), "stderr": strings.ReplaceAll(string(errs), id, "<run>")}
+			for stream, got := range streams {
+				path := filepath.Join("testdata", "run-421d678-"+name+"-"+stream+".golden")
+				if *updateGolden {
+					if err := os.WriteFile(path, []byte(got), 0644); err != nil {
+						t.Fatal(err)
+					}
+				}
+				want, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got != string(want) {
+					t.Errorf("%s differs from 421d678:\ngot %q\nwant %q", stream, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestQuietRunUsesStderrTerminalRule(t *testing.T) {
+	old := stderrIsTerminal
+	defer func() { stderrIsTerminal = old }()
+	stderrIsTerminal = func() bool { return true }
+	m := config.Builtin()
+	t.Setenv("CI", "true")
+	// stdout is a pipe in this test invocation. By the PR's explicit rule only stderr selects quietRun.
+	if quietRun(runOptions{}, m, nil, &outputWriter{dst: os.Stderr}) == nil {
+		t.Fatal("stderr terminal must select terminal mode even in CI with stdout piped")
+	}
+	for _, o := range []runOptions{{verbose: true}, {cmd: "tego watch"}} {
+		if quietRun(o, m, nil, &outputWriter{dst: os.Stderr}) != nil {
+			t.Fatal("verbose or --cmd selected terminal mode")
+		}
+	}
+	stderrIsTerminal = func() bool { return false }
+	if quietRun(runOptions{}, m, nil, &outputWriter{dst: os.Stderr}) != nil {
+		t.Fatal("piped stderr selected terminal mode")
 	}
 }

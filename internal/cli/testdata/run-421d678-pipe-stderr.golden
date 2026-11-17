@@ -1,0 +1,8 @@
+note: tego run: label note [held-label]
+note: tego run: frozen-directory note [deny-read-frozen]
+agent stderr
+tego run: <run> ended (exited with code 0) · tier landlock · refused 2 (fs.ask_read 1, not allowed by any rule 1) · asked 1 (0 approved, 1 denied) · wrote 1 file · chain verified
+  more: tego receipt <run>
+
+next: see what it refused, under which rule:
+  tego receipt <short-run>
