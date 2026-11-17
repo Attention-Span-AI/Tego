@@ -426,3 +426,4 @@ internal/cli TestLoginControllingTerminal/* # needs a usable pseudo-terminal and
 internal/cli TestLoginCaptureWithSystemScript # needs system script(1); skips with a reason when /usr/bin/script is absent
 internal/cli TestLoginCancellationStopsSystemScriptChild # needs system script(1); skips with a reason when /usr/bin/script is absent
 internal/cli TestRunSavedLogins/foreign # needs permission to change a test file to a foreign owner; skips with a reason when chown is unavailable
+internal/cli TestGuideInterruptRestoresTerminal/* # requires an available pseudo-terminal
