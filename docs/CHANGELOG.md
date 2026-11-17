@@ -13,6 +13,16 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
 - Commands in git's noun-verb shape, over the existing ones: `tego rules create|edit|check|learn`, `tego session list|show|stop|pause|resume`, `tego machine check|test`, and `tego dashboard`. `tego help` lists the common commands and `tego help -a` every one. Every existing command keeps its name, flags and exit codes; only `-h`'s layout changed. Guidance and dashboard pages now name the noun-verb commands, such as `tego session show`; the compatibility exception for `tego run` is listed below.
 - `tego start` asks before using a saved login ("Use your saved Claude Code login?"), and logging in again replaces it. The Mac installer's last line says how to use `tego` in the same terminal (`exec zsh`).
 - Sessions have names (`tego-sample-dzfa`) that every command taking a run accepts.
+- One dashboard per configuration: `tego dashboard` and `tego start` reuse a running dashboard only after it proves it
+  holds its sign-in link and serves the same ledger and configuration file; otherwise they start a new one. Its log
+  and a saved agent login are private files (mode 0600) from the moment they exist, and a link planted in their
+  place is refused.
+- The setup guide shows an agent's own install command and where it comes from before it asks to run it, and
+  does not run an agent installer as root. Read-only review keeps the project's content read-only: the agent can
+  write only its own state folder under `.tego/`, which also holds its temporary files.
+- The Mac installer checks the VM template and the VM's installer against the selected release before it uses
+  them, installs that same version in the VM, opens the dashboard only after the tunnel to the VM is confirmed,
+  and adds `tego` to fish's PATH in fish's own configuration.
 
 ### Changed
 
@@ -26,10 +36,17 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
   abnormal endings and read-count limitations retain the full summary without a success check mark.
   Terminal mode is selected by stderr being a terminal, with no `-v` or `--cmd`; piping stdout alone keeps this
   mode. Piped or redirected stderr and `-v` retain the previous run output, including the older command names.
+- The Lima VM template (`examples/lima/tego.yaml`) shares no Mac folder with the VM. It used to mount the Mac
+  home read-only and `/tmp/lima` writable; projects now live in the VM. `docs/INSTALL.md` says how to share one
+  folder on purpose and what an agent can then read. A VM made from the older template keeps its mounts until
+  it is edited.
 
 ### Removed
 
 - maze is no longer built or released. The release has 13 files instead of 22; the last release with maze is v0.1.3.
+- The component notes under `docs/p0` are no longer part of this repository. The repository's checks require the
+  seven public specifications under `spec/` instead; the few checks that could only read those notes are skipped
+  by name in the skip lists under `test/`.
 
 ## v0.1.3 - 2026-11-13
 

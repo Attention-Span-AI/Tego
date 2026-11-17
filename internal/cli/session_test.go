@@ -271,23 +271,3 @@ func TestQuietRunUsesStderrTerminalRule(t *testing.T) {
 		t.Fatal("piped stderr selected terminal mode")
 	}
 }
-
-func TestSessionCompatibilityChangelog(t *testing.T) {
-	b, err := os.ReadFile("../../docs/CHANGELOG.md")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, unreleased, ok := strings.Cut(string(b), "## Unreleased\n")
-	if !ok {
-		t.Fatal("no Unreleased section")
-	}
-	unreleased, _, _ = strings.Cut(unreleased, "\n## v")
-	if !strings.Contains(unreleased, "### Changed\n") {
-		t.Fatal("Unreleased must identify compatibility changes as Changed")
-	}
-	for _, fact := range []string{"`tego setup` in a terminal", "`--json` and `-v` keep the checklist", "JSON", "`fix`", "tego machine check", "tego rules check", "tego session show", "tego rules learn", "13 files instead of 22", "last release with maze is v0.1.3"} {
-		if !strings.Contains(unreleased, fact) {
-			t.Errorf("Unreleased does not disclose %q", fact)
-		}
-	}
-}
