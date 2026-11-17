@@ -136,6 +136,12 @@ another terminal on the Mac, and open the URL `tego serve` printed:
 ssh -F ~/.lima/tego/ssh.config -N -o ExitOnForwardFailure=yes -L 127.0.0.1:8484:127.0.0.1:8484 lima-tego
 ```
 
+The Mac command keeps its dashboard tunnel at `~/.lima/tego/tego-dashboard.sock`, reuses a confirmed live tunnel,
+and replaces an owned leftover socket when its master no longer answers and port 8484 is free. It leaves a linked
+or foreign-owned socket untouched. If the socket folder belongs to someone else or is writable by group or others,
+it names the folder and asks you to correct its ownership and write permissions before trying again. These refusals
+start no tunnel and open no browser; they create no temporary socket folder.
+
 `limactl stop tego` stops the VM and `limactl delete tego` removes it.
 
 **Tested on** Linux with `scripts/install_mac_test.sh` and shellcheck, using stand-ins for Homebrew, Lima, SSH and
