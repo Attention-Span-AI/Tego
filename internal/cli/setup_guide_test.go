@@ -31,6 +31,9 @@ func fakeProgram(t *testing.T, name string) {
 func noLogins(t *testing.T) {
 	for _, v := range []string{"CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "CODEX_API_KEY", "TEGO_ON_MAC"} {
 		t.Setenv(v, "")
+		if err := os.Unsetenv(v); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
