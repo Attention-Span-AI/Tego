@@ -36,6 +36,7 @@ func TestGuideQuestionKeyWalks(t *testing.T) {
 					uv.KeyPressEvent{Code: uv.KeyEnd}, uv.KeyPressEvent{Code: 'n', Mod: uv.ModCtrl},
 					uv.KeyPressEvent{Code: ' ', Text: " "}, uv.KeyPressEvent{Code: uv.KeyEnter},
 					uv.KeyPressEvent{Code: uv.KeyBackspace}, uv.PasteEvent{Content: "pasted"},
+					uv.KeyPressEvent{Code: uv.KeyTab, Mod: uv.ModShift},
 				}
 				for sequence := range 300 {
 					var events []tea.Msg
