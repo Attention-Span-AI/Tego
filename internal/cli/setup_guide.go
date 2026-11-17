@@ -707,7 +707,7 @@ var guideDashboard = func(home string) string {
 		n, err := f.ReadAt(b, 0)
 		if err == nil || errors.Is(err, io.EOF) {
 			b = b[:n]
-			if u := dashboardLink.Find(b); u != nil {
+			if u := dashboardLink.Find(b); u != nil && probeDashboard(string(u)) {
 				return string(u)
 			}
 		}
