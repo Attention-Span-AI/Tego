@@ -139,7 +139,7 @@ func quietRun(o runOptions, m *config.Machine, src *record.ContractSource, stder
 		q.rules = " · rules " + record.Printable(tildeHome(src.Path, m.Home))
 		if b, err := os.ReadFile(src.Path); err == nil {
 			if l := chosenRulesLine.FindSubmatch(b); l != nil {
-				q.rules = " · " + record.Printable(string(l[1]))
+				q.rules += " (setup name from file comment: " + strconv.Quote(record.Printable(string(l[1]))) + ")"
 			}
 		}
 	}
