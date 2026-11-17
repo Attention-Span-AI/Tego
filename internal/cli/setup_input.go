@@ -5,8 +5,11 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 
 	tea "charm.land/bubbletea/v2"
@@ -387,4 +390,137 @@ func (g *walk) setupToken(ctx context.Context, program, home string) (string, er
 		err = startErr
 	}
 	return token, err
+}
+
+// readLine keeps accessible prompts on the same cancellable input owner. The
+// tty itself never echoes a hidden entry, and no password reader can survive
+// cancellation with echo disabled.
+func (t *guideTerminal) readLine(ctx context.Context, out io.Writer, secret bool) (string, error) {
+	var line []rune
+	for {
+		select {
+		case <-ctx.Done():
+			return "", errStopped
+		case event := <-t.input.events:
+			text := ""
+			switch event := guideEvent(event).(type) {
+			case tea.KeyPressMsg:
+				switch event.String() {
+				case "enter", "ctrl+j":
+					fmt.Fprintln(out)
+					return string(line), nil
+				case "backspace", "ctrl+h", "ctrl+u":
+					n := min(1, len(line))
+					if event.String() == "ctrl+u" {
+						n = len(line)
+					}
+					line = line[:len(line)-n]
+					if !secret {
+						fmt.Fprint(out, strings.Repeat("\b \b", n))
+					}
+					continue
+				case "ctrl+d":
+					if len(line) == 0 {
+						t.stop()
+						return "", errStopped
+					}
+				}
+				text = event.Text
+			case tea.PasteMsg:
+				text = event.Content
+			}
+			line = append(line, []rune(text)...)
+			if !secret {
+				fmt.Fprint(out, text)
+			}
+		}
+	}
+}
+
+func (g *walk) accessibleNumber(low, high int, defaultValue bool) (int, error) {
+	for {
+		fmt.Fprintf(g.out, "Enter a number between %d and %d: ", low, high)
+		line, err := g.terminal.readLine(g.ctx, g.out, false)
+		if err != nil {
+			return 0, err
+		}
+		if strings.TrimSpace(line) == "" && defaultValue {
+			return low, nil
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(line))
+		if err == nil && n >= low && n <= high {
+			return n, nil
+		}
+		fmt.Fprintf(g.out, "Invalid: must be a number between %d and %d\n", low, high)
+	}
+}
+func (g *walk) accessibleSelect(q string, items []choice) (int, error) {
+	fmt.Fprintln(g.out, g.question(q)+" ")
+	for i, label := range g.labels(items) {
+		fmt.Fprintf(g.out, "%d. %s\n", i+1, label)
+	}
+	pick, err := g.accessibleNumber(1, len(items), true)
+	fmt.Fprintln(g.out)
+	return pick - 1, err
+}
+func (g *walk) accessibleSeveral(q string, items []choice) ([]int, error) {
+	fmt.Fprintln(g.out, g.question(q)+" ")
+	fmt.Fprintf(g.out, "Select up to %d options.\n", len(items))
+	checked := make([]bool, len(items))
+	for i, item := range items {
+		checked[i] = item.checked
+	}
+	labels := g.labels(items)
+	for {
+		for i, label := range labels {
+			mark := " "
+			if checked[i] {
+				mark = "✓"
+			}
+			fmt.Fprintf(g.out, "%d. %s %s\n", i+1, mark, label)
+		}
+		fmt.Fprintln(g.out, "0.   Confirm selection")
+		pick, err := g.accessibleNumber(0, len(items), false)
+		if err != nil {
+			return nil, err
+		}
+		if pick > 0 {
+			checked[pick-1] = !checked[pick-1]
+			fmt.Fprintln(g.out)
+			continue
+		}
+		var selected []int
+		for i, yes := range checked {
+			if yes {
+				selected = append(selected, i)
+			}
+		}
+		if len(selected) > 0 {
+			fmt.Fprintln(g.out)
+			return selected, nil
+		}
+		fmt.Fprintln(g.out, "keep at least one checked")
+	}
+}
+func (g *walk) accessibleText(q string, secret bool, valid func(string) error) (string, error) {
+	for {
+		fmt.Fprint(g.out, g.question(q)+" ")
+		line, err := g.terminal.readLine(g.ctx, g.out, secret)
+		if err != nil {
+			return "", err
+		}
+		if valid != nil {
+			if err := valid(line); err != nil {
+				fmt.Fprintln(g.out, err)
+				continue
+			}
+		}
+		if secret {
+			if err := g.terminal.discardInput(); err != nil {
+				return "", err
+			}
+		}
+		fmt.Fprintln(g.out)
+		return strings.TrimSpace(line), nil
+	}
 }

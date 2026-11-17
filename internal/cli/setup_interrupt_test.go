@@ -130,7 +130,7 @@ func (w *guidePTYOutput) Write(b []byte) (int, error) {
 func guidePTYHelper(t *testing.T, routeName string) {
 	t.Helper()
 	var route guidePTYRoute
-	for _, r := range append(append(guidePTYRoutes(), guideChildRoutes()...), guideHandoffRoutes()...) {
+	for _, r := range append(append(append(guidePTYRoutes(), guideChildRoutes()...), guideDumbRoutes()...), guideHandoffRoutes()...) {
 		if r.name == routeName {
 			route = r
 		}
@@ -139,11 +139,15 @@ func guidePTYHelper(t *testing.T, routeName string) {
 		t.Fatal("unknown route")
 	}
 	f := onFixture(t, "fresh")
-	t.Setenv("TERM", "xterm-256color")
+	term := "xterm-256color"
+	if routeName == "dumb" {
+		term = "dumb"
+	}
+	t.Setenv("TERM", term)
 	t.Setenv("NO_COLOR", "1")
 	noLogins(t)
 	fakeProgram(t, "claude")
-	if routeName != "login" && routeName != "subscription" && routeName != "secret" && !strings.HasPrefix(routeName, "handoff-") {
+	if routeName != "login" && routeName != "subscription" && routeName != "secret" && routeName != "dumb" && !strings.HasPrefix(routeName, "handoff-") {
 		t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-login")
 	}
 	previousLogin, previousDashboard, previousLook, previousInstall := guideSetupToken, guideDashboard, guideLookPath, guideInstall
@@ -377,15 +381,21 @@ func runGuidePTY(t *testing.T, route guidePTYRoute, target int, how string, ahea
 			t.Fatalf("no %s prompt:\n%s", step.prompt, snapshot())
 		}
 		if i == target {
+			if route.name == "dumb" && strings.HasPrefix(step.prompt, "Paste ") {
+				write("partial-secret")
+			}
 			if how == "key" || how == "burst" {
 				write("\x03")
 			} else {
 				sig := os.Signal(os.Interrupt)
-				if how == "term" {
+				if how == "term" || how == "double" {
 					sig = syscall.SIGTERM
 				}
 				if err := c.Process.Signal(sig); err != nil {
 					t.Fatal(err)
+				}
+				if how == "double" {
+					_ = c.Process.Signal(os.Interrupt)
 				}
 			}
 		} else if how == "burst" {
@@ -443,7 +453,7 @@ func runGuidePTY(t *testing.T, route guidePTYRoute, target int, how string, ahea
 			}
 		}
 	}
-	if strings.Contains(snapshot(), "SECOND_SECRET") {
+	if strings.Contains(snapshot(), "SECOND_SECRET") || strings.Contains(snapshot(), "partial-secret") {
 		t.Fatalf("secret tail reached the screen:\n%s", snapshot())
 	}
 	after, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
