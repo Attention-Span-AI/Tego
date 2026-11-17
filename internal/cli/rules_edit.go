@@ -199,10 +199,10 @@ func atomicRulesWrite(path string, text []byte, mode os.FileMode, check func() e
 
 // checkRules compiles a rules file's text as the file at path, the way tego learn --save checks what it saves and
 // tego compile --offline checks a file, and prints its errors.
-func checkRules(ctx context.Context, m *config.Machine, path string, text []byte, stderr io.Writer) error {
+func checkRules(ctx context.Context, m *config.Machine, path string, text []byte, stderr io.Writer, more ...agent.CompileOption) error {
 	c, ds, err := agent.LoadBytes(path, text, profileSources(m))
 	if err == nil {
-		_, ds, err = agent.Compile(c, m, append(learnCompileOptions(ctx, m), agent.Offline())...)
+		_, ds, err = agent.Compile(c, m, append(append(learnCompileOptions(ctx, m), agent.Offline()), more...)...)
 	}
 	if err != nil {
 		if errs := slices.DeleteFunc(ds, func(d agent.Diagnostic) bool { return d.Severity != agent.SeverityError }); len(errs) > 0 {

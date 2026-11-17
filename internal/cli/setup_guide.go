@@ -1533,20 +1533,8 @@ func rulesFile(ctx context.Context, m *config.Machine, s, cwd string) (string, e
 		return "", fmt.Errorf("%s doesn't exist", s)
 	}
 	var diag bytes.Buffer
-	c, ds, err := agent.LoadBytes(p, text, profileSources(m))
-	if err == nil {
-		options := append(learnCompileOptions(ctx, m), agent.Offline(), agent.WithCwd(cwd))
-		_, ds, err = agent.Compile(c, m, options...)
-	}
-	if err != nil {
-		for _, d := range ds {
-			if d.Severity == agent.SeverityError {
-				_ = agent.WriteDiagnostics(&diag, []agent.Diagnostic{d})
-			}
-		}
-		if diag.Len() == 0 {
-			message(&diag, p, 0, 0, err.Error(), agent.CodeSchema)
-		}
+	// Relative entries resolve against the chosen project, where tego run will read this file.
+	if err := checkRules(ctx, m, p, text, &diag, agent.WithCwd(cwd)); err != nil {
 		first, _, _ := strings.Cut(strings.TrimSpace(diag.String()), "\n")
 		if m := diagLine.FindStringSubmatch(first); m != nil {
 			return "", fmt.Errorf("%s line %s: %s", s, m[1], m[2])
