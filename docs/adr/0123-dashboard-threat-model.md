@@ -63,8 +63,12 @@ before this record:
    (`internal/platform/peer`, `run-member`).
 6. **A listener proves it is this dashboard without being given the link** (*added 2026-11-16*). `GET
    /_tego/identity?challenge=<64 hex digits>` answers `HMAC-SHA256(sign-in token, "tego-dashboard-v1\n" | challenge |
-   "\n" | scope)` in hex, where the scope is the SHA-256 of the ledger root, the configuration file's path and that
-   file's bytes (`internal/control/cli/serve.go`). `tego dashboard` and `tego start` send a fresh 32-byte challenge
+   "\n" | scope)` in hex, where the scope is the SHA-256 of the effective machine configuration after every
+   layer (built-in, `/etc/tego/config.yaml`, `~/.tego/config.yaml`, and `TEGO_CONFIG`), including provenance, and the
+   cleaned absolute served ledger root with directory links resolved (`internal/setup.DashboardScope`), so equivalent
+   served-ledger spellings match. The loaded snapshot retains its own ledger setting even when `--ledger` overrides
+   the served root. Serve computes the scope from the exact loaded snapshot passed to the server, without rereading
+   configuration files. `tego dashboard` and `tego start` send a fresh 32-byte challenge
    to the address in `~/.tego/dashboard.log` and reuse or print that link only when the answer is the one they
    compute from the logged token and their own ledger and configuration (`internal/cli/dashboard.go`: constant-time
    compare, no proxy, no redirect followed, 300 ms); otherwise they start a new dashboard. The request carries no
