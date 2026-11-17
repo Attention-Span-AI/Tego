@@ -643,7 +643,6 @@ var guideDashboard = func(home string) string {
 	if os.MkdirAll(filepath.Join(home, ".tego"), 0o700) != nil {
 		return ""
 	}
-	log := dashboardLog(home)
 	quiet := func(argv ...string) error {
 		c := proc.Command(argv[0], argv[1:]...)
 		if _, err := proc.Start(c); err != nil {
@@ -652,14 +651,22 @@ var guideDashboard = func(home string) string {
 		return c.Wait()
 	}
 	_ = quiet("systemctl", "--user", "stop", "tego-dashboard")
-	if os.WriteFile(log, nil, 0o600) != nil {
+	f, err := openDashboardLog(home)
+	if err != nil {
 		return ""
 	}
-	if quiet("systemd-run", "--user", "--unit=tego-dashboard", "--quiet", "sh", "-c", `exec "$0" serve >"$1" 2>&1`, self, log) != nil {
+	defer func() { _ = f.Close() }()
+	c := proc.Command("systemd-run", "--user", "--unit=tego-dashboard", "--quiet", "--pipe", self, "serve")
+	c.Stdout, c.Stderr = f, f
+	if _, err := proc.Start(c); err != nil {
 		return ""
 	}
+	go func() { _ = c.Wait() }()
 	for range 60 {
-		if b, err := os.ReadFile(log); err == nil {
+		b := make([]byte, 64*1024)
+		n, err := f.ReadAt(b, 0)
+		if err == nil || errors.Is(err, io.EOF) {
+			b = b[:n]
 			if u := dashboardLink.Find(b); u != nil {
 				return string(u)
 			}
@@ -667,6 +674,20 @@ var guideDashboard = func(home string) string {
 		time.Sleep(250 * time.Millisecond)
 	}
 	return ""
+}
+
+// openDashboardLog creates the log privately before any sign-in link is written. The descriptor is handed to
+// systemd-run --pipe, which passes it to the unit; no shell reopens a pathname.
+func openDashboardLog(home string) (*os.File, error) {
+	if err := replaceGuideFile(home, ".tego/dashboard.log", nil, 0600); err != nil {
+		return nil, err
+	}
+	dir, err := guideParent(home, ".tego/dashboard.log", false)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = dir.Close() }()
+	return openGuideAt(dir, "dashboard.log", unix.O_RDWR|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 }
 
 // guideVersion is the version an installed program reports (claude --version), or ""; a variable so a test runs nothing.

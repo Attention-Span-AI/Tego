@@ -83,7 +83,7 @@ func cmdDashboard() Command {
 // restartDashboard stops the running dashboard and starts a new one: with its log emptied, guideDashboard finds no
 // dashboard to reuse.
 func restartDashboard(home string) string {
-	if err := os.WriteFile(dashboardLog(home), nil, 0o600); err != nil {
+	if err := replaceGuideFile(home, ".tego/dashboard.log", nil, 0o600); err != nil {
 		return ""
 	}
 	return guideDashboard(home)
