@@ -78,7 +78,9 @@ a private temporary directory, and checks their release checksums. It uses the s
 cosign verifies the checksums signature at that tag; gh verifies both assets' provenance at that tag. An explicit
 verifier failure stops creation. Lima starts from the verified local template, with no Mac mounts, and receives
 the selected tag and the verified installer digest. Provisioning verifies that digest before executing the installer
-and passes the tag to the Linux installation, so `TEGO_VERSION=v0.1.3` selects that version inside the VM too.
+and passes the tag to the Linux installation, so `TEGO_VERSION=v0.2.0` selects that version inside the VM too.
+Pinned Mac creation requires v0.2.0 or later, the first template that consumes these parameters. Older templates
+are refused before Lima starts; unset `TEGO_VERSION` to install the latest instead.
 The initial piped Mac script has the same trust limit as Linux; [verify it first](#check-the-installer-first) if needed.
 
 The template, [examples/lima/tego.yaml](../examples/lima/tego.yaml), boots Ubuntu 24.04 LTS with 4 CPUs, 4 GiB of

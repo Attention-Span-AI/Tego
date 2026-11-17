@@ -135,6 +135,11 @@ run() {
 		case "$kv" in
 			LIMA=1) cp "$bin.lima/limactl" "$bin/limactl" ;;
 			BREW=0) rm -f "$bin/brew" ;;
+			OLD_TEMPLATE=1)
+				# v0.1.3 provisioning ignores all parameters and fetches mutable latest.
+				printf 'provision:\n  - mode: user\n    script: |\n      curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh | sh\n' >"$bin/tego.yaml"
+				(cd "$bin" && sha256sum tego.yaml install.sh) >"$bin/checksums"
+				;;
 		esac
 	done
 	code=0
@@ -188,6 +193,10 @@ check "VM stopped: starts it" 0 "○ Tego's VM is stopped" "limactl start tego" 
 run pinned LIMA=1 TEGO_YES=1 TEGO_VERSION=v0.1.3
 check "TEGO_VERSION picks that release's template" 0 \
 	"curl $latest" "--param=tego_version=v0.1.3" "verified local template in private directory"
+
+run incompatible LIMA=1 TEGO_YES=1 TEGO_VERSION=v0.1.3 OLD_TEMPLATE=1
+check "old verified template is refused before Lima starts" 7 "v0.2.0 is the first release to support a pinned Mac install" "unset TEGO_VERSION to install the latest"
+absent "old template never starts Lima" "limactl start"
 
 run nobrew BREW=0
 check "no Homebrew: says where to get Lima" 2 "✗ Lima isn't installed" "https://lima-vm.io/docs/installation/"

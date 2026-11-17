@@ -57,6 +57,7 @@ containerd:
   system: false
   user: false
 
+# tego-mac-provisioning: 1
 # The Mac installer supplies the normalized selected tag and the verified install.sh digest.
 # A direct template start defaults to latest and checks the installer against that release's checksum.
 param:
