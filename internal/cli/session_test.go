@@ -214,7 +214,9 @@ func TestRunLegacyOutput(t *testing.T) {
 			os.Stdout, os.Stderr = outW, errW
 			stderrIsTerminal = func() bool { return verbose }
 			defer func() { os.Stdout, os.Stderr, stderrIsTerminal = oldOut, oldErr, oldTTY }()
-			args := []string{"tego", "run", "testdata/minimal.yaml", "--offline"}
+			// The rules pin what the check before the run would otherwise say about this build or this
+			// environment; the streams pinned here are the run's own.
+			args := []string{"tego", "run", "testdata/run-legacy.yaml", "--offline"}
 			if verbose {
 				args = append(args, "-v")
 			}
