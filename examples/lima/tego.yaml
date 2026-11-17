@@ -7,6 +7,9 @@
 #   curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh | sh
 #   tego start
 #
+# Or start the template directly (the installer above also verifies it before Lima starts):
+#   limactl start --name=tego https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml
+#
 # This file is a release asset, like install.sh, and both are in the release's signed checksums file. The
 # provisioning below runs the one-line Linux install inside the VM, as the VM's default user, taking install.sh from
 # the selected release, so tego and tego-control land in ~/.local/bin there. Tier 1 (no root) needs Landlock and a cgroup v2 subtree delegated to the

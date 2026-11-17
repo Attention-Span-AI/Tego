@@ -98,34 +98,49 @@ func TestImagesAreUbuntu2404ForBothMacArchitectures(t *testing.T) {
 	}
 }
 
-// TestProvisionRunsTheOneLineInstall: the VM installs tego as its default user with the Linux one-liner, from the
-// latest release of the repository install.sh names, and every URL in the file is an asset of that release.
+// TestProvisionRunsTheOneLineInstall holds the selected-release download and verification
+// order: no installer is executed before its digest has been checked.
 func TestProvisionRunsTheOneLineInstall(t *testing.T) {
 	raw, tpl := load(t)
-	oneLiner := fmt.Sprintf("curl -fsSL https://github.com/%s/releases/latest/download/install.sh | sh", repo(t))
 	n := 0
 	for _, p := range tpl.Provision {
-		if strings.Contains(p.Script, "install.sh") {
-			n++
-			if p.Mode != "user" {
-				t.Errorf("the install runs in mode %q; want user, so tego lands in the default user's ~/.local/bin", p.Mode)
+		if !strings.Contains(p.Script, "install.sh") {
+			continue
+		}
+		n++
+		if p.Mode != "user" {
+			t.Errorf("the install runs in mode %q; want user", p.Mode)
+		}
+		steps := []string{
+			`set -eu -o pipefail`,
+			`version="$PARAM_tego_version"`,
+			"base=https://github.com/" + repo(t) + "/releases",
+			`curl -fsSL "$base/download/$version/install.sh" -o "$work/install.sh"`,
+			`expected="$PARAM_installer_sha256"`,
+			`[ -n "$expected" ]`,
+			`printf '%s  %s\n' "$expected" "$work/install.sh" | sha256sum -c -`,
+			`TEGO_VERSION="$version" sh "$work/install.sh"`,
+		}
+		pos := 0
+		for _, step := range steps {
+			i := strings.Index(p.Script[pos:], step)
+			if i < 0 {
+				t.Fatalf("provisioning is missing the next verified-install step %q", step)
 			}
-			if !strings.Contains(p.Script, "\n"+oneLiner+"\n") {
-				t.Errorf("the install script does not run %q:\n%s", oneLiner, p.Script)
-			}
+			pos += i + len(step)
+		}
+		if regexp.MustCompile(`\|[ \t]*(?:sh|bash)(?:[ \t\n]|$)`).MatchString(p.Script) || strings.Count(p.Script, `sh "$work/install.sh"`) != 1 {
+			t.Error("provisioning must execute only the checked local installer")
+		}
+		if strings.Contains(p.Script, "releases/latest/download/install.sh") {
+			t.Error("provisioning must download the selected release's installer")
 		}
 	}
 	if n != 1 {
 		t.Errorf("%d provision steps run install.sh; want 1", n)
 	}
-	// Every download is a release asset of install.sh's repository, never a branch's file.
 	if strings.Contains(raw, "raw.githubusercontent.com") {
 		t.Error("the template fetches a file from a branch; take it from the release")
-	}
-	for _, url := range regexp.MustCompile(`https://github\.com/[^/\s]+/[^/\s]+/[^\s]*`).FindAllString(raw, -1) {
-		if !strings.HasPrefix(url, "https://github.com/"+repo(t)+"/releases/latest/download/") {
-			t.Errorf("%s is not an asset of %s's latest release", url, repo(t))
-		}
 	}
 	start := fmt.Sprintf("limactl start --name=tego https://github.com/%s/releases/latest/download/tego.yaml", repo(t))
 	if !strings.Contains(raw, start) {
@@ -148,7 +163,7 @@ func TestTheDashboardPortIsNotForwardedByTheGuestAgent(t *testing.T) {
 	if !ignored {
 		t.Error("portForwards does not ignore guest port 8484")
 	}
-	if !strings.Contains(raw, "-L 8484:127.0.0.1:8484 lima-{{.Name}}") {
+	if !strings.Contains(raw, "-o ExitOnForwardFailure=yes -L 127.0.0.1:8484:127.0.0.1:8484 lima-{{.Name}}") {
 		t.Error("the message does not give the SSH forward of port 8484")
 	}
 }
