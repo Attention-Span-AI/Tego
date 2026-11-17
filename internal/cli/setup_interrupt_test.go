@@ -51,6 +51,9 @@ func guidePTYRoutes() []guidePTYRoute {
 			{"Which project should claude work in?", "\x1b[B\r"}, {"Which rules should claude follow?", "\r"}}},
 		{"install", []guidePTYStep{agent, {"Install Claude Code now?", "\r"}}},
 		{"saved", []guidePTYStep{agent, {"Use your saved Claude Code login?", "\r"}}},
+		{"secret", []guidePTYStep{agent, {"How do you want to log in to Claude Code?", "\x1b[B\r"},
+			{"Paste your Anthropic API key", "test-token\r/SECOND_SECRET"},
+			{"Save the login for later sessions?", "\x1b[B\r"}, project}},
 		{"subscription", []guidePTYStep{agent, {"How do you want to log in to Claude Code?", "\r"},
 			{"Paste the token Claude Code printed", "test-token\r"}}},
 		{"file", []guidePTYStep{agent, project, {rules.prompt, "\x1b[B\x1b[B\x1b[B\r"}, {"Path to the rules file", "~/own.yaml\r"}}},
@@ -86,7 +89,7 @@ func TestGuideInterruptRestoresTerminal(t *testing.T) {
 	}
 	t.Run("typed-ahead/burst", func(t *testing.T) {
 		t.Parallel()
-		route := guidePTYRoutes()[1]
+		route := guidePTYRoutes()[0]
 		runGuidePTY(t, route, len(route.steps)-1, "burst", false)
 	})
 
@@ -127,7 +130,7 @@ func (w *guidePTYOutput) Write(b []byte) (int, error) {
 func guidePTYHelper(t *testing.T, routeName string) {
 	t.Helper()
 	var route guidePTYRoute
-	for _, r := range guidePTYRoutes() {
+	for _, r := range append(guidePTYRoutes(), guideHandoffRoutes()...) {
 		if r.name == routeName {
 			route = r
 		}
@@ -140,14 +143,19 @@ func guidePTYHelper(t *testing.T, routeName string) {
 	t.Setenv("NO_COLOR", "1")
 	noLogins(t)
 	fakeProgram(t, "claude")
-	if routeName != "login" && routeName != "subscription" {
+	if routeName != "login" && routeName != "subscription" && routeName != "secret" && !strings.HasPrefix(routeName, "handoff-") {
 		t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-login")
 	}
 	previousLogin, previousDashboard, previousLook, previousInstall := guideSetupToken, guideDashboard, guideLookPath, guideInstall
 	t.Cleanup(func() {
 		guideSetupToken, guideDashboard, guideLookPath, guideInstall = previousLogin, previousDashboard, previousLook, previousInstall
 	})
-	guideSetupToken = func(context.Context, string, string) (string, error) { return "", nil }
+	guideSetupToken = func(context.Context, string, string) (string, error) {
+		if strings.HasPrefix(routeName, "handoff-") {
+			return guideHandoffToken(t)
+		}
+		return "", nil
+	}
 	guideDashboard = func(string) string { t.Error("interrupted guide started dashboard"); return "" }
 	guideInstall = func(context.Context, string, io.Writer) error {
 		t.Error("interrupted guide ran installer")
@@ -177,6 +185,9 @@ func guidePTYHelper(t *testing.T, routeName string) {
 	defer stop()
 	if code := runSetupGuide(ctx, os.Stdin, out, os.Stderr, true); code != identity.ExitFinding {
 		t.Fatalf("interrupt exit %d", code)
+	}
+	if routeName == "handoff-secret" && os.Getenv("CLAUDE_CODE_OAUTH_TOKEN") != "test-token" {
+		t.Error("sign-in tail answered the token question")
 	}
 	if after := guidePTYFiles(t, f.Home); !reflect.DeepEqual(before, after) {
 		t.Fatalf("interrupted guide changed files: before %v after %v", before, after)
@@ -349,7 +360,7 @@ func runGuidePTY(t *testing.T, route guidePTYRoute, target int, how string, ahea
 		} else {
 			write(step.keys)
 		}
-		if ahead {
+		if ahead || step.prompt == "[handoff-ready]" {
 			if _, err := gateWrite.Write([]byte{'x'}); err != nil {
 				t.Fatal(err)
 			}
@@ -362,6 +373,9 @@ func runGuidePTY(t *testing.T, route guidePTYRoute, target int, how string, ahea
 		}
 	case <-time.After(15 * time.Second):
 		t.Fatalf("guide ignored interrupt:\n%s", snapshot())
+	}
+	if strings.Contains(snapshot(), "SECOND_SECRET") {
+		t.Fatalf("secret tail reached the screen:\n%s", snapshot())
 	}
 	after, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
 	if err != nil {

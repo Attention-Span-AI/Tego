@@ -214,8 +214,9 @@ func resetTerminal() {
 	if _, err := proc.Start(c); err == nil {
 		_ = c.Wait()
 	}
-	// What was typed for the sign-in (the Enter after the pasted code) must not answer the guide's next question.
-	_ = sys.FileDo(os.Stdin, func(fd int) error { return unix.IoctlSetInt(fd, unix.TCFLSH, unix.TCIFLUSH) })
+	// foregroundGuideLogin restores the exact saved termios after this reset.
+	// The guide's reader drains pending input and preserves cancellation keys
+	// before discarding the sign-in tail at its handoff boundary.
 }
 
 // claudeToken is a Claude setup-token token as Claude prints it.
