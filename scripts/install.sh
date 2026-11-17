@@ -174,7 +174,7 @@ mac_setup() {
 		ask "$question" && rc=0 || rc=$?
 		case $rc in
 			0) quietly brew "$verb" lima || exit 2 ;;
-			2) stop 2 "brew ${verb} lima" "limactl start --name=${vm} ${template}" ;;
+			2) stop 2 "brew ${verb} lima" "limactl start --name=${vm} --mount-none ${template}" ;;
 			*) note "Tego needs Lima on a Mac. Nothing was changed."; exit 2 ;;
 		esac
 		done_ "Lima $(limactl --version 2>/dev/null | awk '{print $NF}')"
@@ -195,8 +195,8 @@ mac_setup() {
 		*)
 			todo "Tego's VM isn't set up yet. It takes about 2 minutes, only the first time."
 			ask "Set it up now?" && rc=0 || rc=$?
-			[ "$rc" = 0 ] || stop 0 "limactl start --name=${vm} ${template}"
-			quietly limactl start --tty=false --name="$vm" "$template" || exit 8
+			[ "$rc" = 0 ] || stop 0 "limactl start --name=${vm} --mount-none ${template}"
+			quietly limactl start --tty=false --name="$vm" --mount-none "$template" || exit 8
 			done_ "Tego's VM is ready"
 			;;
 	esac

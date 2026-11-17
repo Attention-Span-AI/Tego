@@ -94,7 +94,7 @@ profile.
 
 ```sh
 brew install lima
-limactl start --name=tego https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml
+limactl start --name=tego --mount-none https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml
 limactl shell tego tego machine check
 ```
 
@@ -162,7 +162,7 @@ tego session show --last          # what the agent did and what Tego blocked
 ```
 
 On a Mac, run `tego start` and `tego dashboard` in your normal terminal: they open Tego's Linux VM for you, and the
-dashboard opens in your Mac's browser. Keep your projects inside the VM. Over SSH on Linux, start a shell in your
+dashboard opens in your Mac's browser. Keep your projects inside the VM; no Mac folders are shared by default ([explicit sharing](docs/INSTALL.md#macos)). Over SSH on Linux, start a shell in your
 user's cgroup first with `systemd-run --user --scope bash` ([docs/INSTALL.md](docs/INSTALL.md#check-the-machine)).
 
 Prefer to do each step yourself? [docs/QUICKSTART.md](docs/QUICKSTART.md) does the same with `tego rules create`,

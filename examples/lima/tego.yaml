@@ -5,7 +5,7 @@
 # Linux. Usage, from a Mac (Apple silicon or Intel):
 #
 #   brew install lima
-#   limactl start --name=tego https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml
+#   limactl start --name=tego --mount-none https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml
 #   limactl shell tego tego doctor
 #
 # This file is a release asset, like install.sh, and both are in the release's signed checksums file. The
@@ -38,12 +38,10 @@ cpus: 4
 memory: "4GiB"
 disk: "20GiB"
 
-# Your Mac home is visible read-only, as in Lima's default template, and /tmp/lima is shared writable. Tego's own
-# data (~/.tego) and the projects an agent works on live in the VM's home, which is not the Mac's.
-mounts:
-  - location: "~"
-  - location: "/tmp/lima"
-    writable: true
+# No Mac folders are shared, including the Mac home and /tmp/lima. Projects and Tego's data live in the VM home.
+# To share a folder explicitly, stop the VM and use `limactl edit tego` to add a mounts entry (docs/INSTALL.md).
+# An agent can read files in any added mount, including secrets; writable mounts also permit Mac file changes.
+mounts: []
 
 # The dashboard (`tego serve`, 127.0.0.1:8484 in the VM) answers only connections made by its own user, and Lima's
 # default port forwarder connects from the VM's guest agent, which runs as root. So 8484 is not forwarded; the
