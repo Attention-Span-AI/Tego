@@ -51,6 +51,8 @@ type Options struct {
 	// contract refuses is recorded at tier landlock too, at the cost compile states (ADR 0077). The dashboard's "Show
 	// refused reads (slower)" switch sets it; tego init does not.
 	Reads bool
+	// ReadOnlyProject grants project writes only in the agent state directory, including its temporary files.
+	ReadOnlyProject bool
 }
 
 // Result is the composed contract and what the caller does around it.
@@ -168,6 +170,16 @@ func Compose(o Options) (*Result, error) {
 		}
 		o.Command, o.AgentNeeds = desc.Command, true
 	}
+	state := "./.tego/review/"
+	if o.ReadOnlyProject {
+		switch argv := commandArgv(o.Command); {
+		case len(argv) > 0 && filepath.Base(argv[0]) == "claude":
+			state = "./.tego/claude/"
+		case len(argv) > 0 && filepath.Base(argv[0]) == "codex":
+			state = "./.tego/codex/"
+		}
+		o.Writes = []string{state}
+	}
 	ps, err := ParsePresets(o.Presets)
 	if err != nil {
 		return nil, err
@@ -198,7 +210,10 @@ func Compose(o Options) (*Result, error) {
 	}
 	envSet := []entry{}
 	if has("repo-only-writes") || len(writes) > 0 {
-		eco := ecosystem(o.Dir)
+		eco := eco{}
+		if !o.ReadOnlyProject {
+			eco = ecosystem(o.Dir)
+		}
 		if has("repo-only-writes") && len(writes) == 0 && len(eco.writes) == 0 {
 			return nil, usagef("repo-only-writes needs the folders the agent may write: add --write <dir> (for example --write src/ --write tests/)")
 		}
@@ -211,13 +226,21 @@ func Compose(o Options) (*Result, error) {
 		}
 		envSet = append(envSet, eco.env...)
 		res.Ignore = append(res.Ignore, eco.ignore...)
-		tmp := filepath.Join(o.Dir, ".tego", "tmp")
-		writes = appendEntry(writes, entry{"./.tego/tmp/", "TMPDIR: the agent's temporary files stay in the project"})
-		envSet = append(envSet, entry{"TMPDIR=" + agent.ProjectDirToken + "/.tego/tmp", "TMPDIR inside the writable ./.tego/tmp/"})
-		if !exists(tmp) {
-			res.makeDir(tmp, "./.tego/tmp/")
+		tempEntry := "./.tego/tmp/"
+		if o.ReadOnlyProject {
+			tempEntry = state + "tmp/"
 		}
-		res.Ignore = append(res.Ignore, ".tego/tmp/")
+		tmp := filepath.Join(o.Dir, strings.TrimPrefix(tempEntry, "./"))
+		writes = appendEntry(writes, entry{tempEntry, "TMPDIR: the agent's temporary files stay in the project"})
+		tempWhy := "TMPDIR inside the writable ./.tego/tmp/"
+		if o.ReadOnlyProject {
+			tempWhy = "temporary files inside the writable agent state"
+		}
+		envSet = append(envSet, entry{"TMPDIR=" + agent.ProjectDirToken + "/" + strings.TrimSuffix(strings.TrimPrefix(tempEntry, "./"), "/"), tempWhy})
+		if !exists(tmp) {
+			res.makeDir(tmp, tempEntry)
+		}
+		res.Ignore = append(res.Ignore, strings.TrimPrefix(tempEntry, "./"))
 	}
 
 	// net.allow: each --allow-host, a group expanded.
