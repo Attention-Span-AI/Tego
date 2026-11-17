@@ -162,14 +162,12 @@ func atomicRulesWrite(path string, text []byte, mode os.FileMode, check func() e
 		return err
 	}
 	defer func() { _ = os.Remove(f.Name()) }()
+	defer func() { _ = f.Close() }() // retain the created inode through publication; Sync reports write failures
 	if _, err = f.Write(text); err == nil {
 		err = f.Chmod(mode)
 	}
 	if err == nil {
 		err = f.Sync()
-	}
-	if cerr := f.Close(); err == nil {
-		err = cerr
 	}
 	if err != nil {
 		return err
@@ -182,7 +180,21 @@ func atomicRulesWrite(path string, text []byte, mode os.FileMode, check func() e
 	if err := regular(); err != nil {
 		return err
 	}
-	return os.Rename(f.Name(), path)
+	if err := os.Rename(f.Name(), path); err != nil {
+		return err
+	}
+	held, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	published, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !os.SameFile(held, published) {
+		return errors.New("the rules file changed underneath publication; check it before running")
+	}
+	return nil
 }
 
 // checkRules compiles a rules file's text as the file at path, the way tego learn --save checks what it saves and

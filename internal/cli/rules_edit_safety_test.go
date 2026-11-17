@@ -76,3 +76,42 @@ func TestRulesEditFileSafety(t *testing.T) {
 		})
 	}
 }
+
+func TestRulesEditReportsSubstitutedPublication(t *testing.T) {
+	for _, link := range []bool{false, true} {
+		t.Run(map[bool]string{false: "file", true: "link"}[link], func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "agent.yaml")
+			if err := os.WriteFile(path, []byte("original"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			victim := filepath.Join(dir, "victim")
+			if err := os.WriteFile(victim, []byte("victim"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			err := atomicRulesWrite(path, []byte("checked"), 0600, func() error {
+				names, e := filepath.Glob(filepath.Join(dir, ".tego-edit-*"))
+				if e != nil {
+					return e
+				}
+				if len(names) != 1 {
+					t.Fatalf("temporary files: %v", names)
+				}
+				if e = os.Remove(names[0]); e != nil {
+					return e
+				}
+				if link {
+					return os.Symlink(victim, names[0])
+				}
+				return os.WriteFile(names[0], []byte("substituted"), 0600)
+			})
+			if err == nil || !strings.Contains(err.Error(), "changed underneath") {
+				t.Fatalf("substituted temporary inode not reported: %v", err)
+			}
+			b, e := os.ReadFile(victim)
+			if e != nil || string(b) != "victim" {
+				t.Fatalf("victim: %q %v", b, e)
+			}
+		})
+	}
+}
