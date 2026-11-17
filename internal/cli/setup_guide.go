@@ -629,7 +629,7 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 			agentName = n
 		}
 	}
-	if code, err := g.saveAgent(ctx, m, a, command, agentName, abs, rc, test, stderr); code != identity.ExitOK || err != nil {
+	if code, err := g.saveAgent(ctx, m, a, command, agentName, abs, &rc, test, stderr); code != identity.ExitOK || err != nil {
 		return code, err
 	}
 	rememberProject(home, abs)
@@ -1376,7 +1376,7 @@ func splitList(s string) []string {
 }
 
 // saveAgent writes the agent's rules file. An agent of that name already there is kept unless the person replaces it.
-func (g *walk) saveAgent(ctx context.Context, m *config.Machine, a guideAgent, command, name, abs string, rc rulesChoice, test bool, stderr io.Writer) (int, error) {
+func (g *walk) saveAgent(ctx context.Context, m *config.Machine, a guideAgent, command, name, abs string, rc *rulesChoice, test bool, stderr io.Writer) (int, error) {
 	replace := false
 	if file, err := agentFile(m, name); err == nil {
 		if _, err := os.Stat(file); err == nil {
@@ -1386,6 +1386,8 @@ func (g *walk) saveAgent(ctx context.Context, m *config.Machine, a guideAgent, c
 				return 0, err
 			}
 			if items[pick].name == "No" {
+				rc.label = "Kept file: " + tildeHome(file, m.Home)
+				rc.file = file
 				g.ok("Kept agent " + name)
 				g.detail("Rules: " + tildeHome(file, m.Home))
 				return identity.ExitOK, nil
@@ -1397,7 +1399,7 @@ func (g *walk) saveAgent(ctx context.Context, m *config.Machine, a guideAgent, c
 	if rc.file != "" {
 		_, code = saveOwnRules(m, name, abs, rc.file, replace, stderr)
 	} else {
-		_, code = guideSaveRules(ctx, m, a, command, name, abs, rc, test, replace, stderr)
+		_, code = guideSaveRules(ctx, m, a, command, name, abs, *rc, test, replace, stderr)
 	}
 	if code != identity.ExitOK {
 		return code, nil
