@@ -963,10 +963,19 @@ func inheritedRuntimeDirLine(lines []string, py bool) int {
 	return -1
 }
 
-// sh5Exempt are the scripts SH-5 does not apply to, each with why.
-var sh5Exempt = map[string]string{
-	"scripts/install.sh":          "it runs the product for the person who installs it, in their own VM and home",
-	"scripts/install_mac_test.sh": "it runs install.sh against stand-ins and only reads 'tego start' in its output",
+// sh5ExemptLine permits only the reviewed logical lines that run the product in the VM or inspect printed
+// installer output. Exact text keeps an appended command, or any later host invocation, subject to SH-5.
+func sh5ExemptLine(rel, line string) bool {
+	var allowed string
+	switch rel {
+	case "scripts/install.sh":
+		allowed = `limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet env TEGO_ON_MAC=1 "\$HOME/.local/bin/tego" dashboard' || exit \$?`
+	case "scripts/install_mac_test.sh":
+		allowed = `check "second run: nothing to redo" 0 "✓ Lima 2.3.0" "✓ Tego's VM is running" "✓ tego command is up to date" "tego start"`
+	default:
+		return false
+	}
+	return strings.TrimSpace(line) == allowed
 }
 
 // checkScript applies SH-1 to SH-7 to one shell or Python script.
@@ -1042,21 +1051,18 @@ func checkScript(path, rel string) ([]finding, error) {
 	if w, f := scriptFuncs(text); len(w) > 0 && filepath.Ext(rel) != ".py" {
 		runsRe, launchRe = execsTegoWith(w, f), runsTegoWith(w, f, launches)
 	}
-	runs := lineOf(runsRe)
-	if runs == 0 && filepath.Ext(rel) != ".py" {
-		// the binary handed to a shell's -c script as $0 or $1 (root-suites.sh's doctor).
-		for _, l := range ll {
-			if runsThroughShell(l.s, text) {
-				runs = l.n
-				break
-			}
+	runs := 0
+	for _, l := range ll {
+		if (runsRe.MatchString(l.s) || (filepath.Ext(rel) != ".py" && runsThroughShell(l.s, text))) && !sh5ExemptLine(rel, l.s) {
+			runs = l.n
+			break
 		}
 	}
 	if runs == 0 && filepath.Ext(rel) == ".py" && pyNamesTego.MatchString(text) {
 		runs = lineOfText(pyExecsTego)
 	}
 	if runs > 0 {
-		if _, product := sh5Exempt[rel]; !product && !helper && !(strings.Contains(text, "TEGO_TEST_CHAIN_ANCHOR") && strings.Contains(text, "TEGO_TEST_OWN_LOG_HOME")) {
+		if !helper && !(strings.Contains(text, "TEGO_TEST_CHAIN_ANCHOR") && strings.Contains(text, "TEGO_TEST_OWN_LOG_HOME")) {
 			out = append(out, finding{rel, runs, "SH-5", "runs a tego binary and neither sets TEGO_TEST_CHAIN_ANCHOR and " +
 				"TEGO_TEST_OWN_LOG_HOME nor calls kt_config or lib_init: the run would anchor in the invoking user's own ~/.tego/chain.log"})
 		}

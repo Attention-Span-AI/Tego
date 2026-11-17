@@ -844,3 +844,34 @@ func TestNamesProductIsAWordPart(t *testing.T) {
 		}
 	}
 }
+
+// TestInstallerSH5ExceptionsAreNotWholeFiles plants a real invocation after each installer's existing lines.
+// Product verification and guest commands need exceptions, but a new host invocation must still be found.
+func TestInstallerSH5ExceptionsAreNotWholeFiles(t *testing.T) {
+	for _, rel := range []string{"scripts/install.sh", "scripts/install_mac_test.sh"} {
+		b, err := os.ReadFile(filepath.Join("..", "..", rel))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, body := range []string{string(b), string(b) + "\ntego run agent.yaml -- /bin/true\n"} {
+			root := tree(t, map[string]string{rel: body})
+			fs, err := checkScript(filepath.Join(root, rel), rel)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []finding
+			for _, f := range fs {
+				if f.Rule == "SH-5" {
+					got = append(got, f)
+				}
+			}
+			planted := len(body) > len(b)
+			if !planted && len(got) != 0 {
+				t.Errorf("%s: existing installer: %v", rel, got)
+			}
+			if planted && (len(got) != 1 || got[0].Line != strings.Count(string(b), "\n")+2) {
+				t.Errorf("%s: planted invocation not found at its line: %v", rel, got)
+			}
+		}
+	}
+}
