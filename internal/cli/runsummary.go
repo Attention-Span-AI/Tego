@@ -152,7 +152,7 @@ func (s *endSummary) textWithMore(show string) string {
 		}
 		parts = append(append(parts, s.counts(false)...), s.tail())
 		fmt.Fprintf(&b, "tego run: %s ended (%s) · %s\n", run, s.rc.Outcome(), strings.Join(parts, " · "))
-		b.WriteString(sameFileLines(s.rc))
+		b.WriteString(s.disclosures())
 	}
 	fmt.Fprintf(&b, "  more: %s %s\n", show, run)
 	return b.String()
@@ -300,6 +300,23 @@ func refusedClause(rc *receipt.Receipt) string {
 		top = append(top, record.Printable(g.name)+" "+strconv.Itoa(g.n))
 	}
 	return s + " (" + strings.Join(top, ", ") + ")"
+}
+
+// disclosures qualifies the action counts and explains same-file refusals. Both the full
+// summary and the terminal footer use it, so a new disclosure cannot be hidden by the footer.
+// Token, pricing and stall gaps concern facts absent from the short footer.
+func (s *endSummary) disclosures() string {
+	if s.rc == nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(sameFileLines(s.rc))
+	for _, g := range s.rc.Coverage.Gaps {
+		if g.Field == "record" || g.Field == "refusals" {
+			fmt.Fprintf(&b, "  %s: %s\n", record.Printable(g.Field), record.Printable(g.Why))
+		}
+	}
+	return b.String()
 }
 
 // maxSameFile is how many programs refused as another name of a blocked file the summary names.

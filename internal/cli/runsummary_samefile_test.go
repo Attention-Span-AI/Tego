@@ -54,7 +54,14 @@ func TestRunSummarySaysASameFileRefusal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	zero := 0
+	rc.Ended, rc.EndReason, rc.ExitCode = true, record.RunEndExit, &zero
+	rc.ReadsNotified = &record.ReadsNotified{Notified: true}
 	s := &endSummary{run: id, rc: rc, chain: "chain verified"}
+	var footer strings.Builder
+	if (&runTerminal{}).ended(&footer, "svc", s) || footer.String() != s.text()+s.readsLine() {
+		t.Errorf("same-file explanation lost in terminal footer:\n%s", footer.String())
+	}
 	text := s.text()
 	if !strings.Contains(text, " · refused 3 (live.block 3) · ") {
 		t.Errorf("the summary line changed:\n%s", text)

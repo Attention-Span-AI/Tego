@@ -183,7 +183,7 @@ func (q *runTerminal) ended(stderr io.Writer, name string, sum *endSummary) bool
 	// A check mark needs a complete, verified record and an ordinary successful exit.
 	// Keep the existing summary's facts whenever the abbreviated count needs qualification.
 	if sum.err != nil || sum.rc == nil || sum.chain != "chain verified" || sum.recordOff || sum.how != "" ||
-		!sum.rc.Ended || sum.rc.EndReason != record.RunEndExit || sum.rc.ExitCode == nil || *sum.rc.ExitCode != 0 || sum.readsLine() != "" {
+		!sum.rc.Ended || sum.rc.EndReason != record.RunEndExit || sum.rc.ExitCode == nil || *sum.rc.ExitCode != 0 || sum.readsLine() != "" || sum.disclosures() != "" {
 		_, _ = io.WriteString(stderr, sum.text()+sum.readsLine())
 		return false
 	}
