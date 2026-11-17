@@ -19,7 +19,7 @@ connect to.
 
 | Command | What it does |
 |---|---|
-| `tego run <agent>` | Runs the agent under its rules. Run it from the agent's project folder. With terminal stderr it prints a start line and a short end line when nothing needs qualification; disclosures retain the full summary. Piped stderr and `-v` keep the detailed output. |
+| `tego run <agent>` | Runs the agent under its rules. Run it from the agent's project folder. With terminal stderr it prints a start line and a short end line when nothing needs qualification; disclosures retain the full summary. Piped stderr and `-v` keep the detailed output. Before it compiles the rules it loads the logins `tego start` saved in `~/.config/tego/agent.env`; a variable already set in the environment wins, and a file that is not your own private file is ignored with a reason. |
 | `tego session list` | Lists sessions: name, agent, status, when it started and how many actions Tego blocked. |
 | `tego session show <session>` or `--last` | Shows what the session did and what Tego blocked. |
 | `tego session stop`, `pause`, `resume <session>` | Stops, pauses or resumes a running session. |
