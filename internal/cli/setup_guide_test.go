@@ -148,7 +148,7 @@ func TestStartSubscriptionNotSaved(t *testing.T) {
 		t.Fatalf("exit %d, setup-token ran %q\n%s\n%s", code, ran, out, errs)
 	}
 	wantAll(t, "subscription", out, "Open the link Claude Code shows", "export CLAUDE_CODE_OAUTH_TOKEN=<your token>",
-		"Reads the project · changes nothing", "Rules       Read-only review")
+		"Project content stays read-only", "Rules       Read-only review")
 	if strings.Contains(out, "Paste the token") {
 		t.Errorf("asked to paste a token the login already gave:\n%s", out)
 	}

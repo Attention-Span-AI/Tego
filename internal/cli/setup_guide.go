@@ -513,7 +513,7 @@ func levelName(t backend.Tier) string {
 type rulesChoice struct {
 	label        string
 	presets      []string
-	writeProject bool // the whole project; otherwise only Tego's own folder in it, .tego/
+	writeProject bool // the whole project; otherwise only the agent state and temporary files
 	hosts        []string
 	summary      string // what the rules mean, in one line
 	file         string // a rules file of the person's own, used as it is
@@ -593,6 +593,7 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 	program := strings.Fields(command)[0]
 	if a.harness == "" {
 		name = program
+		a.command = program
 	}
 	if code, err := g.installed(ctx, a, name, program, home); code != identity.ExitOK || err != nil {
 		return code, err
@@ -1228,7 +1229,7 @@ func (g *walk) rules(ctx context.Context, m *config.Machine, name string, a guid
 	}
 	pick, err := g.chooseOne("Which rules should "+name+" follow?", []choice{
 		{name: "Base development", desc: "Edits and tests the project · never reads secrets", recommended: true},
-		{name: "Read-only review", desc: "Reads the project · changes nothing"},
+		{name: "Read-only review", desc: "Project content stays read-only · agent state and temporary files stay writable"},
 		{name: "Choose each rule", desc: "Pick the rules one by one"},
 		{name: "Use my own rules file", desc: "A rules file you wrote"},
 	})
@@ -1240,7 +1241,7 @@ func (g *walk) rules(ctx context.Context, m *config.Machine, name string, a guid
 		return rulesChoice{label: "Base development", presets: all, writeProject: true,
 			summary: "Edits and tests the project · never reads secrets · reaches only " + host}, nil
 	case 1:
-		return rulesChoice{label: "Read-only review", presets: all, summary: "Reads the project · changes nothing · reaches only " + host}, nil
+		return rulesChoice{label: "Read-only review", presets: all, summary: "Project content stays read-only · writes state and temporary files only in " + reviewState(a) + " · file attributes can change · reaches only " + host}, nil
 	case 3:
 		file, err := g.typeText("Path to the rules file", "~/code/my-app/agent.yaml", false, func(s string) error {
 			_, err := rulesFile(ctx, m, s)
@@ -1279,6 +1280,16 @@ func (g *walk) rules(ctx context.Context, m *config.Machine, name string, a guid
 		rc.summary += " · also reaches " + strings.Join(rc.hosts, ", ")
 	}
 	return rc, nil
+}
+
+func reviewState(a guideAgent) string {
+	switch filepath.Base(a.command) {
+	case "claude":
+		return ".tego/claude/"
+	case "codex":
+		return ".tego/codex/"
+	}
+	return ".tego/review/"
 }
 
 // rulesFile is a typed rules file's absolute path, once it reads and checks as tego run will compile it; otherwise the
@@ -1446,7 +1457,7 @@ func guideSaveRules(_ context.Context, m *config.Machine, a guideAgent, command,
 		return "", identity.ExitError
 	}
 	po := setup.Options{Presets: []string{strings.Join(rc.presets, ",")}, Hosts: rc.hosts,
-		Agent: a.harness, Name: name, Dir: dir, Home: m.Home, Writes: []string{dir + "/.tego/"}}
+		Agent: a.harness, Name: name, Dir: dir, Home: m.Home, ReadOnlyProject: !rc.writeProject}
 	if rc.writeProject {
 		po.Writes = []string{dir + "/"}
 	}
