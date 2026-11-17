@@ -409,3 +409,5 @@ internal/runtime TestRootBuiltinRefusals/bpflsm # needs BPF LSM; unavailable on 
 
 internal/runtime/observe TestMissCountersFollowAttachedPrograms # untagged: needs the compiled objects; the tegobpf suite must exercise real active links
 internal/runtime/observe TestMissingActiveMissInstanceIsUncertain # untagged: needs the compiled objects; the tegobpf suite must exercise real active links
+
+internal/cli TestLoginControllingTerminal/* # needs a usable pseudo-terminal and, for script cases, script(1); skips with a reason when either is unavailable

@@ -421,3 +421,5 @@ tools/rulecheck TestADRNotBuiltClaimsAgreeWithTier3Plan # required component doc
 tools/rulecheck TestNoRuleDefinedAfterChangesList # required component documents are not part of this repository
 tools/rulecheck TestTicketStatusOnTheTree # required component documents are not part of this repository
 pkg/spec/agent TestR5ListsEveryMergeClassRow # required component documents are not part of this repository
+
+internal/cli TestLoginControllingTerminal/* # needs a usable pseudo-terminal and, for script cases, script(1); skips with a reason when either is unavailable

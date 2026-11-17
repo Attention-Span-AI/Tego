@@ -98,9 +98,17 @@ var guideInstall = func(_ context.Context, line string, log io.Writer) error {
 // terminal the sign-in needs and copies what it shows to an already-unlinked file (0600); the
 // wide stty keeps the token on one line there. A variable so a test signs in nothing.
 var guideSetupToken = func(ctx context.Context, program, home string) (string, error) {
-	run := func(c *proc.Cmd) error {
+	run := func(c *proc.Cmd) (err error) {
 		c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
-		c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		restore, err := foregroundGuideLogin(c)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if e := restore(); err == nil {
+				err = e
+			}
+		}()
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -112,7 +120,6 @@ var guideSetupToken = func(ctx context.Context, program, home string) (string, e
 	script, err := guideLookPath("script")
 	if err != nil {
 		err := run(proc.Command(program, "setup-token"))
-		resetTerminal()
 		return "", err
 	}
 	dir := filepath.Join(home, ".tego")
@@ -137,7 +144,6 @@ var guideSetupToken = func(ctx context.Context, program, home string) (string, e
 	c := proc.Command(script, "-q", "-e", "-c", "stty cols 400 2>/dev/null; exec "+shellword.Quote(program)+" setup-token", "/proc/self/fd/3")
 	c.ExtraFiles = []*os.File{f}
 	err = run(c)
-	resetTerminal()
 	if err != nil {
 		return "", err
 	}
@@ -167,6 +173,7 @@ func waitGuideLogin(ctx context.Context, c *proc.Cmd) error {
 			_ = unix.Kill(-c.Process.Pid, unix.SIGKILL)
 			<-done
 		}
+		_ = unix.Kill(-c.Process.Pid, unix.SIGKILL)
 		return ctx.Err()
 	}
 }
