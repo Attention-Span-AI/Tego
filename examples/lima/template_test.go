@@ -167,3 +167,12 @@ func TestTheDashboardPortIsNotForwardedByTheGuestAgent(t *testing.T) {
 		t.Error("the message does not give the SSH forward of port 8484")
 	}
 }
+
+// TestInstallerDocumentsGHAssetAttestations keeps the Linux install instructions
+// distinct about cosign signatures and gh's per-asset provenance checks.
+func TestInstallerDocumentsGHAssetAttestations(t *testing.T) {
+	doc := read(t, "../../docs/INSTALL.md")
+	if !strings.Contains(doc, "cosign verifies the checksums file's signature; gh verifies each asset's build provenance attestation") {
+		t.Error("Linux instructions must distinguish the checksums signature from asset provenance attestations")
+	}
+}
