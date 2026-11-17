@@ -192,6 +192,8 @@ mac_setup() {
 			ask "Set it up now?" && rc=0 || rc=$?
 			[ "$rc" = 0 ] || stop 0 "${install_line}"
 			prepare_release
+			grep -qxF '# tego-mac-provisioning: 1' "$archive_path" ||
+				die "v0.2.0 is the first release to support a pinned Mac install; unset TEGO_VERSION to install the latest" 7
 			# The VM executes install.sh: verify that asset too, then give the guest its digest.
 			download "${base_url}/${tag}/install.sh" "${workdir}/install.sh" "the installer"
 			[ "$verify" != gh ] || attested "${workdir}/install.sh" install.sh
