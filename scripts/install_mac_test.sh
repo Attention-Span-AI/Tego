@@ -283,6 +283,27 @@ case "$*" in
 	*-Fn*) echo "n${FAKE_BIND:-127.0.0.1:8484}" ;;
 esac
 EOF
+# Emulate macOS stat, including lookup failures. Overrides apply to the original
+# VM socket only; a new private tunnel directory has the caller's metadata.
+cat >"$bin/stat" <<'EOF'
+#!/bin/sh
+[ "$1" = -f ] || exit 1
+format=$2
+path=$3
+case "$path" in
+	"$HOME/.lima/tego")
+		[ "${FAKE_DIR_STAT_FAIL:-}" != 1 ] || exit 1
+		case "$format" in %u) echo "${FAKE_DIR_UID:-$(id -u)}" ;; %Lp) echo "${FAKE_DIR_MODE:-700}" ;; esac ;;
+	"$HOME/.lima/tego/tego-dashboard.sock") echo "${FAKE_SOCKET_UID:-$(id -u)}" ;;
+	*) case "$format" in %u) id -u ;; %Lp) echo 700 ;; esac ;;
+esac
+EOF
+cat >"$bin/ps" <<'EOF'
+#!/bin/sh
+[ ! -f "$FAKE_LOG.tunnel" ] || { id -u; exit; }
+[ "${FAKE_PS_FAIL:-}" != 1 ] || exit 1
+printf '  %s\n' "${FAKE_PROCESS_UID:-$(id -u)}"
+EOF
 cat >"$bin/ssh" <<'EOF'
 #!/bin/sh
 echo "ssh $*" >>"$FAKE_LOG"
@@ -297,10 +318,12 @@ cat >"$bin/open" <<'EOF'
 #!/bin/sh
 echo "open $*" >>"$FAKE_LOG"
 EOF
-chmod +x "$bin/lsof" "$bin/ssh" "$bin/open"
+chmod +x "$bin/lsof" "$bin/ssh" "$bin/open" "$bin/stat" "$bin/ps"
 shim_run() {
 	: >"$tmp/log"; rm -f "$tmp/log.tunnel"; code=0
-	env -i HOME="$tmp" PATH="$bin:/usr/bin:/bin" FAKE_VM=Running FAKE_LOG="$tmp/log" "$@" \
+	mkdir -p "$tmp/.lima/tego"
+	: >"$tmp/.lima/tego/tego-dashboard.sock"
+	env -i HOME="$tmp" TMPDIR="$tmp" PATH="$bin:/usr/bin:/bin" FAKE_VM=Running FAKE_LOG="$tmp/log" "$@" \
 		sh "$tmp/.local/bin/tego" "${SHIM_COMMAND:-dashboard}" >"$tmp/out" 2>&1 || code=$?
 }
 shim_run FAKE_LISTENER=none FAKE_SSH_FAIL=1
@@ -321,6 +344,14 @@ check "new tunnel binds loopback and confirms forwarding" 0 "-o ExitOnForwardFai
 shim_run FAKE_LISTENER=ssh
 check "own VM tunnel can be reused" 0 "-O check lima-tego" "open http"
 absent "own VM tunnel is reused without a second forward" "-L "
+other_uid=$(($(id -u) + 1))
+for unsafe in "FAKE_SOCKET_UID=$other_uid" "FAKE_DIR_UID=$other_uid" FAKE_DIR_MODE=770 FAKE_DIR_MODE=707 FAKE_DIR_STAT_FAIL=1 "FAKE_PROCESS_UID=$other_uid" FAKE_PS_FAIL=1; do
+	shim_run FAKE_LISTENER=ssh "$unsafe"
+	check "unsafe tunnel metadata ($unsafe) refuses occupied port" 1 "dashboard tunnel is not up"
+	absent "unsafe tunnel ($unsafe) never opens browser" "open http"
+	shim_run FAKE_LISTENER=none "$unsafe"
+	check "unsafe tunnel metadata ($unsafe) makes a new tunnel on a free port" 0 "-L 127.0.0.1:8484:127.0.0.1:8484" "open http"
+done
 shim_run FAKE_LISTENER=ssh FAKE_BIND='*:8484'
 check "wildcard listener is not accepted" 1 "dashboard tunnel is not up"
 absent "wildcard listener never opens browser" "open http"
