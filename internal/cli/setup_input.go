@@ -71,7 +71,9 @@ type guideInput struct {
 	wakeRead, wakePeer *sys.FD
 	mu                 sync.Mutex
 	once               sync.Once
+	finishOnce         sync.Once
 	closed             bool
+	remaining          int
 }
 
 func newGuideInput(file *os.File) (*guideInput, error) {
@@ -79,7 +81,7 @@ func newGuideInput(file *os.File) (*guideInput, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &guideInput{file: file, wakeRead: r, wakePeer: w}, nil
+	return &guideInput{file: file, wakeRead: r, wakePeer: w, remaining: -1}, nil
 }
 func (r *guideInput) Read(p []byte) (n int, err error) {
 	r.mu.Lock()
@@ -96,16 +98,32 @@ func (r *guideInput) Read(p []byte) (n int, err error) {
 				} else if err != nil {
 					return err
 				}
-				// Cancellation wins even if input became readable at the same time.
+				input := p
 				if fds[1].Revents != 0 {
-					return io.EOF
+					// Finish the bytes already pending through the same decoder.
+					// A blind flush could discard Ctrl-C, including CSI-u keys.
+					// Snapshot the byte count so new input cannot prolong shutdown.
+					if r.remaining < 0 {
+						var err error
+						r.remaining, err = unix.IoctlGetInt(fd, unix.TIOCINQ)
+						if err != nil {
+							return err
+						}
+					}
+					if r.remaining == 0 || fds[0].Revents&unix.POLLIN == 0 {
+						return io.EOF
+					}
+					input = p[:min(len(p), r.remaining)]
 				}
-				n, err = unix.Read(fd, p)
+				n, err = unix.Read(fd, input)
 				if errors.Is(err, unix.EINTR) || errors.Is(err, unix.EAGAIN) {
 					continue
 				}
 				if n == 0 && err == nil {
 					return io.EOF
+				}
+				if r.remaining >= 0 {
+					r.remaining -= max(n, 0)
 				}
 				return err
 			}
@@ -113,10 +131,13 @@ func (r *guideInput) Read(p []byte) (n int, err error) {
 	})
 	return max(n, 0), err
 }
+func (r *guideInput) finish() {
+	// Wake Poll without closing any descriptor still borrowed by Read.
+	r.finishOnce.Do(func() { _ = r.wakePeer.Close() })
+}
 func (r *guideInput) close() {
 	r.once.Do(func() {
-		// Closing the wake peer wakes Poll without racing a borrowed descriptor.
-		_ = r.wakePeer.Close()
+		r.finish()
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		r.closed = true
@@ -182,7 +203,7 @@ func (t *guideTerminal) start() error {
 				t.pending = queue
 				return
 			case <-e.stop:
-				reader.close()
+				reader.finish()
 				// Read now returns EOF. Let the decoder finish naturally and
 				// drain every event before canceling: canceling StreamEvents
 				// first can discard bytes its nested goroutine already read.
@@ -191,6 +212,7 @@ func (t *guideTerminal) start() error {
 					case event := <-decoded:
 						enqueue(event)
 					case <-parsed:
+						reader.close()
 						cancel()
 						t.pending = queue
 						return
@@ -208,6 +230,23 @@ func (t *guideTerminal) pause() {
 		t.input = nil
 	}
 }
+
+// discardInput decodes pending terminal bytes before dropping the queue, so
+// cancellation keys survive a secret boundary while secret tails do not.
+func (t *guideTerminal) discardInput() error {
+	if t.file == nil {
+		return nil // an adapter-only caller has no terminal queue
+	}
+	if t.input == nil {
+		if err := t.start(); err != nil {
+			return err
+		}
+	}
+	t.pause()
+	t.pending = nil
+	return t.start()
+}
+
 func (t *guideTerminal) close() error { t.pause(); return t.restore() }
 func (e *guideEvents) next(ctx context.Context) tea.Cmd {
 	return func() tea.Msg {
@@ -321,6 +360,11 @@ func (t *guideTerminal) runForm(ctx context.Context, form *huh.Form, field *hint
 	form.SubmitCmd, form.CancelCmd = tea.Quit, tea.Interrupt
 	model := &guideForm{form: form, field: field, input: t.input, ctx: ctx}
 	_, err := tea.NewProgram(model, tea.WithInput(nil), tea.WithOutput(out), tea.WithContext(ctx), tea.WithoutSignalHandler(), tea.WithFilter(model.filter)).Run()
+	if field.mask && form.State == huh.StateCompleted {
+		if flushErr := t.discardInput(); err == nil {
+			err = flushErr
+		}
+	}
 	if form.State == huh.StateAborted || errors.Is(err, tea.ErrInterrupted) {
 		return huh.ErrUserAborted
 	}
@@ -331,6 +375,7 @@ func (g *walk) setupToken(ctx context.Context, program, home string) (string, er
 		return guideSetupToken(ctx, program, home)
 	}
 	g.terminal.pause()
+	g.terminal.pending = nil
 	if err := g.terminal.restore(); err != nil {
 		return "", err
 	}
@@ -338,7 +383,7 @@ func (g *walk) setupToken(ctx context.Context, program, home string) (string, er
 	if rawErr := g.terminal.raw(); err == nil {
 		err = rawErr
 	}
-	if startErr := g.terminal.start(); err == nil {
+	if startErr := g.terminal.discardInput(); err == nil {
 		err = startErr
 	}
 	return token, err
