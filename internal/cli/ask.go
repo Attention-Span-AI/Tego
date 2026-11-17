@@ -35,14 +35,15 @@ func init() {
 func cmdAsk() Command {
 	var asJSON bool
 	return Command{Name: "ask", Summary: "list or inspect pending human approvals (no argument: every running run)", Usage: "[run] [ask_id] [--json]", Flags: func(f *flag.FlagSet) { f.BoolVar(&asJSON, "json", false, "one JSON object") }, Run: func(ctx context.Context, f *flag.FlagSet, out, errs io.Writer) int {
+		_, _, session := sessionShape(f.Arg(0))
 		switch {
 		case f.NArg() == 0:
 			return runAskAll(ctx, asJSON, out, errs)
 		case f.NArg() == 1 && ask.ValidID(f.Arg(0)):
 			return runAskByID(ctx, "ask", f.Arg(0), false, false, asJSON, "", out, errs)
-		case f.NArg() == 1 && (strings.HasPrefix(f.Arg(0), "q-") || runIDArg(f.Arg(0)) != nil):
+		case f.NArg() == 1 && ((strings.HasPrefix(f.Arg(0), "q-") && !session) || runOrSessionArg(f.Arg(0)) != nil):
 			// One argument is either kind (QG-11): calling it only "not a run id" hid that an ask id works alone. One
-			// that begins q- is an ask id mistyped, never taken for the end of a run id ("q-" and six more could be).
+			// that begins q- without a session shape is an ask id mistyped, never the end of a run id ("q-" and six more could be).
 			message(errs, "", 0, 0, fmt.Sprintf("tego ask: %q is neither a run id (r-…) nor an ask id (q-…); "+
 				"tego ask alone lists every running run's asks", f.Arg(0)), codeUsage)
 			return identity.ExitUsage
@@ -108,7 +109,7 @@ func cmdAlternate() Command {
 // asks, or the one ask id names. The arguments are checked before the machine config is read; the abbreviation is
 // expanded under the ledger root it names, and everything after it, the lines printed included, uses the whole id.
 func runAskCommand(ctx context.Context, name, ref, id string, approve, always, asJSON bool, alternate string, out, errs io.Writer) int {
-	if err := runIDArg(ref); err != nil {
+	if err := runOrSessionArg(ref); err != nil {
 		message(errs, "", 0, 0, "tego "+name+": "+err.Error(), codeUsage)
 		return identity.ExitUsage
 	}
