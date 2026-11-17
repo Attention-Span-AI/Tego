@@ -538,6 +538,10 @@ func runSetupGuide(ctx context.Context, in io.Reader, stdout, stderr io.Writer, 
 }
 
 func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
+	if learnEUID() == 0 {
+		g.bad("Run tego start as yourself, without root or sudo.")
+		return identity.ExitError, nil
+	}
 	m, cds, err := loadMachine(config.TrustWarn)
 	writeConfigDiagnostics(stderr, cds)
 	if err != nil {
@@ -758,6 +762,10 @@ var guideVersion = func(program string) string {
 
 // installed makes sure the agent's program is on PATH, offering to install a known agent.
 func (g *walk) installed(ctx context.Context, a guideAgent, name, program, home string) (int, error) {
+	if learnEUID() == 0 {
+		g.bad("Run tego start as yourself, without root or sudo; no installer was fetched or run.")
+		return identity.ExitError, nil
+	}
 	if _, err := guideLookPath(program); err == nil {
 		g.ok(strings.TrimSpace(name+" "+guideVersion(program)) + " is installed")
 		return identity.ExitOK, nil
@@ -766,6 +774,8 @@ func (g *walk) installed(ctx context.Context, a guideAgent, name, program, home 
 		g.bad(program + " isn't installed. Install it, then run tego start again.")
 		return identity.ExitFinding, nil
 	}
+	g.detail("This fetches and runs the current upstream installer with your permissions:")
+	g.cmd(a.install)
 	pick, err := g.chooseOne("Install "+name+" now?", yesNoItems("Runs "+name+"'s own installer", "Shows the install line instead", true))
 	if err != nil {
 		return 0, err
@@ -792,6 +802,10 @@ func (g *walk) installed(ctx context.Context, a guideAgent, name, program, home 
 // installAgent runs a's install line with its output in ~/.tego/setup-install.log; on failure it shows the log's last
 // lines and where the whole log is.
 func (g *walk) installAgent(ctx context.Context, a guideAgent, home string) bool {
+	if learnEUID() == 0 {
+		g.bad("An agent installer cannot run as root.")
+		return false
+	}
 	logPath := filepath.Join(home, ".tego", "setup-install.log")
 	_ = os.MkdirAll(filepath.Dir(logPath), 0o700)
 	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
