@@ -160,6 +160,19 @@ check "bash with only a .profile: the line goes there" 0 "Run   exec bash -l   (
 grep -q 'added by the Tego installer' "$tmp/bashhome/.profile" || { echo "FAIL bash: PATH line not in .profile"; fails=$((fails + 1)); }
 [ ! -e "$tmp/bashhome/.bash_profile" ] || { echo "FAIL bash: a .bash_profile now hides .profile"; fails=$((fails + 1)); }
 
+run fish LIMA=1 FAKE_VM=Running TEGO_YES=1 SHELL=/usr/bin/fish XDG_CONFIG_HOME="$tmp/fish-config"
+check "fish receives its own PATH configuration" 0 "exec fish -l"
+fishfile="$tmp/fish-config/fish/conf.d/tego.fish"
+# shellcheck disable=SC2016 # this is the literal fish configuration
+if ! grep -qF 'fish_add_path "$HOME/.local/bin"' "$fishfile" 2>/dev/null; then
+	echo 'FAIL fish: no fish PATH configuration'; fails=$((fails + 1))
+fi
+run fishagain LIMA=1 FAKE_VM=Running TEGO_YES=1 SHELL=/usr/bin/fish XDG_CONFIG_HOME="$tmp/fish-config"
+check "fish configuration is idempotent" 0
+[ "$(grep -c 'added by the Tego installer' "$fishfile" 2>/dev/null || true)" = 1 ] || {
+	echo 'FAIL fish: PATH configuration missing or duplicated'; fails=$((fails + 1));
+}
+
 run again LIMA=1 FAKE_VM=Running TEGO_YES=1
 check "second run: nothing to redo" 0 "✓ Lima 2.3.0" "✓ Tego's VM is running" "✓ tego command is up to date" "tego start"
 [ "$(grep -c 'added by the Tego installer' "$tmp/.zshrc")" = 1 ] || { echo "FAIL second run: PATH line added twice"; fails=$((fails + 1)); }
