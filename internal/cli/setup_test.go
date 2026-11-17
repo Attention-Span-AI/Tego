@@ -52,6 +52,9 @@ const danaUID = 1000
 func onFixture(t *testing.T, name string) *guidetest.Fixture {
 	t.Helper()
 	ownShell(t)
+	previousEUID := learnEUID
+	learnEUID = func() int { return danaUID }
+	t.Cleanup(func() { learnEUID = previousEUID })
 	f := guidetest.Make(t, name)
 	t.Setenv(config.EnvConfigVar, f.Config)
 	t.Setenv("PATH", guidetest.PATH)

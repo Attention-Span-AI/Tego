@@ -47,7 +47,21 @@ func TestAgentInstallerConsentAndRoot(t *testing.T) {
 	var out bytes.Buffer
 	g := newWalk(strings.NewReader("1\n"), &out, false)
 	code, _ := g.installed(context.Background(), guideAgents[0], "Claude Code", "claude", t.TempDir())
-	if code != identity.ExitError || calls != 0 || !strings.Contains(out.String(), "root") {
+	if code != identity.ExitFinding || calls != 0 || !strings.Contains(out.String(), "root") || !strings.Contains(out.String(), guideAgents[0].install) {
 		t.Fatalf("root installer allowed: %d %d %s", code, calls, &out)
+	}
+}
+
+func TestGuideWorksAsRoot(t *testing.T) {
+	f := onFixture(t, "fresh")
+	noLogins(t)
+	fakeProgram(t, "claude")
+	old := learnEUID
+	learnEUID = func() int { return 0 }
+	t.Cleanup(func() { learnEUID = old })
+	t.Chdir(f.Home)
+	code, out, errs := runGuide(t, "1\n2\nsk-test-root\n1\n1\n1\n")
+	if code != identity.ExitOK || !strings.Contains(out, "Ready") {
+		t.Fatalf("root guide: %d\n%s\n%s", code, out, errs)
 	}
 }
