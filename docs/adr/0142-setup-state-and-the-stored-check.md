@@ -304,6 +304,37 @@ with runs it sits under the headline, folded to one line once every step is done
   holds every step, the next step and the not-known lines to the object in `internal/guide/testdata`, which `tego setup
   --json` prints for that tree (`TestSetupParityWithTheFiles`).
 
+## Amendment 2026-11-17: `tego start` and the terminal
+
+`tego start` (and `tego setup` in a terminal) walks a person through four questions with Huh forms
+(`internal/cli/setup_guide.go`). How it holds the terminal is decided here, because each rule below replaced a
+simpler arrangement that lost keys or left the terminal unusable:
+
+1. **One reader for the whole guide** (`internal/cli/setup_input.go`). The guide puts the terminal's input in raw mode
+   once, owns one decoder and one queue from its first question to its last, and restores the saved settings when it
+   returns, however it returns. A form is given one event at a time and no more once Huh has accepted its field, so
+   a key typed for the next question waits in the queue. A reader per form outlived its form and took the next
+   question's keys; cooked mode between questions turned an early Enter into a line feed.
+2. **Secret boundaries.** After a masked answer, and on both sides of an agent's sign-in, input already in the kernel
+   is decoded to its end (so Ctrl-C is still seen) and then dropped with the queue: the rest of a paste never
+   answers the next question or shows in it.
+3. **The agent's sign-in owns the terminal while it runs.** The reader is paused and joined, the saved settings are
+   restored, and the child is made the terminal's foreground process group; afterwards the guide takes the
+   terminal back and applies rule 2.
+4. **Every other program runs without the terminal** (an agent's installer, a version check, `systemctl`,
+   `systemd-run`): no input, its own process group, ended and joined when the guide is left. Starting the dashboard
+   is bounded at twenty seconds, and a start that was interrupted stops the unit.
+5. **Leaving.** Ctrl-C is a key in raw mode; SIGINT, SIGTERM and SIGHUP stay subscribed until the terminal is
+   restored. Each ends the guide with the `Stopped` line and exit 1. What was already saved stays saved: the guide
+   is not a transaction.
+6. **`TERM=dumb`** gets numbered questions read through the same reader, because Huh's plain prompts do not end
+   when their context does. Input that is not a terminal (a pipe, a test) keeps Huh's plain prompts, one line per
+   answer.
+
+Tested with real controlling pseudo-terminals (`TestGuideInterruptRestoresTerminal`, `TestGuideHandoffBoundary`,
+`TestGuideChildrenStop`, `TestGuideDumbInterrupt`, `TestLoginControllingTerminal`) and a seeded key walk over every
+question (`TestGuideQuestionKeyWalks`). Not proven: a real agent's sign-in, which the tests replace with a stand-in.
+
 ## Consequences
 
 - One object for both surfaces, tested for parity on eight fixture trees with the command in the loop
