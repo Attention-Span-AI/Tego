@@ -42,7 +42,7 @@ func TestForwarderVarNamesIsTheOneList(t *testing.T) {
 	} {
 		b, err := os.ReadFile(doc.file)
 		if os.IsNotExist(err) && strings.Contains(doc.file, "p0") {
-			continue // the rule specs are kept in the private tree
+			continue // this component document is not part of this repository
 		}
 		if err != nil {
 			t.Fatal(err)

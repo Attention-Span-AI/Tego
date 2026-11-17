@@ -414,10 +414,10 @@ internal/runtime/enforce/cgroup TestRootBuiltinRefusalsPeer # needs root: actual
 
 internal/runtime/observe TestMissCountersFollowAttachedPrograms # needs root, bpffs and the compiled objects; exercised in the tegobpf KVM root suite
 internal/runtime/observe TestMissingActiveMissInstanceIsUncertain # needs root, bpffs and the compiled objects; exercised in the tegobpf KVM root suite
-# These read the design notes (docs/p0, the plan) that the public tree does not ship; they run in the private tree.
-tools/deadcodereport TestNoSpecNamesATestOnlyFunction # no docs/p0 in the public tree
-tools/rulecheck TestSpecsDoNotNameSymbolsThatNeverExisted # no docs/p0 in the public tree
-tools/rulecheck TestADRNotBuiltClaimsAgreeWithTier3Plan # no docs/p0 in the public tree
-tools/rulecheck TestNoRuleDefinedAfterChangesList # no docs/p0 in the public tree
-tools/rulecheck TestTicketStatusOnTheTree # no docs/p0 in the public tree
-pkg/spec/agent TestR5ListsEveryMergeClassRow # no docs/p0 in the public tree
+# These checks read component notes or the tier plan, which are not part of this repository.
+tools/deadcodereport TestNoSpecNamesATestOnlyFunction # required component documents are not part of this repository
+tools/rulecheck TestSpecsDoNotNameSymbolsThatNeverExisted # required component documents are not part of this repository
+tools/rulecheck TestADRNotBuiltClaimsAgreeWithTier3Plan # required component documents are not part of this repository
+tools/rulecheck TestNoRuleDefinedAfterChangesList # required component documents are not part of this repository
+tools/rulecheck TestTicketStatusOnTheTree # required component documents are not part of this repository
+pkg/spec/agent TestR5ListsEveryMergeClassRow # required component documents are not part of this repository
