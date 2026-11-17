@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -63,7 +64,7 @@ func TestDashboardLiteralDollars(t *testing.T) {
 				}
 			}
 			t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
-			if got := guideDashboard(f.Home); got == "" {
+			if got := guideDashboard(context.Background(), f.Home); got == "" {
 				t.Fatal("dashboard did not start")
 			}
 			args, err := os.ReadFile(argsFile)

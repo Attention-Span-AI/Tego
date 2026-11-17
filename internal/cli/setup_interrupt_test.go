@@ -130,7 +130,7 @@ func (w *guidePTYOutput) Write(b []byte) (int, error) {
 func guidePTYHelper(t *testing.T, routeName string) {
 	t.Helper()
 	var route guidePTYRoute
-	for _, r := range append(guidePTYRoutes(), guideHandoffRoutes()...) {
+	for _, r := range append(append(guidePTYRoutes(), guideChildRoutes()...), guideHandoffRoutes()...) {
 		if r.name == routeName {
 			route = r
 		}
@@ -156,7 +156,7 @@ func guidePTYHelper(t *testing.T, routeName string) {
 		}
 		return "", nil
 	}
-	guideDashboard = func(string) string { t.Error("interrupted guide started dashboard"); return "" }
+	guideDashboard = func(context.Context, string) string { t.Error("interrupted guide started dashboard"); return "" }
 	guideInstall = func(context.Context, string, io.Writer) error {
 		t.Error("interrupted guide ran installer")
 		return errStopped
@@ -174,6 +174,10 @@ func guidePTYHelper(t *testing.T, routeName string) {
 			t.Fatalf("initial rules: %d %s %s", code, out, errs)
 		}
 	}
+	if strings.HasPrefix(routeName, "child-") {
+		guideChildActions(routeName)
+		prepareGuideChild(t, routeName)
+	}
 	before := guidePTYFiles(t, f.Home)
 	var out io.Writer = os.Stdout
 	if os.Getenv("TEGO_TEST_GUIDE_AHEAD") == "1" {
@@ -189,7 +193,24 @@ func guidePTYHelper(t *testing.T, routeName string) {
 	if routeName == "handoff-secret" && os.Getenv("CLAUDE_CODE_OAUTH_TOKEN") != "test-token" {
 		t.Error("sign-in tail answered the token question")
 	}
-	if after := guidePTYFiles(t, f.Home); !reflect.DeepEqual(before, after) {
+	if routeName == "child-systemd-run" || routeName == "child-dashboard-poll" {
+		b, err := os.ReadFile(os.Getenv("TEGO_TEST_GUIDE_STOP_CALLS"))
+		if err != nil || strings.Count(string(b), "stop\n") < 2 {
+			t.Errorf("cancelled dashboard unit was not stopped: %q %v", b, err)
+		}
+	}
+	if err := filepath.WalkDir(f.Home, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if strings.HasPrefix(entry.Name(), ".tego-save-") || strings.HasPrefix(entry.Name(), "sign-in-") {
+			return fmt.Errorf("partial setup file: %s", path)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if after := guidePTYFiles(t, f.Home); !strings.HasPrefix(routeName, "child-") && !reflect.DeepEqual(before, after) {
 		t.Fatalf("interrupted guide changed files: before %v after %v", before, after)
 	}
 }
@@ -253,8 +274,19 @@ func runGuidePTY(t *testing.T, route guidePTYRoute, target int, how string, ahea
 	if err != nil {
 		t.Fatal(err)
 	}
+	childPID := filepath.Join(t.TempDir(), "pid")
+	t.Cleanup(func() {
+		b, _ := os.ReadFile(childPID)
+		for _, value := range strings.Fields(string(b)) {
+			pid, _ := strconv.Atoi(value)
+			if pid > 1 {
+				_ = unix.Kill(-pid, unix.SIGKILL)
+				_ = unix.Kill(pid, unix.SIGKILL)
+			}
+		}
+	})
 	c := exec.Command(self, "-test.run=^TestGuideInterruptRestoresTerminal$")
-	c.Env = append(os.Environ(), "TEGO_TEST_GUIDE_INTERRUPT="+route.name, "TERM=xterm-256color", "TEGO_TEST_GUIDE_AHEAD="+map[bool]string{true: "1", false: "0"}[ahead])
+	c.Env = append(os.Environ(), "TEGO_TEST_GUIDE_INTERRUPT="+route.name, "TEGO_TEST_GUIDE_CHILD_PID="+childPID, "TEGO_TEST_GUIDE_STOP_CALLS="+childPID+".stops", "TERM=xterm-256color", "TEGO_TEST_GUIDE_AHEAD="+map[bool]string{true: "1", false: "0"}[ahead])
 	c.Stdin, c.Stdout, c.Stderr = slave, slave, slave
 	c.ExtraFiles = []*os.File{gateRead}
 	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
@@ -266,6 +298,7 @@ func runGuidePTY(t *testing.T, route guidePTYRoute, target int, how string, ahea
 	go func() { childErr = c.Wait(); close(done) }()
 	defer func() { _ = c.Process.Kill(); <-done }()
 	var trace bytes.Buffer
+	outputChanged := make(chan struct{}, 1)
 	var mu sync.Mutex
 	snapshot := func() string { mu.Lock(); defer mu.Unlock(); return trace.String() }
 	ready := make(chan string, len(route.steps))
@@ -287,6 +320,10 @@ func runGuidePTY(t *testing.T, route guidePTYRoute, target int, how string, ahea
 				trace.Write(b[:n])
 				current := trace.String()
 				mu.Unlock()
+				select {
+				case outputChanged <- struct{}{}:
+				default:
+				}
 				for i := range queries {
 					q := &queries[i]
 					count := strings.Count(current, q.q)
@@ -340,10 +377,16 @@ func runGuidePTY(t *testing.T, route guidePTYRoute, target int, how string, ahea
 			t.Fatalf("no %s prompt:\n%s", step.prompt, snapshot())
 		}
 		if i == target {
-			if how != "signal" {
+			if how == "key" || how == "burst" {
 				write("\x03")
-			} else if err := c.Process.Signal(os.Interrupt); err != nil {
-				t.Fatal(err)
+			} else {
+				sig := os.Signal(os.Interrupt)
+				if how == "term" {
+					sig = syscall.SIGTERM
+				}
+				if err := c.Process.Signal(sig); err != nil {
+					t.Fatal(err)
+				}
 			}
 		} else if how == "burst" {
 			if i == 0 {
@@ -373,6 +416,32 @@ func runGuidePTY(t *testing.T, route guidePTYRoute, target int, how string, ahea
 		}
 	case <-time.After(15 * time.Second):
 		t.Fatalf("guide ignored interrupt:\n%s", snapshot())
+	}
+	outputDeadline := time.NewTimer(15 * time.Second)
+	defer outputDeadline.Stop()
+	for !strings.Contains(snapshot(), "Stopped. Run tego start") {
+		select {
+		case <-outputChanged:
+		case <-outputDeadline.C:
+			t.Fatalf("no stopped ending:\n%s", snapshot())
+		}
+	}
+	if strings.Contains(snapshot(), "Ready") {
+		t.Fatalf("wrong interrupted ending:\n%s", snapshot())
+	}
+	if b, err := os.ReadFile(childPID); err == nil {
+		for _, value := range strings.Fields(string(b)) {
+			pid, _ := strconv.Atoi(value)
+			for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+				b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+				if err != nil || strings.Contains(string(b), ") Z ") {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("guide child %d survived interruption", pid)
+				}
+			}
+		}
 	}
 	if strings.Contains(snapshot(), "SECOND_SECRET") {
 		t.Fatalf("secret tail reached the screen:\n%s", snapshot())

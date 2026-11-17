@@ -193,9 +193,12 @@ var startSites = []startSite{
 			"that launcher holds no fanotify group, since only enforce/cgroup's listener (tiers cgroup and bpflsm) calls proc.Arm",
 	},
 	{
-		file: "internal/cli/setup_guide.go", fn: "guideInstall", call: "proc.Start", n: 1, rel: guarded,
-		when: "the agent's own installer, run when the person says yes, in " +
-			"tego start's guide, a command that starts no run: its process holds no fanotify group, since only enforce/cgroup's listener in a launcher calls proc.Arm",
+		file: "internal/cli/setup_guide.go", fn: "startGuideCommand", call: "proc.Start", n: 1, rel: guarded,
+		when: "the cancellable process-group start for setup-only commands, whose callers run no agent and hold no fanotify group",
+	},
+	{
+		file: "internal/cli/setup_guide.go", fn: "runGuideCommand", call: "cli.startGuideCommand", n: 1, rel: beforeArm,
+		when: "the installer, version and systemd probes during setup, which starts no run and holds no fanotify group",
 	},
 	{
 		file: "internal/cli/setup_guide.go", fn: "guideSetupToken", call: "proc.Start", n: 1, rel: guarded,
@@ -203,49 +206,13 @@ var startSites = []startSite{
 			"tego start's guide, a command that starts no run: its process holds no fanotify group, since only enforce/cgroup's listener in a launcher calls proc.Arm",
 	},
 	{
-		file: "internal/cli/setup_guide.go", fn: "resetTerminal", call: "proc.Start", n: 1, rel: guarded,
-		when: "stty sane, after the agent's login gave the terminal back, in " +
-			"tego start's guide, a command that starts no run: its process holds no fanotify group, since only enforce/cgroup's listener in a launcher calls proc.Arm",
-	},
-	{
-		file: "internal/cli/setup_guide.go", fn: "guideDashboard", call: "proc.Start", n: 2, rel: guarded,
+		file: "internal/cli/setup_guide.go", fn: "guideDashboard", call: "cli.startGuideCommand", n: 1, rel: beforeArm,
 		when: "systemctl and systemd-run, which start the dashboard as a user unit, in " +
 			"tego start's guide, a command that starts no run: its process holds no fanotify group, since only enforce/cgroup's listener in a launcher calls proc.Arm",
 	},
 	{
-		file: "internal/cli/setup_guide.go", fn: "guideVersion", call: "proc.Start", n: 1, rel: guarded,
-		when: "the agent's --version, to name the version installed, in " +
-			"tego start's guide, a command that starts no run: its process holds no fanotify group, since only enforce/cgroup's listener in a launcher calls proc.Arm",
-	},
-	{
-		file: "internal/cli/setup_guide.go", fn: "walk.guide", call: "cli.guideDashboard", n: 1, rel: beforeArm,
-		when: "the dashboard, started once the agent is saved, in tego start's guide, a command that starts no run: its process holds no fanotify group",
-	},
-	{
-		file: "internal/cli/dashboard.go", fn: "cmdDashboard", call: "cli.guideDashboard", n: 1, rel: beforeArm,
-		when: "the dashboard, started when none is running, in tego dashboard, a command that starts no run: its process " +
-			"holds no fanotify group",
-	},
-	{
-		file: "internal/cli/dashboard.go", fn: "restartDashboard", call: "cli.guideDashboard", n: 1, rel: beforeArm,
-		when: "the dashboard, started again when the person asks for a new one or tego was updated, in tego dashboard, a " +
-			"command that starts no run: its process holds no fanotify group",
-	},
-	{
-		file: "internal/cli/setup_guide.go", fn: "walk.installed", call: "cli.guideVersion", n: 2, rel: beforeArm,
-		when: "the agent's --version, before and after it is installed, in tego start's guide, a command that starts no run: its process holds no fanotify group",
-	},
-	{
-		file: "internal/cli/setup_guide.go", fn: "walk.installAgent", call: "cli.guideInstall", n: 1, rel: beforeArm,
-		when: "the agent's installer, once the person says yes, in tego start's guide, a command that starts no run: its process holds no fanotify group",
-	},
-	{
 		file: "internal/cli/setup_input.go", fn: "walk.setupToken", call: "cli.guideSetupToken", n: 2, rel: beforeArm,
 		when: "the agent's own login, with and without the guide's own terminal reader, in tego start's guide, a command that starts no run: its process holds no fanotify group",
-	},
-	{
-		file: "internal/cli/setup_login_terminal.go", fn: "foregroundGuideLogin", call: "cli.resetTerminal", n: 2, rel: beforeArm,
-		when: "stty sane after the agent's own login, in tego start's guide, a command that starts no run: its process holds no fanotify group",
 	},
 	{
 		file: "internal/cli/rules_edit.go", fn: "cmdRulesEdit", call: "cli.editCopy", n: 1, rel: beforeArm,

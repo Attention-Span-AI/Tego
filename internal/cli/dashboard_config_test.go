@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"context"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"os"
 	"path/filepath"
@@ -48,7 +49,7 @@ func TestDashboardConfigurationBoundToReuse(t *testing.T) {
 		}
 	}
 	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
-	if got := guideDashboard(f.Home); got == "" {
+	if got := guideDashboard(context.Background(), f.Home); got == "" {
 		t.Fatal("configured dashboard did not start")
 	}
 	argv, _ := os.ReadFile(args)

@@ -90,27 +90,44 @@ var guideLookPath = func(name string) (string, error) {
 var guideInstall = func(ctx context.Context, line string, log io.Writer) error {
 	c := proc.Command("/bin/sh", "-c", line)
 	c.Stdout, c.Stderr = log, log
-	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	return runGuideCommand(ctx, c)
+}
+
+// guideProcess owns a background process group and joins Wait, including the
+// output-copy goroutines. Commands that do not need input never own the tty.
+type guideProcess struct {
+	cmd  *proc.Cmd
+	done chan struct{}
+	err  error
+}
+
+func startGuideCommand(ctx context.Context, c *proc.Cmd) (*guideProcess, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return nil, err
 	}
+	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	c.WaitDelay = time.Second
 	if _, err := proc.Start(c); err != nil {
+		return nil, err
+	}
+	p := &guideProcess{cmd: c, done: make(chan struct{})}
+	go func() { p.err = c.Wait(); close(p.done) }()
+	return p, nil
+}
+func (p *guideProcess) stop() {
+	_ = unix.Kill(-p.cmd.Process.Pid, unix.SIGKILL)
+	<-p.done
+}
+func runGuideCommand(ctx context.Context, c *proc.Cmd) error {
+	p, err := startGuideCommand(ctx, c)
+	if err != nil {
 		return err
 	}
-	done := make(chan struct{})
-	var waitErr error
-	go func() { waitErr = c.Wait(); close(done) }()
+	defer p.stop()
 	select {
-	case <-done:
-		return waitErr
+	case <-p.done:
+		return p.err
 	case <-ctx.Done():
-		_ = unix.Kill(-c.Process.Pid, unix.SIGTERM)
-		select {
-		case <-done:
-		case <-time.After(3 * time.Second):
-		}
-		// Whatever of the line's pipeline ignored the first signal, or was started after it.
-		_ = unix.Kill(-c.Process.Pid, unix.SIGKILL)
 		return ctx.Err()
 	}
 }
@@ -122,6 +139,7 @@ var guideInstall = func(ctx context.Context, line string, log io.Writer) error {
 var guideSetupToken = func(ctx context.Context, program, home string) (string, error) {
 	run := func(c *proc.Cmd) (err error) {
 		c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+		c.WaitDelay = time.Second
 		restore, err := foregroundGuideLogin(c)
 		if err != nil {
 			return err
@@ -201,19 +219,14 @@ func waitGuideLogin(ctx context.Context, c *proc.Cmd) error {
 }
 
 // resetTerminal undoes what a full-screen program can leave behind when it exits (the kitty keyboard protocol, xterm's
-// modifyOtherKeys, bracketed paste, the alternate screen, a hidden cursor) and puts the line settings back, so the
-// guide's next question shows and reads Enter as Enter.
+// modifyOtherKeys, bracketed paste, the alternate screen, a hidden cursor).
+// foregroundGuideLogin then restores the saved line settings.
 func resetTerminal() {
 	if !isTerminalFile(os.Stdout) {
 		return
 	}
 	// Keyboard modes off, the main screen back, the cursor shown, then a fresh line for the next question.
 	_, _ = os.Stdout.WriteString("\x1b[<u\x1b[>4;0m\x1b[?2004l\x1b[?1049l\x1b[?25h\r\n")
-	c := proc.Command("stty", "sane")
-	c.Stdin = os.Stdin
-	if _, err := proc.Start(c); err == nil {
-		_ = c.Wait()
-	}
 	// foregroundGuideLogin restores the exact saved termios after this reset.
 	// The guide's reader drains pending input and preserves cancellation keys
 	// before discarding the sign-in tail at its handoff boundary.
@@ -617,6 +630,9 @@ func runSetupGuide(ctx context.Context, in io.Reader, stdout, stderr io.Writer, 
 		}
 	}
 	code, err := g.guide(ctx, stderr)
+	if ctx.Err() != nil {
+		err = errStopped
+	}
 	switch {
 	case errors.Is(err, errStopped):
 		g.line("")
@@ -727,9 +743,15 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 	rememberProject(home, abs)
 
 	// The recap, the dashboard and what to type next. The person starts the session: Tego never starts the agent.
+	if ctx.Err() != nil {
+		return 0, errStopped
+	}
 	url := ""
 	if g.tty {
-		url = guideDashboard(home)
+		url = guideDashboard(ctx, home)
+	}
+	if ctx.Err() != nil {
+		return 0, errStopped
 	}
 	g.line("")
 	g.line("%s%s%s%s", colTop, g.dim, strings.Repeat("─", 62), g.offEsc)
@@ -770,7 +792,12 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 // guideDashboard starts the dashboard for this user as a systemd user unit (tego-dashboard), as the Mac's tego dashboard
 // does, and returns its address from its log, or "" when it didn't start. On a Mac, the tego command there then opens
 // it in the browser through Tego's VM. A variable so a test starts no unit.
-var guideDashboard = func(home string) string {
+var guideDashboard = func(ctx context.Context, home string) string {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	if ctx.Err() != nil {
+		return ""
+	}
 	self, err := os.Executable()
 	if err != nil {
 		return ""
@@ -788,10 +815,7 @@ var guideDashboard = func(home string) string {
 		var out bytes.Buffer
 		c := proc.Command(argv[0], argv[1:]...)
 		c.Stdout = &out
-		if _, err := proc.Start(c); err != nil {
-			return nil, err
-		}
-		err := c.Wait()
+		err := runGuideCommand(ctx, c)
 		return out.Bytes(), err
 	}
 	_, _ = quiet("systemctl", "--user", "stop", "tego-dashboard")
@@ -818,20 +842,42 @@ var guideDashboard = func(home string) string {
 	}
 	c := proc.Command("systemd-run", append(args, command...)...)
 	c.Stdout, c.Stderr = f, f
-	if _, err := proc.Start(c); err != nil {
+	p, err := startGuideCommand(ctx, c)
+	if err != nil {
 		return ""
 	}
-	go func() { _ = c.Wait() }()
+	started := false
+	defer func() {
+		if !started {
+			p.stop()
+			// The service lives in the user manager's cgroup, outside the
+			// forwarding process group. Stop it even if startup was interrupted.
+			cleanup, stop := context.WithTimeout(context.Background(), 3*time.Second)
+			defer stop()
+			_ = runGuideCommand(cleanup, proc.Command("systemctl", "--user", "stop", "tego-dashboard"))
+		}
+	}()
 	for range 60 {
+		if ctx.Err() != nil {
+			return ""
+		}
 		b := make([]byte, 64*1024)
 		n, err := f.ReadAt(b, 0)
 		if err == nil || errors.Is(err, io.EOF) {
 			b = b[:n]
 			if u := dashboardLink.Find(b); u != nil && probeDashboard(string(u)) {
+				if ctx.Err() != nil {
+					return ""
+				}
+				started = true
 				return string(u)
 			}
 		}
-		time.Sleep(250 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return ""
+		case <-time.After(250 * time.Millisecond):
+		}
 	}
 	return ""
 }
@@ -843,22 +889,13 @@ func openDashboardLog(home string) (*os.File, error) {
 }
 
 // guideVersion is the version an installed program reports (claude --version), or ""; a variable so a test runs nothing.
-var guideVersion = func(program string) string {
+var guideVersion = func(ctx context.Context, program string) string {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
 	c := proc.Command(program, "--version")
 	var out bytes.Buffer
 	c.Stdout = &out
-	if _, err := proc.Start(c); err != nil {
-		return ""
-	}
-	done := make(chan error, 1)
-	go func() { done <- c.Wait() }()
-	select {
-	case err := <-done:
-		if err != nil {
-			return ""
-		}
-	case <-time.After(3 * time.Second):
-		_ = c.Process.Kill()
+	if err := runGuideCommand(ctx, c); err != nil {
 		return ""
 	}
 	return regexp.MustCompile(`[0-9]+\.[0-9]+\.[0-9]+`).FindString(out.String())
@@ -867,7 +904,11 @@ var guideVersion = func(program string) string {
 // installed makes sure the agent's program is on PATH, offering to install a known agent.
 func (g *walk) installed(ctx context.Context, a guideAgent, name, program, home string) (int, error) {
 	if _, err := guideLookPath(program); err == nil {
-		g.ok(strings.TrimSpace(name+" "+guideVersion(program)) + " is installed")
+		version := guideVersion(ctx, program)
+		if ctx.Err() != nil {
+			return 0, errStopped
+		}
+		g.ok(strings.TrimSpace(name+" "+version) + " is installed")
 		return identity.ExitOK, nil
 	}
 	if a.install == "" {
@@ -914,7 +955,7 @@ func (g *walk) installed(ctx context.Context, a guideAgent, name, program, home 
 			g.pathExport = localBin
 		}
 	}
-	g.ok(strings.TrimSpace("Installed " + name + " " + guideVersion(program)))
+	g.ok(strings.TrimSpace("Installed " + name + " " + guideVersion(ctx, program)))
 	return identity.ExitOK, nil
 }
 
@@ -1014,6 +1055,9 @@ func (g *walk) signIn(ctx context.Context, a guideAgent, home string) (int, erro
 		g.todo("Open the link " + a.label + " shows, log in, and paste the code back here.")
 		got, err := g.setupToken(ctx, a.command, home)
 		if err != nil {
+			if ctx.Err() != nil {
+				return 0, errStopped
+			}
 			g.bad(a.label + "'s login didn't finish: " + err.Error() + ". Run tego start to try again.")
 			return identity.ExitFinding, nil
 		}

@@ -412,7 +412,7 @@ func TestRunningDashboardIsReused(t *testing.T) {
 	if got := runningDashboard(home); got != link {
 		t.Errorf("running: %q, want %q", got, link)
 	}
-	if got := guideDashboard(home); got != link {
+	if got := guideDashboard(context.Background(), home); got != link {
 		t.Errorf("tego start restarted a running dashboard: %q", got)
 	}
 	old := time.Now().Add(-time.Hour) // started before this program was built: tego was updated since
@@ -437,7 +437,7 @@ func TestDashboardIsOneDashboard(t *testing.T) {
 	starts := 0
 	prev := guideDashboard
 	t.Cleanup(func() { guideDashboard = prev })
-	guideDashboard = func(home string) string {
+	guideDashboard = func(_ context.Context, home string) string {
 		if u := runningDashboard(home); u != "" {
 			return u
 		}

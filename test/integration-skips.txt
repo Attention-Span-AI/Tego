@@ -428,3 +428,4 @@ internal/cli TestLoginCancellationStopsSystemScriptChild # needs system script(1
 internal/cli TestRunSavedLogins/foreign # needs permission to change a test file to a foreign owner; skips with a reason when chown is unavailable
 internal/cli TestGuideInterruptRestoresTerminal/* # requires an available pseudo-terminal
 internal/cli TestGuideHandoffBoundary/* # requires an available pseudo-terminal
+internal/cli TestGuideChildrenStop/* # requires an available pseudo-terminal
