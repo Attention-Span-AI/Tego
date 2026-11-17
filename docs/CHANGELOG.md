@@ -11,6 +11,27 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
 
 - On kernels that list TOMOYO as active with no policy loaded, including stock Debian 12 and 13, v0.1.3 refused every held file open (`held-label-unavailable`): approvals on file reads, held reads and the dashboard's demo did not work there. They now complete while TOMOYO is unused. Any TOMOYO policy update since boot (including initializer domain creation by a container or local user in another mount namespace), a domain other than `<kernel>`, unreadable TOMOYO files or a kernel built with `CONFIG_SECURITY_TOMOYO_OMIT_USERSPACE_LOADER` still refuse (GAPS B14, C74, C75).
 
+- Mac installer messages explain Lima and Homebrew, give the installer retry command, and put opening a new Terminal window first in the next step. Dashboard and socket messages give clearer next steps.
+
+- The Mac installer restores saved terminal settings on failures and interrupts as well as success, preserving the exit status.
+
+- The Mac VM template has only digest-pinned images for Apple silicon and Intel. Failed image downloads explain
+  removing the incomplete VM before retrying; only a not-found error suggests updating the installer.
+
+- `tego shell` on a Mac reports usage when given extra arguments instead of silently ignoring them.
+
+- The Mac command reads the dashboard port from its link. If another process holds a nondefault port, it explains
+  that Lima forwards VM ports to the Mac itself and Tego's own tunnel is set up for 8484. Use 8484, or stop the VM,
+  run `limactl edit tego`, add `- guestPort: PORT` with `ignore: true` under `portForwards`, then start the VM again.
+  Other dashboard ports have not yet been verified on a Mac; Lima's other forwarding rules are unchanged.
+
+- On a Mac, a dashboard tunnel or browser failure after the guide prints a retry command and still opens the project shell. A failed guide keeps its exit status.
+
+- Rerunning the Mac installer refreshes the Mac command first, then offers a verified guest update or repair when
+  the release supports it. Unsupported releases leave the guest alone and finish normally. Replacing a newer
+  guest with an older release defaults to no. Existing runs finish with their old executable; projects, contracts
+  and records stay in place.
+
 ### Added
 
 - `tego start` sets up a first-time user in four steps: the agent (Claude Code, Codex or another program), its login, a project (a test project with a harmlessly poisoned dependency, or their own) and its rules (Base development, Read-only review, rules picked one by one, or their own rules file). It opens the dashboard and ends with the command that starts the first session. On a Mac, the one-line installer sets up Lima and Tego's VM, and `tego start` and `tego dashboard` work from the Mac's terminal.

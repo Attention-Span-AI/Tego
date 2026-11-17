@@ -61,12 +61,12 @@ func repo(t *testing.T) string {
 }
 
 // TestImagesAreUbuntu2404ForBothMacArchitectures: Apple silicon boots the arm64 image, an Intel Mac the amd64 one,
-// and each architecture has a pinned image first and the current release image after it.
+// and every image must have a digest; there is no mutable fallback.
 func TestImagesAreUbuntu2404ForBothMacArchitectures(t *testing.T) {
 	_, tpl := load(t)
 	file := map[string]string{"aarch64": "ubuntu-24.04-server-cloudimg-arm64.img", "x86_64": "ubuntu-24.04-server-cloudimg-amd64.img"}
 	digest := regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
-	pinned, current := map[string]bool{}, map[string]bool{}
+	pinned := map[string]bool{}
 	for _, img := range tpl.Images {
 		want, ok := file[img.Arch]
 		if !ok {
@@ -76,24 +76,14 @@ func TestImagesAreUbuntu2404ForBothMacArchitectures(t *testing.T) {
 		if !strings.HasPrefix(img.Location, "https://cloud-images.ubuntu.com/releases/noble/") || !strings.HasSuffix(img.Location, "/"+want) {
 			t.Errorf("image %s for %s: want Ubuntu 24.04's %s", img.Location, img.Arch, want)
 		}
-		switch {
-		case img.Digest != "":
-			if !digest.MatchString(img.Digest) {
-				t.Errorf("image %s: digest %q is not sha256:<64 hex>", img.Location, img.Digest)
-			}
-			if current[img.Arch] {
-				t.Errorf("image %s: a pinned image after the current one is never used", img.Location)
-			}
-			pinned[img.Arch] = true
-		case strings.Contains(img.Location, "/noble/release/"):
-			current[img.Arch] = true
-		default:
-			t.Errorf("image %s: a dated image needs its digest", img.Location)
+		if !digest.MatchString(img.Digest) {
+			t.Errorf("image %s: digest %q is not sha256:<64 hex>; no unpinned fallback is allowed", img.Location, img.Digest)
 		}
+		pinned[img.Arch] = true
 	}
 	for arch := range file {
-		if !pinned[arch] || !current[arch] {
-			t.Errorf("%s: pinned %v, current %v; want both", arch, pinned[arch], current[arch])
+		if !pinned[arch] {
+			t.Errorf("%s: no pinned image", arch)
 		}
 	}
 }

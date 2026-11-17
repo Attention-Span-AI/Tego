@@ -64,8 +64,8 @@ mac_setup() {
 	# Colour and animation only on a terminal, and never with NO_COLOR or TERM=dumb (clig.dev).
 	# The terminal's settings, put back before the handoff and at the end: a step can leave the terminal raw (no
 	# carriage return on a newline), and everything printed after it then steps down the screen like a staircase.
+	restore_term() { [ -z "$term_state" ] || stty "$term_state" </dev/tty 2>/dev/null || :; }
 	term_state=$({ stty -g </dev/tty; } 2>/dev/null || true)
-	restore_term() { [ -n "$term_state" ] && stty "$term_state" </dev/tty 2>/dev/null; return 0; }
 	tty=0
 	if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != dumb ]; then
 		tty=1
@@ -84,24 +84,59 @@ mac_setup() {
 		ok "$1"
 	}
 
-	ask() { # ask QUESTION: 0 yes, 1 no, 2 nobody to ask
+	ask() { # ask QUESTION [yes|no]: 0 yes, 1 no, 2 nobody to ask
+		ask_default=${2:-yes}
+		ask_choices='[Y/n]'
+		[ "$ask_default" != no ] || ask_choices='[y/N]'
 		if [ "${TEGO_YES:-}" = 1 ]; then
-			printf '    %s [Y/n] yes\n' "$1"
+			printf '    %s %s yes\n' "$1" "$ask_choices"
 			return 0
 		fi
 		(: </dev/tty) 2>/dev/null || return 2
-		printf '    %s [Y/n] ' "$1" >/dev/tty
+		printf '    %s %s ' "$1" "$ask_choices" >/dev/tty
 		read -r answer </dev/tty || return 1
-		case "$answer" in "" | [Yy]*) return 0 ;; *) return 1 ;; esac
+		case "$answer" in "") [ "$ask_default" = yes ] ;; [Yy]*) return 0 ;; *) return 1 ;; esac
+	}
+	# SemVer precedence: core numbers, then prerelease identifiers (numeric before text).
+	# Compare numeric strings by length to avoid integer limits; build metadata has no precedence.
+	compare_versions() {
+		LC_ALL=C awk -v left="$1" -v right="$2" '
+function number(a, b) {
+    sub(/^0+/, "", a); sub(/^0+/, "", b)
+    if (length(a) != length(b)) return length(a) > length(b) ? 1 : -1
+    return ("x" a) == ("x" b) ? 0 : (("x" a) > ("x" b) ? 1 : -1)
+}
+function compare(a, b, ac, bc, ap, bp, an, bn, i, c, ai, bi) {
+    sub(/^v/, "", a); sub(/^v/, "", b)
+    sub(/\+.*/, "", a); sub(/\+.*/, "", b)
+    if (a !~ /^[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?$/ ||
+        b !~ /^[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?$/) exit 1
+    i=index(a, "-"); if (i) { ap=substr(a, i+1); a=substr(a, 1, i-1) }
+    i=index(b, "-"); if (i) { bp=substr(b, i+1); b=substr(b, 1, i-1) }
+    split(a, ac, /[.]/); split(b, bc, /[.]/)
+    for (i=1; i<=3; i++) { c=number(ac[i], bc[i]); if (c) return c }
+    if (ap == "" || bp == "") return ap == bp ? 0 : (ap == "" ? 1 : -1)
+    an=split(ap, ac, /[.]/); bn=split(bp, bc, /[.]/)
+    for (i=1; i<=an && i<=bn; i++) {
+        if (ac[i] == "" || bc[i] == "") exit 1
+        ai=ac[i] ~ /^[0-9]+$/; bi=bc[i] ~ /^[0-9]+$/
+        if (ai && bi) c=number(ac[i], bc[i])
+        else if (ai != bi) c=ai ? -1 : 1
+        else c=("x" ac[i]) == ("x" bc[i]) ? 0 : (("x" ac[i]) > ("x" bc[i]) ? 1 : -1)
+        if (c) return c
+    }
+    return an == bn ? 0 : (an > bn ? 1 : -1)
+}
+BEGIN { print compare(left, right) }'
 	}
 	stop() { # stop CODE LINE...: what is left to type, then exit
 		code=$1
 		shift
 		echo ""
-		echo "  To finish, run:"
+		[ "$#" -eq 0 ] || echo "  To finish, run:"
 		for line in "$@"; do printf '      %s%s%s\n' "$bold" "$line" "$off"; done
 		echo ""
-		echo "  Then run this installer again."
+		echo "  Then run this installer again: ${install_line}"
 		exit "$code"
 	}
 	# quietly CMD...: runs CMD with its output in the log. On a terminal a fish swims while it runs. On failure it
@@ -156,27 +191,53 @@ mac_setup() {
 	fi
 	if [ -z "$lima" ] || [ "${lima%%.*}" -lt 2 ] 2>/dev/null; then
 		if [ -z "$lima" ]; then
-			bad "Lima isn't installed. Tego uses it to run the VM."
+			bad "Lima isn't installed. Tego uses this free program to run its Linux VM."
 			verb=install
 		else
 			bad "Lima ${lima} is too old. Tego needs 2.0 or later."
 			verb=upgrade
 		fi
 		if ! command -v brew >/dev/null 2>&1; then
-			note "Install Lima from https://lima-vm.io/docs/installation/, then run this again."
+			note "Install Lima from https://lima-vm.io/docs/installation/."
+			note "For its Homebrew option, first install Homebrew from https://brew.sh."
+			note "Then run: $install_line"
 			exit 2
 		fi
-		if [ "$verb" = install ]; then question="Install it now?"; else question="Upgrade it now?"; fi
+		if [ "$verb" = install ]; then question="Install Lima now with Homebrew?"; else question="Upgrade Lima now with Homebrew?"; fi
 		ask "$question" && rc=0 || rc=$?
 		case $rc in
 			0) quietly brew "$verb" lima || exit 2 ;;
-			2) stop 2 "brew ${verb} lima" "${install_line}" ;;
+			2) stop 2 "brew ${verb} lima" ;;
 			*) note "Tego needs Lima on a Mac. Nothing was changed."; exit 2 ;;
 		esac
 		done_ "Lima $(limactl --version 2>/dev/null | awk '{print $NF}')"
 	else
 		ok "Lima ${lima}"
 	fi
+
+	verify_guest_install() {
+		grep -qxF '# tego-mac-provisioning: 1' "$archive_path" ||
+			die "v0.2.0 is the first release to support a pinned Mac install; unset TEGO_VERSION to install the latest" 7
+		# The VM executes install.sh: verify that asset too, then give the guest its digest.
+		download "${base_url}/${tag}/install.sh" "${workdir}/install.sh" "the installer"
+		[ "$verify" != gh ] || attested "${workdir}/install.sh" install.sh
+		installer_sha256=$(awk '$2=="install.sh" {print $1}' "$checksums_path")
+		[ -n "$installer_sha256" ] && [ "$installer_sha256" = "$(sha256_of "${workdir}/install.sh")" ] ||
+			die "checksum mismatch or missing entry for install.sh; not installing Tego" 7
+		# Cosign authenticated the whole checksums file. gh attests assets instead:
+		# authenticate the guest binaries and their entries before carrying this file's digest.
+		if [ "$verify" = gh ]; then
+			for guest_asset in "tego_${version_no_v}_linux_${arch}" "tego-control_${version_no_v}_linux_${arch}"; do
+				guest_path="${workdir}/${guest_asset}"
+				download "${base_url}/${tag}/${guest_asset}" "$guest_path" "the guest Linux binary"
+				attested "$guest_path" "$guest_asset"
+				guest_expected=$(awk -v f="$guest_asset" '$2==f {print $1}' "$checksums_path")
+				[ -n "$guest_expected" ] && [ "$guest_expected" = "$(sha256_of "$guest_path")" ] ||
+					die "checksum mismatch or missing entry for ${guest_asset}; not installing Tego" 7
+			done
+		fi
+		checksums_sha256=$(sha256_of "$checksums_path")
+	}
 
 	state=$(limactl list --format '{{.Status}}' "$vm" 2>/dev/null || true)
 	case "$state" in
@@ -191,44 +252,27 @@ mac_setup() {
 		*)
 			todo "Tego's VM isn't set up yet. It takes about 2 minutes, only the first time."
 			ask "Set it up now?" && rc=0 || rc=$?
-			[ "$rc" = 0 ] || stop 0 "${install_line}"
+			[ "$rc" = 0 ] || stop 0
 			prepare_release
-			grep -qxF '# tego-mac-provisioning: 1' "$archive_path" ||
-				die "v0.2.0 is the first release to support a pinned Mac install; unset TEGO_VERSION to install the latest" 7
-			# The VM executes install.sh: verify that asset too, then give the guest its digest.
-			download "${base_url}/${tag}/install.sh" "${workdir}/install.sh" "the installer"
-			[ "$verify" != gh ] || attested "${workdir}/install.sh" install.sh
-			installer_sha256=$(awk '$2=="install.sh" {print $1}' "$checksums_path")
-			[ -n "$installer_sha256" ] && [ "$installer_sha256" = "$(sha256_of "${workdir}/install.sh")" ] ||
-				die "checksum mismatch or missing entry for install.sh; not creating the VM" 7
-			# Cosign authenticated the whole checksums file. gh attests assets instead:
-			# authenticate the guest binaries and their entries before carrying this file's digest.
-			if [ "$verify" = gh ]; then
-				for guest_asset in "tego_${version_no_v}_linux_${arch}" "tego-control_${version_no_v}_linux_${arch}"; do
-					guest_path="${workdir}/${guest_asset}"
-					download "${base_url}/${tag}/${guest_asset}" "$guest_path" "the guest Linux binary"
-					attested "$guest_path" "$guest_asset"
-					guest_expected=$(awk -v f="$guest_asset" '$2==f {print $1}' "$checksums_path")
-					[ -n "$guest_expected" ] && [ "$guest_expected" = "$(sha256_of "$guest_path")" ] ||
-						die "checksum mismatch or missing entry for ${guest_asset}; not creating the VM" 7
-				done
-			fi
-			checksums_sha256=$(sha256_of "$checksums_path")
+			verify_guest_install
 			quietly limactl start --tty=false --name="$vm" --mount-none --param="tego_version=$tag" \
-				--param="installer_sha256=$installer_sha256" --param="checksums_sha256=$checksums_sha256" "$archive_path" || exit 8
+				--param="installer_sha256=$installer_sha256" --param="checksums_sha256=$checksums_sha256" "$archive_path" || {
+				if grep -q 'failed to download .*cloud-images[.]ubuntu[.]com/' "$log"; then
+					# Lima keeps a newly created instance even when its image download fails.
+					# Leave deletion explicit so the person can inspect it and its diagnostic log.
+					[ -n "$state" ] || note "First remove the incomplete VM: limactl delete ${vm}"
+					if grep -q 'failed to download .*cloud-images[.]ubuntu[.]com/.*unexpected HTTP status Not Found' "$log"; then
+						note "The pinned VM image is no longer available. Update the installer and try again:"
+						note "$install_line"
+					else
+						note "The VM image download failed. Check the connection and run this installer again."
+					fi
+				fi
+				exit 8
+			}
 			done_ "Tego's VM is ready"
 			;;
 	esac
-	if [ "$state" = Running ] || [ "$state" = Stopped ]; then
-		note "Rerunning this installer updates only the Mac command, not Tego inside an existing VM."
-		note "To upgrade Tego: tego shell, then run the Linux installer there:"
-		if [ -n "$version" ]; then
-			case "$version" in v*) upgrade_tag=$version ;; *) upgrade_tag=v$version ;; esac
-			note "curl -fsSL ${base_url}/${upgrade_tag}/install.sh | TEGO_VERSION=${upgrade_tag} sh"
-		else
-			note "$install_line"
-		fi
-	fi
 
 	# The tego command on the Mac: it runs tego in the VM, from the VM's home folder, in the user's cgroup, which
 	# a limactl shell login is outside of. It lives in ~/.local/bin, a folder of the user's own, not one another tool
@@ -255,6 +299,10 @@ mac_setup() {
 # tego on a Mac, written by Tego's installer: runs tego inside Tego's Linux VM (the Lima instance "${vm}").
 # "tego shell" opens a shell in the VM, in the project tego start set up last. To remove: delete this file.
 vm=${vm}
+if [ "\${1:-}" = shell ] && [ \$# -ne 1 ]; then
+	echo "usage: tego shell (no arguments)" >&2
+	exit 2
+fi
 case "\$(limactl list --format '{{.Status}}' "\$vm" 2>/dev/null)" in
 	Running) ;;
 	Stopped)
@@ -272,7 +320,7 @@ if [ "\${1:-}" = shell ]; then
 	exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME"; d=\$(cat "\$HOME/.config/tego/last-project" 2>/dev/null); [ -d "\$d" ] && cd "\$d"; exec systemd-run --user --scope --quiet bash -l'
 fi
 # The dedicated SSH control socket belongs to this VM. Reuse requires its master's PID to own the
-# only listener on 8484, bound to loopback. A process merely named ssh is not proof of our tunnel.
+# only listener on the dashboard port, bound to loopback. A process merely named ssh is not proof of our tunnel.
 control_dir_private() {
 	[ "\$(stat -f '%u' "\${control%/*}" 2>/dev/null)" = "\$caller_uid" ] || return 1
 	dir_mode=\$(stat -f '%Lp' "\${control%/*}" 2>/dev/null) || return 1
@@ -288,14 +336,20 @@ tunnel_ready() {
 	master=\$(ssh -F "\$ssh_config" -S "\$control" -O check "lima-\$vm" 2>&1) || return 1
 	master_pid=\$(printf '%s\n' "\$master" | sed -n 's/^Master running (pid=\([0-9][0-9]*\))\r\{0,1\}\$/\1/p')
 	[ -n "\$master_pid" ] || return 1
-	listeners=\$(lsof -nP -iTCP:8484 -sTCP:LISTEN -Fp 2>/dev/null | sed -n 's/^p//p')
+	listeners=\$(lsof -nP -iTCP:\$port -sTCP:LISTEN -Fp 2>/dev/null | sed -n 's/^p//p')
 	[ "\$listeners" = "\$master_pid" ] || return 1
 	process_uid=\$(ps -o uid= -p "\$master_pid" 2>/dev/null | awk '{\$1=\$1; print}')
 	[ "\$process_uid" = "\$caller_uid" ] || return 1
-	bound=\$(lsof -nP -a -p "\$master_pid" -iTCP:8484 -sTCP:LISTEN -Fn 2>/dev/null | sed -n 's/^n//p')
-	[ "\$bound" = 127.0.0.1:8484 ]
+	bound=\$(lsof -nP -a -p "\$master_pid" -iTCP:\$port -sTCP:LISTEN -Fn 2>/dev/null | sed -n 's/^n//p')
+	[ "\$bound" = 127.0.0.1:\$port ]
 }
 open_dashboard() {
+	port=\$(printf '%s\n' "\$1" | sed -n 's#^http://127[.]0[.]0[.]1:\([0-9][0-9]*\)/.*#\1#p')
+	port=\${port:-8484}
+	if ! { [ "\$port" -ge 1 ] && [ "\$port" -le 65535 ]; } 2>/dev/null; then
+		echo "tego: invalid dashboard port in \$1. Run tego dashboard to try again." >&2
+		return 1
+	fi
 	caller_uid=\$(id -u)
 	vm_dir=\$(limactl list --format '{{.Dir}}' "\$vm") || {
 		echo "tego: the dashboard tunnel is not up. Could not find this VM's SSH configuration." >&2
@@ -303,8 +357,9 @@ open_dashboard() {
 	}
 	ssh_config="\$vm_dir/ssh.config"
 	control="\$vm_dir/tego-dashboard.sock"
+	[ "\$port" = 8484 ] || control="\$vm_dir/tego-dashboard-\$port.sock"
 	if ! control_dir_private; then
-		echo "tego: the dashboard tunnel is not up. Unsafe socket folder \$vm_dir; make it owned by you and remove group and other write permission, then try again." >&2
+		echo "tego: the dashboard tunnel is not up. Unsafe socket folder \$vm_dir; it must belong to you and other users must not be allowed to write to it. Fix its ownership and write permissions, then run tego dashboard." >&2
 		return 1
 	fi
 	if { [ -e "\$control" ] || [ -L "\$control" ]; } && ! control_private; then
@@ -313,7 +368,7 @@ open_dashboard() {
 	fi
 	if ! tunnel_ready; then
 		# Never open the URL when some other listener holds the port, or forwarding fails.
-		listeners=\$(lsof -nP -iTCP:8484 -sTCP:LISTEN -Fp 2>/dev/null)
+		listeners=\$(lsof -nP -iTCP:\$port -sTCP:LISTEN -Fp 2>/dev/null)
 		# Only an owned, non-answering socket in our private folder is a leftover.
 		# Keep the stable path so the next invocation can find and reuse the new master.
 		if [ -z "\$listeners" ] && [ -e "\$control" ] &&
@@ -322,8 +377,15 @@ open_dashboard() {
 		fi
 		if [ -n "\$listeners" ] || [ -e "\$control" ] || ! ssh -F "\$ssh_config" -S "\$control" -M -f -N \
 			-o ExitOnForwardFailure=yes -o ClearAllForwardings=no \
-			-L 127.0.0.1:8484:127.0.0.1:8484 "lima-\$vm" >/dev/null 2>&1 || ! tunnel_ready; then
-			echo "tego: the dashboard tunnel is not up. Port 8484 must be free or held by this VM's dashboard tunnel; try again." >&2
+			-L 127.0.0.1:\$port:127.0.0.1:\$port "lima-\$vm" >/dev/null 2>&1 || ! tunnel_ready; then
+			if [ "\$port" != 8484 ] && [ -n "\$listeners" ]; then
+				echo "tego: port \$port is in use. Lima forwards the VM's ports to the Mac itself; Tego's own tunnel is set up for 8484." >&2
+				echo "Put the dashboard back on 8484, or run limactl stop \$vm, then limactl edit \$vm and add under portForwards:" >&2
+				printf '  - guestPort: %s\n    ignore: true\n' "\$port" >&2
+				echo "Then run limactl start \$vm and tego dashboard. Other dashboard ports have not yet been verified on a Mac." >&2
+			else
+			echo "tego: the dashboard tunnel is not up. Port \$port must be free or held by this VM's dashboard tunnel; try again." >&2
+			fi
 			return 1
 		fi
 	fi
@@ -335,17 +397,21 @@ open_dashboard() {
 if { [ "\${1:-}" = start ] || [ "\${1:-}" = setup ]; } && [ \$# -eq 1 ]; then
 	sub=\$1 # start or setup: a fixed word, put into the VM's command line here
 	limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet env TEGO_ON_MAC=1 "\$HOME/.local/bin/tego" '"\$sub" || exit \$?
-	url=\$(limactl shell --workdir / "\$vm" sh -c 'grep -o "http://127.0.0.1:8484/[^ ]*" "\$HOME/.tego/dashboard.log" 2>/dev/null | head -n 1')
-	[ -z "\$url" ] || open_dashboard "\$url" || exit 1
+	url=\$(limactl shell --workdir / "\$vm" sh -c 'grep -o "http://127[.]0[.]0[.]1:[0-9][0-9]*/[^ ]*" "\$HOME/.tego/dashboard.log" 2>/dev/null | head -n 1')
+	if [ -z "\$url" ]; then
+		echo "tego: the dashboard is not running. Run tego dashboard to start it." >&2
+	elif ! open_dashboard "\$url" 2>/dev/null; then
+		echo "tego: could not open the dashboard at \$url. Run tego dashboard to try again." >&2
+	fi
 	exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME"; d=\$(cat "\$HOME/.config/tego/last-project" 2>/dev/null); [ -d "\$d" ] && cd "\$d"; exec systemd-run --user --scope --quiet bash -l'
 fi
 # tego dashboard (and tego serve --open): the one dashboard runs in the VM and opens in the Mac's browser.
 if { [ "\${1:-}" = dashboard ] && [ \$# -eq 1 ]; } || { [ "\${1:-}" = serve ] && [ "\${2:-}" = --open ] && [ \$# -eq 2 ]; }; then
 	# the VM's tego dashboard says whether one is running and asks before starting a new one; the Mac opens its link
 	limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet env TEGO_ON_MAC=1 "\$HOME/.local/bin/tego" dashboard' || exit \$?
-	url=\$(limactl shell --workdir / "\$vm" sh -c 'grep -o "http://127.0.0.1:8484/[^ ]*" "\$HOME/.tego/dashboard.log" 2>/dev/null | head -n 1')
+	url=\$(limactl shell --workdir / "\$vm" sh -c 'grep -o "http://127[.]0[.]0[.]1:[0-9][0-9]*/[^ ]*" "\$HOME/.tego/dashboard.log" 2>/dev/null | head -n 1')
 	if [ -z "\$url" ]; then
-		echo "✗ The dashboard didn't start. Its log: tego shell, then cat ~/.tego/dashboard.log" >&2
+		echo "The dashboard did not start. Run tego dashboard to try again. For details, run tego shell, then cat ~/.tego/dashboard.log" >&2
 		exit 1
 	fi
 	open_dashboard "\$url" || exit 1
@@ -385,9 +451,54 @@ EOF
 			if [ "$had" = 1 ]; then ok "tego command is up to date"; else done_ "tego command added"; fi
 		else
 			shim=""
-			note "Skipped. You can still use Tego with: limactl shell ${vm}"
+			note "Skipped adding the Mac command. To open the VM, run: limactl shell ${vm}"
 		fi
 	}
+
+	if [ "$state" = Running ] || [ "$state" = Stopped ]; then
+		prepare_release
+		guest_version=''
+		# shellcheck disable=SC2016 # expanded by the guest shell
+		if guest_output=$(limactl shell --workdir / "$vm" sh -c 'exec "$HOME/.local/bin/tego" version' 2>/dev/null); then
+			guest_version=$(printf '%s\n' "$guest_output" | sed -n 's/^tego=//p')
+		fi
+		guest_order=$(compare_versions "$guest_version" "$tag") || guest_order=-1
+		if [ "$guest_order" = 0 ]; then
+			ok "Tego ${tag} inside the VM is up to date"
+		elif ! grep -qxF '# tego-mac-provisioning: 1' "$archive_path"; then
+			selection=''
+			[ -z "${TEGO_VERSION:-}" ] || selection=" Selected with TEGO_VERSION=${TEGO_VERSION}."
+			note "Tego inside the VM was left as it is; updating it from the Mac needs a later release.${selection}"
+		else
+			[ -n "$guest_version" ] || guest_version='missing or not working'
+			if [ "$guest_order" = 1 ]; then
+				ask "Replace Tego ${guest_version} inside the VM with older version ${tag}?" no && rc=0 || rc=$?
+			else
+				ask "Update Tego inside the VM from ${guest_version} to ${tag}?" && rc=0 || rc=$?
+			fi
+			case $rc in
+				0)
+					verify_guest_install
+					# Fixed code; release values are positional arguments, never shell source.
+					# shellcheck disable=SC2016 # fixed guest code, expanded only inside the VM
+					quietly limactl shell --workdir / "$vm" sh -c '
+set -eu
+work=$(mktemp -d)
+trap '\''rm -rf "$work"'\'' EXIT
+curl -fsSL "$2/$1/install.sh" -o "$work/install.sh"
+printf '\''%s  %s\n'\'' "$3" "$work/install.sh" | sha256sum -c -
+TEGO_VERSION="$1" TEGO_BASE_URL="$2" TEGO_CHECKSUMS_SHA256="$4" sh "$work/install.sh"
+' sh "$tag" "$base_url" "$installer_sha256" "$checksums_sha256" || exit 8
+					ok "Tego ${tag} inside the VM is ready"
+					note "Existing runs keep running with the old program until they finish; new commands use ${tag}."
+					;;
+				2)
+					install_line="curl -fsSL ${base_url}/${tag}/install.sh | TEGO_YES=1 TEGO_VERSION=${tag} sh"
+					stop 2 ;;
+				*) note "Skipped the VM update. Tego inside the VM was not changed." ;;
+			esac
+		fi
+	fi
 
 	# The installer ends here, with the one step that comes next: tego start walks through the rest.
 	restore_term
@@ -396,7 +507,7 @@ EOF
 	if [ "$reopen" = 1 ]; then
 		# this script cannot change the PATH of the shell that started it; a new shell reads the PATH line
 		# a login shell, the kind a new terminal window starts: it reads the file the PATH line went into
-		printf '    Run   %sexec %s -l%s   (or open a new terminal window), then   %stego start%s\n' "$bold" "$(basename "${SHELL:-sh}")" "$off" "$bold" "$off"
+		printf '    Open a new Terminal window, then type %stego start%s (or run exec %s -l here first).\n' "$bold" "$off" "$(basename "${SHELL:-sh}")"
 	else
 		printf '    Run   %stego start%s\n' "$bold" "$off"
 	fi
@@ -485,8 +596,10 @@ main() {
 	workdir=$(mktemp -d "${TMPDIR:-/tmp}/tego-install.XXXXXX") || die "could not create a temporary directory" 8
 	tmp_bin=""
 	tmp_control=""
+	term_state=""
 	cleanup() {
 		cleanup_status=$?
+		[ -z "${term_state:-}" ] || restore_term
 		# Keep a failed Mac step's private diagnostic log at the path shown to the person.
 		if [ "$cleanup_status" -eq 0 ] || [ ! -s "$workdir/install.log" ]; then
 			rm -rf "$workdir"
