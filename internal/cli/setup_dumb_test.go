@@ -20,7 +20,7 @@ func guideDumbRoutes() []guidePTYRoute {
 func TestGuideDumbInterrupt(t *testing.T) {
 	for _, route := range guideDumbRoutes() {
 		for _, target := range []int{0, 2, 7} {
-			for _, how := range []string{"key", "signal", "term", "double"} {
+			for _, how := range []string{"key", "signal", "term", "double", "hup"} {
 				t.Run(route.steps[target].prompt+"/"+how, func(t *testing.T) { t.Parallel(); runGuidePTY(t, route, target, how, false) })
 			}
 		}

@@ -75,7 +75,7 @@ func TestGuideInterruptRestoresTerminal(t *testing.T) {
 				continue
 			}
 			seen[step.prompt] = true
-			for _, how := range []string{"key", "signal"} {
+			for _, how := range []string{"key", "signal", "hup"} {
 				t.Run(route.name+"/"+strconv.Itoa(i)+"/"+how, func(t *testing.T) { t.Parallel(); runGuidePTY(t, route, i, how, false) })
 			}
 		}
@@ -388,6 +388,9 @@ func runGuidePTY(t *testing.T, route guidePTYRoute, target int, how string, ahea
 				write("\x03")
 			} else {
 				sig := os.Signal(os.Interrupt)
+				if how == "hup" {
+					sig = syscall.SIGHUP
+				}
 				if how == "term" || how == "double" {
 					sig = syscall.SIGTERM
 				}

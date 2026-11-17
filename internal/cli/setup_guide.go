@@ -629,7 +629,7 @@ func runSetupGuide(ctx context.Context, in io.Reader, stdout, stderr io.Writer, 
 	defer stop()
 	// Hold the signal subscription until the terminal is restored, even if
 	// Main releases its first-signal handler while a question is unwinding.
-	ctx, releaseSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	ctx, releaseSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer releaseSignals()
 	g.ctx = ctx
 	{

@@ -35,7 +35,7 @@ func guideChildRoutes() []guidePTYRoute {
 
 func TestGuideChildrenStop(t *testing.T) {
 	for _, route := range guideChildRoutes() {
-		for _, how := range []string{"key", "signal", "term"} {
+		for _, how := range []string{"key", "signal", "term", "hup"} {
 			t.Run(route.name+"/"+how, func(t *testing.T) { t.Parallel(); runGuidePTY(t, route, len(route.steps)-1, how, false) })
 		}
 	}
