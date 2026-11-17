@@ -1595,6 +1595,21 @@ SELinux creation attributes or Smack refusal. Canonicalization includes true; co
 `run_start.best_effort` lists `apparmor/assumed-root-namespace` whenever enabled, even when no open needed it.
 
 
+*Amended 2026-11-17 (SEC08, ADR 0041):* an active TOMOYO module has a separate held-file-open
+check. The checking thread's own `self_domain` must read exactly `<kernel>` and the first `stat`
+`Policy update:` line must equal the exact 49-byte never-updated kernel line, including newline.
+Both facts are bounded and read afresh; no policy observation is retained between checks or runs.
+Every other line, missing newline, malformed spacing, empty/oversized/unreadable fact or data with
+an error refuses `held-label-unavailable`. A nonzero or timestamped counter says policy was updated
+since boot and refuses held file opens on this machine until TOMOYO is unused again after a restart,
+even without policy activation (GAPS C75). A domain other than `<kernel>` names the observed domain
+as preventing held opens. The shared build-configuration reader positively reading
+`CONFIG_SECURITY_TOMOYO_OMIT_USERSPACE_LOADER=y` also refuses. Other modules' decisions are unchanged.
+No TOMOYO opt-in exists for hidden securityfs. The observations do not read the loaded flag;
+SEC08's TOMOYO guarantee rests on the kernel assumption and administrator residuals below.
+
+(a) A TOMOYO policy activated between an authority check and the open it admits is not noticed for that one open; this requires the machine's administrator to act in that interval. (b) A kernel compiled with its own TOMOYO policy and activation without a loader (`CONFIG_SECURITY_TOMOYO_OMIT_USERSPACE_LOADER`), or with a hand-made built-in policy that predefines its domains, can enforce with a counter that never moved; the shared running-kernel build-configuration reader refuses held opens when it positively reads `CONFIG_SECURITY_TOMOYO_OMIT_USERSPACE_LOADER=y`, while an unreadable configuration changes nothing, and none of the distribution kernels we tested does this (Debian 12 and Debian 13 configurations inspected). (c) A container that hides TOMOYO securityfs refuses held file opens (GAPS C74). (d) The counter can return to its never-updated reading only after its full range of counted updates with the clock set to the epoch, an administrator's deliberate act.
+
 ### Built-in refusals — 2026-11-03, ADR 0113
 
 Every enforcing contract first applies `builtin.host_ipc`, `builtin.tego_surface` and

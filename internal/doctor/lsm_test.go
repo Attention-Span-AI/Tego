@@ -3,6 +3,7 @@
 package doctor
 
 import (
+	"github.com/attention-span-ai/tego/internal/platform/tomoyo"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -204,5 +205,37 @@ func TestBootFamilyOf(t *testing.T) {
 	if got := (LSMState{Modules: []string{"capability"}}).GRUBFix(); !strings.Contains(got, "grubby") ||
 		!strings.Contains(got, "lsm=capability,bpf") {
 		t.Errorf("GRUBFix on an AL2023 machine: %s", got)
+	}
+}
+
+func TestTOMOYOHeldOpenDetail(t *testing.T) {
+	t.Cleanup(tomoyo.SetLoaderOmissionForTest(func() string { return "" }))
+	for _, tc := range []struct{ name, domain, missing, line, want string }{
+		{name: "Debian stock", domain: "<kernel>", want: "TOMOYO has no policy update since boot and does not prevent held file opens"},
+		{name: "loaded policy", domain: "<kernel> /usr/bin/tego", want: "held opens are refused on this machine"},
+		{name: "updated", domain: "<kernel>", line: "Policy update:                                 1\n", want: "until TOMOYO is unused again after a restart"},
+		{name: "hidden securityfs", missing: "/sys/kernel/security/tomoyo/stat", want: "expose readable /sys/kernel/security/tomoyo"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			read := func(path string) ([]byte, error) {
+				if path == tc.missing {
+					return nil, os.ErrPermission
+				}
+				if strings.HasSuffix(path, "self_domain") {
+					return []byte(tc.domain), nil
+				}
+				if tc.line != "" {
+					return []byte(tc.line), nil
+				}
+				return []byte("Policy update:                                 0\n"), nil
+			}
+			got := tomoyoHeldOpenDetail(LSMState{Modules: []string{"apparmor", "tomoyo"}}, read)
+			if !strings.Contains(got, tc.want) || !strings.Contains(got, "TOMOYO") || strings.Contains(got, "AppArmor") {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+			if got := tomoyoHeldOpenDetail(LSMState{Modules: []string{"apparmor"}}, func(string) ([]byte, error) { t.Fatal("read TOMOYO on another boot"); return nil, nil }); got != "" {
+				t.Fatal(got)
+			}
+		})
 	}
 }

@@ -239,8 +239,13 @@ jobs:
             kernel: fedora-7.0
           - policy: smack
             kernel: ubuntu-25.10
+          - policy: tomoyo
+            kernel: ubuntu-25.10
+          - policy: tomoyo
+            kernel: debian-13
     env:
       POLICY: ${{ matrix.policy }}
+      TEGO_VM_HELD_LABEL_KERNEL: ${{ matrix.kernel }}
       GOMAXPROCS: '4'
       GOMEMLIMIT: 2GiB
       TEGO_VM_MEM: 3G
@@ -258,6 +263,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm --settle
           test -r /dev/kvm && test -w /dev/kvm
           sudo apt-get update -qq
+          # TOMOYO needs no tools beyond the existing SELinux/Smack harness prerequisites.
           sudo apt-get install -y secilc
       - name: load policy and require live regressions without skips
         run: test/vm/held-label-tests.sh "$POLICY" "$RUNNER_TEMP/held-labels"
@@ -269,4 +275,6 @@ jobs:
           path: |
             ${{ runner.temp }}/held-labels/guest.status
             ${{ runner.temp }}/held-labels/guest.console
+            ${{ runner.temp }}/held-labels/counter.status
+            ${{ runner.temp }}/held-labels/counter.console
           if-no-files-found: error

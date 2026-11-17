@@ -907,7 +907,7 @@ test/vm/held-label-tests.sh selinux /path/to/results/selinux
 test/vm/held-label-tests.sh smack /path/to/results/smack
 ```
 
-Install `secilc` on the build host (or set `SECILC` to its executable). Each command loads the policy in a
+Install `secilc` on the build host (or set `SECILC` to its executable). The harness checks its build and boot tools, including `cpio` and a static `${TEGO_VM_BUSYBOX:-/usr/bin/busybox}`, before compiling any fixture; failures name each missing tool. TOMOYO requires no tools beyond the existing SELinux/Smack harness prerequisites. Each command loads the policy in a
 disposable guest and runs `held-label-required.sh`: any skip, missing top-level pass, test failure or
 unreported guest exit fails. SELinux also requires `TestIntegrationHeldCreateRespectsSELinux` at all
 three tiers. On a shared development host set `VM_RUNNER` to its VM-slot wrapper and run the whole command
@@ -915,6 +915,41 @@ through its resource-limited runner. `TEGO_VM_MEM` defaults to 3G. Output includ
 status. These jobs run nightly, on release tags and through **Run workflow** / manual dispatch.
 **Per-PR CI does not run these SELinux/Smack live-policy tests**; it runs the comparator unit coverage.
 The ordinary root-suite skip entries apply to other boots and do not permit a skip in these jobs.
+
+The TOMOYO fixture uses Ubuntu 6.17 with `tomoyo` added to `lsm=` and explicit kernel trigger/loader
+paths. Run `test/vm/held-label-tests.sh tomoyo OUT`. It requires held read, truncate and create at
+landlock, cgroup and bpflsm before any loader exists, then uses the kernel's activation path with a
+disabled profile. Three already-running supervisors must refuse their next held operations after the
+counted update, and fresh runs must refuse too, preserving bytes and leaving the create leaf absent.
+The disabled profile isolates the loaded-policy observation from enforcement mode. A skip fails the
+same required-pass guard as SELinux and Smack; the TOMOYO boot is part of `vm-matrix`'s held-labels job.
+A fresh second boot counts an update without activating a policy and requires the
+`counter_without_activation` leaves at all three tiers; the first boot requires its own `positive`
+leaves. Each boot records its status and console (`guest.*` and `counter.*`); running the wrong half fails.
+The held-labels matrix also boots the Debian 13 kernel with its compiled-in LSM list:
+`TEGO_VM_HELD_LABEL_KERNEL=debian-13 test/vm/held-label-tests.sh tomoyo OUT`.
+It requires both boots' leaves, using the harness's initramfs userspace rather than a full Debian image.
+
+**RELEASE STEP — Debian:** before releasing a held-open change, boot both pinned full cloud images
+with their shipped kernel, LSM list and userspace: `debian-12` (20261117-2665, SHA256
+`b94ebc662796cbd4fd1f5053ce63b59ebc56e034f8f550689713c0cae493310e`) and `debian-13` (SHA256
+`de9d63f5e5ec5927d7548bc05b6043b87457b8c1cb9bcb95365168e8d0293b4f`).
+Stage the release checkout, Go toolchain and module cache in each disposable guest. Run the following
+from that checkout as an ordinary non-root user with no sudo access, in its systemd user manager;
+use private config, ledger, temporary and cache directories in the guest:
+
+```sh
+CGO_ENABLED=0 GOFLAGS=-p=2 ./scripts/in-user-manager.sh go test -json -count=1 -tags integration -p 2 -timeout 60m ./internal/cli ./internal/setup ./internal/control/...
+```
+
+Require zero failures and explicit passes for `TestIntegrationLiftGrantRestoreOnALiveLauncher`,
+`TestIntegrationReceiptOfAScriptedRunAtTierLandlock`, `TestDashboardJourneyOverALiveRun` and
+`TestDemoNeverAllow`. These exercise file-read approval, held reads and the dashboard demo; this
+release step would have caught the v0.1.3 regression. The kernel-only row above does not replace it.
+
+`test/vm/held-label-tests.sh apparmor OUT` runs the existing Ubuntu AppArmor comparator and actual
+held-open fixtures. `bash test/vm/held-label_test.sh` checks dispatch and the required-pass guard with
+stand-ins, including rejection of a skipped TOMOYO leaf and absent or dynamically linked build prerequisites, and checks the policy scripts' guest guards. No hosted execution of the TOMOYO row is claimed.
 
 `held-label-docker.sh` is a separate disposable Ubuntu guest proof. Stage a working Docker installation
 (client, dockerd, containerd, runc and their shared libraries), the static supervisor/runtime integration

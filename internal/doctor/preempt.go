@@ -3,13 +3,12 @@
 package doctor
 
 import (
-	"bufio"
-	"compress/gzip"
-	"io"
 	"os"
 	"strings"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/attention-span-ai/tego/internal/platform/kernelconfig"
 )
 
 // The kernel's preemption model, which fmod_ret mode needs to be one shown never to preempt kernel code (ADR 0024
@@ -79,10 +78,6 @@ type preemptFacts struct {
 	Debugfs    string
 	DebugfsErr string
 }
-
-// preemptConfigKeys are the build options the model reads.
-var preemptConfigKeys = []string{"CONFIG_PREEMPT_RT", "CONFIG_PREEMPT_DYNAMIC", "CONFIG_PREEMPT_NONE",
-	"CONFIG_PREEMPT_VOLUNTARY", "CONFIG_PREEMPT", "CONFIG_PREEMPT_LAZY"}
 
 // preemptModel is the kernel's preemption model and where it was read. A model that does not preempt kernel code is
 // returned only on proof (the package comment); otherwise the model is the most preemptive one any source names, or
@@ -198,48 +193,25 @@ func readPreemptLive(release string) (string, string) {
 	return preemptModel(f)
 }
 
-// configPreempt reads which of preemptConfigKeys one kernel config file, gzip or plain, sets to y. A file with no
-// CONFIG_ line at all, or one that cannot be read to its end, is no answer, as for scanConfigLTO.
+// configPreempt reads which preemption options one kernel config file, gzip or plain, sets to y. A file with no
+// CONFIG_ line at all, or one that cannot be read to its end, is no answer, as for the LTO reader.
 func configPreempt(path string) (map[string]bool, bool) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, false
-	}
-	defer func() { _ = f.Close() }()
-	var r io.Reader = f
-	if strings.HasSuffix(path, ".gz") {
-		gz, err := gzip.NewReader(f)
-		if err != nil {
-			return nil, false
-		}
-		defer func() { _ = gz.Close() }()
-		r = gz
-	}
-	return scanConfigPreempt(r)
+	cfg, ok := kernelconfig.Read(path)
+	return preemptOptions(cfg), ok
 }
 
-// scanConfigPreempt is configPreempt over a config's text.
-func scanConfigPreempt(r io.Reader) (map[string]bool, bool) {
+// preemptOptions keeps the preemption reader's existing fact set.
+func preemptOptions(cfg map[string]bool) map[string]bool {
+	if cfg == nil {
+		return nil
+	}
 	out := map[string]bool{}
-	configs := 0
-	sc := bufio.NewScanner(r)
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if strings.HasPrefix(line, "CONFIG_") || strings.HasPrefix(line, "# CONFIG_") {
-			configs++
-		}
-		if k, ok := strings.CutSuffix(line, "=y"); ok {
-			for _, want := range preemptConfigKeys {
-				if k == want {
-					out[k] = true
-				}
-			}
+	for _, key := range []string{"CONFIG_PREEMPT_RT", "CONFIG_PREEMPT_DYNAMIC", "CONFIG_PREEMPT_NONE", "CONFIG_PREEMPT_VOLUNTARY", "CONFIG_PREEMPT", "CONFIG_PREEMPT_LAZY"} {
+		if cfg[key] {
+			out[key] = true
 		}
 	}
-	if sc.Err() != nil || configs == 0 {
-		return nil, false
-	}
-	return out, true
+	return out
 }
 
 // fmodRetPreemptRefusal is what rules fmod_ret mode out on a kernel not shown to never preempt kernel code, and the

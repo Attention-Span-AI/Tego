@@ -100,6 +100,8 @@ github.com/attention-span-ai/tego/internal/platform/sys.ReceiveRights	pending	AD
 github.com/attention-span-ai/tego/internal/platform/sys.SeccompNewListenerFD	pending	ADR 0023 C1/C2 owning helper, built ahead of FD-LATE (supervisor, C8), which takes the listener as a *sys.FD
 github.com/attention-span-ai/tego/internal/platform/sys.Stdio	pending	ADR 0023 C1/C2 owning helper, built ahead of FD-MID/FD-LATE (C5-C19), which move its callers onto it
 
+github.com/attention-span-ai/tego/internal/platform/tomoyo.SetLoaderOmissionForTest	test-api	doctor and supervisor unit tests replace the loader-omission observation so passing rows never read the machine's kernel configuration
+
 # internal/policy, internal/runtime
 github.com/attention-span-ai/tego/internal/policy/decide.LandlockLinkRefusal	test-api	internal/runtime/observe's chain_link_test names the Landlock floor's link refusal by scan, the oracle for the recorder's indexed answer
 github.com/attention-span-ai/tego/internal/policy/decide.LandlockRenameRefusal	test-api	internal/runtime/observe's chain_link_test names the Landlock floor's rename refusal by scan, the oracle for the recorder's indexed answer

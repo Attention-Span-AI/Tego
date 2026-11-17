@@ -25,18 +25,51 @@ import (
 // The static test binary is also the agent: an attached profile must not prevent a
 // dynamic loader from starting before the open under test can be attempted.
 func init() {
-	if len(os.Args) != 3 || (os.Args[1] != "--held-label-agent" && os.Args[1] != "--held-label-selinux-agent") {
+	if len(os.Args) != 3 || (os.Args[1] != "--held-label-agent" && os.Args[1] != "--held-label-selinux-agent" && os.Args[1] != "--held-label-tomoyo-agent") {
 		return
 	}
 	if os.Args[1] == "--held-label-selinux-agent" {
 		runtime.LockOSThread()
-		if err := os.WriteFile(fmt.Sprintf("/proc/%d/attr/fscreate", unix.Gettid()), []byte("user_u:object_r:restricted_t"), 0); err != nil {
+		// The controller supplies this task's attribute descriptor. The
+		// contract cannot grant a write entry on the proc filesystem.
+		fmt.Printf("SELINUX-READY %d\n", unix.Gettid())
+		control := make([]byte, unix.CmsgSpace(4))
+		if _, _, _, _, err := unix.Recvmsg(0, make([]byte, 1), control, 0); err != nil {
+			fmt.Println("SETUP fscreate receive", err)
+			os.Exit(2)
+		}
+		messages, err := unix.ParseSocketControlMessage(control)
+		if err != nil || len(messages) != 1 {
+			fmt.Println("SETUP fscreate control", err)
+			os.Exit(2)
+		}
+		rights, err := unix.ParseUnixRights(&messages[0])
+		if err != nil || len(rights) != 1 {
+			fmt.Println("SETUP fscreate descriptor", err)
+			os.Exit(2)
+		}
+		_, err = unix.Write(rights[0], []byte("user_u:object_r:restricted_t"))
+		_ = unix.Close(rights[0])
+		if err != nil {
 			fmt.Println("SETUP fscreate", err)
 			os.Exit(2)
 		}
 	}
 
 	path := os.Args[2]
+	if os.Args[1] == "--held-label-tomoyo-agent" {
+		fd, err := unix.Open(path, unix.O_RDONLY|unix.O_CLOEXEC, 0)
+		if err != nil {
+			fmt.Println("TOMOYO-FIRST", err)
+			os.Exit(2)
+		}
+		_ = unix.Close(fd)
+		fmt.Println("TOMOYO-READY")
+		var next [1]byte
+		if _, err := os.Stdin.Read(next[:]); err != nil {
+			os.Exit(2)
+		}
+	}
 	result := make(map[string]int)
 	for name, flags := range map[string]int{"read": unix.O_RDONLY, "truncate": unix.O_WRONLY | unix.O_TRUNC,
 		"create": unix.O_WRONLY | unix.O_CREAT | unix.O_EXCL} {
@@ -319,9 +352,8 @@ func TestIntegrationHeldCreateRespectsSELinux(t *testing.T) {
 					agentOwns(t, secret)
 					contract := contractFor("icreatelabel", []string{actor, "--held-label-selinux-agent", secret}, []string{actor})
 					contract = strings.Replace(contract, "tier: landlock", "tier: "+tier, 1)
-					// Permit the task's own creation-attribute write. The regression exercises
-					// a host security restriction independently of the contract's path floor.
-					contract = strings.Replace(contract, `write: ["./out/"]`, fmt.Sprintf("write: [%q, \"/proc/\"]", c.f.out), 1)
+					// Keep the fixture's write tree absolute while the gate's worktree is /.
+					contract = strings.Replace(contract, `write: ["./out/"]`, fmt.Sprintf("write: [%q]", c.f.out), 1)
 					contract = strings.Replace(contract, "fs:\n", "fs:\n  deny_read: []\n  deny_write: []\n", 1)
 					if held {
 						contract += "gate:\n  completion: held\n  rules:\n    - 'fs.read matches \"*.never\"': 90\n    - 'fs.write outside worktree': 90\n"
@@ -330,11 +362,11 @@ func TestIntegrationHeldCreateRespectsSELinux(t *testing.T) {
 						t.Fatal(err)
 					}
 					cmd := c.command(t, false, "run", filepath.Join(c.f.dir, "agent.yaml"))
-					// A root worktree makes the write predicate false for both the proc
-					// attribute and the test leaf, while its static kind still holds writes.
+					// A root worktree keeps the write predicate false for the test leaf,
+					// while its static kind still holds writes.
 					cmd.Dir = "/"
 
-					if err := cmd.Run(); err != nil {
+					if err := runSELinuxCreationAgent(cmd); err != nil {
 						t.Fatalf("run: %v\n%s", err, output(cmd))
 					}
 					_, report, ok := strings.Cut(output(cmd), "LABEL-RESULT ")
@@ -364,5 +396,65 @@ func TestIntegrationHeldCreateRespectsSELinux(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+// runSELinuxCreationAgent supplies only the agent's own fscreate descriptor,
+// opened outside the run. This keeps the native/held comparison independent of
+// the contract compiler's refusal of writes to kernel control filesystems.
+func runSELinuxCreationAgent(cmd *exec.Cmd) error {
+	pair, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unix.Close(pair[0]) }()
+	child := os.NewFile(uintptr(pair[1]), "creation-attribute-control")
+	cmd.Stdin = child
+	err = cmd.Start()
+	_ = child.Close()
+	if err != nil {
+		return err
+	}
+	ended := make(chan error, 1)
+	go func() { ended <- cmd.Wait() }()
+	waited := false
+	defer func() {
+		if !waited {
+			_ = cmd.Process.Kill()
+			<-ended
+		}
+	}()
+	tid := 0
+	for deadline := time.Now().Add(120 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+		if _, report, ok := strings.Cut(output(cmd), "SELINUX-READY "); ok {
+			if _, err := fmt.Sscanf(report, "%d", &tid); err != nil {
+				return err
+			}
+			break
+		}
+		select {
+		case err := <-ended:
+			waited = true
+			return fmt.Errorf("agent ended before attribute handoff: %v", err)
+		default:
+		}
+	}
+	if tid <= 0 {
+		return fmt.Errorf("agent did not report its creation-attribute thread")
+	}
+	fd, err := unix.Open(fmt.Sprintf("/proc/%d/attr/fscreate", tid), unix.O_WRONLY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unix.Close(fd) }()
+	if err := unix.Sendmsg(pair[0], []byte{1}, unix.UnixRights(fd), nil, 0); err != nil {
+		return err
+	}
+	select {
+	case err := <-ended:
+		waited = true
+		return err
+	case <-time.After(120 * time.Second):
+		return fmt.Errorf("agent did not finish after attribute handoff")
 	}
 }

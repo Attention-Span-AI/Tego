@@ -147,7 +147,7 @@ script_tests() {
 	for t in scripts/install_test.sh scripts/install_mac_test.sh scripts/coverage_test.sh scripts/bench-gate_test.sh scripts/timing-budgets_test.sh scripts/check-spdx_test.sh scripts/check-licenses_test.sh scripts/scrub-capture_test.sh scripts/fuzz-corpus_test.sh scripts/deadcode-report_test.sh scripts/skipgate_test.sh \
 		scripts/demo-credentials_test.sh scripts/demo-reset_test.sh scripts/cleanup-guards_test.sh \
 		scripts/check-skiplists_test.sh scripts/release_test.sh scripts/check-control-pin_test.sh scripts/bpf-toolchain_test.sh scripts/tree-files_test.sh \
-		scripts/precommit_test.sh scripts/check-bpf-objects_test.sh scripts/fd-churn_test.sh scripts/check-fd_test.sh scripts/check-edgelint_test.sh test/vm/kvm-step_test.sh test/vm/python-pkgs_test.sh test/vm/fetch-kernel_test.sh \
+		scripts/precommit_test.sh scripts/check-bpf-objects_test.sh scripts/fd-churn_test.sh scripts/check-fd_test.sh scripts/check-edgelint_test.sh test/vm/kvm-step_test.sh test/vm/held-label_test.sh test/vm/python-pkgs_test.sh test/vm/fetch-kernel_test.sh \
 		test/e2e/lib_test.sh test/e2e/pydeps_test.sh test/e2e/kt4_test.sh test/e2e/kt5_test.sh test/e2e/kt2_pairs_test.sh test/e2e/m0_demo_test.sh test/e2e/overhead/kt3_test.sh test/e2e/overhead/bench_test.sh test/e2e/overhead/run_test.sh \
 		test/vm/matrix_test.sh test/vm/root-suites_test.sh test/vm/doctor-refusal_test.sh test/vm/doctor-facts_test.sh test/vm/perf_test.sh \
 		test/vm/guarded-run_test.sh test/vm/bounded-run_test.sh test/vm/fwd-run_test.sh test/vm/kvm-modules_test.sh test/vm/kvm-files_test.sh test/vm/kvm-cleanup_test.sh test/vm/tier2-pairs_test.sh test/vm/pairs_test.sh \

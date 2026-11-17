@@ -1579,18 +1579,46 @@ gate:
 
 What it costs and what it leaves:
 - Latency: a held open took 2–4× the copied path's median in the measurements (ADR 0041 §Performance, TARGET-MISS),
-  which is why it is an opt-in. Only opens of a kind the gate can escalate are held.
+  which is why it is an opt-in. Only opens of a kind the gate can escalate are held. With TOMOYO active,
+  the two bounded fact reads added about 26.50 microseconds per authority check in a Debian 13 guest
+  benchmark of the shipped check (five 2-second samples; ADR 0041); end-to-end acceptance remains open.
 - The run's processes cannot make Landlock domains of their own (`landlock_*` answer `ENOSYS`): an agent that
   sandboxes its tools with Landlock finds it unavailable. `tego rules check` says so in its gate line.
 - A deputy that cannot start fails nothing: the run warns `[held-unavailable]`, decides those opens on copied facts,
   and `run_start.best_effort` keeps the open cells (run_start's `capabilities` row `gate.fs_open_completion` is
   false).
-- **Host security authority (SEC08, amended 2026-11-04).** A held file open checks the requesting thread
+- **Host security authority (SEC08, amended 2026-11-17).** A held file open checks the requesting thread
   against the process opening the file, including before reads, creates, truncates, approvals and alternates.
   AppArmor needs equal full labels and proof that the reader is in the root policy namespace (readable
   `.ns_level` zero). Equal visible profiles in a child namespace can hide different ancestor restrictions.
   SELinux needs equal full contexts and, before potential file creation, equal readable `fscreate` contexts.
-  Smack always refuses because the other thread's process rules cannot be queried. Differences return
+  Smack always refuses because the other thread's process rules cannot be queried. With TOMOYO active
+  (including Debian's stock kernel), held opens require the checking thread's own domain to be `<kernel>` and
+  the first policy-update line to equal the exact 49-byte never-updated kernel line, newline included. Both facts are read afresh; no policy observation is retained between checks or runs; no policy
+  loader is needed on a stock Debian install with no policy. An observed domain other than `<kernel>` refuses held opens
+  on this machine. If TOMOYO securityfs is unreadable, expose readable
+  `/sys/kernel/security/tomoyo/self_domain` and `stat`; there is no TOMOYO contract opt-in. A nonzero or timestamped
+  update line says policy was updated since boot: every held file open on the machine is refused until
+  the next restart, even without policy activation (GAPS C75). No host privilege is needed to cause
+  this: TOMOYO's built-in initializer rules create a domain and count an update for a program named
+  `/sbin/modprobe` or `/sbin/hotplug`. The name is the link's own path, without following the final
+  link, from the root of the starting process's mount namespace. A container with a real `/sbin`
+  directory, or a local user able to create a user and mount namespace with that layout, can move
+  the counter for the whole machine. The refusal returns after a restart if such a program runs
+  again. This fails closed: opens are refused, and nothing is opened that should not be. On Debian
+  12 and 13, `/sbin` is a link into `/usr`, so the host's modprobe is named `/usr/sbin/modprobe` and
+  does not match; the counter was measured at zero after boot and module load/unload. For a machine
+  that does not use TOMOYO, the lasting remedy is to omit `tomoyo` from the boot `lsm=` list, retaining
+  the other active modules: on Debian, edit the list in `GRUB_CMDLINE_LINUX_DEFAULT` in
+  `/etc/default/grub`, run `update-grub`, and reboot. The warning and own log name TOMOYO and the failed fact;
+  `tego doctor` reports the current observation. See the TOMOYO residual immediately below (also
+  ADR 0041 and GAPS B14).
+
+  What the TOMOYO check leaves:
+
+  (a) A TOMOYO policy activated between an authority check and the open it admits is not noticed for that one open; this requires the machine's administrator to act in that interval. (b) A kernel compiled with its own TOMOYO policy and activation without a loader (`CONFIG_SECURITY_TOMOYO_OMIT_USERSPACE_LOADER`), or with a hand-made built-in policy that predefines its domains, can enforce with a counter that never moved; the shared running-kernel build-configuration reader refuses held opens when it positively reads `CONFIG_SECURITY_TOMOYO_OMIT_USERSPACE_LOADER=y`, while an unreadable configuration changes nothing, and none of the distribution kernels we tested does this (Debian 12 and Debian 13 configurations inspected). (c) A container that hides TOMOYO securityfs refuses held file opens (GAPS C74). (d) The counter can return to its never-updated reading only after its full range of counted updates with the clock set to the epoch, an administrator's deliberate act.
+
+  Differences return
   `EACCES`, `held-label-differs`; unavailable authority facts return `held-label-unavailable` in the ledger,
   with the missing fact in the log and the `[held-label]` warning explaining the requirements.
   The active module list uses `lsm_list_modules(2)` on 6.8+ with securityfs fallback: hiding the securityfs list

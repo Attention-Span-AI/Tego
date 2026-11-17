@@ -10,7 +10,7 @@ if grep -Eq -- '^[[:space:]]*--- SKIP:' "$log"; then
  exit 1
 fi
 for testname do
- grep -q -- "^--- PASS: $testname (" "$log" || {
+ grep -q -- "^[[:space:]]*--- PASS: $testname (" "$log" || {
   echo "held-label: $testname did not pass" >&2
   exit 1
  }

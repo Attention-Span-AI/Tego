@@ -157,7 +157,7 @@ jobs:
       - name: release.sh push and tag refusals, bpf-toolchain.sh directory guard
         run: ./scripts/release_test.sh && ./scripts/check-control-pin_test.sh && ./scripts/bpf-toolchain_test.sh && ./scripts/tree-files_test.sh && ./scripts/precommit_test.sh && ./scripts/check-bpf-objects_test.sh
       - name: vm-matrix's KVM step waits for udev
-        run: ./test/vm/kvm-step_test.sh && ./test/vm/python-pkgs_test.sh && ./test/vm/fetch-kernel_test.sh && ./test/vm/guarded-run_test.sh && ./test/vm/bounded-run_test.sh && ./test/vm/fwd-run_test.sh && ./test/vm/kvm-modules_test.sh && ./test/vm/kvm-files_test.sh && ./test/vm/kvm-cleanup_test.sh && ./test/vm/tier2-pairs_test.sh && ./test/vm/pairs_test.sh && ./test/vm/doctor-refusal_test.sh && ./test/vm/doctor-facts_test.sh && ./test/vm/perf_test.sh && ./test/vm/kvm-run_test.sh && ./test/vm/ssh-suite_test.sh
+        run: ./test/vm/kvm-step_test.sh && ./test/vm/held-label_test.sh && ./test/vm/python-pkgs_test.sh && ./test/vm/fetch-kernel_test.sh && ./test/vm/guarded-run_test.sh && ./test/vm/bounded-run_test.sh && ./test/vm/fwd-run_test.sh && ./test/vm/kvm-modules_test.sh && ./test/vm/kvm-files_test.sh && ./test/vm/kvm-cleanup_test.sh && ./test/vm/tier2-pairs_test.sh && ./test/vm/pairs_test.sh && ./test/vm/doctor-refusal_test.sh && ./test/vm/doctor-facts_test.sh && ./test/vm/perf_test.sh && ./test/vm/kvm-run_test.sh && ./test/vm/ssh-suite_test.sh
       # With kvm-step_test.sh above, this is make harness-test.
       - name: the kill tests' (kill test 2's request pairing included), overhead harness's and kernel matrix's own tests (kt_run's bound, kill test 4's timing, kill test 5's budget and contracts, kill test 3's cache, run.sh's ledgers and rows, matrix.sh, root-suites.sh's copy)
         run: >
