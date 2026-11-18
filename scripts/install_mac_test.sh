@@ -12,6 +12,20 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/install-mac-test.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT INT TERM
 fails=0
 
+# Fixture hashes use the platform's checksum tool. Do not put an adapter on the
+# installer's Mac PATH: that must exercise its native shasum branch on macOS.
+suite_sha256() {
+	if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"; else shasum -a 256 "$@"; fi
+}
+# The suite executes Linux guest shell bodies locally. Only those bodies need
+# Linux's sha256sum spelling; shasum has the same -c format and failure status.
+guest_tools="$tmp/guest-tools"
+mkdir -p "$guest_tools"
+if ! PATH=/usr/bin:/bin command -v sha256sum >/dev/null 2>&1; then
+	printf '#!/bin/sh\nexec /usr/bin/shasum -a 256 "$@"\n' >"$guest_tools/sha256sum"
+	chmod +x "$guest_tools/sha256sum"
+fi
+
 # stubs FAKEBIN: writes the stand-ins. limactl goes in its own folder, which a case puts on PATH when Lima is
 # "installed"; brew install/upgrade copies it into FAKEBIN, as a real install would put it on PATH.
 # shellcheck disable=SC2016 # the stand-ins are written as is, for their own shell to expand
@@ -57,7 +71,7 @@ case "$1" in
 				shift
 				while [ "$1" != sh ]; do shift; done
 				# limactl does not export the Mac installer environment into the guest.
-				(unset TEGO_BASE_URL; FAKE_CORRUPT_INSTALLER=${FAKE_CORRUPT_GUEST_INSTALLER:-0} "$@") ;;
+				(unset TEGO_BASE_URL; PATH="$PATH:$FAKE_GUEST_TOOLS" FAKE_CORRUPT_INSTALLER=${FAKE_CORRUPT_GUEST_INSTALLER:-0} "$@") ;;
 			*'TEGO_ON_MAC=1'*' start'|*'TEGO_ON_MAC=1'*' setup') exit "${FAKE_GUIDE_STATUS:-0}" ;;
 			*'grep -o'*) [ "${FAKE_NO_URL:-}" != 1 ] || exit 1; mkdir -p "$HOME/.tego"
 				printf '%s\n' "${FAKE_URL:-http://127.0.0.1:8484/?t=test}" >"$HOME/.tego/dashboard.log"
@@ -89,7 +103,7 @@ EOF
 	printf '#!/bin/sh\necho "guest installed $TEGO_VERSION checksums=${TEGO_CHECKSUMS_SHA256:-missing} base=${TEGO_BASE_URL:-missing}" >>"$FAKE_LOG"\n' >"$b/install.sh"
 	printf 'guest binary fixture\n' >"$b/tego_0.1.3_linux_arm64"
 	printf 'guest control fixture\n' >"$b/tego-control_0.1.3_linux_arm64"
-	(cd "$b" && sha256sum -- tego.yaml install.sh *linux_arm64) >"$b/checksums"
+	(cd "$b" && suite_sha256 -- tego.yaml install.sh *linux_arm64) >"$b/checksums"
 	cat >"$b/curl" <<'EOF'
 #!/bin/sh
 out='' url=''
@@ -182,12 +196,12 @@ run() {
 			OLD_TEMPLATE=1)
 				# v0.1.3 provisioning ignores all parameters and fetches mutable latest.
 				printf 'provision:\n  - mode: user\n    script: |\n      curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh | sh\n' >"$bin/tego.yaml"
-				(cd "$bin" && sha256sum tego.yaml install.sh) >"$bin/checksums"
+				(cd "$bin" && suite_sha256 tego.yaml install.sh) >"$bin/checksums"
 				;;
 		esac
 	done
 	code=0
-	env -i HOME="$tmp" TMPDIR="$tmp" SHELL=/bin/zsh PATH="$path" FAKE_LOG="$tmp/log" "$@" sh "$script" >"$tmp/out" 2>&1 </dev/null || code=$?
+	env -i HOME="$tmp" TMPDIR="$tmp" SHELL=/bin/zsh PATH="$path" FAKE_LOG="$tmp/log" FAKE_GUEST_TOOLS="$guest_tools" "$@" /bin/sh "$script" >"$tmp/out" 2>&1 </dev/null || code=$?
 }
 
 # Give /dev/tty a real terminal while stdin remains the piped install script.
@@ -200,7 +214,7 @@ script, tmp, bin, answer = sys.argv[1:5]
 pid, fd = pty.fork()
 if pid == 0:
     env = dict(HOME=tmp, TMPDIR=tmp, SHELL='/bin/zsh', PATH=bin+':/usr/bin:/bin',
-               FAKE_LOG=tmp+'/log', FAKE_VM='Running', FAKE_GUEST_VERSION='v0.1.2')
+               FAKE_LOG=tmp+'/log', FAKE_GUEST_TOOLS=tmp+'/guest-tools', FAKE_VM='Running', FAKE_GUEST_VERSION='v0.1.2')
     env.update(x.split('=', 1) for x in sys.argv[5:])
     os.execve('/bin/sh', ['sh', '-c', 'cat "$1" | sh', 'sh', script], env)
 output = b''
@@ -232,7 +246,7 @@ latest="https://github.com/Attention-Span-AI/Tego/releases/download/v0.1.3/tego.
 
 run fresh TEGO_YES=1
 check "fresh Mac: installs Lima, sets up the VM, adds tego" 0 "Lima isn't installed. Tego uses this free program to run its Linux VM." "Install Lima now with Homebrew?" "brew install lima" \
-	"limactl start --tty=false --name=tego --mount-none --param=tego_version=v0.1.3" "--param=checksums_sha256=$(sha256sum "$tmp/fresh/bin/checksums" | awk '{print $1}')" "verified local template in private directory" "✓ Lima 2.3.0" "✓ Tego's VM is ready" "✓ tego command added" \
+	"limactl start --tty=false --name=tego --mount-none --param=tego_version=v0.1.3" "--param=checksums_sha256=$(suite_sha256 "$tmp/fresh/bin/checksums" | awk '{print $1}')" "verified local template in private directory" "✓ Lima 2.3.0" "✓ Tego's VM is ready" "✓ tego command added" \
 	"Next steps" "Open a new Terminal window, then type tego start"
 [ -x "$tmp/.local/bin/tego" ] || { echo "FAIL fresh Mac: no tego command in ~/.local/bin"; fails=$((fails + 1)); }
 grep -q 'added by the Tego installer' "$tmp/.zshrc" 2>/dev/null || { echo "FAIL fresh Mac: PATH line not added to ~/.zshrc"; fails=$((fails + 1)); }
@@ -295,6 +309,9 @@ check "VM stopped: starts it" 0 "○ Tego's VM is stopped" "limactl start tego" 
 run pinned LIMA=1 TEGO_YES=1 TEGO_VERSION=v0.1.3
 check "TEGO_VERSION picks that release's template" 0 \
 	"curl $latest" "--param=tego_version=v0.1.3" "verified local template in private directory"
+
+run freshmirror LIMA=1 TEGO_YES=1 TEGO_BASE_URL=https://mirror.example/tego/releases/download
+check "fresh mirror is carried into provisioning" 0 "--param=release_base=https://mirror.example/tego/releases/download"
 
 run imagesgone LIMA=1 TEGO_YES=1 FAKE_IMAGE_FAIL=1
 check "M3 missing image gives deletion before retry" 8 "First remove the incomplete VM: limactl delete tego" "The pinned VM image is no longer available" "Update the installer" "releases/latest/download/install.sh | sh"
@@ -374,7 +391,7 @@ for old in v0.1.2 broken; do
 	run "update-$old" LIMA=1 FAKE_VM=Running TEGO_YES=1 TEGO_VERSION=0.1.3 FAKE_GUEST_VERSION="$old"
 	from=$old; [ "$old" != broken ] || from='missing or not working'
 	check "existing guest $old is updated in place" 0 "Update Tego inside the VM from $from to v0.1.3? [Y/n] yes" \
-		"guest installed v0.1.3 checksums=$(sha256sum "$bin/checksums" | awk '{print $1}')" "Existing runs keep running"
+		"guest installed v0.1.3 checksums=$(suite_sha256 "$bin/checksums" | awk '{print $1}')" "Existing runs keep running"
 	absent "update does not recreate or stop VM" "limactl start"
 	absent "update does not stop VM" "limactl stop"
 done
@@ -413,7 +430,7 @@ check "M8 explicit yes replaces newer version" 0 "with older version v0.1.3? [y/
 run mirrorupdate LIMA=1 FAKE_VM=Running TEGO_YES=1 FAKE_GUEST_VERSION=v0.1.2 TEGO_BASE_URL=https://mirror.example/tego/releases/download
 check "M9 guest receives Mac release base and verified checksums" 0 \
 	"curl https://mirror.example/tego/releases/download/v0.1.3/install.sh" \
-	"guest installed v0.1.3 checksums=$(sha256sum "$bin/checksums" | awk '{print $1}') base=https://mirror.example/tego/releases/download"
+	"guest installed v0.1.3 checksums=$(suite_sha256 "$bin/checksums" | awk '{print $1}') base=https://mirror.example/tego/releases/download"
 
 run updatebadversion LIMA=1 FAKE_VM=Running TEGO_YES=1 FAKE_GUEST_FAIL=1
 check "failing version command is repaired even if it prints a version" 0 "from missing or not working to v0.1.3?" "guest installed"
@@ -491,16 +508,16 @@ refreshed_command "M0 decline"
 awk '/^    script: \|/ && !seen {seen=1; inside=1; next} /^probes:/ {inside=0} inside {sub(/^      /, ""); print}' \
 	"$here/../examples/lima/tego.yaml" >"$tmp/provision.sh"
 bin="$tmp/normalized/bin"
-checksums_digest=$(sha256sum "$bin/checksums" | awk '{print $1}')
-digest=$(sha256sum "$bin/install.sh" | awk '{print $1}')
+checksums_digest=$(suite_sha256 "$bin/checksums" | awk '{print $1}')
+digest=$(suite_sha256 "$bin/install.sh" | awk '{print $1}')
 : >"$tmp/log"; code=0
-env -i PATH="$bin:/usr/bin:/bin" HOME="$tmp/guest" TMPDIR="$tmp" FAKE_LOG="$tmp/log" \
-	PARAM_checksums_sha256="$checksums_digest" PARAM_tego_version=v0.1.3 PARAM_installer_sha256="$digest" bash "$tmp/provision.sh" >"$tmp/out" 2>&1 || code=$?
-check "guest provisioning installs selected release" 0 "guest installed v0.1.3 checksums=$checksums_digest" "releases/download/v0.1.3/install.sh"
+env -i PATH="$bin:/usr/bin:/bin:$guest_tools" HOME="$tmp/guest" TMPDIR="$tmp" FAKE_LOG="$tmp/log" \
+	PARAM_release_base=https://mirror.example/tego/releases/download PARAM_checksums_sha256="$checksums_digest" PARAM_tego_version=v0.1.3 PARAM_installer_sha256="$digest" bash "$tmp/provision.sh" >"$tmp/out" 2>&1 || code=$?
+check "guest provisioning installs selected release" 0 "guest installed v0.1.3 checksums=$checksums_digest base=https://mirror.example/tego/releases/download" "curl https://mirror.example/tego/releases/download/v0.1.3/install.sh"
 absent "pinned guest never fetches latest" "releases/latest"
 : >"$tmp/log"; code=0
-env -i PATH="$bin:/usr/bin:/bin" HOME="$tmp/guest" TMPDIR="$tmp" FAKE_LOG="$tmp/log" FAKE_CORRUPT_INSTALLER=1 \
-	PARAM_checksums_sha256="$checksums_digest" PARAM_tego_version=v0.1.3 PARAM_installer_sha256="$digest" bash "$tmp/provision.sh" >"$tmp/out" 2>&1 || code=$?
+env -i PATH="$bin:/usr/bin:/bin:$guest_tools" HOME="$tmp/guest" TMPDIR="$tmp" FAKE_LOG="$tmp/log" FAKE_CORRUPT_INSTALLER=1 \
+	PARAM_release_base=https://mirror.example/tego/releases/download PARAM_checksums_sha256="$checksums_digest" PARAM_tego_version=v0.1.3 PARAM_installer_sha256="$digest" bash "$tmp/provision.sh" >"$tmp/out" 2>&1 || code=$?
 check "guest refuses changed installer" 1 "FAILED"
 absent "changed guest installer never executes" "guest installed"
 
@@ -523,6 +540,15 @@ cat >"$bin/stat" <<'EOF'
 [ "$1" = -f ] || exit 1
 format=$2
 path=$3
+[ "${FAKE_DIR_STAT_FAIL:-}" != 1 ] || [ "$path" != "$HOME/.lima/tego" ] || exit 1
+if [ -x /usr/bin/sw_vers ]; then
+	case "$path:$format" in
+		"$HOME/.lima/tego:%u") [ -n "${FAKE_DIR_UID:-}" ] || exec /usr/bin/stat "$@" ;;
+		"$HOME/.lima/tego:%Lp") [ -n "${FAKE_DIR_MODE:-}${FAKE_DIR_STAT_FAIL:-}" ] || exec /usr/bin/stat "$@" ;;
+		"$HOME/.lima/tego/tego-dashboard.sock:"*) [ -n "${FAKE_SOCKET_UID:-}" ] || exec /usr/bin/stat "$@" ;;
+		*) exec /usr/bin/stat "$@" ;;
+	esac
+fi
 case "$path" in
 	"$HOME/.lima/tego")
 		[ "${FAKE_DIR_STAT_FAIL:-}" != 1 ] || exit 1
@@ -579,6 +605,7 @@ shim_call() {
 shim_run() {
 	: >"$tmp/log"; rm -f "$tmp/log.tunnel"
 	mkdir -p "$tmp/.lima/tego" "$tmp/shim-tmp"
+	chmod 700 "$tmp/.lima/tego"
 	rm -f "$tmp/.lima/tego/tego-dashboard.sock"
 	# Socket contents stand in for the old and replacement masters.
 	printf 'old master\n' >"$tmp/.lima/tego/tego-dashboard.sock"

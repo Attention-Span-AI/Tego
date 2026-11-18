@@ -256,7 +256,8 @@ BEGIN { print compare(left, right) }'
 			prepare_release
 			verify_guest_install
 			quietly limactl start --tty=false --name="$vm" --mount-none --param="tego_version=$tag" \
-				--param="installer_sha256=$installer_sha256" --param="checksums_sha256=$checksums_sha256" "$archive_path" || {
+				--param="installer_sha256=$installer_sha256" --param="checksums_sha256=$checksums_sha256" \
+				--param="release_base=$base_url" "$archive_path" || {
 				if grep -q 'failed to download .*cloud-images[.]ubuntu[.]com/' "$log"; then
 					# Lima keeps a newly created instance even when its image download fails.
 					# Leave deletion explicit so the person can inspect it and its diagnostic log.
