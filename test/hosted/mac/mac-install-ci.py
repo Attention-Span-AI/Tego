@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Hosted Mac infrastructure: bounded subprocesses, real PTYs and redacted logs."""
+# Hosted Mac infrastructure: bounded subprocesses, real PTYs and redacted logs.
+# https://docs.github.com/en/actions/reference/workflows-and-actions/variables
+import os
+import sys
+if __name__ == '__main__' and (os.environ.get('GITHUB_ACTIONS') != 'true' or os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted'):
+    print('this script installs the real product and is only for GitHub-hosted machines', file=sys.stderr)
+    raise SystemExit(2)
 import errno
 import fcntl
-import os
 from pathlib import Path
 import pty
 import re
@@ -11,9 +16,14 @@ import select
 import signal
 import struct
 import subprocess
-import sys
 import termios
 import time
+
+
+def require_hosted():
+    if os.environ.get('GITHUB_ACTIONS') != 'true' or os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted':
+        print('this script installs the real product and is only for GitHub-hosted machines', file=sys.stderr)
+        raise SystemExit(2)
 
 
 def scrub(data):
@@ -29,6 +39,7 @@ def show(path, code):
 
 
 def bound(seconds, path, command):
+    require_hosted()
     with path.open('wb') as log:
         child = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         try:
@@ -47,6 +58,7 @@ def bound(seconds, path, command):
 
 
 def terminal(seconds, path, mode, command):
+    require_hosted()
     # TERM=dumb chooses the guide's accessible prompts, as runGuide in
     # internal/cli/setup_guide_test.go does. It remains a real terminal, so the
     # guide starts the real dashboard, and limactl allocates the guest terminal.
@@ -66,7 +78,7 @@ def terminal(seconds, path, mode, command):
         os.close(gate_write)
         os.read(gate_read, 1)
         os.close(gate_read)
-        os.environ.update(TERM='dumb', NO_COLOR='1')
+        os.environ.update(TERM='dumb', NO_COLOR='1', HISTFILE='/dev/null')
         os.execvp(command[0], command)
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack('HHHH', 40, 120, 0, 0))
     os.close(gate_read)
@@ -148,6 +160,7 @@ def collect(destination):
 
 
 def dispatch(args):
+    require_hosted()
     # Test-only seam. The product does not read these variables or reference this
     # helper. No template bytes/digests are changed. Only the fixture directory is
     # mounted read-only; no Mac home or project folders are shared.

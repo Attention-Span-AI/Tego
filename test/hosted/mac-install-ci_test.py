@@ -8,14 +8,17 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+import contextlib
+import io
 
-HELPER = Path(__file__).with_name('mac-install-ci.py')
+HELPER = Path(__file__).with_name('mac') / 'mac-install-ci.py'
 spec = importlib.util.spec_from_file_location('macci', HELPER)
 macci = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(macci)
 
 
-class Infrastructure(unittest.TestCase):
+class PureInfrastructure(unittest.TestCase):
     def test_tokens_scrubbed_including_serial_and_browser_logs(self):
         data = b'url http://127.0.0.1:8484/?t=secret-token\r\nAuthorization: Bearer secret-header\n'
         clean = macci.scrub(data)
@@ -35,7 +38,8 @@ class Infrastructure(unittest.TestCase):
             install.parent.mkdir(parents=True)
             install.write_bytes(data)
             env = dict(os.environ, HOME=str(home), MAC_CI_LOGS=str(logs), MAC_CI_TMP=str(work))
-            subprocess.run([sys.executable, str(HELPER), 'collect', str(root/'safe')], env=env, check=True)
+            with patch.dict(os.environ, env, clear=True):
+                macci.collect(root/'safe')
             artifacts = list((root/'safe').rglob('*'))
             self.assertEqual(3, sum(p.is_file() for p in artifacts))
             for p in artifacts:
@@ -43,6 +47,51 @@ class Infrastructure(unittest.TestCase):
                     self.assertNotIn(b'secret', p.read_bytes())
                     self.assertNotIn(b'PRIVATE KEY', p.read_bytes())
 
+    def test_command_modes_refuse_before_side_effects(self):
+        # No hosted facts are invented: exercise the refusal on a developer machine.
+        for facts in ({}, {'GITHUB_ACTIONS': 'true'}, {'RUNNER_ENVIRONMENT': 'github-hosted'},
+                      {'GITHUB_ACTIONS': 'true', 'RUNNER_ENVIRONMENT': 'self-hosted'},
+                      {'GITHUB_ACTIONS': 'false', 'RUNNER_ENVIRONMENT': 'github-hosted'}):
+            env = {k: v for k, v in os.environ.items() if k not in ('GITHUB_ACTIONS', 'RUNNER_ENVIRONMENT')}
+            env.update(facts)
+            with self.subTest(facts=facts), tempfile.TemporaryDirectory() as tmp:
+                log = Path(tmp)/'must-not-exist'
+                for op, args in (('bound', ['1', str(log), '/must/not/run']),
+                                 ('terminal', ['1', str(log), 'install', '/must/not/run']),
+                                 ('dispatch', ['start']), ('collect', [str(log)])):
+                    p = subprocess.run([sys.executable, str(HELPER), op, *args], env=env,
+                                       capture_output=True, timeout=5)
+                    self.assertEqual(2, p.returncode, p.stderr)
+                    self.assertEqual(REFUSAL, p.stderr.decode().strip())
+                    self.assertEqual(b'', p.stdout)
+                    self.assertFalse(log.exists())
+                for script in ('mac-install-assets.sh', 'mac-install-ci.sh'):
+                    p = subprocess.run(['bash', str(HELPER.with_name(script))], env=env,
+                                       capture_output=True, timeout=5)
+                    self.assertEqual(2, p.returncode, p.stderr)
+                    self.assertEqual(REFUSAL, p.stderr.decode().strip())
+                    self.assertEqual(b'', p.stdout)
+
+    def test_imported_command_functions_also_refuse(self):
+        with patch.dict(os.environ, {}, clear=True), contextlib.redirect_stderr(io.StringIO()), \
+                patch.object(macci.pty, 'fork', side_effect=AssertionError('opened a terminal')), \
+                patch.object(macci.subprocess, 'Popen', side_effect=AssertionError('started a command')), \
+                patch.object(macci.os, 'execv', side_effect=AssertionError('dispatched a command')):
+            for function, args in ((macci.bound, (1, Path('/must/not/open'), [])),
+                                   (macci.terminal, (1, Path('/must/not/open'), 'install', [])),
+                                   (macci.dispatch, ([],))):
+                with self.subTest(function=function.__name__):
+                    with self.assertRaises(SystemExit) as raised:
+                        function(*args)
+                    self.assertEqual(2, raised.exception.code)
+
+
+REFUSAL = 'this script installs the real product and is only for GitHub-hosted machines'
+HOSTED = os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted'
+
+
+@unittest.skipUnless(HOSTED, 'command and terminal checks run only on GitHub-hosted machines')
+class HostedInfrastructure(unittest.TestCase):
     def helper(self, operation, seconds, log, *args):
         return subprocess.run([sys.executable, str(HELPER), operation, str(seconds), str(log), *args],
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=15)
@@ -62,7 +111,7 @@ class Infrastructure(unittest.TestCase):
 
     def test_pty_preserves_installer_exit_and_terminal(self):
         with tempfile.TemporaryDirectory() as tmp:
-            p = self.helper('terminal', 3, Path(tmp)/'pty.log', 'install', '/bin/sh', '-c', 'test -t 0 || exit 42; exit 8')
+            p = self.helper('terminal', 3, Path(tmp)/'pty.log', 'install', '/bin/sh', '-c', 'test -t 0 || exit 42; test "$HISTFILE" = /dev/null || exit 43; exit 8')
             self.assertEqual(8, p.returncode, p.stdout)
             self.assertIn(b'restored=True', p.stdout)
 

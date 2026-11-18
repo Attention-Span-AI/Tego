@@ -3,6 +3,12 @@
 # CI-only unsigned release fixture, never run its Linux binaries on the build host.
 # Match .goreleaser.yaml: static exe, trimpath, tegobpf engine, shared buildinfo,
 # commit date, and the release's own control-pin pre-hook. Only Intel is booted.
+# GitHub documents these runner facts (no workflow override is needed):
+# https://docs.github.com/en/actions/reference/workflows-and-actions/variables
+if [ "${GITHUB_ACTIONS:-}" != true ] || [ "${RUNNER_ENVIRONMENT:-}" != github-hosted ]; then
+  echo 'this script installs the real product and is only for GitHub-hosted machines' >&2
+  exit 2
+fi
 set -euo pipefail
 out=$1
 version=v0.2.0-macci
