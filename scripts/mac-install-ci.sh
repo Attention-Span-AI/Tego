@@ -183,9 +183,10 @@ BROWSER
     need "$MAC_CI_LOGS/guide.log" "$step"
   done
   echo 'CHECK page answers on the Mac through the real SSH dashboard tunnel'
+  # The link carries a one-time token: the dashboard answers it with a cookie and a redirect to the page.
   url=$(tail -n 1 "$MAC_CI_LOGS/browser-links.txt")
   case "$url" in http://127.0.0.1:8484/*) ;; *) echo 'CHECK FAILED unexpected dashboard URL'; exit 1 ;; esac
-  bound 30 "$MAC_CI_LOGS/dashboard-fetch.log" /usr/bin/curl --fail --silent --show-error --max-time 20 "$url" -o "$MAC_CI_LOGS/dashboard.html"
+  bound 30 "$MAC_CI_LOGS/dashboard-fetch.log" /usr/bin/curl --fail --silent --show-error --max-time 20 --location --cookie-jar "$MAC_CI_LOGS/dashboard.cookies" --cookie "$MAC_CI_LOGS/dashboard.cookies" "$url" -o "$MAC_CI_LOGS/dashboard.html"
   need "$MAC_CI_LOGS/dashboard.html" '<!doctype|<!DOCTYPE|<html'
   echo 'CHECK tego dashboard opens the running dashboard again and reuses the tunnel'
   terminal 90 "$MAC_CI_LOGS/dashboard-again.log" dashboard tego dashboard
@@ -224,7 +225,7 @@ PYORDER
   terminal 360 "$MAC_CI_LOGS/restart-dashboard.log" dashboard tego dashboard
   need "$MAC_CI_LOGS/restart-dashboard.log" "Starting Tego's VM"
   url=$(tail -n 1 "$MAC_CI_LOGS/browser-links.txt")
-  bound 30 "$MAC_CI_LOGS/dashboard-refetch.log" /usr/bin/curl --fail --silent --show-error --max-time 20 "$url" -o "$MAC_CI_LOGS/dashboard-after.html"
+  bound 30 "$MAC_CI_LOGS/dashboard-refetch.log" /usr/bin/curl --fail --silent --show-error --max-time 20 --location --cookie-jar "$MAC_CI_LOGS/dashboard-after.cookies" --cookie "$MAC_CI_LOGS/dashboard-after.cookies" "$url" -o "$MAC_CI_LOGS/dashboard-after.html"
   need "$MAC_CI_LOGS/dashboard-after.html" '<!doctype|<!DOCTYPE|<html'
   ;;
 collect) collect ;;
