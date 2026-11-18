@@ -15,6 +15,8 @@ if [ "${RUNNER_OS:-}" != macOS ]; then
 fi
 here=$(cd "$(dirname "$0")" && pwd)
 helper="$here/mac-install-ci.py"
+# The installer under test stays where a user gets it from: scripts/install.sh at the repository root.
+installer="$(cd "$here/../../.." && pwd)/scripts/install.sh"
 export MAC_CI_LOGS="${MAC_CI_LOGS:-$RUNNER_TEMP/mac-ci-raw}"
 export MAC_CI_TMP="${MAC_CI_TMP:-$RUNNER_TEMP/mac-ci-tmp}"
 export MAC_CI_ASSETS="${MAC_CI_ASSETS:-$RUNNER_TEMP/mac-release}"
@@ -110,7 +112,7 @@ LAUNCHER
     echo 'CHECK CI-only read-only fixture mount; template bytes and checksum verification remain intact'
   fi
   rc=0
-  terminal 900 "$MAC_CI_LOGS/installer.log" install /bin/sh "$here/install.sh" || rc=$?
+  terminal 900 "$MAC_CI_LOGS/installer.log" install /bin/sh "$installer" || rc=$?
   echo "CHECK real installer status=$rc"
   need "$MAC_CI_LOGS/installer.log" '✓ macOS '
   need "$MAC_CI_LOGS/installer.log" '✓ .*GB free'
@@ -208,7 +210,7 @@ BROWSER
   echo 'CHECK rerun refreshes Mac command before comparing the VM version'
   printf '\n# stale-ci-command\n' >>"$HOME/.local/bin/tego"
   export TEGO_YES=1 TEGO_VERSION=v0.2.0-macci TEGO_VERIFY=sha256 TEGO_BASE_URL="file://$MAC_CI_ASSETS"
-  terminal 120 "$MAC_CI_LOGS/rerun.log" install /bin/sh "$here/install.sh"
+  terminal 120 "$MAC_CI_LOGS/rerun.log" install /bin/sh "$installer"
   reject "$HOME/.local/bin/tego" stale-ci-command
   need "$MAC_CI_LOGS/rerun.log" 'tego command is up to date'
   need "$MAC_CI_LOGS/rerun.log" 'Tego v0.2.0-macci inside the VM is up to date'
@@ -221,7 +223,7 @@ PYORDER
   echo 'CHECK supported release repairs a missing VM binary through the same verified mirror'
   # shellcheck disable=SC2016 # fixed guest code, no Mac expansion
   limactl shell tego sh -c 'mv "$HOME/.local/bin/tego" "$HOME/.local/bin/tego.before-repair"'
-  terminal 180 "$MAC_CI_LOGS/repair.log" install /bin/sh "$here/install.sh"
+  terminal 180 "$MAC_CI_LOGS/repair.log" install /bin/sh "$installer"
   need "$MAC_CI_LOGS/repair.log" 'from missing or not working to v0.2.0-macci'
   need "$MAC_CI_LOGS/repair.log" 'Tego v0.2.0-macci inside the VM is ready'
   bound 60 "$MAC_CI_LOGS/repaired-version.log" tego version
