@@ -92,6 +92,9 @@ func TestImagesAreUbuntu2404ForBothMacArchitectures(t *testing.T) {
 // order: no installer is executed before its digest has been checked.
 func TestProvisionRunsTheOneLineInstall(t *testing.T) {
 	raw, tpl := load(t)
+	if !strings.Contains(raw, `release_base: "https://github.com/`+repo(t)+`/releases/download"`) {
+		t.Fatal("direct template starts must default to the release download base")
+	}
 	n := 0
 	for _, p := range tpl.Provision {
 		if !strings.Contains(p.Script, "install.sh") {
@@ -104,12 +107,12 @@ func TestProvisionRunsTheOneLineInstall(t *testing.T) {
 		steps := []string{
 			`set -eu -o pipefail`,
 			`version="$PARAM_tego_version"`,
-			"base=https://github.com/" + repo(t) + "/releases",
-			`curl -fsSL "$base/download/$version/install.sh" -o "$work/install.sh"`,
+			`base="$PARAM_release_base"`,
+			`curl -fsSL "$base/$version/install.sh" -o "$work/install.sh"`,
 			`expected="$PARAM_installer_sha256"`,
 			`[ -n "$expected" ]`,
 			`printf '%s  %s\n' "$expected" "$work/install.sh" | sha256sum -c -`,
-			`TEGO_VERSION="$version" TEGO_CHECKSUMS_SHA256="$PARAM_checksums_sha256" sh "$work/install.sh"`,
+			`TEGO_VERSION="$version" TEGO_BASE_URL="$base" TEGO_CHECKSUMS_SHA256="$PARAM_checksums_sha256" sh "$work/install.sh"`,
 		}
 		pos := 0
 		for _, step := range steps {

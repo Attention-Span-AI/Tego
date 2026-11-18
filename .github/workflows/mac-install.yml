@@ -1,0 +1,145 @@
+# SPDX-License-Identifier: Apache-2.0
+name: mac-install
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - scripts/install.sh
+      - scripts/install_mac_test.sh
+      - scripts/mac-install-*
+      - examples/lima/**
+      - .github/workflows/mac-install.yml
+
+# As ci.yml: no publishing or comments; checkout leaves no token in the tree.
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+env:
+  GO_VERSION: '1.27.4' # keep in step with ci.yml/release.yml
+jobs:
+  mac-tools:
+    name: mac-tools (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: system facts before any installs
+        shell: bash
+        run: |
+          echo 'CHECK macOS version, architecture, system shell and utility identities'
+          sw_vers
+          uname -m
+          /bin/sh --version
+          for tool in /usr/bin/sed /usr/bin/awk /usr/bin/grep /usr/bin/stat /usr/bin/mktemp /usr/sbin/lsof /usr/bin/shasum; do
+            ls -l "$tool"
+            file "$tool"
+            /usr/bin/shasum -a 256 "$tool"
+          done
+      - name: stand-in suite with system sh and Apple userland
+        shell: bash
+        run: |
+          echo 'CHECK installer lines under /bin/sh and BSD tools; stand-ins supply only external services and fault fixtures'
+          mkdir -p "$RUNNER_TEMP/mac-tools-raw"
+          set -o pipefail
+          PATH=/usr/bin:/bin:/usr/sbin:/sbin /bin/sh scripts/install_mac_test.sh 2>&1 | tee "$RUNNER_TEMP/mac-tools-raw/suite.log"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: template Go contracts
+        run: |
+          echo 'CHECK template contracts on the Mac'
+          set -o pipefail
+          go test -count=1 ./examples/lima/... 2>&1 | tee "$RUNNER_TEMP/mac-tools-raw/template-test.log"
+      - name: validate this template with Homebrew Lima
+        run: |
+          echo 'CHECK Homebrew Lima version and actual validation (no VM boot here)'
+          brew install lima
+          limactl --version
+          set -o pipefail
+          limactl validate examples/lima/tego.yaml 2>&1 | tee "$RUNNER_TEMP/mac-tools-raw/validate.log"
+      - name: scrub diagnostics
+        if: always()
+        env:
+          MAC_CI_LOGS: ${{ runner.temp }}/mac-tools-raw
+          MAC_CI_TMP: ${{ runner.temp }}/mac-tools-tmp
+        run: python3 scripts/mac-install-ci.py collect "$RUNNER_TEMP/mac-tools-scrubbed"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: mac-tools-${{ matrix.runner }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/mac-tools-scrubbed/
+
+  linux-assets:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: build this commit with the release flags and real checksums
+        run: scripts/mac-install-assets.sh "$RUNNER_TEMP/mac-release"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mac-release
+          retention-days: 1
+          if-no-files-found: error
+          path: ${{ runner.temp }}/mac-release/
+
+  mac-real:
+    # Apple-silicon hosted runners cannot start nested VMs; do not attempt it there:
+    # https://docs.github.com/en/actions/reference/runners/github-hosted-runners#limitations-for-arm64-macos-runners
+    # Intel is probed, not presumed capable. Lima's macOS default is VZ:
+    # https://lima-vm.io/docs/config/vmtype/
+    needs: linux-assets
+    runs-on: macos-15-intel
+    timeout-minutes: 65
+    env:
+      SHELL: /bin/zsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: establish whether any offered Lima driver can boot
+        timeout-minutes: 20
+        run: scripts/mac-install-ci.sh probe
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: mac-release
+          path: ${{ runner.temp }}/mac-release
+      - name: CI infrastructure contracts on this Mac
+        run: |
+          echo 'CHECK deadlines, PTY prompts/restoration and log redaction before the installer'
+          python3 scripts/mac-install-ci_test.py
+      - name: real installer success or asserted VM failure
+        timeout-minutes: 17
+        run: scripts/mac-install-ci.sh install
+      - name: Mac command, guide, tunnel, rerun and stopped VM
+        timeout-minutes: 20
+        run: scripts/mac-install-ci.sh exercise
+      - name: preserve scrubbed installer, Lima and serial logs before removal
+        if: always()
+        run: scripts/mac-install-ci.sh collect
+      - name: remove instances even after failure
+        if: always()
+        timeout-minutes: 4
+        run: scripts/mac-install-ci.sh cleanup
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: mac-real-logs
+          retention-days: 7
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/mac-ci-scrubbed/

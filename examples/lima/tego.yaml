@@ -58,6 +58,7 @@ containerd:
 # A direct template start defaults to latest and checks the installer against that release's checksum.
 param:
   tego_version: latest
+  release_base: "https://github.com/Attention-Span-AI/Tego/releases/download"
   installer_sha256: ""
   checksums_sha256: ""
 
@@ -70,22 +71,22 @@ provision:
       set -eu -o pipefail
       [ -x "$HOME/.local/bin/tego" ] && exit 0
       version="$PARAM_tego_version"
-      base=https://github.com/Attention-Span-AI/Tego/releases
+      base="$PARAM_release_base"
       if [ "$version" = latest ]; then
         version=$(curl -fsSL https://api.github.com/repos/Attention-Span-AI/Tego/releases/latest | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
       fi
       [ -n "$version" ]
       work=$(mktemp -d)
       trap 'rm -rf "$work"' EXIT
-      curl -fsSL "$base/download/$version/install.sh" -o "$work/install.sh"
+      curl -fsSL "$base/$version/install.sh" -o "$work/install.sh"
       expected="$PARAM_installer_sha256"
       if [ -z "$expected" ]; then
-        curl -fsSL "$base/download/$version/tego_${version#v}_checksums.txt" -o "$work/checksums"
+        curl -fsSL "$base/$version/tego_${version#v}_checksums.txt" -o "$work/checksums"
         expected=$(awk '$2=="install.sh" {print $1}' "$work/checksums")
       fi
       [ -n "$expected" ]
       printf '%s  %s\n' "$expected" "$work/install.sh" | sha256sum -c -
-      TEGO_VERSION="$version" TEGO_CHECKSUMS_SHA256="$PARAM_checksums_sha256" sh "$work/install.sh"
+      TEGO_VERSION="$version" TEGO_BASE_URL="$base" TEGO_CHECKSUMS_SHA256="$PARAM_checksums_sha256" sh "$work/install.sh"
 
 probes:
   - description: "tego to be installed"
