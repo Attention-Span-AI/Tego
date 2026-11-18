@@ -9,6 +9,8 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
 
 ### Fixed
 
+- `tego start` accepts executable absolute program paths; relative program paths ask for a program name or full path, and invalid paths get an accurate message.
+
 - On kernels that list TOMOYO as active with no policy loaded, including stock Debian 12 and 13, v0.1.3 refused every held file open (`held-label-unavailable`): approvals on file reads, held reads and the dashboard's demo did not work there. They now complete while TOMOYO is unused. Any TOMOYO policy update since boot (including initializer domain creation by a container or local user in another mount namespace), a domain other than `<kernel>`, unreadable TOMOYO files or a kernel built with `CONFIG_SECURITY_TOMOYO_OMIT_USERSPACE_LOADER` still refuse (GAPS B14, C74, C75).
 
 - Mac installer messages explain Lima and Homebrew, give the installer retry command, and put opening a new Terminal window first in the next step. Dashboard and socket messages give clearer next steps.
