@@ -164,7 +164,8 @@ exercise)
   need "$MAC_CI_LOGS/version.log" '^tego=v0.2.0-macci'
   need "$MAC_CI_LOGS/version.log" "^commit=$(git rev-parse HEAD)"
   echo 'CHECK doctor names a protection level'
-  bound 90 "$MAC_CI_LOGS/doctor.log" tego doctor
+  # doctor writes its Ready line only for a person at a terminal, so it is run on one.
+  terminal 90 "$MAC_CI_LOGS/doctor.log" install tego doctor
   need "$MAC_CI_LOGS/doctor.log" 'Ready: this shell can enforce at tier [123] [(](landlock|cgroup|bpflsm)[)]'
   echo 'CHECK all four guide steps with Another program (/bin/sh), no account, test project, Base development'
   # A stable prompt identifies the project shell after the guide, without guessing sleeps.
