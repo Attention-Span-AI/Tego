@@ -6,13 +6,17 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/shellword"
+	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
@@ -70,6 +74,139 @@ func savedRules(t *testing.T, name string) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+// TestGuideLookPath exercises the real lookup, rather than an installation stub.
+func TestGuideLookPath(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("PATH", dir)
+	executable := filepath.Join(dir, "bot")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	notExecutable := filepath.Join(dir, "data")
+	if err := os.WriteFile(notExecutable, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A slash must never cause a search inside a PATH directory, even if it has a match.
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sub", "bot"), nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name, program, want string
+		wantErr             bool
+	}{
+		{"absolute executable", executable, executable, false},
+		{"absolute nonexecutable", notExecutable, "", true},
+		{"absolute directory", dir, "", true},
+		{"absolute missing", filepath.Join(dir, "missing"), "", true},
+		{"bare on PATH", "bot", executable, false},
+		{"bare missing", "missing", "", true},
+		{"relative with slash", "sub/bot", "", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := guideLookPath(tt.program)
+			if got != tt.want || (err != nil) != tt.wantErr {
+				t.Errorf("guideLookPath(%q) = %q, %v; want %q, error %v", tt.program, got, err, tt.want, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestStartProgramWithAbsolutePath(t *testing.T) {
+	for _, relativeFirst := range []bool{false, true} {
+		t.Run(fmt.Sprint("relative first=", relativeFirst), func(t *testing.T) {
+			f := onFixture(t, "fresh")
+			noLogins(t)
+			t.Chdir(f.Home)
+			project := filepath.Join(f.Home, "my app")
+			if err := os.Mkdir(project, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(f.Home, "bot.sh"), nil, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			prev := guideVersion
+			t.Cleanup(func() { guideVersion = prev })
+			var versionPrograms []string
+			guideVersion = func(_ context.Context, program string) string {
+				versionPrograms = append(versionPrograms, program)
+				return "1.2.3"
+			}
+			answers := "3\n"
+			if relativeFirst {
+				answers += "./bot.sh\n"
+			}
+			answers += "/bin/sh -i\n2\n" + project + "\n1\n"
+			code, out, errs := runGuide(t, answers)
+			if code != identity.ExitOK {
+				t.Fatalf("exit %d\n%s\n%s", code, out, errs)
+			}
+			if !slices.Equal(versionPrograms, []string{"/bin/sh"}) {
+				t.Errorf("version programs = %q, want only /bin/sh", versionPrograms)
+			}
+			wantAll(t, "absolute program", out, "1/4  Agent", "✓ /bin/sh 1.2.3 is installed",
+				"2/4  Login", "Nothing to log in to: /bin/sh brings its own", "3/4  Project", "4/4  Rules",
+				"Which rules should /bin/sh follow?", "Run /bin/sh under Tego",
+				"cd "+shellword.Quote(project)+" && tego run "+agentNameFor(project))
+			wantAll(t, "rules file", savedRules(t, agentNameFor(project)), `command: ["/bin/sh", "-i"]`)
+			// Compile from the chosen project as tego run does, without starting a run.
+			t.Chdir(project)
+			m, _, err := loadMachine(config.TrustWarn)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var diagnostics bytes.Buffer
+			rt, _, _, compileCode := compileForRun(t.Context(), runOptions{contract: agentNameFor(project), offline: true}, m, &diagnostics)
+			if compileCode != identity.ExitOK {
+				t.Fatalf("compile exit %d: %s", compileCode, &diagnostics)
+			}
+			if got := commandFor(runOptions{}, rt); !slices.Equal(got, []string{"/bin/sh", "-i"}) {
+				t.Errorf("saved run command = %q", got)
+			}
+			if !slices.ContainsFunc(rt.Exec, func(r agent.ExecRule) bool {
+				return r.Raw == "/bin/sh" && r.Path == "/bin/sh" && r.Basename == "sh" && !r.ByName && r.Source == agent.ExecSourceCommand
+			}) {
+				t.Errorf("compiled exec rules do not grant /bin/sh by path: %+v", rt.Exec)
+			}
+			if relativeFirst {
+				wantAll(t, "relative retry", out, "use the program's name or its full path; relative paths would run from the project folder chosen later")
+				if strings.Contains(out, "isn't installed") {
+					t.Errorf("relative path was called missing:\n%s", out)
+				}
+			}
+		})
+	}
+}
+
+func TestGuideMissingProgramMessages(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PATH", dir)
+	data := filepath.Join(dir, "data")
+	if err := os.WriteFile(data, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	missing := dir + "/./missing"
+	for _, tt := range []struct{ program, message string }{
+		{"missing", "missing isn't installed. Install it, then run tego start again."},
+		{missing, missing + " was not found."},
+		{data, data + " is not a program that can be run."},
+		{dir, dir + " is not a program that can be run."},
+	} {
+		t.Run(tt.program, func(t *testing.T) {
+			var out bytes.Buffer
+			g := newWalk(strings.NewReader(""), &out, false)
+			code, err := g.installed(t.Context(), guideAgents[2], tt.program, tt.program, dir)
+			if code != identity.ExitFinding || err != nil {
+				t.Fatalf("installed = %d, %v", code, err)
+			}
+			wantAll(t, "missing program", out.String(), "✗ "+tt.message)
+		})
+	}
 }
 
 // TestStartTestProjectWithClaude: Claude Code, logged in with an API key that is saved, on the test project with the

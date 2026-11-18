@@ -94,8 +94,26 @@ func unsetLine(shell string, names []string) string {
 	return "unset " + strings.Join(names, " ")
 }
 
-// guideLookPath finds a program on PATH; a variable so a test can say what is installed.
+// Relative program paths cannot be checked before the project is chosen: the run starts in that project,
+// which may differ from the guide's current folder.
+var errGuideRelativeProgram = errors.New("use the program's name or its full path; relative paths would run from the project folder chosen later")
+
+// guideLookPath checks an absolute program path directly, or finds a bare name on PATH; a variable so a test
+// can say what is installed. Relative paths with a slash are refused until the person gives an unambiguous program.
 var guideLookPath = func(name string) (string, error) {
+	if strings.Contains(name, "/") {
+		if !filepath.IsAbs(name) {
+			return "", errGuideRelativeProgram
+		}
+		fi, err := os.Stat(name)
+		if err != nil {
+			return "", err
+		}
+		if !fi.Mode().IsRegular() || fi.Mode().Perm()&0o111 == 0 {
+			return "", fmt.Errorf("%s is not a program that can be run", name)
+		}
+		return name, nil
+	}
 	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
 		p := filepath.Join(dir, name)
 		if fi, err := os.Stat(p); dir != "" && err == nil && !fi.IsDir() && fi.Mode().Perm()&0o111 != 0 {
@@ -727,6 +745,10 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 			if strings.TrimSpace(s) == "" {
 				return errors.New("type the command, for example python3 bot.py")
 			}
+			program := strings.Fields(s)[0]
+			if strings.Contains(program, "/") && !filepath.IsAbs(program) {
+				return errGuideRelativeProgram
+			}
 			return nil
 		}); err != nil {
 			return 0, err
@@ -936,7 +958,7 @@ var guideVersion = func(ctx context.Context, program string) string {
 	return regexp.MustCompile(`[0-9]+\.[0-9]+\.[0-9]+`).FindString(out.String())
 }
 
-// installed makes sure the agent's program is on PATH, offering to install a known agent.
+// installed checks the agent's program by absolute path or on PATH, offering to install a known agent.
 func (g *walk) installed(ctx context.Context, a guideAgent, name, program, home string) (int, error) {
 	if _, err := guideLookPath(program); err == nil {
 		version := guideVersion(ctx, program)
@@ -945,6 +967,13 @@ func (g *walk) installed(ctx context.Context, a guideAgent, name, program, home 
 		}
 		g.ok(strings.TrimSpace(name+" "+version) + " is installed")
 		return identity.ExitOK, nil
+	} else if strings.Contains(program, "/") {
+		if errors.Is(err, os.ErrNotExist) {
+			g.bad(program + " was not found.")
+		} else {
+			g.bad(program + " is not a program that can be run.")
+		}
+		return identity.ExitFinding, nil
 	}
 	if a.install == "" {
 		g.bad(program + " isn't installed. Install it, then run tego start again.")
