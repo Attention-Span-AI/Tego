@@ -875,3 +875,57 @@ func TestInstallerSH5ExceptionsAreNotWholeFiles(t *testing.T) {
 		}
 	}
 }
+
+const hostedShellGuard = `if [ "${GITHUB_ACTIONS:-}" != true ] || [ "${RUNNER_ENVIRONMENT:-}" != github-hosted ]; then
+  echo 'this script installs the real product and is only for GitHub-hosted machines' >&2
+  exit 2
+fi
+`
+
+const hostedPythonGuard = `import os
+import sys
+if __name__ == '__main__' and (os.environ.get('GITHUB_ACTIONS') != 'true' or os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted'):
+    print('this script installs the real product and is only for GitHub-hosted machines', file=sys.stderr)
+    raise SystemExit(2)
+`
+
+func TestSH8HostedScriptsRefuseBeforeAnyCommand(t *testing.T) {
+	for _, ext := range []string{"sh", "bash", "py"} {
+		guard, command := hostedShellGuard, "go build ./cmd/tego\ntego doctor\n"
+		if ext == "py" {
+			guard, command = hostedPythonGuard, "subprocess.run(['tego', 'doctor'])\n"
+		}
+		for name, body := range map[string]string{
+			"guarded":    guard + command,
+			"comments":   "#!/usr/bin/env ignored\n# SPDX-License-Identifier: Apache-2.0\n\n" + guard + command,
+			"missing":    command,
+			"late":       command + guard,
+			"mention":    "# " + strings.ReplaceAll(guard, "\n", "\n# ") + command,
+			"one-fact":   strings.ReplaceAll(guard, "github-hosted", "self-hosted") + command,
+			"no-exit":    strings.ReplaceAll(strings.ReplaceAll(guard, "exit 2", "true"), "raise SystemExit(2)", "pass") + command,
+			"before":     "touch /a/developers/file\n" + guard + command,
+			"set-before": "set -eu\n" + guard + command,
+			"nested":     "if false; then\n" + guard + "fi\n" + command,
+		} {
+			t.Run(ext+"/"+name, func(t *testing.T) {
+				path := "test/hosted/mac/nested/check." + ext
+				got := rules(t, tree(t, map[string]string{path: body}))
+				var want []string
+				if name != "guarded" && name != "comments" {
+					want = []string{path + ":SH-8"}
+				}
+				if !slices.Equal(got, want) {
+					t.Fatalf("got %v, want %v", got, want)
+				}
+			})
+		}
+	}
+}
+
+// The exemption covers every script in its subtree, including directories other rules ignore as fixtures.
+func TestSH8HostedFixturesAreStillChecked(t *testing.T) {
+	path := "test/hosted/mac/testdata/unguarded.sh"
+	if got := rules(t, tree(t, map[string]string{path: "echo unsafe\n"})); !slices.Equal(got, []string{path + ":SH-8"}) {
+		t.Fatalf("got %v, want SH-8 in the hosted fixtures too", got)
+	}
+}

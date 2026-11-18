@@ -2,8 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # Hosted Mac only. Every invocation is bounded by the workflow as well as the
 # per-operation deadlines below. Never invoke this on the Linux build host.
+# GitHub documents these runner facts (no workflow override is needed):
+# https://docs.github.com/en/actions/reference/workflows-and-actions/variables
+if [ "${GITHUB_ACTIONS:-}" != true ] || [ "${RUNNER_ENVIRONMENT:-}" != github-hosted ]; then
+  echo 'this script installs the real product and is only for GitHub-hosted machines' >&2
+  exit 2
+fi
 set -euo pipefail
-if [ "${GITHUB_ACTIONS:-}" != true ] || [ "${RUNNER_OS:-}" != macOS ]; then
+if [ "${RUNNER_OS:-}" != macOS ]; then
   echo 'mac-install-ci: only run by the hosted macOS workflow' >&2
   exit 2
 fi

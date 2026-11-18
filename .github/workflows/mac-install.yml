@@ -6,7 +6,7 @@ on:
     paths:
       - scripts/install.sh
       - scripts/install_mac_test.sh
-      - scripts/mac-install-*
+      - test/hosted/**
       - examples/lima/**
       - .github/workflows/mac-install.yml
 
@@ -70,7 +70,7 @@ jobs:
         env:
           MAC_CI_LOGS: ${{ runner.temp }}/mac-tools-raw
           MAC_CI_TMP: ${{ runner.temp }}/mac-tools-tmp
-        run: python3 scripts/mac-install-ci.py collect "$RUNNER_TEMP/mac-tools-scrubbed"
+        run: python3 test/hosted/mac/mac-install-ci.py collect "$RUNNER_TEMP/mac-tools-scrubbed"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -90,7 +90,7 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: build this commit with the release flags and real checksums
-        run: scripts/mac-install-assets.sh "$RUNNER_TEMP/mac-release"
+        run: test/hosted/mac/mac-install-assets.sh "$RUNNER_TEMP/mac-release"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mac-release
@@ -114,7 +114,7 @@ jobs:
           persist-credentials: false
       - name: establish whether any offered Lima driver can boot
         timeout-minutes: 20
-        run: scripts/mac-install-ci.sh probe
+        run: test/hosted/mac/mac-install-ci.sh probe
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: mac-release
@@ -122,20 +122,20 @@ jobs:
       - name: CI infrastructure contracts on this Mac
         run: |
           echo 'CHECK deadlines, PTY prompts/restoration and log redaction before the installer'
-          python3 scripts/mac-install-ci_test.py
+          python3 test/hosted/mac-install-ci_test.py
       - name: real installer success or asserted VM failure
         timeout-minutes: 17
-        run: scripts/mac-install-ci.sh install
+        run: test/hosted/mac/mac-install-ci.sh install
       - name: Mac command, guide, tunnel, rerun and stopped VM
         timeout-minutes: 20
-        run: scripts/mac-install-ci.sh exercise
+        run: test/hosted/mac/mac-install-ci.sh exercise
       - name: preserve scrubbed installer, Lima and serial logs before removal
         if: always()
-        run: scripts/mac-install-ci.sh collect
+        run: test/hosted/mac/mac-install-ci.sh collect
       - name: remove instances even after failure
         if: always()
         timeout-minutes: 4
-        run: scripts/mac-install-ci.sh cleanup
+        run: test/hosted/mac/mac-install-ci.sh cleanup
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

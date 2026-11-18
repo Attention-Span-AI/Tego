@@ -91,6 +91,11 @@
 //	      other names: a launch makes <XDG_RUNTIME_DIR>/tego and removes the directories the invoking user's crashed
 //	      runs left there.
 //
+//	SH-8  every shell or Python script under test/hosted/mac/ starts with the reviewed refusal unless
+//	      GITHUB_ACTIONS=true and RUNNER_ENVIRONMENT=github-hosted. Only comments and blank lines may precede it;
+//	      Python imports only os and sys first. This holds the exemption for real-product hosted-machine checks
+//	      to disposable GitHub-hosted runners, before any build, download, terminal or command.
+//
 // Usage: go run ./tools/isocheck [root]   (root defaults to the working directory)
 // Exit: 0 when every rule holds; 1 when one does not; 2 on a read or parse error.
 //

@@ -58,7 +58,7 @@ tego/
 │   ├── adapters/              Layer 3, Go-side harness glue (claudecode, openaicodex)
 │   │   └── claudecode/        `tego hook claude-code`: new refusals to Claude Code hook output, once each (ADR 0063); stdlib, x/sys/unix, pkg/spec/reason and pkg/spec/harness only (depguard claudecode-imports)
 │   └── cli/               one file per subcommand (init, doctor, compile, run, stop, status, ask, approve, deny, dns, drift, measure, learn, events, watch, adopt, agents, alternate, gc, licenses, version, hidden __child; guard.go and verify.go back `agents --follow --adopt` and `events --verify`)
-├── test/                      fixtures, workloads, integration (root), e2e kill tests, VM matrix
+├── test/                      fixtures, workloads, integration (root), e2e kill tests, VM matrix, hosted-machine checks
 ├── examples/                  contracts per common agent, quickstart; demo/ is the live demo kit (README.md, demo.sh, a rogue stand-in agent and its contracts)
 ├── docs/                      start at docs/README.md: engine docs, adr/, user/ (the user guide; its README states what the root tiers and adopt need, and fixes the label for what is not built yet)
 ├── tools/  scripts/           dev tooling; operator scripts
@@ -191,6 +191,7 @@ and a noun never spans both binaries (ADR 0100 (2)).
 | how the ledger is written or read | `internal/ledger` |
 | status, drift, measure, learn | `internal/check/*` |
 | a subcommand | `internal/cli/<name>.go` |
+| GitHub-hosted real-product checks | `test/hosted/mac/` refuses before any command unless `GITHUB_ACTIONS=true` and `RUNNER_ENVIRONMENT=github-hosted` (isocheck SH-8); its developer-runnable pure-function and refusal test is beside it in `test/hosted/mac-install-ci_test.py` |
 | a sample agent to test with | `test/workloads/` |
 | a hand-checked ledger to build a view against | `spec/record/v1/fixtures/` and `test/fixtures/ledger/` |
 | a decision and why | `docs/adr/` |

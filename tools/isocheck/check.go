@@ -35,6 +35,10 @@ var skipDirs = map[string]bool{
 
 // shellExempt are the directory prefixes whose scripts the shell rules leave alone, and why.
 var shellExempt = []string{
+	// Hosted Mac installation checks build and run the real product, without test hooks, on GitHub's disposable
+	// machines. SH-8 checks every script under this prefix for the hosted-machine refusal before any command;
+	// their developer-runnable unit test lives beside this directory, outside the exemption.
+	"test/hosted/mac/",
 	// test/vm's scripts run inside the KVM guests (run-matrix-row.sh, doctor-refusal.sh, tier2-pairs.sh ...), whose
 	// home is the guest's own; the ones that run on the host only start and read the guest, but for shellChecked's.
 	"test/vm/",
@@ -95,7 +99,7 @@ func check(root string) ([]finding, error) {
 		}
 		rel = filepath.ToSlash(rel)
 		if d.IsDir() {
-			if rel != "." && skipDirs[d.Name()] {
+			if rel != "." && skipDirs[d.Name()] && !strings.HasPrefix(rel, "test/hosted/mac/") {
 				return filepath.SkipDir
 			}
 			return nil
@@ -114,6 +118,13 @@ func check(root string) ([]finding, error) {
 				facts = append(facts, gf)
 			}
 		case ".sh", ".bash", ".py":
+			if strings.HasPrefix(rel, "test/hosted/mac/") {
+				fnd, err := checkHostedScript(path, rel)
+				if err != nil {
+					return err
+				}
+				out = append(out, fnd...)
+			}
 			for _, p := range shellExempt {
 				if strings.HasPrefix(rel, p) && !shellChecked[rel] {
 					return nil
@@ -131,6 +142,46 @@ func check(root string) ([]finding, error) {
 		return nil, err
 	}
 	return append(out, checkGuards(facts)...), nil
+}
+
+// checkHostedScript holds the hosted-only exemption to one reviewed prologue, not a mention of its variables.
+// Only blank lines and comments may precede or separate its lines. Python's two standard-library imports are
+// needed for the check; importing the helper for pure-function tests is allowed, executing it is guarded. Direct
+// calls of its command-running functions also refuse (test/hosted/mac-install-ci_test.py).
+func checkHostedScript(path, rel string) ([]finding, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	guard := `if [ "${GITHUB_ACTIONS:-}" != true ] || [ "${RUNNER_ENVIRONMENT:-}" != github-hosted ]; then
+  echo 'this script installs the real product and is only for GitHub-hosted machines' >&2
+  exit 2
+fi`
+	if filepath.Ext(rel) == ".py" {
+		guard = `import os
+import sys
+if __name__ == '__main__' and (os.environ.get('GITHUB_ACTIONS') != 'true' or os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted'):
+    print('this script installs the real product and is only for GitHub-hosted machines', file=sys.stderr)
+    raise SystemExit(2)`
+	}
+	// Preserve Python indentation: a guard nested in a function or dead branch cannot protect the script.
+	var lines []string
+	first := 1
+	for i, line := range strings.Split(string(raw), "\n") {
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		if len(lines) == 0 {
+			first = i + 1
+		}
+		lines = append(lines, line)
+	}
+	want := strings.Split(guard, "\n")
+	if len(lines) >= len(want) && slices.Equal(lines[:len(want)], want) {
+		return nil, nil
+	}
+	return []finding{{rel, first, "SH-8", "hosted-only script must refuse unless GITHUB_ACTIONS=true and " +
+		"RUNNER_ENVIRONMENT=github-hosted before any command (use the reviewed refusal prologue)"}}, nil
 }
 
 // checkGo applies GO-1 to GO-3 and GO-5 to one Go file and, when the module path is known, returns what GO-4
