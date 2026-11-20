@@ -64,7 +64,7 @@ their own machine, and the kernel programs.
 | <img src="docs/assets/icons/link.svg" width="20" height="20" alt=""> **Hash-chained record** | Every run writes one. `tego session show` and `tego events` read it, `tego events <run> --verify` checks its chain, `tego drift` compares what was allowed with what was used, and the dashboard shows it. |
 | <img src="docs/assets/icons/activity.svg" width="20" height="20" alt=""> **Run limits** | A run that passes its limits (tokens, cost, time, stall, repeats) ends with exit code 124. Token and cost limits count Anthropic Messages traffic only. |
 | <img src="docs/assets/icons/eye.svg" width="20" height="20" alt=""> **Watch any agent** | `tego watch` runs any command as a black box and records it. `tego agents` lists the agents running here and `tego adopt` governs one already running; both need root. |
-| <img src="docs/assets/icons/layout-dashboard.svg" width="20" height="20" alt=""> **Local dashboard** | `tego serve --open` serves runs, logs, refusals and held requests on `127.0.0.1`, for one person. |
+| <img src="docs/assets/icons/layout-dashboard.svg" width="20" height="20" alt=""> **Local dashboard** | `tego dashboard` serves runs, logs, refusals and held requests on `127.0.0.1`, for one person. |
 | <img src="docs/assets/icons/server.svg" width="20" height="20" alt=""> **MCP tool rules** | A relay can allow, hold or deny single tools of an MCP server, and `tego mcp` changes that live ([guide](docs/user/mcp-tools.md)). |
 | <img src="docs/assets/icons/ban.svg" width="20" height="20" alt=""> **Nothing sent home** | No telemetry, no update check, no crash reports. Runtime traffic includes DNS lookups and connections for the agent ([details](docs/OPERATIONS.md#tegos-own-network-traffic)); the setup guide also downloads an agent's installer when you agree, and start/dashboard commands make local dashboard probes. |
 
@@ -73,113 +73,82 @@ Anthropic Python SDK and an agent of your own.
 
 ## Quickstart
 
-### Install
+### 1. Install
 
-**Linux** (amd64 or arm64):
+| System | Run | Then |
+|---|---|---|
+| **Linux** (amd64 or arm64) | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | If `tego` isn't found, run the `export PATH=…` line it prints, or log in again. |
+| **macOS** 13.5 or later | the same line | Open a new terminal window. Tego runs in a small Linux VM ([Lima](https://lima-vm.io)), and the `tego` command on your Mac runs it there. |
+| **Windows** | `wsl --install -d Ubuntu-24.04` in PowerShell | Open Ubuntu and run the Linux line there. |
+| **From source** | `git clone https://github.com/Attention-Span-AI/Tego && cd Tego && make build` | [Build from source](docs/INSTALL.md#build-from-source) |
 
-```sh
-curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh | sh
-```
+Run the same line again to update. On a Mac, that also updates Tego inside the VM.
+[docs/INSTALL.md](docs/INSTALL.md) has the details, what each system was tested on, and how to check the installer
+before it runs.
 
-The script is an asset of the latest release. It installs that release's `tego` and `tego-control` into
-`~/.local/bin`, checks their checksums, and prints the next steps.
-
-The installer does not change your `PATH`. If `~/.local/bin` is not on it yet, the [First run](#first-run) commands
-answer `tego: command not found` until you run the first of those next steps,
-`export PATH="/home/<you>/.local/bin:$PATH"` with your own home folder, or log in again (a new SSH session, or log out
-and back in). On Ubuntu, `~/.profile` adds `~/.local/bin` at login. Elsewhere, add the `export` line to your shell's
-profile.
-
-**macOS**, in a Linux VM made by [Lima](https://lima-vm.io):
-
-```sh
-curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh | sh
-tego start
-```
-
-**Windows**, in WSL2. In PowerShell:
-
-```powershell
-wsl --install -d Ubuntu-24.04
-```
-
-Then open Ubuntu and run the Linux line there.
-
-What each was tested on: the installer put the published v0.1.1 on AlmaLinux 9.8, Ubuntu 24.04, Debian 13, Fedora 44,
-Amazon Linux 2023 and Ubuntu 26.04.1, and a new user's `tego machine check`, `tego machine test` and a governed run reached tier
-landlock on each
-([docs/TIERS.md](docs/TIERS.md#the-published-release-as-a-new-user)). The macOS installer and template have shell tests with stand-ins on Linux;
-this revision has not been validated by Lima or booted on a Mac here, and the Windows steps have not been run yet.
-[docs/INSTALL.md](docs/INSTALL.md) has the details, and how to check the installer before it runs.
-
-### Build from source
-
-You need Linux, `git`, `make` and Go 1.27.
-
-```sh
-git clone https://github.com/Attention-Span-AI/Tego
-cd Tego
-make build
-mkdir -p ~/.local/bin
-install -m 0755 bin/tego bin/tego-control ~/.local/bin/
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-Keep `tego` and `tego-control` in the same directory: `tego serve` hands off to the `tego-control` beside it and
-refuses any other. Add the `export` to your shell's profile if your login does not already put `~/.local/bin` on
-`PATH`.
-
-### First run
+### 2. Set up
 
 ```sh
 tego start
 ```
 
-`tego start` walks you through four steps, one question at a time:
+Four questions, one at a time:
 
 1. **Agent:** Claude Code, Codex or another program. Tego offers to install Claude Code or Codex if it's missing.
-2. **Login:** a Claude subscription, an Anthropic API key, or an OpenAI API key for Codex. You choose whether Tego
-   saves it for later sessions.
-3. **Project:** a test project Tego makes for you, or one of yours. The test project's dependency is poisoned on
-   purpose (harmlessly) so you can watch Tego block it.
-4. **Rules:** Base development, Read-only review, the rules you pick one by one, or a rules file you wrote.
-   [Read more about presets](docs/user/presets.md).
+2. **Login:** your Claude subscription or an API key, saved for later sessions if you want.
+3. **Project:** a test project Tego makes for you, or one of yours.
+4. **Rules:** Base development, Read-only review, rules you pick one by one, or your own rules file
+   ([presets](docs/user/presets.md)).
 
-It then starts the dashboard, prints its sign-in link on Linux (opens it in your browser on a Mac), and ends with the command that starts your first supervised session. It never starts
-the agent for you:
+It then opens the dashboard and prints the command for the next step. It never starts the agent for you.
+
+### 3. Run your agent under the rules
 
 ```sh
 cd ~/tego-sample && tego run tego-sample
 ```
 
-When the test project's tests run in that session, its dependency tries to read the project's `.env` and send it
-out. Tego blocks both, the tests still pass, and the dashboard shows the two blocked actions. In the terminal:
+Ask the agent to run the project's tests. The test project's dependency is poisoned on purpose, harmlessly: it tries to
+read the project's `.env` and send it out. Tego blocks both, and the tests still pass.
 
-```sh
-tego session list                 # your sessions
-tego session show --last          # what the agent did and what Tego blocked
+```text
+  ✓ Session tego-sample-6hbm ended · 2 actions blocked
+      Details: tego session show tego-sample-6hbm
 ```
 
-On a Mac, run `tego start` and `tego dashboard` in your normal terminal: they open Tego's Linux VM for you, and the
-dashboard opens in your Mac's browser. Keep your projects inside the VM; no Mac folders are shared by default ([explicit sharing](docs/INSTALL.md#macos)). Over SSH on Linux, start a shell in your
-user's cgroup first with `systemd-run --user --scope bash` ([docs/INSTALL.md](docs/INSTALL.md#check-the-machine)).
-
-Prefer to do each step yourself? [docs/QUICKSTART.md](docs/QUICKSTART.md) does the same with `tego rules create`,
-`tego run` and `tego session show`, and explains the output.
-
-### Your own projects and agents
-
-Run `tego start` again and pick **My own project**, and **Use my own rules file** if you wrote one. Or:
+### 4. See what happened
 
 ```sh
-tego rules create --agent claude-code --preset no-secrets,repo-only-writes --write src/   # a rules file in this project
-tego rules check agent.yaml       # what it enforces
-tego rules edit agent.yaml        # change the rules, checked before they're saved
+tego session show --last      # what the session did, and each blocked action with its rule
+tego dashboard                # the same session in your browser
 ```
 
-`tego help` lists the common commands, and `tego help -a` every one. [docs/user/commands.md](docs/user/commands.md) explains each one.
-[examples/agents/](examples/agents/README.md) has rules files for Claude Code, Codex, the Claude Agent SDK, the
-Anthropic Python SDK and an agent of your own.
+### Commands you'll use
+
+| To | Run |
+|---|---|
+| **Set up** another agent or project | `tego start` |
+| **Open** the dashboard | `tego dashboard` |
+| **Run** an agent | `tego run <agent>` |
+| **List, show or stop** sessions | `tego session list` · `tego session show <session>` · `tego session stop <session>` |
+| **Write** a rules file in a project | `tego rules create --preset no-secrets,repo-only-writes --write src/` |
+| **Change** rules, checked before they're saved | `tego rules edit <agent>` |
+| **Check** what a rules file enforces | `tego rules check <agent>` |
+| **Narrow** rules to what a session used | `tego rules learn <session>` |
+| **Check** this machine | `tego machine check` |
+
+`tego help` lists the common commands, `tego help -a` every one, and [docs/user/commands.md](docs/user/commands.md)
+explains each. [examples/agents/](examples/agents/README.md) has rules files for Claude Code, Codex, the Claude Agent
+SDK, the Anthropic Python SDK and an agent of your own. [docs/QUICKSTART.md](docs/QUICKSTART.md) does each step by hand
+and explains the output.
+
+### If something's off
+
+- **`tego: command not found`:** open a new terminal window, or run the line the installer printed last.
+- **On a Mac:** keep your projects inside Tego's VM. No Mac folders are shared with it by default
+  ([sharing one](docs/INSTALL.md#macos)). `tego shell` opens a shell in the VM.
+- **Over SSH on Linux:** a run exits with code 125 until you start a shell in your user's cgroup:
+  `systemd-run --user --scope bash` ([why](docs/INSTALL.md#check-the-machine)).
 
 ## How it works
 
@@ -222,7 +191,7 @@ run records the tier it had. Details, including the one boot line Ubuntu needs f
 
 ## Dashboard
 
-`tego serve --open` starts a dashboard on `127.0.0.1` for one person: runs, logs, refusals, held requests you can allow or
+`tego dashboard` starts a dashboard on `127.0.0.1` for one person, and prints its link (on a Mac, opens it in your browser): runs, logs, refusals, held requests you can allow or
 deny, each run's rules, and a way to stop a run or block something while it runs. A run started with `sudo` is root's
 until it ends, so the dashboard shows it only then; until then use `sudo "$(command -v tego)" status`.
 `--preview` also lists the pages for MCP tool rules and model routes. See [docs/DASHBOARD.md](docs/DASHBOARD.md).

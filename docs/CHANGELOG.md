@@ -73,6 +73,7 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
 
 ### Changed
 
+- The Linux installer's last line is `tego start` when the installed `tego` has it, else `tego setup` or `tego doctor` as before. The README's quickstart is four steps (install, set up, run, see what happened) and a table of everyday commands; the install details and what each system was tested on moved to `docs/INSTALL.md`, which now records the Mac runs.
 - `tego run` keeps coverage gaps and same-file refusal explanations in the full summary; its short success line appears only when no disclosure qualifies the blocked-action count.
 - `tego session list` reports an unreadable ledger and exits with an error instead of saying there are no sessions.
 - `tego help` says what `tego dashboard` does on each system: it prints the link on Linux and opens the browser

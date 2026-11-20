@@ -6,7 +6,7 @@ source is the other way.
 | System | Install | Tested on |
 |---|---|---|
 | Linux | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | The published v0.1.1 as a new user, tier landlock: AlmaLinux 9.8, Ubuntu 24.04 and 26.04.1, Debian 13, Fedora 44, Amazon Linux 2023 ([details](TIERS.md#the-published-release-as-a-new-user)) |
-| macOS | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | Shell tests with stand-ins on Linux; VM creation on a Mac not run |
+| macOS | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | By hand on an Apple silicon Mac, through to a Claude Code session; on each change, in CI on GitHub's hosted macOS 15 runners ([details](#macos)) |
 | Windows | `wsl --install -d Ubuntu-24.04`, then the Linux line inside Ubuntu | Not run on Windows yet |
 
 ## Requirements
@@ -32,8 +32,8 @@ Both require this repository's release workflow at the selected tag; without eit
 that only the checksum was checked, and how to get cosign
 ([Sigstore's install page](https://docs.sigstore.dev/cosign/system_config/installation/)) or log `gh` in (`gh auth login`). It runs the new `tego` before it replaces anything, and it needs no root. It ends
 with the next steps: the `export PATH` line if `~/.local/bin` is not on your `PATH` yet, over SSH the
-`systemd-run --user --scope bash` line, then one next command: `tego setup` when the installed `tego` has it, else
-`tego doctor`. The installer does not change your `PATH`, so until you run that line, or log in again, the shell
+`systemd-run --user --scope bash` line, then one next command: `tego start` when the installed `tego` has it, else
+`tego setup`, else `tego doctor`. The installer does not change your `PATH`, so until you run that line, or log in again, the shell
 answers `tego: command not found`. For the default folder the line is `export PATH="/home/<you>/.local/bin:$PATH"`,
 with your own home folder. Ubuntu's `~/.profile` adds `~/.local/bin` at login; elsewhere, add the line to your shell's
 profile.
@@ -139,7 +139,7 @@ tego test
 
 The dashboard answers only connections made by its own user. Lima forwards the VM's ports to the Mac itself,
 connecting as root inside the VM; Tego's own tunnel is set up for 8484, which the template excludes from Lima's
-forwarding. For a manual forward of the default dashboard, start `tego serve` in the VM, run this in another Mac
+forwarding. For a manual forward of the default dashboard, start `tego dashboard` in the VM, run this in another Mac
 terminal, and open the URL it printed:
 
 ```sh
@@ -167,9 +167,13 @@ start no tunnel and open no browser; they create no temporary socket folder.
 
 `limactl stop tego` stops the VM and `limactl delete tego` removes it.
 
-**Tested on** Linux with `scripts/install_mac_test.sh` and shellcheck, using stand-ins for Homebrew, Lima, SSH and
-the browser. The earlier template passed Lima 2.2.1's `limactl validate`; this revision has not been validated by
-Lima or booted on a Mac here.
+**Tested on** an Apple silicon Mac by hand, in zsh, with Lima 2.3: install, `tego start` with a Claude subscription, a
+session with both blocked actions, and `tego dashboard`. On each change, CI runs the installer on GitHub's hosted
+macOS 15 runners, Apple silicon and Intel (`.github/workflows/mac-install.yml`): Lima validates the template on both.
+On Intel, when a Lima driver can boot a VM there, CI runs the real installer, the Mac command, the guide, the
+dashboard tunnel and a rerun; when none can, it checks that the installer fails cleanly. Apple silicon runners cannot
+start a nested VM. `scripts/install_mac_test.sh` covers every installer path
+with stand-ins for Homebrew, Lima, SSH and the browser.
 
 ## Windows
 
@@ -179,10 +183,10 @@ Tego runs in WSL2, which runs a real Linux kernel. In PowerShell opened as admin
 wsl --install -d Ubuntu-24.04
 ```
 
-Restart if Windows asks you to, then open Ubuntu, create your user, and run the Linux line there. `tego doctor` says
+Restart if Windows asks you to, then open Ubuntu, create your user, and run the Linux line there. `tego machine check` says
 which tier WSL2 gives you. Tier 3 needs `bpf` in the boot LSM list. Microsoft's WSL kernel lists it by default from
 6.18.54.1 (WSL 3.0.3 and later), so on an older install run `wsl --update` and `wsl --shutdown` in PowerShell. Where you
-cannot update, put the `lsm=` value from `sudo "$(command -v tego)" doctor` under `[wsl2]` in `%UserProfile%\.wslconfig`
+cannot update, put the `lsm=` value from `sudo "$(command -v tego)" machine check` under `[wsl2]` in `%UserProfile%\.wslconfig`
 as `kernelCommandLine = lsm=<the list doctor printed>`, then run `wsl --shutdown`. Ubuntu 24.04's WSL image runs
 systemd already (its `/etc/wsl.conf` has `[boot]` `systemd=true`).
 
@@ -191,7 +195,7 @@ such distribution, and otherwise runs the Linux line inside it. Download it, rea
 `powershell -ExecutionPolicy Bypass -File install-wsl.ps1`.
 
 **Tested on** nothing yet: neither the steps nor the script have been run on Windows. That the 6.18.54.1 kernel lists
-`bpf` is read from Microsoft's kernel configuration, not from a run of `tego doctor`.
+`bpf` is read from Microsoft's kernel configuration, not from a run of `tego machine check`.
 
 ## Run in a container
 
@@ -260,7 +264,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 `make build` writes `bin/tego-control` first, then `bin/tego` with the SHA-256 of `tego-control` built into it, and checks
 the pair. Use `make build`. A plain `go build ./cmd/tego` makes a tier-1-only `tego` that has no pin for `tego-control`:
-`tego doctor` reports tier 2 as not built, and `tego serve` refuses with `[control-not-installed]`, or with `[control-unpinned]` once a `tego-control` sits beside it.
+`tego machine check` reports tier 2 as not built, and `tego serve` refuses with `[control-not-installed]`, or with `[control-unpinned]` once a `tego-control` sits beside it.
 
 **Keep the two binaries in one directory.** `tego serve` (the dashboard) hands off to the `tego-control` next to it,
 never one found on `PATH`. It runs only a regular file owned by you or root, not writable by group or others, whose hash
@@ -296,7 +300,7 @@ Tiers 2 and 3 need a root launcher, so you run `sudo tego run ...`. `sudo` may u
 `~/.local/bin`. If it says `command not found`, give it the full path:
 
 ```sh
-sudo "$(command -v tego)" doctor
+sudo "$(command -v tego)" machine check
 ```
 
 The launcher is root, and the agent runs as you, with your `HOME`, `USER` and `LOGNAME`. It has `sudo`'s `PATH`, so give a
@@ -305,7 +309,7 @@ program installed under your home by its full path in `command:`.
 Granting `sudo` for `tego` is granting root: the launcher runs as root over a contract and config you control. Do not put
 `tego` in a sudoers rule for another account. [OPERATIONS.md](OPERATIONS.md) ("Privileged path") says more.
 
-The dashboard is the exception. `tego-control` refuses to run as root or with any capability, so start `tego serve` as
+The dashboard is the exception. `tego-control` refuses to run as root or with any capability, so start `tego dashboard` as
 yourself, never with `sudo`. Under `sudo`, Tego looks up your account through `SUDO_UID`, so a root-tier run is recorded in
 your own `~/.tego`, where the dashboard reads it. While such a run is live its folder there is root's (mode
 0700), so the dashboard shows it only after it ends. Until then read it with `sudo "$(command -v tego)" status`.
@@ -313,8 +317,8 @@ your own `~/.tego`, where the dashboard reads it. While such a run is live its f
 ## Check the machine
 
 ```sh
-tego doctor
-sudo "$(command -v tego)" doctor
+tego machine check
+sudo "$(command -v tego)" machine check
 ```
 
 The first shows what you get without root. The second shows tiers 2 and 3. Each says the tier it found on its `summary:`
@@ -326,18 +330,18 @@ in the boot LSM list. That is a fact about the machine, not a fault in the insta
 (`sudo modprobe tcp_diag`).
 
 **Over SSH.** Every run, one that only records included, starts in a cgroup your user can place a process in. A login
-over SSH or on a console, or a service, starts outside `user@<uid>.service` and cannot, so `doctor`'s cgroup check
+over SSH or on a console, or a service, starts outside `user@<uid>.service` and cannot, so the machine check's cgroup check
 fails, and `tego run`, `tego watch` and `tego test` exit 125. Start a shell in your user's cgroup first:
-`systemd-run --user --scope bash`. In a terminal, `tego setup`, `tego doctor` and those three commands end with that
+`systemd-run --user --scope bash`. In a terminal, `tego start`, `tego setup`, `tego machine check` and those three commands end with that
 command as their `next:` line when this is the only thing missing, and then you run `tego setup` (or the command again)
 in the new shell. If `systemd-run --user` cannot reach your user manager (after `su` or `sudo -u`, with no
-`XDG_RUNTIME_DIR`), the line says why and names no command; log in as yourself instead. If `doctor` says your user has
+`XDG_RUNTIME_DIR`), the line says why and names no command; log in as yourself instead. If the check says your user has
 no delegated cgroup, it prints the fix.
 
-This is `sudo "$(command -v tego)" doctor` on a fresh Ubuntu 24.04 cloud image, with your build's own values in angle
+This is `sudo "$(command -v tego)" machine check` on a fresh Ubuntu 24.04 cloud image, with your build's own values in angle
 brackets. The table is cut after five rows here; yours prints in full. `(>= 5.14.0)` on the `kernel` line is the oldest
-release `doctor` accepts at all, not tier 1's minimum: tier 1 also needs the `landlock` line to show ABI 2 or newer, and
-`doctor` adds a note on a release below 6.1, the upstream tested floor. The Landlock entries after `without:` come
+release the check accepts at all, not tier 1's minimum: tier 1 also needs the `landlock` line to show ABI 2 or newer, and
+the check adds a note on a release below 6.1, the upstream tested floor. The Landlock entries after `without:` come
 from the ABI the kernel answers, the one the `landlock` line shows, so a kernel with a backported Landlock (RHEL 9's
 5.14 answers ABI 6) lists only what it lacks.
 

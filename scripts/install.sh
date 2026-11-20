@@ -895,11 +895,15 @@ main() {
 		echo "  systemd-run --user --scope bash"
 	fi
 	echo ""
-	# tego setup checks the machine and says which step it is on and what to type next (ADR 0142). A
-	# release made before it has no setup command, and this script installs any tag, so the installed tego's own
+	# tego start walks a new user through the rest; tego setup, before it, says which step this machine is on (ADR 0142). A
+	# release made before them lacks both, and this script installs any tag, so the installed tego's own
 	# command list decides: the line never names a command that tego lacks. Its stdin is not the script's (see the
 	# version check above).
-	if "$installed" help -a </dev/null 2>/dev/null | grep -Eq '^ {2,3}setup '; then
+	commands=$("$installed" help -a </dev/null 2>/dev/null || true)
+	if printf '%s\n' "$commands" | grep -Eq '^ {2,3}start '; then
+		echo "next: set up Tego and connect your first agent:"
+		echo "  tego start"
+	elif printf '%s\n' "$commands" | grep -Eq '^ {2,3}setup '; then
 		echo "next: see where this machine is, step by step, and what to type next:"
 		echo "  tego setup"
 	else

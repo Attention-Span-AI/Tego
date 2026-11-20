@@ -3,6 +3,9 @@
 Your first governed run, from `tego version` to the dashboard. It takes a few minutes and needs no root and no agent
 account: the demo command it runs is a short shell script that shows what each rule does.
 
+For the guided setup, run `tego start` instead ([README](../README.md#quickstart)). This page does each step by hand
+and explains the output.
+
 Run every command in a plain terminal, as yourself, not inside another `tego run`.
 
 The output below comes from a fresh Ubuntu 24.04 cloud image, as a new user, `dana`, over SSH in a
@@ -302,22 +305,19 @@ characters are enough, four or more, when no other run's id ends with them: `teg
 
 ## 8. Open the dashboard
 
-In a second terminal, as the same user:
-
 ```sh
-tego serve --open
+tego dashboard
 ```
 
 ```text
-Tego dashboard: http://127.0.0.1:8484/?t=0ab4c708b2775be17e4d67f247ea774b
-  ledger: /home/dana/.tego/runs (from default), 1 run
-  chains: checked against /home/dana/.tego/chain.log
-tego-control serve: --open: exec: "xdg-open": executable file not found in $PATH; open the URL above
+  ✓ Started the dashboard: http://127.0.0.1:8484/?t=0ab4c708b2775be17e4d67f247ea774b
+    Open the link above in your browser.
 ```
 
-This starts the dashboard on `127.0.0.1:8484` and opens it in your browser, signed in. On a machine with no browser, like the
-one above, it says so and keeps serving. It prints a link with a token (`http://127.0.0.1:8484/?t=...`); open that link, not
-the bare address, in any other browser. You will see your run under Runs, with its receipt and refusals.
+This starts the dashboard on `127.0.0.1:8484` as a service of your user, so it keeps running after you close the
+terminal, and prints a link with a token. Open that link, not the bare address. On a Mac, `tego dashboard` opens it in
+your browser. Run it again and it reuses the same dashboard; in a terminal it asks whether to open it or start a new
+one. You will see your run under Runs, with its receipt and refusals.
 [DASHBOARD.md](DASHBOARD.md) describes each page.
 
 Four things catch people out:
@@ -325,7 +325,7 @@ Four things catch people out:
 - **Start it from a plain terminal.** A shell that itself runs under `tego run` can look at the dashboard but not press
   its buttons: a request that comes from inside a governed run is refused.
 - **Never with `sudo`.** `tego-control` refuses to run as root, so the dashboard is always started as yourself.
-- **If port 8484 is busy,** pass `--addr 127.0.0.1:<port>`. The address must be on loopback.
+- **If port 8484 is busy,** start it with `tego serve --addr 127.0.0.1:<port>` instead. The address must be on loopback.
 - **Over SSH,** forward the same port (`ssh -L 8484:127.0.0.1:8484 <host>`) and open the printed link on your own machine.
   A different local port is refused with `wrong Host header`. In the macOS VM that is
   `ssh -F ~/.lima/tego/ssh.config -N -L 8484:127.0.0.1:8484 lima-tego`, run on the Mac ([INSTALL.md](INSTALL.md#macos)).

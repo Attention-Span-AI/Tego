@@ -14,6 +14,7 @@ connect to.
 |---|---|
 | `tego start` | Sets up your first agent in four steps: the agent, its login, its project and its rules. Then it starts the dashboard, prints its sign-in link on Linux and shows the command that starts your first session. On a Mac it runs inside Tego's Linux VM, opens the dashboard in your Mac browser and leaves you in the VM project. |
 | `tego dashboard` | On Linux it starts or reuses the dashboard and prints its sign-in link for you to open. On a Mac it runs the dashboard in Tego's VM and opens it in your Mac browser. |
+| `tego shell` | On a Mac only: opens a shell in Tego's VM, in the project `tego start` set up last. |
 
 ## Supervise an agent
 
