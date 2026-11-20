@@ -55,7 +55,7 @@ Kept because code and tests cite them. Each says what is out of date. Skip them 
 | **run** | One governed session of an agent |
 | **refused** | An action Tego stopped. The run's record names the rule, except for a read refused at tier 1 under `record: summary`, which leaves no line |
 | **held** | An action paused while a person decides, with a timeout. Also called an ask |
-| **receipt** | The summary of a run's record: time, files, connections, sensitive files read, refusals, asks and tokens (`tego receipt`). It shows only what the record holds |
+| **receipt** | The summary of a run's record: time, files, connections, sensitive files read, refusals, asks and tokens (`tego session show`). It shows only what the record holds |
 | **ledger / record** | The hash-chained file of what a run did, as far as its tier and `record:` mode can see ([TIERS.md](TIERS.md)). The only store Tego keeps |
 | **drift** | What the contract allowed against what the run used (`tego drift`) |
 | **tier 1 / 2 / 3** | Enforcement levels. Tier 1 (`landlock`) needs no root; tier 2 (`cgroup`) and tier 3 (`bpflsm`) need root. See [TIERS.md](TIERS.md) |

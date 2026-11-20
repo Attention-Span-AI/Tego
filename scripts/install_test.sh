@@ -623,6 +623,17 @@ check "a release with tego setup installs" 0 "$code"
 ending=$(tail -n 2 "$tmp/out")
 want_ending=$(printf 'next: see where this machine is, step by step, and what to type next:\n  tego %s' setup)
 check "the install of a tego with setup ends with tego setup" "$want_ending" "$ending"
+
+# A release whose tego lists start ends with tego start, the guide.
+# shellcheck disable=SC2016 # $1 is the fake tego's own argument, expanded when it runs.
+printf '#!/bin/sh\ncase "$1" in help) printf "commands:\\n   start            set up\\n   setup   where this machine is\\n" ;;\n*) echo "tego %s"; echo "control_sha256=%s" ;; esac\n' \
+	"$version" "$pin" >"$rel/$archive"
+resum
+piped "$installer" && code=0 || code=$?
+check "a release with tego start installs" 0 "$code"
+ending=$(tail -n 2 "$tmp/out")
+want_ending=$(printf 'next: set up Tego and connect your first agent:\n  tego %s' start)
+check "the install of a tego with start ends with tego start" "$want_ending" "$ending"
 release
 
 exit "$fail"
