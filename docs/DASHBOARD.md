@@ -19,6 +19,17 @@ still being checked, and it updates by itself when they are done. For an audit, 
 
 ## Start it
 
+```sh
+tego dashboard
+```
+
+This is the usual way. It starts the dashboard as a service of your user (`tego-dashboard`), so it keeps running after
+the terminal closes, and prints its sign-in link; on a Mac it also opens the link in your browser. Run again, it reuses
+the running dashboard, and restarts it once after Tego is updated. `tego start` does the same at the end of the guide.
+
+To choose the address, the ledger or the preview pages, start the dashboard yourself instead, with `tego serve` (which
+hands off to `tego-control serve`) and these options:
+
 ```
 tego-control serve [--addr 127.0.0.1:8484] [--ledger DIR] [--open] [--preview]
 ```

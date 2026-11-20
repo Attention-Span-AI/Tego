@@ -8,7 +8,7 @@ Tego; the guide does not repeat them.
 
 Tier cgroup, tier bpflsm and adopt need root. Tier landlock, the default, needs no privilege. The root tiers also need a
 kernel that offers them (cgroup v2, BPF and fanotify for tier cgroup, and `bpf` in the boot LSM list for tier bpflsm), and `tego
-doctor` says what a machine gives. The release binary and a build from source (`make build`) both carry the root tiers.
+machine check` says what a machine gives. The release binary and a build from source (`make build`) both carry the root tiers.
 A paragraph of these pages that names tier cgroup, tier bpflsm, adopt or the root tiers says in the same paragraph, in
 words and not only in a code block, that it needs root; TestUserDocsNameRootRequirement in `tools/rulecheck` fails the
 build when one does not.
