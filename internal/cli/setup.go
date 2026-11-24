@@ -33,13 +33,15 @@ func init() { register(cmdSetup) }
 // finding), 2 for usage, 125 when the machine config, the record or a registry cannot be read or a recorded run cannot
 // be checked against the chain anchor, inside a governed run ([governed]) and as root for another user ([privilege]).
 func cmdSetup() Command {
-	var asJSON, verbose bool
+	var asJSON, verbose, noScope bool
 	return Command{
-		Name:    "setup",
-		Summary: "where this machine is, step by step, and the one command to type next",
-		Usage:   "[--json] [-v]",
+		Name:         "setup",
+		HoldsSecrets: true,
+		Summary:      "where this machine is, step by step, and the one command to type next",
+		Usage:        "[--json] [-v] [--no-scope]",
 		Flags: func(fs *flag.FlagSet) {
 			fs.BoolVar(&asJSON, "json", false, "one JSON object (schema tego.setup/1)")
+			fs.BoolVar(&noScope, "no-scope", false, "check this shell without rehearsing entry into a user scope")
 			fs.BoolVar(&verbose, "v", false, "say where each fact was read and why each run or contract was taken")
 		},
 		Run: func(ctx context.Context, fs *flag.FlagSet, stdout, stderr io.Writer) int {
@@ -49,6 +51,9 @@ func cmdSetup() Command {
 			}
 			if refuseSetup(stderr) {
 				return identity.ExitError
+			}
+			if !noScope {
+				ctx = rehearseUserScope(ctx, stderr)
 			}
 			// A person at a terminal is walked through; scripts, --json and -v get the checklist.
 			if !asJSON && !verbose && guideInteractive(stdout) {
@@ -70,7 +75,11 @@ type probeAnswer struct {
 	fix     string
 	outside bool
 	// noManager: none runs only because no user manager runs for this user (doctor.Report.NoUserManager).
-	noManager bool
+	noManager    bool
+	throughScope bool
+	// scopeError is why the rehearsal of entry into a user scope failed (doctor.Report.UserScopeFailure), "" when it
+	// worked or was not tried.
+	scopeError string
 }
 
 // probeHere is doctor's no-root probes, tier landlock's checks (doctor.ForRun at reach landlock: D1, D3, D4 and D5, in
@@ -81,7 +90,12 @@ func probeHere(ctx context.Context, m *config.Machine) (probeAnswer, error) {
 		return probeAnswer{}, err
 	}
 	_, fix := rep.Verdict()
-	return probeAnswer{tier: rep.Tier, fix: fix, outside: rep.OutsideUserManager, noManager: rep.NoUserManager}, nil
+	tier, through := rep.Tier, rep.ThroughUserScope
+	if len(rep.PendingWSL) != 0 {
+		tier, through = "", false
+	}
+	return probeAnswer{tier: tier, fix: fix, outside: rep.OutsideUserManager, noManager: rep.NoUserManager, throughScope: through,
+		scopeError: rep.UserScopeFailure}, nil
 }
 
 // setupNow is the clock a stored check is stamped with; a variable so the golden tests are stable.
@@ -90,7 +104,7 @@ var setupNow = time.Now
 // setupInputs fills what is this process's own in a guide's inputs: who asks, the host and the build. A variable so
 // the golden tests describe one machine.
 var setupInputs = func(in *guide.Inputs) {
-	as := guide.Invoker()
+	as := guide.Invoker(selfAnswer())
 	in.As = &as
 	in.Host = guide.ThisHost()
 	s := buildinfo.Resolve(debug.ReadBuildInfo)
@@ -105,19 +119,19 @@ var setupInputs = func(in *guide.Inputs) {
 // user, under sudo (125 [privilege]): the folder and file root makes in that user's ~/.tego would be root's, and that
 // user's own tego setup could not replace them. It reports true when it refused.
 func refuseSetup(stderr io.Writer) bool {
-	if in, err := selfInRun(); in {
-		why := "this process is inside a tego run's cgroup"
-		if err != nil {
-			why = "this process cannot be shown to be outside every tego run (" + err.Error() + ")"
-		}
-		message(stderr, "", 0, 0, "tego setup: a governed agent cannot check the machine for you: "+why+
-			"; nothing was written; run it from a terminal outside any tego run", codeGoverned)
+	if a := selfAnswer(); !a.Outside() {
+		message(stderr, "", 0, 0, notOutside("setup", a, "cannot check the machine for you", "the machine was not checked",
+			"nothing was written"), codeGoverned)
 		return true
 	}
 	if learnEUID() == 0 {
 		if uid, _ := config.InvokingUID(); uid != 0 {
+			doctorAsRoot, why := sudoTego("doctor")
+			if why != "" {
+				doctorAsRoot = "tego doctor as root (" + strings.TrimSuffix(why, ".") + ")"
+			}
 			message(stderr, "", 0, 0, "tego setup: as root for another user: the stored check would be root's, in that "+
-				"user's ~/.tego; nothing was written; run tego setup without sudo, and "+sudoTego("doctor")+
+				"user's ~/.tego; nothing was written; run tego setup without sudo, and "+doctorAsRoot+
 				" for the root tiers", codePrivilege)
 			return true
 		}
@@ -127,10 +141,10 @@ func refuseSetup(stderr io.Writer) bool {
 
 // runSetup is the in-process body of setup.
 func runSetup(ctx context.Context, asJSON, verbose bool, stdout, stderr io.Writer) int {
-	m, cds, err := loadMachine(config.TrustWarn)
+	m, cds, err := loadMachine(config.TrustAbort)
 	writeConfigDiagnostics(stderr, cds)
 	if err != nil {
-		message(stderr, "", 0, 0, "tego setup: machine config: "+err.Error(), config.CodeUntrusted)
+		configRefused(stderr, "tego setup", err)
 		return identity.ExitError
 	}
 	pa, err := setupProbe(ctx, m)
@@ -152,13 +166,14 @@ func runSetup(ctx context.Context, asJSON, verbose bool, stdout, stderr io.Write
 		in.Dir = wd
 	}
 	setupInputs(&in)
+	in.Now = setupNow()
 	fresh := guide.Check{Where: in.As.Where, Build: in.Build, BootID: in.Host.BootID, Tier: string(tier),
-		FirstFix: fixText(pa.fix), Time: setupNow().UTC().Truncate(time.Second)}
+		ThroughUserScope: pa.throughScope, FirstFix: fixText(pa.fix), Time: setupNow().UTC().Truncate(time.Second)}
 	switch {
 	case tier != "":
 		fresh.FirstFix = ""
 	case pa.outside && in.As.Where == guide.WhereShell:
-		fresh.Cause = guide.CauseOutsideUserManager
+		fresh.Cause, fresh.ScopeError = guide.CauseOutsideUserManager, pa.scopeError
 	case pa.noManager && in.As.Where == guide.WhereShell:
 		fresh.Cause = guide.CauseNoUserManager
 	}

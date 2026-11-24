@@ -1,0 +1,82 @@
+{
+  "id": "s06-batch-other-tools",
+  "group": "scope",
+  "pins": [
+    "B024"
+  ],
+  "why": "B024: Every batch on this rule-bearing server refuses even if no member selects refunds.",
+  "bundle": {
+    "version": 1,
+    "adapter": "square.refund.v1",
+    "server": "square",
+    "rules": [
+      {
+        "id": "cap",
+        "kind": "per_call",
+        "currency": "USD",
+        "limit": "10000"
+      },
+      {
+        "id": "currencies",
+        "kind": "currencies",
+        "codes": [
+          "USD"
+        ]
+      }
+    ]
+  },
+  "bundle_wire_hex": null,
+  "request": {
+    "adapter": "square.refund.v1",
+    "call_hex": "5b7b226964223a322c226a736f6e727063223a22322e30222c226d6574686f64223a2270696e67227d5d",
+    "contract_bundle_digest": "762086c3104e609f82fb5c5bbb9dc077417803897248181a048adf6b74c7b6f9",
+    "contract_verdict": "allow",
+    "evaluator_status": "ready",
+    "request_id": "1",
+    "run_id": "run1",
+    "server": "square",
+    "state": {
+      "bundle_digest": "762086c3104e609f82fb5c5bbb9dc077417803897248181a048adf6b74c7b6f9",
+      "epoch": "e1",
+      "revision": "0",
+      "run_id": "run1",
+      "seen_keys": [],
+      "server": "square",
+      "status": "ready",
+      "totals": []
+    },
+    "tool_source": "contract",
+    "topology": "exclusive",
+    "version": 1
+  },
+  "request_wire_hex": null,
+  "expected": {
+    "adapter": "square.refund.v1",
+    "bundle_digest": "762086c3104e609f82fb5c5bbb9dc077417803897248181a048adf6b74c7b6f9",
+    "business": {
+      "verdict": "deny",
+      "rule_id": "$adapter",
+      "condition": "adapter.batch"
+    },
+    "asks": [],
+    "call_digest": "470f35d00633c1160e5f1f70ecfee7eeba64562e0fc39cda442ca9b99dbb5636",
+    "facts": null,
+    "final": {
+      "verdict": "deny",
+      "source": "business",
+      "condition": "adapter.batch"
+    },
+    "record": {
+      "coverage": "unknown",
+      "delivery": "not_attempted",
+      "remote_outcome": "unknown",
+      "required": true,
+      "stage": "evaluated"
+    },
+    "request_id": "1",
+    "reservation": null,
+    "run_id": "run1",
+    "server": "square",
+    "version": 1
+  }
+}

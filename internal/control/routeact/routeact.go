@@ -23,6 +23,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/modelroutes"
 	"github.com/attention-span-ai/tego/internal/runlock"
+	"github.com/attention-span-ai/tego/internal/runscope"
 	"github.com/attention-span-ai/tego/pkg/policy/modelroute"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
@@ -106,8 +107,14 @@ type Service struct {
 	Root string
 	// Now stamps a change; nil is time.Now.
 	Now func() time.Time
-	// governed reports whether the caller is inside a run; nil is runact.SelfGoverned. Tests replace it.
-	governed func() (bool, error)
+	// governed is the caller's own answer to "outside every tego run?"; nil is runact.SelfGoverned. Tests replace it.
+	governed func() runscope.Answer
+	// Indexed, when set, answers a run's route facts from a read model that already folded the run's lines: how many
+	// ssl_request lines took each modelroute.RouteKey, and the route-change records in file order. ok false (the run
+	// is not one it holds exactly) sends State to the ledger, which it walks as it always did. The dashboard sets it
+	// from its read model, so a page refresh no longer walks the whole ledger; `tego route list` (a one-shot process)
+	// leaves it nil and walks once.
+	Indexed func(run string) (tally map[modelroute.RouteKey]int, changes []record.ModelRouteChange, ok bool)
 	// beforeLock runs in Set between the preview's read and the writers' lock; nil in production. Tests use it to move
 	// the overlay there.
 	beforeLock func()
@@ -166,30 +173,56 @@ type facts struct {
 	changes  map[string][]record.ModelRouteChange
 }
 
-func readFacts(dir string, ms []agent.ModelEndpoint) facts {
+// indexedFacts is the run's facts from the service's read model, when it holds the run exactly.
+func (s *Service) indexedFacts(run string, ms []agent.ModelEndpoint) (facts, bool) {
+	if s.Indexed == nil {
+		return facts{}, false
+	}
+	tally, changes, ok := s.Indexed(run)
+	if !ok {
+		return facts{}, false
+	}
+	f := facts{requests: modelroute.CountsOf(ms, tally), changes: map[string][]record.ModelRouteChange{}}
+	for _, c := range changes {
+		f.changes[c.Model] = append(f.changes[c.Model], c)
+	}
+	return f, true
+}
+
+func readFacts(dir string, ms []agent.ModelEndpoint) (facts, error) {
 	f := facts{requests: map[[2]string]int{}, changes: map[string][]record.ModelRouteChange{}}
 	rd, err := ledger.OpenReader(dir)
 	if err != nil {
-		return f
+		return f, err
 	}
 	defer func() { _ = rd.Close() }()
 	count := modelroute.RequestCounter(ms)
 	for e, err := range rd.Iter() {
 		if err != nil {
-			break
+			return f, err
 		}
 		switch e.Kind {
 		case record.KindSSLRequest:
+			var payload record.SSLRequestPayload
+			if err := e.DecodePayload(&payload); err != nil {
+				return f, err
+			}
 			count(e, f.requests)
 		case record.KindGap:
 			var p record.GapPayload
-			if e.DecodePayload(&p) != nil || p.Why != record.GapModelRouteChanged || p.ModelRoute == nil {
+			if err := e.DecodePayload(&p); err != nil {
+				return f, err
+			}
+			if p.Why != record.GapModelRouteChanged {
 				continue
+			}
+			if p.ModelRoute == nil {
+				return f, fmt.Errorf("route-change record has no change payload")
 			}
 			f.changes[p.ModelRoute.Model] = append(f.changes[p.ModelRoute.Model], *p.ModelRoute)
 		}
 	}
-	return f
+	return f, nil
 }
 
 func readOverlay(dir, run string) (*modelroutes.Overlay, error) {
@@ -220,14 +253,23 @@ func (s *Service) State(run string) (*State, error) {
 	if err != nil {
 		return nil, err
 	}
-	fc := readFacts(dir, ms)
+	fc, indexed := s.indexedFacts(run, ms)
+	if !indexed {
+		if fc, err = readFacts(dir, ms); err != nil {
+			return nil, fmt.Errorf("read route requests: %w", err)
+		}
+	}
 	held, _, _ := runlock.ProbeLock(dir)
 	st := &State{Run: run, Running: held}
+	// A run whose run_start does not say it is Adjustable (a Locked run, one still starting, one whose first line cannot
+	// be read) keeps every endpoint on its own backend whatever the overlay holds (ADR 0127, Amendment 2026-11-21), so the
+	// page shows that, not a route the forwarder does not put in force.
+	adjustable := runact.StartFacts(dir).Adjustable
 	for _, m := range ms {
 		auth := m.ModelAuthority()
 		row := Model{Endpoint: auth, Provider: m.Provider, Changes: fc.changes[auth]}
 		live := ""
-		if e, ok := o.Lookup(auth); ok {
+		if e, ok := o.Lookup(auth); ok && adjustable {
 			live, row.By, row.At = e.Route, e.By, e.At
 		}
 		now, _ := modelroute.Resolve(m, live)
@@ -344,7 +386,7 @@ func (s *Service) Set(ctx context.Context, run, endpoint, route, ack string) (*P
 	if gov == nil {
 		gov = runact.SelfGoverned
 	}
-	if in, _ := gov(); in { // fails closed: a cgroup it cannot judge refuses too
+	if !gov().Outside() { // inside a run, and whatever cannot be shown to be outside one, refuse alike
 		return p, ErrGoverned
 	}
 	if held, _, err := runlock.ProbeLock(dir); err != nil {

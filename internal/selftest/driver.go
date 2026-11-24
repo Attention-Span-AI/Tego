@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/platform/proc"
+	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
 // Options are tego test's inputs.
@@ -117,6 +118,10 @@ func treeParent(tempDir, tego string, env []string) (string, error) {
 			continue
 		}
 		return c, nil
+	}
+	if !identity.EnvPlace(tempDir) { // not a place: never echoed (identity envtext.go, rule (b))
+		return "", fmt.Errorf("the temporary folder TMPDIR names is not an absolute clean path, and tego test makes its folder nowhere else; "+
+			"set TMPDIR to an absolute folder outside tego's own directory %s; %s", bin, identity.EnvInspect("TMPDIR"))
 	}
 	return "", fmt.Errorf("the temporary folder %s is inside tego's own directory %s, where tego test does not make its folder; "+
 		"set TMPDIR to a folder elsewhere", tempDir, bin)

@@ -16,7 +16,7 @@ import (
 // data", never stack garbage read as a length.
 func TestReadExReturnReadsAZeroedSlot(t *testing.T) {
 	t.Parallel()
-	body := functionBody(t, uprobeSSL(t), "tego_ssl_read_return")
+	body := functionBody(t, uprobeSSL(t), "tego_ssl_read_return_body")
 	for _, want := range []struct{ frag, why string }{
 		{"length = 0, readbytes = 0;", "the slot the length is read into starts at zero"},
 		{"if (ret != 1 || val.len_ptr == 0)", "SSL_read_ex's length counts only when it returned 1, with a place to read it"},
@@ -34,7 +34,7 @@ func TestReadExReturnReadsAZeroedSlot(t *testing.T) {
 // one's request. The failed read must emit a hole of unknown length, which takes the connection's next number.
 func TestUnreadableReadExLengthIsAHole(t *testing.T) {
 	t.Parallel()
-	body := functionBody(t, uprobeSSL(t), "tego_ssl_read_return")
+	body := functionBody(t, uprobeSSL(t), "tego_ssl_read_return_body")
 	at := strings.Index(body, "sizeof(readbytes), (const void *)val.len_ptr) != 0")
 	if at < 0 {
 		t.Fatalf("tego_ssl_read_return no longer reads *readbytes the way this test expects")
@@ -58,10 +58,10 @@ func TestUnreadableReadExLengthIsAHole(t *testing.T) {
 func TestNothingIsEmittedForAZeroLengthCall(t *testing.T) {
 	t.Parallel()
 	path := uprobeSSL(t)
-	if w := functionBody(t, path, "tego_ssl_write"); !strings.Contains(w, "if (num <= 0)\n        return 0;") {
+	if w := functionBody(t, path, "tego_ssl_write_body"); !strings.Contains(w, "if (num <= 0)\n        return 0;") {
 		t.Errorf("tego_ssl_write no longer returns before the capture for a non-positive length")
 	}
-	if r := functionBody(t, path, "tego_ssl_read_return"); !strings.Contains(r, "if (ret <= 0)\n            return 0;") {
+	if r := functionBody(t, path, "tego_ssl_read_return_body"); !strings.Contains(r, "if (ret <= 0)\n            return 0;") {
 		t.Errorf("tego_ssl_read_return no longer returns before the capture for a read that moved no bytes")
 	}
 	if c := functionBody(t, path, "tego_ssl_capture"); !strings.Contains(c, "total == 0") {
@@ -76,7 +76,7 @@ func TestNothingIsEmittedForAZeroLengthCall(t *testing.T) {
 func TestCaptureIsKeyedByThreadAndFilteredByCgroup(t *testing.T) {
 	t.Parallel()
 	path := uprobeSSL(t)
-	w := functionBody(t, path, "tego_ssl_write")
+	w := functionBody(t, path, "tego_ssl_write_body")
 	if !strings.Contains(w, "bpf_get_current_cgroup_id()") || !strings.Contains(w, "tego_run_lookup(&tego_run_set, cgroup_id)") ||
 		!strings.Contains(w, "if (!run") {
 		t.Errorf("tego_ssl_write no longer filters by the cgroup's row in the run set")
@@ -97,11 +97,11 @@ func TestCaptureIsKeyedByThreadAndFilteredByCgroup(t *testing.T) {
 func TestWriteLengthIsKnownAtEntry(t *testing.T) {
 	t.Parallel()
 	path := uprobeSSL(t)
-	if w := functionBody(t, path, "tego_ssl_write"); !strings.Contains(w, "tego_ssl_capture(") ||
+	if w := functionBody(t, path, "tego_ssl_write_body"); !strings.Contains(w, "tego_ssl_capture(") ||
 		!strings.Contains(w, "PT_REGS_PARM3(ctx)") {
 		t.Errorf("tego_ssl_write no longer captures at entry from its length argument")
 	}
-	if r := functionBody(t, path, "tego_ssl_read_return"); !strings.Contains(r, "PT_REGS_RC(ctx)") {
+	if r := functionBody(t, path, "tego_ssl_read_return_body"); !strings.Contains(r, "PT_REGS_RC(ctx)") {
 		t.Errorf("a read's length is no longer taken at its return")
 	}
 }

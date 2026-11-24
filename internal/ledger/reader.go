@@ -25,12 +25,15 @@ import (
 // Reader reads one run directory without taking its lock; any number may open a run concurrently with its
 // live Writer (§3). It owns one file descriptor, released by Close, and a second, its run directory, when it
 // was opened under a ledger root a GC or SweepLive pass holds (openReaderIn).
+// OpenReaderFiles instead owns duplicates of the supplied events and lock files.
 type Reader struct {
 	dir string
 	f   *os.File
 	// at is the run directory a reader opened under a held root resolves the lock through, instead of dir,
 	// which then only names the run in errors and reports; nil for a reader over a path.
-	at    *sys.FD
+	at *sys.FD
+	// lock is an independently opened lock supplied by OpenReaderFiles.
+	lock  *os.File
 	blobs BlobRepository
 	// skipNewer is SkipNewerVersions; newer is the most newer-version lines one pass has skipped.
 	skipNewer bool
@@ -38,6 +41,8 @@ type Reader struct {
 	scanSize  int // the read buffer of a line scan; 0 is scanLines' default
 	// binder is the Binder Bind attached, which the next pass of Lines takes and feeds.
 	binder *Binder
+	// verifier is the Verifier VerifyAlong attached, which the next pass of Lines takes and feeds.
+	verifier *Verifier
 }
 
 // SkipNewerVersions makes Iter and Entries pass over a line whose record version is newer than this binary
@@ -61,7 +66,8 @@ type Entry struct {
 func OpenReader(dir string) (*Reader, error) {
 	f, err := openRegular(filepath.Join(dir, EventsFile))
 	if err != nil {
-		return nil, fmt.Errorf("ledger: open events: %w", err)
+		// A permission refusal says which owner right is missing and the one command that gives it back (ModeAdvice).
+		return nil, WithModeAdvice(dir, fmt.Errorf("ledger: open events: %w", err))
 	}
 	return &Reader{dir: dir, f: f, blobs: NewBlobRepository(dir)}, nil
 }
@@ -80,6 +86,34 @@ func OpenReaderAt(dir sys.Lender, path string) (*Reader, error) {
 	return openReaderIn(d, path)
 }
 
+// OpenReaderFiles reads already-open events and lock files. The caller retains
+// both inputs; the Reader owns duplicates and opens no paths. Each must be a
+// regular file. Callers must check ownership and permissions before calling and
+// open the lock independently of the Writer (flock follows the open description).
+// Like OpenReaderAt, this reader does not read blobs.
+func OpenReaderFiles(events, lock *os.File, path string) (*Reader, error) {
+	if events == nil || lock == nil {
+		return nil, fmt.Errorf("ledger: open events and lock: %s: %w", path, sys.ErrClosed)
+	}
+	duplicate := func(f *os.File, name string) (*os.File, error) {
+		fd, err := sys.DupFile(f, 0)
+		if err != nil {
+			return nil, err
+		}
+		return regularFile(fd, filepath.Join(path, name))
+	}
+	f, err := duplicate(events, EventsFile)
+	if err != nil {
+		return nil, fmt.Errorf("ledger: duplicate events: %w", err)
+	}
+	l, err := duplicate(lock, LockFile)
+	if err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("ledger: duplicate lock: %w", err)
+	}
+	return &Reader{dir: path, f: f, lock: l, blobs: &blobStore{dir: filepath.Join(path, BlobsDir), closed: true}}, nil
+}
+
 // openReaderIn is OpenReader for the run directory open at d, which the Reader then owns (Close closes it); dir
 // is what its errors and reports name. Its lock probes are made under d too. It reads no blobs: nothing a GC
 // pass asks of a run reads one, and a blob path would resolve outside the directory the pass holds.
@@ -92,9 +126,12 @@ func openReaderIn(d *sys.FD, dir string) (*Reader, error) {
 	return &Reader{dir: dir, f: f, at: d, blobs: &blobStore{dir: filepath.Join(dir, BlobsDir), closed: true}}, nil
 }
 
-// Close releases the descriptor, and the run directory's when the Reader holds one.
+// Close releases the events descriptor and any held lock or run-directory descriptor.
 func (r *Reader) Close() error {
 	err := r.f.Close()
+	if r.lock != nil {
+		err = errors.Join(err, r.lock.Close())
+	}
 	if r.at != nil {
 		err = errors.Join(err, r.at.Close())
 	}
@@ -103,6 +140,9 @@ func (r *Reader) Close() error {
 
 // lockFree probes the run's lock (lockFree), under the run directory the Reader holds when it holds one.
 func (r *Reader) lockFree() (bool, error) {
+	if r.lock != nil {
+		return probeLockFile(r.lock)
+	}
 	if r.at != nil {
 		return lockFreeAt(r.at, filepath.Join(r.dir, LockFile))
 	}
@@ -208,12 +248,15 @@ func readLine(br *bufio.Reader) ([]byte, error) { return chaincheck.ReadLine(br)
 // same place already failed all four. Each call rescans from byte 0; there is no follow mode.
 func (r *Reader) Lines() iter.Seq2[[]byte, error] {
 	return func(yield func([]byte, error) bool) {
-		bind := r.takeBinder() // nil unless Bind asked for this pass
-		var prev []byte        // the last complete line, decoded only when a torn tail follows it
+		bind := r.takeBinder()    // nil unless Bind asked for this pass
+		along := r.takeVerifier() // nil unless VerifyAlong asked for this pass
+		var prev []byte           // the last complete line, decoded only when a torn tail follows it
 		offset, n := int64(0), 0
 		for l, err := range r.scan() {
+			along.feed(l, err)
 			if err != nil {
 				bind.fail(err)
+				along.finished()
 				yield(nil, err)
 				return
 			}
@@ -221,6 +264,7 @@ func (r *Reader) Lines() iter.Seq2[[]byte, error] {
 			if !l.terminated {
 				if !wholeLine(l.data) {
 					bind.tornTail(l.data)
+					along.finished() // a torn tail is the last thing the scan holds
 					if afterRunEnd(prev) {
 						yield(nil, fmt.Errorf("%w %d: %d bytes at byte offset %d after run_end are not a record",
 							ErrCorruptLedger, n, len(l.data), offset))
@@ -238,6 +282,7 @@ func (r *Reader) Lines() iter.Seq2[[]byte, error] {
 			offset += int64(len(l.data)) + 1
 		}
 		bind.end()
+		along.finished()
 	}
 }
 
@@ -413,6 +458,11 @@ func (r *Reader) verify(ctx context.Context, anchor ChainAnchor, rescanned, vali
 			break
 		}
 	}
+	return r.verifyEnd(ctx, w, anchor, rescanned, validate)
+}
+
+// verifyEnd is the rest of the check once every line went through w: its end rules and the anchor.
+func (r *Reader) verifyEnd(ctx context.Context, w *chaincheck.Walk, anchor ChainAnchor, rescanned, validate bool) (VerifyReport, error) {
 	if err := w.Finish(); err != nil {
 		return w.Report(), err
 	}
@@ -745,6 +795,11 @@ func probeLock(f *os.File, err error) (bool, error) {
 		return false, fmt.Errorf("ledger: open lock: %w", err)
 	}
 	defer func() { _ = f.Close() }()
+	return probeLockFile(f)
+}
+
+// probeLockFile leaves a caller-owned, independently opened descriptor open.
+func probeLockFile(f *os.File) (bool, error) {
 	if err := sys.Flock(f, unix.LOCK_SH|unix.LOCK_NB); err != nil {
 		if errors.Is(err, unix.EWOULDBLOCK) {
 			return false, nil

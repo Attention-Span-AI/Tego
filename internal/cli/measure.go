@@ -9,11 +9,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"sync"
 
 	"github.com/attention-span-ai/tego/internal/check/measure"
 	"github.com/attention-span-ai/tego/internal/ledger"
-	"github.com/attention-span-ai/tego/internal/runtime/limits"
+	"github.com/attention-span-ai/tego/internal/pricetable"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
@@ -89,24 +88,12 @@ func runMeasure(ctx context.Context, ref string, asJSON bool, stdout, stderr io.
 // refused reads as "$0.00 est. (N unpriced)" rather than a plausible wrong number. cmd names the command on those
 // lines (measure, receipt: both price from this one table, so they print one cost).
 func measurePrices(cmd string, mc *machineOnce, stderr io.Writer) measure.Prices {
-	return &lazyPrices{load: func() measure.Prices { return loadPrices(cmd, mc, stderr) }}
-}
-
-// lazyPrices loads its table on the first Cost call, once; a load that failed (nil) prices nothing, which is what a
-// nil Prices does.
-type lazyPrices struct {
-	once  sync.Once
-	load  func() measure.Prices
-	table measure.Prices
-}
-
-// Cost prices u with the table, loading it on the first call.
-func (l *lazyPrices) Cost(u ledger.TokenUsage) (float64, bool) {
-	l.once.Do(func() { l.table = l.load() })
-	if l.table == nil {
-		return 0, false
-	}
-	return l.table.Cost(u)
+	return pricetable.NewLazy(func() pricetable.Coster {
+		if p := loadPrices(cmd, mc, stderr); p != nil {
+			return p
+		}
+		return nil
+	})
 }
 
 // loadPrices loads the price table now, warning once on stderr when it cannot.
@@ -116,7 +103,7 @@ func loadPrices(cmd string, mc *machineOnce, stderr io.Writer) measure.Prices {
 		message(stderr, "", 0, 0, "tego "+cmd+": machine config: "+err.Error(), codeIO)
 		return nil
 	}
-	table, warn := limits.FromMachine(m)
+	table, warn := pricetable.FromMachine(m)
 	if warn != nil {
 		message(stderr, "", 0, 0, "tego "+cmd+": "+warn.Message, codeNotFound)
 		return nil // a nil *PriceTable in an interface is not a nil interface; hand back a real nil

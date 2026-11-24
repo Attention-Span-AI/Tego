@@ -85,41 +85,48 @@ func summarizeRun(ctx context.Context, m *config.Machine, anchor string, res teg
 	}
 	s.root = root
 	dir := filepath.Join(root, res.RunID)
-	// The receipt's pass and the chain check are two independent reads of the same closed file, each about half
-	// the cost: run side by side, the summary costs about 10 ms per 1,000 lines instead of 18 (BenchmarkEndSummary).
-	// The goroutine is joined before return, and both stop at the budget's deadline.
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		s.chain = chainClause(ctx, dir, anchor, res)
-	}()
-	s.rc, s.err = receiptOf(ctx, dir)
-	<-done
+	s.rc, s.chain, s.err = receiptAndChain(ctx, dir, anchor, res)
 	return s
 }
 
-// receiptOf computes the receipt of the run in dir. No prices: the summary prints no cost, so it never reads the
-// price table (or warns about one).
-func receiptOf(ctx context.Context, dir string) (*receipt.Receipt, error) {
+// receiptAndChain is the receipt of the run in dir and the chain clause, from one read of the ledger: the chain check
+// rides the receipt's pass (ledger.Reader.VerifyAlong), as `tego events --verify` would check the same lines, so a long
+// record is read once for the summary, not once for the receipt and again for the chain. A record that cannot be opened
+// has no receipt, and its chain clause says why from the check's own read.
+func receiptAndChain(ctx context.Context, dir, anchor string, res tegoruntime.Result) (*receipt.Receipt, string, error) {
 	r, err := ledger.OpenReader(dir)
 	if err != nil {
-		return nil, err
+		return nil, chainClause(ctx, dir, anchor, res), err
 	}
 	defer func() { _ = r.Close() }()
 	r.SkipNewerVersions()
-	return receipt.Compute(ctx, r, receipt.Options{Home: os.Getenv("HOME")})
+	var along *ledger.Verifier
+	if res.RecordErr == nil && anchor != "" {
+		along = r.VerifyAlong()
+	}
+	rc, err := receipt.Compute(ctx, r, receipt.Options{Home: os.Getenv("HOME")})
+	chain := chainClauseOf(ctx, anchor, res, func(a ledger.ChainAnchor) (ledger.VerifyReport, error) { return along.Finish(ctx, a) })
+	return rc, chain, err
 }
 
 // chainClause checks the run's chain and its anchor as `tego events --verify` does, and says the result in a few
 // words. "verified" needs both: every line chained, and the head anchored in chain.log.
 func chainClause(ctx context.Context, dir, anchor string, res tegoruntime.Result) string {
+	return chainClauseOf(ctx, anchor, res, func(a ledger.ChainAnchor) (ledger.VerifyReport, error) {
+		return ledger.VerifyRunDir(ctx, dir, a)
+	})
+}
+
+// chainClauseOf is chainClause over check, the chain check against an anchor: Verify's own answer, or the one a pass
+// that read the record for another reason found (Verifier.Finish).
+func chainClauseOf(ctx context.Context, anchor string, res tegoruntime.Result, check func(ledger.ChainAnchor) (ledger.VerifyReport, error)) string {
 	switch {
 	case res.RecordErr != nil:
 		return "chain not checked (the run's record is incomplete)"
 	case anchor == "":
 		return "chain not checked (no chain anchor)"
 	}
-	rep, err := ledger.VerifyRunDir(ctx, dir, ledger.NewFileChainAnchor(anchor))
+	rep, err := check(ledger.NewFileChainAnchor(anchor))
 	switch {
 	case errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil:
 		return "chain not checked (it took too long; tego events " + res.RunID + " --verify checks it)"
@@ -227,7 +234,7 @@ func runAgain(o runOptions, flags string) string {
 			words = append(words, shellword.Quote(w))
 		}
 	}
-	return record.Printable(strings.Join(words, " "))
+	return strings.Join(words, " ")
 }
 
 // tail is the summary line's last clauses: the chain's, after recordOffClause for a run whose record was off. Both
@@ -387,6 +394,9 @@ func (s *endSummary) seen() string {
 				break
 			}
 		}
+	}
+	if rc.ConnectionsOverflowAttempts > 0 {
+		conn = strings.TrimSuffix(rc.ConnectionSummary(), ".")
 	}
 	var read string
 	switch n := len(rc.SensitiveReads); n {

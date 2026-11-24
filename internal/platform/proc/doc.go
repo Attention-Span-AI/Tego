@@ -22,6 +22,8 @@
 // ExecID is the one constructor of an exec id for every producer (the seccomp supervisor from /proc, the
 // tier-2 recorder from the kernel's exact start), so both name one process the same way.
 //
-// Imports: standard library (os/exec for Start), pkg/spec/identity (the exec id type)
+// On Windows the native launcher uses the same start gate; GetProcessTimes
+// supplies the creation identity. The Linux exec-id helper is excluded there.
+// Imports: standard library (os/exec for Start), pkg/spec/identity (Linux exec id), x/sys/windows (Windows identity)
 // Must not import: cilium/ebpf
 package proc

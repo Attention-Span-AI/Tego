@@ -132,3 +132,18 @@ func TestServeOpenPrintsTheURLAndOpensIt(t *testing.T) {
 		t.Errorf("no opener: exit %d, stdout %q, stderr %q; want a normal serve and a note", code, so, se)
 	}
 }
+
+func TestWindowsServeLeavesNoListenerOrLink(t *testing.T) {
+	t.Setenv("TEGO_HOST_KIND", "windows")
+	for _, args := range [][]string{nil, {"--open"}, {"--addr", "127.0.0.2:0"}} {
+		var out, errs bytes.Buffer
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if code := cmdServe().Run(ctx, args, &out, &errs); code == 0 {
+			t.Fatal("Windows serve unexpectedly succeeded")
+		}
+		if out.Len() != 0 || !strings.Contains(errs.String(), "on Windows the dashboard opens with tego dashboard") {
+			t.Fatalf("stdout=%q stderr=%q", out.String(), errs.String())
+		}
+	}
+}

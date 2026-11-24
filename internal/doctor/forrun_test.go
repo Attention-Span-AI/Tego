@@ -30,11 +30,12 @@ func passingChecks(c *calls) checks {
 	c.n = map[CheckID]int{}
 	ok := func(id CheckID) Result { c.n[id]++; return Result{ID: id, OK: true, Detail: "ok"} }
 	return checks{
+		pidNamespace: func() (uint64, error) { return initialPIDNamespace, nil },
 		kernel: func() (Result, string, Version, kernelProbe) {
 			return ok(CheckKernel), "6.17.0-test", Version{6, 17, 0}, kernelProbe{}
 		},
 		btf:      func() Result { return ok(CheckBTF) },
-		cgroup:   func(int, []config.Value) Result { return ok(CheckCgroupV2) },
+		cgroup:   func(int, []config.Value, bool) Result { return ok(CheckCgroupV2) },
 		landlock: func() (Result, int) { return ok(CheckLandlock), 7 },
 		seccomp:  func() (Result, PtraceState, error) { return ok(CheckSeccomp), PtraceState{}, nil },
 		lsm: func(bool) (Result, LSMState) {
@@ -395,12 +396,12 @@ func TestAutoTiers(t *testing.T) {
 		{"untagged build, root, bpf in lsm=", true, true, landlockOnly, AutoSet{Tiers: []backend.Tier{L}}},
 		{"untagged build, normal user, no bpf in lsm=", false, false, landlockOnly, AutoSet{Tiers: []backend.Tier{L}}},
 	} {
-		got := autoTiers(c.root, func() bool { return c.bpfLSM }, c.built)
+		got := autoTiers(c.root, "", func() bool { return c.bpfLSM }, c.built)
 		if !slices.Equal(got.Tiers, c.want.Tiers) || !slices.Equal(got.NeedRoot, c.want.NeedRoot) ||
 			!slices.Equal(got.NeedBPFLSM, c.want.NeedBPFLSM) {
 			t.Errorf("%s: autoTiers = %+v, want %+v", c.name, got, c.want)
 		}
 	}
 	// A normal user's set never reads the LSM list: no precondition it holds can give that user tier bpflsm.
-	autoTiers(false, func() bool { t.Error("the LSM list was read for a process that is not root"); return true }, all)
+	autoTiers(false, "", func() bool { t.Error("the LSM list was read for a process that is not root"); return true }, all)
 }

@@ -23,6 +23,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/mcptools"
 	"github.com/attention-span-ai/tego/internal/runlock"
+	"github.com/attention-span-ai/tego/internal/runscope"
 	"github.com/attention-span-ai/tego/pkg/policy/mcptool"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -79,6 +80,9 @@ type State struct {
 	// Broker is whether the run can hold a call for a person (run_start capabilities.ask).
 	Broker  bool
 	Servers []Server
+	// CountError explains why ledger tool counts could not be read completely.
+	// When set, the page must show this error instead of the prefix counts.
+	CountError string
 }
 
 // Plan is one previewed switch.
@@ -103,8 +107,8 @@ type Service struct {
 	Root string
 	// Now stamps a change; nil is time.Now.
 	Now func() time.Time
-	// governed reports whether the caller is inside a run; nil is runact.SelfGoverned. Tests replace it.
-	governed func() (bool, error)
+	// governed is the caller's own answer to "outside every tego run?"; nil is runact.SelfGoverned. Tests replace it.
+	governed func() runscope.Answer
 	// beforeLock runs in apply between the preview's read and the writers' lock; nil in production. Tests use it to move
 	// the overlay there.
 	beforeLock func()
@@ -195,6 +199,7 @@ func servers(dir string) ([]contractServer, error) {
 // facts is what the run's ledger says: its run_start capabilities.ask, and per tool its relay lines and asks.
 type facts struct {
 	broker                bool
+	err                   error
 	calls, refused, asked map[[2]string]int
 }
 
@@ -202,12 +207,14 @@ func readFacts(dir string) facts {
 	f := facts{calls: map[[2]string]int{}, refused: map[[2]string]int{}, asked: map[[2]string]int{}}
 	rd, err := ledger.OpenReader(dir)
 	if err != nil {
+		f.err = err
 		return f
 	}
 	defer func() { _ = rd.Close() }()
 	first := true
 	for e, err := range rd.Iter() {
 		if err != nil {
+			f.err = err
 			break
 		}
 		if first {
@@ -225,7 +232,11 @@ func readFacts(dir string) facts {
 		switch {
 		case e.Kind == record.KindMCP && e.Source == record.SourceProxy:
 			var p record.MCPPayload
-			if e.DecodePayload(&p) != nil || p.Tool == "" {
+			if err := e.DecodePayload(&p); err != nil {
+				f.err = fmt.Errorf("MCP event %d: %w", e.Seq, err)
+				return f
+			}
+			if p.Tool == "" {
 				continue
 			}
 			k := [2]string{p.Name, p.Tool}
@@ -239,7 +250,11 @@ func readFacts(dir string) facts {
 				Op     string `json:"op"`
 				Target string `json:"target"`
 			}
-			if e.DecodePayload(&p) != nil || p.Op != opMCPTool {
+			if err := e.DecodePayload(&p); err != nil {
+				f.err = fmt.Errorf("request event %d: %w", e.Seq, err)
+				return f
+			}
+			if p.Op != opMCPTool {
 				continue
 			}
 			if sv, t, ok := strings.Cut(p.Target, " "); ok {
@@ -276,7 +291,14 @@ func (s *Service) State(run string) (*State, error) {
 	seen, _ := mcptools.ReadSeen(dir)
 	fc := readFacts(dir)
 	held, _, _ := runlock.ProbeLock(dir)
+	// What the relay decides: a run whose run_start does not say it is Adjustable (a Locked run, one still starting, one
+	// whose first line cannot be read) holds every tool to its contract's decision or tighter, whatever the overlay holds
+	// (ADR 0126, Amendment 2026-11-21), so the page shows that, not a switch the relay does not put in force.
+	adjustable := runact.StartFacts(dir).Adjustable
 	st := &State{Run: run, Running: held, Broker: fc.broker}
+	if fc.err != nil {
+		st.CountError = fc.err.Error()
+	}
 	for _, cs := range svs {
 		sv := Server{Name: cs.Name, Transport: "stdio", Relayed: cs.hasTool}
 		if cs.URL != "" {
@@ -318,6 +340,9 @@ func (s *Service) State(run string) (*State, error) {
 				live := ""
 				if e, ok := o.Lookup(cs.Name, t); ok {
 					live = e.Decision
+				}
+				if !adjustable {
+					live = mcptool.WithinContract(rules, live, cs.Name, t)
 				}
 				now := mcptool.Decide(rules, live, cs.Name, t)
 				tool.Contract = mcptool.Contract(rules, cs.Name, t).Decision
@@ -457,8 +482,7 @@ func (s *Service) apply(ctx context.Context, run, server, tool, decision, ack st
 		if gov == nil {
 			gov = runact.SelfGoverned
 		}
-		in, _ := gov() // fails closed: a cgroup it cannot judge refuses too
-		return in
+		return !gov().Outside() // inside a run, and whatever cannot be shown to be outside one, refuse alike
 	}
 	// Refused here as well as under the lock: a caller inside a run cannot write the run directory, so it would not
 	// get that far to be told why.

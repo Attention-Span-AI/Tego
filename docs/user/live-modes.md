@@ -136,8 +136,8 @@ fence (on a Locked run they wait for the next run too).
 
 **Today these are terminal commands, under `sudo`.** Adjustable runs only at tier cgroup or bpflsm, so its launcher is
 root, and while a root run is live its folder under the ledger root, the run's key included, is root's (mode 0700). The
-dashboard runs as you and never as root, so it cannot open a live Adjustable run. Use `sudo tego lift`, `sudo tego grant`
-and `sudo tego restore`; the same goes for block, unblock and stop on any live run started with `sudo`. When the run ends,
+dashboard runs as you and never as root, so it cannot open a live Adjustable run. Use `sudo "$(command -v tego)" lift`, `sudo "$(command -v tego)" grant`
+and `sudo "$(command -v tego)" restore`; the same goes for block, unblock and stop on any live run started with `sudo`. When the run ends,
 Tego hands its folder to you, and the dashboard shows the run with every change.
 
 The dashboard's own controls are built, but no product run reaches them yet. On a run it can open, an Adjustable run's

@@ -65,7 +65,7 @@ func layers(t *testing.T, dir string, etc, user, env string) Sources {
 
 func mustLoad(t *testing.T, src Sources, home string) (*Machine, []Diagnostic) {
 	t.Helper()
-	m, diags, err := LoadSources(src, home, os.Getuid(), TrustAbort)
+	m, diags, err := fixtureLoad(src, home, os.Getuid(), TrustAbort)
 	if err != nil {
 		t.Fatalf("LoadSources: %v (diags %v)", err, diags)
 	}
@@ -266,7 +266,7 @@ func TestCeilingChain(t *testing.T) {
 // observe is a run mode, never a ceiling, so it is illegal here too.
 func TestCeilingBadName(t *testing.T) {
 	src := layers(t, trustedDir(t), "tier: quantum\ncapture: tap\n", "", "")
-	_, diags, err := LoadSources(src, "", os.Getuid(), TrustAbort)
+	_, diags, err := fixtureLoad(src, "", os.Getuid(), TrustAbort)
 	if !errors.Is(err, ErrInvalid) {
 		t.Fatalf("err = %v, want ErrInvalid", err)
 	}
@@ -300,7 +300,7 @@ func TestCeilingBadName(t *testing.T) {
 		}
 	}
 	src = layers(t, trustedDir(t), "tier: observe\n", "", "")
-	if _, _, err := LoadSources(src, "", os.Getuid(), TrustAbort); !errors.Is(err, ErrInvalid) {
+	if _, _, err := fixtureLoad(src, "", os.Getuid(), TrustAbort); !errors.Is(err, ErrInvalid) {
 		t.Errorf("tier: observe loaded (err %v); it is a run mode, not a ceiling", err)
 	}
 }
@@ -309,7 +309,7 @@ func TestCeilingBadName(t *testing.T) {
 // no line.
 func TestNonUTF8LayerNamesItsLine(t *testing.T) {
 	src := layers(t, trustedDir(t), "log:\n  level: info\nprices: \"/x\xff\"\n", "", "")
-	_, diags, err := LoadSources(src, "", os.Getuid(), TrustAbort)
+	_, diags, err := fixtureLoad(src, "", os.Getuid(), TrustAbort)
 	if !errors.Is(err, ErrInvalid) {
 		t.Fatalf("err %v", err)
 	}
@@ -445,7 +445,7 @@ func TestLoadInvalid(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			src := layers(t, trustedDir(t), tc.content, "", "")
-			m, diags, err := LoadSources(src, "", os.Getuid(), TrustAbort)
+			m, diags, err := fixtureLoad(src, "", os.Getuid(), TrustAbort)
 			if m != nil || !errors.Is(err, ErrInvalid) {
 				t.Fatalf("m=%v err=%v diags=%v", m, err, diags)
 			}
@@ -786,7 +786,7 @@ func TestResolveSecure(t *testing.T) {
 	}{
 		{"plain", uid, false, envFile, true},
 		{"secure drops TEGO_CONFIG", uid, true, "", true},
-		{"no passwd entry warns, env kept", 65534 + 1000, false, envFile, false},
+		{"no passwd entry is silent, env kept", 65534 + 1000, false, envFile, false},
 		{"secure and no passwd entry", 65534 + 1000, true, "", false},
 	}
 	for _, tc := range cases {
@@ -802,7 +802,7 @@ func TestResolveSecure(t *testing.T) {
 				if len(diags) != 0 {
 					t.Errorf("diags %v", diags)
 				}
-			} else if src.User != "" || home != "" || countCode(diags, CodeIgnored) != 1 {
+			} else if src.User != "" || home != "" || len(diags) != 0 {
 				t.Errorf("user layer %q home %q diags %v", src.User, home, diags)
 			}
 		})
@@ -836,7 +836,7 @@ func TestEffective(t *testing.T) {
 	for _, v := range values {
 		byKey[v.Key] = v
 	}
-	if len(values) != 34 {
+	if len(values) != 35 {
 		t.Errorf("%d values", len(values))
 	}
 	cases := []struct {
@@ -947,7 +947,7 @@ func BenchmarkLoad(b *testing.B) {
 	src := Sources{Etc: write("etc.yaml", etcLayer), User: write("user.yaml", userLayer), EnvFile: write("env.yaml", envLayer)}
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		if _, _, err := LoadSources(src, "/home/test", os.Getuid(), TrustAbort); err != nil {
+		if _, _, err := fixtureLoad(src, "/home/test", os.Getuid(), TrustAbort); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -996,6 +996,63 @@ func TestLayerPathIsAnOpaqueByteString(t *testing.T) {
 	}
 }
 
+// TestUnplacedConfigValueIsNeverEchoed: a $TEGO_CONFIG value that is absolute but not clean, or that holds a control
+// character, failed validation (pkg/spec/identity envtext.go, rule (b)). Whatever the file it names is (absent,
+// untrusted, malformed, or read with a warning), no error, diagnostic, fix or provenance of either Load mode echoes
+// it: each names the variable. The same file under its clean name is named (rule (c)).
+func TestUnplacedConfigValueIsNeverEchoed(t *testing.T) {
+	dir := trustedDir(t)
+	odd := filepath.Join(dir, "qz-a\nb")
+	for _, d := range []string{filepath.Join(dir, "qz-x"), odd} {
+		if err := os.Mkdir(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := map[string]struct {
+		content string
+		mode    os.FileMode
+	}{
+		"absent":    {},
+		"untrusted": {"version: 0\n", 0o666},
+		"malformed": {"stop_grace: [\n", 0o600},
+		"warning":   {"stop_grace: 3s\nbaseline: {env: {deny: [OK_NAME]}}\n", 0o600},
+	}
+	for name, f := range files {
+		file := "qz-" + name + ".yaml"
+		if f.mode != 0 {
+			writeFile(t, dir, file, f.content, f.mode)
+			writeFile(t, odd, file, f.content, f.mode)
+		}
+		for _, value := range []string{dir + "/qz-x/../" + file, odd + "/" + file, dir + "/" + file} {
+			placed := value == dir+"/"+file
+			for _, mode := range []TrustMode{TrustAbort, TrustWarn} {
+				m, ds, err := LoadSources(Sources{EnvFile: value}, "", os.Getuid(), mode)
+				var text strings.Builder
+				if err != nil {
+					text.WriteString(err.Error() + "\n")
+				}
+				var ue *UntrustedError
+				if errors.As(err, &ue) {
+					text.WriteString(ue.Error() + " " + ue.Fix() + "\n")
+				}
+				for _, d := range ds {
+					text.WriteString(d.String() + " " + d.Fix + "\n")
+				}
+				if m != nil {
+					text.WriteString(m.StopGrace.Source.File + "\n")
+				}
+				got := text.String()
+				switch {
+				case placed && !strings.Contains(got, value):
+					t.Errorf("%s, mode %v: the clean value %q is not named: %s", name, mode, value, got)
+				case !placed && (strings.Contains(got, "qz-") || !strings.Contains(got, "$"+EnvConfigVar)):
+					t.Errorf("%s, mode %v: the value %q is echoed, or the variable is not named: %s", name, mode, value, got)
+				}
+			}
+		}
+	}
+}
+
 func TestServePortLayeringAndValidation(t *testing.T) {
 	for _, tt := range []struct {
 		value string
@@ -1004,7 +1061,7 @@ func TestServePortLayeringAndValidation(t *testing.T) {
 	}{{"1", 1, false}, {"65535", 65535, false}, {"0", 7433, true}, {"65536", 7433, true}, {"abc", 7433, true}} {
 		t.Run(tt.value, func(t *testing.T) {
 			src := layers(t, trustedDir(t), "serve:\n  port: 9000\n", "", "serve:\n  port: "+tt.value+"\n")
-			m, ds, err := LoadSources(src, "/home/test", os.Getuid(), TrustAbort)
+			m, ds, err := fixtureLoad(src, "/home/test", os.Getuid(), TrustAbort)
 			if (HasErrors(ds) || err != nil) != tt.bad {
 				t.Fatalf("port diagnostic: %v %+v", err, ds)
 			}

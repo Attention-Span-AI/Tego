@@ -354,3 +354,34 @@ func TestBindLookupWithoutKernelMarkerDisclosesMissingEvidence(t *testing.T) {
 		t.Fatalf("missing marker was not disclosed: %+v", r.Gaps())
 	}
 }
+
+// TestRecorderNamesALiveBlockRefusedBind (review finding F5): a unix-socket bind whose new name a live block refuses carries
+// the block's id under the fs-row tag (tego_mknod_bind's floor), and its line names the block's rule, not unmatched.
+func TestRecorderNamesALiveBlockRefusedBind(t *testing.T) {
+	f := newFixture(t)
+	di, ok := statDevIno(f.out)
+	if !ok {
+		t.Fatal("stat directory")
+	}
+	rule := "live.block[write:" + filepath.Join(f.out, "agent.sock") + "]"
+	names := func(id uint16) (string, bool) { return rule, id == 3 }
+	join := func(tid, pid int, start, at uint64) (supervisor.BindNaming, bool) {
+		return supervisor.BindNaming{AttemptMonoNS: at - 1}, true
+	}
+	refused := bindResultSample(sample{PID: 50, TID: 50, Start: 900, MonoNS: 1, Verdict: KernelRefused,
+		Reason: uint8(bpf.ReasonWriteOutsideContract)}, -int64(unix.EACCES),
+		bpf.BindMarked|bpf.BindDecided|bpf.BindNameOK|bpf.BindResolved, bpf.PlaneRuleFSRow|uint32(bpf.PlaneRuleLiveBlock|3),
+		di.Dev, di.Ino, "agent.sock")
+	_, sink := runRecorder(t, f, Options{FlushInterval: time.Hour, DecisionPlane: record.DecisionPlaneLSM, BindResults: true,
+		ContinuedBind: join, LiveBlockRule: names}, refused)
+	evs := sink.byKind(record.KindNet)
+	if len(evs) != 1 {
+		t.Fatalf("net lines %d, want 1: %+v", len(evs), evs)
+	}
+	if evs[0].Verdict != record.VerdictRefused || evs[0].Rule != rule {
+		t.Errorf("the refused bind is %s under %q, want refused under %q", evs[0].Verdict, evs[0].Rule, rule)
+	}
+	if err := evs[0].Validate(); err != nil {
+		t.Error(err)
+	}
+}

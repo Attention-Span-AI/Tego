@@ -38,6 +38,7 @@ func presetContract(t *testing.T, extends string) string {
 // with no error and no warning a preset caused.
 func TestPresetCombinationsCompile(t *testing.T) {
 	t.Setenv("TEGO_CONFIG", "")
+	fixedEnviron(t) // a preset with env: and no env.pass would otherwise warn about the caller's credentials
 	buildsTiers(t, backend.TierLandlock, backend.TierCgroup)
 	all := presets.List()
 	for mask := 1; mask < 1<<len(all); mask++ {
@@ -68,7 +69,7 @@ func TestUnknownPresetListsTheKnownOnes(t *testing.T) {
 	for _, name := range []string{"tego/no-secret", "tego/no-prod@2"} {
 		f := presetContract(t, name)
 		code, _, errs := run(t, "compile", f, "--offline")
-		want := "the built-in profiles are tego/no-prod, tego/no-prod@1, tego/no-secrets, tego/no-secrets@1, tego/repo-only-writes, tego/repo-only-writes@1"
+		want := "the built-in profiles are tego/ci, tego/ci@1, tego/no-prod, tego/no-prod@1, tego/no-secrets, tego/no-secrets@1, tego/repo-only-writes, tego/repo-only-writes@1"
 		if code != identity.ExitFinding || !strings.Contains(errs, "agent.yaml:3:") || !strings.Contains(errs, "[extends-not-found]") || !strings.Contains(errs, want) {
 			t.Errorf("%s: exit %d\n%s", name, code, errs)
 		}

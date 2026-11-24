@@ -5,6 +5,7 @@ package runact
 import (
 	"errors"
 
+	"github.com/attention-span-ai/tego/internal/platform/peer"
 	"github.com/attention-span-ai/tego/internal/runscope"
 )
 
@@ -13,13 +14,12 @@ import (
 // governed.go), and the engine's CLI writers refuse it from a caller inside one (internal/cli governed.go).
 var ErrGoverned = errors.New("a governed agent cannot change its own governance")
 
-// selfInRun is runscope.InRun, replaced in tests.
-var selfInRun = runscope.InRun
+// selfAnswer is peer.Self, replaced in tests.
+var selfAnswer = peer.Self
 
-// SelfGoverned reports whether this process sits inside a tego run's cgroup, read from /proc/self/cgroup
-// (runscope.InRun): inside a run's or an adoption's scope, or a look-alike of one. It fails closed: when the file
-// cannot be read or this process is outside the initial cgroup namespace, it is true with the error (a process that
-// unshares a cgroup namespace inside its run's scope reads like a container's, and InRun cannot tell them apart). A
-// writer that would widen a run's governance (an unblock, a resume) refuses when it is true; one that only narrows
-// need not ask.
-func SelfGoverned() (bool, error) { return selfInRun() }
+// SelfGoverned is this process's own answer to "outside every tego run?" (internal/platform/peer.Self, the rule of
+// internal/runscope): inside a run's or an adoption's scope or a look-alike of one, unknown when that cannot be
+// shown (a cgroup file that cannot be read, a cgroup namespace that is not the machine's first one and has no
+// proof), or outside. A writer that would widen a run's governance (an unblock, a resume) refuses unless
+// SelfGoverned().Outside(); one that only narrows need not ask.
+func SelfGoverned() runscope.Answer { return selfAnswer() }

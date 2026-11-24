@@ -329,7 +329,7 @@ func TestNeverMoveNarrows(t *testing.T) {
 	}
 	// The line's rule says its change in the words the Change rules form says it (the event page leads with them).
 	if want := (Sentence{Before: "Asks you before it reads ~/.config/telemetry/", After: "Can never read ~/.config/telemetry/",
-		Direction: Narrows}); len(res.Sentences) != 1 || res.Sentences[0] != want {
+		Direction: Narrows, Key: "fs.ask_read"}); len(res.Sentences) != 1 || res.Sentences[0] != want {
 		t.Errorf("sentences %+v, want [%+v]", res.Sentences, want)
 	}
 	rt, err = compile(res.Text)

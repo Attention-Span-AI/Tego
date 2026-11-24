@@ -233,3 +233,14 @@ places its own; while another run holds it, the library is refused, an attach fa
 detail. A multi pair the run cannot prove is still refused whoever holds it
 (`TestProbesNotTheBuildsAreRefusedWhileAnotherRunHoldsTheLibrary`,
 `TestProbesNotTheBuildsArePlacedAgainWhenNoOtherRunHoldsThem`, `TestIntegrationProbesOverRecreatedMapsArePlacedAgain`).
+
+### Object-load test floors for io_uring result hooks, 2026-11-12
+
+The object-load test requires `io_bind` and `io_listen` in kernel BTF from Linux
+6.11 onward. Below that floor it still probes BTF, so backports load and are
+tested. BTF read/lookup errors fail; a missing hook at or above its floor fails
+instead of becoming an allowed skip. This is a test acceptance rule, not a
+change to runtime capability selection. Both operations arrived in 6.11:
+[bind commit](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=7481fd93fa0a851740e26026485f56a1305454ce),
+[listen commit](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=ff140cc8628abfb1755691d16cfa8788d8820ef7),
+and the [maintainer's 6.11 release notes](https://github.com/axboe/liburing/wiki/What's-new-with-io_uring-in-6.11-and-6.12).

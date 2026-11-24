@@ -37,7 +37,7 @@ func init() { register(cmdCompile) }
 // caller's shell.
 var launchEnviron = os.Environ
 
-// cmdCompile is `tego compile <agent.yaml | name> [--test <table> [--tier <t>[,<t>]]] [--offline] [--json] [--merged] [--upgrade]` (R29):
+// cmdCompile is `tego rules check <agent.yaml | name> [--test <table> [--tier <t>[,<t>]]] [--offline] [--json] [--merged | --effective] [--upgrade]` (R29):
 // agent.Load, agent.Compile against the machine ceilings, diagnostics on stderr in
 // agent.Diagnostic's codes (R26), the rule table on stdout. With --test the compiled table is
 // evaluated against a table of hypothetical actions instead of printed (R28). Exit 0 with only
@@ -59,6 +59,7 @@ func cmdCompile() Command {
 		asJSON    bool
 		upgrade   bool
 		merged    bool
+		effective bool
 		testTable string
 		tiers     string
 		execLine  string
@@ -66,7 +67,7 @@ func cmdCompile() Command {
 	return Command{
 		Name:    "compile",
 		Summary: "load a contract, validate it and print the rule table",
-		Usage:   "<agent.yaml | name | - for stdin> [--test <table.yaml> [--tier <t>[,<t>]]] [--offline] [--json] [--merged] [--upgrade]",
+		Usage:   "<agent.yaml | name | - for stdin> [--test <table.yaml> [--tier <t>[,<t>]]] [--offline] [--json] [--merged | --effective] [--upgrade]",
 		Flags: func(fs *flag.FlagSet) {
 			fs.BoolVar(&offline, "offline", false, "an unresolvable host is a warning; run resolves it")
 			fs.BoolVar(&asJSON, "json", false, "print the compiled table as one JSON object")
@@ -74,6 +75,7 @@ func cmdCompile() Command {
 			fs.StringVar(&tiers, "tier", "", "with --test: the tiers to answer in, comma-separated (default: every tier a run of the contract can get)")
 			fs.BoolVar(&upgrade, "upgrade", false, "rewrite the contract to the newest contract version (none newer than 0 exists yet)")
 			fs.BoolVar(&merged, "merged", false, "print the merged contract, every profile it extends laid in: the one rule file, whose sha256 is contract_hash")
+			fs.BoolVar(&effective, "effective", false, "print the effective contract with the machine baseline applied, whose sha256 is effective_hash")
 			fs.StringVar(&execLine, "exec", "", "evaluate one command line against the exec rules in every tier, words split on spaces, quotes grouping (ADR 0048)")
 		},
 		Run: func(ctx context.Context, fs *flag.FlagSet, stdout, stderr io.Writer) int {
@@ -86,6 +88,10 @@ func cmdCompile() Command {
 				return identity.ExitUsage // R25: usage error — nothing this binary can rewrite to
 			}
 			var only []backend.Tier
+			if effective && (merged || testTable != "" || execLine != "" || asJSON) {
+				message(stderr, "", 0, 0, "tego rules check: --effective is a separate output; give one print option", codeUsage)
+				return identity.ExitUsage
+			}
 			if merged && (testTable != "" || execLine != "" || asJSON) {
 				message(stderr, "", 0, 0, "tego compile: --merged prints the merged contract; --test, --exec and --json are other prints, give one", codeUsage)
 				return identity.ExitUsage // R25: usage error
@@ -115,7 +121,7 @@ func cmdCompile() Command {
 					return identity.ExitUsage // R25: usage error
 				}
 			}
-			return runCompile(ctx, fs.Arg(0), compileRequest{testTable: testTable, execLine: execLine, tiers: only, offline: offline, asJSON: asJSON, merged: merged}, stdout, stderr)
+			return runCompile(ctx, fs.Arg(0), compileRequest{testTable: testTable, execLine: execLine, tiers: only, offline: offline, asJSON: asJSON, merged: merged, effective: effective}, stdout, stderr)
 		},
 	}
 }
@@ -136,7 +142,8 @@ type compileRequest struct {
 	offline bool
 	asJSON  bool
 	// merged is --merged: print the merged contract in place of the table.
-	merged bool
+	merged    bool
+	effective bool
 	// resolver is a per-call dependency; nil keeps the system resolver.
 	resolver agent.Resolver
 }
@@ -171,13 +178,29 @@ var autoSet = doctor.AutoTiers
 // agent.WithTiers.
 func builtTiers() []backend.Tier { return autoSet().Tiers }
 
+// pidNamespaceTierDiagnostics keeps a context exclusion separate from the build inventory. WithTiers carries the
+// usable set into the pure compiler; its generic missing-build warning is inaccurate for these built root tiers.
+func pidNamespaceTierDiagnostics(rt *agent.RuleTable, ds []agent.Diagnostic, available doctor.AutoSet) []agent.Diagnostic {
+	if rt == nil || !slices.Contains(available.NeedPIDNamespace, rt.Tier) {
+		return ds
+	}
+	out := slices.Clone(ds)
+	for i, d := range out {
+		if d.Code == backend.CodeTierUnavailable && d.Severity == agent.SeverityWarning && d.Tier == "" {
+			out[i].Message = fmt.Sprintf("pinned tier %s requires the kernel's first process-id namespace; every run of this contract is refused", rt.Tier)
+			out[i].Fix = "use tier landlock here, or run the root tier from the kernel's first process-id namespace"
+		}
+	}
+	return out
+}
+
 // runCompile is the in-process body of compile.
 func runCompile(ctx context.Context, path string, req compileRequest, stdout, stderr io.Writer) int {
 	testTable, offline, asJSON := req.testTable, req.offline, req.asJSON
-	m, cds, err := loadMachine(config.TrustWarn)
+	m, cds, err := loadMachine(config.TrustAbort)
 	writeConfigDiagnostics(stderr, cds)
 	if err != nil {
-		message(stderr, "", 0, 0, "tego compile: machine config: "+err.Error(), config.CodeUntrusted)
+		configRefused(stderr, "tego compile", err)
 		return identity.ExitError // R25: Tego's own error (I/O on a config layer)
 	}
 	ref, rerr := resolveContract(path, false, m)
@@ -195,7 +218,16 @@ func runCompile(ctx context.Context, path string, req compileRequest, stdout, st
 		message(stderr, "", 0, 0, "tego compile: interrupted", codeIO)
 		return identity.ExitError // R25: Tego's own error (interrupted)
 	}
-	opts := []agent.CompileOption{agent.WithContext(ctx), agent.WithPATH(os.Getenv("PATH")), agent.WithEnviron(launchEnviron()), agent.WithClock(time.Now), agent.WithTiers(builtTiers()...)}
+	set := autoSet()
+	pred := &rootPrediction{rerun: rerunArgs(path, req)}
+	opts := []agent.CompileOption{agent.WithContext(ctx), agent.WithPATH(os.Getenv("PATH")), agent.WithEnviron(launchEnviron()), agent.WithClock(time.Now), agent.WithTiers(set.Tiers...)}
+	// Prediction describes the requested tier, rather than this caller's launch privileges.
+	// Keep WithTiers and Reach unchanged: they still describe what this caller can launch.
+	rootTier := func(t backend.Tier) bool { return t == backend.TierCgroup || t == backend.TierBPFLSM }
+	if slices.ContainsFunc(req.tiers, rootTier) || slices.ContainsFunc(set.Tiers, rootTier) ||
+		slices.ContainsFunc(set.NeedRoot, rootTier) || slices.ContainsFunc(set.NeedBPFLSM, rootTier) || slices.ContainsFunc(set.NeedPIDNamespace, rootTier) {
+		opts = append(opts, agent.WithNamePrediction(pred.cutTable))
+	}
 	if req.resolver != nil {
 		opts = append(opts, agent.WithResolver(req.resolver))
 	}
@@ -212,8 +244,14 @@ func runCompile(ctx context.Context, path string, req compileRequest, stdout, st
 		message(stderr, "", 0, 0, "tego compile: interrupted", codeIO)
 		return identity.ExitError // R25: interrupted compilation is an I/O failure, not a contract finding
 	}
+	ds = pidNamespaceTierDiagnostics(rt, ds, set)
 	_ = agent.WriteDiagnostics(stderr, ds)
 	if err != nil {
+		for _, d := range ds {
+			if d.IsError() && (d.Code == agent.CodeBaselinePlacement || d.Code == agent.CodeBaselineUnknown) {
+				return identity.ExitError
+			}
+		}
 		return loadFailed(stderr, label, ds, err)
 	}
 	warnCostUnpriced(stderr, label, rt, m)
@@ -229,11 +267,14 @@ func runCompile(ctx context.Context, path string, req compileRequest, stdout, st
 	if req.merged {
 		return printMerged(stdout, stderr, c)
 	}
+	if req.effective {
+		return printMerged(stdout, stderr, rt.EffectiveContract)
+	}
 	if testTable != "" {
-		return runCompileTest(rt, m, testTable, req.tiers, asJSON, stdout, stderr)
+		return runCompileTest(rt, m, testTable, req.tiers, asJSON, pred, stdout, stderr)
 	}
 	if req.execLine != "" {
-		return runCompileExec(rt, m, req.execLine, req.tiers, stdout, stderr)
+		return runCompileExec(rt, m, req.execLine, req.tiers, pred, stdout, stderr)
 	}
 	if asJSON {
 		t := tableJSON(rt)
@@ -342,7 +383,7 @@ func warnCostUnpriced(stderr io.Writer, path string, rt *agent.RuleTable, m *con
 // that tier. Rows used to be answered in the tier auto compiled to,
 // bpflsm, which no build then contained, and so certified refusals the run's own tier did not make. No machine
 // is probed (R33).
-func runCompileTest(rt *agent.RuleTable, m *config.Machine, path string, tiers []backend.Tier, asJSON bool, stdout, stderr io.Writer) int {
+func runCompileTest(rt *agent.RuleTable, m *config.Machine, path string, tiers []backend.Tier, asJSON bool, pred *rootPrediction, stdout, stderr io.Writer) int {
 	table, ds, err := agent.LoadTestTable(path)
 	_ = agent.WriteDiagnostics(stderr, ds)
 	if err != nil {
@@ -367,13 +408,20 @@ func runCompileTest(rt *agent.RuleTable, m *config.Machine, path string, tiers [
 		}
 	}
 	model := decide.NewEvaluator(rt)
+	unknown := false
 	eval := func(_ *agent.RuleTable, a agent.Action, tier backend.Tier) agent.EvalResult {
+		// A step root finishes was cut short for this user, in the table's compile or in this row's own walk: the
+		// root column is unknown (rootPrediction.unknown); landlock and plain network answers stay concrete.
+		if pred.unknown(a, tier) {
+			unknown = true
+			return unknownResult()
+		}
 		if tier == backend.TierBPFLSM && plane != nil {
 			return plane.Evaluate(a, env)
 		}
 		return model.EvaluateIn(a, tier, env)
 	}
-	results := table.RunResolved(eval, rt, cwd, landers(stderr, path), tiers...)
+	results := table.RunResolved(eval, rt, cwd, pred.landers(landers(stderr, path)), tiers...)
 	failed := 0
 	for _, r := range results {
 		if !r.Pass {
@@ -387,6 +435,11 @@ func runCompileTest(rt *agent.RuleTable, m *config.Machine, path string, tiers [
 		}
 	} else {
 		fmt.Fprintf(stdout, "tiers %s (%s)\n", tierList(tiers), from)
+		if rt.NetworkAssurance() == agent.NetAssuranceKernel {
+			// A contract that holds its opens is no exception (ADR 0128, amended 2026-11-21): the plane passes the open
+			// deputy by its identity and refuses every other task's control receive.
+			fmt.Fprintf(stdout, "net.assurance: %s\n", AssuranceImportsNote)
+		}
 		if plane != nil {
 			note := PlaneColumnNote
 			if plane.NameEntries() > 0 {
@@ -402,6 +455,10 @@ func runCompileTest(rt *agent.RuleTable, m *config.Machine, path string, tiers [
 			fmt.Fprintf(stdout, "FAIL %s%s%s (%s:%d): %s\n", record.Printable(r.Row.Label()), resolvedNote(r.Resolved), bestEffortNote(r.Columns), record.Printable(path), r.Row.Line, testFailure(rt, r))
 		}
 		fmt.Fprintf(stdout, "%d rows: %d passed, %d failed\n", len(results), len(results)-failed, failed)
+	}
+	if unknown {
+		pred.explain(stderr)
+		return identity.ExitError // R25: an incomplete prediction is unknown, not an allow or a finding
 	}
 	if failed > 0 {
 		return identity.ExitFinding // R25: compile --test has a failing row
@@ -489,7 +546,7 @@ func autoOrigin(s doctor.AutoSet) string {
 	for _, left := range []struct {
 		tiers []backend.Tier
 		need  string
-	}{{s.NeedRoot, "root"}, {s.NeedBPFLSM, "bpf in the LSM list"}} {
+	}{{s.NeedPIDNamespace, "the kernel's first process-id namespace"}, {s.NeedRoot, "root"}, {s.NeedBPFLSM, "bpf in the LSM list"}} {
 		if len(left.tiers) == 0 {
 			continue
 		}
@@ -605,6 +662,14 @@ type TestReportCell struct {
 	BestEffort []string `json:"best_effort,omitempty"`
 }
 
+// AssuranceImportsNote is the line compile --test prints under the tiers line for a contract with net.assurance: kernel
+// (ADR 0128, amended): who answers recvmsg(2), the descriptor-import guard. The plane's socket_recvmsg refuses a
+// receive that carries a control buffer (EACCES, rule socket-import) wherever a plane mode runs the run, and interface
+// lists work; a run with no plane (tier landlock, or tier cgroup on the fanotify fallback) keeps the filter's ENOSYS for
+// every recvmsg, so glibc's if_nameindex and getifaddrs and Node's os.networkInterfaces() fail there. No row of the table
+// asserts either answer.
+const AssuranceImportsNote = "recvmsg is refused by the decision plane when it carries a control buffer (EACCES, socket-import) and interface lists work; with no plane (tier landlock, or the fanotify fallback) the filter answers recvmsg ENOSYS and interface lists fail"
+
 // PlaneColumnNote is the line compile --test prints under the tiers line when the bpflsm column is answered:
 // what the column is and the decision plane it answers for. The fs and exec answers compose the
 // Landlock floor tier 3 keeps under the plane (a #! script's EXECUTE, a link's or a rename's REFER); exec.anonymous
@@ -683,7 +748,7 @@ func loadContract(path string, profiles agent.ProfileSource) (*agent.Contract, [
 	if path != stdinContract {
 		return agent.Load(path, profiles)
 	}
-	data, err := agent.ReadCapped(contractStdin(), "stdin")
+	data, err := config.ReadRulesFile(context.Background(), contractStdin(), "stdin", agent.MaxContractSize+1)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -796,9 +861,12 @@ func machineJSON(m *config.Machine) []TableMachineValue {
 
 // Table is the --json shape of a compiled contract: one object, fields in declaration order.
 type Table struct {
-	Gate         *TableGate `json:"gate,omitempty"`
-	Name         string     `json:"name"`
-	ContractHash string     `json:"contract_hash"`
+	Gate          *TableGate `json:"gate,omitempty"`
+	Name          string     `json:"name"`
+	ContractHash  string     `json:"contract_hash"`
+	EffectiveHash string     `json:"effective_hash,omitempty"`
+	// Baseline describes modeled compile coverage, not recorded actual enforcement.
+	Baseline *TableBaseline `json:"baseline,omitempty"`
 	// Revision is the contract's revision; absent when it has none.
 	Revision string `json:"revision,omitempty"`
 	// Source is the contract file, and the name and registry it was resolved from; absent
@@ -951,7 +1019,7 @@ type TableNet struct {
 	Rule   string   `json:"rule"`
 }
 
-// TableSource is where the compiled contract came from: run_start's contract_source for the same argument.
+// TableSource is the path, name and registry from run_start's contract_source for the same argument; it omits learn.
 type TableSource struct {
 	Path     string `json:"path"`
 	Name     string `json:"name,omitempty"`
@@ -986,7 +1054,9 @@ func tableReads(rt *agent.RuleTable) TableReads {
 		r.Landlock = "held"
 	}
 	for _, n := range rt.Reads.Nested {
-		r.Nested = append(r.Nested, n.Rule)
+		if n.AliasOf == "" { // another name of a target is held under the target's own rule, listed once
+			r.Nested = append(r.Nested, n.Rule)
+		}
 	}
 	return r
 }
@@ -995,6 +1065,7 @@ func tableJSON(rt *agent.RuleTable) Table {
 	t := Table{
 		Name:         rt.Contract.Name,
 		ContractHash: hex.EncodeToString(rt.Hash[:]),
+		Baseline:     tableBaseline(rt),
 		Revision:     rt.Contract.Revision,
 		Tier:         string(rt.Tier),
 		Reach:        tierNames(rt.Reach),
@@ -1023,6 +1094,9 @@ func tableJSON(rt *agent.RuleTable) Table {
 		EnvPass:            rt.Env,
 		EnvDeny:            append([]string{}, rt.Deny...),
 		EnvSet:             map[string]string{},
+	}
+	if rt.Baseline != nil && rt.Baseline.Applied && len(rt.Baseline.Entries) > 0 {
+		t.EffectiveHash = hex.EncodeToString(rt.EffectiveHash[:])
 	}
 	if rt.Gate != nil {
 		allow, ask := rt.Gate.Thresholds()

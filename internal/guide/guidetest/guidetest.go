@@ -181,7 +181,7 @@ func (f *Fixture) run(t testing.TB, n int, start record.RunStartPayload, ended b
 	start.TegoVersion, start.Kernel, start.ContractHash = Version, Kernel, strings.Repeat("0", 64)
 	start.LauncherPID, start.LauncherStartNS, start.StopGrace, start.Capture = 1, 1, "1s", "off"
 	w, err := ledger.Open(filepath.Join(f.Ledger, id), record.RunRef{ID: id, Agent: "bot"},
-		ledger.WithAnchor(ledger.NewFileChainAnchor(f.Anchor)))
+		ledger.WithAnchor(ledger.NewFileChainAnchor(f.Anchor)), ledger.WithClock(fixtureClock{CheckTime.Add(time.Duration(n) * 10 * time.Minute)}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func (f *Fixture) Machine(t testing.TB) *config.Machine {
 func (f *Fixture) Inputs(t testing.TB) guide.Inputs {
 	t.Helper()
 	return guide.Inputs{Machine: f.Machine(t), Home: f.Home, UID: os.Getuid(), LedgerRoot: f.Ledger, Anchor: f.Anchor,
-		Dir: f.Project, Version: Version, Commit: Commit, Build: Build, Host: guide.Host{Kernel: Kernel, BootID: BootID},
+		Dir: f.Project, Version: Version, Commit: Commit, Build: Build, Host: guide.Host{Kernel: Kernel, BootID: BootID}, Now: CheckTime.Add(time.Minute),
 		PATH: PATH}
 }
 
@@ -229,3 +229,21 @@ var sha256Hex = regexp.MustCompile(`\b[0-9a-f]{64}\b`)
 func (f *Fixture) Normal(b []byte) []byte {
 	return sha256Hex.ReplaceAll(bytes.ReplaceAll(b, []byte(f.Root), []byte("<root>")), []byte("<sha256>"))
 }
+
+// SelfWord is the path a test gives the running tego when it holds a sudo line: the service account's own install.
+const SelfWord = "/home/svc/.local/bin/tego"
+
+// SelfAs makes guide.SelfPath answer word and why for one test (a sudo line names the running binary, which in a test is
+// the test binary).
+func SelfAs(t *testing.T, word, why string) {
+	t.Helper()
+	prev := guide.SelfPath
+	guide.SelfPath = func() (string, string) { return word, why }
+	t.Cleanup(func() { guide.SelfPath = prev })
+}
+
+// fixtureClock keeps run timestamps stable as identity rows expose their age.
+type fixtureClock struct{ at time.Time }
+
+func (c fixtureClock) Now() time.Time { return c.at }
+func (c fixtureClock) Mono() uint64   { return 1 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/attention-span-ai/tego/internal/ledger"
@@ -133,6 +134,14 @@ func TestClassify(t *testing.T) {
 		{record.GapEnforce, record.GapModelRouteChanged, Live},
 		{record.GapEnforce, record.GapLiveBlockLost, Missed},
 		{record.GapEnforce, record.GapLiveBlockUnreadable, Missed},
+		{record.GapEnforce, record.GapLiveBlockPartial, Missed},
+		// An overlay of routes the forwarder could not read is a gap, like the live blocks' (GAPS C220).
+		{record.GapEnforce, record.GapModelRouteUnreadable, RoutesKept},
+		{record.GapRecord, record.GapModelRouteUnreadable, Missed},
+		// A message the MCP relay dropped for its size lost no action (GAPS C201, C202); under another what it is not that.
+		{record.GapRecord, record.GapMCPResponseOversize, Dropped},
+		{record.GapRecord, record.GapMCPStreamOversize, Dropped},
+		{record.GapEnforce, record.GapMCPStreamOversize, Missed},
 		{record.GapCapture, "no-openssl", Capture},
 		{record.GapRecord, "no-price-table", Price},
 		{record.GapRecord, "price-table-version-mismatch", Price},
@@ -170,8 +179,10 @@ func TestWordsSayWhatHappened(t *testing.T) {
 			"2 gaps in the record (counts are a minimum, 12 events lost)"},
 		{"capture and price say no action is missing", []Count{
 			{What: record.GapCapture, Why: "no-openssl", Events: 2},
-			{What: record.GapRecord, Why: "no-price-table", Events: 1},
-		}, "no action known to be missing; token counts may be low (2 capture gaps); the cost is not estimated (no price for a model)"},
+			{What: record.GapRecord, Why: record.GapNoPriceTable, Events: 1},
+		}, "no action known to be missing; token counts may be low (2 capture gaps); the cost is not estimated (no price table)"},
+		{"an unpriced model", []Count{{What: record.GapRecord, Why: record.GapUnpricedModel, Events: 1}},
+			"no action known to be missing; the cost is not estimated (no price for a model)"},
 		{"all at once", []Count{
 			{What: record.GapCapture, Why: "no-openssl", Events: 1},
 			{What: record.GapEnforce, Why: record.GapRunPaused, Events: 1},
@@ -224,4 +235,36 @@ func TestLiveWordsCoverEveryLiveChange(t *testing.T) {
 			t.Errorf("no words for %s", why)
 		}
 	}
+}
+
+// TestDroppedMessagesAreCountedByLineAndByCount: a run writes a line per dropped message up to record.OversizeLines and
+// one counted line for the rest; Words says how many were dropped in all, and no action is called missing.
+func TestDroppedMessagesAreCountedByLineAndByCount(t *testing.T) {
+	var tl Tally
+	for range 3 {
+		tl.Add(gap(t, record.GapPayload{What: record.GapRecord, Why: record.GapMCPResponseOversize,
+			Binary: record.OversizeNote("files", 9000000, 8388608)}))
+	}
+	tl.Add(gap(t, record.GapPayload{What: record.GapRecord, Why: record.GapMCPResponseOversize, Count: 4}))
+	cs := tl.Counts()
+	if len(cs) != 1 || cs[0].Events != 3 || cs[0].Lost != 4 {
+		t.Fatalf("counts %+v, want one entry of 3 lines and 4 lost", cs)
+	}
+	want := "7 MCP messages were too large for the relay and were dropped; no action went unrecorded"
+	if got := Words(cs, false); !strings.Contains(got, want) || !strings.Contains(got, "no action known to be missing") {
+		t.Errorf("Words = %q, want it to hold %q", got, want)
+	}
+	if got := Words(tallyOf(t, record.GapPayload{What: record.GapRecord, Why: record.GapMCPStreamOversize,
+		Binary: record.OversizeNote("web", 0, 8388608)}), false); !strings.Contains(got, DroppedWords(1)) {
+		t.Errorf("one dropped message: %q", got)
+	}
+}
+
+func tallyOf(t *testing.T, ps ...record.GapPayload) []Count {
+	t.Helper()
+	var tl Tally
+	for _, p := range ps {
+		tl.Add(gap(t, p))
+	}
+	return tl.Counts()
 }

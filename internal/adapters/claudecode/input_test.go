@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -136,4 +137,24 @@ func FuzzHookInput(f *testing.F) {
 			t.Errorf("stdout %q", r.stdout)
 		}
 	})
+}
+
+// TestReasonPathMessages: a TEGO_REASON value that is not an absolute clean path to the reason file failed validation
+// and is not echoed; one that passed and lies in the wrong folder is a place, and the message prints it beside the
+// folder it should be in (rules (b) and (c) of pkg/spec/identity envtext.go).
+func TestReasonPathMessages(t *testing.T) {
+	for _, value := range []string{"QZ", "private-environment-value-that-is-long"} {
+		for _, p := range []string{value, value + "/last-refusal.json", "/" + value + "/../last-refusal.json", "/" + value + "/other.json"} {
+			_, _, err := discover("", false, func(string) string { return p }, 1000)
+			if err == nil || strings.Contains(err.Error(), value) || !strings.Contains(err.Error(), "echo $TEGO_REASON") {
+				t.Fatalf("a value that failed validation (%q): %v", p, err)
+			}
+		}
+		for _, p := range []string{"/" + value + "/last-refusal.json", "/" + value + "/r-00000000-000000000000a-aaaaaa/last-refusal.json"} {
+			_, _, err := discover("", false, func(string) string { return p }, 1000)
+			if err == nil || !strings.Contains(err.Error(), strconv.Quote(p)+" is not in ") {
+				t.Fatalf("a place in the wrong folder is not named (%q): %v", p, err)
+			}
+		}
+	}
 }

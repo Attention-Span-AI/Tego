@@ -9,10 +9,13 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/liveblock"
 	"github.com/attention-span-ai/tego/internal/modelroutes"
+	"github.com/attention-span-ai/tego/pkg/policy/modelroute"
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 const run = "r-aaaaaaaa-0000000000003-route0"
@@ -80,7 +83,7 @@ func fixtureMode(t *testing.T, live string) (*Service, string) {
 	}
 	t.Cleanup(func() { _ = f.Close() })
 	s := New(root)
-	s.governed = func() (bool, error) { return false, nil }
+	s.governed = answerOutside
 	return s, dir
 }
 
@@ -171,7 +174,7 @@ func TestRefusals(t *testing.T) {
 	if _, err := s.Set(ctx, "r-bad", endpoint, "direct", ""); !errors.Is(err, ErrBadRun) {
 		t.Errorf("bad run: %v", err)
 	}
-	s.governed = func() (bool, error) { return true, nil }
+	s.governed = answerGoverned
 	p, _ := s.Plan(run, endpoint, "corp")
 	if _, err := s.Set(ctx, run, endpoint, "corp", p.Ack); !errors.Is(err, ErrGoverned) {
 		t.Errorf("widening from inside a run: %v", err)
@@ -308,5 +311,63 @@ func TestLockedRunRefusesARoute(t *testing.T) {
 	}
 	if _, err := s.Clear(ctx, run, endpoint); err != nil {
 		t.Fatalf("clear with no ledger: %v", err)
+	}
+}
+
+// TestStateOfALockedRunShowsTheEndpointOnItsOwnBackend (C208): a route written into a Locked run's overlay some other way is
+// not in force in the forwarder, so the page shows the endpoint on its own backend; an Adjustable run's route is shown.
+func TestStateOfALockedRunShowsTheEndpointOnItsOwnBackend(t *testing.T) {
+	for _, c := range []struct{ name, live, route string }{{"Locked", "", "direct"}, {"Adjustable", adjustable, "corp"}} {
+		t.Run(c.name, func(t *testing.T) {
+			s, dir := fixtureMode(t, c.live)
+			if _, err := modelroutes.Update(context.Background(), dir, run, func(o *modelroutes.Overlay) (bool, error) {
+				return o.Set(endpoint, "corp", "uid:1 pid:3 other", time.Now())
+			}); err != nil {
+				t.Fatal(err)
+			}
+			st, err := s.State(run)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if a := st.Models[0]; a.Route != c.route || (c.route == "direct") != (a.SendsTo == endpoint) {
+				t.Fatalf("%+v, want route %s", a, c.route)
+			}
+		})
+	}
+}
+
+// TestStateTakesIndexedFactsOrWalks (C219): with an Indexed answer State uses it and never opens the ledger (the
+// counts it shows are the tally's, the ledger's lines left unread); with none, or one that says it cannot answer, it
+// walks the ledger as before.
+func TestStateTakesIndexedFactsOrWalks(t *testing.T) {
+	s, dir := fixture(t)
+	walked, err := s.State(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dir, "events.jsonl")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.State(run); err == nil {
+		t.Fatal("without the ledger and without an index State answered")
+	}
+	key := modelroute.RouteKey{Host: "api.anthropic.com", Provider: "anthropic", Route: "corp", Backend: "llm-proxy.corp.example:8443"}
+	s.Indexed = func(r string) (map[modelroute.RouteKey]int, []record.ModelRouteChange, bool) {
+		return map[modelroute.RouteKey]int{key: 7}, []record.ModelRouteChange{{Model: endpoint, Route: "corp"}}, r == run
+	}
+	st, err := s.State(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := st.Models[0]
+	if a.Options[0].Requests != 0 || a.Options[1].Requests != 7 || len(a.Changes) != 1 || a.Changes[0].Route != "corp" {
+		t.Errorf("indexed: options %+v changes %+v, want 7 requests by corp and its one change", a.Options, a.Changes)
+	}
+	if walked.Models[0].Options[0].Requests != 1 || walked.Models[0].Options[1].Requests != 1 {
+		t.Errorf("walked options %+v", walked.Models[0].Options)
+	}
+	s.Indexed = func(string) (map[modelroute.RouteKey]int, []record.ModelRouteChange, bool) { return nil, nil, false }
+	if _, err := s.State(run); err == nil {
+		t.Error("an index that cannot answer left State answering without the ledger")
 	}
 }

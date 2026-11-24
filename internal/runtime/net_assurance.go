@@ -20,6 +20,21 @@ import (
 var ErrNetAssurance = errors.New("runtime: kernel network assurance unavailable")
 
 func validateNetworkRequest(rt *agent.RuleTable, deps Deps) error {
+	if err := validateNetworkPolicy(rt, deps); err != nil {
+		return err
+	}
+	if rt.NetworkAssurance() == agent.NetAssuranceKernel {
+		tier := deps.Enforce.Tier()
+		if tier != backend.TierCgroup && tier != backend.TierBPFLSM {
+			return fmt.Errorf("%w: net.assurance: kernel requires cgroup or bpflsm destination hooks; tier %s cannot provide it", ErrNetAssurance, tier)
+		}
+	}
+	return nil
+}
+
+// validateNetworkPolicy checks only facts of the contract and inherited streams.
+// A tier hint in the table is not a capability answer.
+func validateNetworkPolicy(rt *agent.RuleTable, deps Deps) error {
 	if rt.Contract != nil && rt.Contract.Net != nil && rt.Contract.Net.Assurance == agent.NetAssuranceKernel && rt.NetworkAssurance() != agent.NetAssuranceKernel {
 		return fmt.Errorf("%w: compiled assurance contradicts the contract's kernel requirement", ErrNetAssurance)
 	}
@@ -29,10 +44,6 @@ func validateNetworkRequest(rt *agent.RuleTable, deps Deps) error {
 	case agent.NetAssuranceKernel:
 	default:
 		return fmt.Errorf("%w: unknown net.assurance %q", ErrNetAssurance, rt.NetworkAssurance())
-	}
-	tier := deps.Enforce.Tier()
-	if tier != backend.TierCgroup && tier != backend.TierBPFLSM {
-		return fmt.Errorf("%w: net.assurance: kernel requires cgroup or bpflsm destination hooks; tier %s cannot provide it", ErrNetAssurance, tier)
 	}
 	if rt.NetUnrestricted() {
 		return fmt.Errorf("%w: net.assurance: kernel requires a net section", ErrNetAssurance)

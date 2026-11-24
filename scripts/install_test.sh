@@ -288,6 +288,7 @@ run "" TEGO_VERIFY=sha256 TEGO_VERSION= TEGO_API_URL="file://$tmp/latest" && cod
 check "an empty TEGO_VERSION installs the tag the latest lookup names" 0 "$code"
 expect "the latest lookup's tag is the one installed" "installed tego ${version}" "$tmp/out"
 expect "the install says where the licence notices are" "licence notices: .*_licenses.tar.gz" "$tmp/out"
+expect "the install says a service account needs its own copy, because sudo does not search ~/.local/bin" "install both binaries in that account's ~/.local/bin" "$tmp/out"
 
 run "$fake/curl" REAL_CURL="$sysbin/curl" TEGO_VERIFY=sha256 TEGO_VERSION= \
 	TEGO_API_URL="https://api.github.invalid/repos/Attention-Span-AI/Tego/releases/latest" FAKE_CURL_API=403 && code=0 || code=$?
@@ -556,8 +557,15 @@ expect "a piped install installs the tag the latest lookup names" "installed teg
 expect "the install names the Quickstart" "Quickstart: https://github.com/" "$tmp/out"
 # It ends with tego's hint block: "next: " and the one command on the line after it, indented two spaces.
 ending=$(tail -n 2 "$tmp/out")
-want_ending=$(printf 'next: check this machine:\n  tego %s' doctor)
-check "the install ends with the one next command, tego doctor" "$want_ending" "$ending"
+# The prefix is not on this shell's PATH, and the installer cannot change that: the command names tego by its full path,
+# so it works in the shell the person is in before any export line is typed.
+want_ending=$(printf 'next: check this machine:\n  %s/tego %s' "$tmp/prefix" doctor)
+check "the install ends with the one next command, tego doctor, by its full path while the prefix is off PATH" "$want_ending" "$ending"
+expect "a prefix that is not on PATH says the command below uses the full path" "^Until you do, the command below names tego by its full path.$" "$tmp/out"
+if grep -Eq '^ +sudo +tego( |$)|sudo +tego +(setup|doctor|run|status|stop|gc|adopt)' "$tmp/out"; then
+	echo "FAIL the install printed a bare sudo tego line, which sudo's secure_path does not find" >&2
+	fail=1
+fi
 expect "a prefix that is not on PATH says so and names the profile" "is not on your PATH. Run this line, and add it to your shell's profile (~/.profile) too:" "$tmp/out"
 expect "a prefix that is not on PATH gets its export line" "^  export PATH=\"$tmp/prefix:\$PATH\"$" "$tmp/out"
 if grep -q 'Next steps:\|serve --open' "$tmp/out"; then echo "FAIL the install still lists the old five next steps" >&2; fail=1; fi
@@ -621,10 +629,40 @@ resum
 piped "$installer" && code=0 || code=$?
 check "a release with tego setup installs" 0 "$code"
 ending=$(tail -n 2 "$tmp/out")
+want_ending=$(printf 'next: see where this machine is, step by step, and what to type next:\n  %s/tego %s' "$tmp/prefix" setup)
+check "the install of a tego with setup ends with tego setup, by its full path while the prefix is off PATH" "$want_ending" "$ending"
+# With the prefix on PATH the bare name works in this shell, and the line keeps it.
+run "$tmp/prefix" TEGO_VERIFY=sha256 && code=0 || code=$?
+check "an install into a prefix on PATH installs" 0 "$code"
+ending=$(tail -n 2 "$tmp/out")
 want_ending=$(printf 'next: see where this machine is, step by step, and what to type next:\n  tego %s' setup)
-check "the install of a tego with setup ends with tego setup" "$want_ending" "$ending"
+check "with the prefix on PATH the next command is the bare name, not the full path" "$want_ending" "$ending"
+if grep -q 'by its full path' "$tmp/out"; then echo "FAIL a prefix already on PATH got the full-path note" >&2; fail=1; fi
+# A prefix whose name a shell would split or expand is quoted in the command, so pasting it runs it.
+# shellcheck disable=SC2016 # the dollar sign is part of the folder name
+odd="$tmp/odd \$x"
+run "" TEGO_VERIFY=sha256 TEGO_PREFIX="$odd" && code=0 || code=$?
+check "an install into a prefix with a space and a dollar sign installs" 0 "$code"
+ending=$(tail -n 1 "$tmp/out")
+# shellcheck disable=SC2016 # the backslash before the dollar sign is what the line must print
+want_ending=$(printf '  "%s/odd \\$x/tego" setup' "$tmp")
+check "an odd prefix is quoted in the next command" "$want_ending" "$ending"
+# A tego that opens a user scope itself: the line says run, watch and test open one, that the setup command checks it from
+# here, and keeps the manual shell as the one fix when it does not work.
+# shellcheck disable=SC2016 # The fake binary reads its own $1.
+printf '#!/bin/sh\ncase "$1" in help) printf "commands:\n  run     run a command (opens a user scope when needed)\n  setup   where this machine is\n" ;;\n*) echo "tego %s"; echo "control_sha256=%s" ;; esac\n' \
+    "$version" "$pin" >"$rel/$archive"
+resum
+run "$tmp/prefix" TEGO_VERIFY=sha256 SSH_CONNECTION="192.0.2.1 50000 192.0.2.2 22" && code=0 || code=$?
+check "automatic scope build installs over SSH" 0 "$code"
+expect "automatic scope entry: run, watch and test open a user scope" "run, watch and test open a user scope for each run" "$tmp/out"
+expect "automatic scope entry: the setup command checks it from here" "the setup command below checks that this works from here" "$tmp/out"
+expect "automatic scope build keeps the manual shell as the one fix" "systemd-run --user --scope bash" "$tmp/out"
+expect "automatic scope build retains the account copy advice" "install both binaries in that account's ~/.local/bin" "$tmp/out"
+if grep -q 'no shell command is needed first' "$tmp/out"; then echo "FAIL automatic scope build promises an unverified SSH handoff" >&2; fail=1; fi
 
-# A release whose tego lists start ends with tego start, the guide.
+# A release whose tego lists start ends with tego start, the guide, by the same name as the other next commands: the
+# full path while the prefix is off PATH, the bare name when it is on PATH.
 # shellcheck disable=SC2016 # $1 is the fake tego's own argument, expanded when it runs.
 printf '#!/bin/sh\ncase "$1" in help) printf "commands:\\n   start            set up\\n   setup   where this machine is\\n" ;;\n*) echo "tego %s"; echo "control_sha256=%s" ;; esac\n' \
 	"$version" "$pin" >"$rel/$archive"
@@ -632,8 +670,13 @@ resum
 piped "$installer" && code=0 || code=$?
 check "a release with tego start installs" 0 "$code"
 ending=$(tail -n 2 "$tmp/out")
+want_ending=$(printf 'next: set up Tego and connect your first agent:\n  %s/tego %s' "$tmp/prefix" start)
+check "the install of a tego with start ends with tego start, by its full path while the prefix is off PATH" "$want_ending" "$ending"
+run "$tmp/prefix" TEGO_VERIFY=sha256 && code=0 || code=$?
+check "an install of a tego with start into a prefix on PATH installs" 0 "$code"
+ending=$(tail -n 2 "$tmp/out")
 want_ending=$(printf 'next: set up Tego and connect your first agent:\n  tego %s' start)
-check "the install of a tego with start ends with tego start" "$want_ending" "$ending"
+check "with the prefix on PATH the start line is the bare name" "$want_ending" "$ending"
 release
 
 exit "$fail"

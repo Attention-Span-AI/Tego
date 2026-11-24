@@ -119,3 +119,17 @@ func TestVersionJSON(t *testing.T) {
 		t.Fatalf("fields in R30 order, tego first: %s", out)
 	}
 }
+
+// Version aliases use the same command, including JSON, usage errors and
+// output-delivery checks, rather than a second banner with different fields.
+func TestVersionFlagAliases(t *testing.T) {
+	for _, suffix := range [][]string{nil, {"--json"}, {"extra"}, {"--bogus"}} {
+		wantCode, wantOut, wantErr := run(t, append([]string{"version"}, suffix...)...)
+		for _, alias := range []string{"--version", "-V"} {
+			code, out, errs := run(t, append([]string{alias}, suffix...)...)
+			if code != wantCode || out != wantOut || errs != wantErr {
+				t.Errorf("%s %v: got (%d, %q, %q), want (%d, %q, %q)", alias, suffix, code, out, errs, wantCode, wantOut, wantErr)
+			}
+		}
+	}
+}

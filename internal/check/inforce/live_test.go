@@ -27,6 +27,8 @@ func TestAddLiveStatus(t *testing.T) {
 		{"write", "/p/out", livestatus.InForce, livestatus.SentenceInForce, "Blocked now: cannot change /p/out (reads still go through)", StateBestEffort},
 		{"write", "/p/out", livestatus.RecordedOnly, livestatus.SentenceRecordedOnly, "Marked now (recorded, not refused): cannot change /p/out (reads still go through)", StateNotEnforced},
 		{"read", "/p/data", livestatus.Waiting, livestatus.SentenceWaiting, "Blocking: cannot read /p/data", StateNotEnforced},
+		{"write", "/p/out", livestatus.PartlyKernel, livestatus.SentencePartlyKernel, "Partly blocked now: cannot change /p/out (reads still go through); changes the kernel decides in this run are not covered", StateBestEffort},
+		{"path", "/p/data", livestatus.PartlyKernel, livestatus.SentencePartlyKernel, "Partly blocked now: cannot open or change /p/data; changes the kernel decides in this run are not covered", StateBestEffort},
 		{"exec", "curl", livestatus.Dormant, livestatus.SentenceDormant, "Unblocked for a while (refuses nothing until its time limit): cannot run curl", StateNotEnforced},
 		{"exec", "curl", livestatus.Expired, livestatus.SentenceExpired, "Ended by its time limit: cannot run curl", StateNotEnforced},
 	}
@@ -64,6 +66,8 @@ func TestEndedLiveRule(t *testing.T) {
 		{"path", "/p/data", livestatus.InForce, "Was blocked: cannot open or change /p/data"},
 		{"path", "/p/data", livestatus.Partial, "Was blocked: cannot change /p/data (reads went through)"},
 		{"read", "/p/data", livestatus.InForce, "Was blocked: cannot read /p/data"},
+		{"write", "/p/out", livestatus.PartlyKernel, "Was partly blocked: cannot change /p/out (reads went through); changes the kernel decided in this run were not covered"},
+		{"path", "/p/data", livestatus.PartlyKernel, "Was partly blocked: cannot open or change /p/data; changes the kernel decided in this run were not covered"},
 		{"write", "/p/out", livestatus.InForce, "Was blocked: cannot change /p/out (reads went through)"},
 		{"exec", "curl", livestatus.RecordedOnly, "Was marked (recorded, not refused): cannot run curl"},
 		{"write", "/p/out", livestatus.RecordedOnly, "Was marked (recorded, not refused): cannot change /p/out"},
@@ -80,7 +84,7 @@ func TestEndedLiveRule(t *testing.T) {
 			if r.Live != livestatus.Ended || r.State != StateNotEnforced || r.Enforced || !strings.HasPrefix(r.EnforcedText, "Ended with the run") {
 				t.Errorf("rule %+v, want ended with no claim", r)
 			}
-			refused := strings.HasPrefix(c.want, "Was blocked")
+			refused := strings.HasPrefix(c.want, "Was blocked") || strings.HasPrefix(c.want, "Was partly blocked")
 			if strings.Contains(r.EnforcedText, "tego refused") != refused {
 				t.Errorf("text %q for a block that %s", r.EnforcedText, map[bool]string{true: "refused", false: "refused nothing"}[refused])
 			}
@@ -118,6 +122,7 @@ func TestLiveGroupCopy(t *testing.T) {
 		{"marks", []livestatus.State{livestatus.RecordedOnly, livestatus.RecordedOnly}, "Marked live now", "A mark refuses nothing"},
 		{"waiting", []livestatus.State{livestatus.Waiting}, "Blocking live", "A block refuses nothing until the run puts it in force"},
 		{"one refuses", []livestatus.State{livestatus.Waiting, livestatus.Partial}, "Blocked live now", "A live block refuses more than the rules file"},
+		{"one partly refuses", []livestatus.State{livestatus.Waiting, livestatus.PartlyKernel}, "Blocked live now", "A live block refuses more than the rules file"},
 		{"in force", []livestatus.State{livestatus.InForce}, "Blocked live now", "A live block refuses more than the rules file"},
 		{"time limits", []livestatus.State{livestatus.Dormant, livestatus.Expired}, "Live blocks, none refusing now", "A block unblocked for a while refuses again"},
 		{"dormant and waiting", []livestatus.State{livestatus.Dormant, livestatus.Waiting}, "Blocking live", "A block refuses nothing until the run puts it in force"},

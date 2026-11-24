@@ -54,6 +54,8 @@ const (
 
 // rulesFix is a ledger root whose runs name real rules files, and a server that compiles them.
 type rulesFix struct {
+	// startExtra is added to every run_start line runAt writes (`,"key":value` pairs).
+	startExtra                      string
 	root, proj, home, source, other string
 	s                               *Server
 	c                               *http.Cookie
@@ -94,6 +96,12 @@ func newRulesFix(t *testing.T) *rulesFix {
 // run writes the rules file, the run's copy and its ledger: run_start at t0, then rest, one line each.
 func (f *rulesFix) run(t *testing.T, id, source, text string, t0 time.Time, live bool, rest ...string) {
 	t.Helper()
+	f.runAt(t, id, source, text, t0, live, f.proj, "landlock", rest...)
+}
+
+// runAt is run for a run that started in cwd at tier.
+func (f *rulesFix) runAt(t *testing.T, id, source, text string, t0 time.Time, live bool, cwd, tier string, rest ...string) {
+	t.Helper()
 	if err := os.WriteFile(source, []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -113,8 +121,8 @@ func (f *rulesFix) run(t *testing.T, id, source, text string, t0 time.Time, live
 	if err := os.WriteFile(filepath.Join(dir, "contract.yaml"), canon, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	lines := append([]string{fmt.Sprintf(`"kind":"run_start","source":"supervisor","tier":"landlock","command":["sh"],"cwd":"%s","contract_hash":"%s","contract_source":{"path":"%s"}`,
-		f.proj, hex.EncodeToString(sum[:]), source)}, rest...)
+	lines := append([]string{fmt.Sprintf(`"kind":"run_start","source":"supervisor","tier":"%s","command":["sh"],"cwd":"%s","contract_hash":"%s","contract_source":{"path":"%s"}%s`,
+		tier, cwd, hex.EncodeToString(sum[:]), source, f.startExtra)}, rest...)
 	var b strings.Builder
 	for i, l := range lines {
 		fmt.Fprintf(&b, `{"v":1,"seq":%d,"id":"%064x","prev":"","ts":"%s","mono_ns":%d,"run":"%s","agent":"%s","pid":10,"tid":10,"cgroup":1,%s}`+"\n",
@@ -204,18 +212,18 @@ func TestRulesPageInForce(t *testing.T) {
 	}
 }
 
-// TestRulesPageChooser: the default is the newest run; ?c= picks a rules file by its ref, the rule service's, and
+// TestRulesPageChooser: the default lists contracts; ?c= picks a rules file by its ref, the rule service's, and
 // shows its newest run, also when the form kept a run of another file; the run list holds only that file's runs; an
 // old link naming the file by the page's former ref (the sha256 of its recorded path) is sent to its ref with its run
 // kept; an unknown ref, a path in place of a ref and an unknown run are 404s.
 func TestRulesPageChooser(t *testing.T) {
 	f := newRulesFix(t)
 	_, body := f.get(t, "/rules")
-	if !strings.Contains(body, "Contract · other-agent") {
-		t.Error("/rules does not default to the newest run")
+	if !strings.Contains(body, "other-agent") || !strings.Contains(body, "rules-demo") {
+		t.Error("/rules does not list both contracts")
 	}
 	src, oth := f.svcRef(t, f.source), f.svcRef(t, f.other)
-	for _, want := range []string{`<option value="` + src + `"`, `<option value="` + oth + `" selected`} {
+	for _, want := range []string{`href="/rules?c=` + src + `"`, `href="/rules?c=` + oth + `"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("/rules chooser lacks %s", want)
 		}
@@ -284,7 +292,7 @@ func TestRulesPageChooserMarksAGoneFile(t *testing.T) {
 		j := strings.Index(body[i:], "</option>")
 		return body[i : i+j]
 	}
-	_, body := f.get(t, "/rules")
+	_, body := f.get(t, "/rules?run="+rulesRunA)
 	if o := option(body, rules.Ref(f.other)); !strings.Contains(o, "other-agent") || !strings.Contains(o, " · file gone") {
 		t.Errorf("the removed rules file's option reads %q, want it marked gone", o)
 	}
@@ -556,4 +564,112 @@ func TestRulesNewFromRunSaysAddresses(t *testing.T) {
 	if code != http.StatusOK || !strings.Contains(body, "the addresses it connected to (tego rules learn)") || strings.Contains(body, "hosts it reached") {
 		t.Errorf("From a run answered %d and does not say it allows the addresses the run connected to:\n%s", code, body)
 	}
+}
+
+// TestRulesPageNamesTheOtherSpellingOfAFile: a file recorded through a linked folder is one contract, and the page says
+// so (the path the other runs recorded it under, and that their runs are listed with it), where it showed one path
+// and counted runs it never named. A file recorded under one spelling says nothing of the kind.
+func TestRulesPageNamesTheOtherSpellingOfAFile(t *testing.T) {
+	f := newRulesFix(t)
+	link := filepath.Join(filepath.Dir(f.proj), "proj-link")
+	if err := os.Symlink(f.proj, link); err != nil {
+		t.Fatal(err)
+	}
+	const viaLink = "r-aaaaaaaa-0000000000034-linked"
+	f.run(t, viaLink, filepath.Join(link, "agent.yaml"), rulesSource, time.Now().Add(-30*time.Minute).UTC().Truncate(time.Millisecond), false,
+		`"kind":"run_end","source":"supervisor","reason":"exit","exit_code":0`)
+	ref := f.svcRef(t, filepath.Join(link, "agent.yaml"))
+	_, body := f.get(t, "/rules?c="+ref)
+	for _, want := range []string{"This file is also recorded as ", "Runs of every spelling are listed here together."} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page lacks %q", want)
+		}
+	}
+	if !strings.Contains(body, f.source) || !strings.Contains(body, filepath.Join(link, "agent.yaml")) {
+		t.Errorf("the page does not name both spellings (%s, %s)", f.source, filepath.Join(link, "agent.yaml"))
+	}
+	_, body = f.get(t, "/rules?c="+rules.Ref(f.other))
+	if strings.Contains(body, "also recorded as") {
+		t.Error("a file recorded under one spelling says it has another")
+	}
+}
+
+// TestRulesPageRunListPages: a rules file with more runs than the list holds (maxChooserRuns) offers "Older runs", whose
+// page lists the runs past the first page, and "Newer runs" back; a file whose runs all fit offers neither. No run is
+// reachable only by typing its id.
+func TestRulesPageRunListPages(t *testing.T) {
+	f := newRulesFix(t)
+	t0 := time.Now().Add(-50 * time.Minute).UTC().Truncate(time.Millisecond)
+	for i := range maxChooserRuns {
+		f.run(t, fmt.Sprintf("r-aaaaaaaa-%013d-later", 100+i), f.source, rulesSource, t0.Add(time.Duration(i)*time.Second), false,
+			`"kind":"run_end","source":"supervisor","reason":"exit","exit_code":0`)
+	}
+	ref := rules.Ref(f.source)
+	runList := func(body string) string {
+		_, list, _ := strings.Cut(body, `<select class="select" name="run">`)
+		list, _, _ = strings.Cut(list, "</select>")
+		return list
+	}
+	_, body := f.get(t, "/rules?c="+ref)
+	if !strings.Contains(body, `href="/rules?c=`+ref+`&amp;rp=1">Older runs</a>`) || strings.Contains(body, ">Newer runs<") {
+		t.Errorf("the newest page does not offer Older runs alone")
+	}
+	if l := runList(body); strings.Contains(l, rulesRunA) || strings.Contains(l, rulesRunB) {
+		t.Errorf("the newest page lists the oldest runs")
+	}
+	code, body := f.get(t, "/rules?c="+ref+"&rp=1")
+	if code != http.StatusOK {
+		t.Fatalf("the second page: %d", code)
+	}
+	l := runList(body)
+	for _, id := range []string{rulesRunA, rulesRunB} {
+		if !strings.Contains(l, `<option value="`+id+`"`) {
+			t.Errorf("the second page of runs lacks %s", id)
+		}
+	}
+	if !strings.Contains(body, `href="/rules?c=`+ref+`">Newer runs</a>`) || strings.Contains(body, ">Older runs<") {
+		t.Errorf("the last page does not offer Newer runs alone")
+	}
+	other := rules.Ref(f.other)
+	if _, body = f.get(t, "/rules?c="+other); strings.Contains(body, "Older runs") || strings.Contains(body, "Newer runs") {
+		t.Error("a file whose runs all fit offers paging")
+	}
+}
+
+// compareStub answers the page's comparison of a run's rules with its file, as the rule service would.
+type compareStub struct {
+	RuleService
+	got rules.SourceComparison
+	run string
+}
+
+func (c *compareStub) CompareSource(_ context.Context, run string) rules.SourceComparison {
+	c.run = run
+	return c.got
+}
+
+// TestRulesPageSaysWhatAnOutsideEditChanged: a rules file edited outside Tego, or one that differs with nothing to date
+// it, is compared with the rules the run ran, and the banner says what the next run does differently and which way it
+// moves, not only that the file differs. A comparison that cannot be made says why; an equal one says so.
+func TestRulesPageSaysWhatAnOutsideEditChanged(t *testing.T) {
+	f := newRulesFix(t)
+	if err := os.WriteFile(f.source, []byte(strings.Replace(rulesSource, "  allow: [sh, git]\n", "  allow: [sh]\n", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stub := &compareStub{got: rules.SourceComparison{Direction: "narrows", Families: []rules.FamilyChange{
+		{Family: "programs", Direction: "narrows", Words: "Programs it may run: the next run may do less than before"}}}}
+	f.s.cfg.Rules = stub
+	for _, run := range []string{rulesRunA, rulesRunB} { // an ended run's banner and a running run's panel
+		_, body := f.get(t, "/rules?run="+run)
+		mustContain(t, run, body, "What the file says now, compared with what this run ran", "Programs it may run: the next run may do less than before")
+		if stub.run != run {
+			t.Errorf("the comparison was asked for %q, want %q", stub.run, run)
+		}
+	}
+	stub.got = rules.SourceComparison{Err: "the rules file does not compile now, so it cannot be compared"}
+	_, body := f.get(t, "/rules?run="+rulesRunA)
+	mustContain(t, "a comparison that failed", body, "The file could not be compared with the rules this run ran: the rules file does not compile now")
+	stub.got = rules.SourceComparison{Direction: "same"}
+	_, body = f.get(t, "/rules?run="+rulesRunA)
+	mustContain(t, "an equal comparison", body, "the file now compiles to the same rules this run ran")
 }

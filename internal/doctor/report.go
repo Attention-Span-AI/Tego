@@ -24,6 +24,13 @@ const MinLandlockABI = 2
 // highest tier this machine can reach, what each tier above it is missing, and the capability matrix
 // with this machine's own values in it.
 type Report struct {
+	// BusinessRules is separate from the kernel tier: a tier label proves no exclusive business route.
+	BusinessRules BusinessRulesStatus `json:"business_rules"`
+
+	// PendingWSL names containment proofs that this release has not completed on WSL.
+	// It qualifies readiness, not the measured kernel capabilities or run admission.
+	PendingWSL []string `json:"pending_wsl,omitempty"`
+
 	// Results holds exactly nine entries, D1..D9 in order.
 	Results []Result `json:"results"`
 	// Tier is the highest tier this machine can reach at or below the machine config's ceiling;
@@ -54,10 +61,16 @@ type Report struct {
 	// OutsideUserManager is true when no tier runs from this process only because it runs beside its user manager's
 	// cgroup (an SSH or console login's session scope): D3's placement refusal (cgroup.ErrBesideSubtree) is the one
 	// thing tier landlock misses, and the ceiling allows tier landlock. A shell opened inside that cgroup
-	// (systemd-run --user --scope) gets tier landlock; tego starts no run from this one, not even tego watch. It is
-	// the predicate `tego setup` stores and `tego doctor`, `tego run`, `tego watch` and `tego test` name that shell on.
-	// Not in --json: doctor's JSON stays as scripts read it.
+	// (systemd-run --user --scope) gets tier landlock. This report describes the original shell; run, watch and
+	// test can try a user-scope handoff before runtime placement (ADR 0142 B3-1). `tego setup` stores this
+	// predicate. Not in --json: doctor's JSON stays as scripts read it.
 	OutsideUserManager bool `json:"-"`
+	// ThroughUserScope records successful entry rehearsal and the remaining D3 checks, from the original shell.
+	ThroughUserScope bool `json:"through_user_scope,omitempty"`
+	// UserScopeFailure is why the CLI's rehearsal of entry into a user scope failed (WithUserScopeFailure), set only
+	// with OutsideUserManager: tego could not open a user scope from this shell, so run, watch and test cannot either.
+	// "" when no rehearsal was tried or it worked. Not in --json.
+	UserScopeFailure string `json:"-"`
 	// NoUserManager is true when no tier runs from this process only because no user manager runs for its user
 	// (cgroup.ErrNoUserManager: user@<uid>.service has no cgroup, as for an account with a nologin shell reached
 	// through su or sudo -u that has no linger), with the same conditions as OutsideUserManager. The delegation fix
@@ -89,6 +102,8 @@ type Report struct {
 	cacheNote string
 	// coordinationNote is why a run could not coordinate its probe with a concurrent one (CoordinationNote).
 	coordinationNote string
+	// rootStateVisible is live namespace authority, never accepted from JSON.
+	rootStateVisible bool
 }
 
 // Run performs every probe of R27 in order and derives the tier, the gaps and the fix. It needs no
@@ -105,7 +120,9 @@ func Run(ctx context.Context, m *config.Machine, require backend.Tier) (*Report,
 		return nil, fmt.Errorf("doctor: %w", ctx.Err())
 	}
 	r := st.report(m, require)
+	r.noteScope(ctx)
 	r.addMountWarnings(uid)
+	r.addWSLWarnings()
 	return r, nil
 }
 
@@ -113,18 +130,21 @@ func Run(ctx context.Context, m *config.Machine, require backend.Tier) (*Report,
 // and get exactly what Run would print and `tego run` would select from on that machine.
 func (st probeState) report(m *config.Machine, require backend.Tier) *Report {
 	r := &Report{
-		Results:     st.results,
-		Kernel:      st.release,
-		Root:        st.root,
-		LandlockABI: st.landlockABI,
-		LSM:         st.lsm,
-		Ptrace:      st.ptrace,
-		Programs:    st.hooks,
-		Plane:       st.plane,
-		Require:     require,
-		Ceiling:     ceiling(m),
-		cached:      st.cached,
-		cacheNote:   st.cacheNote,
+		Results:          st.results,
+		BusinessRules:    businessRulesStatus(),
+		Kernel:           st.release,
+		PendingWSL:       pendingWSLProofs(st.wslHeld),
+		Root:             st.root,
+		rootStateVisible: st.root && st.rootTierWhy == "",
+		LandlockABI:      st.landlockABI,
+		LSM:              st.lsm,
+		Ptrace:           st.ptrace,
+		Programs:         st.hooks,
+		Plane:            st.plane,
+		Require:          require,
+		Ceiling:          ceiling(m),
+		cached:           st.cached,
+		cacheNote:        st.cacheNote,
 	}
 	r.coordinationNote = st.coordinationNote
 	if r.Ceiling != "" {
@@ -136,6 +156,7 @@ func (st probeState) report(m *config.Machine, require backend.Tier) *Report {
 	}
 	r.Tiers = st.probe()
 	r.OutsideUserManager = st.outsideUserManager(r.Ceiling)
+	r.ThroughUserScope = st.byID[CheckCgroupV2].throughUserScope
 	r.NoUserManager = st.noUserManager(r.Ceiling)
 	// A concrete machine tier is both ceiling and pin, exactly as internal/runtime/enforce reads it,
 	// and `tego run` selects from this same r.Tiers, so the tier
@@ -165,6 +186,11 @@ func (st probeState) report(m *config.Machine, require backend.Tier) *Report {
 func (r *Report) pinUnavailable() bool {
 	return r.Tier == "" && r.Ceiling != "" && !r.Tiers[r.Ceiling]
 }
+
+// RootStateVisible reports whether a live probe proved that root can interpret
+// PID-indexed root-tier state. A report decoded from JSON carries no such
+// authority. A private or unreadable PID namespace must not sweep other builds.
+func (r *Report) RootStateVisible() bool { return r.rootStateVisible }
 
 // available lists the tiers this machine provides, lowest first.
 func (r *Report) available() []string {
@@ -225,7 +251,7 @@ func (r *Report) Select(m *config.Machine, rt *agent.RuleTable, only backend.Tie
 	// backend loads and pins, beside it the answer that lets a run adopting the build probe nothing (R21).
 	if choice, err := r.PlaneFor(backend.TierCgroup); err == nil && choice.Mode != "" {
 		opts = append(opts, enforce.Plane(enforce.PlaneSetup{Mode: choice.Mode, Build: choice.Build,
-			ExecPins: choice.ExecPins, PinAnswer: func(dir string) error { return PinPlaneAnswer(dir, choice) }}))
+			ExecPins: choice.ExecPins, RecheckAdmission: r.planeAdmission(choice.Mode), PinAnswer: func(dir string) error { return PinPlaneAnswer(dir, choice) }}))
 	}
 	// Tier bpflsm's plane (R19): LSM mode, or doctor's reason and fix where it does not pass, which a
 	// run pinned to tier bpflsm is refused with. It is never another mode.
@@ -233,19 +259,20 @@ func (r *Report) Select(m *config.Machine, rt *agent.RuleTable, only backend.Tie
 	setup := enforce.PlaneSetup{Mode: lsm.Mode, Build: lsm.Build, ExecPins: lsm.ExecPins}
 	if err == nil {
 		setup.PinAnswer = func(dir string) error { return PinPlaneAnswer(dir, lsm) }
+		setup.RecheckAdmission = r.planeAdmission(lsm.Mode)
 	}
 	opts = append(opts, enforce.LSMPlane(setup, err))
 	return enforce.Select(m, rt, r.Probe(), opts...)
 }
 
 // ExitCode is the process status `tego doctor` should exit with (R25): 211 when --require named a
-// tier this machine cannot reach, 1 when no tier at all can run, 0 otherwise. RUN-IDENTITY.md's
+// tier this machine cannot reach, 1 when no tier can run or WSL containment remains unproved, 0 otherwise. RUN-IDENTITY.md's
 // exit table resolves the earlier 1/211 ambiguity in favour of 211 for the --require case.
 func (r *Report) ExitCode() int {
 	if r.Require != "" && (r.Tier == "" || !r.Require.AtOrBelow(r.Tier)) {
 		return identity.ExitRequire
 	}
-	if r.Tier == "" {
+	if r.Tier == "" || len(r.PendingWSL) != 0 {
 		return identity.ExitFinding
 	}
 	return identity.ExitOK
@@ -261,6 +288,16 @@ func (r *Report) WriteText(w io.Writer) error {
 	}
 	if _, err := fmt.Fprintf(w, "\n%s\n", r.summary()); err != nil {
 		return fmt.Errorf("doctor: write summary: %w", err)
+	}
+	for _, row := range r.PendingWSL {
+		if _, err := fmt.Fprintf(w, "warning: WSL %s containment has not been proven; this build does not qualify WSL as ready\n", row); err != nil {
+			return fmt.Errorf("doctor: write WSL warning: %w", err)
+		}
+	}
+	if len(r.PendingWSL) != 0 {
+		if _, err := fmt.Fprintln(w, "WSL_INTEROP is omitted from enforcing runs; launcher and socket containment still require guest proof"); err != nil {
+			return fmt.Errorf("doctor: write WSL environment: %w", err)
+		}
 	}
 	tier := r.Tier
 	if tier == "" {
@@ -305,6 +342,10 @@ func (r *Report) WriteText(w io.Writer) error {
 			return fmt.Errorf("doctor: write require: %w", err)
 		}
 	}
+	if _, err := fmt.Fprintf(w, "\nbusiness rules: %s\n", r.BusinessRules.Reason); err != nil {
+		return fmt.Errorf("doctor: write business rules: %w", err)
+	}
+
 	return nil
 }
 
@@ -323,11 +364,14 @@ func (r *Report) Verdict() (line, fix string) {
 		got = can + " enforce at " + TierWords(r.Tier)
 	}
 	// "Only record" holds only where D3 passed: a run that records is placed in the same cgroup, so where D3 fails
-	// tego watch fails too.
+	// recording also needs placement. A CLI scope handoff does not change the shell this report checked.
 	none := who + " can only record"
 	switch {
+	case r.OutsideUserManager && r.UserScopeFailure != "":
+		none = who + " is outside your user manager's cgroup and tego could not open a user scope from it (" +
+			r.UserScopeFailure + ")"
 	case r.OutsideUserManager:
-		none = who + " is outside your user manager's cgroup, so tego starts no run from it, not even tego watch"
+		none = who + " is outside your user manager's cgroup; run, watch and test can try a user scope"
 	case r.NoUserManager:
 		none = "no user manager runs for this user, so tego starts no run from " + who + ", not even tego watch"
 	case r.placementFailed():
@@ -342,11 +386,20 @@ func (r *Report) Verdict() (line, fix string) {
 		if !r.Root && r.Tier == backend.TierLandlock {
 			line += ", no root needed"
 		}
+		if r.ThroughUserScope {
+			line += "; " + ThroughScopeFact
+		}
 		return line + ".", ""
 	case identity.ExitRequire:
 		line = fmt.Sprintf("Not ready for %s, which --require asks for: %s.", TierWords(r.Require), got)
 	default:
 		line = "Not ready: " + none + "."
+		if len(r.PendingWSL) != 0 {
+			line = "Not ready: WSL containment checks remain unproven; a kernel tier alone does not qualify this machine."
+		}
+	}
+	if len(r.PendingWSL) != 0 {
+		return line, "WSL remains unqualified until its launcher, home-folder alias, Windows drive, and GUI and audio socket checks are proven"
 	}
 	fix = r.Fix
 	for _, res := range r.Results {
@@ -383,8 +436,10 @@ func (r *Report) tierText() string {
 			text += " (available here: " + strings.Join(avail, ", ") + ")"
 		}
 		return text
+	case r.Tier == "" && r.OutsideUserManager && r.UserScopeFailure != "":
+		return "none in this shell (tego could not open a user scope from it)"
 	case r.Tier == "" && r.OutsideUserManager:
-		return "none (this shell is outside your user manager's cgroup, so tego starts no run from it)"
+		return "none in this shell (run commands can try a user scope)"
 	case r.Tier == "" && r.NoUserManager:
 		return "none (no user manager runs for this user, so tego starts no run from here)"
 	case r.Tier == "" && r.placementFailed():
@@ -509,10 +564,14 @@ func ceiling(m *config.Machine) backend.Tier {
 
 // probeState is what the nine probes learned, before it becomes a Report.
 type probeState struct {
-	results []Result
-	byID    map[CheckID]Result
-	root    bool
-	release string
+	// rootTierWhy is the PID-namespace precondition shared by doctor and run.
+	rootTierWhy string
+	results     []Result
+	byID        map[CheckID]Result
+	root        bool
+	release     string
+	// wslHeld is checks.wslHeld's answer: this machine is WSL and the rule's gate holds there (pendingWSLProofs).
+	wslHeld bool
 	kernel  Version
 	// kernelProbe is what D1 asked the kernel, kept so D1 can be rendered again with D7's answer (kernelFromD7).
 	kernelProbe kernelProbe

@@ -13,8 +13,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
+	"github.com/attention-span-ai/tego/internal/handoff"
 	"github.com/attention-span-ai/tego/internal/shellword"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
@@ -33,7 +33,7 @@ func fakeProgram(t *testing.T, name string) {
 
 // noLogins clears the sign-in variables for this test, and restores them after (the guide sets the one it is given).
 func noLogins(t *testing.T) {
-	for _, v := range []string{"CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "CODEX_API_KEY", "TEGO_ON_MAC"} {
+	for _, v := range []string{"CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "CODEX_API_KEY", "TEGO_ON_MAC", "TEGO_HOST_KIND", "WSL_DISTRO_NAME"} {
 		t.Setenv(v, "")
 		if err := os.Unsetenv(v); err != nil {
 			t.Fatal(err)
@@ -327,7 +327,8 @@ func TestStartOwnProjectOnMac(t *testing.T) {
 	if code != identity.ExitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errs)
 	}
-	wantAll(t, "own project", out, "What command starts it?", "✓ python3 is installed", "Nothing to log in to",
+	wantAll(t, "own project", out, "python3 bot.py is only an example. To try Tego on its test project, type: python3 -m unittest -v",
+		"What command starts it?", "✓ python3 is installed", "Nothing to log in to",
 		"Path to the project", "~/nope isn't in Tego's VM", "✓ Using ~/app",
 		"Which rules?", "✓ Created agent app", "cd "+app+" && tego run app",
 		"Shell       Tego's Linux VM · type exit to return to your Mac")
@@ -543,24 +544,19 @@ func TestRunningDashboardIsReused(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(dashboardLog(home)), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(dashboardLog(home), []byte("tego serve: dashboard at "+link+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	this := thisProgramFile(t)
+	startedBy(t, home, this, "tego serve: dashboard at "+link+"\n") // it runs this tego
 	if got := runningDashboard(home); got != link {
 		t.Errorf("running: %q, want %q", got, link)
 	}
 	if got := guideDashboard(context.Background(), home); got != link {
 		t.Errorf("tego start restarted a running dashboard: %q", got)
 	}
-	old := time.Now().Add(-time.Hour) // started before this program was built: tego was updated since
-	if err := os.Chtimes(dashboardLog(home), old, old); err != nil {
-		t.Fatal(err)
-	}
+	startedBy(t, home, olderProgramFile(this), "tego serve: dashboard at "+link+"\n") // tego was updated since
 	if got := runningDashboard(home); got != "" {
 		t.Errorf("tego was updated after the dashboard started, yet it was reused: %q", got)
 	}
-	now := time.Now()
-	_ = os.Chtimes(dashboardLog(home), now, now)
+	startedBy(t, home, this, "tego serve: dashboard at "+link+"\n")
 	l.Close()
 	if got := runningDashboard(home); got != "" {
 		t.Errorf("stopped, yet reused: %q", got)
@@ -586,19 +582,15 @@ func TestDashboardIsOneDashboard(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(dashboardLog(f.Home)), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(dashboardLog(f.Home), []byte(link+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	this := thisProgramFile(t)
+	startedBy(t, f.Home, this, link+"\n")
 
 	code, out, errs := run(t, "dashboard")
 	if code != identity.ExitOK || !strings.Contains(out, "The dashboard is already running: "+link) || starts != 0 {
 		t.Fatalf("running: exit %d, %d starts\n%s%s", code, starts, out, errs)
 	}
 
-	old := time.Now().Add(-time.Hour)
-	if err := os.Chtimes(dashboardLog(f.Home), old, old); err != nil {
-		t.Fatal(err)
-	}
+	startedBy(t, f.Home, olderProgramFile(this), link+"\n")
 	code, out, errs = run(t, "dashboard")
 	if code != identity.ExitOK || !strings.Contains(out, "Started the dashboard again, on the updated tego") || starts != 1 {
 		t.Fatalf("updated: exit %d, %d starts\n%s%s", code, starts, out, errs)
@@ -608,6 +600,36 @@ func TestDashboardIsOneDashboard(t *testing.T) {
 	code, out, errs = run(t, "dashboard")
 	if code != identity.ExitOK || !strings.Contains(out, "Started the dashboard: http://127.0.0.1:1/?t=started") || starts != 2 {
 		t.Fatalf("none: exit %d, %d starts\n%s%s", code, starts, out, errs)
+	}
+}
+
+// testProgram is the SHA-256 a test's dashboard is taken to run: this test binary has no pinned tego-control, so
+// thisProgram answers with it (init below), as a pinned build answers with its pin.
+const testProgram = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+func init() { thisProgram = func() (string, bool) { return testProgram, true } }
+
+// thisProgramFile is the program a dashboard started now would run, as dashboardAt compares it.
+func thisProgramFile(t *testing.T) string {
+	t.Helper()
+	p, ok := thisProgram()
+	if !ok {
+		t.Fatal("no program to compare the dashboard with")
+	}
+	return p
+}
+
+// olderProgramFile is a program with other bytes than p: the dashboard tego was updated from.
+func olderProgramFile(p string) string {
+	return strings.Repeat("f", len(p))
+}
+
+// startedBy writes the dashboard log at home as the dashboard leaves it: the program line (the
+// SHA-256 p of the bytes it runs), then body, what tego serve printed.
+func startedBy(t *testing.T, home string, p string, body string) {
+	t.Helper()
+	if err := os.WriteFile(dashboardLog(home), []byte(handoff.ProgramLine(p)+body), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -644,5 +666,20 @@ func TestStartOwnRulesUseSelectedProject(t *testing.T) {
 	rc, err := g.rules(ctx, m, "Claude Code", guideAgents[0], project)
 	if err != nil || rc.file != file {
 		t.Fatalf("selected-project rules: %+v, %v\n%s", rc, err, &output)
+	}
+}
+
+// TestDashboardReadyHasFallback: the Ready panel says how to open the dashboard when the guide's opening did not work.
+func TestDashboardReadyHasFallback(t *testing.T) {
+	win := strings.Join(dashboardReady(hostWindows, "http://127.0.0.1:8484/", true, "", ""), "\n")
+	if !strings.Contains(win, "opening in your browser") || !strings.Contains(win, "tego dashboard in PowerShell or cmd") {
+		t.Errorf("Windows Ready lacks the fallback:\n%s", win)
+	}
+	mac := strings.Join(dashboardReady(hostMac, "http://127.0.0.1:8484/", false, "", ""), "\n")
+	if !strings.Contains(mac, "Type tego dashboard.") {
+		t.Errorf("Mac Ready lacks the fallback:\n%s", mac)
+	}
+	if got := dashboardReady(hostLinux, "http://x/", false, "", ""); len(got) != 1 {
+		t.Errorf("Linux Ready: %v", got)
 	}
 }

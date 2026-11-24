@@ -16,6 +16,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/policy/httppolicy"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/harness"
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 // Contract is agent.yaml v0 after decoding and the extends merge.
@@ -35,6 +36,9 @@ type Contract struct {
 	// ^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$, "" for none. The top-level contract's own (a profile that sets it is a
 	// [schema] error), part of the canonical bytes, and written as run_start.contract_revision.
 	Revision string `yaml:"revision,omitempty"`
+	// Learn is the top file's editable history of withheld destinations (ADR 0016).
+	// Canonical preserves it; it has no effect on enforcement.
+	Learn *record.LearnNote `yaml:"learn,omitempty" json:",omitempty"`
 	// Extends names the profiles this file is laid over, one name or a list of 1 to MaxExtendsList, merged in
 	// order (ADR 0066). The merged contract keeps the top file's own list.
 	Extends ExtendsList `yaml:"extends,omitempty"`
@@ -101,6 +105,9 @@ type Contract struct {
 	file    string
 	origins origins
 	loaded  bool
+	// materialized marks an effective copy; it is never a source for another Compile.
+	materialized   bool
+	baselineCounts map[string]int
 	// profiles is every profile the extends walk merged, in merge order, each once (ADR 0066). It is not part of
 	// Canonical: contract_hash covers the merged contract, whose entries already hold what each profile gave.
 	profiles []ProfileUse
@@ -407,7 +414,8 @@ const envPassKey = "pass"
 
 // MCPServer is one mcp: entry: a stdio server the agent launches, whose command gets exec rights implicitly (R8),
 // or an HTTP server it connects to, whose URL's host and port get a net rule implicitly under a net: section (R16a).
-// Exactly one of Command and URL is set.
+// Exactly one of Command and URL is set. BusinessRules reserves an out-of-run
+// trusted worker; its command receives no implicit agent exec grant (ADR 0152).
 type MCPServer struct {
 	Name    string   `yaml:"name"`
 	Command []string `yaml:"command,omitempty"`
@@ -415,6 +423,8 @@ type MCPServer struct {
 	// Tools puts the server behind Tego's MCP relay with per-tool rules (ADR 0126); nil is
 	// today's behaviour, no relay.
 	Tools *MCPTools `yaml:"tools,omitempty"`
+	// BusinessRules pins the immutable submitted-call restriction (ADR 0152).
+	BusinessRules *BusinessRules `yaml:"business_rules,omitempty"`
 }
 
 // ModelEndpoint is one models: entry, the upstream a capture source may proxy.
@@ -493,6 +503,9 @@ type Pos struct {
 // It is never mutated after Compile returns it (I4); a TTL refresh builds a
 // new table.
 type RuleTable struct {
+	// businessRules is independent of the mutable source contract marker.
+	businessRules map[string]compiledBusinessRules
+
 	Builtins *BuiltinRefusals // immutable ADR 0113 boundary; nil only for synthetic tables
 
 	NetAssurance NetAssurance // effective assurance; never empty after Compile
@@ -534,6 +547,14 @@ type RuleTable struct {
 	Reach   []backend.Tier
 	Capture CaptureMode // never ""
 	Hash    [32]byte    // contract_hash = sha256(Contract.Canonical())
+	// EffectiveHash names EffectiveContract before ceiling and live transformations (ADR 0144).
+	EffectiveHash [32]byte `json:"-"`
+	// EffectiveContract is the source plus the applicable baseline, exactly once.
+	EffectiveContract *Contract `json:"-"`
+	// Baseline retains many-source membership and owner-specific coverage separately from origins.
+	Baseline            *BaselineTable `json:",omitempty"`
+	replayed            bool
+	baselineReplayFacts *baselineRecordFacts
 	// Home is the directory "~" expanded to when this table was compiled, so a compile --test row
 	// written with ~ is evaluated against the same path the contract's own entries were.
 	Home string
@@ -773,6 +794,11 @@ type FSRule struct {
 	// Fence marks an entry an Adjustable contract's live.fence added (ADR 0125): its rule name is the fence entry's,
 	// live.fence[<kind>:<value>], so the record never says the contract allowed what only a lifted entry allows.
 	Fence bool `json:",omitempty"`
+	// AliasOf is, for an entry compile added because the mount table shows a denied file or tree under another name,
+	// the path of the entry it is another name of (compile_alias.go): a refusal is about the file, not one of its
+	// names. The entry keeps that entry's Raw and Pos, so it carries the same rule name; a built-in one is named by
+	// AliasOf. "" for every other entry.
+	AliasOf string `json:",omitempty"`
 }
 
 // NetRule is one compiled net.allow entry.
@@ -815,6 +841,7 @@ type NetRule struct {
 	// declaration (RuleName).
 	MCP string
 	// ResolvedAt and TTL are in-memory only, never serialized (E23).
+	// ResolvedAt is zero when an offline lookup supplies no DNS evidence.
 	ResolvedAt time.Time
 	TTL        time.Duration
 	// ExpiresAt is an optional runtime deadline for a refreshed hostname grant.

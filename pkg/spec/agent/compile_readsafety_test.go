@@ -20,7 +20,7 @@ import (
 )
 
 // compileDiagsWithin is compileWithin for a test that reads the diagnostics.
-func compileDiagsWithin(t *testing.T, f *fixture, c *Contract, limit time.Duration) (*RuleTable, []Diagnostic) {
+func compileDiagsWithin(t *testing.T, f *fixture, c *Contract, limit time.Duration, extra ...CompileOption) (*RuleTable, []Diagnostic) {
 	t.Helper()
 	type result struct {
 		rt  *RuleTable
@@ -29,7 +29,7 @@ func compileDiagsWithin(t *testing.T, f *fixture, c *Contract, limit time.Durati
 	}
 	done := make(chan result, 1)
 	go func() {
-		rt, ds, err := Compile(c, f.machine, f.opts()...)
+		rt, ds, err := Compile(c, f.machine, f.opts(extra...)...)
 		done <- result{rt, ds, err}
 	}()
 	select {
@@ -709,7 +709,7 @@ func TestEnvScanBounded(t *testing.T) {
 	}
 	var envs []string
 	var cut bool
-	allocs := testing.AllocsPerRun(1, func() { envs, cut, _, _ = envFiles([]string{f.project}, time.Now().Add(time.Hour)) })
+	allocs := testing.AllocsPerRun(1, func() { envs, cut, _, _ = envFiles([]string{f.project}, time.Now().Add(time.Hour), nil) })
 	t.Logf("%.0f allocations", allocs)
 	if !cut {
 		t.Error("a scan that left entries unread must say so")
@@ -728,7 +728,7 @@ func TestEnvScanBounded(t *testing.T) {
 	}
 	// Without the plant the scan reads everything and says nothing.
 	g := newFixture(t)
-	envs, cut, _, _ = envFiles([]string{g.project}, time.Now().Add(time.Hour))
+	envs, cut, _, _ = envFiles([]string{g.project}, time.Now().Add(time.Hour), nil)
 	if cut || !slices.Equal(envs, []string{filepath.Join(g.project, ".env")}) {
 		t.Errorf("envFiles = %v, cut %v; want the project's .env alone, uncut", envs, cut)
 	}
@@ -757,7 +757,12 @@ func TestDenyWriteWholeCompileBudget(t *testing.T) {
 	last := "e" + strconv.Itoa(maxSearchWhole+1)
 	gitRepo(t, f, filepath.Join(f.project, last, "sub", "real"))
 	yaml.WriteString("\"" + last + "/\"]\n")
-	rt, ds := compileDiagsWithin(t, f, f.load(yaml.String()), 10*time.Second)
+	// This pins the shared operation budget, so the search's wall-clock limits are put out of reach: whether the 16,000
+	// directories are examined before the 4 s the compile shares runs out is the machine's speed, and a starved one
+	// would then say the time ran out where this test asks for the count. The time limits have their own tests
+	// (TestDenyWriteSearchTime, TestDenyWriteSearchTimeWhole), which keep the real ones. The 10 s below is the hang
+	// guard of compileDiagsWithin, never what the compile is held to.
+	rt, ds := compileDiagsWithin(t, f, f.load(yaml.String()), 10*time.Second, withSearchTimes(time.Hour, time.Hour))
 	if slices.Contains(denyWritePaths(rt), filepath.Join(f.project, last, "sub", "real", ".git", "hooks")) {
 		t.Errorf("the last entry's search ran within a budget the compile had spent: %v", denyWritePaths(rt))
 	}
@@ -1007,41 +1012,72 @@ func TestDenyWriteFixedPassCut(t *testing.T) {
 	}
 }
 
-// TestDenyWriteWalkCutByAnotherEntry pins that one write entry's limits do not become another's. A .git file
-// the agent plants beneath e1 names e2's git directory, and the planted gitdirs after it spend e1's time,
-// so e1's walk takes up e2's submodules with no time left. That walk was kept as done, its cut inherited, and
-// e2, whose own time was untouched, never walked its submodules, dropping their hooks. A walk another
-// entry's limits cut is now taken up again within the limits of the entry that reaches it.
+// TestDenyWriteWalkCutByAnotherEntry pins that one write entry's limits do not
+// become another's. The first entry reaches the second entry's git directory
+// through a planted .git file. A cut walk must be cached for that first entry,
+// then retried for the second entry, including the submodule's hooks.
+// Set the exhausted budget/deadline directly: a costly symlink plant made this
+// regression depend on scheduling within the separate four-second whole-search
+// deadline. TestDenyWriteSearchTime{,Whole} retain the real elapsed-time bounds.
 func TestDenyWriteWalkCutByAnotherEntry(t *testing.T) {
-	f := newFixture(t)
-	e2 := filepath.Join(f.project, "e2")
-	gitRepo(t, f, e2)
-	sub := filepath.Join(e2, ".git", "modules", "sub")
-	plantGitDir(t, f, sub, func(i int) string { return "decoy" + strconv.Itoa(i) })
-	e1 := filepath.Join(f.project, "e1")
-	if err := os.MkdirAll(filepath.Join(e1, "a0"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	f.file(filepath.Join(e1, "a0", ".git"), "gitdir: "+filepath.Join(e2, ".git")+"\n", 0o644)
-	bottom := chainPlant(t, e1)
-	for i := 0; i < 800; i++ {
-		p := filepath.Join(e1, "p"+strconv.Itoa(i))
-		if err := os.Mkdir(p, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		f.file(filepath.Join(p, ".git"), "gitdir: "+filepath.Join(bottom, "L1", "g"+strconv.Itoa(i))+"\n", 0o644)
-	}
-	start := time.Now()
-	rt, ds := compileDiagsWithin(t, f, f.load("version: 0\nname: t\ncommand: [\"python\"]\nfs:\n  write: [\"e1/\", \"e2/\"]\n"), 10*time.Second)
-	t.Logf("compiled in %s", time.Since(start))
-	if !cutBy(ds, "e1/", "ran out of its time limit") {
-		t.Fatalf("the plant must spend e1's time for this test to say anything:\n%s", render(ds))
-	}
-	if !slices.Contains(denyWritePaths(rt), filepath.Join(sub, "hooks")) {
-		t.Errorf("e2's submodule must be walked in e2's own time: %v", denyWritePaths(rt))
-	}
-	if cutBy(ds, "e2/", "ran out of") {
-		t.Errorf("e2's search was not cut, and must not say so:\n%s", render(ds))
+	for _, limit := range []string{"budget", "time"} {
+		t.Run(limit, func(t *testing.T) {
+			f := newFixture(t)
+			e2 := filepath.Join(f.project, "e2")
+			gitRepo(t, f, e2)
+			gd := filepath.Join(e2, ".git")
+			sub := filepath.Join(gd, "modules", "sub")
+			plantGitDir(t, f, sub, func(i int) string { return "decoy" + strconv.Itoa(i) })
+			e1 := filepath.Join(f.project, "e1", "a0")
+			if err := os.MkdirAll(e1, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			f.file(filepath.Join(e1, ".git"), "gitdir: "+gd+"\n", 0o644)
+			var probed []string
+			s := &denySearch{probe: func(path, _ string) { probed = append(probed, path) }, known: map[fileID]*gitDirInfo{}, proc: true}
+			first, second := &entrySearch{}, &entrySearch{}
+			s.resume(first)
+			dirs := s.gitDirs(e1)
+			if !slices.Equal(dirs, []string{gd}) {
+				t.Fatalf("planted gitdir not followed: %v", dirs)
+			}
+			infos := s.repoTargets(e1, dirs)
+			if len(infos) != 1 || infos[0] == nil {
+				t.Fatalf("missing shared directory info: %v", infos)
+			}
+			in := infos[0]
+			want := cutBudget
+			if limit == "time" {
+				s.entryEnd = time.Now().Add(-time.Second)
+				want = cutTime
+			} else {
+				s.entry.entries = maxSearchEntries
+			}
+			s.modules(gd, in)
+			if in.cuts&want == 0 || !in.walked || in.walkedIn != first {
+				t.Fatalf("first walk must be cut and cached: %+v", in)
+			}
+			if slices.Contains(probed, filepath.Join(sub, "hooks")) {
+				t.Fatal("first entry walked beyond its limit")
+			}
+			s.modules(gd, in)
+			if in.walkedIn != first || s.cuts&want == 0 {
+				t.Fatal("same-entry retry lost its cut")
+			}
+			s.pause(first, false)
+			s.resume(second)
+			if again := s.info(gd); again != in {
+				t.Fatal("second entry did not share the git directory cache")
+			}
+			s.modules(gd, in)
+			s.pause(second, false)
+			if !slices.Contains(probed, filepath.Join(sub, "hooks")) {
+				t.Errorf("e2's submodule must be walked in e2's own budget: %v", probed)
+			}
+			if second.cuts != 0 || in.walkedIn != second {
+				t.Errorf("e2 inherited e1's cut: cuts=%v info=%+v", second.cuts, in)
+			}
+		})
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/policy/execmatch"
 	"github.com/attention-span-ai/tego/pkg/policy/execmatch/rows"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 // validateMerged runs the cross-field rules of §5 on the merged contract:
@@ -34,11 +35,31 @@ func validateMerged(ds *diags, c *Contract, top string) {
 	if len(c.Command) == 0 || c.Command[0] == "" { // R4, E11
 		ds.errorf(at("command"), CodeSchema, "command must name the program to run").fix("write command: [\"python\", \"agent.py\"]")
 	}
+	if err := c.Learn.Validate(); err != nil {
+		// The shared validator names record fields. A contract author needs the
+		// contract key and the bad value's own line, including a list entry.
+		key, why := "learn", "invalid history"
+		var fe *record.FieldError
+		if errors.As(err, &fe) {
+			key, why = strings.TrimPrefix(fe.Field, "run_start.contract_source."), fe.Why
+		}
+		label := key
+		if index, ok := strings.CutPrefix(key, "learn.withheld."); ok {
+			label = "learn.withheld[" + index + "]"
+		}
+		d := ds.errorf(at(key), CodeSchema, "%s: %s", label, why)
+		if key == "learn.run" {
+			d.fix("write the watched run id, for example r-12345678-0aaaaaaaaaaaa-abcdef; or remove the learn key")
+		} else {
+			d.fix("keep 1 to 100000 sorted, distinct tcp://IP:port or udp://IP:port entries, one canonical IP spelling per line, with ports 1 to 65535 and no zone; or remove the learn key")
+		}
+	}
 	validateNotYetSupported(ds, c, at)
 	validateLists(ds, c)
 	validateEnv(ds, c)
 	validateMCP(ds, c)
 	validateMCPTools(ds, c)
+	validateBusinessRules(ds, c)
 	validateModelRoutes(ds, c) // before credentials, whose allow entries may name a route's backend
 	validateCredentials(ds, c)
 	validateExec(ds, c)
@@ -331,10 +352,10 @@ func validateMCP(ds *diags, c *Contract) {
 	if c.Exec == nil {
 		return
 	}
-	// An mcp command also listed in exec.allow is redundant, not wrong.
+	// Only ordinary MCP commands are implicitly granted (ADR 0152).
 	byName := map[string]string{}
 	for _, s := range c.MCP {
-		if len(s.Command) > 0 {
+		if len(s.Command) > 0 && s.BusinessRules == nil {
 			byName[s.Command[0]] = s.Name
 			byName[path.Base(s.Command[0])] = s.Name
 		}

@@ -329,7 +329,7 @@ schedule:
 		}
 		for _, ri := range hosts[h] {
 			r := &rules[ri]
-			r.ResolvedAt, r.TTL = now, k.o.ttl
+			r.TTL = k.o.ttl
 			if res.err != nil {
 				if k.o.offline {
 					k.ds.warnf(r.Pos, CodeHostUnresolvable, "host %s not resolved (offline): %v; the launcher resolves it at run start", h, res.err)
@@ -339,6 +339,9 @@ schedule:
 				}
 				continue
 			}
+			// A failed offline lookup supplies no DNS evidence. Leaving its
+			// timestamp zero also makes max_stale fail closed as already expired.
+			r.ResolvedAt = now
 			r.IPs = unmapped(res.ips)
 			k.dropResolved(r)
 		}

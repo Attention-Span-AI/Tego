@@ -37,6 +37,13 @@ type Armer interface {
 	Arm() error
 }
 
+// AdmissionRechecker is a prepared handle whose selected mode relies on mutable
+// host facts. Adoption checks them again after the migration lock wait and before
+// moving any process; an error refuses the adoption without changing its mode.
+type AdmissionRechecker interface {
+	RecheckAdmission() error
+}
+
 // Listener is a handle that owns a loop for the length of the run: tier 2's fanotify listener, which must
 // be answering before the agent's first open and stop when the run ends. A facade starts it in the run's
 // own goroutine group; a handle without it needs nothing started.

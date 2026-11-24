@@ -185,6 +185,9 @@ func CheckProvision(rt *agent.RuleTable, run harness.Run, p harness.Provision) e
 	if err := checkReserved(p); err != nil {
 		return err
 	}
+	if err := rt.ValidateBaselineEnv(p.Env); err != nil {
+		return err
+	}
 	for _, kv := range p.Env {
 		k, _, _ := strings.Cut(kv, "=")
 		if _, set := rt.Set[k]; set {

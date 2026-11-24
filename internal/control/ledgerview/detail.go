@@ -13,6 +13,8 @@ import (
 	"sort"
 	"strings"
 	"syscall"
+
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 // The event details page's reads: one ledger line as written (Line), the lines around it (Context) and the lines
@@ -51,8 +53,8 @@ func Line(root, run string, seq uint64) (*LineFacts, error) {
 					sc := bufio.NewScanner(f)
 					sc.Buffer(make([]byte, 64<<10), maxLineBytes)
 					if sc.Scan() {
-						if lf, ok := lineFacts(sc.Bytes(), seq); ok {
-							return lf, nil
+						if lf, ok, err := lineFacts(sc.Bytes(), seq); ok || err != nil {
+							return lf, err
 						}
 					}
 				}
@@ -65,8 +67,8 @@ func Line(root, run string, seq uint64) (*LineFacts, error) {
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64<<10), maxLineBytes)
 	for sc.Scan() {
-		if lf, ok := lineFacts(sc.Bytes(), seq); ok {
-			return lf, nil
+		if lf, ok, err := lineFacts(sc.Bytes(), seq); ok || err != nil {
+			return lf, err
 		}
 	}
 	if err := sc.Err(); err != nil {
@@ -76,24 +78,20 @@ func Line(root, run string, seq uint64) (*LineFacts, error) {
 }
 
 // lineFacts is b's facts when b is line seq.
-func lineFacts(b []byte, seq uint64) (*LineFacts, bool) {
-	var head struct {
-		Seq    uint64 `json:"seq"`
-		ID     string `json:"id"`
-		Prev   string `json:"prev"`
-		PID    int    `json:"pid"`
-		TID    int    `json:"tid"`
-		Cgroup uint64 `json:"cgroup"`
+func lineFacts(b []byte, seq uint64) (*LineFacts, bool, error) {
+	head, err := record.Decode(b)
+	if err != nil {
+		return nil, false, err
 	}
-	if json.Unmarshal(b, &head) != nil || head.Seq != seq {
-		return nil, false
+	if head.Seq != seq {
+		return nil, false, nil
 	}
 	lf := &LineFacts{Raw: string(b), ID: head.ID, Prev: head.Prev, PID: head.PID, TID: head.TID, Cgroup: head.Cgroup}
 	var buf bytes.Buffer
 	if json.Indent(&buf, b, "", "  ") == nil {
 		lf.Pretty = buf.String()
 	}
-	return lf, true
+	return lf, true, nil
 }
 
 // LinePlace is where a line starts in its run's events file (Off), and that file's device, inode and size when the
@@ -182,7 +180,10 @@ func SubjectOf(e *Event) Subject {
 	case "file":
 		v, _, _ = strings.Cut(v, " → ")
 	case "program":
-		v = path.Base(strings.Fields(v)[0])
+		if v = e.Argv0(); v == "" {
+			return Subject{}
+		}
+		v = path.Base(v)
 	case "destination":
 		// "host (dst)" names the destination by its host name; a refusal names the address alone.
 		if h, d, ok := strings.Cut(v, " ("); ok {

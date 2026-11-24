@@ -1,0 +1,16 @@
+version: 0
+name: k2-worker
+command: ["/usr/bin/python3", "-u", "k2-worker/worker.py"]
+tier: landlock
+capture: off
+record: full
+fs:
+  write: ["~/k2-worker/", "/dev/null"]
+  deny_read: ["~/k2-secret.txt"]
+exec:
+  allow: ["/usr/bin/python3"]
+net:
+  allow: []
+  dns: {mode: "off"}
+env:
+  pass: ["PATH", "HOME", "LANG"]

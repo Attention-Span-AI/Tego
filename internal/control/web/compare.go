@@ -15,6 +15,7 @@ import (
 const maxCompareRows = 40
 
 func init() {
+	funcs["cmpSummary"] = cmpSummary
 	funcs["enforcement"] = enforcement
 	funcs["cmpForm"] = cmpForm
 	funcs["cmpSide"] = cmpSide
@@ -32,11 +33,11 @@ func init() {
 		case ledgerview.ToneBad:
 			return "bad"
 		case ledgerview.ToneGood:
-			return "refused" // Stopped: the stopped tone (tokens.css), green
+			return "refused" // A recorded refusal, whether or not it enters the headline count.
 		case ledgerview.ToneAsk:
 			return "asked"
 		case ledgerview.ToneMuted:
-			return "neutral" // Refused: a refusal the verdict does not count wears no green (tokens.css); grey, as routine is
+			return "refused" // The word and count explanation distinguish an uncounted refusal.
 		}
 		return "neutral"
 	}
@@ -57,34 +58,47 @@ func init() {
 	}
 }
 
-// cmpStatView is one run's stat block above Compare's sentence (QA QU-11): Label (A or B) and Mode (Watched or
-// Enforced) as its kicker, Head the headline ("2 secrets left the machine", "0 left"), Detail the line under it, and
-// Tone leak (red), ok (green: Tego stopped something) or neutral.
-type cmpStatView struct{ Label, Mode, Head, Detail, Tone string }
+// cmpStatView is a run's recorded comparison summary, above its supporting context.
+type cmpStatView struct {
+	Label, Mode, Head, Detail, Tone, RunID string
+	Numbers                                countScopes
+}
 
-// cmpStat is a run's stat block, read from the verdict its banner and chip read (CmpSide.Verdict), so the numbers
-// agree: a leak names what left and where, a protected run the attempts Tego stopped (Verdict.Stopped).
+// cmpStat uses positive recorded counts instead of treating an absent leak verdict
+// as evidence that no sensitive file was touched.
 func cmpStat(s ledgerview.CmpSide, label string) cmpStatView {
 	v := s.Verdict
-	st := cmpStatView{Label: label, Mode: "Enforced", Head: "0 left", Tone: "neutral"}
+	id := ""
+	if s.Run != nil {
+		id = s.Run.ID
+	}
+	st := cmpStatView{Numbers: runNumbers(s.Run), RunID: id, Label: label, Mode: "Enforced", Head: "No sensitive access recorded", Tone: "neutral"}
 	if s.Run != nil && s.Run.Tier == "observe" {
 		st.Mode = "Watched"
 	}
+	st.Detail = plural4(s.OffList, "off-list connection recorded", "off-list connections recorded")
 	switch v.Kind {
 	case ledgerview.VerdictLeak:
 		st.Tone, st.Head = "leak", plural4(len(v.Exposed), "secret left the machine", "secrets left the machine")
 		st.Detail = baseNames(v.Exposed) + " → " + destWords(v.Dests)
 	case ledgerview.VerdictProtected:
-		st.Tone, st.Detail = "ok", plural4(v.Stopped(), "attempt stopped", "attempts stopped")
-	case ledgerview.VerdictWatched:
-		st.Detail = plural4(len(v.Read), "secret read, none sent", "secrets read, none sent")
+		st.Tone, st.Head = "ok", plural4(v.Stopped(), "attempt stopped", "attempts stopped")
+		st.Detail = "Recorded refusals"
 	default:
-		st.Detail = "no attempt on a secret seen"
+		if touched := s.SecretsOpened + s.SecretsAllowed; touched > 0 {
+			st.Head = plural4(touched, "sensitive file touched", "sensitive files touched")
+		}
 	}
 	if v.Kind != ledgerview.VerdictLeak && v.Kind != ledgerview.VerdictProtected && readGap(s.Run) != "" {
-		st.Detail = "file reads not recorded"
+		st.Head, st.Detail = "Read coverage incomplete", "file reads not recorded"
 	}
 	return st
+}
+
+// cmpSummary scopes the whole mixed sentence, including zero-derived clauses.
+// Prefixing a run name with “at least” would leave its “read no secret” claim unqualified.
+func cmpSummary(c *ledgerview.Comparison, n countScopes) (quantity, error) {
+	return quantityRecordWords("compare.summary", c.Summary, n)
 }
 
 // cmpFormData is what the chooser form shows: the runs to pick from and the pair selected.
@@ -199,6 +213,16 @@ func suggestOther(runs []*ledgerview.Run, id string) string {
 	return other
 }
 
+func (d compareData) Numbers() countScopes {
+	n := countScopes{}
+	if d.Cmp != nil {
+		a, b := runNumbers(d.Cmp.A.Run), runNumbers(d.Cmp.B.Run)
+		n.Window = worse(a.Window, b.Window)
+		n.Aggregate = worse(a.Aggregate, b.Aggregate)
+	}
+	return n
+}
+
 type compareData struct {
 	Runs   []*ledgerview.Run
 	A, B   string
@@ -258,5 +282,7 @@ func (s *Server) compare(w http.ResponseWriter, r *http.Request) {
 			d.AllURL = "/compare?" + url.Values{"a": {ra.ID}, "b": {rb.ID}, "all": {"1"}}.Encode()
 		}
 	}
-	s.render(w, http.StatusOK, "compare", s.chromeOf(snap, "Compare runs", "runs"), d)
+	c := s.chromeOf(snap, "Compare runs", "runs")
+	c.PhoneName = "Compare"
+	s.render(w, http.StatusOK, "compare", c, d)
 }

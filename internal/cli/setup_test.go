@@ -220,10 +220,10 @@ func TestSetupExitCodes(t *testing.T) {
 		t.Errorf("a bad flag: exit %d", code)
 	}
 
-	prev := selfInRun
-	selfInRun = func() (bool, error) { return true, nil }
+	prev := selfAnswer
+	selfAnswer = answerGoverned
 	code, _, errs := run(t, "setup")
-	selfInRun = prev
+	selfAnswer = prev
 	if code != identity.ExitError || !strings.Contains(errs, "["+codeGoverned+"]") {
 		t.Errorf("governed: exit %d: %s", code, errs)
 	}

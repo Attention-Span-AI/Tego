@@ -52,6 +52,9 @@ func (rt *RuleTable) hasDenyWriteResidual() bool {
 		return false
 	}
 	for _, r := range rt.DenyWrite {
+		if rt.HasBaselineDenyWriteAt(r.Canonical()) && !r.Unenforced {
+			continue
+		}
 		if r.BuiltinRule == "" || r.Unenforced {
 			return true
 		}

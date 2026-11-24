@@ -273,8 +273,8 @@ func routeChange(ctx context.Context, name, ref, endpoint, route string, yes boo
 	}
 	c, err := mcpRunContract(dir)
 	if err != nil {
-		message(stderr, "", 0, 0, "tego "+name+": the run's contract: "+err.Error(), codeIO)
-		return identity.ExitError
+		// A run launched with sudo has a folder that is root's alone: the contract is the first file the person cannot open.
+		return liveRunFailed(name, dir, fmt.Errorf("the run's contract: %w", err), stderr)
 	}
 	m, ok := routeEndpoint(c, endpoint)
 	if !ok {
@@ -290,8 +290,7 @@ func routeChange(ctx context.Context, name, ref, endpoint, route string, yes boo
 	}
 	held, _, err := runlock.ProbeLock(dir)
 	if err != nil {
-		message(stderr, "", 0, 0, "tego "+name+": "+err.Error(), codeIO)
-		return identity.ExitError
+		return liveRunFailed(name, dir, err, stderr)
 	}
 	if !held {
 		message(stderr, "", 0, 0, fmt.Sprintf("tego %s: %s is not running, so a route change would apply to nothing", name, run), codeNotRunning)

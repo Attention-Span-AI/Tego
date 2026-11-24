@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -39,15 +40,14 @@ type guard struct {
 	m    *config.Machine
 	o    adoptOptions
 	log  *slog.Logger
-	// shared are the boundary's compiled tables and backends, one per listed uid, each compiled once at the start
-	// against that uid's home (prepareAdoption); nil for record-only adoptions, which compile a contract per agent.
+	// Startup path spellings and resolved directory identities pin record placement.
+	recordRoot, recordAnchor string
+	recordLocations          [2]guardRecordLocation
+	// shared holds startup boundary preflights, one per listed uid; none is used
+	// for an adoption. Every adoption compiles and owns its fresh preparation.
 	shared map[int]*preparedAdoption
-	// sharedMu guards shared and retired once the guard runs: sharedTable compiles a stale table again and swaps it
-	// in; retired are the tables swapped out, whose adoptions may still run, cleaned up with the rest at the end.
-	sharedMu sync.Mutex
-	retired  []*preparedAdoption
-	emit     watcher.Emit
-	wg       sync.WaitGroup
+	emit   watcher.Emit
+	wg     sync.WaitGroup
 
 	mu sync.Mutex
 	// watches are the exit watches of the agents this guard is adopting, by pid, for their run_end: each is fed the
@@ -72,6 +72,15 @@ func newGuard(ctx context.Context, m *config.Machine, uids []int, o adoptOptions
 	}
 	g := &guard{ctx: ctx, uids: adopt.UIDs(uids), p: p, self: self, reg: adopt.NewRegistry(0), m: m, o: o,
 		log: ownLogger(m), watches: map[int][]*exitWatch{}}
+	if g.recordRoot, err = ledgerRootOf(m); err != nil {
+		return nil, guardLocationError("ledger", err)
+	}
+	if g.recordAnchor, err = anchorPath(m); err != nil {
+		return nil, guardLocationError("anchor", err)
+	}
+	if err := g.captureRecordLocations(); err != nil {
+		return nil, err
+	}
 	var mu sync.Mutex
 	g.emit = func(s watcher.Sighting) error {
 		mu.Lock()
@@ -196,21 +205,19 @@ func (g *guard) adopt(t adopt.Process, s watcher.Sighting, identified time.Time,
 	defer g.reg.Drop(t.Identity)
 	defer g.forget(t.PID, ew)
 	uid := t.Owner()
-	var a *preparedAdoption
-	if g.shared != nil {
-		// The table compiled against the agent's owner's home: its ~/.ssh, never the guard's.
-		var err error
-		if a, err = g.sharedTable(uid); err != nil {
-			g.fail(s, &uid, err.Error())
-			return
+	a, err := g.prepareAdoption(t, uid)
+	if err != nil {
+		g.fail(s, &uid, err.Error())
+		return
+	}
+	defer a.cleanup()
+	deps := a.deps(identified, g.log)
+	deps.ReloadConfig = func() (*config.Machine, error) {
+		m, err := g.currentMachine()
+		if err != nil {
+			return nil, err
 		}
-	} else {
-		var code int
-		if a, code = adoptPrepare(g.ctx, g.m, g.o, t, uid, io.Discard); a == nil {
-			g.fail(s, &uid, fmt.Sprintf("its run could not be prepared (exit %d)", code))
-			return
-		}
-		defer a.cleanup()
+		return a.recheckOwnerConfiguration(m)
 	}
 	spec := tegoruntime.AdoptSpec{Root: t, Env: adopt.Env{Proc: g.p}, Boundary: g.o.boundary != "",
 		Recheck: pinnedOwner(adoptionRules(g.self, g.uids), uid), Keyed: a.keyed(),
@@ -226,7 +233,7 @@ func (g *guard) adopt(t adopt.Process, s watcher.Sighting, identified time.Time,
 		},
 		ExitStatus: ew.status,
 	}
-	res, err := adoptRun(g.ctx, a.rt, spec, a.deps(identified, g.log))
+	res, err := adoptRun(g.ctx, a.rt, spec, deps)
 	if err != nil {
 		g.fail(s, &uid, err.Error())
 		return
@@ -267,49 +274,28 @@ func (g *guard) wait() guardStats {
 	return g.stats
 }
 
-// sharedTable is uid's boundary table. One whose owner's ~/.tego is no longer the directory it denies
-// (preparedAdoption.stale: removed, replaced, or no directory now; or the owner's home, missing then, exists now) is
-// compiled again first, which makes the directory again where it is missing, and replaces it for every later
-// adoption: R6a's deny of the owner's own records attaches
-// to the directory a compile found. A table that cannot be compiled again fails the adoption: it is never adopted
-// under the old one. Adoptions already running keep the table they started with.
-// A table prepared with the decision plane in fmod_ret mode is prepared again, so selected again, when this kernel no
-// longer admits that mode (preparedAdoption.fmodRetLapsed, ADR 0024 (16)), and an adoption is never made under it.
-// Only that directory is rechecked: a built-in deny_read path made after the start (a new ~/.aws) is not covered
-// until the guard restarts, as a deny_read glob covers only the files that exist when it is compiled (SEMANTICS §2).
-func (g *guard) sharedTable(uid int) (*preparedAdoption, error) {
-	g.sharedMu.Lock()
-	defer g.sharedMu.Unlock()
-	a := g.shared[uid]
-	if a == nil {
+// sharedTable verifies the startup owner preflight, then compiles a fresh boundary
+// from this adoption's trusted Machine and current passwd home. Equal config bytes
+// and home strings do not imply equal walks: a trusted symlink can point elsewhere
+// while the old R10 table still protects its former target. Backend selection is
+// also fresh, including the kernel's current admission of fmod_ret mode.
+// Each adoption owns this preparation and cleans it after its run; startup tables
+// remain only for preflight cleanup. Already running adoptions keep their tables.
+func (g *guard) sharedTable(uid int, m *config.Machine) (*preparedAdoption, error) {
+	if g.shared[uid] == nil {
 		return nil, fmt.Errorf("no boundary table was compiled for uid %d", uid)
 	}
-	lapsed := a.fmodRetLapsed()
-	if !a.stale() && lapsed == "" {
-		return a, nil
-	}
-	fresh, code := adoptPrepare(g.ctx, g.m, g.o, adopt.Process{}, uid, io.Discard)
+	var diagnostics bytes.Buffer
+	fresh, code := adoptPrepare(g.ctx, m, g.o, adopt.Process{}, uid, &diagnostics)
 	if fresh == nil {
-		if lapsed != "" {
-			return nil, fmt.Errorf("uid %d's boundary table was prepared with the decision plane in fmod_ret mode, which "+
-				"this kernel no longer admits (%s), and it could not be prepared again (exit %d)", uid, lapsed, code)
-		}
-		return nil, fmt.Errorf("uid %d's ~/.tego is no longer the directory its boundary table denies (or its home, "+
-			"missing then, exists now), and the table could not be compiled again to deny it (exit %d)", uid, code)
+		return nil, fmt.Errorf("uid %d's boundary could not be compiled again for this adoption (exit %d)%s", uid, code, guardDiagnostics(diagnostics.String()))
 	}
-	g.retired = append(g.retired, a)
-	g.shared[uid] = fresh
 	return fresh, nil
 }
 
-// cleanupShared removes what the boundary's tables made, those swapped out by sharedTable too.
+// cleanupShared releases startup boundary preflights, after all adoptions ended.
 func (g *guard) cleanupShared() {
-	g.sharedMu.Lock()
-	defer g.sharedMu.Unlock()
 	for _, a := range g.shared {
-		a.cleanup()
-	}
-	for _, a := range g.retired {
 		a.cleanup()
 	}
 }

@@ -1,0 +1,394 @@
+{
+ "name": "k2-worker",
+ "contract_hash": "9bc51d9305575273e74713c53bc0150dcf05c630bf8e4e35e28395a110a87abd",
+ "source": {
+  "path": "/home/tego/k2/k2-worker.yaml"
+ },
+ "tier": "landlock",
+ "capture": "off",
+ "record": "full",
+ "fs": [
+  {
+   "path": "/home/tego/.tego/runs",
+   "kind": "implicit",
+   "missing": true
+  },
+  {
+   "path": "/home/tego/k2/k2-worker.yaml",
+   "kind": "implicit"
+  },
+  {
+   "path": "/sys/fs/cgroup",
+   "kind": "implicit",
+   "mount_point": true
+  },
+  {
+   "path": "/sys/fs/bpf",
+   "kind": "implicit",
+   "mount_point": true
+  },
+  {
+   "path": "/home/tego/k2-worker",
+   "kind": "write"
+  },
+  {
+   "path": "/dev/null",
+   "kind": "write"
+  },
+  {
+   "path": "/home/tego/k2-secret.txt",
+   "kind": "deny_read"
+  },
+  {
+   "path": "/home/tego/.ssh",
+   "kind": "deny_read",
+   "builtin": true
+  },
+  {
+   "path": "/home/tego/.tego",
+   "kind": "deny_read",
+   "builtin": true
+  },
+  {
+   "path": "/run/user/1000/systemd/inaccessible/fifo",
+   "kind": "deny_read",
+   "builtin": true
+  },
+  {
+   "path": "/run/user/1000/systemd/units",
+   "kind": "deny_read",
+   "builtin": true
+  },
+  {
+   "path": "/run/user/1000/systemd/inaccessible/dir",
+   "kind": "deny_read",
+   "builtin": true
+  },
+  {
+   "path": "/run/user/1000",
+   "kind": "deny_write",
+   "builtin": true
+  },
+  {
+   "path": "/tmp/tmux-1000",
+   "kind": "deny_write",
+   "builtin": true
+  },
+  {
+   "path": "/run/screen/S-tego",
+   "kind": "deny_write",
+   "builtin": true
+  },
+  {
+   "path": "/var/run/screen/S-tego",
+   "kind": "deny_write",
+   "builtin": true
+  },
+  {
+   "path": "/home/tego/.screen",
+   "kind": "deny_write",
+   "builtin": true
+  },
+  {
+   "path": "/tmp/emacs1000",
+   "kind": "deny_write",
+   "builtin": true
+  },
+  {
+   "path": "/tmp/nvim.tego",
+   "kind": "deny_write",
+   "builtin": true
+  },
+  {
+   "path": "/tmp/.X11-unix",
+   "kind": "deny_write",
+   "builtin": true
+  },
+  {
+   "path": "/home/tego/.tego",
+   "kind": "deny_write",
+   "builtin": true
+  },
+  {
+   "path": "/run/user/1000/tego",
+   "kind": "deny_write",
+   "builtin": true
+  },
+  {
+   "path": "/run/dbus/system_bus_socket",
+   "kind": "deny_write",
+   "builtin": true
+  },
+  {
+   "path": "/var/run/dbus/system_bus_socket",
+   "kind": "deny_write",
+   "builtin": true
+  },
+  {
+   "path": "/run/docker.sock",
+   "kind": "deny_write",
+   "builtin": true
+  },
+  {
+   "path": "/var/run/docker.sock",
+   "kind": "deny_write",
+   "builtin": true
+  },
+  {
+   "path": "/run/podman/podman.sock",
+   "kind": "deny_write",
+   "builtin": true
+  },
+  {
+   "path": "/var/run/podman/podman.sock",
+   "kind": "deny_write",
+   "builtin": true
+  },
+  {
+   "path": "/run/containerd/containerd.sock",
+   "kind": "deny_write",
+   "builtin": true
+  },
+  {
+   "path": "/var/run/containerd/containerd.sock",
+   "kind": "deny_write",
+   "builtin": true
+  },
+  {
+   "path": "/run/user/1000/docker.sock",
+   "kind": "deny_write",
+   "builtin": true
+  },
+  {
+   "path": "/run/user/1000/podman/podman.sock",
+   "kind": "deny_write",
+   "builtin": true
+  }
+ ],
+ "exec": [
+  {
+   "path": "/usr/bin/python3",
+   "basename": "python3",
+   "interp": "/lib64/ld-linux-x86-64.so.2",
+   "source": "command,exec.allow"
+  }
+ ],
+ "exec_unrestricted": false,
+ "net": [],
+ "net_unrestricted": false,
+ "host_sockets_refused": false,
+ "env_pass": [
+  "PATH",
+  "HOME",
+  "LANG"
+ ],
+ "env_deny": [],
+ "env_set": {},
+ "machine": [
+  {
+   "key": "tier",
+   "value": "auto",
+   "source": "built-in",
+   "ceiling": true
+  },
+  {
+   "key": "capture",
+   "value": "auto",
+   "source": "built-in",
+   "ceiling": true
+  },
+  {
+   "key": "serve.port",
+   "value": "7433",
+   "source": "built-in",
+   "ceiling": false
+  },
+  {
+   "key": "ledger_root",
+   "value": "/home/tego/.tego/runs",
+   "source": "built-in",
+   "ceiling": false
+  },
+  {
+   "key": "retention",
+   "value": "30d",
+   "source": "built-in",
+   "ceiling": false
+  },
+  {
+   "key": "gc_interval",
+   "value": "0s",
+   "source": "built-in",
+   "ceiling": false
+  },
+  {
+   "key": "stop_grace",
+   "value": "10s",
+   "source": "built-in",
+   "ceiling": false
+  },
+  {
+   "key": "limits.cpu",
+   "value": "unbounded",
+   "source": "built-in",
+   "ceiling": true
+  },
+  {
+   "key": "limits.cpu_weight",
+   "value": "unbounded",
+   "source": "built-in",
+   "ceiling": true
+  },
+  {
+   "key": "limits.memory",
+   "value": "unbounded",
+   "source": "built-in",
+   "ceiling": true
+  },
+  {
+   "key": "limits.memory_high",
+   "value": "unbounded",
+   "source": "built-in",
+   "ceiling": true
+  },
+  {
+   "key": "limits.pids",
+   "value": "unbounded",
+   "source": "built-in",
+   "ceiling": true
+  },
+  {
+   "key": "limits.tokens",
+   "value": "unbounded",
+   "source": "built-in",
+   "ceiling": true
+  },
+  {
+   "key": "limits.cost_usd",
+   "value": "unbounded",
+   "source": "built-in",
+   "ceiling": true
+  },
+  {
+   "key": "limits.wall",
+   "value": "unbounded",
+   "source": "built-in",
+   "ceiling": true
+  },
+  {
+   "key": "limits.stall_after",
+   "value": "unbounded",
+   "source": "built-in",
+   "ceiling": true
+  },
+  {
+   "key": "limits.repeats",
+   "value": "unbounded",
+   "source": "built-in",
+   "ceiling": true
+  },
+  {
+   "key": "ask.timeout",
+   "value": "5m",
+   "source": "built-in",
+   "ceiling": false
+  },
+  {
+   "key": "ask.notify",
+   "value": "cli,desktop",
+   "source": "built-in",
+   "ceiling": false
+  },
+  {
+   "key": "record.ringbuf",
+   "value": "2MiB",
+   "source": "built-in",
+   "ceiling": false
+  },
+  {
+   "key": "record.max_run_bytes",
+   "value": "unbounded",
+   "source": "built-in",
+   "ceiling": true
+  },
+  {
+   "key": "bpf.linger",
+   "value": "5m",
+   "source": "built-in",
+   "ceiling": false
+  },
+  {
+   "key": "bpf.ring_budget",
+   "value": "256MiB",
+   "source": "built-in",
+   "ceiling": false
+  },
+  {
+   "key": "bpf.plane",
+   "value": "auto",
+   "source": "built-in",
+   "ceiling": false
+  },
+  {
+   "key": "resolver",
+   "value": "auto",
+   "source": "built-in",
+   "ceiling": false
+  },
+  {
+   "key": "denied_resolved_addresses",
+   "value": "[]",
+   "source": "built-in",
+   "ceiling": false
+  },
+  {
+   "key": "forwarder.listen",
+   "value": "127.0.0.1:0",
+   "source": "built-in",
+   "ceiling": false
+  },
+  {
+   "key": "prices",
+   "value": "/home/tego/.tego/prices.yaml",
+   "source": "built-in",
+   "ceiling": false
+  },
+  {
+   "key": "profiles",
+   "value": "/home/tego/.tego/profiles",
+   "source": "built-in",
+   "ceiling": false
+  },
+  {
+   "key": "registry",
+   "value": "/home/tego/.config/tego",
+   "source": "built-in",
+   "ceiling": false
+  },
+  {
+   "key": "log.level",
+   "value": "info",
+   "source": "built-in",
+   "ceiling": false
+  },
+  {
+   "key": "landlock.audit",
+   "value": "off",
+   "source": "built-in",
+   "ceiling": false
+  },
+  {
+   "key": "privileged_binary",
+   "value": "",
+   "source": "built-in",
+   "ceiling": false
+  },
+  {
+   "key": "users",
+   "value": "{}",
+   "source": "built-in",
+   "ceiling": false
+  }
+ ],
+ "harness": "generic"
+}

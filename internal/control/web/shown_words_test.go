@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 const (
@@ -210,7 +211,7 @@ func TestRowWords(t *testing.T) {
 			t.Errorf("endWords(%s) = %q, want %q", raw, got, want)
 		}
 	}
-	if got := gapWords("record", "no-price-table"); got != "Cost not counted (no price table for this model)" {
+	if got := gapWords("record", "no-price-table"); got != "No price table was loaded, so the cost is not estimated" {
 		t.Errorf("price gap %q", got)
 	}
 	if got := gapWords("capture", "ssl-unhooked"); got != "Not captured: ssl unhooked" {
@@ -221,7 +222,7 @@ func TestRowWords(t *testing.T) {
 		t.Errorf("a restored mode %q", got)
 	}
 	for why, want := range map[string]string{"run-paused": "Run paused: the agent is frozen", "run-resumed": "Run resumed",
-		"pause-failed": "Pause failed: the agent kept running", "resume-failed": "Resume failed: the run stays paused"} {
+		"pause-failed": "Pause did not take: the agent kept running", "resume-failed": "Resume did not take: the run stays paused"} {
 		if got := gapWords("enforce", why); got != want {
 			t.Errorf("gapWords(enforce, %s) = %q, want %q", why, got, want)
 		}
@@ -245,7 +246,7 @@ func TestRowWords(t *testing.T) {
 		if err := tm.ExecuteTemplate(&b, "pw", pathWords(text, home)); err != nil {
 			t.Fatal(err)
 		}
-		return b.String()
+		return unmarked(b.String())
 	}
 	if got, want := pw("/home/u/.cache/tego-workdir/id_ed25519", "/home/u"), `<span class="ut pw" title="/home/u/.cache/tego-workdir/id_ed25519"><span class="sp-d">~/<wbr>.cache/<wbr><span class="nb">tego-workdir/</span></span><wbr><b class="sp-b">id_ed25519</b></span>`; got != want {
 		t.Errorf("pw(path)\n = %s\nwant %s", got, want)
@@ -328,5 +329,24 @@ func TestBlobArgvMissingSaysSo(t *testing.T) {
 	}
 	if strings.Contains(visible(get(t, s, c, "/logs")), "not the hash") {
 		t.Error("Logs shows a blob that does not hash to its name")
+	}
+}
+
+// TestDroppedMCPMessageRowNamesServerSizeAndLimit (GAPS C201, C202): the row of a message the relay dropped for its size
+// says what happened and shows the server, the size and the limit the line carries.
+func TestDroppedMCPMessageRowNamesServerSizeAndLimit(t *testing.T) {
+	for _, why := range []string{record.GapMCPResponseOversize, record.GapMCPStreamOversize} {
+		note := record.OversizeNote("files", 9_000_000, 8_388_608)
+		e := ledgerview.Event{Kind: "gap", Target: "record " + why,
+			Raw: `{"what":"record","why":"` + why + `","binary":"` + note + `"}`}
+		if got := shown(e); got != note {
+			t.Errorf("%s: target %q, want %q", why, got, note)
+		}
+		if got := shownOp(e); !strings.Contains(got, "too large for the relay") {
+			t.Errorf("%s: sentence %q", why, got)
+		}
+	}
+	if got := gapWords("enforce", record.GapModelRouteUnreadable); !strings.Contains(got, "model routes could not be read") {
+		t.Errorf("unreadable model routes: %q", got)
 	}
 }

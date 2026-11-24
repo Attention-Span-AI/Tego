@@ -39,7 +39,7 @@ func lostRunWithGaps(t *testing.T, gaps []record.GapPayload) (dir, id string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := w.WriteRunStart(record.RunStartPayload{Command: []string{"true"}, Cwd: "/", Tier: "landlock", RecordMinor: record.Minor}); err != nil {
+	if err := w.WriteRunStart(record.RunStartPayload{Command: []string{"true"}, Cwd: "/", Tier: "landlock", RecordMinor: record.MinorLearn}); err != nil {
 		t.Fatal(err)
 	}
 	for _, g := range gaps {

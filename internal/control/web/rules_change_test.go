@@ -129,11 +129,11 @@ func TestRulesChangeForm(t *testing.T) {
 		t.Fatalf("GET: %d %s", code, body)
 	}
 	for _, want := range []string{
-		"Change rules for rules-demo", "Programs it may run", "Can change", "Can never read", "Asks you before it reads",
+		"Change rules", "rules-demo", "Programs it may run", "Can change", "Can never read", "Asks you before it reads",
 		`<span class="mono rc-entry" title="git">git</span>`, `name="op" value="remove"`, `name="key" value="exec.allow"`, `name="v" value="git"`,
 		`name="base" value="` + ref.Base + `"`, `name="c" value="` + ref.Ref + `"`, `action="/rules/change/preview"`,
 		html.EscapeString("git, /usr/bin/git, or git status"), `placeholder="e.g. ./out/"`, "History", "No changes yet",
-		"Advanced: edit YAML", "DEMO_TOKEN: " + rulesview.Hidden, "saving puts each back", `name="text"`, "/static/rules-change.css",
+		"Simple and Full editor", "DEMO_TOKEN: " + rulesview.Hidden, "saving puts each back", `name="text"`, "/static/rules-change.css",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the form lacks %q", want)
@@ -154,7 +154,7 @@ func TestRulesChangeForm(t *testing.T) {
 	other := f.ref(t, f.other)
 	_, body = f.get(t, "/rules/change?c="+other.Ref+"&raw=1")
 	if !strings.Contains(body, `<textarea class="input mono rc-text" id="yaml-text" name="text"`) || !strings.Contains(body, "name: other-agent") ||
-		!strings.Contains(body, `rc-raw" id="yaml" open`) {
+		!strings.Contains(body, `builder-edit" id="yaml" open`) {
 		t.Error("the YAML editor is not open with the file's text")
 	}
 	for _, target := range []string{"/rules/change?c=feedfeedfeedfeed", "/rules/change?c=" + url.QueryEscape("../../etc/passwd"),
@@ -224,8 +224,11 @@ func TestPreviewWritesNothing(t *testing.T) {
 			t.Errorf("the narrowing's preview lacks %q", want)
 		}
 	}
-	if strings.Contains(body, `name="ack"`) || strings.Contains(body, rulesCanary) {
-		t.Error("a narrowing asks for the acknowledgement, or the diff shows an env value")
+	if strings.Contains(body, `<input type="checkbox" name="ack"`) || strings.Contains(body, rulesCanary) {
+		t.Error("a narrowing asks for an extra confirmation, or the diff shows an env value")
+	}
+	if !strings.Contains(body, `<input type="hidden" name="ack" value="`) || hiddenAckIn(t, body) == "" {
+		t.Error("the narrowing form lost its reviewed acknowledgement")
 	}
 	q = url.Values{"c": {ref.Ref}, "base": {ref.Base}, "op": {"add"}, "key": {"fs.write"}, "v": {"./more/"}}
 	_, body = f.get(t, "/rules/change/preview?"+q.Encode())
@@ -306,7 +309,10 @@ func TestRulesChangeSaveAndUndo(t *testing.T) {
 	f := newChangeFix(t)
 	ref := f.ref(t, f.source)
 	before := readText(t, f.source)
-	loc, body := f.save(t, "/rules/change", url.Values{"c": {ref.Ref}, "base": {ref.Base}, "op": {"remove"}, "key": {"exec.allow"}, "v": {"git"}})
+	form := url.Values{"c": {ref.Ref}, "base": {ref.Base}, "op": {"remove"}, "key": {"exec.allow"}, "v": {"git"}}
+	_, preview := f.get(t, "/rules/change/preview?"+form.Encode())
+	form.Set("ack", hiddenAckIn(t, preview))
+	loc, body := f.save(t, "/rules/change", form)
 	if !strings.HasPrefix(loc, "/rules/change/saved?c="+ref.Ref+"&id=") {
 		t.Fatalf("save went to %q", loc)
 	}
@@ -350,8 +356,12 @@ func TestRulesChangeSaveAndUndo(t *testing.T) {
 	if readText(t, f.source) != before {
 		t.Error("Undo did not give the file its old text back")
 	}
-	// The form's base is the text before the undo: stale now.
-	loc, body = f.save(t, "/rules/change", url.Values{"c": {ref.Ref}, "base": {strings.Repeat("ab", 32)}, "op": {"remove"}, "key": {"exec.allow"}, "v": {"git"}})
+	// Submit a live review with a stale base. A missing review has its own refusal.
+	stale := url.Values{"c": {ref.Ref}, "base": {ref.Base}, "op": {"remove"}, "key": {"exec.allow"}, "v": {"git"}}
+	_, preview = f.get(t, "/rules/change/preview?"+stale.Encode())
+	stale.Set("ack", hiddenAckIn(t, preview))
+	stale.Set("base", strings.Repeat("ab", 32))
+	loc, body = f.save(t, "/rules/change", stale)
 	if !strings.HasPrefix(loc, "/rules/change/preview?") || !strings.Contains(body, "changed since you looked") || !strings.Contains(body, `name="base" value="`+ref.Base+`"`) {
 		t.Errorf("a stale confirm went to %q, or the page lacks the line or the new base", loc)
 	}
@@ -407,15 +417,15 @@ func TestRawEditor(t *testing.T) {
 		return f.post(t, "/rules/change", v)
 	}
 	code, body := raw("check", "version: 0\nname: other-agent\ncommand: [sh]\nexec:\n  allow: [sh\n", false)
-	if code != http.StatusOK || !strings.Contains(body, "This text cannot be saved") || !regexp.MustCompile(`href="#yl-\d+">line \d+</a>`).MatchString(body) ||
+	if code != http.StatusOK || !strings.Contains(body, "This text cannot be saved") || !regexp.MustCompile(`href="#yl-\d+"[^>]*>line \d+</a>`).MatchString(body) ||
 		!strings.Contains(body, `class="mono rc-bad" id="yl-`) {
-		t.Errorf("a text that does not parse: %d, or no diagnostic with its line", code)
+		t.Errorf("a text that does not parse: %d, or no diagnostic with its line: %s", code, regexp.MustCompile(`(?s)<ul class="rc-diags">.*?</ul>`).FindString(body))
 	}
 	// "set" inside an ordinary word (assets/) is no env.set: the parse error still reaches its line.
 	code, body = raw("check", "version: 0\nname: other-agent\ncommand: [sh]\nfs:\n  write: [./assets/\n", false)
 	if code != http.StatusOK || !strings.Contains(body, "This text cannot be saved") || !strings.Contains(body, `class="mono rc-bad" id="yl-`) ||
 		strings.Contains(body, "environment values") {
-		t.Errorf("a broken text naming assets/: %d, or no diagnostic with its line", code)
+		t.Errorf("a broken text naming assets/: %d, or no diagnostic with its line: %s", code, regexp.MustCompile(`(?s)<ul class="rc-diags">.*?</ul>`).FindString(body))
 	}
 	code, body = raw("check", "version: 0\nname: other-agent\ncommand: [sh]\nexec:\n  allow: [sh]\nfs:\n  write: [3]\nbogus_key: 1\n", false)
 	if code != http.StatusOK || !strings.Contains(body, "This text cannot be saved") {
@@ -441,8 +451,11 @@ func TestRawEditor(t *testing.T) {
 	if code, body = raw("save", good, false); code != http.StatusBadRequest || !strings.Contains(body, "tick to confirm") {
 		t.Errorf("a free edit without its confirmation: %d", code)
 	}
-	if code, body = raw("save", good+"env:\n  set:\n    K: "+rulesCanary+"\n", true); code != http.StatusUnprocessableEntity || !strings.Contains(body, "environment values") {
+	if code, body = raw("check", good+"env:\n  set:\n    K: "+rulesCanary+"\n", true); code != http.StatusUnprocessableEntity || !strings.Contains(body, "environment values") {
 		t.Errorf("a free edit with env values: %d, want 422", code)
+	}
+	if code, body = raw("save", good+"env:\n  set:\n    K: "+rulesCanary+"\n", true); code != http.StatusBadRequest || !strings.Contains(body, "tick to confirm") || readText(t, f.other) != before {
+		t.Errorf("an unchecked free edit adding env values was not refused without writing: %d", code)
 	}
 	if code, _ = raw("check", good+"env:\n  set:\n    K: "+rulesview.Hidden+"\n", false); code != http.StatusUnprocessableEntity {
 		t.Errorf("a free edit adding a hidden env value: %d, want 422", code)
@@ -465,13 +478,17 @@ func TestRawEditor(t *testing.T) {
 	free := func(step, text string) (int, string) {
 		return f.post(t, "/rules/change", url.Values{"mode": {"raw"}, "c": {src.Ref}, "base": {src.Base}, "step": {step}, "text": {text}})
 	}
-	// The editor's text saved unchanged, as a browser posts it (CR LF), is "Nothing to save", although one value spans
-	// lines and putting it back would rewrite it on one; the file keeps its bytes.
+	// Checking unchanged browser text (CR LF) says "Nothing to save", although
+	// putting back a multi-line value would rewrite it on one line. An unchecked
+	// Save is refused without compiling or changing the original bytes.
 	if !strings.Contains(srcBefore, rulesCanary+"-block\n") {
 		t.Fatalf("the fixture's rules file has no multi-line env value:\n%s", srcBefore)
 	}
-	if code, body = free("save", strings.ReplaceAll(shown, "\n", "\r\n")); !strings.Contains(body, "Nothing to save") || readText(t, f.source) != srcBefore {
+	if code, body = free("check", strings.ReplaceAll(shown, "\n", "\r\n")); !strings.Contains(body, "Nothing to save") || readText(t, f.source) != srcBefore {
 		t.Errorf("the unchanged editor text saved: %d, file changed %v\n%s", code, readText(t, f.source) != srcBefore, body)
+	}
+	if code, body = free("save", strings.ReplaceAll(shown, "\n", "\r\n")); code != http.StatusBadRequest || !strings.Contains(body, "tick to confirm") || readText(t, f.source) != srcBefore {
+		t.Errorf("unchanged text Save without a review was not refused without writing: %d", code)
 	}
 	code, body = free("check", edited)
 	if code != http.StatusOK || !strings.Contains(body, "It compiles") || strings.Contains(body, rulesCanary) {
@@ -559,7 +576,7 @@ func TestAlsoApplyNow(t *testing.T) {
 			{Run: "r-live-2", Why: "this run reads files directly"}}}
 	fc := &fakeChange{plan: plan, applied: &rules.Applied{Plan: plan, ID: "", Bak: "/p/agent.yaml.bak", Warn: "the journal could not be written",
 		Live: []rules.LiveResult{{Run: "r-live-1", Block: "exec:/usr/bin/ls", OK: true}, {Run: "r-live-2", Err: "not running"}}}}
-	s, err := New(Config{Ledger: t.TempDir(), Port: port, Token: "tok123", Rules: fc})
+	s, err := New(Config{Ledger: t.TempDir(), Port: port, Token: "tok123", Machine: config.Builtin(), Rules: fc})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -567,8 +584,8 @@ func TestAlsoApplyNow(t *testing.T) {
 	c := login(t, s)
 	w := do(s, "GET", "/rules/change/preview?c=00112233aabbccdd&base=b1&op=remove&key=exec.allow&v=ls", "127.0.0.1:8484", c)
 	body := w.Body.String()
-	for _, want := range []string{"Also apply now", `name="now" value="r-live-1" checked`, `<span title="exec:/usr/bin/ls">Running /usr/bin/ls</span> · until the run ends`, "this run reads files directly",
-		"tego block r-live-1 exec /usr/bin/ls", "<legend>Running now</legend>", `With Also apply now ticked, it is in force on <span class="nb">r-live-1</span> within about a second`} {
+	for _, want := range []string{"Apply now to", `name="now" value="r-live-1" checked`, `<span title="exec:/usr/bin/ls">Running /usr/bin/ls</span> · until the run ends`, "this run reads files directly",
+		"tego block r-live-1 exec /usr/bin/ls", "<legend>Running now</legend>", `With “Apply now” ticked below, it is in force on <span class="nb">r-live-1</span> within about a second`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the preview lacks %q", want)
 		}
@@ -614,4 +631,21 @@ func TestChangeWithoutService(t *testing.T) {
 			t.Errorf("POST %s: %d", p, w.Code)
 		}
 	}
+}
+
+// TestChangePagesNameEveryFamilyTheChangeMoves: the structured preview, the free editor's check and the saved page of a
+// free edit say what the compiled contract does differently, family by family, with the direction each came out in,
+// where the preview showed only the lists the form changes and the free edit showed only a diff and "Whole file
+// replaced".
+func TestChangePagesNameEveryFamilyTheChangeMoves(t *testing.T) {
+	f := newChangeFix(t)
+	src := f.ref(t, f.source)
+	_, body := f.get(t, "/rules/change/preview?"+url.Values{"c": {src.Ref}, "base": {src.Base}, "op": {"remove"}, "key": {"exec.allow"}, "v": {"git"}}.Encode())
+	mustContain(t, "the preview", body, "What the compiled contract changes", "Programs it may run: the next run may do less than before")
+	ref := f.ref(t, f.other)
+	good := strings.Replace(readText(t, f.other), "allow: [sh]", "allow: [sh, git]", 1)
+	_, body = f.post(t, "/rules/change", url.Values{"mode": {"raw"}, "c": {ref.Ref}, "base": {ref.Base}, "step": {"check"}, "text": {good}})
+	mustContain(t, "the free edit's check", body, "It compiles", "What the compiled contract changes", "Programs it may run: the next run may do more than before")
+	_, saved := f.save(t, "/rules/change", url.Values{"mode": {"raw"}, "c": {ref.Ref}, "base": {ref.Base}, "step": {"save"}, "text": {good}, "ack": {ackIn(t, body)}})
+	mustContain(t, "the saved page", saved, "Whole file replaced", "What the compiled contract changes", "Programs it may run: the next run may do more than before")
 }

@@ -14,11 +14,35 @@ import (
 	"time"
 
 	"github.com/cilium/ebpf"
+	"golang.org/x/sys/unix"
 
 	ebpfbindings "github.com/attention-span-ai/tego/internal/bpf"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
+
+// privateBPFFS mounts a bpf filesystem of this test's own and makes it a state directory, which Options.BPFFS and
+// Options.StateDir name (a build's pins and its locks then are this test's alone, openState). Both go when the test
+// ends: the caller's pin removals run first, the unmount last.
+func privateBPFFS(t *testing.T) (bpffs, state string) {
+	t.Helper()
+	dir := t.TempDir()
+	bpffs, state = filepath.Join(dir, "bpf"), filepath.Join(dir, "state")
+	for _, d := range []string{bpffs, state} {
+		if err := os.Mkdir(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := unix.Mount("bpf", bpffs, "bpf", 0, ""); err != nil {
+		t.Fatalf("mount a bpf filesystem of its own: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := unix.Unmount(bpffs, unix.MNT_DETACH); err != nil {
+			t.Errorf("unmount %s: %v", bpffs, err)
+		}
+	})
+	return bpffs, state
+}
 
 // TestALingeringBuildIsAdoptedAndSweptOnlyWhenIdle is ADR 0022 against the running kernel, as root. With a
 // linger, the last launcher out leaves the build's programs, maps and host-wide links pinned, and the next run
@@ -164,9 +188,15 @@ func TestALingeringBuildIsAdoptedAndSweptOnlyWhenIdle(t *testing.T) {
 // 50 ms, where removing the build there took 1 to 3.7 s on 6.1 and 5.14, which detach synchronously in the unpinning
 // process. With the kernel's lock table read there the slot took 48 ms of its 50 on 6.1, so Prepare
 // reads a timer's pid instead; the test logs what a lock-table read costs on the kernel it runs on.
+//
+// It runs on a bpf filesystem and a state directory of its own (privateBPFFS), not the host's. A timer sweeps every
+// build under its filesystem, the builds past its linger first, and removes each one synchronously, which took 3 s a
+// plane directory in the guest: where earlier tests of the package left a build on the host's filesystem, this test's
+// 1 s timer removed that first and its own build stood past the 3 s bound, whichever test ran before. A filesystem
+// of its own holds this test's builds alone, so the bound measures the removal of the one build.
 func TestIntegrationABuildWhoseTimerDiedIsRemovedAtTheNextPrepare(t *testing.T) {
 	requireRealPrepare(t)
-	state := pinState(t)
+	bpffs, state := privateBPFFS(t)
 	bin := t.TempDir()
 	if err := os.Chmod(bin, 0o755); err != nil {
 		t.Fatal(err)
@@ -177,7 +207,7 @@ func TestIntegrationABuildWhoseTimerDiedIsRemovedAtTheNextPrepare(t *testing.T) 
 	phases := map[string]map[string]time.Duration{}
 	prepare := func(hash, name string, o Options) *Handle {
 		t.Helper()
-		o.Machine, o.StateDir, o.Hash, o.Events = machineLinger(linger), state, hash, &sink{}
+		o.Machine, o.BPFFS, o.StateDir, o.Hash, o.Events = machineLinger(linger), bpffs, state, hash, &sink{}
 		phases[name] = map[string]time.Duration{}
 		o.Phase = func(phase string, d time.Duration) {
 			if strings.HasPrefix(phase, "prepare.lock-slot") || strings.HasPrefix(phase, "prepare.rearm") {
@@ -193,7 +223,7 @@ func TestIntegrationABuildWhoseTimerDiedIsRemovedAtTheNextPrepare(t *testing.T) 
 		return h
 	}
 	orphan := fmt.Sprintf("timer-died-%d", os.Getpid())
-	pins, err := newPinLayout(DefaultBPFFS, orphan)
+	pins, err := newPinLayout(bpffs, orphan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +238,7 @@ func TestIntegrationABuildWhoseTimerDiedIsRemovedAtTheNextPrepare(t *testing.T) 
 	time.Sleep(linger + 1500*time.Millisecond) // past the linger by more than the lock mtime's second
 
 	next := fmt.Sprintf("timer-next-%d", os.Getpid())
-	nextPins, err := newPinLayout(DefaultBPFFS, next)
+	nextPins, err := newPinLayout(bpffs, next)
 	if err != nil {
 		t.Fatal(err)
 	}

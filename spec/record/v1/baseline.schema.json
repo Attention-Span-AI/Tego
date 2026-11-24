@@ -1,0 +1,467 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tego.dev/spec/record/v1/baseline.schema.json",
+  "title": "Machine baseline evidence",
+  "type": "object",
+  "required": [
+    "record_minor"
+  ],
+  "properties": {
+    "record_minor": {
+      "type": "integer",
+      "anyOf": [
+        {
+          "minimum": 0,
+          "maximum": 35
+        },
+        {
+          "const": 39
+        }
+      ]
+    },
+    "contract_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "baseline": {
+      "$ref": "#/$defs/Baseline"
+    },
+    "effective_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "record_minor": {
+            "minimum": 39
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "baseline",
+          "effective_hash",
+          "contract_hash"
+        ]
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "baseline"
+              ]
+            },
+            {
+              "required": [
+                "effective_hash"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "Baseline": {
+      "type": "object",
+      "required": [
+        "v",
+        "mode",
+        "sha256",
+        "owner_uid",
+        "home",
+        "owner_known",
+        "sources",
+        "protected_owner_layer",
+        "rules",
+        "source_contract",
+        "effective_contract",
+        "replay",
+        "fact_sha256",
+        "evidence_sha256"
+      ],
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "mode": {
+          "enum": [
+            "applied",
+            "not-applied"
+          ]
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "owner_uid": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967294
+        },
+        "home": {
+          "type": "string"
+        },
+        "owner_known": {
+          "type": "boolean"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BaselineSource"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "protected_owner_layer": {
+          "type": "string"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BaselineRule"
+          },
+          "maxItems": 100000
+        },
+        "source_contract": {
+          "type": "string"
+        },
+        "effective_contract": {
+          "type": "string"
+        },
+        "replay": {
+          "type": "object"
+        },
+        "fact_sha256": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "evidence_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "owner_known": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "home": {
+                "type": "string",
+                "pattern": "^/"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "not-applied"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "rules": {
+                "items": {
+                  "properties": {
+                    "held": {
+                      "const": "not-applied"
+                    },
+                    "rule": {
+                      "maxItems": 0
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "owner_known": {
+                "const": true
+              },
+              "rules": {
+                "items": {
+                  "properties": {
+                    "held": {
+                      "enum": [
+                        "kernel",
+                        "conditional",
+                        "best-effort"
+                      ]
+                    },
+                    "state": {
+                      "enum": [
+                        "present",
+                        "absent"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "BaselineSource": {
+      "type": "object",
+      "required": [
+        "layer",
+        "file",
+        "state",
+        "sha256",
+        "bytes"
+      ],
+      "properties": {
+        "layer": {
+          "enum": [
+            "etc",
+            "user",
+            "env"
+          ]
+        },
+        "file": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "present",
+            "absent",
+            "unselected"
+          ]
+        },
+        "sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bytes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "present"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "file": {
+                "type": "string",
+                "pattern": "^/"
+              },
+              "bytes": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "absent"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "file": {
+                "type": "string",
+                "pattern": "^/"
+              },
+              "bytes": {
+                "type": "null"
+              },
+              "sha256": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "unselected"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "file": {
+                "const": ""
+              },
+              "bytes": {
+                "type": "null"
+              },
+              "sha256": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "BaselineOrigin": {
+      "type": "object",
+      "required": [
+        "layer",
+        "file",
+        "line"
+      ],
+      "properties": {
+        "layer": {
+          "enum": [
+            "etc",
+            "user",
+            "env"
+          ]
+        },
+        "file": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "BaselineRule": {
+      "type": "object",
+      "required": [
+        "id",
+        "key",
+        "value",
+        "expanded",
+        "state",
+        "rule",
+        "empty_reason",
+        "sources",
+        "tier",
+        "plane",
+        "held",
+        "image_mode",
+        "operations",
+        "conditions",
+        "limits"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "enum": [
+            "fs.deny_read",
+            "fs.deny_write",
+            "exec.deny",
+            "env.deny"
+          ]
+        },
+        "value": {
+          "type": "string"
+        },
+        "expanded": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "present",
+            "absent",
+            "unresolved"
+          ]
+        },
+        "rule": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "empty_reason": {
+          "type": "string"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BaselineOrigin"
+          },
+          "minItems": 1
+        },
+        "tier": {
+          "enum": [
+            "landlock",
+            "cgroup",
+            "bpflsm",
+            "observe"
+          ]
+        },
+        "plane": {
+          "enum": [
+            "",
+            "lsm",
+            "fmod_ret",
+            "fanotify"
+          ]
+        },
+        "held": {
+          "enum": [
+            "kernel",
+            "conditional",
+            "best-effort",
+            "not-applied"
+          ]
+        },
+        "image_mode": {
+          "type": "string"
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "limits": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

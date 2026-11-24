@@ -14,6 +14,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/doctor"
 	"github.com/attention-span-ai/tego/internal/guide"
+	"github.com/attention-span-ai/tego/internal/platform/hostaddr"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
 	"github.com/attention-span-ai/tego/internal/runtime/capture/uprobe"
 	rtcgroup "github.com/attention-span-ai/tego/internal/runtime/cgroup"
@@ -38,9 +39,25 @@ type doctorReport struct {
 	Rings *cgroupenforce.RingUse `json:"rings,omitempty"`
 	// Dashboard is whether the kernel can tell which run a dashboard connection comes from (doctordashboard.go).
 	Dashboard dashboardCheck `json:"dashboard"`
+	// UserBus is what tego dashboard and tego start cannot do without the user's message bus (userbus.go); absent when
+	// nothing is missing.
+	UserBus *userBusCheck `json:"user_bus,omitempty"`
 	// Multicall is the file ls leads to when it is a possible multi-call program (doctormulticall.go); absent when it
 	// has one link and another name, or no ls is on PATH.
 	Multicall *multicallCheck `json:"multicall,omitempty"`
+	// Routing is the routing tables a run's reading of this host leaves out, or a rule dump that could not be read
+	// (doctorrouting.go); absent when every table with local, broadcast or anycast routes is read.
+	Routing *routingCheck `json:"routing,omitempty"`
+	// Baseline carries config completeness even when the JSON consumer does not read stderr.
+	Baseline *doctorBaseline `json:"baseline,omitempty"`
+	// RunMembership is membershipLine: this process's own run-membership answer and the seccomp mode the rule
+	// recorded, absent where the answer is outside and nothing was recorded (ordinary Linux).
+	RunMembership string `json:"run_membership,omitempty"`
+}
+
+type doctorBaseline struct {
+	Known   bool     `json:"known"`
+	Reasons []string `json:"reasons,omitempty"`
 }
 
 func init() { register(cmdDoctor) }
@@ -52,14 +69,15 @@ func init() { register(cmdDoctor) }
 // (doctordashboard.go, never the exit). After it, on stderr, the Ready or Not ready line and the next step
 // (writeDoctorVerdict). Exit 0 when a tier runs, 211 when --require named a tier this machine cannot reach (R25).
 func cmdDoctor() Command {
-	var asJSON bool
+	var asJSON, noScope bool
 	var require string
 	return Command{
 		Name:    "doctor",
 		Summary: "check the machine: kernel, BTF, cgroup v2, Landlock, seccomp, LSM, programs, fanotify, swap",
-		Usage:   "[--json] [--require <landlock|cgroup|bpflsm>]",
+		Usage:   "[--json] [--no-scope] [--require <landlock|cgroup|bpflsm>]",
 		Flags: func(fs *flag.FlagSet) {
 			fs.BoolVar(&asJSON, "json", false, "one JSON object")
+			fs.BoolVar(&noScope, "no-scope", false, "check this shell without rehearsing entry into a user scope")
 			fs.StringVar(&require, "require", "", "exit 211 unless this tier is available (landlock|cgroup|bpflsm)")
 		},
 		Run: func(ctx context.Context, fs *flag.FlagSet, stdout, stderr io.Writer) int {
@@ -67,13 +85,13 @@ func cmdDoctor() Command {
 				message(stderr, "", 0, 0, "tego doctor: takes no arguments", codeUsage)
 				return identity.ExitUsage // R25: usage error
 			}
-			return runDoctor(ctx, asJSON, require, stdout, stderr)
+			return runDoctor(ctx, asJSON, require, noScope, stdout, stderr)
 		},
 	}
 }
 
 // runDoctor is the in-process body of doctor.
-func runDoctor(ctx context.Context, asJSON bool, require string, stdout, stderr io.Writer) int {
+func runDoctor(ctx context.Context, asJSON bool, require string, noScope bool, stdout, stderr io.Writer) int {
 	var tier backend.Tier
 	if require != "" {
 		t, err := backend.ParseTier(require)
@@ -83,9 +101,12 @@ func runDoctor(ctx context.Context, asJSON bool, require string, stdout, stderr 
 		}
 		tier = t
 	}
-	// The machine config is read the way compile reads it (spec/config/v0: compile and doctor warn and
-	// continue on an untrusted layer, run aborts): its tier ceiling is part of the answer, because a run
-	// selects at or below it, and doctor called with no config reported a tier a capped run never gets.
+	if !noScope {
+		ctx = rehearseUserScope(ctx, stderr)
+	}
+	// Doctor keeps diagnosing on a bad layer and reports the baseline UNKNOWN with its cause.
+	// It does not restore modes; the next run or non-dry gc restores missing owner bits.
+	// Known tier ceilings remain useful, but a degraded result cannot certify a launch.
 	m, cds, err := loadMachine(config.TrustWarn)
 	writeConfigDiagnostics(stderr, cds)
 	if err != nil {
@@ -98,22 +119,44 @@ func runDoctor(ctx context.Context, asJSON bool, require string, stdout, stderr 
 		return identity.ExitError // R25: Tego's own error
 	}
 	lc := checkLedger(m, stderr)
-	builds := listBuilds(stderr, m)
-	rings := ringUse(builds, m)
+	var builds []cgroupenforce.BuildInfo
+	var rings *cgroupenforce.RingUse
+	if rep.RootStateVisible() {
+		builds = listBuilds(stderr, m)
+		rings = ringUse(builds, m)
+	}
 	dash := checkDashboard()
+	ub := checkUserBus()
 	mc := checkMulticall()
+	rc := checkRouting(hostaddr.ReadLocalTable)
+	membership := membershipLine(selfAnswer())
 	if asJSON {
+		baseline := &doctorBaseline{Known: m.BaselineKnown()}
+		for _, layer := range m.LayerSources() {
+			if layer.State == config.LayerUnknown {
+				baseline.Reasons = append(baseline.Reasons, fmt.Sprintf("%s layer %s: %s", layer.Layer, layer.File, layer.Reason))
+			}
+		}
 		err = writeJSON(stdout, doctorReport{Version: buildInfo(debug.ReadBuildInfo), Report: rep, Ledger: lc, Builds: builds,
-			Rings: rings, Dashboard: dash, Multicall: mc})
+			Rings: rings, Dashboard: dash, UserBus: ub, Multicall: mc, Routing: rc, Baseline: baseline, RunMembership: membership})
 	} else {
 		if _, err = fmt.Fprintln(stdout, buildInfo(debug.ReadBuildInfo).Line()); err == nil {
 			err = rep.WriteText(stdout)
+		}
+		if err == nil && membership != "" {
+			_, err = fmt.Fprintln(stdout, membership)
 		}
 		if err == nil {
 			err = writeMulticallCheck(stdout, mc)
 		}
 		if err == nil {
+			err = writeRoutingCheck(stdout, rc)
+		}
+		if err == nil {
 			err = writeDashboardCheck(stdout, dash)
+		}
+		if err == nil && ub != nil {
+			err = writeUserBusCheck(stdout, *ub)
 		}
 		if err == nil && lc != nil {
 			err = writeLedgerCheck(stdout, *lc)
@@ -150,7 +193,10 @@ func writeDoctorVerdict(stderr io.Writer, rep *doctor.Report) {
 	_, _ = io.WriteString(stderr, "\n"+line+"\n")
 	text, command := "see Tego refuse four harmless actions on decoy files:", "tego machine test"
 	if rep.Root {
-		command = sudoTego("test")
+		var why string
+		if command, why = sudoTego("test"); why != "" {
+			text = why
+		}
 	}
 	if rep.ExitCode() != identity.ExitOK {
 		if rep.OutsideUserManager && (rep.Require == "" || rep.Require == backend.TierLandlock) {
@@ -158,26 +204,23 @@ func writeDoctorVerdict(stderr io.Writer, rep *doctor.Report) {
 			return
 		}
 		if rep.NoUserManager && (rep.Require == "" || rep.Require == backend.TierLandlock) {
-			// The fix: line names this command too; the block names it so the next step is never tego setup, which
-			// would name tego doctor again before anything changed.
-			uid, _ := config.InvokingUID()
-			if managerRefused(uid) != "" {
-				// systemd starts no user manager for this account's name, linger or not: the
-				// fix: line says what to do, and no command would change anything.
-				_, _ = io.WriteString(stderr, hintBlock("systemd runs no user manager for this account's name; see the fix: line.", ""))
-				return
-			}
-			_, _ = io.WriteString(stderr, hintBlock(guide.NoManagerText, lingerCommand(uid)))
+			noManagerHint(stderr)
 			return
 		}
 		command = "tego setup"
+		noSudo := "" // why the root command cannot be named, when it cannot
 		switch {
 		case rep.Root:
 			command = ""
 		case rep.Require == backend.TierCgroup || rep.Require == backend.TierBPFLSM:
-			command = sudoTego("doctor --require " + string(rep.Require))
+			var why string
+			if command, why = sudoTego("doctor --require " + string(rep.Require)); why != "" {
+				noSudo = why
+			}
 		}
 		switch {
+		case noSudo != "":
+			text = noSudo
 		case rep.Fix != "":
 			text = "do what the fix: line above says, then check again:"
 		case fix != "":
@@ -189,7 +232,27 @@ func writeDoctorVerdict(stderr io.Writer, rep *doctor.Report) {
 			text = strings.TrimSuffix(text, ", then check again:") + ", then run this check again."
 		}
 	}
+	text, command = forReader(text, command)
 	_, _ = io.WriteString(stderr, hintBlock(text, command))
+}
+
+// noManagerHint is the next: block when no tier can run only because no user manager runs for the user
+// (doctor.Report.NoUserManager, cgroup.ErrNoUserManager): the command that starts one without a login, which the fix:
+// line names too. The block names it so the next step is never tego setup, which would name tego doctor again before
+// anything changed (acceptance 2B, 2026-11-11). Where systemd starts no manager for the account's name, linger or not
+// (acceptance 3), no command would change anything: the fix: line says what to do and the block names none. tego doctor,
+// run, watch and test say it alike: the last three exit 125 with the fix: text at the end of their error line, and
+// ended with no next: block at all (acceptance 4, 2026-11-11, stumble 5).
+func noManagerHint(stderr io.Writer) {
+	if !hintsOn(stderr) {
+		return
+	}
+	uid, _ := config.InvokingUID()
+	if managerRefused(uid) != "" {
+		_, _ = io.WriteString(stderr, hintBlock("systemd runs no user manager for this account's name; see the fix: line.", ""))
+		return
+	}
+	_, _ = io.WriteString(stderr, hintBlock(guide.NoManagerText, lingerCommand(uid)))
 }
 
 // lingerCommand is cgroup.LingerCommand; a variable so a test names its user.
@@ -199,17 +262,19 @@ var lingerCommand = rtcgroup.LingerCommand
 var managerRefused = rtcgroup.ManagerRefused
 
 // sudoTego is a root command as a hint writes it: sudo resets PATH to its secure_path, which leaves out ~/.local/bin,
-// where the installer puts tego, so `sudo tego` is "command not found" on Ubuntu and Fedora (FIRST-TEN 5).
-func sudoTego(args string) string { return `sudo "$(command -v tego)" ` + args }
+// where the installer puts tego, so `sudo tego` is "command not found" on Ubuntu and Fedora (FIRST-TEN 5), and on
+// AlmaLinux /usr/local/bin too (acceptance 4). It names this tego by its absolute path, as sudoSelf does.
+func sudoTego(args string) (string, string) { return sudoSelf(args) }
 
 // checkLedger is the ledger half of doctor: the runs in the ledger root no sweep on this host finishes. It reads
 // and writes nothing when the root cannot be resolved, and a check that fails is a warning, never doctor's exit.
 func checkLedger(m *config.Machine, stderr io.Writer) *tegoruntime.LedgerCheck {
+	// With the system root-only approval floor on, it also lists the live runs that started without it.
 	root, err := ledgerRootOf(m)
 	if err != nil {
 		return nil
 	}
-	lc, err := tegoruntime.CheckLedger(root)
+	lc, err := tegoruntime.CheckLedger(root, m.LocalRoles.Value == config.LocalRolesOwnerOnly)
 	if err != nil {
 		message(stderr, "", 0, 0, "tego doctor: "+err.Error(), codeIO)
 		return nil
@@ -375,6 +440,11 @@ func writeLedgerCheck(w io.Writer, lc tegoruntime.LedgerCheck) error {
 		lines = append(lines, fmt.Sprintf("  run %s ended, its launcher is gone, and its live-index entry stays: no sweep "+
 			"has finished it (its anchor repair or its scope removal failed); tego events --verify %s says whether "+
 			"it is anchored", id, id))
+	}
+	for _, id := range lc.LiveWithoutFloor {
+		lines = append(lines, fmt.Sprintf("  run %s is running without the root-only approval floor (local_roles: owner_only binds only runs "+
+			"launched after it was set): its owner can still answer its requests, and only a run started after the "+
+			"floor is held to root. Stop it with tego stop %s and start it again.", id, id))
 	}
 	if _, err := fmt.Fprintln(w, strings.Join(lines, "\n")); err != nil {
 		return fmt.Errorf("doctor: write ledger: %w", err)

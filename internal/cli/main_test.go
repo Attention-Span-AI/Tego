@@ -51,7 +51,7 @@ func TestDispatchExitCodes(t *testing.T) {
 		// The usage lines left out run's --offline and doctor's --require values, and doctor's refusal of a bad
 		// --require did not say which tiers it takes.
 		{"run help names --offline", []string{"run", "-h"}, identity.ExitOK, "", "[--observe] [--offline] [-- <cmd> [args]]"},
-		{"doctor help names the tiers", []string{"doctor", "-h"}, identity.ExitOK, "", "usage: tego doctor [--json] [--require <landlock|cgroup|bpflsm>]"},
+		{"doctor help names the tiers", []string{"doctor", "-h"}, identity.ExitOK, "", "usage: tego doctor [--json] [--no-scope] [--require <landlock|cgroup|bpflsm>]"},
 		{"doctor refuses a bad tier by name", []string{"doctor", "--require", "cgroups"}, identity.ExitUsage, "", `--require "cgroups" is not a tier: landlock, cgroup or bpflsm [usage]`},
 		{"version", []string{"version"}, identity.ExitOK, "tego=", ""},
 		// run, stop and status are implemented; these rows pin their argument handling,

@@ -1,64 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
-// live.js: the dashboard's live updates, in place and dependency-free. Every page works without it (a meta refresh in
-// <noscript> takes over and every form posts as a plain form). It never reloads the page:
-// - it follows the live state (live.go) over one Server-Sent Events stream, GET /events, reopened with backoff, and
-//   polls GET /status.json every 2 s while it has no stream; a hidden tab closes its stream and polls every 5 s, since a
-//   browser opens only 6 connections to the dashboard and each open stream holds one (so ~6 tabs would leave none for
-//   fetches, posts and page loads), and opens it again when it is shown;
-// - the waiting-ask count goes into the title, "(1) Tego", even in a background tab;
-// - when the state changes it fetches the page's changed live regions (regions.go: the page's own address with the
-//   header X-Tego-Regions naming each region shown and its hash) and merges each into the page node by node, so the
-//   scroll position, focus, open <details>, a text selection and a form being filled in stay (new rows: .live-new);
-// - on a live run's timeline (#tl-rows[data-rows]) it puts only the rows after its last line at the top (newest 200);
-// - every second it rewrites each "asked 8 s ago" ([data-ago]) and each running run's time so far ([data-since]);
-// - Allow, Deny, Block, Remove and the rule forms (Never allow, Undo, Save, Create) post in the background with
-//   X-Tego-Inline: the answer is a plain form's 303 line (flash.go) as JSON, said in a toast, and the regions refresh
-//   in place; its "here" (this page with the result) goes in the address bar first, its "go" (as Stop's) is a page
-//   opened with the toast. A data-page button (a YAML Check) posts as a plain form: its answer is a page.
-// static/place.js, which this file loads, builds on its merge (window.tegoLive) to change a page's view in place,
-// keeping the reader's place; hold() keeps the region and row fetches from merging a view the page is leaving.
 (function () {
   'use strict';
   function ago() { // [data-ago]: "asked 8 s ago"; [data-since]: a run's time so far, in pages.go human()'s words
-    document.querySelectorAll('[data-ago],[data-since]').forEach(function (n) {
-      var a = n.dataset.ago, t = Date.parse(a || n.dataset.since), s = Math.max(0, (a ? Math.round : Math.floor)((Date.now() - t) / 1000));
+    document.querySelectorAll('[data-ago],[data-since],[data-started]').forEach(function (n) {
+      if (n.closest('#ask-banner,[data-approval-hold]:is(:hover,:focus-within)')) return; // keep held controls still
+      var a = n.dataset.ago, started = n.dataset.started, t = Date.parse(a || started || n.dataset.since), s = Math.max(0, (a ? Math.round : Math.floor)((Date.now() - t) / 1000));
       var txt = a ? 'asked ' + (s < 60 ? s + ' s' : Math.floor(s / 60) + ' m ' + (s % 60) + ' s') + ' ago' : s < 60 ? s + ' s' : s < 3600 ? Math.floor(s / 60) + ' m ' + (s % 60) + ' s' : s < 259200 ? Math.floor(s / 3600) + ' h ' + Math.floor(s % 3600 / 60) + ' m' : Math.floor(s / 86400) + ' d ' + Math.floor(s % 86400 / 3600) + ' h';
+      if (started) txt = s < 60 ? 'Just now' : new Intl.RelativeTimeFormat(undefined, {numeric: 'always'}).format(-Math.floor(s / (s < 3600 ? 60 : s < 86400 ? 3600 : 86400)), s < 3600 ? 'minute' : s < 86400 ? 'hour' : 'day');
       if (!isNaN(t) && n.textContent !== txt) n.textContent = txt;
     });
-    // Past the agent's own wait (data-late-at), the note says it has likely given up and when Tego refuses it.
     document.querySelectorAll('[data-late-at]').forEach(function (n) {
-      var t = Date.parse(n.dataset.lateAt);
+      var t = n.closest('[data-approval-hold]:is(:hover,:focus-within)') ? NaN : Date.parse(n.dataset.lateAt);
       if (!isNaN(t) && Date.now() >= t && n.textContent !== n.dataset.late) n.textContent = n.dataset.late;
     });
   }
   ago();
   setInterval(ago, 1000); // an ask a live region brings in later ticks too
-  // A tab strip wider than the screen (phone width) scrolls: the open tab comes into view; its fade goes at the end.
-  // strips runs again after a view change merged the page (a strip it already follows is left as it is).
-  function strips() {
-    document.querySelectorAll('.tabs').forEach(function (t) {
-      var cur = t.querySelector('[aria-current="page"]'), end = function () { t.classList.toggle('at-end', t.scrollLeft + t.clientWidth >= t.scrollWidth - 4); };
-      if (cur && (cur.offsetLeft + cur.offsetWidth > t.scrollLeft + t.clientWidth || cur.offsetLeft < t.scrollLeft)) t.scrollLeft = cur.offsetLeft - 16;
-      if (!t.tegoStrip) { t.tegoStrip = true; t.addEventListener('scroll', end, { passive: true }); }
-      end();
-    });
-  }
-  strips();
+  var initialNav = document.querySelector('.nav[data-ask-keys]');
   var body = document.body, d = body.dataset;
-  // tegoLive is what static/place.js builds on: this file's merge for a whole view (no "new" mark, the forms taking the
-  // new page's values), and hold, which keeps refresh and more from merging the regions or rows of a view being left.
-  // A page with nothing to follow (MCP tools, Model routes: no signature) still changes its view in place.
   window.tegoLive = {
     merge: function (o, n) { navMode = true; try { kids(o, n); } finally { navMode = false; } },
     attrs: attrs,
+    initialAskKeys: initialNav ? initialNav.dataset.askKeys : '',
     hold: function (on) { if (!d.sig) return; navigating = on; if (on) navGen++; else if (again) refresh(); },
-    after: function () { if (d.sig) findFeed(); strips(); ago(); }, // the new view's timeline, tab strip and clocks
+    after: function () { if (d.sig) findFeed(); ago(); }, // the new view's timeline and clocks
     toast: toast
   };
   (function () { // loaded from here, so every page's head still names live.js alone (theme_test, the locked goldens)
     var ps = document.createElement('script');
     ps.src = '/static/place.js';
     document.head.appendChild(ps);
+    var gs = document.createElement('script'); gs.src = '/static/guide.js'; document.head.appendChild(gs);
   })();
   if (!d.sig) return; // the answer to a form, an error page, a page with no live regions: nothing to follow
   var rows = null, feed = null;
@@ -68,16 +40,15 @@
   }
   findFeed();
   var sig = d.sig, rev = d.rev, renderedSig = sig, renderedRev = rev, MAX = 200;
+  // The rule-change journal's revision (state.crev): a rule change writes no ledger line, so the rev above does not
+  // move for it. A page that shows change rows names the one it rendered (data-crev); the others take the first state's.
+  var cmark = document.querySelector('[data-crev]'), crev = cmark ? cmark.dataset.crev : undefined, renderedCrev = crev;
   var regionRetry = 0, regionBackoff = 1000, MAX_REGION_BACKOFF = 30000;
   var backoff = 2000, poller = 0, every = 0, fetching = false, again = false, last = 0, feeding = false, feedAgain = false;
   var es = null, retry = 0;
   var navMode = false, navGen = 0, navigating = false; // a view change (place.js): kids merging it, its count, on its way
-  function title(n) { document.title = (n > 0 ? '(' + n + ') ' : '') + d.title; }
+  function title(waiting) { if (waiting) document.title = (waiting.show ? '(' + waiting.short + ') ' : '') + d.title; }
   function conn(s) { body.setAttribute('data-conn', out ? 'out' : s); } // once signed out, it stays so
-  // signedOut: a 401 means the dashboard restarted (each serve has a new token) or the session is gone. Following
-  // stops (no stream, 2 s polling, region or row fetch: each could only fail again) and a banner says how to get back
-  // in; its text is this constant only. One quiet check every 30 s notices a sign-in from another tab (the link sets
-  // the same cookie), takes the banner down and follows again.
   var out = false, outCheck = 0, OUT_EVERY = 30000;
   function signedOut() {
     if (out) return;
@@ -112,10 +83,13 @@
   }
   function gone(r) { if (r.status === 401) signedOut(); throw new Error(r.status); } // a failed answer
   function onState(s) {
-    title(s.pending);
-    var moved = s.rev !== rev;
+    title(s.waiting);
+    var moved = s.rev !== rev, cmoved = s.crev !== undefined && crev !== undefined && s.crev !== crev;
+    if (s.crev !== undefined) { if (crev === undefined) renderedCrev = s.crev; crev = s.crev; }
+    if (cmoved) document.dispatchEvent(new CustomEvent('tego:changes')); // a rule changed: logs.js places the change rows
     if (s.sig === sig && !moved) {
-      if ((renderedSig !== sig || renderedRev !== rev) && !regionRetry) refresh();
+      // A rule change moves only crev; a region left out (Logs' rows while the reader is lower down) is asked again too.
+      if ((renderedSig !== sig || renderedRev !== rev || renderedCrev !== crev) && !regionRetry) refresh();
       return;
     }
     sig = s.sig;
@@ -129,7 +103,6 @@
       .then(function (s) { conn('ok'); onState(s); })
       .catch(function () { conn('lost'); });
   }
-  // polling(ms) polls every ms (0 stops it).
   function polling(ms) {
     if (poller && every !== ms) { clearInterval(poller); poller = 0; }
     if (ms && !poller) poller = setInterval(poll, ms);
@@ -169,13 +142,25 @@
     poll(); // catch up at once, then follow the stream again
     connect();
   });
-  // --- merging a fresh region into the page
   function key(n) { return n.nodeType === 1 ? (n.id || n.getAttribute('data-k') || '') : ''; }
   function selecting(el) {
     var s = window.getSelection();
     return !!s && !s.isCollapsed && s.rangeCount > 0 && el.contains(s.getRangeAt(0).commonAncestorContainer);
   }
-  // busy: a form someone is using (focus in a field, a value changed, or its answer on the way) is left as it is.
+  var askHeld = false;
+  function usingAsk(el) {
+    if ((el.dataset.live !== 'r-banner' && el.dataset.live !== 'content') || (navMode && el.dataset.live === 'content')) return false;
+    return Array.from(el.querySelectorAll('#ask-banner,[data-approval-hold]')).some(function (band) {
+      return band.getClientRects().length && (band.matches(':hover') || band.contains(document.activeElement));
+    });
+  }
+  function leaveAsk(e) {
+    var band = e.target.closest && e.target.closest('#ask-banner,[data-approval-hold]');
+    if (!askHeld || !band || band.contains(e.relatedTarget)) return;
+    setTimeout(refresh, 0); // focus and :hover settle after their departure event
+  }
+  document.addEventListener('pointerout', leaveAsk);
+  document.addEventListener('focusout', leaveAsk);
   function busy(f) {
     var a = document.activeElement;
     if (f.dataset.sending || (a && f.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) return true;
@@ -207,23 +192,31 @@
       if (o.nodeValue !== n.nodeValue) o.nodeValue = n.nodeValue;
       return;
     }
+    if (d.sig && usingAsk(o)) { askHeld = true; return; }
     if (o.tagName === 'FORM' && !navMode && busy(o)) return; // a view change replaces the forms, as a page load would
     attrs(o, n);
     kids(o, n);
   }
-  // kids makes op's children those of np: a node with an id or data-k matches the old node with the same, others
-  // match in order; what matches is updated in place, the rest is added (marked new when keyed) or removed.
+  function same(a, b) { return a.nodeType === 1 && b.nodeType === 1 && a.nodeName === b.nodeName && a.className === b.className; } // the same kind of block
   function kids(op, np) {
-    var byKey = {}, c, k, m, cur, nx;
+    var byKey = {}, c, k, m, cur, nx, fresh = Array.prototype.slice.call(np.childNodes);
     for (c = op.firstChild; c; c = c.nextSibling) if ((k = key(c))) byKey[c.nodeName + '#' + k] = c;
     cur = op.firstChild;
-    Array.prototype.slice.call(np.childNodes).forEach(function (n) {
+    fresh.forEach(function (n, i) {
       k = key(n);
       m = null;
       if (k) {
         m = byKey[n.nodeName + '#' + k] || null;
         delete byKey[n.nodeName + '#' + k];
-      } else if (cur && !key(cur) && cur.nodeType === n.nodeType && cur.nodeName === n.nodeName) m = cur;
+      } else if (cur && !key(cur) && cur.nodeType === n.nodeType && cur.nodeName === n.nodeName) {
+        m = cur;
+        // A block that grew in front (a note, a late line) must not hand this one's place to the next block: match a
+        // block to the same kind (its class), and take its place by position only when no later one is of its kind.
+        if (n.nodeType === 1 && cur.className !== n.className) {
+          for (c = cur.nextSibling, m = null; c; c = c.nextSibling) if (!key(c) && same(c, n)) { m = c; break; }
+          if (!m && !fresh.slice(i + 1).some(function (x) { return !key(x) && same(x, cur); })) m = cur;
+        }
+      }
       if (m) {
         if (m === cur) cur = cur.nextSibling; else op.insertBefore(m, cur);
         node(m, n);
@@ -232,32 +225,24 @@
         if (k && n.nodeType === 1 && !navMode) mark(n); // a view change's rows are the view, not news
       }
     });
-    while (cur) { nx = cur.nextSibling; drop(op, cur); cur = nx; }
-  }
-  // drop removes n from op. The floating ask banner (mvp.css, fixed: it takes no space) fades out first; a banner
-  // that comes back meanwhile is matched by its id, loses .ab-leave and stays.
-  function drop(op, n) {
-    if (n.nodeType === 1 && n.classList.contains('ab-leave')) return; // already on its way out
-    if (n.nodeType === 1 && n.classList.contains('banner-ask') && getComputedStyle(n).position === 'fixed' &&
-        !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) {
-      n.classList.add('ab-leave');
-      setTimeout(function () { if (n.classList.contains('ab-leave') && n.parentNode) n.parentNode.removeChild(n); }, 200);
-      return;
-    }
-    op.removeChild(n);
+    while (cur) { nx = cur.nextSibling; op.removeChild(cur); cur = nx; }
   }
   function mark(el) {
+    if (el.closest('#ask-banner')) return; // its waiting background must keep contrast with the answer controls
     el.classList.add('live-new');
     setTimeout(function () { el.classList.remove('live-new'); }, 2600);
   }
+  var heldTop = false; // a top-only region (Logs' groups) was left out of the last ask: scrolling back to the top asks again
   function shown() {
-    var top = window.scrollY - (window.tegoRoom || 0) < 120 && !/[?&]before=/.test(location.search), out = [];
+    var top = window.scrollY < 120 && !/[?&]before=/.test(location.search), out = [];
+    heldTop = false;
     document.querySelectorAll('[data-live]').forEach(function (el) {
       if (!el.hasAttribute('data-top') || top) out.push(el.dataset.live + ':' + (el.dataset.h || ''));
+      else heldTop = true;
     });
     return out;
   }
-  // refresh fetches the changed regions, at most once a second, and merges them.
+  window.addEventListener('scroll', function () { if (heldTop && window.scrollY < 120 && !/[?&]before=/.test(location.search)) refresh(); }, { passive: true });
   function refresh() {
     if (out) return;
     if (fetching || navigating) { again = true; return; } // a view change on its way: its page is fresher
@@ -267,7 +252,7 @@
     fetching = true;
     again = false;
     last = Date.now();
-    var gen = navGen, wantSig = sig, wantRev = rev;
+    var gen = navGen, wantSig = sig, wantRev = rev, wantCrev = crev;
     if (regionRetry) { clearTimeout(regionRetry); regionRetry = 0; }
     fetch(location.pathname + location.search, { credentials: 'same-origin', cache: 'no-store', headers: { 'X-Tego-Regions': have.join(',') } })
       .then(function (r) { if (!r.ok) gone(r); return r.text(); })
@@ -278,17 +263,19 @@
         t.content.querySelectorAll('template[data-live]').forEach(function (f) {
           var el = document.querySelector('[data-live="' + f.dataset.live + '"]');
           if (!el) return;
+          if (usingAsk(el)) { askHeld = true; retry = true; return; }
+          if (el.dataset.live === 'r-banner') askHeld = false;
+          // The guide must not replace any control while the person is using its step.
+          if (el.dataset.live === 'r-guide' && el.contains(document.activeElement)) { retry = true; return; }
           if (selecting(el) || (window.tegoLive.steady && window.tegoLive.steady(el))) { retry = true; return; } // someone is selecting text in it, or reaching for a row: later
           kids(el, f.content);
           el.dataset.h = f.dataset.h;
         });
         ago(); // the region came with the time it was rendered at
         document.dispatchEvent(new CustomEvent('tego:merged')); // a page's own script (review.js) marks the new rows
-        // The focused control went with its region (an answered ask's Deny): the focus goes to <main>, not to nothing,
-        // so the next Tab starts in the page (main:focus shows no ring).
         if (had && had !== body && !had.isConnected) document.querySelector('main').focus({ preventScroll: true });
         if (retry) setTimeout(refresh, 2000);
-        else { renderedSig = wantSig; renderedRev = wantRev; }
+        else { renderedSig = wantSig; renderedRev = wantRev; renderedCrev = wantCrev; }
         regionBackoff = 1000;
       })
       .catch(function () {
@@ -299,8 +286,6 @@
       .then(function () { fetching = false; if (again) refresh(); });
   }
 
-  // more puts the rows after feed's cursor at the top: a folded refusal group's older row is dropped when its group
-  // arrives again with the whole count, and the list is cut to the newest MAX, the Older link moving with it.
   function more() {
     if (out || !feed) return;
     if (feeding || navigating) { feedAgain = true; return; } // a line came while the rows were on the way: ask again after
@@ -318,6 +303,7 @@
         var t = document.createElement('template');
         t.innerHTML = x.html;
         var fresh = t.content;
+        var steps = window.tegoSteps, heads = steps && steps.heads(rows, fresh); // model-step headers (run.js)
         fresh.querySelectorAll('[data-k]').forEach(function (n) {
           var old = rows.querySelector('[data-k="' + n.dataset.k + '"]');
           if (old) old.remove();
@@ -326,6 +312,7 @@
         var empty = rows.querySelector('.tl-empty');
         if (x.html && empty) empty.remove();
         rows.insertBefore(fresh, rows.firstChild);
+        if (steps) steps.regroup(rows, heads);
         var cut = false;
         while (rows.children.length > MAX) { rows.lastElementChild.remove(); cut = true; }
         var older = document.getElementById('tl-older'), end = rows.lastElementChild;
@@ -347,10 +334,6 @@
     if (!feeding && feedAgain && feed) more();
   }
 
-  // --- answering in place
-  // toast says a, the line an action left ({ok, text, link, link_text}: flash.go's inlineAnswer). A toast of a kind
-  // (every answer to a request is one kind; another action's kind is its path) takes the place of the one before it,
-  // so a Deny's notice and a later Allow once's never stack: at most one per kind.
   function toast(a, kind) {
     var box = document.getElementById('toasts');
     if (!box) {
@@ -392,6 +375,18 @@
   var kbd = false; // the last move was a key, not a pointer: only then does a focus put back show (focus-visible)
   document.addEventListener('keydown', function () { kbd = true; }, true);
   document.addEventListener('pointerdown', function () { kbd = false; }, true);
+  // A time limit's "until" is read in the zone it was typed in. The form has no way to say it, so each form with one
+  // carries a hidden [data-zone] field, which the browser fills as the form's data is made (a post, a preview's link
+  // or the script's own FormData): the offset, in minutes west of UTC as getTimezoneOffset says it, at the date typed,
+  // since a limit past a clock change has another offset than today. With no script the field stays empty and the
+  // dashboard reads the time in its own zone.
+  document.addEventListener('formdata', function (e) {
+    var f = e.target;
+    if (!(f instanceof HTMLFormElement) || !f.querySelector('[data-zone]')) return;
+    var typed = e.formData.get('until'), at = typed ? new Date(typed) : new Date();
+    if (isNaN(at.getTime())) at = new Date();
+    e.formData.set('tz', String(Math.round(at.getTimezoneOffset())));
+  });
   var INLINE = /^\/(approvals\/answer|runs\/[^/]+\/(block|unblock|stop|lines\/\d+)|rules\/(change|revert|new))$/;
   document.addEventListener('submit', function (e) {
     var f = e.target, sub = e.submitter, path;
@@ -427,7 +422,6 @@
       .then(function () {
         delete f.dataset.sending;
         btns.forEach(function (b) { b.disabled = false; });
-        // A disabled button drops the focus: a keyboard's goes back to it (refresh moves it to <main> if it goes).
         if (kbd && (!document.activeElement || document.activeElement === body) && foc && foc.isConnected) foc.focus({ preventScroll: true });
         refresh();
       });

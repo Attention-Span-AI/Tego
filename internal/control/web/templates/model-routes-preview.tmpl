@@ -1,21 +1,21 @@
 {{/* SPDX-License-Identifier: Apache-2.0 */}}
 {{/* model-routes-preview: the check before sending a model endpoint's requests elsewhere (model_routes.go, routeact.Plan). */}}
-{{define "content"}}<link rel="stylesheet" href="/static/routes.css">{{with .Data}}{{$d := .}}
-<div class="head"><div><h1>Check this change</h1>{{if not .Err}}<p class="lede">This sends the agent's model requests somewhere other than where they go now. Nothing changes until you confirm.</p>{{end}}</div></div>
+{{define "content"}}<link rel="stylesheet" href="/static/routes.css">{{with .Data}}<div class="page-interior layer-page">{{$d := .}}
+<div class="head"><div>{{if $.Tour}}<h2 class="h1-obj">{{else}}<h1 class="h1-obj">{{end}}Check this change{{if $.Tour}}</h2>{{else}}</h1>{{end}}{{if not .Err}}<p class="lede" data-number="editor.preview-written">This sends the agent's model requests somewhere other than where they go now. Nothing changes until you confirm.</p>{{end}}</div></div>
 {{with .Err}}<section class="banner banner-danger" role="alert">{{template "i" "i-triangle-alert"}}<div class="grow"><strong>Not done: {{.}}</strong></div></section>{{end}}
 {{with .Plan}}
 <section class="panel rt-preview">
 <dl class="rt-change">
-<dt>Endpoint</dt><dd class="mono">{{.Endpoint}}</dd>
-<dt>Now</dt><dd><span class="mono">{{.From.Name}}</span> <span class="soft mono">{{.From.Authority}}</span></dd>
-<dt>After</dt><dd><span class="mono">{{.To.Name}}</span> <span class="soft mono">{{.To.Authority}}</span> <span class="b {{if .To.TLS}}b-verified{{else}}b-waiting{{end}}">{{if .To.TLS}}TLS, certificate checked{{else}}Plaintext, this machine{{end}}</span></dd>
-<dt>Run</dt><dd class="mono">{{rid .Run}}</dd>
+<dt>Endpoint</dt><dd class="mono" data-number-exclude="routes.preview-endpoint">{{.Endpoint}}</dd>
+<dt>Now</dt><dd><span class="mono">{{.From.Name}}</span> <span class="soft mono" data-number-exclude="routes.preview-from">{{.From.Authority}}</span></dd>
+<dt>After</dt><dd><span class="mono">{{.To.Name}}</span> <span class="soft mono" data-number-exclude="routes.preview-to">{{.To.Authority}}</span> <span class="b {{if .To.TLS}}b-verified{{else}}b-neutral{{end}}">{{if .To.TLS}}{{template "i" "i-lock"}}{{else}}{{template "i" "i-server"}}{{end}}{{if .To.TLS}}TLS, certificate checked{{else}}Plaintext, this machine{{end}}</span></dd>
+<dt>Run</dt><dd class="mono"><a class="text-link" href="/runs/{{pathEsc .Run}}" data-number-exclude="routes.preview-run">{{.Run}}</a></dd>
 </dl>
 {{if $d.Err}}<a class="btn" href="{{$d.Back}}">Back to Model routes</a>{{else if .Widens}}
 <form method="post" action="/routes/set" class="rt-confirm"><input type="hidden" name="csrf" value="{{$d.CSRF}}"><input type="hidden" name="run" value="{{.Run}}"><input type="hidden" name="endpoint" value="{{.Endpoint}}"><input type="hidden" name="route" value="{{.To.Name}}">
-<label class="ev-ack"><input type="checkbox" name="ack" value="{{.Ack}}" required><span>From the next request, the prompts this agent sends to <strong class="mono">{{.Endpoint}}</strong> go to <strong class="mono">{{.To.Authority}}</strong> instead, for the rest of this run. The request's headers go with them, so a key the agent holds itself goes there too.{{with layerRouteNote}} {{.}}{{end}}</span></label>
+<label class="ev-ack"><input type="checkbox" name="ack" value="{{.Ack}}" required><span>From the next request, the prompts this agent sends to <strong class="mono" data-number-exclude="routes.preview-request-endpoint">{{.Endpoint}}</strong> go to <strong class="mono" data-number-exclude="routes.preview-request-backend">{{.To.Authority}}</strong> instead, for the rest of this run. The request's headers go with them, so a key the agent holds itself goes there too.{{with layerRouteNote}} {{.}}{{end}}</span></label>
 <div class="rt-actions"><button class="btn btn-primary" type="submit">Confirm</button><a class="btn" href="{{$d.Back}}">Cancel</a></div>
-</form>{{else}}<p>This change sends nothing anywhere new; go back and apply it from the page.</p><a class="btn" href="{{$d.Back}}">Back to Model routes</a>{{end}}
+</form>{{else}}<p><span data-number="editor.changes-zero">This change sends nothing anywhere new; go back and apply it from the page.</span></p><a class="btn" href="{{$d.Back}}">Back to Model routes</a>{{end}}
 </section>{{end}}
 {{if not .Plan}}<a class="btn" href="{{.Back}}">Back to Model routes</a>{{end}}
-{{end}}{{end}}
+</div>{{end}}{{end}}

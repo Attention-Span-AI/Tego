@@ -11,6 +11,7 @@ import (
 	"time"
 )
 
+// These tests exercise the helper-local source cache; HTTP process isolation is tested by web.TestRecordedLocationsHangReturnsAndLeavesNoHandler.
 // TestRuleSourceNamesTheContractLine: a rule a line names is found with the sentence, the rules file and the line it
 // is written on, and its enforcement in words; asking again compiles nothing; a change to the run's copy builds the
 // view again; a rule key the contract does not hold is not found.
@@ -23,7 +24,7 @@ func TestRuleSourceNamesTheContractLine(t *testing.T) {
 	ctx := context.Background()
 	o := Options{Machine: f.m}
 	before := ruleBuilds.Load()
-	ro, ok := RuleSource(ctx, f.root, f.run, "fs.write[./out/]", o)
+	ro, ok := ruleSource(ctx, f.root, f.run, "fs.write[./out/]", o)
 	if !ok {
 		t.Fatal("fs.write[./out/] not found")
 	}
@@ -33,13 +34,13 @@ func TestRuleSourceNamesTheContractLine(t *testing.T) {
 	if ro.Sentence == "" || !strings.Contains(ro.Sentence, "./out/") || ro.StateWords != "enforced" || ro.Group == "" {
 		t.Errorf("origin %+v", ro)
 	}
-	if git, ok := RuleSource(ctx, f.root, f.run, "exec[git]", o); !ok || git.Line != lineOf(t, sourceText, "allow: [sh, git]") {
+	if git, ok := ruleSource(ctx, f.root, f.run, "exec[git]", o); !ok || git.Line != lineOf(t, sourceText, "allow: [sh, git]") {
 		t.Errorf("exec[git]: %+v, %v", git, ok)
 	}
-	if _, ok := RuleSource(ctx, f.root, f.run, "fs.write[./nowhere/]", o); ok {
+	if _, ok := ruleSource(ctx, f.root, f.run, "fs.write[./nowhere/]", o); ok {
 		t.Error("a rule the contract does not hold was found")
 	}
-	if _, ok := RuleSource(ctx, f.root, f.run, "unmatched", o); ok {
+	if _, ok := ruleSource(ctx, f.root, f.run, "unmatched", o); ok {
 		t.Error("unmatched names no contract line, but was found")
 	}
 	if n := ruleBuilds.Load() - before; n != 1 {
@@ -51,13 +52,13 @@ func TestRuleSourceNamesTheContractLine(t *testing.T) {
 	if err := os.Chtimes(filepath.Join(f.dir, "contract.yaml"), later, later); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := RuleSource(ctx, f.root, f.run, "fs.write[./out/]", o); !ok {
+	if _, ok := ruleSource(ctx, f.root, f.run, "fs.write[./out/]", o); !ok {
 		t.Fatal("not found after the copy was touched")
 	}
 	if n := ruleBuilds.Load() - before; n != 2 {
 		t.Errorf("%d views built after the copy changed, want 2", n)
 	}
-	if _, ok := RuleSource(ctx, f.root, "not-a-run", "fs.write[./out/]", o); ok {
+	if _, ok := ruleSource(ctx, f.root, "not-a-run", "fs.write[./out/]", o); ok {
 		t.Error("a malformed run id was looked up")
 	}
 }
@@ -73,11 +74,11 @@ func TestRuleSourceKeepsNoViewOfACancelledRequest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	before := ruleBuilds.Load()
-	_, _ = RuleSource(ctx, f.root, f.run, "fs.write[./out/]", o) // whatever a cancelled build found
-	if _, ok := RuleSource(context.Background(), f.root, f.run, "fs.write[./out/]", o); !ok {
+	_, _ = ruleSource(ctx, f.root, f.run, "fs.write[./out/]", o) // whatever a cancelled build found
+	if _, ok := ruleSource(context.Background(), f.root, f.run, "fs.write[./out/]", o); !ok {
 		t.Fatal("not found after a cancelled request")
 	}
-	if _, ok := RuleSource(context.Background(), f.root, f.run, "fs.write[./out/]", o); !ok {
+	if _, ok := ruleSource(context.Background(), f.root, f.run, "fs.write[./out/]", o); !ok {
 		t.Fatal("not found on the third request")
 	}
 	if n := ruleBuilds.Load() - before; n != 2 {

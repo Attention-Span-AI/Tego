@@ -2073,7 +2073,8 @@ even if `uname` fails. An unreadable config does not change the two fresh policy
 
 **Residual.** (a) A TOMOYO policy activated between an authority check and the open it admits is not noticed for that one open; this requires the machine's administrator to act in that interval. (b) A kernel compiled with its own TOMOYO policy and activation without a loader (`CONFIG_SECURITY_TOMOYO_OMIT_USERSPACE_LOADER`), or with a hand-made built-in policy that predefines its domains, can enforce with a counter that never moved; the shared running-kernel build-configuration reader refuses held opens when it positively reads `CONFIG_SECURITY_TOMOYO_OMIT_USERSPACE_LOADER=y`, while an unreadable configuration changes nothing, and none of the distribution kernels we tested does this (Debian 12 and Debian 13 configurations inspected). (c) A container that hides TOMOYO securityfs refuses held file opens (GAPS C74). (d) The counter can return to its never-updated reading only after its full range of counted updates with the clock set to the epoch, an administrator's deliberate act.
 
-**Cost and diagnostics.** A counter moved without policy activation is a false refusal (GAPS C75).
+**Cost and diagnostics.** A counter moved without policy activation is a false refusal (GAPS C75) at tier landlock; the root
+tiers recover through SEC08b below.
 A successful administrator policy write can move it, but no host privilege is needed. The built-in
 `initialize_domain /sbin/modprobe from any` and `/sbin/hotplug` rules create a domain and count an
 update when the program is named by that path. TOMOYO uses the link's own path, without following
@@ -2096,6 +2097,92 @@ for readable TOMOYO securityfs. Launch prints a TOMOYO refusal first and preserv
 AppArmor/SELinux/Smack note, including the AppArmor administrator-assertion disclosure.
 
 Two bounded kernel reads are added per authority check when TOMOYO is active. In the pinned Debian 13 guest, five 2-second samples of the shipped check measured a median 27,056.0 ns/check with the kernel reads against 557.0 ns/check on the same bytes in memory: about 26.50 microseconds added per authority check. A definite immutable build-configuration answer is cached; if no candidate is readable, each check retries. This is a microbenchmark on a shared host; end-to-end latency acceptance remains open.
+
+### D55, 2026-11-22: TOMOYO's facts from a read-only bind named by the administrator (GAPS C74)
+
+A container that hides securityfs on a host with TOMOYO active refused every held open, and the remedy this ADR gave,
+a read-only securityfs bind at `/sys/kernel/security`, stays unreadable (`EACCES`) under Docker's enforcing
+`docker-default` profile (the round-three Docker evidence above). The decision: a root-only machine setting,
+`tomoyo.facts_dir` in `/etc/tego/config.yaml` (honoured like `bpf.plane`; a user layer's value is ignored with a warning;
+default empty, the kernel's path), names a directory in which the three facts (`self_domain`, `stat`, `profile`) are read
+in place of `/sys/kernel/security/tomoyo`. The administrator makes it at container creation, for example
+`-v /sys/kernel/security/tomoyo:/run/tego-tomoyo:ro`; the path is outside `/sys/kernel/security/**`, which is what
+`docker-default` denies. Each file is read from a descriptor that passes the old magic check (`fstatfs` is securityfs)
+and a new one: the descriptor's mount id (`statx` `STATX_MNT_ID`) must name a line of `/proc/self/mountinfo` that is
+securityfs and read-only per mount, and the mount's root joined with the file's path below its mount point must be exactly
+`/tomoyo/<name>`. So another securityfs file bound in a fact's place, a tmpfs copy, a writable bind (`self_domain` takes
+domain transitions on write) and a path through a link all refuse with the existing words plus what is wrong; an unusable
+setting (not a clean absolute path) refuses every fact and never falls back to the kernel's path. Securityfs is one kernel
+instance and mounting it needs `CAP_SYS_ADMIN` in the initial user namespace, so what passes is the kernel's own file. The
+profile proof, the never-updated line and the domain check are unchanged and run on the same bytes. Each check reads
+mountinfo afresh (no state kept; bounded at 4 MiB), which costs more per held open than the kernel's path; the default path
+has no mountinfo read. `tego doctor` names which path the facts came from.
+
+Rejected:
+
+- An assume-style opt-in (`fs.tomoyo_assume_unenforced: true`, after `fs.apparmor_assume_root_namespace`): unlike AppArmor's,
+  which replaces one fact (namespace depth) and keeps the full-label comparison, it would replace every TOMOYO fact, so a
+  held open could complete what TOMOYO refuses the agent's domain. Not safe.
+- Keep the limit and correct only the remedy words: leaves Docker on Debian (AppArmor and TOMOYO together) with no way to
+  hold opens at all.
+
+Proof built: unit tests with injected `fstatfs`, `statx` and mountinfo (wrong filesystem, wrong root, writable bind, other
+file bound in place, link in the path, no mount id, unreadable mountinfo, an accepted bind, escapes in the mount point),
+the machine-config layer rule, the doctor line, and the supervisor's own reader. Owed in a guest: Docker with
+`docker-default` enforcing on Debian 13 (held opens complete with the bind and refuse without it; a bind of `apparmor/`, a
+tmpfs file and a writable bind refuse; a write to `self_domain` through the bind fails `EROFS`), Debian 12 (6.1) as the
+second row, and Ubuntu 6.17 as the control (TOMOYO not active, the key unused).
+
+### SEC08b, 2026-11-20: a root tier proves from the profile that nothing enforces
+
+When the first `stat` line is not the never-updated line, or the build configuration positively reads
+`CONFIG_SECURITY_TOMOYO_OMIT_USERSPACE_LOADER=y`, a checking thread that can open
+`/sys/kernel/security/tomoyo/profile` admits a held open only on a fresh proof that nothing can enforce. It reads the
+complete first `stat` line, then `profile` to its end within 64 KiB, then the first `stat` line again. The two lines must
+be byte-equal, every profile line must parse in the kernel's printed grammar, and no `mode=` in any namespace,
+profile or category may be `enforcing`. Any read error, oversize, unparsed line or differing stat line refuses
+`held-label-unavailable`, as today. The checking thread's domain is not consulted on this path, and nothing is kept
+between checks. Basis: only `TOMOYO_CONFIG_ENFORCING` denies (`tomoyo_supervisor`). `tomoyo_read_profile` prints every
+namespace's profiles. `tomoyo_set_mode` validates before it publishes and every successful profile line is counted. A
+thread that cannot read `profile` (tier landlock) keeps the counter-only refusal. Residual (a) now also covers a
+profile mode written during or after the proof. During, because `tomoyo_write_control` publishes a mode and only then
+counts it, so a mode published after the profile was read but counted after the second `stat` read is admitted.
+
+When the two `stat` lines differ the whole proof is run again, from a fresh first read, a few milliseconds apart, up to
+three times; each attempt is the complete bracketed proof, and the open is refused when no attempt was clean (a machine in
+learning mode counts every ACL entry it learns, so the lines often differ there). Every TOMOYO file the check reads
+(`stat`, `profile`, `self_domain`) is read from a descriptor whose `fstatfs` type is securityfs, and any other filesystem is
+refused: whoever controls the launcher's mount namespace could otherwise show another file at that path.
+
+What is accepted, line by line (`internal/platform/tomoyo`): after an optional `<namespace> `, `PROFILE_VERSION=N`,
+`N-COMMENT=text`, `N-PREFERENCE={ key=N ... }` and `N-CONFIG[::category[::operation]]={ mode=M grant_log=yes|no
+reject_log=yes|no }` with `M` one of `disabled`, `learning`, `permissive`; every byte printable ASCII, the data ending in a
+line break, at least one version line. A comment's own text is never scanned for modes: the kernel prints it as one line,
+so it cannot start another. Any other line, any other mode word and any `enforcing` refuse. A profile that nothing uses but
+that is `enforcing` refuses too: the proof does not decide which domain would use it.
+
+Where the guarantee sits: still the supervisor's fresh read of kernel facts at each authority check, with no state kept, so
+the statelessness above holds. Machines whose counter never moved keep the 49-byte path and read nothing more. A thread
+that cannot read `profile` is the unprivileged launcher of tier landlock (the file is mode 0600, root in the initial user
+namespace); the refusal keeps its words and says "a root tier can prove nothing is enforced, and this tier cannot read
+TOMOYO's profile". Doctor says "TOMOYO's policy was updated since boot, and its profile, read now, enforces nothing" where
+the proof admits. Residual (b) narrows: a built-in enforcing profile appears as `mode=enforcing` and is refused, a built-in
+non-enforcing one is admitted. Residuals (c) and (d) are unchanged.
+
+Not covered, and stated: the proof reads policy, not the kernel's `tomoyo_policy_loaded` flag, and a kernel that decides a
+denial from something `profile` does not print (a namespace off the kernel's list, a per-domain flag acting as enforcement,
+a differently formatted print on an old kernel) would escape it. The differential that would catch that
+(`TestIntegrationTOMOYOProfileProofDifferential`, in the dedicated TOMOYO guest) draws 400 random states of a profile and
+has a program in a domain that uses it open a file the domain has no ACL for, after the product's own check: on Debian 12's
+6.1.0-50 and Debian 13's 6.12.107 the proof admitted 97 states, in all of which the open worked, and refused 303, of which the
+kernel denied 104 (the others were enforcing modes that do not apply to that open, or in a profile no domain uses).
+Limits: only the kernel's own namespace has a domain to run in (a second namespace's profile is drawn and refused, never
+enforced against a process), only the open of a file is tried, and v5.14 is not covered because RHEL 9's kernel builds no TOMOYO at
+all. Two more guest halves ran there: an unprivileged user in a user and mount namespace of its own, with a root it made the way
+switch_root does, starts `/sbin/modprobe` and moves the counter from 0 to 1 with no policy written (the counter alone then
+refuses tier landlock and admits the root tiers), and a registered manager flipping an unused profile's file category between
+permissive and enforcing 1500 times while four goroutines ran the check (about 40,000 checks: none admitted inside an enforcing
+window, none refused inside a permissive one; checks that overlapped a write are counted, not judged).
 
 **Kernel source chain.**
 
@@ -2176,3 +2263,33 @@ where mounts and other security modules permit them. The supported release floor
 `5.14.0-687.53.1.el9_8.x86_64` configuration has `# CONFIG_SECURITY_TOMOYO is not set`; this verifies
 that build, not every RHEL 9 build or custom 5.14 kernel. Exact upstream 5.14 TOMOYO behavior is not
 certified here.
+
+### C30's limit worded as the kernel bounds it, 2026-11-22 (D18)
+
+GAPS C30 and SEMANTICS §4 said a raced exec at tiers 1 and 2 could run "another image than the one decided on, a memfd
+included, which Landlock then allows", and that only tier 3 closes it. That overstated what a race reaches. At tier
+landlock, and on tier 2's fanotify fallback, Landlock grants `EXECUTE` only on each compiled `exec.allow` rule, its loader
+and the deputy (`internal/runtime/enforce/landlock/exec.go`), and checks the real path of the file the kernel opens, so
+`/proc/self/fd/N`, `/dev/fd/N` and dirfd spellings meet the same bound, for the exec's image: what a granted loader or interpreter maps or reads stays GAPS C31 and A2. The raceable part is what the supervisor decides
+inside that set (`exec.deny`, `exec.ask`, command rules, live blocks, the MCP gate, fence entries, multicall names), and a
+memfd received from outside the run (`SCM_RIGHTS`, or inherited at launch), which Landlock lets through; the run's own
+`memfd_create` is refused at creation.
+
+**Decision: keep the limit and correct its words.** Both residuals are race-free only where a decision plane decides the
+run's execs (tier cgroup in a plane mode, tier bpflsm). The words are in GAPS A2, C30, C31 and SEMANTICS §4. A pinning
+test, `TestIntegrationExecRaceStaysInsideTheGrantedSet`, races a descriptor between a granted and an ungranted file 400
+times at tier landlock and asserts the ungranted one never ran, that each exec ended as the granted file or EACCES, and that the
+kernel itself refused execs whose line the supervisor had allowed (the walk and the open did differ). Its control grants both
+files and asserts an exec whose line names the granted file ran the other; a third case, `exec.deny` on the other file under a
+directory grant, shows it can run under an allowed line (the raceable part, documented).
+No behaviour changed.
+
+**Rejected:**
+
+- Per-file `EXECUTE` for directory grants minus `exec.deny` paths: closes only path-only denies, freezes the directory at
+  launch (a binary made later cannot run), hits rule-count limits, and leaves command rules, asks, live blocks and a
+  received memfd open.
+- Refuse refinement contracts (`exec.deny`, `exec.ask`, command rules) at tier landlock: breaks the default unprivileged
+  Ubuntu run of every shipped contract with an `exec.deny` command rule.
+- A seccomp refusal of `execveat(AT_EMPTY_PATH)`: closes one spelling, since glibc's `fexecve` falls back to
+  `/proc/self/fd/N`, which goes back to the walk.

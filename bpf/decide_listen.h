@@ -73,8 +73,18 @@ TEGO_PLANE_HOOK(socket_listen, socket_listen, security_socket_listen,
         tego_plane_unslotted(TEGO_HOOK_SOCKET_LISTEN, (__u64)sock);
         return tego_listen_refuse(run,sock,TEGO_R_PATH_UNRESOLVED);
     }
-    if (!(slot->flags & TEGO_SLOT_LISTEN_DECIDES))
-        return 0;
+    if (!(slot->flags & TEGO_SLOT_LISTEN_DECIDES)) {
+        /* ADR 0024's 2026-11-23 amendment (D28): a net: section with no net.listen declares no listener, so a listen
+         * on an inet socket other than UDP is refused here as the supervisor refuses the syscall (handleListen), which
+         * no ring's IORING_OP_LISTEN (6.11+) ever reaches: its autobind takes an ephemeral port on every address, and
+         * Landlock's BIND_TCP never sees it. Not "protocol TCP": an MPTCP socket (262) autobinds as a TCP one does, and
+         * the supervisor counts MPTCP as TCP and SCTP as raw, so it refuses all but UDP, whose listen is the kernel's
+         * EOPNOTSUPP. A unix listen stays undecided, as in the supervisor. With no net: section nothing is decided. */
+        if (!(slot->flags & TEGO_SLOT_NET_DECIDES) || sk->sk_protocol == IPPROTO_UDP ||
+            (sk->__sk_common.skc_family != TEGO_AF_INET && sk->__sk_common.skc_family != TEGO_AF_INET6))
+            return 0;
+        goto decided;
+    }
     if (sk->__sk_common.skc_family == TEGO_AF_UNIX) {
         reason = tego_unix_listen_reason(sock,run,&rule);
         goto decided;

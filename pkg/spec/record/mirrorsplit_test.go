@@ -8,7 +8,7 @@ import "testing"
 // holds it to what it is for: each of its three refused lines copies the envelope (pid, tid, cgroup, source,
 // mono_ns), rule and reason of its own refused action at most 4 lines before it, as the runtime's mirror does; one has
 // another line between it and its action, and two refused actions are both written before either's mirror. The views
-// count three refusals in it, not five (internal/check/internal/mirror, internal/control/ledgerview pair.go).
+// count three refusals in it, not five (internal/check/mirror, internal/control/ledgerview pair.go).
 func TestMirrorSplitFixture(t *testing.T) {
 	events := readFixture(t, "mirror-split.jsonl")
 	if events[0].Kind != KindRunStart || events[len(events)-1].Kind != KindRunEnd {

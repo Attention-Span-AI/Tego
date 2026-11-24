@@ -3,14 +3,15 @@
 package rulesview
 
 import (
+	"context"
 	"errors"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
+	"github.com/attention-span-ai/tego/internal/control/pathcheck"
 )
 
 // ContractRun is one rules file runs in a ledger snapshot named (run_start's contract_source): the Rules page's
@@ -21,6 +22,9 @@ type ContractRun struct {
 	// Gone: nothing is at Path now (the file, or a folder on its way, was removed or renamed since its runs). Its runs
 	// still show the rules they ran, from their own copies.
 	Gone bool `json:"gone,omitempty"`
+	// Why disables changes when the location cannot be checked. Resolved is checked only in the helper.
+	Why      string `json:"why,omitempty"`
+	Resolved string `json:"-"`
 	// Agent is the agent name of the newest run of it.
 	Agent string `json:"agent"`
 	// Newest is the newest run of it and NewestStart that run's start.
@@ -34,9 +38,14 @@ type ContractRun struct {
 // ContractsFromRuns is the distinct rules files the snapshot's runs named, one per path as the runs recorded it (the
 // page joins two spellings of one file by their ref, and an old link's ref is of the spelling), the file of the newest
 // run first, each marked Gone when nothing is at its path now. A run that named none (an older ledger, a contract
-// given on standard input) is left out. Each path is looked at once, so a call costs one system call per distinct
-// path, not per run.
+// given on standard input) is left out. Distinct paths are checked together in one bounded helper exchange.
+// An unavailable location remains listed with its Why and cannot be changed.
 func ContractsFromRuns(s *ledgerview.Snapshot) []ContractRun {
+	return ContractsFromRunsContext(context.Background(), s)
+}
+
+// ContractsFromRunsContext checks recorded locations using the page request context.
+func ContractsFromRunsContext(ctx context.Context, s *ledgerview.Snapshot) []ContractRun {
 	if s == nil {
 		return nil
 	}
@@ -58,11 +67,17 @@ func ContractsFromRuns(s *ledgerview.Snapshot) []ContractRun {
 			out[i].Live++
 		}
 	}
-	for i := range out {
-		_, err := os.Lstat(out[i].Path)
-		// ENOTDIR: a folder on the way is a file now. Any other error (a folder this user may not search) says
-		// nothing about whether the file is there.
-		out[i].Gone = errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR)
+	var checked []ContractRun
+	if err := pathcheck.Call(ctx, "control.locations", out, &checked); err != nil {
+		for i := range out {
+			out[i].Why = err.Error()
+			out[i].Resolved = out[i].Path
+		}
+		return out
 	}
-	return out
+	return checked
+}
+
+func missingLocation(err error) bool {
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR)
 }

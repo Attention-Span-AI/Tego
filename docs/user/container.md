@@ -205,13 +205,13 @@ may also be overlayfs, which is what a container's `/` is.
 
 ### Tiers that need root
 
-Both root tiers need `tego` to run as root (`sudo tego run` on a
+Both root tiers need `tego` to run as root (`sudo "$(command -v tego)" run` on a
 host) with `CAP_BPF`, `CAP_NET_ADMIN` and `CAP_SYS_ADMIN`, and attach BPF programs whose reach is the kernel, not the
 container. A container that can run them can change the host, so treat it as the host. `TEGO_LAUNCHER=root` makes
 the entrypoint keep `tego` root with the container's capabilities, empty the namespace root into `/init` with its
 controllers on (a root `tego` makes `tego.slice` there), and name the `tego` user in `SUDO_UID` so the agent runs as
 that user. CI tries it in a `--privileged` container with `tego machine check --require cgroup` and a hello run at each root
-tier, report-only. Until such a run has passed, run the root tiers on the host itself (`sudo tego run`), not in a
+tier, report-only. Until such a run has passed, run the root tiers on the host itself (`sudo "$(command -v tego)" run`), not in a
 container.
 
 ## The ledger and the chain anchor
@@ -319,3 +319,10 @@ running tego as root in a container (`TEGO_LAUNCHER=root`).
 | `held-read stable identities/replacement events unavailable on filesystem 0x794c7630` | A secret the agent's write entry holds (a `.env` in the project) lies on the container's own layer (overlayfs, `0x794c7630`) or another unsupported filesystem | Put the project on a named volume or a bind mount of a local folder ([A secret inside the work folder](#a-secret-inside-the-work-folder)) |
 | The dashboard says 403 to your browser | The image's `tego` uid is not yours | Build with `TEGO_UID=$(id -u) TEGO_GID=$(id -g)` |
 | `tego machine check`: `warn dashboard: the kernel answers no TCP socket lookup` | The host has not loaded `inet_diag` and `tcp_diag`; tego-control refuses every dashboard action until it is loaded | On the host: `sudo modprobe tcp_diag` (and add it to /etc/modules-load.d) |
+
+
+Root tiers, which need root, also require the kernel's initial process-id namespace, as the backends already do. A
+container with a private process-id namespace cannot use cgroup or bpflsm solely by adding capabilities or `bpf`
+to the LSM list. Doctor names that reason before loading root-tier probes. Auto may select landlock when its
+other requirements pass; an explicitly selected root tier refuses. This does not relax the separate private-cgroup-
+namespace guard on person-facing setup, approvals, scans or dashboard access.

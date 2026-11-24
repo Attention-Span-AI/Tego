@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/attention-span-ai/tego/internal/check/gaps"
-	"github.com/attention-span-ai/tego/internal/check/internal/mirror"
+	"github.com/attention-span-ai/tego/internal/check/mirror"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/pkg/policy/execmatch"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"

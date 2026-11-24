@@ -525,6 +525,32 @@ func runFixture(t *testing.T, bin, actor string, uid, gid int, fx *Fixture, ax a
 			ax.label, fx.Name)
 		return rep
 	}
+	// Under net.assurance: kernel (ADR 0128) tier landlock refuses to start the run, and tier cgroup's listener fallback
+	// does where the kernel lacks the unix destination hooks (below 6.7): exit 125, ErrNetAssurance, before the actor
+	// performs any action. From 6.7 the listener axis runs it, the filter answering the receive ENOSYS with no line
+	// (the cell's column is unasked); a plane axis must run it.
+	if fx.Model.NetAssuranceKernel && ax.want.Tier != TierBPFLSM {
+		var exit *exec.ExitError
+		refused := errors.As(runErr, &exit) && exit.ExitCode() == 125 && strings.Contains(stderr.String(), netAssuranceRefusal)
+		switch {
+		case refused:
+			if len(results) != 0 {
+				t.Fatalf("net.assurance: kernel startup refusal at %s: %d actions ran\nstderr:\n%s", ax.label, len(results), stderr.String())
+			}
+			if !maps.Equal(before, after) {
+				rep.FailOpens = append(rep.FailOpens, fmt.Sprintf("%s at %s: the project tree changed although the run was refused before its actor started",
+					fx.Name, ax.label))
+			}
+			t.Logf("STARTUP %s/%s refused before actor actions: net.assurance: kernel needs a plane-capable tier", ax.label, fx.Name)
+			for j := range fx.Cells { // judged by the refusal: none of its cells ran here
+				rep.Ran[NotRunKey(fx.ID(&fx.Cells[j]), string(ax.label))] = true
+			}
+			return rep
+		case ax.tier == TierLandlock:
+			t.Fatalf("net.assurance: kernel at tier landlock: %v, %d actions; want exit 125 with %q\nstdout:\n%s\nstderr:\n%s",
+				runErr, len(results), netAssuranceRefusal, stdout.String(), stderr.String())
+		}
+	}
 	// A table the plane cannot hold is refused at tier bpflsm before its actor performs any action (ErrPlaneCannotHold,
 	// ErrPlaneDetachedPart), and one the listener cannot hold either at tier cgroup (ErrListenerAlias); the tree is as
 	// the run found it.
@@ -597,7 +623,7 @@ func runFixture(t *testing.T, bin, actor string, uid, gid int, fx *Fixture, ax a
 		// judged: a generated cell the floor does not answer, whose judge is the kernel (ADR 0017 D1).
 		judged := c.Generated && !has
 		got, isVerdict := o.Verdict()
-		lines := ledgerLines(e, c, o.Value, events)
+		lines := ledgerLines(e, fx, c, o.Value, events)
 		if len(lines) == 0 && mapOps[c.Op] && !w.NoLine {
 			for _, ev := range events { // what the plane named instead, for the matcher (refusedMapLines)
 				if ev["kind"] == "refused" && (ev["op"] == "mmap" || ev["op"] == "mprotect") {
@@ -693,9 +719,9 @@ func describe(lines []map[string]any) string {
 }
 
 // ledgerLines finds the verdict lines of the cell's action: an fs or exec line whose path is the cell's own
-// canonical path (every cell owns its path), a net line whose destination is its address, or a process or control
+// canonical path (pathLines), a net line whose destination is its address, or a process or control
 // line of its op (controlLines; peer is the pid the actor reported for it).
-func ledgerLines(e *env, c *Cell, peer string, events []map[string]any) (out []map[string]any) {
+func ledgerLines(e *env, fx *Fixture, c *Cell, peer string, events []map[string]any) (out []map[string]any) {
 	kind, key, val := "fs", "path", e.path(c.canon())
 	spelled := e.path(c.Path)
 	switch c.Op {
@@ -745,7 +771,7 @@ func ledgerLines(e *env, c *Cell, peer string, events []map[string]any) (out []m
 		}
 	case OpConnectUnix:
 		kind, key, val = "net", "dst", "unix:"+e.subst(c.Addr)
-	case OpPtraceAttach, OpPtraceTraceme, OpKeyctl, OpAddKey, OpRequestKey, OpBPF:
+	case OpPtraceAttach, OpPtraceTraceme, OpKeyctl, OpAddKey, OpRequestKey, OpBPF, OpRecvFD:
 		return controlLines(c, peer, events)
 	case OpMapExec:
 		return refusedMapLines(events, func(target string) bool { return target == val || target == spelled })
@@ -767,15 +793,7 @@ func ledgerLines(e *env, c *Cell, peer string, events []map[string]any) (out []m
 		// that before the kernel's open, so they disagree with the kernel both ways and go unjudged.
 		spelled = val
 	}
-	for _, ev := range events {
-		if ev["kind"] != kind || ev["verdict"] == nil || ev["verdict"] == "" {
-			continue
-		}
-		if got := fmt.Sprint(ev[key]); got == val || (kind != "net" && got == spelled) {
-			out = append(out, ev)
-		}
-	}
-	return out
+	return pathLines(e, fx, c, kind, key, val, spelled, events)
 }
 
 // readSnapshot reads a tree the mount namespace helper wrote.
@@ -830,10 +848,13 @@ func refusedMapLines(events []map[string]any, match func(target string) bool) (o
 	return out
 }
 
+// netAssuranceRefusal is what a run refused for lack of net.assurance: kernel's guarantees says (runtime.ErrNetAssurance).
+const netAssuranceRefusal = "kernel network assurance unavailable"
+
 // controlLines are a process or control cell's refused lines: those with its op's ledger op (controlOps), and for a
 // ptrace op the pid its hook names, which the actor reported (peer). A refused line carries no verdict key
-// (spec/record/v1); the copy says refused. Every fixture has one cell of each keyring and bpf op, so their lines are
-// found by op alone.
+// (spec/record/v1); the copy says refused. Every fixture has one cell of each keyring, bpf and recv-fd op, so their
+// lines are found by op alone (a recv-fd cell's is the plane's refused recvmsg line, rule socket-import).
 func controlLines(c *Cell, peer string, events []map[string]any) (out []map[string]any) {
 	op := controlOps[c.Op]
 	for _, ev := range events {

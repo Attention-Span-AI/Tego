@@ -93,8 +93,11 @@ func TestLeastPrivilegeWithholdsTheLeak(t *testing.T) {
 	if strings.Contains(page, html.EscapeString(allowed)) || strings.Contains(page, allowed) {
 		t.Error("the leak's proposal still allows the sink")
 	}
-	pre := page[strings.Index(page, `<pre class="mono lp-contract">`)+len(`<pre class="mono lp-contract">`):]
-	pre = html.UnescapeString(pre[:strings.Index(pre, "</pre>")])
+	m := preRe.FindStringSubmatch(page)
+	if m == nil {
+		t.Fatal("no proposal block on the leak's Least privilege tab")
+	}
+	pre := html.UnescapeString(m[1])
 
 	w := do(s, "GET", "/runs/"+sysWatchRun+"/least-privilege.yaml", "127.0.0.1:8484", c)
 	if w.Code != http.StatusOK {

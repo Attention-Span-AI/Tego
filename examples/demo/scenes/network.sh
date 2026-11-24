@@ -26,7 +26,7 @@ fs:
 exec:
   allow: ["sh", "curl", "$PYTHON3"]
 net:
-  allow: ["127.0.0.1:$PORT", "unix:/var/run/nscd/socket"]   # the sink only
+  allow: ["127.0.0.1:$PORT", $(lookup_allow)]   # the sink, and the name lookup
   listen: []                                                  # no listening port: a bind is refused and recorded
 env:
   pass: ["PATH", "HOME"]

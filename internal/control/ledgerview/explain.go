@@ -115,7 +115,9 @@ type Field struct {
 
 // AskFacts is one question: what was asked, how it was answered and what followed.
 type AskFacts struct {
-	AskID string
+	// Managed records an authenticated managed answer selection, not operation completion.
+	Managed bool
+	AskID   string
 	// AskSeq is the ask line's seq (HasAsk); AnswerSeq the answer line's (Answered).
 	AskSeq, AnswerSeq uint64
 	HasAsk, Answered  bool
@@ -150,6 +152,11 @@ func ExplainLine(root, run string, seq uint64) (*LineView, error) {
 // Explain explains line seq of r, whose run directory is under root. A seq r does not hold is os.ErrNotExist.
 func Explain(root string, r *Run, seq uint64) (*LineView, error) {
 	evs := r.AllEvents()
+	// A positioned refusal elsewhere withdraws summary claims, but a retained
+	// valid line and its neighbor are still independently checked below.
+	if err := r.readError(); err != nil && (len(r.LineErrors) == 0 || findSeq(evs, seq) < 0) {
+		return nil, err
+	}
 	if findSeq(evs, seq) < 0 && r.Cut && seq < ^uint64(0)-consequenceWindow-1 {
 		window, err := WindowBefore(root, r, seq+consequenceWindow+1)
 		if err != nil {
@@ -170,6 +177,12 @@ func Explain(root string, r *Run, seq uint64) (*LineView, error) {
 	cur, prev := readLines(root, r.ID, evs, i)
 	if cur == nil {
 		return nil, os.ErrNotExist
+	}
+	if cur.err != nil {
+		return nil, cur.err
+	}
+	if prev != nil && prev.err != nil {
+		return nil, prev.err
 	}
 	lv.Raw = string(cur.raw)
 	var buf bytes.Buffer
@@ -219,6 +232,10 @@ func Explain(root string, r *Run, seq uint64) (*LineView, error) {
 		lv.MirroredBy = &s
 	}
 	lv.Sentence = sentence(lv, e, r, x, names)
+	if w, ok := x.malformed[int32(i)]; ok { //nolint:gosec // as above
+		// A repeated ask or an answer with no ask is no question and no answer: the line says so (askpair).
+		lv.Sentence = capFirst(w) + ": the record is malformed here, and this line is not counted"
+	}
 	lv.Decision, lv.DecidedBy = askDecision(e, lv.Ask)
 	return lv, nil
 }
@@ -289,6 +306,7 @@ type lineHead struct {
 	PID    int    `json:"pid"`
 	TID    int    `json:"tid"`
 	Cgroup uint64 `json:"cgroup"`
+	err    error
 	raw    []byte
 }
 
@@ -307,19 +325,44 @@ func readLines(root, run string, evs []Event, i int) (cur, prev *lineHead) {
 	if cur == nil {
 		if lf, err := Line(root, run, evs[i].Seq); err == nil {
 			cur = headOf([]byte(lf.Raw), evs[i].Seq)
+		} else if !os.IsNotExist(err) {
+			cur = &lineHead{err: err}
 		}
 	}
 	if prev == nil && i > 0 {
 		if lf, err := Line(root, run, evs[i-1].Seq); err == nil {
 			prev = headOf([]byte(lf.Raw), evs[i-1].Seq)
+		} else if !os.IsNotExist(err) {
+			prev = &lineHead{err: err}
 		}
 	}
 	if prev == nil && evs[i].Seq > 0 {
 		if lf, err := Line(root, run, evs[i].Seq-1); err == nil {
 			prev = headOf([]byte(lf.Raw), evs[i].Seq-1)
+		} else if !os.IsNotExist(err) {
+			prev = &lineHead{err: err}
 		}
 	}
 	return cur, prev
+}
+
+// currentLine is line e of the run's events file as readLines reads the line itself, without its neighbour: at the
+// offset the read model recorded, else by Line's scan; nil when there is no such line.
+func currentLine(root, run string, e *Event) *lineHead {
+	if f, err := os.OpenFile(filepath.Join(root, run, "events.jsonl"), os.O_RDONLY|syscall.O_NOFOLLOW, 0); err == nil {
+		defer func() { _ = f.Close() }()
+		if cur := headAt(f, e.off, e.Seq); cur != nil {
+			return cur
+		}
+	}
+	lf, err := Line(root, run, e.Seq)
+	switch {
+	case err == nil:
+		return headOf([]byte(lf.Raw), e.Seq)
+	case !os.IsNotExist(err):
+		return &lineHead{err: err}
+	}
+	return nil
 }
 
 // headAt is the line at off in f when it is line seq, else nil.
@@ -333,12 +376,14 @@ func headAt(f *os.File, off int64, seq uint64) *lineHead {
 }
 
 func headOf(b []byte, seq uint64) *lineHead {
-	h := &lineHead{}
-	if json.Unmarshal(b, h) != nil || h.Seq != seq {
+	e, err := record.Decode(b)
+	if err != nil {
+		return &lineHead{err: err}
+	}
+	if e.Seq != seq {
 		return nil
 	}
-	h.raw = b
-	return h
+	return &lineHead{V: e.V, Seq: e.Seq, ID: e.ID, Prev: e.Prev, MonoNS: e.MonoNS, PID: e.PID, TID: e.TID, Cgroup: e.Cgroup, raw: b}
 }
 
 // envelopeKeys are the common fields Envelope holds; every other key of a line is a Field.
@@ -450,7 +495,7 @@ func (lv *LineView) procFacts(evs []Event, x *lineIndex, i int32) {
 		ref := x.ref(evs, pi, exec, refused)
 		lv.Proc, parent = &ref, pi.parent
 	default:
-		pi, exec, refused, ok := x.procAt(e.pid, i)
+		pi, exec, refused, ok := x.procAt(e.pid, i, e.mono)
 		switch {
 		case ok:
 			ref := x.ref(evs, pi, exec, refused)
@@ -532,6 +577,8 @@ func askFacts(evs []Event, a *askEntry, names func(string) string, home string) 
 	}
 	if a.hasAnswer {
 		af.AnswerSeq = evs[a.answerIdx].Seq
+		e := evs[a.answerIdx]
+		af.Managed = record.AnswerAuthorityOf(json.RawMessage(e.Raw), e.RecordMinor, e.LocalFloor).Actor != nil
 	}
 	for _, c := range a.consequences {
 		af.ConsequenceSeqs = append(af.ConsequenceSeqs, evs[c].Seq)
@@ -542,7 +589,7 @@ func askFacts(evs []Event, a *askEntry, names func(string) string, home string) 
 	}
 	what := "asked a person"
 	if a.target != "" {
-		what = "asked to " + strings.TrimSpace(opVerb(a.op, false)+" "+shortPath(linewords.Mask(a.target), home))
+		what = "asked to " + strings.TrimSpace(opVerb(linewords.AskOp(a.op, a.rule), false)+" "+shortPath(linewords.Mask(a.target), home))
 	} else if h, ok := linewords.Hold(a.hold); ok {
 		what = "asked a person to let " + h + " go on"
 	}
@@ -564,6 +611,8 @@ func answerWords(af *AskFacts) string {
 		out = "answered with another file, " + af.Alternate
 	case af.Approved != nil && *af.Approved && strings.HasSuffix(af.By, " always"):
 		out = "allowed for the rest of the run"
+	case af.Approved != nil && *af.Approved && af.Managed:
+		out = "approval recorded; operation completion is separate"
 	case af.Approved != nil && *af.Approved:
 		out = "allowed once"
 	case af.AnswerReason == string(record.ReasonAskTimeout):
@@ -686,7 +735,7 @@ func sentence(lv *LineView, e *Event, r *Run, x *lineIndex, names func(string) s
 	case string(record.KindAnswer):
 		if lv.Ask != nil {
 			a := lv.Ask
-			return capFirst(answerWords(a)) + ": " + strings.TrimSpace(opVerb(a.Op, false)+" "+clip(shortPath(linewords.Mask(a.Target), home)))
+			return capFirst(answerWords(a)) + ": " + strings.TrimSpace(opVerb(linewords.AskOp(a.Op, a.Rule), false)+" "+clip(shortPath(linewords.Mask(a.Target), home)))
 		}
 		return "A person answered a question"
 	case string(record.KindExec):

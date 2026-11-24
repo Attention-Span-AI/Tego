@@ -12,10 +12,23 @@ smack) name=TestOpenLabelSmackProcessRules ;;
 apparmor) name=TestOpenLabelAppArmorHiddenAncestors ;;
 tomoyo)
  export TEGO_VM_TOMOYO_COUNTER_ONLY=${TEGO_VM_TOMOYO_COUNTER_ONLY:-0}
+ export TEGO_VM_TOMOYO_HALF=${TEGO_VM_TOMOYO_HALF:-}
+ if [ "$TEGO_VM_TOMOYO_HALF" = differential ]; then
+  /vm/runtime.test -test.v -test.run '^TestIntegrationTOMOYOProfileProofDifferential$' -test.timeout=500s | tee /vm/runtime.log
+  /vm/held-label-required.sh /vm/runtime.log TestIntegrationTOMOYOProfileProofDifferential
+  exit 0
+ fi
  /vm/runtime.test -test.v -test.run '^TestIntegrationHeldOpenTOMOYO$' -test.timeout=300s | tee /vm/runtime.log
  /vm/held-label-required.sh /vm/runtime.log TestIntegrationHeldOpenTOMOYO
  half=positive
  if [ "$TEGO_VM_TOMOYO_COUNTER_ONLY" = 1 ]; then half=counter_without_activation; fi
+ case "$TEGO_VM_TOMOYO_HALF" in
+ enforcing_profile|initializer_counter) half=$TEGO_VM_TOMOYO_HALF ;;
+ profile_flip_race)
+  /vm/held-label-required.sh /vm/runtime.log TestIntegrationHeldOpenTOMOYO/profile_flip_race
+  exit 0
+  ;;
+ esac
  for tier in landlock cgroup bpflsm; do
   /vm/held-label-required.sh /vm/runtime.log "TestIntegrationHeldOpenTOMOYO/$half/$tier"
  done

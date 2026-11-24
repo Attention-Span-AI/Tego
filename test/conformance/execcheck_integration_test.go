@@ -326,6 +326,7 @@ const execCheckNoBPFEnv = "TEGO_CONFORMANCE_TEST_NO_TEGOBPF"
 // the environment requires tier cgroup (root-suites.sh sets it per boot) and the setup cannot offer it (no root, or
 // no tegobpf build), the must-pass execcheck tests fail rather than pass on the tier landlock axis alone.
 func TestExecCheckSetupFailsARequiredAxis(t *testing.T) {
+	// rootskips:ignore skips only as root without the SUDO_UID and SUDO_GID the root run's harness sets; not a skip for want of root (the tests it reruns are in root-must-pass.txt)
 	if _, _, ok := sudoIDs(); os.Geteuid() == 0 && !ok {
 		t.Skip("a root `tego run` drops the agent to the sudo caller and refuses without SUDO_UID and SUDO_GID")
 	}

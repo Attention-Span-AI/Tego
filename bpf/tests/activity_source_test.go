@@ -87,9 +87,9 @@ func TestTLSProbesStampBeforeTheModeAndReadNothingUnderOff(t *testing.T) {
 	t.Parallel()
 	path := uprobeSSL(t)
 	for _, tc := range []struct{ prog, cond string }{
-		{"tego_ssl_write", "if (num > 0) tego_activity_stamp(&tego_activity, run);"},
-		{"tego_ssl_write_ex", "if ((__u64)PT_REGS_PARM3(ctx) > 0) tego_activity_stamp(&tego_activity, run);"},
-		{"tego_ssl_read_return", "if (ret > 0) tego_activity_stamp(&tego_activity, run);"},
+		{"tego_ssl_write_body", "if (num > 0) tego_activity_stamp(&tego_activity, run);"},
+		{"tego_ssl_write_ex_body", "if ((__u64)PT_REGS_PARM3(ctx) > 0) tego_activity_stamp(&tego_activity, run);"},
+		{"tego_ssl_read_return_body", "if (ret > 0) tego_activity_stamp(&tego_activity, run);"},
 	} {
 		body := squash(functionBody(t, path, tc.prog))
 		hit := strings.Index(body, "if (!run) return 0;")
@@ -108,7 +108,7 @@ func TestTLSProbesStampBeforeTheModeAndReadNothingUnderOff(t *testing.T) {
 			}
 		}
 	}
-	for _, prog := range []string{"tego_ssl_read", "tego_ssl_read_ex", "tego_ssl_free"} {
+	for _, prog := range []string{"tego_ssl_read_body", "tego_ssl_read_ex_body", "tego_ssl_free_body"} {
 		body := squash(functionBody(t, path, prog))
 		if strings.Contains(body, "tego_activity_stamp(") {
 			t.Errorf("%s stamps activity: a read entry has moved nothing yet, and a free moves nothing", prog)

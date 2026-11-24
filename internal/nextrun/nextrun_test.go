@@ -6,11 +6,13 @@ import (
 	"context"
 	"errors"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"github.com/attention-span-ai/tego/internal/profilesrc"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
@@ -76,5 +78,39 @@ func TestCompileDoesNoDNS(t *testing.T) {
 	}
 	if n := queries.Load(); n != 0 {
 		t.Errorf("the check sent %d DNS queries; it resolves no host (the next run does, at its start)", n)
+	}
+}
+
+func TestCompileLoadedKeepsOneProfileSnapshot(t *testing.T) {
+	root := t.TempDir()
+	profiles := filepath.Join(root, "profiles")
+	if err := os.Mkdir(profiles, 0700); err != nil {
+		t.Fatal(err)
+	}
+	profile := filepath.Join(profiles, "base.yaml")
+	if err := os.WriteFile(profile, []byte("net:\n  limits: {connections: 0}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	m := config.Builtin()
+	m.Home, m.Profiles.Value = root, profiles
+	cc := Context{Contract: filepath.Join(root, "agent.yaml"), Cwd: root, Home: root, PATH: "/usr/bin:/bin"}
+	text := []byte("version: 0\nname: one-snapshot\nextends: base\ncommand: [sh]\n")
+	c, ds, err := agent.LoadBytes(cc.Contract, text, profilesrc.Chain(m))
+	if err != nil {
+		t.Fatal(DiagError(ds, err))
+	}
+	if err := os.WriteFile(profile, []byte("net:\n  limits: {connections: 100}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	rt, err := CompileLoaded(t.Context(), m, cc, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.NetLimits.Connections == nil || *rt.NetLimits.Connections != 0 {
+		t.Fatal("compiling a loaded snapshot reloaded changed profile bytes")
+	}
+	rt, err = Compile(t.Context(), m, cc, text)
+	if err != nil || rt.NetLimits.Connections == nil || *rt.NetLimits.Connections != 100 {
+		t.Fatal("a fresh compile did not read the changed profile")
 	}
 }

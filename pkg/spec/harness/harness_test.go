@@ -96,3 +96,25 @@ func TestNamesMatchParseMessage(t *testing.T) {
 		}
 	}
 }
+
+func TestEnvironmentErrorHidesValue(t *testing.T) {
+	for _, value := range []string{"QZ", "private-environment-value-that-is-long"} {
+		for _, name := range []string{"TOKEN", "TEGO_", "TEGO_lower"} {
+			err := CheckEnv(name + "=" + value)
+			if err == nil || strings.Contains(err.Error(), value) || !strings.Contains(err.Error(), name) {
+				t.Fatalf("environment error: %v", err)
+			}
+		}
+	}
+}
+
+// TestEnvEntryMessages: a harness entry with no name to tell from its value is not shown (the rule is
+// pkg/spec/identity's envtext.go, (a), restated in CheckEnv).
+func TestEnvEntryMessages(t *testing.T) {
+	for _, entry := range []string{"sk-live-qz", "=sk-live-qz", "1BAD=sk-live-qz", "A B=sk-live-qz"} {
+		err := CheckEnv(entry)
+		if err == nil || strings.Contains(err.Error(), "qz") || strings.Contains(err.Error(), "BAD") || !strings.Contains(err.Error(), "the entry is not shown") {
+			t.Errorf("harness entry %q: %v", entry, err)
+		}
+	}
+}

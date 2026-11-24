@@ -323,10 +323,14 @@ func TestPlaceAndUserManager(t *testing.T) {
 }
 
 // TestOpenScopeNamesOnlyACommandThatCanWork: the command that opens a shell in the user manager's cgroup is named only
-// when systemd-run is on PATH and a socket of the user's own manager is under XDG_RUNTIME_DIR, which systemd-run --user
-// connects through; it uses $SHELL's name when that shell is one of a fixed list and on PATH, else bash; otherwise it is "" with the reason
+// when the fixed systemd-run executable exists and a socket of the user's own manager is under XDG_RUNTIME_DIR, which
+// systemd-run --user connects through. It uses $SHELL's name when that shell is one of a fixed list and on PATH, else
+// bash; otherwise it is "" with the reason
 // (never a command that fails).
 func TestOpenScopeNamesOnlyACommandThatCanWork(t *testing.T) {
+	previous := scopeRunner
+	scopeRunner = func() (string, error) { return "/usr/bin/systemd-run", nil }
+	t.Cleanup(func() { scopeRunner = previous })
 	bin, rt := t.TempDir(), t.TempDir()
 	for _, p := range []string{"systemd-run", "bash", "zsh", "nologin", "false", "python3", "evil-tool"} {
 		if err := os.WriteFile(filepath.Join(bin, p), []byte("#!/bin/sh\n"), 0o755); err != nil {
@@ -382,7 +386,7 @@ func TestOpenScopeNamesOnlyACommandThatCanWork(t *testing.T) {
 		{"false", map[string]string{"PATH": bin, "XDG_RUNTIME_DIR": rt, "SHELL": "/bin/false"}, uid, none, "systemd-run --user --scope bash", ""},
 		{"python3", map[string]string{"PATH": bin, "XDG_RUNTIME_DIR": rt, "SHELL": "/usr/bin/python3"}, uid, none, "systemd-run --user --scope bash", ""},
 		{"a program on PATH", map[string]string{"PATH": bin, "XDG_RUNTIME_DIR": rt, "SHELL": "/opt/evil-tool"}, uid, none, "systemd-run --user --scope bash", ""},
-		{"no systemd-run", map[string]string{"PATH": rt, "XDG_RUNTIME_DIR": rt}, uid, none, "", "systemd-run is not on your PATH"},
+		{"no shell", map[string]string{"PATH": rt, "XDG_RUNTIME_DIR": rt}, uid, none, "", "bash is not on your PATH"},
 		{"no runtime dir", map[string]string{"PATH": bin}, uid, none, "", "XDG_RUNTIME_DIR is not set"},
 		{"another user's manager", map[string]string{"PATH": bin, "XDG_RUNTIME_DIR": rt}, uid + 1, none, "", "socket is not under"},
 		// After su or sudo -u (XDG_RUNTIME_DIR unset, or another user's), the uid's own logind folder holding its
@@ -404,7 +408,8 @@ func TestOpenScopeNamesOnlyACommandThatCanWork(t *testing.T) {
 	// Started from another user's shell through sudo or su: the person types the command in
 	// their own shell, so it opens the shell as this user, with sudo -u and the name from the passwd entry, and always
 	// through the user's logind folder, whatever this process's XDG_RUNTIME_DIR holds. Typed without sudo -u it opened
-	// the reader's own scope on Ubuntu 24.04 and AlmaLinux 9.8, and failed on Fedora 44.
+	// the reader's own scope on Ubuntu 24.04 and AlmaLinux 9.8, and failed on Fedora 44. Where no command opens it, the
+	// account is still said (As): the other tego commands a next step names carry sudo -u (ForReader).
 	asSvc := "sudo -u svc XDG_RUNTIME_DIR=" + own + " systemd-run --user --scope bash"
 	asUID := "sudo -u '#" + strconv.Itoa(uid) + "' XDG_RUNTIME_DIR=" + own + " systemd-run --user --scope bash"
 	svc := reader{other: true, name: "svc", named: true}
@@ -427,8 +432,8 @@ func TestOpenScopeNamesOnlyACommandThatCanWork(t *testing.T) {
 		{"a name sudo reads as an option", map[string]string{"PATH": bin}, reader{other: true, name: "-x", named: true}, lr, asUID, "'#" + strconv.Itoa(uid) + "'", ""},
 		{"a name sudo reads as a uid", map[string]string{"PATH": bin}, reader{other: true, name: "#0", named: true}, lr, asUID, "'#" + strconv.Itoa(uid) + "'", ""},
 		{"no passwd entry", map[string]string{"PATH": bin}, reader{other: true}, lr, asUID, "'#" + strconv.Itoa(uid) + "'", ""},
-		{"no manager in the logind folder", map[string]string{"PATH": bin, "XDG_RUNTIME_DIR": rt}, svc, none, "", "", "keeps no socket under"},
-		{"no systemd-run", map[string]string{"PATH": rt}, svc, lr, "", "", "systemd-run is not on your PATH"},
+		{"no manager in the logind folder", map[string]string{"PATH": bin, "XDG_RUNTIME_DIR": rt}, svc, none, "", "svc", "keeps no socket under"},
+		{"no shell", map[string]string{"PATH": rt}, svc, lr, "", "svc", "bash is not on your PATH"},
 	} {
 		t.Run("another user's shell/"+tc.name, func(t *testing.T) {
 			o := openScope(env(tc.vars), uid, tc.logind, tc.r)
@@ -436,5 +441,82 @@ func TestOpenScopeNamesOnlyACommandThatCanWork(t *testing.T) {
 				t.Errorf("openScope = %+v; want %q as %q and a reason with %q", o, tc.command, tc.as, tc.missing)
 			}
 		})
+	}
+}
+
+// TestManagerMessageNamesTheFolder: the runtime folder with no user manager socket is a place and is printed; a value
+// that is not an absolute clean path is not echoed (rules (b) and (c) of pkg/spec/identity envtext.go).
+func TestManagerMessageNamesTheFolder(t *testing.T) {
+	dir := t.TempDir()
+	if got := managerUnder(dir, os.Getuid()); !strings.Contains(got, "is not under "+dir) {
+		t.Errorf("the folder is not named: %q", got)
+	}
+	if got := managerUnder("/run/user/../qz-unclean", os.Getuid()); strings.Contains(got, "qz-") || !strings.Contains(got, "echo $XDG_RUNTIME_DIR") {
+		t.Errorf("a value that is not a clean path was echoed: %q", got)
+	}
+	if got := managerUnder("qz-relative", os.Getuid()); strings.Contains(got, "qz-") {
+		t.Errorf("a relative value was echoed: %q", got)
+	}
+}
+
+func TestCheckUserScopePlacementRoundTrips(t *testing.T) {
+	c := sample
+	c.ThroughUserScope = true
+	b, err := EncodeChecks([]Check{c})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs, err := DecodeChecks(b)
+	if err != nil || len(cs) != 1 || cs[0] != c {
+		t.Fatalf("round trip: %+v %v", cs, err)
+	}
+	for name, text := range map[string]string{
+		"null":    strings.Replace(string(b), `"through_user_scope": true`, `"through_user_scope": null`, 1),
+		"number":  strings.Replace(string(b), `"through_user_scope": true`, `"through_user_scope": 1`, 1),
+		"root":    strings.Replace(string(b), `"shell"`, `"root"`, 1),
+		"no tier": strings.Replace(string(b), `"landlock"`, `""`, 1),
+	} {
+		if _, err := DecodeChecks([]byte(text)); !errors.Is(err, ErrBadCheck) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if cs, err := DecodeChecks([]byte(good)); err != nil || cs[0].ThroughUserScope {
+		t.Fatalf("older check: %+v %v", cs, err)
+	}
+}
+
+// TestCheckScopeErrorRoundTrips: a check from a shell outside the user manager's cgroup whose rehearsal of scope entry
+// failed keeps the reason (Check.ScopeError), and DecodeChecks refuses one anywhere else: beside a tier, without the
+// outside cause, empty, null, not a string, or holding a character that does not print. A file without the key
+// decodes as before.
+func TestCheckScopeErrorRoundTrips(t *testing.T) {
+	c := sample
+	c.Tier, c.FirstFix, c.Cause, c.ScopeError = "", "open a shell", CauseOutsideUserManager, "user scope rehearsal exited 1"
+	b, err := EncodeChecks([]Check{c})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs, err := DecodeChecks(b)
+	if err != nil || len(cs) != 1 || cs[0] != c {
+		t.Fatalf("round trip: %+v %v", cs, err)
+	}
+	quoted := `"scope_error": "user scope rehearsal exited 1"`
+	if !strings.Contains(string(b), quoted) {
+		t.Fatalf("encoded: %s", b)
+	}
+	for name, text := range map[string]string{
+		"null":           strings.Replace(string(b), quoted, `"scope_error": null`, 1),
+		"empty":          strings.Replace(string(b), quoted, `"scope_error": ""`, 1),
+		"number":         strings.Replace(string(b), quoted, `"scope_error": 1`, 1),
+		"no cause":       strings.Replace(string(b), `"cause": "outside-user-manager"`, `"cause": ""`, 1),
+		"another cause":  strings.Replace(string(b), `"outside-user-manager"`, `"no-user-manager"`, 1),
+		"does not print": strings.Replace(string(b), quoted, `"scope_error": "a\u001b[2Jb"`, 1),
+	} {
+		if _, err := DecodeChecks([]byte(text)); !errors.Is(err, ErrBadCheck) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if cs, err := DecodeChecks([]byte(good)); err != nil || cs[0].ScopeError != "" {
+		t.Fatalf("older check: %+v %v", cs, err)
 	}
 }

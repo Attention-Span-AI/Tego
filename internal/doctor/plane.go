@@ -219,6 +219,7 @@ var planeParams = map[string][]string{
 	"socket_connect":      {"socket", "sockaddr", "int"},
 	"socket_sendmsg":      {"socket", "msghdr"},
 	"unix_may_send":       {"socket", "socket"},
+	"socket_recvmsg":      {"socket", "msghdr", "int", "int"},
 	"mmap_file":           {"file", "__u64", "__u64", "__u64"},
 	"file_mprotect":       {"vm_area_struct", "__u64", "__u64"},
 	"socket_bind":         {"socket", "sockaddr", "int"},

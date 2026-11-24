@@ -21,6 +21,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/platform/proc"
 	"github.com/attention-span-ai/tego/internal/policy/decide"
+	"github.com/attention-span-ai/tego/internal/runtime/admission"
 	"github.com/attention-span-ai/tego/internal/runtime/cgroup"
 	"github.com/attention-span-ai/tego/internal/runtime/enforce"
 	"github.com/attention-span-ai/tego/internal/runtime/enforce/api"
@@ -158,8 +159,19 @@ const NoAdoptReaper = "-"
 
 // AdoptDeps are the injected components of one adoption.
 type AdoptDeps struct {
-	Config  *config.Machine
-	Enforce enforce.Backend
+	// BaselineOwnerUnknown distinguishes a record-only fallback from a passwd home.
+	BaselineOwnerUnknown bool
+	// Home is the passwd home of the agent's owner the adoption's table was compiled against, "" when none (a
+	// record-only adoption of a uid with no home); run_start.home records it (record minor 41).
+	Home   string
+	Config *config.Machine
+	// ReloadConfig reloads all selected configuration with strict trust and fresh discovery.
+	// Required for a loaded Machine; nil is only valid for an injected built-in snapshot.
+	ReloadConfig func() (*config.Machine, error)
+	// Admission carries the same named checks already prepared by the CLI.
+	// Direct callers may leave it nil; runtime creates and prepares its own table.
+	Admission *admission.Table
+	Enforce   enforce.Backend
 	// ObserveFactory builds the kernel recorder once the handle names its build, as Deps.ObserveFactory.
 	ObserveFactory func(bpfHash string) (source.Source, error)
 	Build          Build
@@ -224,6 +236,8 @@ type adoption struct {
 	// identified is when the root was identified, migrated when the tree's move completed.
 	identified, migrated time.Time
 	planeMode            string
+	// baselineStart retains validated record facts from preparation, before any movement.
+	baselineStart record.RunStartPayload
 	// release is set once the adoption has released its tree, with what it did; releasedBy is who asked for it
 	// through a release request (ReleaseAdoption), "" when the adopter was asked to stop.
 	release    *adopt.ReleaseResult
@@ -258,6 +272,8 @@ func newAdoption(rt *agent.RuleTable, spec AdoptSpec, deps AdoptDeps) (*adoption
 	switch {
 	case rt == nil || rt.Contract == nil:
 		return nil, fmt.Errorf("%w: no rule table", ErrAdoptDeps)
+	case rt.BusinessRulesConfigured():
+		return nil, errors.New(agent.BusinessRulesUnavailable)
 	case deps.Config == nil:
 		return nil, fmt.Errorf("%w: no machine config", ErrAdoptDeps)
 	case deps.Enforce == nil || deps.Enforce.Tier() != backend.TierCgroup:
@@ -266,17 +282,6 @@ func newAdoption(rt *agent.RuleTable, spec AdoptSpec, deps AdoptDeps) (*adoption
 		return nil, fmt.Errorf("%w: the process to adopt is not identified", ErrAdoptDeps)
 	case spec.Recheck == nil:
 		return nil, fmt.Errorf("%w: no rules to recheck the process with before the move", ErrAdoptDeps)
-	}
-	if err := refuseAdjustable(rt, true); err != nil {
-		return nil, err
-	}
-	var limits cgroup.Limits
-	if spec.Boundary {
-		l, err := adoptionLimits(rt.Limits)
-		if err != nil {
-			return nil, err
-		}
-		limits = l
 	}
 	agentID, err := identity.ParseAgentID(rt.Contract.Name)
 	if err != nil {
@@ -306,7 +311,7 @@ func newAdoption(rt *agent.RuleTable, spec AdoptSpec, deps AdoptDeps) (*adoption
 	r := &runner{
 		rt: rt.AtTier(deps.Enforce.Tier()), log: log, agentID: agentID, stopGrace: grace,
 		started: make(chan struct{}),
-		deps: Deps{Config: deps.Config, Enforce: deps.Enforce, ObserveFactory: deps.ObserveFactory, Build: deps.Build,
+		deps: Deps{BaselineOwnerUnknown: deps.BaselineOwnerUnknown, Home: deps.Home, Config: deps.Config, Enforce: deps.Enforce, ObserveFactory: deps.ObserveFactory, Build: deps.Build,
 			ContractYAML: deps.ContractYAML, AnchorPath: deps.AnchorPath, Logger: log, Clock: deps.Clock, Rand: deps.Rand,
 			MachineID: deps.MachineID, ContractSource: deps.ContractSource},
 	}
@@ -317,7 +322,49 @@ func newAdoption(rt *agent.RuleTable, spec AdoptSpec, deps AdoptDeps) (*adoption
 	if identified.IsZero() {
 		identified = time.Now()
 	}
-	return &adoption{r: r, spec: spec, deps: deps, env: env, identified: identified, limits: limits}, nil
+	if deps.Admission == nil {
+		deps.Admission = &admission.Table{}
+	}
+	a := &adoption{r: r, spec: spec, deps: deps, env: env, identified: identified}
+	if err := a.deps.Admission.Add(admission.Check{
+		Name: "local approval floor", SnapshotReason: "The machine's approval authority is pinned for the process (ADR 0154) and an adoption cannot carry the root-only floor, so a floor that is set refuses it before anything is prepared.",
+		Run: func() error {
+			if a, err := deps.Config.ApprovalAuthority(); err != nil {
+				return err
+			} else if a.OwnerOnly() {
+				return fmt.Errorf("%w: local root-only approvals do not support adoption", ErrAdoptDeps)
+			}
+			return nil
+		},
+	}); err != nil {
+		return nil, err
+	}
+	if err := a.deps.Admission.Add(admission.Check{
+		Name: "compiled runtime eligibility", SnapshotReason: "The compiled contract, adjustable-rule eligibility and requested limits stay fixed for this adoption; current baseline configuration is checked separately.",
+		Run: func() error {
+			if err := validateBaselineLaunch(rt, deps.Config, !spec.Boundary); err != nil {
+				return err
+			}
+			if err := baselineLaunchRecord(rt); err != nil {
+				return err
+			}
+			if err := refuseAdjustable(rt, true); err != nil {
+				return err
+			}
+			if spec.Boundary {
+				var err error
+				a.limits, err = adoptionLimits(rt.Limits)
+				return err
+			}
+			return nil
+		},
+	}); err != nil {
+		return nil, err
+	}
+	if err := a.deps.Admission.Prepare(); err != nil {
+		return nil, err
+	}
+	return a, nil
 }
 
 // run is prepare (everything before run_start, contain first), run_start and the adoption's own lines, the wait,
@@ -347,7 +394,13 @@ func (a *adoption) run(ctx context.Context) (Result, error) {
 // and the pipeline and the kernel recorder. Every moved process and its future children are governed immediately.
 func (a *adoption) prepare(ctx context.Context) error {
 	r := a.r
-	if err := r.mintRun(); err != nil {
+	if err := a.deps.Admission.Add(admission.Check{
+		Name: "run directory contract", SnapshotReason: "checkRunDir compares the generated lexical path against the compiled contract snapshot, already classified as compiled runtime eligibility; neither input changes during the wait, and allocation must happen once.",
+		Run: func() error { return r.mintRun() },
+	}); err != nil {
+		return err
+	}
+	if err := a.deps.Admission.Prepare(); err != nil {
 		return err
 	}
 	if err := r.openLedger(); err != nil {
@@ -386,13 +439,22 @@ func (a *adoption) prepare(ctx context.Context) error {
 	}
 	// The skip counters' base, before the agent is moved in: one that cannot be read refuses the adoption with the
 	// agent untouched (skips.go, ADR 0148).
-	if err := r.readSkipBase(true); err != nil {
+	if err := a.deps.Admission.Add(admission.Check{
+		Name: "skip counter baseline", SnapshotReason: "This is the baseline the run's skips are counted from; reading it again after the wait would hide what was skipped during the wait.",
+		Run: func() error { return r.readSkipBase(true) },
+	}); err != nil {
+		return err
+	}
+	if err := a.deps.Admission.Prepare(); err != nil {
 		return err
 	}
 	if err := a.move(ctx); err != nil {
 		return err
 	}
 	a.migrated = time.Now()
+	if err := r.rt.RecheckBaseline(); err != nil {
+		return fmt.Errorf("runtime: baseline identity after adoption migration: %w", err)
+	}
 	if err := a.checkKeyedPaths(); err != nil {
 		return err
 	}
@@ -408,6 +470,25 @@ func (a *adoption) move(ctx context.Context) error {
 		return err
 	}
 	defer func() { _ = lock.Close() }()
+	if err := a.finalAdmission(); err != nil {
+		return err
+	}
+	pid := a.spec.Root.PID
+	moved, err := adopt.Move(a.env, a.r.cg.Path, a.spec.Root, a.spec.Extra)
+	a.moved = moved
+	if err != nil {
+		return fmt.Errorf("runtime: adopt pid %d: %w", pid, err)
+	}
+	return a.checkScopeTasks()
+}
+
+// finalAdmission runs every entry in the shared table marked rechecked after
+// the migration lock wait. Snapshot entries retain their named preparation reasons.
+func (a *adoption) finalAdmission() error {
+	return a.deps.Admission.Recheck()
+}
+
+func (a *adoption) checkRootAdmission() error {
 	pid := a.spec.Root.PID
 	t, err := adopt.Identify(a.env.Proc, pid)
 	switch {
@@ -419,15 +500,91 @@ func (a *adoption) move(ctx context.Context) error {
 	if err := a.spec.Recheck(t); err != nil {
 		return fmt.Errorf("runtime: adopt pid %d, rechecked before the move: %w", pid, err)
 	}
-	if err := a.checkTreeTasks(); err != nil {
+	return nil
+}
+
+// prepareAdmission extends the very same table prepared by the CLI and constructor.
+// These checks need the prepared handle and empty scope, but precede Attach and Arm.
+func (a *adoption) prepareAdmission() error {
+	if err := a.deps.Admission.Add(
+		admission.Check{Name: "prepared enforcement handle", SnapshotReason: "The handle's mechanism, descriptors and row ownership are fixed by Prepare; live plane admission is a separate rechecked entry.", Run: func() error {
+			if err := validateBaselineLaunch(a.r.rt, a.deps.Config, recordsOnly(a.r.handle)); err != nil {
+				return err
+			}
+			if a.spec.Boundary && a.planeMode == "" {
+				return fmt.Errorf("%w: the plane runs in no mode here or cannot hold this contract (tego machine check says which); adopt with no --boundary to record it", ErrAdoptNoPlane)
+			}
+			if _, ok := a.r.handle.(api.Armer); !ok {
+				return fmt.Errorf("%w: %s handle cannot arm the empty adoption scope", ErrAdoptDeps, a.r.deps.Enforce.Tier())
+			}
+			return nil
+		}},
+		admission.Check{Name: "root identity and process rules", Rechecked: true, Run: a.checkRootAdmission},
+		admission.Check{Name: "current configuration", Rechecked: true, Run: a.checkConfiguration},
+		admission.Check{Name: "chain anchor file", Rechecked: true, Run: func() error {
+			if err := ledger.ProbeAnchor(a.r.anchorFile()); err != nil {
+				return fmt.Errorf("runtime: adoption chain anchor before migration: %w", err)
+			}
+			return nil
+		}},
+		admission.Check{Name: "tree task eligibility", Rechecked: true, Run: a.checkTreeTasks},
+		admission.Check{Name: "baseline target identities", Rechecked: true, Run: func() error {
+			if err := a.r.rt.RecheckBaseline(); err != nil {
+				return fmt.Errorf("runtime: baseline identity before adoption migration: %w", err)
+			}
+			return nil
+		}},
+		admission.Check{Name: "required keyed rows", Rechecked: true, Run: func() error { return a.checkKeyed(a.r.handle) }},
+		admission.Check{Name: "keyed path identities", Rechecked: true, Run: a.checkKeyedPaths},
+	); err != nil {
 		return err
 	}
-	moved, err := adopt.Move(a.env, a.r.cg.Path, a.spec.Root, a.spec.Extra)
-	a.moved = moved
-	if err != nil {
-		return fmt.Errorf("runtime: adopt pid %d: %w", pid, err)
+	plane := ""
+	if a.spec.Boundary {
+		plane = a.planeMode
 	}
-	return a.checkScopeTasks()
+	a.baselineStart = record.RunStartPayload{RecordMinor: launchMinor, Tier: string(a.r.deps.Enforce.Tier()), DecisionPlane: plane}
+	return a.r.prepareBaselineRecord(a.deps.Admission, &a.baselineStart)
+}
+
+func (a *adoption) checkConfiguration() error {
+	current := a.deps.Config
+	if a.deps.ReloadConfig != nil {
+		var err error
+		current, err = a.deps.ReloadConfig()
+		if err != nil {
+			return fmt.Errorf("runtime: adoption configuration before migration: %w", err)
+		}
+	} else if len(current.LayerSources()) != 0 {
+		return fmt.Errorf("%w: no configuration reload before migration", ErrAdoptDeps)
+	}
+	if current == nil || !current.BaselineKnown() {
+		return fmt.Errorf("%w: current machine baseline is UNKNOWN", ErrBaselineLaunch)
+	}
+	// The release boundary must see even a baseline added while an empty
+	// adoption waited. Checking only the prepared table would miss that case.
+	baseline, _ := current.BaselineSnapshot()
+	if a.spec.Boundary && !baseline.Empty() {
+		return ErrBaselineRecordUnavailable
+	}
+	if err := a.deps.Config.CheckAdmissionSnapshot(current); err != nil {
+		return fmt.Errorf("runtime: adoption configuration changed before migration: %w", err)
+	}
+	if err := validateBaselineLaunch(a.r.rt, current, recordsOnly(a.r.handle)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (a *adoption) recheckPlaneAdmission() error {
+	if checker, ok := a.r.handle.(api.AdmissionRechecker); ok {
+		if err := checker.RecheckAdmission(); err != nil {
+			return fmt.Errorf("%w: live plane admission before adoption: %w", ErrAdoptNoPlane, err)
+		}
+	} else if a.planeMode == "fmod_ret" {
+		return fmt.Errorf("%w: selected fmod_ret handle cannot recheck live admission", ErrAdoptNoPlane)
+	}
+	return nil
 }
 
 // createScope makes tego.slice/tego-<agent>.slice/adopt-<run id>.scope under the cgroup2 mount root and writes a
@@ -487,15 +644,7 @@ func (a *adoption) prepareEnforcement(ctx context.Context) error {
 	if dp, ok := h.(enforce.DecisionPlaneReporter); ok {
 		a.planeMode, _ = dp.DecisionPlane()
 	}
-	if a.spec.Boundary && a.planeMode == "" {
-		return fmt.Errorf("%w: the plane runs in no mode here or cannot hold this contract (tego machine check says which); "+
-			"adopt with no --boundary to record it", ErrAdoptNoPlane)
-	}
-	armer, ok := h.(api.Armer)
-	if !ok {
-		return fmt.Errorf("%w: %s handle cannot arm the empty adoption scope", ErrAdoptDeps, r.deps.Enforce.Tier())
-	}
-	if err := a.checkKeyed(h); err != nil {
+	if err := a.prepareAdmission(); err != nil {
 		return err
 	}
 	if t, ok := h.(reaped); ok {
@@ -508,7 +657,15 @@ func (a *adoption) prepareEnforcement(ctx context.Context) error {
 	if err := h.Attach(r.cg.ID); err != nil {
 		return fmt.Errorf("runtime: attach %s: %w", r.deps.Enforce.Tier(), err)
 	}
-	if err := armer.Arm(); err != nil {
+	// Attach can wait too. Prepare this entry at the last boundary before Arm,
+	// and retain it in the same table for the migration-lock recheck.
+	if err := a.deps.Admission.Add(admission.Check{Name: "live plane admission", Rechecked: true, Run: a.recheckPlaneAdmission}); err != nil {
+		return err
+	}
+	if err := a.deps.Admission.Prepare(); err != nil {
+		return err
+	}
+	if err := h.(api.Armer).Arm(); err != nil {
 		return fmt.Errorf("runtime: arm %s: %w", r.deps.Enforce.Tier(), err)
 	}
 	return nil
@@ -615,6 +772,9 @@ func (a *adoption) startWorkers(ctx context.Context) error {
 	}
 	if n, ok := src.(DecisionPlaneNamer); ok {
 		n.SetDecisionPlane(a.planeMode)
+	}
+	if n, ok := src.(LiveBlockRuleNamer); ok {
+		n.SetLiveBlockRule(r.liveRules.rule)
 	}
 	if t, ok := src.(TrackingFailureReporter); ok {
 		t.SetTrackingFailure(func(err error) { r.trackingFailed.Store(true) })
@@ -820,6 +980,7 @@ func (a *adoption) shutdown(ctx context.Context) Result {
 		if a.release != nil && len(a.release.Left) > 0 {
 			r.emitGapNow(source.Gap{What: record.GapRecord, Why: GapAdoptionLeft, Count: int64(len(a.release.Left))})
 		}
+		r.emitLedgerOvershootGap()
 	}
 	end, code := a.end()
 	end.Resources = r.runResources()
@@ -845,6 +1006,7 @@ func (a *adoption) releaseKernelState(ctx context.Context, ended bool) {
 		if err := r.handle.Detach(); err != nil {
 			r.log.Warn("adopt: detach", "err", err)
 		}
+		r.planeBlocks.close() // after Detach cleared the slot's live-block rows
 		if err := r.handle.Close(); err != nil {
 			r.log.Warn("adopt: close handle", "err", err)
 		}

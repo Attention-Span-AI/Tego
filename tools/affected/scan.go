@@ -203,15 +203,19 @@ func scanFile(abs string) *fileFacts {
 		return ff
 	}
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, abs, src, parser.SkipObjectResolution)
+	f, err := parser.ParseFile(fset, abs, src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		ff.err = err
 		return ff
 	}
+	// The patterns look at the code, comments blanked out: a comment that names repoRoot, "go.mod" or README reads
+	// nothing, and it selected tests (and the docs gate) on that word alone. Offsets stay, so text() still cuts a
+	// declaration out of the same bytes.
+	code := blankComments(fset, f, src)
 	text := func(n ast.Node) string {
-		return string(src[fset.Position(n.Pos()).Offset:fset.Position(n.End()).Offset])
+		return string(code[fset.Position(n.Pos()).Offset:fset.Position(n.End()).Offset])
 	}
-	ff.docs = docRead.Match(src) && treeRead.Match(src)
+	ff.docs = docRead.Match(code) && treeRead.Match(code)
 	for _, d := range f.Decls {
 		switch d := d.(type) {
 		case *ast.FuncDecl:
@@ -251,6 +255,21 @@ func scanFile(abs string) *fileFacts {
 		return true
 	})
 	return ff
+}
+
+// blankComments is src with every comment of f replaced by spaces, line breaks kept, so no offset moves.
+func blankComments(fset *token.FileSet, f *ast.File, src []byte) []byte {
+	code := append([]byte(nil), src...)
+	for _, cg := range f.Comments {
+		for _, c := range cg.List {
+			for i := fset.Position(c.Pos()).Offset; i < fset.Position(c.End()).Offset && i < len(code); i++ {
+				if code[i] != '\n' {
+					code[i] = ' '
+				}
+			}
+		}
+	}
+	return code
 }
 
 func stringLit(e ast.Expr) (string, bool) {

@@ -13,8 +13,8 @@ import (
 )
 
 // fillPlane is the single-use fill convenience used only by integration tests.
-func fillPlane(fill bpfobj.Object, rows, execRows *ebpf.Map, plan *planeFillPlan, table *decide.PlaneRows, opts planeFillOptions, listeners ...*ebpf.Map) (planeFillReport, error) {
-	f, err := newPlaneFiller(fill, rows, execRows, listeners...)
+func fillPlane(fill bpfobj.Object, m fillMaps, plan *planeFillPlan, table *decide.PlaneRows, opts planeFillOptions) (planeFillReport, error) {
+	f, err := newPlaneFiller(fill, m)
 	if err != nil {
 		return planeFillReport{}, err
 	}

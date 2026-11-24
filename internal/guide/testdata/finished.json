@@ -1,4 +1,190 @@
 {
+  "agents": [
+    {
+      "ID": "agent-<sha256>",
+      "Name": "python3",
+      "Command": "python3",
+      "Folder": "<root>/home/bot",
+      "RunID": "r-f16d05ec-0dms9yec6mm80-b883rx",
+      "RunStarted": "2026-11-11T09:30:00Z",
+      "SelectionRule": "Each recorded run has its own row; all stage facts describe only this named run.",
+      "VerificationReason": "This run's record checks out.",
+      "RelatedRunIDs": null,
+      "Relationship": "",
+      "NextStep": "Open this run's record to inspect its check and evidence.",
+      "UID": 0,
+      "UIDKnown": false,
+      "Found": null,
+      "Runs": [
+        {
+          "ID": "r-f16d05ec-0dms9yec6mm80-b883rx",
+          "Name": "python3",
+          "Folder": "<root>/home/bot",
+          "Source": "<root>/home/.tego/runs/r-f16d05ec-0dms9yec6mm80-b883rx",
+          "ContractPath": "",
+          "Tier": "observe",
+          "UID": 0,
+          "UIDKnown": false,
+          "Ended": true,
+          "Verification": 1,
+          "VerificationReason": "",
+          "Started": "2026-11-11T09:30:00Z"
+        }
+      ],
+      "ContractPath": "",
+      "Stages": [
+        {
+          "ID": "found",
+          "Label": "Found",
+          "Fact": {
+            "Established": false,
+            "Text": "",
+            "Source": "",
+            "RunID": "",
+            "CannotTell": "No eligible scan observation establishes this stage."
+          }
+        },
+        {
+          "ID": "recorded",
+          "Label": "Recorded",
+          "Fact": {
+            "Established": true,
+            "Text": "Run r-f16d05ec-0dms9yec6mm80-b883rx has a recorded run_start.",
+            "Source": "<root>/home/.tego/runs/r-f16d05ec-0dms9yec6mm80-b883rx",
+            "RunID": "r-f16d05ec-0dms9yec6mm80-b883rx",
+            "CannotTell": "The record does not supply the command, folder and known uid needed to relate this run to another observation."
+          }
+        },
+        {
+          "ID": "contract",
+          "Label": "Contract",
+          "Fact": {
+            "Established": false,
+            "Text": "",
+            "Source": "",
+            "RunID": "",
+            "CannotTell": "No recorded contract source and matching current compile establish this agent's contract."
+          }
+        },
+        {
+          "ID": "enforced",
+          "Label": "Enforced",
+          "Fact": {
+            "Established": false,
+            "Text": "",
+            "Source": "",
+            "RunID": "",
+            "CannotTell": "No recorded enforcing tier establishes this stage."
+          }
+        },
+        {
+          "ID": "verified",
+          "Label": "Verified",
+          "Fact": {
+            "Established": false,
+            "Text": "",
+            "Source": "",
+            "RunID": "",
+            "CannotTell": "No ended enforcing run has an affirmative record verification result."
+          }
+        }
+      ],
+      "Current": "recorded",
+      "LastSeen": "2026-11-11T09:30:00Z"
+    },
+    {
+      "ID": "agent-<sha256>",
+      "Name": "sh",
+      "Command": "sh",
+      "Folder": "<root>/home/bot",
+      "RunID": "r-f16d05ec-0dmsa61z34x6o-b88krx",
+      "RunStarted": "2026-11-11T09:40:00Z",
+      "SelectionRule": "Each recorded run has its own row; all stage facts describe only this named run.",
+      "VerificationReason": "This run's record checks out.",
+      "RelatedRunIDs": null,
+      "Relationship": "",
+      "NextStep": "Open this run's record to inspect its check and evidence.",
+      "UID": 0,
+      "UIDKnown": false,
+      "Found": null,
+      "Runs": [
+        {
+          "ID": "r-f16d05ec-0dmsa61z34x6o-b88krx",
+          "Name": "sh",
+          "Folder": "<root>/home/bot",
+          "Source": "<root>/home/.tego/runs/r-f16d05ec-0dmsa61z34x6o-b88krx",
+          "ContractPath": "<root>/home/.config/tego/agents/bot.yaml",
+          "Tier": "landlock",
+          "UID": 0,
+          "UIDKnown": false,
+          "Ended": true,
+          "Verification": 1,
+          "VerificationReason": "",
+          "Started": "2026-11-11T09:40:00Z"
+        }
+      ],
+      "ContractPath": "<root>/home/.config/tego/agents/bot.yaml",
+      "Stages": [
+        {
+          "ID": "found",
+          "Label": "Found",
+          "Fact": {
+            "Established": false,
+            "Text": "",
+            "Source": "",
+            "RunID": "",
+            "CannotTell": "No eligible scan observation establishes this stage."
+          }
+        },
+        {
+          "ID": "recorded",
+          "Label": "Recorded",
+          "Fact": {
+            "Established": true,
+            "Text": "Run r-f16d05ec-0dmsa61z34x6o-b88krx has a recorded run_start.",
+            "Source": "<root>/home/.tego/runs/r-f16d05ec-0dmsa61z34x6o-b88krx",
+            "RunID": "r-f16d05ec-0dmsa61z34x6o-b88krx",
+            "CannotTell": "The record does not supply the command, folder and known uid needed to relate this run to another observation."
+          }
+        },
+        {
+          "ID": "contract",
+          "Label": "Contract",
+          "Fact": {
+            "Established": true,
+            "Text": "Run r-f16d05ec-0dmsa61z34x6o-b88krx names this contract file; it compiles now in that run's context.",
+            "Source": "<root>/home/.config/tego/agents/bot.yaml",
+            "RunID": "r-f16d05ec-0dmsa61z34x6o-b88krx",
+            "CannotTell": ""
+          }
+        },
+        {
+          "ID": "enforced",
+          "Label": "Enforced",
+          "Fact": {
+            "Established": true,
+            "Text": "Run r-f16d05ec-0dmsa61z34x6o-b88krx records enforcing tier landlock.",
+            "Source": "<root>/home/.tego/runs/r-f16d05ec-0dmsa61z34x6o-b88krx",
+            "RunID": "r-f16d05ec-0dmsa61z34x6o-b88krx",
+            "CannotTell": ""
+          }
+        },
+        {
+          "ID": "verified",
+          "Label": "Verified",
+          "Fact": {
+            "Established": true,
+            "Text": "Run r-f16d05ec-0dmsa61z34x6o-b88krx ended at an enforcing tier and its record checks out.",
+            "Source": "<root>/home/.tego/runs/r-f16d05ec-0dmsa61z34x6o-b88krx",
+            "RunID": "r-f16d05ec-0dmsa61z34x6o-b88krx",
+            "CannotTell": ""
+          }
+        }
+      ],
+      "Current": "verified",
+      "LastSeen": "2026-11-11T09:40:00Z"
+    }
+  ],
   "schema": "tego.setup/1",
   "tego": {
     "version": "v0.0.0-fixture",
@@ -69,7 +255,7 @@
     "placeholder": false
   },
   "not_known": [
-    "agents Tego never recorded: nothing here looks for them yet",
+    "agents outside a scan's rules and sources, or activity between scans",
     "a contract in no registry (a file given by its path) that no run used"
   ]
 }

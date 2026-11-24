@@ -3,7 +3,8 @@
 Status: **accepted 2026-10-25**; implemented 2026-10-25: D1 to D6.
 Builds on ADR 0066 D2 and D7; refines agent-contract R5 (the profile name, built-in profiles), limits-check-doctor-cli
 R29 (`compile --merged`). Amended by `tego init --preset` (Implementation notes 2026-10-26). Revision 1
-sets neither `fs.reads` nor CI `deny_write` entries.
+of the original three presets sets neither `fs.reads` nor CI `deny_write` entries; the CI amendment below
+adds a fourth preset with its own revision 1.
 
 ## Context
 
@@ -55,9 +56,10 @@ pin included, `builtin`, and the sha256 of its bytes, ADR 0066 D6), so a preset 
 `refused-in-profile` anyway, R28). `TestPresetsNeverLoosen` fails a preset that sets `revision`, `host_sockets: true`,
 `fs.reads: direct`, `deny_read: []`, a `best-effort` assurance, `io_uring`, `keyring`, `ipc`, `setuid` or
 `exec.anonymous: true`, `record: off` or `capture: off`, or any key outside an allow-list of the keys the presets set
-with the values they may hold (an empty `net.allow`, the `/dev/null` write entry, `env.pass` names), and each preset
-loads alone with no diagnostic at all. `env.pass` is the one key through which a preset widens a contract (the
-lists concatenate, R5), so no name in it may be credential-shaped (`credentialShaped`: a credential word, a cloud or
+with the values they may hold (an empty `net.allow`, the `/dev/null` write entry, `env.pass` names).
+This original list and the no-diagnostic-alone check describe the first three presets; the CI amendment
+below adds allowed keys and discloses its conditional diagnostics. `env.pass` is the one key through
+which a preset widens a contract (the lists concatenate, R5), so no name in it may be credential-shaped (`credentialShaped`: a credential word, a cloud or
 secret-store family, an agent socket, a container or cluster endpoint, a URL, a proxy), and revision `n+1` passes
 no name revision `n` did not unless `envPassReviewed` names the review that admitted it (`TestEnvPassNeverWidens`).
 
@@ -150,7 +152,7 @@ the contract stays the one readable list of what a run may reach.
   from. The logic is Layer 2 (`internal/setup`, depguard `setup-never-imports-engine`); `internal/cli` init.go parses
   flags and prints. `setup.Draft` composes and compiles the bytes offline against the machine the caller passes
   (init passes what `tego compile` uses) without creating anything, so the same call serves a dashboard form;
-  `setup.Create` makes the folders. Not built: `--agent` and the harness descriptor
+  `setup.CreateContext` makes the folders. Not built: `--agent` and the harness descriptor
   (so no `models:` entry is written for a detected harness, and the compile warning deferred above stays deferred),
   `--prompt`.
 
@@ -194,3 +196,86 @@ settings source is an informational compile note (also visible with run -v), rat
 than an actionable warning on every start. Overrides of actual runtime-owned values
 remain warnings. Init leaves informational notes to the compile command it prints as
 its next step, and keeps errors and warnings about weakened enforcement visible.
+
+### Amendment 2026-11-11: the CI preset (B1-1)
+
+The catalog gains a fourth preset, `tego/ci`, revision 1 in `v1/ci.yaml`, also served as `tego/ci@1`.
+The first three released revision-1 files and their freeze hashes are unchanged. The CI revision is new
+for v0.2.0; its first release must add its hash to `released` using D3's existing release check.
+
+D4's allowed key list gains `reason.reads: on`, a nonempty list of literal `env.deny` names and
+`fs.deny_write: [./.github/]`. None adds a grant or lowers assurance. The preset sets no `env.pass`,
+`env.set`, `fs.write`, `net.allow`, privilege, recording-mode or assurance key. Denials accumulate;
+empty lists in the contract cannot remove them. `reason.reads` remains contract-wins (ADR 0077).
+An explicit `off` or `auto` withdraws reason notifications. The receipt already reports unrecorded
+allowed and refused reads when no other mechanism records them, held by
+`TestSensitiveReadsNoteSaysWhatTheRunKept` and `TestNothingRefusedSaysWhatTheRunDoesNotRecord`.
+Do not infer completeness from the preset name. Read opens notified for reason record refused reads
+under enforced denies, not allowed reads. ADR 0077's measured cost remains about 17 microseconds
+per open and 19 percent on its offline workload; no new performance measurement is claimed here.
+
+The environment deny list is `ACTIONS_ID_TOKEN_REQUEST_URL`, `ACTIONS_ID_TOKEN_REQUEST_TOKEN`,
+`ACTIONS_RUNTIME_TOKEN`, `ACTIONS_RUNTIME_URL`, `ACTIONS_CACHE_URL`, `ACTIONS_RESULTS_URL`,
+`ACTIONS_CACHE_SERVICE_V2`, `GITHUB_TOKEN`, `GH_TOKEN`, `SIGSTORE_ID_TOKEN`, `INPUT_TOKEN` and
+`INPUT_GITHUB_TOKEN`. `INPUT_TOKEN`, `INPUT_GITHUB_TOKEN` and `ACTIONS_CACHE_SERVICE_V2` are
+recalled, to verify on a runner; the two input names depend on the action. The cache switch is not a
+credential; dropping it removes service configuration alongside the old cache and newer results URLs.
+`GITHUB_TOKEN` is deliberately denied even when
+`env.pass` names it: the agent must not inherit the receipt writer's authority. Passing it still loses
+to deny with a `redundant-rule` warning, and setting it is a compile contradiction. A job deliberately
+granting that authority must use a different contract without this preset. This list does not cover
+arbitrary renamed secrets or all
+possible action inputs. A caller-owned allow list or `tego/no-secrets` is still needed. Hyphenated names
+such as `INPUT_GITHUB-TOKEN` cannot be denied by any contract: the environment-name schema allows
+only letters, digits and underscores, starting with a letter or underscore. The runner preserves the
+hyphen in a `github-token` input. The action must scrub the launcher environment or the contract must
+use an `env.pass` allow list that excludes it. This was checked against the
+[runner input conversion](https://github.com/actions/runner/blob/main/src/Runner.Worker/Handlers/Handler.cs)
+and [github-script input](https://github.com/actions/github-script/blob/main/action.yml), not a live runner.
+
+The preset's portable workspace refusal is `./.github/`, relative to the run's working directory; the action
+must run from `GITHUB_WORKSPACE`. Filesystem paths support `~/`, relative and absolute forms, but no
+shell or environment interpolation. `${TEGO_PROJECT_DIR}` is confined to `env.set`. The runtime temp
+directory, full `_actions` tree, event file, runner installation, evidence and tools therefore cannot
+be represented portably in this static revision. No guessed runner path or literal dollar expression
+stands in for them. The action must supply concrete paths and reject overlapping write grants before
+launch. The file-command files named by `GITHUB_ENV`, `GITHUB_PATH`, `GITHUB_OUTPUT`, `GITHUB_STATE`
+and `GITHUB_STEP_SUMMARY`, and stdout workflow commands, are not protected by this preset. Writable
+command files can change later steps' environment, PATH, outputs, action state or summaries. The action
+must protect concrete file paths and control workflow-command parsing while forwarding agent output;
+removing a variable does not deny its file. GitHub's
+[workflow commands reference](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands)
+describes those channels.
+
+Path expansion is a proposal only. One option is three CI-specific whole-path tokens supplied by a
+trusted typed compiler option such as `WithCIPaths`; the CLI currently has no such input. Another is
+a general deny-only `${ENV:NAME}` expansion from the launcher environment, failing closed when unset.
+The general form adds no grant and avoids GitHub names in the contract language. Either needs explicit
+validation of absolute paths, target types and resolution, and a record of the resolved inputs. Neither
+is implemented or selected. Under ADR 0071, a denial outside every write and ask scope refuses nothing
+new: it warns `redundant-rule` in the contract and is silent in a profile. Temp and `_actions` therefore
+need nested denials only when a write grant or ask scope covers them; the action must reject broad
+grants over signer inputs anyway. Expansion does not make nested denials race-free. A future feature
+needs its own spec decision and a new CI preset revision once revision 1 is released.
+
+ADR 0071 still applies: a missing profile target under a write grant warns `unenforced`, a child write
+grant reopens its subtree, and a nested denial is blocked for ordinary commands; not race-free at the
+no-root tier or on the cgroup fanotify listener. The action must reject missing protected paths and
+regrants, and narrow broad grants over signer inputs. With a retained denial beneath a write grant,
+`fs.assurance: kernel` makes compile fail at tier landlock with `unenforced` (exit 1); a landlock pin
+alone does not. Outside every write and ask scope the profile denial is silently omitted before its
+existence is checked, so a missing `.github/` there produces no warning. The preset adds no claim that
+environment denial closes credential files, other-process `/proc`, inherited descriptors or sockets.
+ADR 0143's signing
+boundary and teardown checks are separate work. No signing or hosted-runner result is established by
+this amendment.
+
+`TestCIPresetCompileMerged` pins the merged default and the contract's off override, newest and pinned
+names. `TestCIPresetKeepsDenialsAndGrants` holds token denials across pass, set and empty deny entries,
+and the contract's own restrictions. `TestCIPresetRefusesWorkflowWrites` checks the policy model for
+workflow, local-action, new-file and symlink paths under narrow and broad grants.
+`TestCIPresetMissingWorkflowDirectoryIsVisible` holds the missing-target warning under a broad grant.
+`TestCIPresetKernelAssuranceAtLandlock` checks the retained kernel denial and narrow-grant/ask/pin controls;
+`TestCIPresetHyphenatedInputCannotBeDenied` checks the environment-name restriction. The root package
+CI documentation tests hold the environment, runner-command and compile-limit disclosures. These are compile
+checks, not kernel or runner proofs. No new ADR number is allocated; this amends 0068.

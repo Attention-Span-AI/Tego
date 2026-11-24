@@ -277,8 +277,10 @@ func TestWatchedLineNamesNoDecider(t *testing.T) {
 		{pw3Watch, "1", "no one: recorded only"}, {pw3Watch, "2", "no one: recorded only"},
 		{pw3Enf, "1", "a rule"}, {pw3Enf, "3", "a rule"},
 	} {
-		if m := authorityField.FindStringSubmatch(get(t, s, c, "/runs/"+tc.run+"/lines/"+tc.seq)); m == nil || m[1] != tc.want {
-			t.Errorf("%s line %s: the authority field reads %q, want %q", tc.run, tc.seq, m, tc.want)
+		// "Decided by" is said once on the line page: in the decision when it names who, in Every field when it names no one.
+		m := authorityField.FindStringSubmatch(get(t, s, c, "/runs/"+tc.run+"/lines/"+tc.seq))
+		if said := tc.want != "no one: recorded only"; said && m != nil || !said && (m == nil || m[1] != tc.want) {
+			t.Errorf("%s line %s: the authority field reads %q, want %q (and none beside a Decided by row)", tc.run, tc.seq, m, tc.want)
 		}
 		if m := openAuthorityField.FindStringSubmatch(opened(tc.run, tc.seq)); m == nil || m[1] != tc.want {
 			t.Errorf("%s line %s opened in place: the authority field reads %q, want %q", tc.run, tc.seq, m, tc.want)
@@ -327,8 +329,8 @@ func TestObservedLineKeepsWhoAllowedIt(t *testing.T) {
 	}
 	for _, tc := range []struct{ seq, want string }{{"3", "a person"}, {"4", "no one: recorded only"}} {
 		page := get(t, s, c, "/runs/"+pw3Held+"/lines/"+tc.seq)
-		if m := authorityField.FindStringSubmatch(page); m == nil || m[1] != tc.want {
-			t.Errorf("line %s: the authority field reads %q, want %q", tc.seq, m, tc.want)
+		if m := authorityField.FindStringSubmatch(page); (tc.seq == "3") != (m == nil) || m != nil && m[1] != tc.want {
+			t.Errorf("line %s: the authority field reads %q, want %q (listed only where no Decided by row says it)", tc.seq, m, tc.want)
 		}
 		if m := openAuthorityField.FindStringSubmatch(openedLine(t, s, c, pw3Held, tc.seq)); m == nil || m[1] != tc.want {
 			t.Errorf("line %s opened in place: the authority field reads %q, want %q", tc.seq, m, tc.want)
@@ -404,5 +406,17 @@ func TestLogsCSVRuleReadsAsTheRow(t *testing.T) {
 	}
 	if words := csvRuleWords(t, s, c, "q=ls")[key]; words != html.UnescapeString(m[1]) {
 		t.Errorf("the CSV words the live block's refusal %q, its Logs row %q", words, html.UnescapeString(m[1]))
+	}
+}
+
+func TestMixedRuleFacetNamesWatchedLines(t *testing.T) {
+	s := newServer(t, pw3Fixture(t))
+	c := login(t, s)
+	body := get(t, s, c, "/logs")
+	if !strings.Contains(body, ">Watched and enforced · Not in contract<") {
+		t.Fatal("mixed unmatched facet uses enforcement wording for watched lines")
+	}
+	if !strings.Contains(body, "includes watched lines that no rule decided") {
+		t.Fatal("mixed facet does not explain its watched lines")
 	}
 }

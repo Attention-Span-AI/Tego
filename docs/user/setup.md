@@ -2,7 +2,7 @@
 
 `tego setup` checks this machine from your shell, then lists the six steps from installing Tego to an agent held by
 its own contract. Each step shows whether it is done and the fact that decided it. Last, it names the one command to
-type next. It asks nothing, starts no program and needs no root. On a machine where one run was recorded (this is the
+type next. It asks nothing and needs no root. It may briefly rehearse entry into a user scope; `--no-scope` skips that check. On a machine where one run was recorded (this is the
 half-done test fixture's output, `internal/cli/testdata/setup-half-done.golden`):
 
 ```
@@ -25,53 +25,56 @@ next: make a contract from what it did, and read it before you use it:
 Run it again after each step. The `next:` lines are on stderr, after the list, and follow the same rule as every
 other command's: they are shown in a terminal, `TEGO_HINTS=on` shows them where stderr is not a terminal, and
 `TEGO_HINTS=off` hides them. They never appear with `--json`. A `next:` line is meant to name neither the command that
-printed it nor a command that fails from the shell you are in. What is tested: an SSH login, a console login, a
-`systemd-run --user --scope` shell, `sudo tego agents` from an SSH login and from such a shell (with the cgroups
+printed it nor a command that fails from the shell you are in. Unit tests model an SSH login, a console login, a
+`systemd-run --user --scope` shell, agents run through sudo from an SSH login and from such a shell (with the cgroups
 Ubuntu 24.04, AlmaLinux 9.8 and Fedora 44 showed), a user with no user manager running, the same user after linger
 reached from an administrator's shell, and a user whose name systemd refuses, on a fresh, a half-done and a finished
-machine (`TestTheNextLinesNeverLoopFromAnyPlace`). A place outside that list is not covered.
+machine (`TestTheNextLinesNeverLoopFromAnyPlace`). Those fixtures do not prove a real automatic handoff. A place outside that list is not covered.
+
+Overview and the optional dashboard tour use the same stored facts. If a step is not known, a refresh checks it
+again. An ended run stays unconfirmed until its record and chain anchor verify; an invalid record stays blocked.
+With scripts off, use the reload link. Facts already checked can take up to 15 seconds to refresh.
 
 ## Over SSH, or on a console login
 
-Tego starts every run, one that only records included, in your user manager's cgroup
-(`user@<uid>.service`). A login over SSH or on a console starts beside it, in a session scope, so from that shell
-`tego run`, `tego watch` and `tego machine test` exit 125. `tego setup` says so, and its `next:` line opens a shell inside that
-cgroup (`internal/cli/testdata/firstrun-fresh-ssh.golden`):
+Automatic user-scope entry is built for `tego run`, `tego watch` and `tego machine test`. They try it when this shell
+sits outside your user manager's cgroup and the manager answers. SSH, console, terminal and real-manager
+validation is **owed in a guest** on Ubuntu 24.04, AlmaLinux 9.8 and Fedora 44. Process stand-ins check the
+invocation and parent/child plumbing; they do not establish that the handoff works in those logins.
+The previously checked manual path remains available:
 
-```
-$ tego setup
-Tego on this machine, step by step:
-  [x] 1 Install             tego v0.0.0-fixture (commit f1x7ure)
-  [!] 2 Check this machine  tego starts no run from a shell outside your user manager's cgroup, not even tego watch, checked 2026-11-11 09:30 UTC; a shell inside it can start one
-  [ ] 3 Find your agents    Tego has recorded no run here yet
-  ...
-
-next: open a shell in your user manager's cgroup, then run tego setup there:
-  systemd-run --user --scope bash
-$ systemd-run --user --scope bash
-$ tego setup
+```sh
+systemd-run --user --scope bash
+tego setup
 ```
 
-In that shell every later `next:` line works as printed. The command uses your login shell's name (`$SHELL`) when it
-is one of bash, zsh, fish, sh, dash, ksh, mksh, tcsh and csh and on your `PATH`, else `bash`: a fixed list, so no
-setting names another program there. When `XDG_RUNTIME_DIR` is unset or holds no socket of your user manager (as
-after `su` or `sudo -u`) but `/run/user/<your uid>` is your own folder and holds that socket, the command names it:
-`XDG_RUNTIME_DIR=/run/user/<uid> systemd-run --user --scope bash`, to type as that user. When `tego` was started
-from another user's shell through `sudo` or `su`, it puts `sudo -u <user>` in front, names `bash` whatever `$SHELL`
-says, and says to type the line in your own login shell (see "A user with no user manager" below). When
-`systemd-run --user` cannot reach your user manager from your shell even so (`systemd-run` is not on `PATH`, or no
-such socket is there), step 2 says why and the `next:` line names no command: log in as yourself over SSH or on the
-console, or open a terminal on your desktop, which is in that cgroup already. `tego machine check` says the same from such a
-shell, and `tego run`, `tego watch` and `tego machine test` end their exit 125 with the same `next:` line, "then run this
-again there". Where `tego rules learn --save` (or `tego agents`) would name `tego run` (or `tego watch`), it says that
-command in a line of its own, to type in the new shell, and its `next:` line opens the shell.
+After a committed handoff, Tego says `tego: opened a user scope for this run` once on stderr. The built path
+passes the original arguments, working directory, environment and standard streams to the new launcher, whose
+pid the runtime writes in the record. Setup, start and doctor keep their original shell and may rehearse entry into a user scope. A successful rehearsal proves placement only; the delegated-tree checks still have to pass. Setup can name a run
+step that attempts entry, such as `tego watch -- <the command you start it with>`. Doctor describes that shell's
+placement and whether entry was just shown to work. `tego doctor --no-scope` and `tego setup --no-scope` check without starting a scope helper. Missing systemd-run, a refused manager, failed placement or a ten-second
+startup timeout gives exit 125 and the existing `next:` line, before a run id or run record. Cancelling startup
+with Ctrl-C exits 130 without fallback advice and never gives the child permission to run.
 
-`sudo tego agents` decides that by the shell you typed `sudo` in, not by its own process: on Fedora 44, sudo from a
-`systemd-run --user --scope` shell opened a session of root's own and moved into it (measured; a desktop terminal,
-also inside the user manager, is expected to do the same, not measured). Tego reads the cgroup of the nearest parent
-outside root's own sessions, so from inside the scope its `next:` line is the step itself (`tego watch -- ...`), to
-type without `sudo`, and from an SSH login it opens the scope. Unit tests check this with the cgroups the guests
-logged; on Fedora only the command's own cgroup was logged, so the parents' cgroups in that test are assumed.
+The handoff uses `/usr/bin/systemd-run` or `/bin/systemd-run` and the checked absolute path of the running Tego
+binary, never PATH. An unsafe, unreadable or replaced binary path refuses the handoff. It uses
+this account's user manager even after `sudo -u` and restores the original environment for normal startup. It
+does not enable lingering. Logout or stopping the manager can end a scope as with a shell opened by hand.
+A nested governed call keeps the existing path and cannot request a scope outside its run. `tego run --service`
+keeps its unit.
+
+The waiting parent follows the launcher's stop through the existing job-control mechanism, checking it is still
+stopped so a delayed stop status after `fg` cannot stop the parent again. It avoids forwarding
+INT/QUIT when its process group is already foreground on its controlling terminal, including with piped stdin.
+For a deliberate INT/QUIT while the job is foreground, target the launcher or the whole job; a signal sent only
+to its waiting parent is not forwarded. Without a controlling terminal, or in the background, the parent forwards it.
+Known limit: `kill -INT %1` to a background job with piped stdin can deliver two interrupts and escalate immediately,
+since the parent cannot distinguish a group send from a parent-only send. Target only the launcher pid for a
+single graceful background interrupt.
+It resets a terminating signal's disposition before raising it on itself, then falls back to exit 128 plus the
+signal number if still alive. Parent death sends the launcher SIGTERM so normal `stop_grace` can finish the record.
+There is no additional forced-kill timer if that launcher is unresponsive; existing tier-specific orphan cleanup
+and a later sweep remain the fallback. All of these complete-login behaviors are **owed in a guest**.
 
 ## A user with no user manager (a service account)
 
@@ -81,8 +84,12 @@ no user manager running at all: it never logged in, and nothing keeps one for it
 shell (here the account is `svc`, uid 1002):
 
 1. Create the account, with a name that starts with a letter (see below):
-   `sudo useradd --create-home --shell /usr/sbin/nologin svc`.
-2. Start a user manager for it that runs without a login. `sudo -u svc tego setup` says "no user manager runs for
+   `sudo useradd --create-home --shell /usr/sbin/nologin svc`. Install tego **as that account**, into its own
+   `~/.local/bin` ([INSTALL.md](https://github.com/Attention-Span-AI/Tego/blob/main/docs/INSTALL.md#a-service-account)). Put the installed folder on that account's
+   login-shell `PATH` in its `~/.profile` before using the explicit login-shell examples below. The lookup runs as `svc`;
+   sudo's own `secure_path` need not contain the installed folder. Tego's printed commands instead name the checked
+   absolute path of the running copy.
+2. Start a user manager for it that runs without a login. `sudo -u svc -H sh -lc 'exec "$(command -v tego)" setup'` says "no user manager runs for
    you" and names the command:
 
    ```
@@ -90,19 +97,27 @@ shell (here the account is `svc`, uid 1002):
      sudo loginctl enable-linger svc
    ```
 
-3. Open a shell as that user, in its user manager's cgroup. `sudo -u svc tego setup`, typed again, names the command
-   and says whose shell it opens:
+3. Run `sudo -u svc -H sh -lc 'exec "$(command -v tego)" setup'` again. It names the service account's next step with
+   that account and the checked absolute path of the running binary. The built run, watch and test path
+   tries its own scope as `svc`; that handoff is **owed in a guest**. Tego does not enable lingering for you.
+4. The existing manual path opens a shell inside that account's manager:
+   `sudo -u svc XDG_RUNTIME_DIR=/run/user/1002 systemd-run --user --scope bash`, then run `tego setup` in it.
+   Type the sudo command in your own login shell. Leave a shell sudo or su opened first (`exit`), since `svc`
+   may not use sudo. Doctor's manual fallback names this same account, not the administrator's.
 
-   ```
-   [!] 2 Check this machine  tego starts no run from a shell outside your user manager's cgroup, ...; tego ran as svc, started from another user's shell through sudo or su: type the next command in your own login shell, not in one sudo or su opened; it opens a shell as svc in svc's user manager's cgroup, not in yours
-   ...
-   next: from your own shell, open a shell as this user; run tego setup in it:
-     sudo -u svc XDG_RUNTIME_DIR=/run/user/1002 systemd-run --user --scope bash
-   ```
+Every other `next:` line from a command run as `svc` is for you to type in your own shell too. A Tego command
+in it names `svc` with sudo's target-account option and the checked full path of the copy that printed it.
+Where the command runs in a folder, a shell changes folder and executes that checked path as `svc` too.
+That form needs a sudoers grant that lets you run a shell as `svc`, which Tego cannot read, so the line says it
+may be refused: a grant for the `tego` binary alone refuses it, and then you run the same command from a shell
+opened as `svc`. After the account's first governed run, setup points to a receipt command for `svc` and its run id.
+Without the account prefix, that command reads **your** record and fails ("no such run"), or answers for the wrong user. In the account's own shell
+(step 4), where nobody started `tego` for another user, such lines stay bare. Before step 2, `tego run`, `tego watch` and `tego test` end their exit 125 with the same
+`next:` block as `tego setup` (the `sudo loginctl enable-linger` line), not only the `fix:` text inside their error line.
 
-   Type it in the shell you logged in with. In a shell that `sudo su -s /bin/bash svc` opened, leave it first
-   (`exit`): `svc` may not use `sudo`.
-4. Run `tego setup` in that shell. It is the service account's, so every later `next:` line works as printed there.
+When the account's user manager runs but keeps no socket under `/run/user/<uid>`, no command can open a shell in it from
+your shell. Step 2, the `next:` line and the `fix:` line then all say so and name no command (before, the `fix:` line
+still named the `sudo -u` command, which fails there).
 
 The name in these commands is the account's own, from the passwd database (never from your environment), quoted when
 it is not one plain word. Where `loginctl` or `sudo` would read the name as an option or a uid (a leading `-`, or
@@ -148,7 +163,7 @@ Linger keeps that user's processes and units running after logout and starts its
 | - | ---- | --------- | --------- |
 | 1 | Install | always: it is running | the binary's build info |
 | 2 | Check this machine | a check of this boot and this build says a run started from where it was made can enforce | `~/.tego/state/check.json` |
-| 3 | Find your agents | Tego has recorded a run | your ledger root |
+| 3 | Find your agents | Tego has recorded a run, or a fresh same-boot saved scan reports eligible own running or installed evidence; a scan is an untrusted observation | your ledger root and `~/.tego/scan/last.json` |
 | 4 | Record one run | a run that enforced nothing (`tego watch`) has ended, and its record checks out now against `~/.tego/chain.log` | the record of that run and the chain anchor |
 | 5 | Make its contract | a contract in your registry (`~/.config/tego/agents/`) or in this folder compiles now (the first 20 names, in name order). With several, it names the one the newest ended run under a contract ran, when that run's record checks out; else the one named after the recorded run's folder; else the first in name order | the registry |
 | 6 | Enforce it | a run under a contract has ended, and its record checks out now against `~/.tego/chain.log` | the record and the chain anchor |
@@ -159,8 +174,8 @@ recording first) and `[?]` not known (its source could not be read; the "Not kno
 
 A step is never ticked for a run that is still going, and a check from before this machine last started, or from
 another tego build, is never used. A contract with `tier: auto` that no run used is compiled at the machine's
-ceiling, whatever the stored check says. Tego does not yet look for agents it never recorded, so it never says there are
-none. It never writes the command you start your agent with: before anything is recorded, the next step is
+ceiling, whatever the stored check says. Setup reads an eligible saved scan but starts no discovery itself.
+It never establishes that no agents exist. It never writes the command you start your agent with: before anything is recorded, the next step is
 `tego watch -- <the command you start it with>`, and you fill in the part in angle brackets.
 
 ## The check it stores
@@ -170,8 +185,14 @@ and seccomp) from your shell, with your shell's privilege. It loads no BPF progr
 `~/.tego/state/check.json` (mode 0600, the folder 0700), one entry per place it was run from: a shell outside your user
 manager's cgroup (an SSH login), a shell inside it (a desktop terminal, or `systemd-run --user --scope bash`), or root.
 The dashboard's Overview reads that file to show the same step, since its own process is not your shell.
+A successful entry rehearsal keeps the entry under `shell`, with `through_user_scope: true`; it does not turn
+`as.in_user_cgroup` true. The check step is then done, and its fact says "this shell is outside your user manager's
+cgroup; tego run, watch and test open a user scope for each run (checked)": such a shell is no blocker. When the
+rehearsal fails, the entry keeps `"cause": "outside-user-manager"` and adds `scope_error`, the reason; the step stays
+blocked with that reason, and the next step is the one fix, a shell inside the manager's cgroup
+(`systemd-run --user --scope bash`). Older files omit both optional keys.
 
-An entry from a shell outside your user manager's cgroup that starts no run only for that reason says so
+An entry from a shell outside your user manager's cgroup that cannot place a run says so
 (`"cause": "outside-user-manager"`), and one that starts no run because no user manager runs for the user says that
 (`"cause": "no-user-manager"`), so the dashboard can name the same next step; the key is left out otherwise. The
 dashboard cannot build the `loginctl` command (it does not link the engine), so for that cause its next step is `tego
@@ -189,9 +210,9 @@ runs from, so step 2 names each other place as "not checked since this machine s
 keeps the new check alone.
 
 When you run `tego setup` from a shell that cannot enforce (an SSH login, say) and a check stored from another place
-says it can, step 2 is done and its fact says "not from ..., where you are now". A next step that would start a run
-(`tego watch`, `tego run`) is then the step that opens a shell in your user manager's cgroup, as above, never the
-command that exits 125 from here. When the only check that can enforce is root's, step 2 says root's check holds only
+says it can, step 2 is done and its fact says "not from ..., where you are now". A next step that starts a run
+(`tego watch`, `tego run`) now names that run directly, since the built path attempts a user scope. Its login behavior is owed in a guest. When scope entry is
+known to be unavailable, the existing fallback still names the manual step or says why no command opens one. When the only check that can enforce is root's, step 2 says root's check holds only
 a run started as root, with sudo, and the next step is `tego machine check`, which says why this shell cannot. No stored
 check chooses a command.
 
@@ -212,6 +233,7 @@ write `~/.tego` at all.
 ## Options
 
 - `--json` prints one JSON object, schema `tego.setup/1` (below), and no `next:` lines.
+- `--no-scope` checks this shell without rehearsing user-scope entry. Doctor accepts the same option.
 - `-v` also prints who asks and from where, the kernel and boot, where each fact was read, the run a step is about,
   why that run or contract was taken, and the rule that chose the next step.
 
@@ -220,7 +242,7 @@ write `~/.tego` at all.
 | Code | Means |
 | ---- | ----- |
 | 0 | printed, and a run started from here can enforce at tier 1 |
-| 1 | printed, and no tier enforces a run started from here (the check's finding). From a shell outside your user manager's cgroup no run starts at all, not even `tego watch`; the `next:` line opens a shell inside it. Otherwise `tego machine check` names the fix |
+| 1 | printed, and no tier enforces a run started from here (the check's finding). From a shell outside your user manager's cgroup, run commands try to open a user scope; setup still reports its original shell. Otherwise `tego machine check` names the fix |
 | 2 | a usage error |
 | 125 | the machine config, the record or a registry could not be read, or a recorded run could not be checked against the chain anchor (the list is printed first, with `[?]`); or it ran inside a tego run (`[governed]`); or it ran under sudo for another user (`[privilege]`): run it without sudo |
 
@@ -234,8 +256,10 @@ New fields may be added within `tego.setup/1`; removing one or changing what one
 | `tego` | `version`, `commit` |
 | `as` | who asked: `user`, `uid`, `root`, `ssh`, `in_user_cgroup`, `in_run`, `where` (`shell`, `user-manager`, `root`), and from a shell outside the user manager's cgroup `scope` (the command that opens a shell inside it) or `scope_missing` (why none does), and `scope_as` (the user `scope` opens a shell as, written as the command writes it) when `tego` was started from another user's shell through `sudo` or `su`, so `scope` begins with `sudo -u`; `null` when no shell asked (the dashboard) |
 | `host` | `kernel`, `boot_id` |
-| `steps[]` | in order: `id` (`install`, `check`, `find`, `record`, `contract`, `enforce`), `title`, `state` (`done`, `todo`, `waiting`, `blocked`, `skipped`, `not-known`), `fact` (`null` when not known), `source`, and when they apply `run` (a full run id) and `link` (why that run or contract) |
+| `steps[]` | after a successful rehearsal the check step is done and its fact says the shell is outside your user manager's cgroup and that run, watch and test open a user scope for each run (checked), while `as` still names the original shell; in order: `id` (`install`, `check`, `find`, `record`, `contract`, `enforce`), `title`, `state` (`done`, `todo`, `waiting`, `blocked`, `skipped`, `not-known`), `fact` (`null` when not known), `source`, and when they apply `run` (a full run id) and `link` (why that run or contract) |
 | `next` | `step` (`""` when every step is done), `rule`, `text`, `command` (`""` for none), `needs_root`, `placeholder` (the command has a part in angle brackets) |
+| `records_partial` | optional true when unreadable or capped run-start evidence makes the inventory incomplete |
+| `agents[]` | additive rows shared with Agents: one named recorded run per recorded row, with run id/time and stages from that same checked snapshot; scan observations stay separate and have no stage ticks. Unchecked rows state the reason and next step. Arguments are not serialized; missing relations say Cannot tell |
 | `not_known[]` | what Tego could not know, one sentence each; never empty |
 
 This object comes from a test fixture of a finished machine (`internal/guide/testdata/finished.json`; `<root>` is
@@ -281,9 +305,11 @@ the fixture's folder):
 
 ## What it does not do yet
 
-It works at machine level: it says whether any agent was recorded, any contract made and any run enforced, not which
-run belongs to which agent. The per-agent form (`tego setup --agent <name>`), a scan that finds agents Tego never
-recorded and rules for every agent on the machine come later. The design and its limits are ADR 0142.
+The six steps work at machine level: they say whether any run was recorded, any contract made and any run enforced.
+The additive `agents[]` inventory identifies each named recorded run separately; scan observations never join a
+recorded row or inherit its ticks. `tego scan` supplies bounded observations for agents Tego has never recorded,
+not proof that every agent has been found. The per-agent command (`tego setup --agent <name>`) and rules for every
+agent on the machine remain later work. The designs and limits are ADRs 0142 and 0145.
 
 ## On the dashboard
 
@@ -300,3 +326,45 @@ seconds to show a contract you just saved. With no run yet, it also shows the fi
 <the command that starts your agent>`, under the guide's own next step, unless that is the next step. Of the guide's
 text, the next step's command is the only one offered to copy; a fact, the stored fix sentence among them, is always
 shown as text.
+
+
+## WSL measurement limit
+
+A Windows guest with WSL 3.0.5, Ubuntu 24.04.5 and kernel 6.18.58.1 used a private cgroup namespace. Its ordinary
+shell was outside the user delegation, and the normal user could not read its service manager's namespace links.
+The earlier membership guard therefore refused setup and suppressed automatic entry there. Since 2026-11-18 Tego has a
+rule that tells such a shell from a process inside a run without reading another process's namespace, and since the
+commit that switched it on for WSL (ADR 0100, amendment of 2026-11-19, round 6) it is on in every build where WSL shows
+two of its marks (the kernel release, `/run/WSL`, a `WSLInterop` entry). The four containment checks it waited for
+passed in that Windows guest: a run refuses WSL's own program launcher (`wsl.exe` and the sockets under `/run/WSL`),
+the second name of your home folder (`/mnt/wslg/distro/...`), a write on the Windows drive, and the GUI and audio
+sockets, under the default rules and with `host_sockets: true`. So `tego setup`, `run`, `watch` and `test` proceed
+from an ordinary WSL shell, through a user scope they open for each run, and `tego doctor` no longer lists the four
+checks as unproven.
+
+What stays as it was:
+
+- A distribution that shows only one mark of WSL (interop turned off shows its kernel release alone) keeps every hold:
+  setup, run, watch and test refuse with the line that on WSL this build treats no process as outside every tego run
+  yet, doctor lists the four checks, and setup stores no ready tier. Relaxing needs two marks; holding needs one.
+- With `isolateDistroCgroup=false` (the shell sits in the kernel's first cgroup namespace) the two-mark rule decides
+  the same way. With systemd off the line says the service manager is not at the top of the cgroup tree and how to
+  turn systemd on; in the first seconds after WSL starts it says your user session is not up yet; as root it says to
+  run tego as your own user, without sudo. Each refusal exits 125 and ends `[governed]`.
+- Not proven: the rule's answer where `/proc/self/ns/cgroup` is served by FUSE (unit-tested for a plain file only),
+  the facts of a shell opened from a terminal window (the guest could not drive one), WSL's mirrored networking
+  (`networkingMode=mirrored`) for the Windows browser's access to the dashboard, which is not supported, and a real
+  keyboard and mouse click, a signed executable, a real HTTPS release, ARM64 and Windows 10. The ordinary build with
+  the switch on has run in a guest (2026-11-19): all six beginner steps passed on Windows PowerShell 5.1, with
+  PowerShell 7 and cmd checked on a base that already had WSL, and Allow once in the browser continued a held run.
+  WSL's idle shutdown also remains open.
+
+No WSL support claim goes beyond those rows: kernel features or a successful diagnostic alone establish none. Root
+tiers, which need root, also require the kernel's initial process-id namespace; updating WSL or adding `bpf` to its LSM
+list does not establish that requirement. `WSL_INTEROP` is omitted from enforcing runs.
+
+Keep your rules files in your Linux home, not on the Windows drive. Tego refuses to run from a rules file (or a file it
+extends) on `/mnt/c` or another Windows drive: there the owner and permissions are made up by WSL, and any Windows
+program can change the file. A project on the Windows drive is fine; its rules file goes in your Linux home, for
+example `~/tego/agent.yaml`. The same refusal holds on Linux for rules files on FAT, exFAT or NTFS disks, 9p or
+virtiofs shares and SMB shares.

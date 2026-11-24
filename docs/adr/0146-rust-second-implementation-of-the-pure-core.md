@@ -1,11 +1,14 @@
 # ADR 0146: Rust is a second, independent implementation of the pure core; Go stays the only enforcer
 
-Status: **proposed 2026-11-11**. Go remains the only enforcer. This release extracts pure chain checking
-(`pkg/spec/record/chaincheck`) and publishes the shared spec (`spec/record/v1/CHAIN.md`) and handwritten vectors.
-A second, independent checker in Rust is planned, not shipped. No Rust release or CI integration is claimed.
-Adds to [ADR 0001](0001-go-for-the-engine.md) (its Rust runtime behind `spec/` stays open and is not this decision).
-Builds on [ADR 0017](0017-kernel-conformance-suite.md) (expectations are handwritten), ADR 0028 (the decision core
-is pure), ADR 0048 (the exec matcher), and ADR 0007 (a later rule only tightens).
+Status: **proposed 2026-11-11**. Phase P0 built: the pure Go chain check
+(`pkg/spec/record/chaincheck`), `spec/record/v1/CHAIN.md` and its handwritten vectors, `rust/` with `tego-record`
+and `tego-verify chain`, the differential (`test/rustdiff`) and `make rust-check`. The Go checker, RFC 3339 leaf and chain spec/vectors are admitted to the public engine export.
+Rust, the differential and `rust-check` remain explicitly private; public Rust shipping requires the owner's later
+decision (P3). No Rust release or CI integration is claimed. Adds to [ADR 0001](0001-go-for-the-engine.md) (its Rust runtime behind `spec/` stays open and is not
+this decision). Builds on [ADR 0017](0017-kernel-conformance-suite.md) (expectations are handwritten), ADR 0028 (the
+decision core is pure), ADR 0048 (the exec matcher), ADR 0007 (a later rule only tightens). Amends
+docs/REPO-LAYOUT.md's growth path (a `rust/` workspace beside the reserved `runtime-rs/`) and the rule "no new
+third-party dependency", for the `rust/` tree only and only for the crates and versions `rust/deny.toml` names.
 
 ## Context
 
@@ -33,11 +36,12 @@ Measured on 2026-11-11 on the dev box (i7-10870H, Go 1.27.4, GOMAXPROCS=4) unles
 
 1. **Go is the only implementation that decides a live action.** No Rust code runs inside `tego run`, the
    supervisor, the BPF loader or any enforcement backend: there is one kernel enforcer. What can be held by the
-   repository: no production Go package imports, starts or reads the output of a Rust program. Any future
-   independent checker must remain outside that authority. The repository cannot control how a caller uses a
-   checker's result. Every such result must be labelled `scope: integrity` and `checked_by` with the checker and
-   version, and its words must
-   concern the integrity of bytes, never whether a run was right.
+   repository: no production Go package imports, starts or reads the output of a Rust program. A check holds it (P3):
+   `tools/oss` and a test refuse an `os/exec` or `proc.Start` of `tego-verify` or any `rust/` artifact outside `test/`,
+   and depguard keeps `test/rustdiff` the only Go importer of the differential's code. What the repository cannot hold:
+   a CI job that deploys after `tego-verify` exits 0, or a person who reads its result as approval. So every Rust
+   result is labelled with its scope and authority (`scope: integrity`, `checked_by: tego-verify <version>`), and its
+   words are about the integrity of bytes, never about a run being right.
 
 2. **The seam is a pure Go function of bytes, built first.** Each twin has a Go side that is a pure function (no file,
    no clock, no lock, no host state) with a spec section and handwritten vectors; the existing code calls it with
@@ -50,46 +54,52 @@ Measured on 2026-11-11 on the dev box (i7-10870H, Go 1.27.4, GOMAXPROCS=4) unles
    wrapper is removed (ADR 0029). Production file verification includes schema checks. Check and Reason are
    public library APIs and are classified as such by the dead-code ratchet; the CLI uses the streaming Walk adapter.
 
-3. **A second checker must be independent**, written from `spec/` and its vectors, not by translating Go.
-   Where the spec is not enough and Go must be read, that dependency must be stated and the spec corrected.
-   On those rules a second checker repeats Go's reading and checks nothing; shared vectors and a differential
-   can find where two implementations read one written rule differently, never a rule both read the same wrong way.
+3. **Rust is a second, independent implementation of that function**, written from `spec/` and its vectors, not by
+   translating Go. Where the spec was not enough and Go had to be read, the twin says so (`rust/*/SPEC-NOTES.md`) and
+   the spec is fixed in the same change. On those rules the twin repeats Go's reading and checks nothing; the vectors
+   and the differential find where the two implement one written rule differently, never a rule both read the same
+   wrong way.
 
-4. **A disagreement must fail, on a change to either side.** A future differential must compare the verdict,
-   reason code, first bad line, line count and head, never message text or checker identity. It must have no skip
-   list or lag file. A vector where Go and the spec disagree records Go's answer as an open `finding`, pinned by
-   Go's runners and treated as a failure by the differential until one side changes, never as a skip.
+4. **A disagreement fails, on a change to either side.** The differential (`test/rustdiff`) compares meaning: the
+   verdict, the reason code, the first bad line, the number of lines and the head; never message text or
+   `checked_by`. It has no skip list and no lag file: a change to the Go twin, the Rust twin, `spec/`, or either
+   side's dependencies runs it, and any difference fails. A vector where Go and the spec disagree records Go's answer as
+   an open `finding`, which Go's runners pin (they fail the day Go changes) and which the differential reports as a
+   failure until one side changes; it is never a skip. `make rust-check` runs all of it; it joins the gate and CI in P3,
+   on every change, not only on changes under `rust/` or `spec/`.
 
-5. **An independent checker has integrity scope only.** It must read only the given paths, have no default
-   location, write nothing and open no socket. Its chain result must use exit 0 for match, 1 for mismatch,
-   125 for cannot check and 2 for usage. Receipt checking remains unresolved: the receipt binding commits to
-   the record's bytes, not the receipt's reported totals, so an integrity-only check could pass an edited total.
-   No wording may say that a receipt and record agree without a separate design for that check.
+5. **The product face is `tego-verify`.** `tego-verify chain <run dir> [--anchor <chain.log>] [--json]` says whether the
+   chain of a record's bytes matches (spec/record/v1/CHAIN.md): exit 0 match, 1 mismatch, 125 cannot check, 2 usage. It
+   reads only the paths it is given, has no default location, writes nothing and opens no socket. Receipt checking is
+   not in it: the receipt binding commits to the record's bytes, not to the receipt's reported totals, so an
+   integrity-only check of a receipt could pass a receipt whose totals were edited. It waits for a design answer
+   (P2), and no wording says "the receipt and the record agree" until then.
 
-6. **An exec matcher twin requires blind qualification.** It must detect withheld seeded faults and undisclosed
-   defect families without spec changes, with valid-command controls, prefix-extension properties and real-tool
-   witnesses where they apply; surviving faults must be reported. Replaying known v0.1.1 forms alone does not qualify
-   it. Its wire contract must include `ArgvComplete`, `Final` and every other security-relevant decision output,
-   not only the verdict.
+6. **The exec matcher twin (P1) starts only after a blind qualification.** The maintainer runs it: seeded faults in a
+   copy of the Go matcher, withheld from whoever builds the twin, and exploit families not disclosed to them; the twin
+   must detect them without spec changes, with valid-command controls, prefix-extension properties and real-tool
+   witnesses where they apply, and the surviving faults are reported. Replaying v0.1.1's known forms alone does not
+   qualify it. Its wire contract includes `ArgvComplete`, `Final` and every other security-relevant output of a
+   decision, not only the verdict.
 
-7. **Build requirements for a future checker.** One Cargo workspace must pin an exact stable toolchain at least
-   two weeks old (the selected version was 1.99.1), declare a 1.99 minimum and use the exact pin for qualified
-   builds. No crate is published. Every crate must have `#![forbid(unsafe_code)]`. Clippy must deny unwrap, expect,
-   panic, indexing, unchecked arithmetic and `as` casts outside tests, with every warning an error. Release builds
-   must keep overflow checks and unwind: a caught panic must report cannot check, never match.
+7. **Build rules.** `rust/` is one Cargo workspace; `rust-toolchain.toml` pins one exact stable release at least two
+   weeks old (1.99.1); Cargo declares a 1.99 minimum, and qualified builds use the exact pin. No crate is published. Every crate has
+   `#![forbid(unsafe_code)]`. Clippy denies unwrap, expect, panic, indexing, unchecked arithmetic and `as` casts
+   outside tests, and `make rust-check` treats every warning as an error. Release builds keep overflow checks and
+   unwind: a panic is caught and reported as cannot check, never a match.
 
-8. **Dependency requirements.** Exact versions, default features off: `serde =1.0.229` (std), `serde_json =1.0.154`
-   (std, raw_value), `sha2 =0.11.1`; their graph is serde_core, itoa, memchr, zmij, digest, block-buffer,
-   crypto-common, hybrid-array, typenum, cpufeatures, cfg-if, and libc on aarch64 only. No proc-macro crate may be
-   built (no derive) and there must be no dev-only crate (property loops use a seeded generator in test code).
-   The dependency allow list must permit exactly these crates at these versions, crates.io only, the licences
-   Apache-2.0, MIT, BSD-3-Clause and Unicode-3.0, the five selected build scripts (each read: none compiles C or
-   fetches), and no open advisory. A bump requires review of the changed crates' sources. The Go module gains
-   no dependency.
+8. **Dependencies.** Exact versions, default features off: `serde =1.0.229` (std), `serde_json =1.0.154` (std,
+   raw_value), `sha2 =0.11.1`; their graph is serde_core, itoa, memchr, zmij, digest, block-buffer, crypto-common,
+   hybrid-array, typenum, cpufeatures, cfg-if, and libc on aarch64 only. No proc-macro crate is built (no derive) and
+   there is no dev-only crate (property loops use a seeded generator in test code). `rust/deny.toml` allows exactly
+   these crates at these versions, crates.io only, the licences Apache-2.0, MIT, BSD-3-Clause and Unicode-3.0, the
+   five build scripts it names (each read: none compiles C or fetches), and no open advisory. A bump is its own
+   commit, with the changed crates' sources read. The Go module gains no dependency.
 
-9. **Release requirements.** Static musl linux amd64 and arm64 artifacts must be built natively, signed through the
-   checksums file using the existing cosign step, accompanied by an SBOM and reproducible byte for byte with pinned linker inputs, remapped paths
-   and an empty-cache fetch. A build that does not reproduce must not ship; no ADR note waives that.
+9. **Release (P3).** `tego-verify` for linux amd64 and arm64, static musl, built natively on each runner, in the
+   checksums file the existing cosign step signs, with an SBOM, and rebuilt byte for byte by the reproduce job, which
+   then names the Rust artifact beside the Go binaries. Pinned linker inputs, remapped paths and an empty-cache fetch
+   come with it; a build that does not reproduce does not ship, and no ADR note waives that.
 
 ## First finding (2026-11-11): Go's reader took timestamps RFC 3339 does not
 
@@ -192,21 +202,23 @@ Go against itself. Each needs an answer from a source independent of both implem
 
 ## Consequences and residuals
 
-- This release ships the Go seam and shared chain spec/vectors. The independent checker is planned, not shipped;
-  no differential transport or filesystem-adapter result is a claim about this release.
-- A future differential must bound requests (5 s, 64 MiB), responses (64 KiB) and shutdown (2 s), echo monotonic
-  request identifiers and validate response fields. Shutdown must drain through EOF within its deadline, refuse
-  extra replies or trailing bytes (including whitespace), then check the server's exit. The response reader must
-  own its pipe until the drain ends; Wait must not close it early. Non-compared run labels and diagnostic text
-  must be empty in differential replies so legitimate large inputs fit the response bound. Line and chain answers
-  must both carry scope and checker identity.
-  Invalid replies, duplicates, trailing bytes, timeouts and nonzero exits require tests; these tests cannot qualify
-  every possible transport fault.
-- A future disk checker must retain the original open events descriptor across an anchor race, see appends to it
-  and refuse an inode replacement at its name. Concurrent vector executions must own separate directories until cleanup.
-- Parser and diagnostic disagreements will cost time before any independent bug is found. The first historical
-  finding, `go-ts-lenient`, was found and closed on 2026-11-11 (above).
-- The planned checker checks that the chain of a record's bytes matches and, with an anchor, that none was cut from its end.
+- A second toolchain is private during P0. The export manifest admits the Go seam and vectors now and excludes
+  `rust/`, `test/rustdiff`, the Rust script and Make target. SPDX checks `.rs` even while private. Public Rust
+  admission, dependency notices, CI, release and reproduction remain P3 work after the owner's shipping decision.
+- The differential transport bounds requests (5 s, 64 MiB), responses (64 KiB) and shutdown (2 s), echoes monotonic
+  request identifiers and validates response fields. Shutdown closes the request side and reads responses through EOF
+  within its deadline, refuses any extra reply or trailing byte (including whitespace), then checks the server's
+  exit. The response reader owns its pipe until the drain ends; Wait cannot close it early. Its non-compared run
+  label and diagnostic text are empty in differential replies so legitimate large inputs fit that response bound.
+  Line and chain answers both carry scope and checker identity. Tests cover invalid replies, duplicates between
+  requests and after the final reply, trailing bytes, request/shutdown timeouts and nonzero exits after the last
+  answer. This qualifies the checked protocol in `test/rustdiff/PROTOCOL.md`, not every possible transport fault.
+- Rust rescans the original open events descriptor after an anchor race, seeing appends to it but never accepting
+  an inode replacement at its name. Disk-vector directories are allocated atomically per execution and owned until
+  cleanup; concurrent tests cannot remove one another's fixtures.
+- Every change to a twinned Go function costs a Rust change, and parser and diagnostic disagreements will cost time
+  before any independent bug is found. The first one, `go-ts-lenient`, was found and closed on 2026-11-11 (above).
+- `tego-verify` checks that the chain of a record's bytes matches and, with an anchor, that none was cut from its end.
   It does not prove who made the files, that the run was complete or true, or that a receipt's totals are right:
   whoever can write `events.jsonl` and `chain.log` can make a matching pair. A signature would name a signer, not make
   a host honest. These limits apply to any future verifier.

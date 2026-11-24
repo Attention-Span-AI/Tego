@@ -42,8 +42,9 @@ const StopRequestFile = ledger.StopRequestFile
 // ParseLockInfo is runlock.ParseLockInfo.
 func ParseLockInfo(b []byte) (LockInfo, error) { return runlock.ParseLockInfo(b) }
 
-// probeLock is runlock.ProbeLock for d, under the directory a sweep hook was lent when d holds one.
-func probeLock(d runDir) (held bool, info LockInfo, err error) { return runlock.ProbeLockIn(d.lock()) }
+// probeLock is runlock.ProbeLock for d, under the directory a sweep hook was lent when d holds one. A variable so a
+// test can stand in a lock that is held at one look and free at the next.
+var probeLock = func(d runDir) (held bool, info LockInfo, err error) { return runlock.ProbeLockIn(d.lock()) }
 
 // OpenStopTargetFor is runlock.OpenStopTargetFor, whose doc is the contract (R22).
 func OpenStopTargetFor(runDir string, info LockInfo) (*StopTarget, error) {
@@ -51,8 +52,8 @@ func OpenStopTargetFor(runDir string, info LockInfo) (*StopTarget, error) {
 }
 
 // openStopTarget is OpenStopTargetFor for d, whose lock is proved under the directory a sweep hook was lent when d
-// holds one.
-func openStopTarget(d runDir, info LockInfo) (*StopTarget, error) {
+// holds one. A variable so a test can stand in the refusal of a launcher that left during its proof.
+var openStopTarget = func(d runDir, info LockInfo) (*StopTarget, error) {
 	return runlock.OpenStopTargetIn(d.lock(), info)
 }
 

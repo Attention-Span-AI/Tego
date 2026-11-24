@@ -28,13 +28,17 @@ var secretEnvSuffixes = []string{
 // never reads the process environment itself; without this option the warning cannot fire.
 func WithEnviron(environ []string) CompileOption {
 	names := make([]string, 0, len(environ))
+	variables := make([]string, 0, len(environ))
 	for _, kv := range environ {
-		name, _, _ := strings.Cut(kv, "=")
+		name, _, variable := strings.Cut(kv, "=")
 		if name != "" {
 			names = append(names, name)
+			if variable {
+				variables = append(variables, name)
+			}
 		}
 	}
-	return func(o *compileOptions) { o.envNames = names }
+	return func(o *compileOptions) { o.envNames, o.envVariableNames = names, variables }
 }
 
 // secretEnvName reports whether a variable's name looks like a credential's: one of secretEnvExact, or a name that

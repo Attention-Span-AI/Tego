@@ -5,6 +5,7 @@ package uprobe
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -47,6 +48,32 @@ func TestUnreadableBaselineCountsFromZero(t *testing.T) {
 	}
 	if got := gapCount(u.Gaps(), GapRingBufferDrop); got != 4 {
 		t.Errorf("ring-buffer-drop = %d, want the 4 drops counted from zero", got)
+	}
+}
+
+// TestLostCounterDetailNamesTheKernelCounter: a ring-buffer-drop gap has two sources, the kernel's per-slot
+// lost-chunk counter and the final drain's bound, and the gap line cannot say which. A run that ended over one
+// (hosted run 43152191607, Fedora 7.0) could not be explained: the log now says which, with the counter's values.
+func TestLostCounterDetailNamesTheKernelCounter(t *testing.T) {
+	lost := &fakeLost{value: 2}
+	var logged strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	u, sink := newTestUprobe(t, nil, Options{Lost: lost, Logger: logger})
+	if err := u.Start(context.Background(), source.RunRef{ID: "r-1", Agent: "a", CgroupID: 41}, sink); err != nil {
+		t.Fatal(err)
+	}
+	lost.mu.Lock()
+	lost.value = 5
+	lost.mu.Unlock()
+	<-u.done
+	if err := u.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if got := gapCount(u.Gaps(), GapRingBufferDrop); got != 3 {
+		t.Errorf("ring-buffer-drop = %d, want 3", got)
+	}
+	if want := "lost-chunk counter for this run's slot went from 2 to 5"; !strings.Contains(logged.String(), want) {
+		t.Errorf("log lacks %q:\n%s", want, logged.String())
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/control/rulesview"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/profilesrc"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
@@ -24,12 +25,17 @@ import (
 func init() { register(cmdRules) }
 
 func cmdRules() Command {
-	return Command{Name: "rules", Summary: "show a run's rules, their enforcement and hits", Usage: "<run> | --last [--json]",
+	return Command{Name: "rules", Summary: "show a run's rules, their enforcement and hits", Usage: "<run> | --last [--json] | history <agent | file> [--json] | undo <agent | file> [<id>] [--yes]",
 		Run: func(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+			if len(args) > 0 && (args[0] == "history" || args[0] == "undo") {
+				return rulesHistoryVerb(ctx, args[0], args[1:], stdout, stderr)
+			}
 			fs := flag.NewFlagSet("tego rules", flag.ContinueOnError)
 			fs.SetOutput(stderr)
 			fs.Usage = func() {
 				fmt.Fprintln(stderr, "usage: tego rules <run> | --last [--json]")
+				fmt.Fprintln(stderr, "   or: tego rules history <agent | file> [--json]")
+				fmt.Fprintln(stderr, "   or: tego rules undo <agent | file> [<id>] [--yes]")
 				fs.PrintDefaults()
 			}
 			asJSON := fs.Bool("json", false, "print the same rules view as the dashboard, as versioned JSON")
@@ -58,16 +64,16 @@ func cmdRules() Command {
 				diag(stderr, "tego rules needs one run id or --last", codeUsage, "run tego rules --last")
 				return identity.ExitUsage
 			}
-			mr := loadMachineReport()
+			mr := loadMachineReport(config.TrustAbort)
 			for _, d := range mr.diags {
 				fmt.Fprintln(stderr, d.String())
 			}
-			if why, code := mr.envSkip(); why != "" {
-				diag(stderr, "tego rules: TEGO_CONFIG was skipped: "+record.Printable(why), code, "fix the config file, then run tego rules --last")
-				return identity.ExitError
-			}
 			if mr.err != nil {
-				diag(stderr, "tego rules: "+mr.err.Error(), codeIO, "check TEGO_CONFIG, then run tego rules --last")
+				code := config.CodeInvalid
+				if errors.Is(mr.err, config.ErrUntrusted) {
+					code = config.CodeUntrusted
+				}
+				diag(stderr, "tego rules: "+mr.err.Error(), code, "repair the config layer, then run tego rules --last")
 				return identity.ExitError
 			}
 			root, err := ledgerRootOf(mr.m, mr.secure)
@@ -96,7 +102,7 @@ func cmdRules() Command {
 				diag(stderr, "tego rules: "+err.Error(), reason, "tego status --all lists the runs")
 				return code
 			}
-			anchor, err := anchorPath()
+			anchor, err := reportAnchorPath(mr)
 			if err != nil {
 				diag(stderr, "tego rules: "+err.Error(), codeIO, "check the chain anchor, then run tego rules --last")
 				return identity.ExitError

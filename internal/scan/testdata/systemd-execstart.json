@@ -1,0 +1,288 @@
+{
+  "systemd_version": "systemd 257 (257.9-0ubuntu2.5)",
+  "command": "SYSTEMD_LOG_LEVEL=debug systemd-analyze verify --man=no <scratch-file.service>",
+  "source": "https://github.com/systemd/systemd/blob/v257/src/shared/conf-parser.c#L309-L415; https://github.com/systemd/systemd/blob/v257/src/core/load-fragment.c#L817-L995; https://github.com/systemd/systemd/blob/v257/src/basic/extract-word.c#L62-L167",
+  "cases": [
+    {
+      "name": "backslash-space",
+      "input": "[Unit]\nDefaultDependencies=no\n[Service]\nEnvironment=A=b\\ \nExecStart=/usr/bin/node /opt/@openai/codex/bin/codex.js\n",
+      "systemd_commands": [
+        "/usr/bin/node /opt/@openai/codex/bin/codex.js"
+      ],
+      "exec": [
+        {
+          "program": "codex-node",
+          "arguments": 1
+        }
+      ],
+      "systemd_exit": 0
+    },
+    {
+      "name": "blank-terminates",
+      "input": "[Unit]\nDefaultDependencies=no\n[Service]\nExecStart=/usr/bin/node \\\n\nEnvironment=KEY=value\n",
+      "systemd_commands": [
+        "/usr/bin/node"
+      ],
+      "exec": [
+        {
+          "program": "",
+          "arguments": 0
+        }
+      ],
+      "systemd_exit": 0
+    },
+    {
+      "name": "empty-quoted",
+      "input": "[Unit]\nDefaultDependencies=no\n[Service]\nExecStart=/usr/bin/true \"\"\n",
+      "systemd_commands": [
+        "/usr/bin/true \"\""
+      ],
+      "exec": [
+        {
+          "program": "",
+          "arguments": 1
+        }
+      ],
+      "systemd_exit": 0
+    },
+    {
+      "name": "even-backslash",
+      "input": "[Unit]\nDefaultDependencies=no\n[Service]\nEnvironment=A=b\\\\\nExecStart=/usr/bin/node /opt/@openai/codex/bin/codex.js\n",
+      "systemd_commands": [
+        "/usr/bin/node /opt/@openai/codex/bin/codex.js"
+      ],
+      "exec": [
+        {
+          "program": "codex-node",
+          "arguments": 1
+        }
+      ],
+      "systemd_exit": 0
+    },
+    {
+      "name": "join-comments",
+      "input": "[Unit]\nDefaultDependencies=no\n[Service]\nExecStart=/usr/bin/node \\\n# skip this comment\n; skip this too\n /opt/@openai/codex/bin/codex.js\n",
+      "systemd_commands": [
+        "/usr/bin/node /opt/@openai/codex/bin/codex.js"
+      ],
+      "exec": [
+        {
+          "program": "codex-node",
+          "arguments": 1
+        }
+      ],
+      "systemd_exit": 0
+    },
+    {
+      "name": "join-eof",
+      "input": "[Unit]\nDefaultDependencies=no\n[Service]\nExecStart=/usr/bin/node /opt/@openai/codex/bin/codex.js \\",
+      "systemd_commands": [
+        "/usr/bin/node /opt/@openai/codex/bin/codex.js"
+      ],
+      "exec": [
+        {
+          "program": "codex-node",
+          "arguments": 1
+        }
+      ],
+      "systemd_exit": 0
+    },
+    {
+      "name": "join-even-four",
+      "input": "[Unit]\nDefaultDependencies=no\n[Service]\nEnvironment=A=b\\\\\\\\\nExecStart=/usr/bin/node /opt/@openai/codex/bin/codex.js\n",
+      "systemd_commands": [
+        "/usr/bin/node /opt/@openai/codex/bin/codex.js"
+      ],
+      "exec": [
+        {
+          "program": "codex-node",
+          "arguments": 1
+        }
+      ],
+      "systemd_exit": 0
+    },
+    {
+      "name": "join-odd-three",
+      "input": "[Unit]\nDefaultDependencies=no\n[Service]\nEnvironment=A=b\\\\\\\nExecStart=/usr/bin/node /opt/@openai/codex/bin/codex.js\n",
+      "systemd_commands": [],
+      "exec": [],
+      "systemd_exit": 1
+    },
+    {
+      "name": "midword-node",
+      "input": "[Unit]\nDefaultDependencies=no\n[Service]\nExecStart=/usr/bin/node /opt/@openai/co\"dex\"/bin/codex.js\n",
+      "systemd_commands": [
+        "/usr/bin/node /opt/@openai/codex/bin/codex.js"
+      ],
+      "exec": [
+        {
+          "program": "codex-node",
+          "arguments": 1
+        }
+      ],
+      "systemd_exit": 0
+    },
+    {
+      "name": "midword-program",
+      "input": "[Unit]\nDefaultDependencies=no\n[Service]\nExecStart=/usr/bin/co\"dex\"\n",
+      "systemd_commands": [
+        "/usr/bin/codex"
+      ],
+      "exec": [
+        {
+          "program": "codex-native",
+          "arguments": 0
+        }
+      ],
+      "systemd_exit": 1
+    },
+    {
+      "name": "midword-quote",
+      "input": "[Unit]\nDefaultDependencies=no\n[Service]\nExecStart=/usr/bin/true --components=\"pkcs11,secrets\"\n",
+      "systemd_commands": [
+        "/usr/bin/true --components=pkcs11,secrets"
+      ],
+      "exec": [
+        {
+          "program": "",
+          "arguments": 1
+        }
+      ],
+      "systemd_exit": 0
+    },
+    {
+      "name": "midword-single",
+      "input": "[Unit]\nDefaultDependencies=no\n[Service]\nExecStart=/usr/bin/node /opt/@openai/co'dex'/bin/codex.js\n",
+      "systemd_commands": [
+        "/usr/bin/node /opt/@openai/codex/bin/codex.js"
+      ],
+      "exec": [
+        {
+          "program": "codex-node",
+          "arguments": 1
+        }
+      ],
+      "systemd_exit": 0
+    },
+    {
+      "name": "midword-space",
+      "input": "[Unit]\nDefaultDependencies=no\n[Service]\nExecStart=/usr/bin/true --components=\"pkcs11 secrets\"\n",
+      "systemd_commands": [
+        "/usr/bin/true \"--components=pkcs11 secrets\""
+      ],
+      "exec": [
+        {
+          "program": "",
+          "arguments": 1
+        }
+      ],
+      "systemd_exit": 0
+    },
+    {
+      "name": "odd-backslash",
+      "input": "[Unit]\nDefaultDependencies=no\n[Service]\nEnvironment=A=b\\\nExecStart=/usr/bin/node /opt/@openai/codex/bin/codex.js\n",
+      "systemd_commands": [],
+      "exec": [],
+      "systemd_exit": 1
+    },
+    {
+      "name": "quoted-join-eof",
+      "input": "[Unit]\nDefaultDependencies=no\n[Service]\nExecStart=/usr/bin/true \"hello\\\nworld\"",
+      "systemd_commands": [
+        "/usr/bin/true \"hello world\""
+      ],
+      "exec": [
+        {
+          "program": "",
+          "arguments": 1
+        }
+      ],
+      "systemd_exit": 0
+    },
+    {
+      "name": "quoted-joined",
+      "input": "[Unit]\nDefaultDependencies=no\n[Service]\nExecStart=/usr/bin/node \"/opt/@openai/\\\ncodex/bin/codex.js\"\n",
+      "systemd_commands": [
+        "/usr/bin/node \"/opt/@openai/ codex/bin/codex.js\""
+      ],
+      "exec": [
+        {
+          "program": "",
+          "arguments": 1
+        }
+      ],
+      "systemd_exit": 0
+    },
+    {
+      "name": "quoted-prefix",
+      "input": "[Unit]\nDefaultDependencies=no\n[Service]\nExecStart=\"/usr/bin/no\"de /opt/@openai/codex/bin/codex.js\n",
+      "systemd_commands": [
+        "/usr/bin/node /opt/@openai/codex/bin/codex.js"
+      ],
+      "exec": [
+        {
+          "program": "codex-node",
+          "arguments": 1
+        }
+      ],
+      "systemd_exit": 0
+    },
+    {
+      "name": "quoted-ignore-prefix",
+      "input": "[Unit]\nDefaultDependencies=no\n[Service]\nExecStart=\"-/usr/bin/node\" /opt/@openai/codex/bin/codex.js\n",
+      "systemd_commands": [
+        "/usr/bin/node /opt/@openai/codex/bin/codex.js"
+      ],
+      "exec": [
+        {
+          "program": "codex-node",
+          "arguments": 1
+        }
+      ],
+      "systemd_exit": 0
+    },
+    {
+      "name": "quoted-argv0-prefix",
+      "input": "[Unit]\nDefaultDependencies=no\n[Service]\nExecStart=\"@/usr/bin/node\" arbitrary /opt/@openai/codex/bin/codex.js\n",
+      "systemd_commands": [
+        "arbitrary /opt/@openai/codex/bin/codex.js"
+      ],
+      "exec": [
+        {
+          "program": "codex-node",
+          "arguments": 1
+        }
+      ],
+      "systemd_exit": 0
+    },
+    {
+      "name": "escaped-ignore-prefix",
+      "input": "[Unit]\nDefaultDependencies=no\n[Service]\nExecStart=\"\\x2d/usr/bin/node\" /opt/@openai/codex/bin/codex.js\n",
+      "systemd_commands": [
+        "/usr/bin/node /opt/@openai/codex/bin/codex.js"
+      ],
+      "exec": [
+        {
+          "program": "codex-node",
+          "arguments": 1
+        }
+      ],
+      "systemd_exit": 0
+    },
+    {
+      "name": "quoted-argv0-is-not-script",
+      "input": "[Unit]\nDefaultDependencies=no\n[Service]\nExecStart=\"@/usr/bin/node\" /opt/@openai/codex/bin/codex.js /opt/other.js\n",
+      "systemd_commands": [
+        "/opt/@openai/codex/bin/codex.js /opt/other.js"
+      ],
+      "exec": [
+        {
+          "program": "",
+          "arguments": 1
+        }
+      ],
+      "systemd_exit": 0
+    }
+  ],
+  "notes": "Verification runs no commands. midword-program exits 1 because /usr/bin/codex is absent on the oracle host; its parsed command is still reported. Odd-backslash cases have no ExecStart and exit 1."
+}

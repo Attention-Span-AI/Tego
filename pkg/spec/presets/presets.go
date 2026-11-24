@@ -45,11 +45,12 @@ var catalog = []Preset{
 	{Name: "no-secrets", Promise: "the agent cannot read your secret files, and your secret variables never reach it", Revision: 1},
 	{Name: "no-prod", Promise: "the agent reaches no network host except the ones your contract names", Revision: 1},
 	{Name: "repo-only-writes", Promise: "the agent writes only in the folders your contract names", Revision: 1},
+	{Name: "ci", Promise: "named CI variables stay out, ordinary .github writes are refused, and refused read opens are recorded by default", Revision: 1},
 }
 
 // released is the sha256 of every released revision's bytes, by its pinned name without the prefix
 // (no-secrets@1). A revision listed here is frozen: TestReleasedRevisionsAreFrozen fails when its file changes,
-// and a change is a new revision (README.md). v0.1.0, the first release, carries revision 1 of each.
+// and a change is a new revision (README.md). v0.1.0, the first release, carries revision 1 of the original three.
 var released = map[string]string{
 	"no-secrets@1":       "1a57482703807021e712fe717dd3f12483c9e5b7f97761dbe8546788541c51a4",
 	"no-prod@1":          "bb02323c70e8d7ffe2198e00b04c7853cda7d4c6d760e8d1f8cf56bdf8f7fcc4",

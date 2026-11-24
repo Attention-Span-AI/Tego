@@ -43,10 +43,9 @@ cells:
     op: read
     path: pub/b/alias/key
     canon: secret/deep/key
+    # Moved with its parent, the bind is still secret/deep's inode: at tier landlock the held-read pin of that identity
+    # refuses it by the rule (ADR 0069); it was readable under E32 (ii) until the held reads and the alias pass.
     want:
-      landlock: allow
-      root: refused fs.deny_read[./secret/]
+      all: refused fs.deny_read[./secret/]
     no_compile: compile --test answers names and sees no mount; the alias is the deny_read's inode only in the run's namespace
-    exception: 'enforce-landlock E32 (ii): a deny_read target''s content reached through a bind mount beneath a granted sibling is readable through that name at tier landlock (recorded limitation; compile warns on mount points)'
-    exception_at: landlock
-    source: 'ADR 0025 (identity is the inode); ADR 0011 (2026-11-11 amendments); enforce-landlock E32 (ii)'
+    source: 'ADR 0025 (identity is the inode); ADR 0011 (2026-11-11 amendments); ADR 0069 (held reads)'

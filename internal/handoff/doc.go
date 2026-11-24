@@ -10,6 +10,11 @@
 // rename after Open cannot change what runs, and an unpinned build, a root caller or a kernel that refuses an
 // executable memfd is refused with a reason code that maps to a pkg/spec/identity exit.
 //
+// ProgramLine, RecordedProgram, SelfSum and PinnedSum are how a running dashboard and the next tego agree it is the same
+// program: the dashboard writes the SHA-256 of its own bytes into its log, and a later tego compares it with the hash
+// this build pinned (the bytes a new dashboard would run), never with a file's inode or time, which a fresh sealed memfd
+// changes on every launch.
+//
 // Nouns is the list of commands tego hands to tego-control (ADR 0100 (2)): the engine registers a handoff for
 // each, and tego-control registers a command for each, and a test holds the two lists equal.
 //

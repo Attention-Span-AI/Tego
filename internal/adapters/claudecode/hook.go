@@ -7,7 +7,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"slices"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -26,10 +28,14 @@ const Harness = "claude-code"
 // Code hook event read from stdin, answered on stdout or stderr, its exit code returned (spec/reason/
 // REASON-CHANNEL.md §3, ADR 0063).
 //
-// SessionStart prints the run's facts (reason.HookInstructions) and counts the session. PostToolUse,
-// PostToolUseFailure, PostToolBatch and Stop each claim the refusals no hook of the run has shown yet, under the
-// state lock, and print them once (reason.Render); with nothing new they print nothing, and neither does a Stop
-// with stop_hook_active, which claims nothing, so a turn goes on at most once. Outside any tego run (no
+// SessionStart prints the run's facts and pending refusals, and counts the session. PostToolUse,
+// PostToolUseFailure, PostToolBatch and Stop each claim the refusals that are theirs and not yet claimed, under the
+// state lock, print them (reason.Render) and then, under the lock again, mark the claim printed; with nothing new
+// they print nothing, and neither does a Stop with stop_hook_active, which claims nothing, so a turn goes on at most
+// once. A refusal is theirs when the hook's harness is the nearest of the harnesses that have a hook among the refusal's owners, or when none is (it is shared). A claim
+// whose hook was stopped before it marked it printed is told again by the next hook of that harness, so a refusal is
+// printed at least once and may be printed twice; printed means the hook's output was written to the harness without
+// error, and Tego cannot see whether the harness passed it to the model. Outside any tego run (no
 // --reason, no TEGO_REASON) it is a silent no-op. Anything else it cannot use (its arguments, the payload, the
 // reason file, hook-state, the lock) leaves one line on stderr, nothing on stdout and exit 0: the agent loses a
 // note, the run loses nothing. Exit 2 comes only from --mode stderr, for the events where it shows Claude the text.
@@ -39,6 +45,11 @@ func Run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 
 // run is Run with its environment, uid and lock budget given.
 func run(stdin io.Reader, stdout, stderr io.Writer, args []string, getenv func(string) string, uid uint32, budget time.Duration) int {
+	return runWith(stdin, stdout, stderr, args, getenv, uid, budget, systemProcs())
+}
+
+// runWith is run with the processes it asks about given (procs).
+func runWith(stdin io.Reader, stdout, stderr io.Writer, args []string, getenv func(string) string, uid uint32, budget time.Duration, p procs) int {
 	if len(args) == 0 || args[0] != Harness {
 		warn(stderr, fmt.Sprintf("the first argument names the harness, and this tego has a hook for %s only", Harness))
 		return exitOK
@@ -87,7 +98,7 @@ func run(stdin io.Reader, stdout, stderr io.Writer, args []string, getenv func(s
 		warn(stderr, fmt.Sprintf("hook event %q is not one this hook answers", in.HookEventName))
 		return exitOK
 	}
-	text, err := answer(t, in.HookEventName, budget)
+	text, tok, err := answer(t, in.HookEventName, budget, p)
 	if err != nil {
 		warn(stderr, err.Error())
 		return exitOK
@@ -96,53 +107,132 @@ func run(stdin io.Reader, stdout, stderr io.Writer, args []string, getenv func(s
 		return exitOK
 	}
 	if *mode == ModeStderr {
-		_, _ = io.WriteString(stderr, bounded(text)) // a failed write to Claude Code's pipe has nowhere to be reported
+		// A failed write to Claude Code's pipe has nowhere to be reported, and leaves the claim for the next hook.
+		if _, err := io.WriteString(stderr, bounded(text)); err == nil {
+			markPrinted(t, tok, budget, stderr)
+		}
 		return exitFeedback
 	}
 	if err := writeContext(stdout, in.HookEventName, text); err != nil {
 		warn(stderr, "write: "+err.Error())
+		return exitOK // the claim stays pending: the next hook of this harness tells it again
 	}
+	markPrinted(t, tok, budget, stderr)
 	return exitOK
 }
 
-// answer is the text the hook prints for event, "" for nothing, with the state committed first: under the lock it
-// reads the reason file and the state, claims (or, at SessionStart, counts the session), and writes the state, so
-// that of hook processes started at once each refusal is printed by exactly one. A hook killed between the write
-// and its print loses that note (at most once); the ledger still holds every refusal.
-func answer(t target, event string, budget time.Duration) (string, error) {
+// markPrinted removes the claim tok names from the state and counts the delivery, under the lock: the hook's output
+// was written to the harness without error. A claim another hook already told again (it was older than claimStale)
+// is not there, and nothing is counted.
+func markPrinted(t target, tok claimToken, budget time.Duration, stderr io.Writer) {
+	if !tok.made {
+		return
+	}
+	if err := commit(t, tok, budget); err != nil {
+		warn(stderr, err.Error())
+	}
+}
+
+// claimToken names the claim answer made, for markPrinted.
+type claimToken struct {
+	made bool
+	by   string
+	at   int64
+}
+
+// answer is the text the hook prints for event, "" for nothing, with the claim committed first: under the lock it
+// reads the reason file and state, tells again the claims of this hook's harness whose claimer is gone or too old,
+// claims at delivery events and the first SessionStart what is this hook's (claim), records the claim as pending, and
+// writes the state. Later starts preview pending refusals without claiming, so they cannot consume another session's
+// tool note. Concurrent delivery hooks claim each refusal once. A hook killed between this write and its print leaves
+// the claim pending, and the next hook of its harness tells it again (at least once; a note may print twice); the
+// ledger still holds every refusal.
+func answer(t target, event string, budget time.Duration, p procs) (string, claimToken, error) {
 	d, err := openStateDir(t.dir)
 	if err != nil {
-		return "", err
+		return "", claimToken{}, err
 	}
 	defer d.close()
 	if err := d.lock(budget); err != nil {
-		return "", err
+		return "", claimToken{}, err
 	}
 	f, err := readReason(t.reasonFile)
 	if err != nil {
-		return "", err
+		return "", claimToken{}, err
 	}
 	if f != nil && f.Run != t.run {
-		return "", fmt.Errorf("reason file %s is run %q's, not %q's", t.reasonFile, f.Run, t.run)
+		return "", claimToken{}, fmt.Errorf("reason file %s is run %q's, not %q's", t.reasonFile, f.Run, t.run)
 	}
 	s, err := d.read(t.run)
 	if err != nil {
-		return "", err
+		return "", claimToken{}, err
 	}
 	var text string
+	owner := p.harness()
+	next := s
+	next.Owned = maps.Clone(s.Owned)
+	next.Pending = slices.Clone(s.Pending)
+	next.Harnesses = recordHarness(s.Harnesses, owner, p)
+	redo, carry := reap(&next, owner, p)
+	entries, notListed := claim(f, &next, owner, redo, carry)
+	claims := len(entries) > 0 || notListed > 0
+	tok := claimToken{}
+	if claims && (event != EventSessionStart || s.Sessions == 0) {
+		if len(next.Pending) >= maxPending {
+			return "", claimToken{}, fmt.Errorf("%w: %d claims are waiting to be marked printed; refusals stay unclaimed", errState, len(next.Pending))
+		}
+		tok = claimToken{made: true, by: p.self(), at: p.now().Unix()}
+		c := Claim{Owner: owner, By: tok.by, At: tok.at, NotListed: notListed}
+		for _, e := range entries {
+			c.Seqs = append(c.Seqs, e.Seq)
+		}
+		next.Pending = append(next.Pending, c)
+		if !fit(&next, owner) {
+			return "", claimToken{}, fmt.Errorf("%w: the state does not fit %d bytes; refusals stay unclaimed", errState, MaxStateBytes)
+		}
+		s = next
+	}
 	if event == EventSessionStart {
 		s.Sessions++
-		text = reason.HookInstructions(t.reasonFile)
+		text = reason.RenderSessionStart(t.reasonFile, entries, notListed)
 	} else {
-		entries, notListed := claim(f, &s)
 		if text = reason.Render(entries, notListed); text == "" {
-			return "", nil // nothing new: the state is left as it was
+			return "", claimToken{}, nil // nothing new: the state is left as it was
 		}
 	}
+	s.Harnesses = next.Harnesses
 	if err := d.write(s); err != nil {
-		return "", err
+		return "", claimToken{}, err
 	}
-	return text, nil
+	return text, tok, nil
+}
+
+// commit marks the claim tok names printed: under the lock it removes it from the state's pending claims and counts
+// the delivery.
+func commit(t target, tok claimToken, budget time.Duration) error {
+	d, err := openStateDir(t.dir)
+	if err != nil {
+		return err
+	}
+	defer d.close()
+	if err := d.lock(budget); err != nil {
+		return err
+	}
+	s, err := d.read(t.run)
+	if err != nil {
+		return err
+	}
+	for i, c := range s.Pending {
+		if c.By == tok.by && c.At == tok.at {
+			s.Pending = slices.Delete(slices.Clone(s.Pending), i, i+1)
+			if len(s.Pending) == 0 {
+				s.Pending = nil
+			}
+			s.Deliveries++
+			return d.write(s)
+		}
+	}
+	return nil
 }
 
 // errReasonFile is a reason file the hook cannot read.

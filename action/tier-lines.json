@@ -1,0 +1,7 @@
+{
+  "_source": "spec/backend/CAPABILITIES.md rows at public main 691106e; one line per tier, kept in step with that table by hand",
+  "landlock": "no root. The kernel (Landlock) refuses writes, deletes and program starts outside the contract. Network destinations are decided by Tego's supervisor process, outside the agent, not in the kernel. UDP, command-argument and protected-file rules are best effort. The record of programs, writes and connections is advisory against a hostile process; reads are recorded only with read recording on.",
+  "cgroup": "root. Network is decided in the kernel (cgroup BPF). On GitHub-hosted runners file decisions use the fanotify fallback, by path. Reads are recorded, but tracing can miss lines on kernels that preempt kernel code, and the coverage list says so when it can tell.",
+  "bpflsm": "root, with bpf in the boot LSM list. Files, programs and network are decided in the kernel, files by inode. Tracing can miss lines on kernels that preempt kernel code.",
+  "observe": "record only. Nothing was enforced, and the agent could rewrite its own record. This receipt is a report, not evidence."
+}

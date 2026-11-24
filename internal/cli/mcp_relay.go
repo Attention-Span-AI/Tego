@@ -161,7 +161,7 @@ func (s *relayShim) run(ctx context.Context) int {
 	go func() {
 		br := bufio.NewReaderSize(s.in, 64<<10)
 		for {
-			line, oversize, err := mcprelay.ReadLine(br, mcprelay.MaxLine)
+			line, size, err := mcprelay.ReadLineSize(br, mcprelay.MaxLine)
 			if err != nil {
 				// The client closed its end: the server's input ends too.
 				srvMu.Lock()
@@ -170,8 +170,8 @@ func (s *relayShim) run(ctx context.Context) int {
 				return
 			}
 			f := mcprelay.Frame{C: line}
-			if oversize {
-				f = mcprelay.Frame{Oversize: "c"}
+			if size > 0 {
+				f = mcprelay.Frame{Oversize: "c", Size: size}
 			}
 			if err := fw.Write(f); err != nil {
 				return // the control reader sees the loss
@@ -182,13 +182,13 @@ func (s *relayShim) run(ctx context.Context) int {
 	go func() {
 		br := bufio.NewReaderSize(fromServer, 64<<10)
 		for {
-			line, oversize, err := mcprelay.ReadLine(br, mcprelay.MaxLine)
+			line, size, err := mcprelay.ReadLineSize(br, mcprelay.MaxLine)
 			if err != nil {
 				break
 			}
 			f := mcprelay.Frame{S: line}
-			if oversize {
-				f = mcprelay.Frame{Oversize: "s"}
+			if size > 0 {
+				f = mcprelay.Frame{Oversize: "s", Size: size}
 			}
 			if err := fw.Write(f); err != nil {
 				break

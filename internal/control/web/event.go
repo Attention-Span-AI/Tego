@@ -50,7 +50,7 @@ const contextLines = 5
 
 // eventPage is parsed apart from pageNames so the page is one new file; it shares the layout and the funcs.
 var eventPage = sync.OnceValues(func() (*template.Template, error) {
-	t, err := template.New("layout.tmpl").Funcs(funcs).Funcs(template.FuncMap{"scopeKey": scopeKey, "scopeVal": scopeVal, "baseName": path.Base, "ctxRow": ctxRowOf}).
+	t, err := template.New("layout.tmpl").Funcs(funcs).Funcs(template.FuncMap{"scopeKey": scopeKey, "scopeVal": scopeVal, "baseName": path.Base, "ctxRow": ctxRowOf, "ctxEvent": ctxEventOf}).
 		Funcs(factsFuncs).
 		ParseFS(assets, "templates/layout.tmpl", "templates/rulelink.tmpl", "templates/event.tmpl", "templates/evfacts.tmpl", "templates/hostwarn.tmpl")
 	if err != nil {
@@ -61,8 +61,10 @@ var eventPage = sync.OnceValues(func() (*template.Template, error) {
 
 // eventData is the details page's data.
 type eventData struct {
-	Run *ledgerview.Run
-	Ev  ledgerview.Event
+	Numbers countScopes
+	Run     *ledgerview.Run
+	Ev      ledgerview.Event
+	Reads   *readContext
 	// F is the facts column (eventfacts.go): the line explained, its process chain, decision, question and chain.
 	F *factsView
 	// FullCommand is the whole command an exec line or run_start moved to a blob (a row keeps 8 KiB of it), ""
@@ -85,9 +87,16 @@ type eventData struct {
 	ActErr string
 	// NoAct hides the panel: a line nobody can make a rule from (noActKinds).
 	NoAct bool
-	// Guard is the rule that already refuses the line, in words, on a refusal by a deny_read entry or the built-in
-	// secret list: the panel leads with it and folds the options that widen under "Change this rule" (UX-F10).
+	// Guard is the rule that already refuses the line, in words, on a refusal by a deny_read entry, the built-in
+	// secret list or a built-in socket refusal (host IPC, Tego's own surface; ADR 0113): the panel leads with it and
+	// folds the options that widen under "Change this rule" (UX-F10). A built-in socket refusal offers no Allow and no
+	// Ask (rules.ActPlan: no contract line lifts it), and the panel says why in the open.
 	Guard string
+	// GuardBuiltin is set when Guard is a built-in socket refusal: no Allow and no Ask is possible, so the fold is open
+	// and shows why.
+	GuardBuiltin bool
+	// Changes are the journal's rule changes made from this line (rules.FeedEntry.Run and Line), newest first.
+	Changes []changeRow
 	// Head is the headline's sentence with its object ("The agent tried to read" ~/.config/telemetry/token), nil when
 	// the panel's plan names no action and the page says "Line #N: <kind>" instead.
 	Head *headView
@@ -97,6 +106,11 @@ type eventData struct {
 // near maxHeadTarget characters) and Title the whole masked value.
 type headView struct {
 	Lead, Target, Title string
+}
+
+// ctxEventOf carries the same read classification into every surrounding row.
+func ctxEventOf(e ledgerview.Event, reads *readContext) map[string]any {
+	return map[string]any{"Ev": e, "Reads": reads}
 }
 
 // ctxRow is one row of "Around it" in the words Logs uses (r9 QG-9): an ask row reads "Asked to read <file>" under an
@@ -115,6 +129,8 @@ type ctxRow struct {
 // (a note, a run's start or end).
 func lineVerdict(e ledgerview.Event) (class, icon, word string) {
 	switch {
+	case e.Malformed != "":
+		return "neutral", "i-eye", "Not counted" // a repeated ask or an answer with no ask is no question and no answer
 	case e.Refused():
 		return "refused", "i-ban", "Refused"
 	case e.Verdict == "allow":
@@ -129,6 +145,9 @@ func lineVerdict(e ledgerview.Event) (class, icon, word string) {
 		case json.Unmarshal([]byte(e.Raw), &p) != nil || p.Approved == nil:
 			return "neutral", "i-hand", "Answered"
 		case *p.Approved:
+			if record.AnswerAuthorityOf(json.RawMessage(e.Raw), e.RecordMinor, e.LocalFloor).Actor != nil {
+				return "neutral", "i-hand", "Approval recorded"
+			}
 			return "allowed", "i-check", "Allowed"
 		case p.By == linewords.WithdrawnBy:
 			// No person denied it: the broker took it back when a live block landed (askwords' answered.Withdrawn).
@@ -300,7 +319,7 @@ type liveOut struct {
 // green of the Narrows chip beside it, so "Live now on this run" reads as done at a glance; "" for the states said as a
 // plain line (being put in force, recorded only, ended).
 func (o liveOut) Chip() string {
-	if o.State == ledgerview.LiveInForce || o.State == ledgerview.LivePartial {
+	if o.State == ledgerview.LiveInForce || o.State == ledgerview.LivePartial || o.State == ledgerview.LivePartlyKernel {
 		return "b-narrows"
 	}
 	return ""
@@ -431,10 +450,13 @@ func (s *Server) eventDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if rr.Cut && seq < ^uint64(0)-contextLines-1 {
-		rr, err = ledgerview.WindowBefore(s.cfg.Ledger, rr, seq+contextLines+1)
-		if err != nil {
-			s.fail(w, http.StatusInternalServerError, "The line could not be read", err.Error())
-			return
+		retained, _, _, present := ledgerview.Context(rr, seq, contextLines)
+		if !present || len(retained) < contextLines {
+			rr, err = ledgerview.WindowBefore(s.cfg.Ledger, rr, seq+contextLines+1)
+			if err != nil {
+				s.fail(w, http.StatusInternalServerError, "The line could not be read", err.Error())
+				return
+			}
 		}
 	}
 	before, at, after, ok := ledgerview.Context(rr, seq, contextLines)
@@ -462,7 +484,7 @@ func (s *Server) eventDetail(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	d := eventData{Run: rr, Ev: at, Before: before, After: after, CSRF: s.csrf}
+	d := eventData{Numbers: snapshotNumbers(snap), Run: rr, Ev: at, Before: before, After: after, CSRF: s.csrf, Reads: readContextOf(rr, s.signals(snap.Runs).ownOf(rr))}
 	if len(before) > 0 {
 		d.Prev = &before[len(before)-1]
 	}
@@ -473,8 +495,11 @@ func (s *Server) eventDetail(w http.ResponseWriter, r *http.Request) {
 	d.FullCommand, _ = ledgerview.BlobCommand(s.cfg.Ledger, run, at.Raw)
 	d.CLI = lineCLI(run, seq)
 	d.Label = ruleLabel(at, rulesview.RunLists(s.cfg.Ledger, run))
+	isMark := false
 	if l, ok := blockLabels(rr)[at.Rule]; ok {
-		d.Label = sameFileLabel(l, &at)
+		m := watchedMarkLabel(rr, &at, l)
+		isMark = m != l
+		d.Label = sameFileLabel(m, &at)
 	}
 	if v, ok := strings.CutPrefix(at.Rule, "exec.deny["); ok && d.Label == at.Rule {
 		d.Label = "Denied command: " + strings.TrimSuffix(v, "]")
@@ -483,7 +508,7 @@ func (s *Server) eventDetail(w http.ResponseWriter, r *http.Request) {
 	// home and working directory as the row's other texts do (runText), not the owner's ~/…/with/home path. A watched
 	// line's rule decided nothing, and the label says so.
 	d.Label = runText(d.Label, ledgerview.RunHome(rr), rr.Cwd)
-	if ledgerview.WatchedLine(rr, &at) {
+	if ledgerview.WatchedLine(rr, &at) && !isMark {
 		d.Label = watchedRule(at.Rule, d.Label)
 	}
 	switch at.Kind {
@@ -494,7 +519,9 @@ func (s *Server) eventDetail(w http.ResponseWriter, r *http.Request) {
 		d.Into = human(at.TS.Sub(rr.Start).Truncate(time.Millisecond))
 	}
 	d.Similar = ledgerview.FindSimilar(snap, &at)
-	if at.Refused() && strings.HasPrefix(at.Rule, "fs.deny_read[") {
+	d.Changes = changesOfLine(s.feed(r.Context()), rr.ID, at.Seq)
+	if at.Refused() && (strings.HasPrefix(at.Rule, "fs.deny_read[") || at.Rule == "builtin.host_ipc" || at.Rule == "builtin.tego_surface") {
+		d.GuardBuiltin = !strings.HasPrefix(at.Rule, "fs.deny_read[")
 		d.Guard = d.Label
 		if d.F.RuleFound && d.F.Rule.Sentence != "" {
 			d.Guard = d.F.Rule.Sentence
@@ -616,7 +643,7 @@ func (s *Server) settleLive(v *actView, rr *ledgerview.Run) {
 			serial = f.Confirmed + 1 // not in the overlay: never claimed in force
 		}
 		kind, _, _ := strings.Cut(o.Block, ":")
-		o.State, o.Before, o.After, o.Title = liveOutWords(f.StatusAt(kind, serial, s.cfg.Now(), e.From, e.Until))
+		o.State, o.Before, o.After, o.Title = liveOutWords(f.StatusAt(kind, blockValueOf(o.Block, e), serial, s.cfg.Now(), e.From, e.Until))
 	}
 }
 
@@ -650,14 +677,15 @@ func (s *Server) heldLive(v *actView, rr *ledgerview.Run) {
 		return false
 	}
 	now := s.cfg.Now()
+	facts := ledgerview.LiveFactsOf(rr)
 	for _, b := range lb.Blocks {
 		// A block past its time limit, or unblocked for a while, refuses nothing now (ADR 0125 decision 4): Block now
 		// stays offered.
-		if t := blockTimeOf(b, now); !covers(string(b.Kind), b.Value) || t.Ended || t.Dormant {
+		if t := blockTimeOf(b, now, facts); !covers(string(b.Kind), b.Value) || t.Ended || t.Dormant {
 			continue
 		}
 		key := b.Key()
-		st := ledgerview.LiveFactsOf(rr).StatusAt(string(b.Kind), lb.Serials[key], s.cfg.Now(), b.From, b.Until)
+		st := ledgerview.LiveFactsOf(rr).StatusAt(string(b.Kind), b.Value, lb.Serials[key], s.cfg.Now(), b.From, b.Until)
 		switch st.State {
 		case ledgerview.LiveEnded:
 			return
@@ -682,6 +710,8 @@ func liveOutWords(st ledgerview.LiveStatus) (state, before, after, title string)
 		return st.State, "Live now on ", since, st.Sentence
 	case ledgerview.LivePartial:
 		return st.State, "Live now on ", since + ": changes are refused; this run's reads are not seen", st.Sentence
+	case ledgerview.LivePartlyKernel:
+		return st.State, "Live now on ", strings.Replace(since, ", in force since", ", partly in force since", 1) + ": file changes the kernel decides in this run are not covered", st.Sentence
 	case ledgerview.LiveWaiting:
 		return st.State, "Putting it in force on ", "…", st.Sentence
 	case ledgerview.LiveRecordedOnly:

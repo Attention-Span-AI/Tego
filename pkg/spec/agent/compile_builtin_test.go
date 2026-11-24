@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
 func TestBuiltinFIFOIsImmutableAndNestedReadIsHeld(t *testing.T) {
@@ -123,6 +125,26 @@ func TestBuiltinUnplaceableEnvironmentFailsClosed(t *testing.T) {
 	_, ds, err := f.compileErr(f.load("version: 0\nname: unknown-ipc\ncommand: [\"python\"]\n"))
 	if err == nil || !strings.Contains(render(ds), "cannot be placed for builtin.host_ipc") {
 		t.Fatalf("unknown refusal base compiled: %v %s", err, render(ds))
+	}
+	if got := render(ds); strings.Contains(got, "loop/../screen") || !strings.Contains(got, "echo $SCREENDIR") {
+		t.Fatalf("the refusal echoes the value, or does not say how to print it: %s", got)
+	}
+}
+
+// TestPlacedEnvValueAlwaysWalks: the host_ipc placement check refuses a TMUX_TMPDIR or SCREENDIR only when
+// WalkedPath cannot place it, and every value identity.EnvPlace accepts (an absolute clean path of printable
+// characters) is placed. So the refusal is only ever about a value that failed validation, and it has one wording,
+// which never echoes the value.
+func TestPlacedEnvValueAlwaysWalks(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "absent")
+	for _, v := range []string{"/", "/tmp", "/a/b/c", missing, missing + "/x/y", "/a b/c", "/caf\u00e9", "/a/...", "/a/..b", "/..a/b",
+		"/a/.b", "/a=b", "/a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p"} {
+		if !identity.EnvPlace(v) {
+			t.Fatalf("the table holds %q, which is not a place", v)
+		}
+		if _, ok := WalkedPath(v); !ok {
+			t.Errorf("WalkedPath(%q) cannot place a value identity.EnvPlace accepts", v)
+		}
 	}
 }
 
@@ -254,4 +276,23 @@ func TestBuiltinConfiguredAliasKeepsItsName(t *testing.T) {
 		}
 	}
 	t.Fatal("configured alias has no immutable name row")
+}
+
+// TestBuiltinFIFOCheckNamesTheFolderAndTheLoop: the FIFO check names the entry it could not read and why (a link
+// loop here), as it names any place: the folder is one Tego resolved from SCREENDIR (rule (c)).
+func TestBuiltinFIFOCheckNamesTheFolderAndTheLoop(t *testing.T) {
+	f := newFixture(t)
+	dir := filepath.Join(f.project, "qz-screens")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("loop", filepath.Join(dir, "loop")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SCREENDIR", dir)
+	_, ds, err := f.compileErr(f.load("version: 0\nname: private-env\ncommand: [python]\n"))
+	got := render(ds)
+	if err == nil || !strings.Contains(got, "cannot stat FIFO inventory entry "+filepath.Join(dir, "loop")) || !strings.Contains(got, "too many levels of symbolic links") {
+		t.Fatalf("FIFO diagnostic lacks the entry or the loop: %v %s", err, got)
+	}
 }

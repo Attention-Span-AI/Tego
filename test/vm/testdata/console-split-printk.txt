@@ -1,0 +1,12 @@
+    --- PASS: TestAttachTargetsResolve/tego_cgroup_rmdir (0.00s)
+    --- PASS: TestAttachTargetsResolve/tego_sched_exec (0.00s)
+    --- PASS: TestAttachTargetsResolve/tego_sched_exit (0.00s)
+    --- PASS: TestAttachTargetsResolve/tego_file_open (0.00s)
+    --- PASS: TestAttachTargetsResolve/tego_path_unlink (0.00s)
+    --- PASS: TestAttachTargetsResolve/tego_path_rename (0.00s)
+    --- PASS: TestAttachTargetsResolve/tego_path_mkdir (0.00s)
+    --- PASS: TestAttachTargetsResolve/tego_path_mknod (0.00s)
+    --- PASS: TestAttachTargetsResolve/tego_path_rmdir (0.00s)
+    --- PASS: TestAttachTarg[   51.159345] reboot: Power down
+etsResolve/tego_path_link (0.00s)
+    --- PASS: TestAttachTargetsResolve/tego_path_symlink (0.00s)

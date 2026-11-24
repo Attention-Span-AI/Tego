@@ -3,6 +3,7 @@
 package web
 
 import (
+	"fmt"
 	"path"
 	"slices"
 	"strconv"
@@ -47,6 +48,7 @@ func init() {
 	funcs["askRow"] = func(r *ledgerview.Run, home string, v ledgerview.Approval) map[string]any {
 		return map[string]any{"Run": r.ID, "R": r, "Home": home, "V": v}
 	}
+	funcs["rowAgo"] = rowAgo
 	funcs["ago"] = func(ts, now time.Time) string { return human(now.Sub(ts)) }
 	funcs["modeWord"] = modeWord
 	funcs["askWhy"] = askWhy
@@ -69,11 +71,16 @@ type tlMarked struct {
 	V       ledgerview.Verdict
 	Watched bool
 	Home    string
+	Reads   *readContext
 }
 
 // tlMarkedOf is the "tlv" template func.
-func tlMarkedOf(t tlRows, v ledgerview.Verdict, watched bool, home string) tlMarked {
-	return tlMarked{tlRows: t, V: v, Watched: watched, Home: home}
+func tlMarkedOf(t tlRows, v ledgerview.Verdict, watched bool, home string, reads ...*readContext) tlMarked {
+	out := tlMarked{tlRows: t, V: v, Watched: watched, Home: home}
+	if len(reads) > 0 {
+		out.Reads = reads[0]
+	}
+	return out
 }
 
 // renameView is a rename's target on one line, "a.pyc → b.pyc", with its folder (or both, when it moved) muted
@@ -102,11 +109,12 @@ type leakMarkView struct{ Class, Word, Why string }
 func leakMark(v ledgerview.Verdict, e ledgerview.Event) leakMarkView {
 	switch v.Mark(&e) {
 	case ledgerview.MarkSecret:
+		// Keep the read's own chip; this mark explains its separate link to a send.
 		why := "A secret file, read with nothing to stop it"
 		if v.Kind == ledgerview.VerdictLeak {
 			why = "A secret file, read just before a send to " + v.Dest()
 		}
-		return leakMarkView{"mk-leak mk-secret", "Secret read", why}
+		return leakMarkView{"mk-leak mk-secret", "", why}
 	case ledgerview.MarkSent:
 		why := "The address the secrets were sent to; nothing stopped this send"
 		if !v.Observe {
@@ -200,6 +208,12 @@ func askWhy(rule string) string {
 	}
 	if v, ok := in("fs.ask"); ok {
 		return "Your rules ask before any change under " + v
+	}
+	if strings.HasPrefix(rule, "net.ask") {
+		return "The contract asks you before this network connection."
+	}
+	if strings.HasPrefix(rule, "exec.ask") {
+		return "The contract asks you before this program runs."
 	}
 	if rule == "" {
 		return "A rule that asks a person"
@@ -323,6 +337,9 @@ func watchLabels(rows []ledgerview.Row, snap *ledgerview.Snapshot) {
 // watchLabel relabels one row of run r when r is a watched run and the line was only observed.
 func watchLabel(row *ledgerview.Row, r *ledgerview.Run) {
 	if ledgerview.WatchedLine(r, &row.Event) {
+		if strings.HasPrefix(row.Rule, "live.block[") && strings.HasPrefix(row.Label, "Marked live") {
+			return // a watch-only mark names itself (watchedMarkLabel)
+		}
 		row.Label = watchedLabel
 	}
 }
@@ -598,11 +615,12 @@ func storyOf(v ledgerview.Verdict, live bool) storyText {
 // unrecorded instead of standing as an all-clear.
 func storyOfRun(v ledgerview.Verdict, r *ledgerview.Run) storyText {
 	st := storyOf(v, r != nil && r.State() == "running")
+	st.Title = strings.Replace(st.Title, "No attack seen", "No secret read or unexpected send recorded", 1)
 	if readGap(r) == "" || v.Kind == ledgerview.VerdictLeak || v.Kind == ledgerview.VerdictProtected {
 		return st
 	}
 	if v.Kind != ledgerview.VerdictWatched {
-		st.Title = strings.Replace(st.Title, "No attack seen", "No attack seen in the record", 1) // "… record yet" while live
+		st.Title = strings.Replace(st.Title, "No secret read or unexpected send recorded", "No secret read or unexpected send in the saved record", 1) // "… record yet" while live
 	}
 	sub := "File reads not recorded"
 	if st.Sub != "" {
@@ -663,6 +681,7 @@ func chipOf(v ledgerview.Verdict) chipText {
 		if c.Text == "" {
 			c = chipText{"b-observed", "i-eye", "partial", "This verdict does not cover every recorded event"}
 		} else {
+			c.Text = "at least " + c.Text
 			c.Title += "; some events are not covered"
 		}
 		return c
@@ -685,19 +704,29 @@ func chipOf(v ledgerview.Verdict) chipText {
 }
 
 // overviewStory fills the Overview's verdicts: each run's (the Secrets column), how many runs leaked and how many were
-// watched reading secrets (the headline), the refused lines split as the run pages split them (the Stopped tile), the
+// recorded reading secrets (the headline), the refused lines split as the run pages split them (the Stopped tile), the
 // listed refusals' run homes, and the link that compares the newest watched run with the newest enforced one.
+// leakOrRead is whether run r's verdict v is a recorded leak, and whether its Signal sig records a read of a secret that
+// is not the agent's own login: the two counts the Overview shows (Leaked, Watched) and the runs a layer's own reading
+// lists by id (LeakedRuns, ReadRuns). One definition, so they cannot differ.
+func leakOrRead(r *ledgerview.Run, sig *ledgerview.RunSignal, v ledgerview.Verdict) (leak, read bool) {
+	return v.Kind == ledgerview.VerdictLeak, sensitiveReadRecorded(r, sig)
+}
+
 func (s *Server) overviewStory(snap *ledgerview.Snapshot, sigs *sigMemo, d *overviewData) {
 	d.V = make(map[string]ledgerview.Verdict, len(snap.Runs))
 	for _, r := range snap.Runs {
 		sig := sigs.of(r)
 		v := ledgerview.RunVerdict(r, sig)
 		d.V[r.ID] = v
-		switch v.Kind {
-		case ledgerview.VerdictLeak:
+		leak, read := leakOrRead(r, sig, v)
+		if leak {
 			d.Leaked++
-		case ledgerview.VerdictWatched:
+			d.LeakedRuns = append(d.LeakedRuns, r.ID)
+		}
+		if read {
 			d.Watched++
+			d.ReadRuns = append(d.ReadRuns, r.ID)
 		}
 		d.Matter += sig.RealLines
 		d.BgTotal += sig.BackgroundLines
@@ -744,4 +773,23 @@ func homeIn(s, home string) string {
 		i++
 	}
 	return b.String()
+}
+
+// rowAgo is the summary age, matching the live data-started clock in English.
+// Exact time remains in datetime and on the row's detail page.
+func rowAgo(at, now time.Time) string {
+	d := now.Sub(at)
+	if d < time.Minute {
+		return "Just now"
+	}
+	n, unit := int(d/time.Minute), "minute"
+	if d >= 24*time.Hour {
+		n, unit = int(d/(24*time.Hour)), "day"
+	} else if d >= time.Hour {
+		n, unit = int(d/time.Hour), "hour"
+	}
+	if n != 1 {
+		unit += "s"
+	}
+	return fmt.Sprintf("%d %s ago", n, unit)
 }

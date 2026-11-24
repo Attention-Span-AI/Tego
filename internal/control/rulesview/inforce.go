@@ -15,9 +15,12 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/check/inforce"
 	"github.com/attention-span-ai/tego/internal/check/livestatus"
+	"github.com/attention-span-ai/tego/internal/contracts"
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
+	"github.com/attention-span-ai/tego/internal/control/pathcheck"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/liveblock"
+	"github.com/attention-span-ai/tego/internal/nextrun"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -38,7 +41,11 @@ const (
 // inforce sentences in fixed groups, with each rule's hits in the run, the run's live blocks, and whether its rules
 // file changed for the next run. The dashboard's Rules page and `tego rules` show it.
 type InForceView struct {
-	Run string `json:"run"`
+	Run               string           `json:"run"`
+	Baseline          *record.Baseline `json:"baseline,omitempty"`
+	EffectiveHash     string           `json:"effective_hash,omitempty"`
+	NextEffectiveHash string           `json:"next_effective_hash,omitempty"`
+	BaselineCheck     string           `json:"baseline_check,omitempty"`
 	// View is the groups and their rules; its live group holds the run's live blocks while the run has not ended.
 	View inforce.View `json:"view"`
 	// Contract is the run's copy, its compile table and diagnostics: the page's raw YAML and compile details.
@@ -47,6 +54,9 @@ type InForceView struct {
 	// the agent name it was resolved from, "" when it was named by its path.
 	Source     string `json:"source,omitempty"`
 	SourceName string `json:"source_name,omitempty"`
+	// SourceUnavailable keeps a failed source read distinct from a readable run
+	// copy. Changes and trust in today's source stay disabled while it cannot answer.
+	SourceUnavailable string `json:"source_unavailable,omitempty"`
 	// CopyPath is the run's own copy, <run>/contract.yaml.
 	CopyPath string `json:"copy_path"`
 	// Positions is PositionsSource or PositionsCopy; PositionsWhy is why the copy, "" for the source.
@@ -86,6 +96,34 @@ type InForceView struct {
 // run's copy, and the positions are the copy's lines. A contract that does not compile today is shown from its text
 // (inforce.Declared), with no enforcement claim.
 func InForce(ctx context.Context, root, run string, o Options) *InForceView {
+	if remoteView(o) {
+		// Secure a display projection before touching today's source. Both
+		// exchanges share one worker and one overall deadline; an abandoned
+		// source check cannot take the already received copy with it.
+		ctx, closeSession := contracts.WithHelperSession(ctx)
+		defer closeSession()
+		ctx, cancel := pathcheck.Bound(ctx)
+		defer cancel()
+		recorded, err := viewCall(ctx, "inforce-copy", root, run, "", "", o)
+		if err != nil {
+			return &InForceView{Run: run, Err: err.Error(), Positions: PositionsCopy, PositionsWhy: err.Error(), View: emptyView(err.Error())}
+		}
+		reply, err := viewCall(ctx, "inforce", root, run, "", "", o)
+		if err != nil {
+			v := recorded.InForce
+			v.SourceUnavailable, v.PositionsWhy = err.Error(), err.Error()
+			return v
+		}
+		return reply.InForce
+	}
+	return inForce(ctx, root, run, o)
+}
+
+func inForce(ctx context.Context, root, run string, o Options) *InForceView {
+	return inForceWithSource(ctx, root, run, o, true)
+}
+
+func inForceWithSource(ctx context.Context, root, run string, o Options, check bool) *InForceView {
 	v := &InForceView{Run: run, Positions: PositionsCopy}
 	if !ledger.IsRunID(run) {
 		v.Err = "not a run id"
@@ -110,12 +148,20 @@ func InForce(ctx context.Context, root, run string, o Options) *InForceView {
 	if s := sc.start.ContractSource; s != nil {
 		v.Source, v.SourceName = s.Path, s.Name
 	}
-	src := checkSource(v.Source, sc.start.ContractHash, o.Profiles)
+	src := source{why: "the rules file has not been checked"}
+	if check {
+		src = checkSource(v.Source, sc.start.ContractHash, o.Profiles)
+	}
+	v.SourceUnavailable = src.unavailable
 	var alt *agent.Contract
 	if src.matches {
 		alt = src.contract
 	}
-	loadCopy(ctx, &v.Contract, dir, sc.start, o, alt, sc.moreDirs)
+	if check {
+		loadCopy(ctx, &v.Contract, dir, sc.start, o, alt, sc.moreDirs)
+	} else if readRecordedContract(&v.Contract, dir, sc.start) != nil {
+		v.Contract.Err = "the recorded rules have not been compiled against today's filesystem"
+	}
 	v.Contract.Run = run
 	c := &v.Contract
 	tier, _ := backend.ParseTier(sc.start.Tier)
@@ -131,7 +177,11 @@ func InForce(ctx context.Context, root, run string, o Options) *InForceView {
 		v.View, _ = inforce.Declared(src.text, v.Source)
 		v.Positions = PositionsSource
 	case c.Text != "":
-		v.View, _ = inforce.Declared([]byte(c.Text), c.Path)
+		var declaredErr error
+		v.View, declaredErr = inforce.Declared([]byte(c.Text), c.Path)
+		if !check && declaredErr == nil && len(v.View.Notes) > 0 {
+			v.View.Notes[len(v.View.Notes)-1] = "Read from the recorded copy; today's filesystem has not been checked, so nothing here says what a run enforces."
+		}
 	default:
 		v.View = emptyView("The run left no copy of its rules.")
 	}
@@ -139,6 +189,10 @@ func InForce(ctx context.Context, root, run string, o Options) *InForceView {
 		v.PositionsWhy = src.why
 	}
 	v.addLive(dir, run, func() ledgerview.LiveFacts { return liveFacts(root, run, o, &sc.start, v.Ended) })
+	v.View.NoteProfiles(sc.start.Profiles)
+	for _, g := range sc.start.RuntimeGrants {
+		v.View.AddHarnessHook(g) // the run's own exec grant for its hook: a rule its lines name
+	}
 	v.View.Count(func(yield func(string) bool) {
 		for rule, n := range sc.rules {
 			for range n {
@@ -148,13 +202,17 @@ func InForce(ctx context.Context, root, run string, o Options) *InForceView {
 			}
 		}
 	})
+	v.View.CountCommands(sc.commands)
 	for kind, n := range sc.unmatched {
 		v.View.CountDefault(kind, n)
 	}
 	for i := range v.EndedLive { // in no group, so Count passed them by: each counts the refusals under its key
 		v.EndedLive[i].Hits = sc.rules[v.EndedLive[i].RuleKey]
 	}
-	v.Pending = pendingOf(root, v.Source, v.Started, src)
+	if check {
+		v.Pending = pendingOf(root, v.Source, v.Started, src)
+		v.compareBaseline(ctx, sc.start, o, src)
+	}
 	return v
 }
 
@@ -269,10 +327,10 @@ func (v *InForceView) addLive(dir, run string, facts func() ledgerview.LiveFacts
 		if !ok {
 			s = ov.Serial
 		}
-		// A block with a time limit is judged now (livestatus.StatusAt): an unblock for a while or a passed limit
-		// refuses nothing, and the live group must not say it does.
-		st := livestatus.StatusAt(string(e.Kind), f.Facts, s, f.Confirmed, time.Now(), e.From, e.Until)
-		v.View.AddLiveStatus(string(e.Kind), e.Value, e.By, st.State, st.Sentence)
+		// A block with a time limit is judged now by what its run's launcher recorded (LiveFacts.StatusAt): an unblock
+		// for a while or a passed limit refuses nothing, and the live group must not say it does.
+		st := f.StatusAt(string(e.Kind), e.Value, s, time.Now(), e.From, e.Until)
+		v.View.AddLiveStatus(string(e.Kind), e.Value, e.By, livestatus.State(st.State), st.Sentence)
 	}
 }
 
@@ -389,6 +447,8 @@ type source struct {
 	contract         *agent.Contract
 	// why is why the run's copy gives the positions, "" when the file matches.
 	why string
+	// unavailable is a failed source or profile read, even when the copy compiles.
+	unavailable string
 }
 
 // checkSource reads the rules file at path (no link followed at its last name, under the size cap) and loads it with
@@ -408,19 +468,35 @@ func checkSource(path, hash string, profiles agent.ProfileSource) source {
 	}
 	if err != nil {
 		s.why = "the rules file could not be read"
+		if mapped := pathcheck.LocationError(err); pathcheck.IsUnanswered(mapped) {
+			s.why, s.unavailable = mapped.Error(), mapped.Error()
+		}
 		return s
 	}
 	s.read, s.text, s.mtime = true, text, st.ModTime()
 	if profiles == nil {
 		profiles = &agent.ProfileChain{}
 	}
-	c, _, err := agent.LoadBytes(path, text, profiles)
+	c, ds, err := agent.LoadBytes(path, text, profiles)
+	// LoadBytes returns only the first error. A later diagnostic can carry
+	// a failed read that must still disable changes to this source.
+	for _, d := range ds {
+		if mapped := pathcheck.LocationError(d); pathcheck.IsUnanswered(mapped) && s.unavailable == "" {
+			s.unavailable = mapped.Error()
+		}
+	}
 	var sum [32]byte
 	if err == nil {
 		sum, err = c.Hash()
 	}
 	if err != nil {
 		s.why = "the rules file does not load here as the run loaded it"
+		if s.unavailable != "" {
+			s.why = s.unavailable
+		}
+		if mapped := pathcheck.LocationError(err); pathcheck.IsUnanswered(mapped) {
+			s.why, s.unavailable = mapped.Error(), mapped.Error()
+		}
 		return s
 	}
 	if hash == "" {
@@ -436,4 +512,47 @@ func checkSource(path, hash string, profiles agent.ProfileSource) source {
 		s.why = "the rules file no longer loads to the rules this run ran"
 	}
 	return s
+}
+
+// compareBaseline keeps source-position equality separate from effective change.
+func (v *InForceView) compareBaseline(ctx context.Context, start record.RunStartPayload, o Options, src source) {
+	if !start.BaselineRecorded() {
+		return
+	}
+	if err := start.ValidateBaseline(); err != nil {
+		v.BaselineCheck = "unknown: invalid recorded baseline: " + err.Error()
+		return
+	}
+	v.Baseline, v.EffectiveHash = start.Baseline, start.EffectiveHash
+	if o.Machine == nil || !o.Machine.BaselineKnown() || !src.matches {
+		v.BaselineCheck = "unknown: current rules could not be compared"
+		return
+	}
+	if start.Baseline.Mode == "not-applied" {
+		v.BaselineCheck = "recording-only: no baseline enforcement comparison"
+		return
+	}
+	caller := o.Caller
+	if caller == nil {
+		caller = contracts.CallerContext(ctx)
+	}
+	path := o.PATH
+	if o.Caller == nil {
+		path = caller.PATH
+	}
+	rt, err := nextrun.Compile(ctx, o.Machine, nextrun.Context{Caller: caller, RuntimeDirs: caller.RuntimeDirs, Contract: v.Source, Cwd: start.Cwd, Tier: start.Tier, RunCommandGrant: start.RunCommandGrant, PATH: path, Home: start.Baseline.Home, Anchor: o.Anchor}, src.text)
+	if err != nil {
+		v.BaselineCheck = "unknown: current effective rules do not compile: " + err.Error()
+		return
+	}
+	v.NextEffectiveHash = hex.EncodeToString(rt.EffectiveHash[:])
+	if v.NextEffectiveHash != v.EffectiveHash {
+		v.BaselineCheck = "effective rules for this run changed for the next launch"
+		if v.Pending == nil {
+			v.Pending = &Pending{}
+		}
+		v.Pending.BaselineChanged = true
+	} else {
+		v.BaselineCheck = "same effective contract bytes; recorded coverage still describes this run"
+	}
 }

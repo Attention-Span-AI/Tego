@@ -7,7 +7,7 @@
 #
 # Why it exists: test/vm/kvm-run.sh boots whatever vmlinuz sits in $TEGO_VM_CACHE/kernel/<name>/, so a
 # matrix row needs nothing but that file: the guest's root is an initramfs of this host's userland, and
-# the console is the built-in 8250 UART every one of these distro kernels carries, so no module is loaded.
+# the console is the built-in 8250 UART every one of these distro kernels carries, so a basic boot needs no module.
 # Each distro publishes its kernel as a package on an anonymous mirror, and the package formats are simple
 # enough to open here with the standard library plus the xz/zstd tools: a .deb is an ar archive around a
 # tar, an .rpm is a lead and two headers in front of a compressed newc cpio. Nothing is installed, nothing
@@ -31,7 +31,7 @@
 # which exists only for a kernel apt knows, never for a row's. --modules extracts the row's module tree from the package
 # it has just authenticated, into the directory kvm-run.sh reads before it asks apt. Debian and Amazon Linux carry
 # their modules beside the image. Fedora uses the separately authenticated modules-core RPM of that exact build.
-# Ubuntu's separate linux-modules-<release> package remains unsupported here.
+# Ubuntu uses linux-modules-<release> from the image's same signed InRelease/Packages snapshot.
 #
 # Usage: fetch-kernel.py <row>            print the path of the row's vmlinuz, fetching it once
 #        fetch-kernel.py --list           the rows: name, series, source kind, body (full or doctor-only), label
@@ -39,7 +39,7 @@
 #        fetch-kernel.py --name <row>     the TEGO_VM_KERNEL name kvm-run.sh boots it under
 #        fetch-kernel.py --body <row>     what the row's guest runs: full, or doctor-only (see DOCTOR_ONLY)
 #        fetch-kernel.py --modules <row>  print the path of the row's module tree, fetching the row first as <row>
-#                                         does and extracting the tree once per package (module_tree)
+#                                         does and preparing its module tree (module_tree)
 # Exit code: 0 with the path on stdout; 97 when the row cannot be fetched here (no network, the mirror no
 # longer carries the package), with a message naming what failed; 2 on a usage error. 97 is kvm-run.sh's
 # own "this box cannot do it" code, so a matrix row that could not start is never mistaken for a test fail.
@@ -77,7 +77,7 @@ KOJI = "https://kojipkgs.fedoraproject.org/packages/kernel/"
 # actually booted reports its own release through uname(2), which the matrix prints beside it.
 ROWS = {
     "ubuntu-24.04": ("6.8", "Ubuntu 24.04 LTS, GA kernel", "deb",
-                     {"base": "https://archive.ubuntu.com/ubuntu", "suite": "noble-updates", "meta": "linux-image-generic", "keys": ["ubuntu-2018"]}),
+                     {"base": "https://archive.ubuntu.com/ubuntu", "suite": "noble-updates", "meta": "linux-image-generic", "keys": ["ubuntu-2018"], "modules": True}),
     "debian-13": ("6.12", "Debian 13 (trixie)", "deb",
                   {"base": "https://deb.debian.org/debian", "suite": "trixie", "meta": "linux-image-amd64", "keys": ["debian-13-archive", "debian-13-release"]}),
     "rhel-9": ("5.14", "RHEL 9 (AlmaLinux 9 BaseOS rebuild)", "rpm",
@@ -89,11 +89,11 @@ ROWS = {
     "fedora-7.0": ("7.0", "Fedora, kernel 7.0 series (koji)", "koji",
                    {"series": "7.0", "package": "kernel-core"}),
     "ubuntu-25.10": ("6.17", "Ubuntu 25.10, GA kernel", "deb",
-                     {"base": "https://archive.ubuntu.com/ubuntu", "suite": "questing-updates", "meta": "linux-image-generic", "keys": ["ubuntu-2018"]}),
+                     {"base": "https://archive.ubuntu.com/ubuntu", "suite": "questing-updates", "meta": "linux-image-generic", "keys": ["ubuntu-2018"], "modules": True}),
     "fedora-7.2": ("7.2", "Fedora, kernel 7.2 series (koji)", "koji",
                    {"series": "7.2", "package": "kernel-core"}),
     "ubuntu-22.04": ("5.15", "Ubuntu 22.04 LTS, GA kernel", "deb",
-                     {"base": "https://archive.ubuntu.com/ubuntu", "suite": "jammy-updates", "meta": "linux-image-generic", "keys": ["ubuntu-2018"]}),
+                     {"base": "https://archive.ubuntu.com/ubuntu", "suite": "jammy-updates", "meta": "linux-image-generic", "keys": ["ubuntu-2018"], "modules": True}),
 }
 
 # What a row's guest is asked to do. "full" runs the whole of run-matrix-row.sh. "doctor-only" runs one check, that
@@ -243,7 +243,7 @@ def vkey(v):
 # ---- .deb ------------------------------------------------------------------------------------------
 
 def deb_index(base, suite, p, work):
-    """The suite's main/binary-amd64 Packages stanzas for linux-image-* packages, newest version of each, as
+    """The suite's main/binary-amd64 Packages stanzas for kernel images/modules, newest version of each, as
     dicts. Only those are kept: a whole Debian index is tens of thousands of stanzas."""
     release_path = artifact(p, work, "InRelease", f"{base}/dists/{suite}/InRelease")
     release, signers = signed_bytes(read_bytes(release_path), None, p["keys"])
@@ -285,7 +285,7 @@ def deb_index(base, suite, p, work):
 
     def done():
         name = fields.get("Package", "")
-        if name.startswith("linux-image-") and (
+        if name.startswith(("linux-image-", "linux-modules-")) and (
                 name not in out or vkey(fields.get("Version", "")) > vkey(out[name].get("Version", ""))):
             out[name] = dict(fields)
 
@@ -321,6 +321,11 @@ def deb_data_tar(path):
             size = int(hdr[48:58].decode().strip())
             if name.startswith("data.tar"):
                 f.seek(off + 60)
+                # Ubuntu's module DEBs can leave the tar uncompressed; the .ko files are already compressed.
+                if name == "data.tar":
+                    with tarfile.open(fileobj=f, mode="r|") as tar:
+                        yield tar
+                    return
                 cmd = decompressor(f.read(6))
                 f.seek(off + 60)
                 proc = subprocess.Popen(cmd, stdin=f, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
@@ -696,35 +701,43 @@ def module_tree(row, dest_dir, info):
     """The row's own module tree, where kvm-run.sh --module looks before it asks apt for linux-modules-<kernel>:
     kernel/matrix-<row>/mods/lib/modules/matrix-<row>/. apt serves that package for the kernel this host runs, never
     for a row's distro kernel, so a row's guests can load a module only from this tree (test/vm/README.md). Debian's
-    image package carries its modules beside the image, so a .deb row's tree is lib/modules/<release>/ of the package
+    image package carries its modules beside the image, so its tree is lib/modules/<release>/ of the package
     _fetch_locked has just authenticated (proof/package), extracted once per package: mods/.package-sha256 names the
     package it came from, a tree from another package is replaced, and a fresh fetch removes it with the old image.
     Amazon's kernel RPM carries its modules too. Fedora keeps them in the publisher-signed kernel-modules-core
     RPM of the exact same build; authenticate that package separately before extracting any bytes.
-    Ubuntu's separate linux-modules packages are not fetched here."""
-    kind = ROWS[row][2]
+    Ubuntu's linux-modules-<release> DEB comes from the image's retained signed index, with its own SHA256.
+    Companion packages are reauthenticated before even a cached tree is returned, and included in its stamp.
+    Ubuntu companions are re-extracted each time, replacing mutable cached files with authenticated bytes."""
+    _, _, kind, params = ROWS[row]
     packages = [os.path.join(dest_dir, "proof", "package")]
     proofs = []
     if kind == "koji":
         package, proof = koji_module_package(dest_dir, info)
         packages.append(package)
         proofs.append(proof)
+    elif kind == "deb" and params.get("modules"):
+        package, proof = deb_module_package(params, dest_dir, info)
+        packages = [package]
+        proofs.append(proof)
     mods = os.path.join(dest_dir, "mods")
     tree = os.path.join(mods, "lib", "modules", kernel_name(row))
     want = (info.get("sha256") or "").lower()
+    if proofs:
+        want = hashlib.sha256("\n".join([want] + [p["sha256"] for p in proofs]).encode()).hexdigest()
     try:
         have = read_bytes(os.path.join(mods, ".package-sha256")).decode("utf-8", "replace").strip()
     except OSError:
         have = ""
-    if want and have == want and os.path.isdir(tree):
+    if want and have == want and os.path.isdir(tree) and not params.get("modules"):
         return tree
     with tempfile.TemporaryDirectory(dir=dest_dir) as work:
         extract = deb_modules if kind == "deb" else rpm_modules
         kos = sum(extract(package, info["release"], os.path.join(work, "lib", "modules", kernel_name(row)))
                   for package in packages)
         if not kos:
-            raise EnvError(f"{info.get('package')} carries no kernel module under lib/modules/{info['release']}/ "
-                           "(Ubuntu ships them in linux-modules-<release>, which this script does not fetch)")
+            raise EnvError(f"module payload for {info.get('package')} carries no kernel module under "
+                           f"lib/modules/{info['release']}/")
         with open(os.path.join(work, ".package-sha256"), "w") as f:
             f.write(want + "\n")
         with open(os.path.join(work, "packages.json"), "w") as f:
@@ -741,6 +754,34 @@ def module_tree(row, dest_dir, info):
         if aside:
             shutil.rmtree(aside)
     return tree
+
+
+def deb_module_package(params, dest_dir, info):
+    """Authenticate Ubuntu's exact release companion through the image's retained InRelease -> Packages proof.
+    Never refresh just the index: that could pair an old image with another repository snapshot's modules."""
+    proof_dir = os.path.join(dest_dir, "proof")
+    params = dict(params, _offline=True)
+    idx = deb_index(params["base"], params["suite"], params, proof_dir)
+    name = "linux-modules-" + info["release"]
+    pkg = idx.get(name)
+    if not pkg:
+        raise EnvError(f"{name} is not in the image's authenticated index; use --refresh")
+    if pkg.get("Version") != info["version"]:
+        raise EnvError(f"{name} version differs from the image build; use --refresh")
+    url = f"{params['base']}/{pkg['Filename']}"
+    want = pkg.get("SHA256", "")
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", want):
+        raise EnvError(f"{name}: the authenticated index lists no valid SHA256 for the module DEB")
+    path = os.path.join(proof_dir, "modules.deb")
+    if not os.path.isfile(path):
+        with tempfile.TemporaryDirectory(dir=dest_dir) as work:
+            downloaded = os.path.join(work, "modules.deb")
+            download(url, downloaded)
+            verify_sha256(downloaded, want, url)
+            os.replace(downloaded, path)
+    verify_sha256(path, want, url)
+    return path, {"package": name, "version": pkg["Version"], "url": url, "sha256": want,
+                  "verification": params["_verification"]}
 
 
 def koji_module_package(dest_dir, info):

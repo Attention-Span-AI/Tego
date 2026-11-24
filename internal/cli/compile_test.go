@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
@@ -579,6 +581,50 @@ func readsDirect(t *testing.T) {
 	}
 }
 
+// TestCompileTestNamesWhoAnswersRecvmsgUnderKernelAssurance: a contract with net.assurance: kernel says, under the tiers
+// line of compile --test, that the plane answers a control-bearing recvmsg and which runs keep the filter's ENOSYS
+// (ADR 0128, amended); a contract without it prints no such line.
+func TestCompileTestNamesWhoAnswersRecvmsgUnderKernelAssurance(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("the example contract names sh, not on PATH")
+	}
+	copyExampleTests(t, rootTierOnlyRow)
+	_, out, _ := run(t, "compile", "agent.yaml", "--test", "verdicts.yaml")
+	if strings.Contains(out, "net.assurance:") {
+		t.Errorf("a best-effort contract prints the import note:\n%s", out)
+	}
+	data, err := os.ReadFile("agent.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	kernel := strings.Replace(string(data), "net:\n", "net:\n  assurance: kernel\n", 1)
+	if kernel == string(data) {
+		t.Fatal("the example contract has no net: section")
+	}
+	if err := os.WriteFile("agent.yaml", []byte(kernel), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, out, _ = run(t, "compile", "agent.yaml", "--test", "verdicts.yaml")
+	lines := strings.Split(out, "\n")
+	if len(lines) < 2 || !strings.HasPrefix(lines[0], "tiers ") || lines[1] != "net.assurance: "+AssuranceImportsNote {
+		t.Errorf("a kernel-assurance contract's header lacks the import note under the tiers line:\n%s", out)
+	}
+	// A contract that holds its reads starts the open deputy, which the plane passes by its identity (ADR 0128, amended
+	// 2026-11-21): its note is the same, the plane's.
+	held := strings.Replace(kernel, "fs:\n", "fs:\n  reads: held\n", 1)
+	if held == kernel {
+		t.Fatal("the example contract has no fs: section")
+	}
+	if err := os.WriteFile("agent.yaml", []byte(held), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, out, _ = run(t, "compile", "agent.yaml", "--test", "verdicts.yaml")
+	lines = strings.Split(out, "\n")
+	if len(lines) < 2 || lines[1] != "net.assurance: "+AssuranceImportsNote {
+		t.Errorf("a held-reads kernel-assurance contract's header has the wrong import note:\n%s", out)
+	}
+}
+
 // rootTierOnlyRow asserts a refusal the root tiers make and Landlock does not under fs.reads: direct: a deny_read
 // beneath the write entry.
 const rootTierOnlyRow = `version: 0
@@ -828,7 +874,7 @@ func TestCompileJSONRequiredDenyWriteAuthority(t *testing.T) {
 // TestCompileBindRows verifies the public loader, CLI dispatch and bpflsm
 // network fallback together, using a real compiled listener declaration.
 func TestCompileBindRows(t *testing.T) {
-	dir := t.TempDir()
+	dir := sunPathDir(t, "bind", len("/work/server.sock"))
 	work := filepath.Join(dir, "work")
 	if err := os.MkdirAll(work, 0o755); err != nil {
 		t.Fatal(err)
@@ -996,6 +1042,162 @@ func TestRunningBinary(t *testing.T) {
 		executable = func() (string, error) { return c.exe, c.err }
 		if got := runningBinary(); got != c.want {
 			t.Errorf("runningBinary(%q, %v) = %q, want %q", c.exe, c.err, got, c.want)
+		}
+	}
+}
+
+// Root predictions must include future-name entries even when this caller can only launch at landlock.
+func TestCompileRootPredictionIncludesFutureNames(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.Mkdir("out", 0700); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"agent.yaml": "version: 0\nname: future\ncommand: [true]\nfs:\n  write: [./out/]\n  reads: direct\n",
+		"tests.yaml": "version: 0\ntests:\n  - name: future secret\n    action: fs.write\n    path: out/.env.new\n    expect: refused\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	buildsTiers(t, backend.TierLandlock)
+	for _, tier := range []string{"cgroup", "bpflsm"} {
+		code, out, errs := run(t, "compile", "agent.yaml", "--test", "tests.yaml", "--tier", tier)
+		if code != identity.ExitOK || !strings.Contains(out, "PASS future secret") {
+			t.Errorf("%s: exit %d\n%s\n%s", tier, code, out, errs)
+		}
+	}
+	// A row can name a root column without --tier. A root-capable build must
+	// include names even when AutoTiers excludes root for this caller.
+	autoTiersAre(t, doctor.AutoSet{Tiers: []backend.Tier{backend.TierLandlock}, NeedRoot: []backend.Tier{backend.TierCgroup}})
+	data, err := os.ReadFile("tests.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = []byte(strings.Replace(string(data), "action: fs.write", "tier: cgroup\n    action: fs.write", 1))
+	if err := os.WriteFile("tests.yaml", data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errs := run(t, "compile", "agent.yaml", "--test", "tests.yaml")
+	if code != identity.ExitOK || !strings.Contains(out, "PASS future secret") {
+		t.Errorf("build root prediction: exit %d\n%s\n%s", code, out, errs)
+	}
+}
+
+// An inaccessible name scope cannot be certified from this user's incomplete table.
+func TestCompileRootPredictionNeedsRoot(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll("out/private/nested", 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod("out/private", 0000); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod("out/private", 0700)
+	scopeReadable := false
+	if _, err := os.Stat("out/private/nested"); err == nil {
+		scopeReadable = true
+	} else if !os.IsPermission(err) {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"agent.yaml": "version: 0\nname: inaccessible\ncommand: [true]\nfs:\n  write: [./out/]\n  deny_read: [./out/private/nested/secret*]\n  reads: direct\n",
+		"tests.yaml": "version: 0\ntests:\n  - name: inaccessible name\n    action: fs.write\n    path: out/private/nested/secret-new\n    expect: refused\n",
+	} {
+		if err := os.WriteFile(name, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	buildsTiers(t, backend.TierLandlock)
+	for _, tier := range []string{"cgroup", "bpflsm"} {
+		for _, format := range []string{"text", "json"} {
+			args := []string{"compile", "agent.yaml", "--test", "tests.yaml", "--tier", tier}
+			if format == "json" {
+				args = append(args, "--json")
+			}
+			code, out, errs := run(t, args...)
+			if scopeReadable {
+				if code != identity.ExitOK {
+					t.Errorf("root %s/%s: %d\n%s\n%s", tier, format, code, out, errs)
+				}
+				continue
+			}
+			if code != identity.ExitError || !strings.Contains(out, "cannot tell without root") {
+				t.Errorf("%s/%s: exit %d, want 125 and its own unknown verdict\n%s\n%s", tier, format, code, out, errs)
+			}
+			if format == "json" {
+				var report TestReport
+				if err := json.Unmarshal([]byte(out), &report); err != nil {
+					t.Fatal(err)
+				}
+				if len(report.Rows) != 1 || len(report.Rows[0].Columns) != 1 || report.Rows[0].Columns[0].Verdict != "cannot tell without root" || report.Rows[0].Pass {
+					t.Errorf("unknown certified as a verdict: %+v", report)
+				}
+			}
+		}
+	}
+	// Name prediction does not change the landlock column or launch compilation.
+	data, err := os.ReadFile("tests.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("tests.yaml", []byte(strings.Replace(string(data), "expect: refused", "expect: allow", 1)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errs := run(t, "compile", "agent.yaml", "--test", "tests.yaml", "--tier", "landlock")
+	if code != identity.ExitOK || !strings.Contains(out, "PASS inaccessible name") {
+		t.Errorf("landlock changed: %d\n%s\n%s", code, out, errs)
+	}
+}
+
+func TestAutoOriginNamesThePIDNamespacePrecondition(t *testing.T) {
+	origin := autoOrigin(doctor.AutoSet{Tiers: []backend.Tier{backend.TierLandlock},
+		NeedPIDNamespace: []backend.Tier{backend.TierCgroup, backend.TierBPFLSM}})
+	if !strings.Contains(origin, "cgroup and bpflsm, which need the kernel's first process-id namespace") {
+		t.Fatalf("auto origin omits the unavailable root tiers: %q", origin)
+	}
+}
+
+// A built tier excluded by the PID-namespace precondition must not tell the person to install another build.
+// Exercise both compile prints and the run-start compiler; neither may silently replace the requested pin.
+func TestPIDNamespacePinWarningsNameThePrecondition(t *testing.T) {
+	for _, tier := range []backend.Tier{backend.TierCgroup, backend.TierBPFLSM} {
+		for _, unavailable := range []bool{false, true} {
+			t.Run(string(tier)+"/namespace="+fmt.Sprint(unavailable), func(t *testing.T) {
+				set := doctor.AutoSet{Tiers: []backend.Tier{backend.TierLandlock}}
+				if unavailable {
+					set.NeedPIDNamespace = []backend.Tier{tier}
+				}
+				autoTiersAre(t, set)
+				dir := t.TempDir()
+				path := filepath.Join(dir, "agent.yaml")
+				if err := os.WriteFile(path, []byte("version: 0\nname: pid-pin\ncommand: [true]\ntier: "+string(tier)+"\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				code, _, errs := run(t, "compile", path, "--offline")
+				if code != identity.ExitOK {
+					t.Fatalf("compile exit%d: %s", code, errs)
+				}
+				check := func(label, text string) {
+					t.Helper()
+					if unavailable {
+						if !strings.Contains(text, "first process-id namespace") || strings.Contains(text, "not built into this tego") || strings.Contains(text, "use a build") {
+							t.Errorf("%s misdiagnosed namespace exclusion: %s", label, text)
+						}
+					} else if !strings.Contains(text, "not built into this tego") {
+						t.Errorf("%s lost the actual build warning: %s", label, text)
+					}
+				}
+				check("compile", errs)
+				var stderr strings.Builder
+				rt, _, _, status := compileForRun(t.Context(), runOptions{contract: path, offline: true}, config.Builtin(), &stderr)
+				if status != identity.ExitOK || rt == nil || rt.Tier != tier {
+					t.Fatalf("run compile changed pin: tier=%v exit%d %s", rt, status, stderr.String())
+				}
+				check("run", stderr.String())
+			})
 		}
 	}
 }

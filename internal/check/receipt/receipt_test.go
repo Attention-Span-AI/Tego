@@ -18,13 +18,18 @@ import (
 	"github.com/attention-span-ai/tego/internal/check/measure"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
+	receiptspec "github.com/attention-span-ai/tego/pkg/spec/receipt"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 // line is one synthetic ledger line: its kind, its offset from the run's start, and the fields the receipt reads.
 type line struct {
-	kind    record.Kind
-	at      time.Duration
+	cgroup uint64
+	kind   record.Kind
+	at     time.Duration
+	// wrote is when the writer appended the line (the line's ts), when that is not the time it was received (at, its
+	// mono_ns); zero means the same instant.
+	wrote   time.Duration
 	verdict record.Verdict
 	rule    string
 	reason  record.Reason
@@ -40,9 +45,14 @@ func ledgerOf(t testing.TB, lines []line) *ledger.Reader {
 	prev := ""
 	for i, in := range lines {
 		mono := t0 + uint64(in.at)
-		e := &record.Event{V: record.Version, Seq: uint64(i), Prev: prev, MonoNS: mono, TS: time.Unix(0, int64(mono)).UTC(),
+		ts := mono
+		if in.wrote != 0 {
+			ts = t0 + uint64(in.wrote)
+		}
+		e := &record.Event{V: record.Version, Seq: uint64(i), Prev: prev, MonoNS: mono, TS: time.Unix(0, int64(ts)).UTC(),
 			Run: "r-3f9c2a1b-0dllq06ts7400-k7m2pq", Agent: "fixture", PID: 1, TID: 1, Kind: in.kind,
 			Source: record.SourceSupervisor, Verdict: in.verdict, Rule: in.rule, Reason: in.reason}
+		e.Cgroup = in.cgroup
 		if in.kind.IsAction() {
 			e.Attr = record.Unattributed()
 			if e.Rule != "" {
@@ -135,6 +145,78 @@ func TestRefusalsCountOnceByRuleAndOverTime(t *testing.T) {
 	}
 	if rc.ExitCode == nil || *rc.ExitCode != 0 || rc.Time.Seconds != 180 || rc.Time.SoFar {
 		t.Errorf("outcome/time = %v %v %v", rc.ExitCode, rc.Time.Seconds, rc.Time.SoFar)
+	}
+}
+
+// TestRefusalListIsInOrderOfReceiptNotOfLedger holds the refusal list to the order the agent's calls were received in
+// (the lines' mono_ns), not the order the lines reached the ledger. The supervisor answers a call and then writes its
+// line (R23), and keeps the order of one thread's lines only (R23a): an agent whose child process is refused an exec,
+// and which then reads a secret itself, can have the read's line written first. Gate 35 found the receipt of such a run
+// listing the read before the exec. Lines of one receipt time keep their ledger order, and the same ledger always gives
+// the same list.
+func TestRefusalListIsInOrderOfReceiptNotOfLedger(t *testing.T) {
+	rd := "fs.deny_read[./secret/]"
+	lines := []line{
+		start("off", false),
+		// written first, received second: the agent's read, from its own thread
+		{kind: record.KindFS, at: 5 * time.Second, verdict: record.VerdictRefused, rule: rd, reason: record.ReasonReadDenied,
+			payload: record.FSPayload{Op: record.FSOpen, Path: "/p/secret/token"}},
+		// written second, received first: its child's exec, answered before the agent went on
+		{kind: record.KindExec, at: 4 * time.Second, verdict: record.VerdictRefused, rule: "unmatched", reason: record.ReasonExecNotAllowed,
+			payload: record.ExecPayload{Path: "/p/unlisted", ExecID: "x"}},
+		{kind: record.KindRefused, at: 4 * time.Second, rule: "unmatched", reason: record.ReasonExecNotAllowed,
+			payload: record.RefusedPayload{Op: "exec", Target: "/p/unlisted", Reason: record.ReasonExecNotAllowed, Rule: "unmatched"}},
+		// two received at the same nanosecond keep the order they were written in
+		{kind: record.KindNet, at: 6 * time.Second, verdict: record.VerdictRefused, rule: "unmatched", reason: record.ReasonNetNotAllowed,
+			payload: record.NetPayload{Proto: "tcp", Dst: "192.0.2.1:80"}},
+		{kind: record.KindNet, at: 6 * time.Second, verdict: record.VerdictRefused, rule: "unmatched", reason: record.ReasonNetNotAllowed,
+			payload: record.NetPayload{Proto: "tcp", Dst: "192.0.2.2:80"}},
+		end(10*time.Second, 0),
+	}
+	targets := func(rc *Receipt) []string {
+		var got []string
+		for _, r := range rc.Refusals.List {
+			got = append(got, r.Kind+" "+r.Target)
+		}
+		return got
+	}
+	want := []string{"exec /p/unlisted", "fs /p/secret/token", "net 192.0.2.1:80", "net 192.0.2.2:80"}
+	first := targets(compute(t, lines, Options{}))
+	if strings.Join(first, "|") != strings.Join(want, "|") {
+		t.Errorf("refusal list = %q, want %q", first, want)
+	}
+	if again := targets(compute(t, lines, Options{})); strings.Join(again, "|") != strings.Join(first, "|") {
+		t.Errorf("the same ledger gave %q, then %q", first, again)
+	}
+}
+
+// TestRefusalListTimesAreWriteTimesAndMayNotRise pins what the time beside a listed refusal means beside the order
+// (review F1): the list is in the order the calls were received (mono_ns), and each row's ts is the writer's append time.
+// A call held for an ask and then refused is received early and written late, so it is listed first with the later
+// time, and the times along the list may go back. The receipt does not rewrite ts to fit the order.
+func TestRefusalListTimesAreWriteTimesAndMayNotRise(t *testing.T) {
+	rc := compute(t, []line{
+		start("off", false),
+		// received at +1 s (held for an ask), refused and written at +300 s
+		{kind: record.KindNet, at: time.Second, wrote: 300 * time.Second, verdict: record.VerdictRefused, rule: "unmatched",
+			reason: record.ReasonNetNotAllowed, payload: record.NetPayload{Proto: "tcp", Dst: "192.0.2.1:80"}},
+		// received and written at +120 s
+		{kind: record.KindNet, at: 120 * time.Second, verdict: record.VerdictRefused, rule: "unmatched",
+			reason: record.ReasonNetNotAllowed, payload: record.NetPayload{Proto: "tcp", Dst: "192.0.2.2:80"}},
+		end(400*time.Second, 0),
+	}, Options{})
+	l := rc.Refusals.List
+	if len(l) != 2 || l[0].Target != "192.0.2.1:80" || l[1].Target != "192.0.2.2:80" {
+		t.Fatalf("refusal list = %+v, want the held call first (received first)", l)
+	}
+	if got, want := l[0].TS.UnixNano(), int64(t0+uint64(300*time.Second)); got != want {
+		t.Errorf("first row's ts = %d, want the write time %d", got, want)
+	}
+	if got, want := l[1].TS.UnixNano(), int64(t0+uint64(120*time.Second)); got != want {
+		t.Errorf("second row's ts = %d, want the write time %d", got, want)
+	}
+	if !l[1].TS.Before(l[0].TS) {
+		t.Errorf("the times rose along the list (%s, %s); this case is built so that they do not", l[0].TS, l[1].TS)
 	}
 }
 
@@ -359,6 +441,10 @@ func TestCoverageCodes(t *testing.T) {
 			if g.Code == "" || g.Why == "" {
 				t.Errorf("a gap without its code or its words: %+v", g)
 			}
+			// C165: each gap says how much of its field the ledger supports, from its code.
+			if g.Level != receiptspec.LevelOf(g.Code) || (g.Level != receiptspec.LevelPartial && g.Level != receiptspec.LevelNone) {
+				t.Errorf("gap %s/%s has level %q, want %q", g.Field, g.Code, g.Level, receiptspec.LevelOf(g.Code))
+			}
 			got = append(got, g.Field+"="+g.Code)
 		}
 		return got
@@ -394,7 +480,7 @@ func TestCoverageCodes(t *testing.T) {
 		{"unmetered, unpriced and a capture gap", []line{start("forwarder", true), req, resp(1, "m", true), req,
 			resp(3, "unpriced", true), req, resp(5, "m", false), gap(record.GapCapture, "no-openssl"), end(2*time.Second, 0)},
 			flatPrices{}, []string{"tokens=unmetered-responses", "tokens.est_cost_usd=unpriced-responses", "tokens.capture=capture-gap"}},
-		{"no price table", []line{start("forwarder", true), gap(record.GapRecord, gapNoPriceTable), req, resp(2, "m", false),
+		{"no price table", []line{start("forwarder", true), gap(record.GapRecord, record.GapNoPriceTable), req, resp(2, "m", false),
 			end(2*time.Second, 0)}, nil, []string{"tokens=unmetered-responses", "tokens.est_cost_usd=no-price-table"}},
 		{"lists past their caps", append(many, end(2*time.Second, 0)), nil, []string{"files=truncated", "refusals.list=truncated"}},
 	} {
@@ -408,7 +494,7 @@ func TestCoverageCodes(t *testing.T) {
 	if err := compute(t, []line{start("off", true), end(time.Second, 0)}, Options{}).JSON(&b); err != nil {
 		t.Fatal(err)
 	}
-	beside := regexp.MustCompile(`"field": "tokens",\s+"code": "capture-off",\s+"why": "not recorded: model traffic capture was off`)
+	beside := regexp.MustCompile(`"field": "tokens",\s+"code": "capture-off",\s+"level": "none",\s+"why": "not recorded: model traffic capture was off`)
 	if !beside.MatchString(b.String()) {
 		t.Errorf("the JSON does not carry the code beside why:\n%s", b.String())
 	}

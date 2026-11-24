@@ -3,6 +3,8 @@
 package agent
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -71,7 +73,7 @@ func (k *compiler) execMapNative() {
 		if w.Kind != FSWrite || w.Raw == "" || w.Resolved == "" {
 			continue
 		}
-		trees, cut, late := nativeTrees(w.Resolved, end)
+		trees, cut, late, denied := nativeTrees(w.Resolved, end)
 		for _, tree := range trees {
 			if seen[tree] || covered(tree) {
 				continue
@@ -87,7 +89,15 @@ func (k *compiler) execMapNative() {
 				"dlopen fails", tree, w.Raw).
 				fix("exec.allow: add %q, as for a binary built or installed there", entry)
 		}
-		// A scan cut short names nothing past where it stopped, and the author reads silence as no native code.
+		// A scan cut short names nothing past where it stopped, and the author reads silence as no native code. The
+		// scan decides no rule (each tree is a warning), so a folder it may not list is said here, not given to a
+		// root-tier prediction's unknown answer: root's table is the same table.
+		if denied != "" {
+			k.ds.warnf(w.Pos, CodeExecMap, "the scan of the writable %s for native code could not list %s (permission "+
+				"denied), so native code there is not named here, and its import or dlopen fails at tiers cgroup and bpflsm",
+				w.Raw, denied).
+				fix("name the native-module trees under %s in exec.allow yourself", w.Raw)
+		}
 		switch {
 		case late:
 			k.ds.warnf(w.Pos, CodeExecMap, "the scan of the writable %s for native code ran out of its time limit, %s, so "+
@@ -110,8 +120,8 @@ func (k *compiler) execMapNative() {
 // bounded way (I6): each directory through listDir with what is left of execMapScanMax, each candidate file
 // through openData (isELF). filepath.WalkDir read and sorted a whole directory before any bound was asked, and
 // os.Open waited on a FIFO swapped in for a *.so, or on a file its owner held a lease on. cut says entries were
-// left unread, late that the scan stopped at end.
-func nativeTrees(root string, end time.Time) (out []string, cut, late bool) {
+// left unread, late that the scan stopped at end, denied the first directory a permission failure kept it from listing.
+func nativeTrees(root string, end time.Time) (out []string, cut, late bool, denied string) {
 	seen := map[string]bool{}
 	add := func(p string) {
 		if !seen[p] {
@@ -142,12 +152,15 @@ func nativeTrees(root string, end time.Time) (out []string, cut, late bool) {
 		d := queue[0]
 		queue = queue[1:]
 		if left <= 0 {
-			return out, true, false
+			return out, true, false, denied
 		}
 		if time.Now().After(end) {
-			return out, cut, true
+			return out, cut, true, denied
 		}
-		es, more, _ := listDir(d.path, left)
+		es, more, err := listDir(d.path, left)
+		if errors.Is(err, os.ErrPermission) && denied == "" {
+			denied = d.path
+		}
 		left -= len(es)
 		cut = cut || more
 		for _, e := range es {
@@ -166,14 +179,14 @@ func nativeTrees(root string, end time.Time) (out []string, cut, late bool) {
 				continue
 			}
 			if time.Now().After(end) {
-				return out, cut, true
+				return out, cut, true, denied
 			}
 			if isELF(p) {
 				add(treeOf(d.path))
 			}
 		}
 	}
-	return out, cut, false
+	return out, cut, false, denied
 }
 
 // nativeName reports whether a file name is a shared object's (lib.so, lib.so.1, x.cpython-313-x86_64-linux-gnu.so)

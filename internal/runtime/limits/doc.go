@@ -11,9 +11,10 @@
 // reason is limit, and one cgroup.kill. It never writes run_end and never decides an exit code —
 // the facade owns both, and maps reason=limit to exit 124.
 //
-// PriceTable is spec/config/v0's prices file, loaded here rather than in internal/check/measure
-// because a live run needs it and the engine may not import the read side: measure takes a Prices
-// interface that *PriceTable satisfies, and internal/cli hands one over. The file is
+// PriceTable is spec/config/v0's prices file, loaded by internal/pricetable (a leaf both the engine and the read side
+// import, so the dashboard prices a receipt as the terminal does; this package keeps the names it always used for it):
+// a live run needs it and the engine may not import the read side, so measure takes a Prices interface that *PriceTable
+// satisfies, and internal/cli hands one over. The file is
 //
 //	version: 1
 //	updated: 2026-09-22

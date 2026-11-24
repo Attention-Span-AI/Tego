@@ -58,3 +58,32 @@ func TestJSONWritesInBlocks(t *testing.T) {
 		t.Fatalf("%d lines, want 200", got)
 	}
 }
+
+// TestCellsAreOneLineOfFourCells: --cells is the table's own verdict, rule and detail cells, one line per event and
+// four tab-separated cells on it, whatever the agent put in a path or a rule: a tab or a line break in a cell is
+// escaped (record.Printable), two spaces in a row stay as they are, and the limit and the filter apply as they do to
+// the table.
+func TestCellsAreOneLineOfFourCells(t *testing.T) {
+	lines := fsLines(t, 3, func(i int) string {
+		return [...]string{"fs.write[./a\tb  c\nd]", "-", "fs.read[.]"}[i]
+	})
+	var out bytes.Buffer
+	n, err := CellsOf(t.Context(), &out, readerOf(t, lines), readerOf(t, lines).Entries(), Filter{})
+	if err != nil || n != 3 {
+		t.Fatalf("CellsOf = %d, %v", n, err)
+	}
+	got := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
+	want := []string{
+		"0\tallow\tfs.write[./a\\tb  c\\nd]\topen /home/u/proj/a.txt",
+		"1\tallow\t-\topen /home/u/proj/a.txt",
+		"2\tallow\tfs.read[.]\topen /home/u/proj/a.txt",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("cells:\n%q\nwant\n%q", got, want)
+	}
+	out.Reset()
+	if n, err := CellsOf(t.Context(), &out, readerOf(t, lines), readerOf(t, lines).Entries(), Filter{Limit: 2}); err != nil || n != 2 ||
+		strings.Count(out.String(), "\n") != 2 {
+		t.Fatalf("limit 2: %d, %v, %q", n, err, out.String())
+	}
+}

@@ -34,3 +34,10 @@ func TestAmbiguousKeysRefused(t *testing.T) {
 		})
 	}
 }
+
+// readCalls reads a client line or POST body in its wire form (wireLine, wireForm): one message or a batch. ok is false
+// for one that is not JSON-RPC at all, or a batch past MaxBatch (readBatch says which).
+func readCalls(line []byte) (calls []call, batch, ok bool) {
+	calls, batch, st := readBatch(line)
+	return calls, batch, st == readOK
+}

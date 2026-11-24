@@ -5,6 +5,9 @@ package liveblock
 import (
 	"errors"
 	"fmt"
+	"os"
+	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -15,17 +18,45 @@ import (
 type Clock struct {
 	Wall time.Time
 	Boot time.Duration
+	// BootID names the boot that Boot counts from (the kernel's boot_id, made anew at every boot). A BOOTTIME instant
+	// means something only inside the boot it was read in, so a pin kept in the overlay file carries this beside it
+	// (Entry.Boot). "" when it cannot be read: nothing is then pinned in the file, and no pin read from it is used.
+	BootID string
 }
 
 // ReadClock reads both clocks now. A BOOTTIME that cannot be read (never on Linux) reads as 0, which no pin has
 // passed: a limit then ends by the wall clock's side alone, as the rules of Ended and Begun say.
 func ReadClock() Clock {
 	var ts unix.Timespec
-	c := Clock{Wall: time.Now()}
+	c := Clock{Wall: time.Now(), BootID: bootID()}
 	if unix.ClockGettime(unix.CLOCK_BOOTTIME, &ts) == nil {
 		c.Boot = time.Duration(ts.Nano())
 	}
 	return c
+}
+
+// bootIDFile is where the kernel names this boot: 36 characters, the same until the machine starts again.
+const bootIDFile = "/proc/sys/kernel/random/boot_id"
+
+// bootID is this boot's identity, read once: it cannot change while this process lives. "" when the file cannot be
+// read (no /proc) or holds anything but a boot identity (validBoot).
+var bootID = sync.OnceValue(func() string {
+	b, err := os.ReadFile(bootIDFile)
+	if err != nil {
+		return ""
+	}
+	if id := strings.TrimSpace(string(b)); validBoot(id) {
+		return id
+	}
+	return ""
+})
+
+// validBoot reports whether id reads as a boot identity: 1 to 64 lower-case hex digits and hyphens.
+func validBoot(id string) bool {
+	if id == "" || len(id) > 64 {
+		return false
+	}
+	return strings.IndexFunc(id, func(r rune) bool { return (r < '0' || r > '9') && (r < 'a' || r > 'f') && r != '-' }) < 0
 }
 
 // readClock is ReadClock, replaced in tests.

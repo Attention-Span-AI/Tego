@@ -39,8 +39,8 @@ func TestRunIDCommandsLoadTheMachineOnce(t *testing.T) {
 	}
 }
 
-// TestRunNotFoundKeepsTheConfigDiagnostics: a group-writable layer that sets ledger_root is skipped, the
-// built-in root is used and a valid run id reads as "no such run"; the skip is the only explanation.
+// TestRunNotFoundKeepsTheConfigDiagnostics preserves a degraded load warning even when
+// the fallback ledger has no matching run. The baseline remains explicitly unknown.
 func TestRunNotFoundKeepsTheConfigDiagnostics(t *testing.T) {
 	root := gcRoot(t)
 	id := endedRun(t, root, time.Now())
@@ -50,11 +50,11 @@ func TestRunNotFoundKeepsTheConfigDiagnostics(t *testing.T) {
 	}
 	for _, cmd := range []string{"events", "drift", "measure", "learn"} {
 		code, _, errs := run(t, cmd, id)
-		if code != identity.ExitUsage || !strings.Contains(errs, "no such run") && !strings.Contains(errs, "no run") {
+		if code != identity.ExitUsage || !strings.Contains(errs, "no such run") {
 			t.Fatalf("%s: exit %d, stderr:\n%s", cmd, code, errs)
 		}
-		if !strings.Contains(errs, "The layer was skipped.") {
-			t.Errorf("%s: stderr does not say why the layer was skipped:\n%s", cmd, errs)
+		if !strings.Contains(errs, "config-baseline-unknown") {
+			t.Errorf("%s: stderr lost the config failure:\n%s", cmd, errs)
 		}
 	}
 }

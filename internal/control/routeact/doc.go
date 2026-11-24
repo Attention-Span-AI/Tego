@@ -16,6 +16,7 @@
 // The web package parses forms, renders and calls this; it never opens the overlay itself.
 //
 // Imports: the standard library, gopkg.in/yaml.v3, internal/modelroutes, internal/ledger, internal/runlock,
-// internal/control/runact (SelfGoverned, CheckLoosening), pkg/policy/modelroute, pkg/spec/agent, pkg/spec/record.
+// internal/runscope (the answer's type), internal/control/runact (SelfGoverned, CheckLoosening), pkg/policy/modelroute,
+// pkg/spec/agent, pkg/spec/record.
 // Must not import: internal/runtime, internal/policy, internal/cli (control-links-no-engine).
 package routeact

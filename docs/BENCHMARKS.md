@@ -355,7 +355,7 @@ is now what doctor lists: root, a build with the BPF objects (`enforce.Buildable
 which D7 loads and attaches every tier-2 program. Earlier on 2026-09-22, in the KVM guest on the test machine's
 6.17 kernel, D7 found the verifier refusing `cgroup/connect6` and `cgroup/sendmsg6`, so doctor, and
 therefore `run`, did not offer tier cgroup there; that was measured before the `cgroup_net` fix to those two
-programs. With the fix in the objects of this tree, `sudo tego doctor` in the same guest loads and attaches
+programs. With the fix in the objects of this tree, `tego doctor` run as root in the same guest loads and attaches
 all 22 hooks (the 16 tier-2 programs, and tier 3's six with a stand-in), reports `tier: cgroup`, and
 `--require cgroup` exits 0.
 
@@ -809,3 +809,58 @@ Borrow's ratio 1.74 to 2.00.
 This page measures whole-run overhead. A run's start, warm and cold, is measured by the tier-3 guest perf suite
 (`make vm-perf`, `test/perf`) with its budgets, and it
 also attributes the cold start per program, map, D7 hook and plane-probe mode ("Cold attribution").
+
+### 2026-11-18: uncharged time in a thread sample (B58)
+
+The old own-time formula could retain an involuntary wait between an inner schedstat
+read and its outer wall-clock read. The reported hosted sample's 4.022568 ms CPU plus
+5.982794 ms outer run-queue delay already accounts for its 10.003116 ms wall interval;
+the inner delay implied by own time is only 3.613 ms. A local instrumented 2,000-repeat
+run reproduced seven failures. One had 1.387168 ms of outer-minus-inner queue delay
+and 1.386487 ms of excess own time, with unchanged per-CPU irq/softirq/steal counters.
+This establishes a clock-read boundary race for that shape; it does not prove the
+source of every hosted disturbance or identify a 10 ms interval as runtime preemption.
+
+A nonblocking sample's own figure now also stays at or below the CPU time charged to
+the process over the sample: thread CPU plus all other threads' CPU. This removes
+unbounded uncharged wall time without subtracting helpers' work. Blocking samples
+retain their whole wall interval. The diagnostic workload reads all three thread
+schedstat fields and per-CPU irq/softirq/steal fields before and after a sample,
+logging and skipping CPU-agreement comparisons when those counters change or queue
+delay lands outside the inner reads. Injected counter readings exercise these cases.
+No tolerance or budget increased.
+
+The Linux per-CPU counters are quantized USER_HZ ticks shared by all tasks and overlap
+queue waits. They cannot safely be subtracted from one thread's wall interval:
+that would double-count delays or remove a real wait. They also cannot prove absence
+of a sub-tick interrupt or unreported hypervisor pause. The CPU bound removes their
+uncharged contribution for nonblocking samples without attributing that interval.
+For a blocked sample, and for the separate wall-clock ceiling and budget mode, such
+machine delays still count; no safe per-thread attribution is available from these
+readings. Use repeated samples on an otherwise quiet machine for budget mode.
+
+Kernel references: [schedstat fields](https://docs.kernel.org/scheduler/sched-stats.html),
+[/proc/stat fields](https://docs.kernel.org/filesystems/proc.html), and
+[IRQ/steal CPU accounting](https://github.com/torvalds/linux/blob/master/kernel/sched/cputime.c).
+
+If a kernel or hypervisor charges interruption time to a task's CPU clock, that
+charged contribution remains in the figure. These readings cannot reliably
+separate it from work. The bound removes time that is uncharged, and makes no
+claim to recover a machine-independent execution cost from every virtual CPU.
+
+Repeating the original diagnostic 2,000 times with
+`GODEBUG=asyncpreemptoff=1` still reproduced two failures: the missed edge queue
+was 1.514 ms and 1.545 ms, respectively. The runtime's asynchronous preemption
+signal is therefore not necessary to reproduce this shape; this does not
+identify the original hosted event without its counter readings.
+
+The diagnostic's own verdict has three outcomes, not two. A try is compared only
+when it did not block and nothing was read as disturbing it. When no try of a
+run is compared, the run has observed nothing about the own time's agreement
+with the CPU time: `TestOwnTimeLeavesOutRunQueueWaits` then skips and prints
+each try's reason, and a pass means at least one sample was held to the rule.
+`TestNoUsableObservationIsNotAPass` injects unreadable accounting and counters
+that move in every try. The figure's two bounds are held with injected readings
+by `TestOwnTimeIsHeldFromBothSides`: too little taken out of the wall clock is
+capped at the CPU time charged to the process, and too much (a run-queue delay
+read wider than the sample's wait) is floored at the thread's CPU time.

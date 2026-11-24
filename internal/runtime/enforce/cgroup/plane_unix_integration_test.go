@@ -66,7 +66,7 @@ func planeUnixRunWith(t *testing.T, tag string, configure func(*unixFixture, *ag
 	}
 	hash := fmt.Sprintf("t15%s%09d", tag, os.Getpid())
 	b := New(Options{Machine: machineLinger(0), BPFFS: DefaultBPFFS, StateDir: pinState(t), Hash: hash,
-		Events: &sink{}, Plane: PlaneSetup{Mode: mode, Build: build}})
+		Events: &sink{}, Plane: PlaneSetup{Mode: mode, Build: build, RecheckAdmission: testPlaneAdmission}})
 	held := maps.Clone(holdPaths(t, rows.Keyed...))
 	parents := heldSet{}
 	for _, n := range rows.Protected {

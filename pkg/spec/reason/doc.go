@@ -4,7 +4,8 @@
 // which the ledger Writer rewrites after refusals and a harness inside the run reads through TEGO_REASON. It holds the
 // file's types and codec (File, Entry, Encode, Decode, File.Since), the one sentence each reason code is told in
 // (Text), the bounded text an agent is shown (Render), the paragraph that tells an agent the file exists
-// (Instructions, and HookInstructions for a hook that reports each refusal, ADR 0063), and where an unprivileged
+// (Instructions, and HookInstructions for run-wide hook reporting, ADR 0063), the bounded combined setup
+// and pending refusals at session start (RenderSessionStart), and where an unprivileged
 // run's copy lives (DirFor).
 //
 // It is Layer 0, data and codecs: no I/O beyond the reader Decode is handed, no clock, no goroutines. It imports

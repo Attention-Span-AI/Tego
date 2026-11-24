@@ -67,7 +67,7 @@ func TestProgramEntriesTakeTheirFilesNames(t *testing.T) {
 	for _, r := range v.Group(GroupPrograms).Rules {
 		for _, k := range append([]string{r.RuleKey}, r.Covers...) {
 			own := r.Key == "exec.allow" && k == ruleKey(kExecAllow, r.Entry)
-			if k != "" && r.Key != "exec.deny" && r.Key != "exec.ask" && !names[k] && !own {
+			if k != "" && r.Key != "exec.deny" && r.Key != "exec.ask" && r.Key != "exec.args" && !names[k] && !own {
 				t.Errorf("%s %q carries %s, which no rule of the table is named", r.Key, r.Entry, k)
 			}
 		}
@@ -98,14 +98,14 @@ func TestProgramEntriesTakeTheirFilesNames(t *testing.T) {
 		}
 	}
 
-	// A line counts for every entry of its file.
+	// A line counts for every entry of its file; an entry with words counts only the lines that name it (CountCommands).
 	v.Count(slices.Values([]string{"exec[cat]", "exec[" + link + "]", "exec[git]", "exec[" + env + "]"}))
 	for _, w := range []struct {
 		key, entry string
 		hits       int
 	}{
-		{"exec.allow", "cat", 2}, {"exec.allow", cat, 2}, {"exec.allow", link, 2}, {"exec.allow", "git status", 1},
-		{"exec.allow", "git diff", 1}, {"exec.allow", "env", 1}, {"run-command", runLink, 1}, {"exec.allow", "'" + tool + "'", 0},
+		{"exec.allow", "cat", 2}, {"exec.allow", cat, 2}, {"exec.allow", link, 2}, {"exec.allow", "git status", 0},
+		{"exec.allow", "git diff", 0}, {"exec.allow", "env", 1}, {"run-command", runLink, 1}, {"exec.allow", "'" + tool + "'", 0},
 	} {
 		if r := findRule(t, &v, w.key, w.entry); r.Hits != w.hits {
 			t.Errorf("%s %q: %d hits, want %d", w.key, w.entry, r.Hits, w.hits)
@@ -175,6 +175,7 @@ func TestCommandRowStaysBesideAnEntryWithWords(t *testing.T) {
 	}
 	for name, v := range map[string]*View{"compiled": &v, "declared": &d} {
 		v.Count(slices.Values([]string{"exec[git]"}))
+		v.CountCommands(map[string]int{"git status": 1}) // the entry's own lines are those that name it
 		for _, key := range []string{"command", "exec.allow"} {
 			entry := map[string]string{"command": "git", "exec.allow": "git status"}[key]
 			if r := findRule(t, v, key, entry); r.RuleKey != "exec[git]" || r.Hits != 1 {
@@ -221,6 +222,9 @@ func TestToolEntriesCoverItsHelperImages(t *testing.T) {
 			}
 			if r.Key != "exec.allow" {
 				continue
+			}
+			if r.Invocation != "" {
+				hits = 0 // an entry with words counts the lines that name it (CountCommands), not its program's
 			}
 			if !slices.Equal(r.Covers, want) || r.Hits != hits {
 				t.Errorf("%s: %q covers %v with %d hits, want %v and %d", allow, r.Entry, r.Covers, r.Hits, want, hits)

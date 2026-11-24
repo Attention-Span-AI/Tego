@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/control/runact"
 	"github.com/attention-span-ai/tego/internal/rulefile"
 	"github.com/attention-span-ai/tego/internal/testutil/ledgertest"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -77,9 +78,9 @@ func newFixture(t *testing.T) *fixture {
 		},
 		live:      func(dir string) bool { return f.live[filepath.Base(dir)] },
 		readsHeld: func(string) (bool, string) { return f.held, "this run reads files directly" },
-		block: func(_ context.Context, run, kind, value string) error {
+		block: func(_ context.Context, run, kind, value string) (runact.Blocked, error) {
 			f.blocks = append(f.blocks, run+" "+kind+":"+value)
-			return nil
+			return runact.Blocked{Run: run, Serial: uint64(len(f.blocks)), Fresh: true, Epoch: "00112233445566778899aabbccddeeff"}, nil
 		},
 	}
 	return f
@@ -97,7 +98,7 @@ func writeFile(t *testing.T, p, text string) {
 func (f *fixture) writeRun(t *testing.T, run, contract string, i int, more ...*record.Event) {
 	t.Helper()
 	p := record.RunStartPayload{Tier: "landlock", Capture: "off", ContractHash: strings.Repeat("0", 64), Command: []string{"sh"},
-		Cwd: f.proj, Kernel: "6", StopGrace: "1s", RecordMinor: record.Minor}
+		Cwd: f.proj, Kernel: "6", StopGrace: "1s", RecordMinor: record.MinorLearn}
 	if contract != "" {
 		p.ContractSource = &record.ContractSource{Path: contract}
 	}
@@ -228,7 +229,7 @@ func TestRefIsNotAPath(t *testing.T) {
 			t.Errorf("ref %q: err = %v", ref, err)
 		}
 		_, err = f.s.ApplyRaw(context.Background(), RawReq{Ref: ref, Base: "x", Text: []byte("version: 0\n"), Ack: "x"})
-		if !errors.Is(err, ErrNoContract) {
+		if !errors.Is(err, ErrReviewGone) {
 			t.Errorf("raw ref %q: err = %v", ref, err)
 		}
 	}
@@ -269,18 +270,18 @@ func TestApplyRefusesStaleBase(t *testing.T) {
 	f := newFixture(t)
 	c := f.ref(t, f.contract)
 	edits := []Edit{{"remove", "exec.allow", "cat"}}
-	for _, base := range []string{"", rulefile.Sum([]byte("other"))} {
-		if _, err := f.s.ApplyChange(context.Background(), ChangeReq{Ref: c.Ref, Base: base, Edits: edits}); !errors.Is(err, ErrStale) {
-			t.Errorf("base %q: err = %v", base, err)
-		}
-	}
-	// The file changes between the preview and the confirm.
 	p, err := f.s.PlanChange(context.Background(), ChangeReq{Ref: c.Ref, Base: c.Base, Edits: edits})
 	if err != nil || p.Err != "" || p.Stale {
 		t.Fatalf("plan: %+v %v", p, err)
 	}
+	for _, base := range []string{"", rulefile.Sum([]byte("other"))} {
+		if _, err := f.s.ApplyChange(context.Background(), ChangeReq{Ref: c.Ref, Base: base, Edits: edits, Ack: p.Ack}); !errors.Is(err, ErrStale) {
+			t.Errorf("base %q: err = %v", base, err)
+		}
+	}
+	// The file changes between the preview and the confirm.
 	writeFile(t, f.contract, baseText+"# edited\n")
-	if _, err := f.s.ApplyChange(context.Background(), ChangeReq{Ref: c.Ref, Base: p.Base, Edits: edits}); !errors.Is(err, ErrStale) {
+	if _, err := f.s.ApplyChange(context.Background(), ChangeReq{Ref: c.Ref, Base: p.Base, Edits: edits, Ack: p.Ack}); !errors.Is(err, ErrStale) {
 		t.Errorf("changed since the preview: err = %v", err)
 	}
 	if f.text(t) != baseText+"# edited\n" || len(f.journal(t)) != 0 {
@@ -289,7 +290,7 @@ func TestApplyRefusesStaleBase(t *testing.T) {
 }
 
 // TestWidenNeedsAck: a widening, and a free edit, are refused without the acknowledgement and written with it; a
-// narrowing needs none.
+// narrowing carries its hidden review value without a checkbox.
 func TestWidenNeedsAck(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
@@ -306,7 +307,7 @@ func TestWidenNeedsAck(t *testing.T) {
 		t.Fatal("a widening without the acknowledgement wrote")
 	}
 	widen.Ack = strings.Repeat("0", 64) // a well-formed acknowledgement of nothing previewed
-	if _, err := f.s.ApplyChange(ctx, widen); !errors.Is(err, ErrAckMismatch) {
+	if _, err := f.s.ApplyChange(ctx, widen); !errors.Is(err, ErrReviewGone) {
 		t.Fatalf("widen with a forged ack: %v", err)
 	}
 	widen.Ack = p.Ack
@@ -337,6 +338,7 @@ func TestNarrowAlsoNowOnlyLiveRuns(t *testing.T) {
 	if err != nil || p.Direction != "narrows" || p.NeedsAck || len(p.Now) != 1 || p.Now[0].Run != runA2 || p.Now[0].Block != "exec:cat" || !p.Now[0].OK {
 		t.Fatalf("plan: %+v %v", p, err)
 	}
+	req.Ack = p.Ack
 	a, err := f.s.ApplyChange(ctx, req)
 	if err != nil {
 		t.Fatal(err)
@@ -383,8 +385,20 @@ func TestChangeRefusedWhenCompileFails(t *testing.T) {
 	if err != nil || !strings.Contains(p.Err, "does-not-compile") {
 		t.Fatalf("plan: %+v %v", p, err)
 	}
-	if _, err := f.s.ApplyChange(context.Background(), req); !errors.Is(err, ErrRefused) {
+	if _, err := f.s.ApplyChange(context.Background(), req); !errors.Is(err, ErrNeedsAck) {
 		t.Errorf("apply: %v", err)
+	}
+	// A valid review must also recompile at Save. A refusal introduced after
+	// Preview cannot publish the held candidate or rebuild a different one.
+	req.Edits = []Edit{{"remove", "exec.allow", "cat"}}
+	p, err = f.s.PlanChange(context.Background(), req)
+	if err != nil || p.Err != "" {
+		t.Fatalf("valid preview: %+v %v", p, err)
+	}
+	req.Ack = p.Ack
+	f.s.Compile = func(context.Context, CheckContext, []byte) error { return errors.New("does-not-compile") }
+	if _, err := f.s.ApplyChange(context.Background(), req); !errors.Is(err, ErrRefused) {
+		t.Errorf("compile changed after review: %v", err)
 	}
 	f.s.Compile = nil // no machine config: no compiler, so no write
 	if p, _ := f.s.PlanChange(context.Background(), ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"remove", "exec.allow", "cat"}}}); !strings.Contains(p.Err, "without the machine config") {
@@ -401,7 +415,7 @@ func TestRevert(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	c := f.ref(t, f.contract)
-	a, err := f.s.ApplyChange(ctx, ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"remove", "exec.allow", "cat"}}})
+	a, err := f.applyReviewed(t, ctx, ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"remove", "exec.allow", "cat"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -442,7 +456,7 @@ func TestRevert(t *testing.T) {
 	}
 }
 
-// TestRawEdit: a free edit is compiled, classified mixed with the free-edit words, and confirmed like a widening; an
+// TestRawEdit: a free edit is compiled, confirmed like a widening (a test compiler returns no table, so no families), and confirmed like a widening; an
 // empty, oversized, binary, unchanged or uncompilable text is refused, and every refusal writes nothing.
 func TestRawEdit(t *testing.T) {
 	f := newFixture(t)
@@ -535,35 +549,43 @@ func TestActBindsConfirmToPreview(t *testing.T) {
 		t.Errorf("blocks = %v", f.blocks)
 	}
 	es := f.journal(t)
-	// The acknowledged Allow and its revert, then the narrowing and its live block.
-	if len(es) != 4 || es[2].Run != runA2 || es[2].Line != 1 || es[2].Via != Via || es[3].Op != rulefile.OpLive {
+	// The acknowledged Allow and its revert, then the narrowing, the live block begun and the live block's outcome.
+	if len(es) != 5 || es[2].Run != runA2 || es[2].Line != 1 || es[2].Via != Via || es[3].Op != rulefile.OpLive || es[4].Op != rulefile.OpLive ||
+		len(es[3].Live) != 1 || !es[3].Live[0].Pending || len(es[4].Live) != 1 || !es[4].Live[0].OK {
 		t.Errorf("journal = %+v", es)
 	}
 }
 
-// TestRefusesRetargetedFolder: a contract recorded through a folder symlink that now points elsewhere is not written:
+// TestRefusesRetargetedFolder: a reviewed contract's folder replaced by a symlink is not written:
 // the write and its journal entry would land on a file no run here ran, which History and Undo never find.
 func TestRefusesRetargetedFolder(t *testing.T) {
 	f := newFixture(t)
 	via := filepath.Join(f.dir, "via")
-	if err := os.Symlink(f.proj, via); err != nil {
+	if err := os.Mkdir(via, 0700); err != nil {
 		t.Fatal(err)
 	}
+	writeFile(t, filepath.Join(via, "agent.yaml"), baseText)
 	f.writeRun(t, "r-aaaa-0009-rules", filepath.Join(via, "agent.yaml"), 9)
 	c := f.ref(t, filepath.Join(via, "agent.yaml"))
+	req := ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"remove", "exec.allow", "cat"}}}
+	p, err := f.s.PlanChange(context.Background(), req)
+	if err != nil || p.Err != "" {
+		t.Fatalf("preview before folder replacement: %+v %v", p, err)
+	}
+	req.Ack = p.Ack
 	elsewhere := filepath.Join(f.dir, "elsewhere")
 	if err := os.MkdirAll(elsewhere, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(elsewhere, "agent.yaml"), baseText)
-	if err := os.Remove(via); err != nil {
+	if err := os.Rename(via, via+"-reviewed"); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(elsewhere, via); err != nil {
 		t.Fatal(err)
 	}
-	_, err := f.s.ApplyChange(context.Background(), ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"remove", "exec.allow", "cat"}}})
-	if !errors.Is(err, ErrNotWritable) || !strings.Contains(err.Error(), "points elsewhere") {
+	_, err = f.s.ApplyChange(context.Background(), req)
+	if !errors.Is(err, ErrNotWritable) || !strings.Contains(err.Error(), "symbolic link") {
 		t.Fatalf("err = %v", err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(elsewhere, "agent.yaml")); string(b) != baseText {
@@ -588,7 +610,7 @@ func TestJournalFailureOffersNoUndo(t *testing.T) {
 	f := newFixture(t)
 	f.s.Writer = journalFails{localWriter{f.s.guard()}}
 	c := f.ref(t, f.contract)
-	a, err := f.s.ApplyChange(context.Background(), ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"remove", "exec.allow", "cat"}}})
+	a, err := f.applyReviewed(t, context.Background(), ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"remove", "exec.allow", "cat"}}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -217,10 +216,11 @@ func TestFlashInLiveRegion(t *testing.T) {
 	c := login(t, s)
 	id := s.putFlash(flash{OK: true, Text: "Allowed once: the request"})
 	b := do(s, "GET", "/runs/"+harmRun+"?flash="+id, "127.0.0.1:8484", c).Body.String()
-	banner := regexp.MustCompile(`(?s)<div class="lr" data-live="r-banner"[^>]*>(.*?)</div>\s*<div class="lr" data-live="r-run-top"`).FindStringSubmatch(b)
-	if banner == nil || !strings.Contains(banner[1], `id="flash"`) || !strings.Contains(banner[1], "Allowed once: the request") {
-		t.Fatalf("the flash is not inside the r-banner region: %s", b)
+	banner := pageElement(t, b, "data-live", "r-banner")
+	if !strings.Contains(banner, `id="flash"`) || !strings.Contains(banner, "Allowed once: the request") {
+		t.Fatalf("flash missing from live banner: %s", banner)
 	}
+
 	id = s.putFlash(flash{OK: true, Text: "Stopped demo-harm."})
 	if w := doRegions(s, "/runs/"+harmRun+"?flash="+id, "127.0.0.1:8484", c, "r-banner:x"); w.Code != http.StatusOK {
 		t.Fatalf("region request: %d", w.Code)

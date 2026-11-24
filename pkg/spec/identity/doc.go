@@ -4,8 +4,9 @@
 // the run, agent and exec id formats, the identity+propagation
 // environment set and its precedence over a contract's env.pass/deny/set, the launcher identity,
 // labels and role run_start records (ADR 0073), the run-directory and cgroup path conventions,
-// the closed set of exit codes of `tego run`, the signal-forwarding table, and the
-// `file:line[:col]: message [code]` message format.
+// the closed set of exit codes of `tego run`, the signal-forwarding table, the
+// `file:line[:col]: message [code]` message format, and the one rule on what a message may show
+// of the environment (envtext.go: EnvEntryName, EnvPlace, EnvInspect).
 //
 // The package is pure: it opens no file, holds no state and never blocks. NewRunID consumes an
 // already-hashed machine id (HostID hashes bytes the caller read); Env.Apply is a total function

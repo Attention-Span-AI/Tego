@@ -55,7 +55,7 @@ func autoTiersAre(t *testing.T, s doctor.AutoSet) {
 	prev := autoSet
 	autoSet = func() doctor.AutoSet {
 		return doctor.AutoSet{Tiers: slices.Clone(s.Tiers), NeedRoot: slices.Clone(s.NeedRoot),
-			NeedBPFLSM: slices.Clone(s.NeedBPFLSM)}
+			NeedBPFLSM: slices.Clone(s.NeedBPFLSM), NeedPIDNamespace: slices.Clone(s.NeedPIDNamespace)}
 	}
 	t.Cleanup(func() { autoSet = prev })
 }

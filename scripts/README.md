@@ -1,7 +1,9 @@
 Operator scripts: `install.sh`, `release.sh`. Plain POSIX sh, reviewed like code. `install.sh` is
 also a release asset (`.goreleaser.yaml`). Turning on BPF LSM at boot is the machine owner's step;
-`tego doctor` says whether it is on. `install-wsl.ps1` is the Windows route: PowerShell that installs Ubuntu 24.04 in
-WSL2 when it is missing and runs `install.sh` inside it. It has not been run on Windows (its header says so).
+`tego doctor` says whether it is on. `install.ps1` is the Windows route: PowerShell that imports a dedicated Ubuntu 24.04 distribution in
+WSL2 when it is missing and runs `install.sh` inside it. PowerShell stand-ins run on Linux; real Windows runs and browser handoff remain pending.
+`install_windows_test.sh` uses Pester 5.7.1 and PSScriptAnalyzer 1.25.0, supplied on PSModulePath.
+The two Windows command scripts and the guest provision/entry files are verified release assets.
 
 Reusable output directories in coverage, benchmarks and BPF tooling pass
 `safe-output-dir.sh`: nonempty directories need the tool's regular ownership
@@ -34,13 +36,16 @@ ADR 0048 C8's, the plane fill's, the datagram flood's, ADR 0023 P1's Borrow rati
 system calls cost several times the reference box's, so C8's unguarded exec and script, which missed their Limits
 there, are held to twice their figures); bash; `make budgets`, on an idle machine; its test list is held
 to the tree's `testutil.TimingMode` callers by internal/testutil's `TestTimingBudgetsListsEveryBudgetTest`) and
-`timing-budgets_test.sh` (its runs and decision, with a stand-in for go; `make budgets-test`), `skipgate.sh`
+`timing-budgets_test.sh` (its runs and decision, with a stand-in for go; `make budgets-test`), `gate-cost.sh [--jobs N] [--budget-minutes MIN] [-o DIR]` (runs the full gate once with an empty Go build cache and says its wall time, the sum of its steps, CPU, largest process and cache size, and fails when the gate failed, ran other than the asked number of jobs, or took longer than ci.yml's build-test allots; a heavy run, never beside another gate; a run with `GATE_COST_CMD` is a stand-in that measured nothing: marked STAND-IN, exit 3) with `gate-cost_test.sh` (a stand-in gate), `skipgate.sh`
 (which reads `go test -json` and fails on a skip that `test/unit-skips.txt` does not allow, or with `--must-pass`
 on a listed test that did not pass, as CI's unit step and root-suites job use it, and names the tests a test binary
 left unfinished when it timed out or crashed, with its panic and goroutine dump; bash and jq) with `skipgate_test.sh` (`make
 skipgate-test`), `check-skiplists.sh` (the skip and must-pass lists name tests that exist, once each, and every
-root-only skip the integration step allows is in the root run's lists; CI's build-test), `check-exits.sh`
-(`os.Exit` only in `cmd/`, no bare exit code in `internal/cli`, checked by
+root-only skip the integration step allows is in the root run's lists; CI's build-test). Its offline
+`check-skiprows.py` validates scoped rows against the kernel inventory and requires a direct full-package
+matrix dispatch for each scoped must-pass entry; `TestScopedMustPassHasAScheduledRow` exercises both refusals,
+including a global skip paired with an inert obligation. `check-exits.sh`
+(`os.Exit` only in `cmd/`, no bare exit code in `internal/cli`: checked by
 `tools/checkexits` on the syntax tree; CI's build-test), `check-fd.sh` (ADR 0023's descriptor ownership:
 `tools/fdcheck`'s birth rule, leases, listed sites, close-on-exec and per-package ratchet; `--base REV` holds the
 baseline's per-kind totals and the F4 lists' to REV's, and each package's count of each kind, which rises only by
@@ -55,8 +60,8 @@ CI's build-test and precommit), `deadcode-report.sh -o NEW_DIRECTORY` (ADR 0029 
 over ./cmd/tego in the eight production profiles, linux amd64/arm64 x plain, integration, tegobpf and both, then
 `tools/deadcodereport -gate`, which fails on an unreachable function `tools/deadcode-allow.txt` does not classify,
 on a classification no profile finds and on a profile the tool could not analyze; bash; CI's deadcode-report job,
-gating) with `deadcode-report_test.sh` (its orchestration with stand-ins for go and deadcode; `make
-deadcode-report-test`), `precommit.sh` (CI's
+gating, and precommit's `deadcode-report` step) with `deadcode-report_test.sh` (its orchestration with stand-ins for go and deadcode; `make
+deadcode-report-test`), `chrome-tests.sh [--full]` (the `-tags chrome` tests, which no other step compiles: every Test of a file with that tag, a skip or a missing browser fails; without `--full` it leaves out the eleven matrix tests that take most of the time; CI's chrome-tests job and precommit's browser step), `precommit.sh` (CI's
 build-test checks before a commit; `make precommit` and `.githooks/pre-commit`; its steps run concurrently through `precommit-runner.sh`, `TEGO_PRECOMMIT_JOBS=1` serially, and `TEGO_PRECOMMIT_SINCE=<rev>` / `make precommit-affected BASE=<rev>` is the change-scoped in-between mode tools/affected selects for) with `precommit_test.sh` (precommit runs every self-test CI does; ci.yml gives each push its own concurrency group), `bpf-toolchain.sh` (fetches the pinned clang `make gen` compiles bpf/ with; CI's bpf-gen), `check-bpf-objects.sh` (`make gen` at a fixed path in a clean `git archive HEAD` copy must reproduce internal/bpf byte for byte, so a worktree's or other clang's BTF is caught; CI's bpf-gen, and precommit when bpf/ or internal/bpf/ differs from origin/main or TEGO_PRECOMMIT_BPF=1) and `--fix` (writes them), with `check-bpf-objects_test.sh` (a stand-in make; tampered, dropped and added files), `check-installer-repo.sh` (install.sh names
 the repository a release is built in; release.yml runs it before building), `check-skiplists_test.sh` (the
 self-test of `check-skiplists.sh`), `release_test.sh` (release.sh's push and tag refusals in a throwaway repository; `make release-test`), `bpf-toolchain_test.sh` (bpf-toolchain.sh's guard on the directory it empties), `tree-files.sh` (the tree's files for the copy into a KVM guest, minus tracked files deleted from the working tree) with `tree-files_test.sh`, `fd-churn.sh` (a package's tests under `-race`, repeated, beside a create/open/close/unlink churn in another process: each ADR 0023 package migration's gate) with `fd-churn_test.sh` (its negative control, `testdata/fdchurn`'s double close, fails under it within `-count=50`; CI's build-test), and `in-user-manager.sh` (a

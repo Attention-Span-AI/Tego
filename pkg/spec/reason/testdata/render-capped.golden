@@ -1,4 +1,5 @@
 Tego, this run's access control, refused 100 actions:
+Scope: whole run, including startup and background work; tool call and session attribution unavailable.
 - Tego refused open "/home/u/proj/000/ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"… (247 bytes): this run may not write to that path (rule fs.write[./out]).
 - Tego refused open "/home/u/proj/001/ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"… (247 bytes): this run may not write to that path (rule fs.write[./out]).
 - Tego refused open "/home/u/proj/002/ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"… (247 bytes): this run may not write to that path (rule fs.write[./out]).
@@ -11,5 +12,4 @@ Tego, this run's access control, refused 100 actions:
 - Tego refused open "/home/u/proj/009/ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"… (247 bytes): this run may not write to that path (rule fs.write[./out]).
 - Tego refused open "/home/u/proj/010/ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"… (247 bytes): this run may not write to that path (rule fs.write[./out]).
 - Tego refused open "/home/u/proj/011/ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"… (247 bytes): this run may not write to that path (rule fs.write[./out]).
-- Tego refused open "/home/u/proj/012/ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"… (247 bytes): this run may not write to that path (rule fs.write[./out]).
-87 more not listed.
+88 more not listed.

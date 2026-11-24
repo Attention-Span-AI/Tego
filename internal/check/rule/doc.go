@@ -11,7 +11,11 @@
 //     removed from one of eight lists, or "never" on an ask entry. It refuses an entry the file does not spell, the
 //     first entry of an absent net: section or exec.allow list, and an entry that would break its line, and it says
 //     each change in words (Asks you before it reads X → Can never read X) with Narrows, Widens or Mixed, from a
-//     lexical model of the file (direction.go) that a page confirms a widening by.
+//     lexical model of the file (direction.go) that a page confirms a widening by. The dashboard's rule service
+//     (internal/control/rules) does not use that word as the direction: it compiles both texts and takes the compiled
+//     comparison's (ADR 0156, 2026-11-21); this model words the sentences and chooses the lists' live blocks, and
+//     is the direction only where a test replaces the compiler. The event page's picked change (internal/control/rules
+//     ActOn) takes the compiled comparison's direction as well.
 //
 // The edit is made on the YAML node tree, so the file's comments and key order are kept; where the change is one
 // list item added to or removed from a block list the text is spliced line by line and every other byte is kept

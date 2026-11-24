@@ -19,7 +19,6 @@ package web
 // Without JavaScript the same addresses render the filtered pages (TestViewLinksWithoutJS, a plain GET).
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -56,7 +55,7 @@ func placeChrome(t *testing.T) *cdp {
 		"--no-default-browser-check", "--disable-gpu", "--disable-extensions", "--disable-sync",
 		"--disable-background-networking", "--disable-component-update", "about:blank")
 	cmd.ExtraFiles = []*os.File{cmdR, outW}
-	var stderr bytes.Buffer
+	var stderr chromeOutput
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -156,7 +155,7 @@ func TestKeepPlaceInChrome(t *testing.T) {
 	if rn.eval(t, `document.activeElement === `+chip("Ended")) != "true" {
 		t.Error("focus left the Ended chip")
 	}
-	rn.until(t, "the new view said", `(document.getElementById("nav-say") || {}).textContent === "Ended 61"`)
+	rn.until(t, "the new view said", `(document.getElementById("nav-say") || {}).textContent === "Ended 61. 61 runs · All time"`)
 	if rn.eval(t, `document.querySelectorAll(".live-new").length`) != "0" {
 		t.Error("the view's rows were marked new")
 	}
@@ -200,6 +199,7 @@ func TestKeepPlaceInChrome(t *testing.T) {
 	rn.until(t, "its line in a toast", `Array.prototype.some.call(document.querySelectorAll(".toast"), function (x) { return x.textContent.indexOf("Not done") === 0; })`)
 	rn.eval(t, `window.__tegoMark = "kept"`)
 
+	c.closeTarget(t, rn.target)
 	// 4. Logs, already narrowed to curl's lines (its query chip is there): a facet in the folded filters, with the
 	// window scrolled to it. The facet adds a second chip beside the first, so nothing above it changes height.
 	root, _ := progFixture(t)
@@ -209,7 +209,7 @@ func TestKeepPlaceInChrome(t *testing.T) {
 	lg.until(t, "loaded", `document.readyState === "complete" && document.documentElement.classList.contains("lq-js")`)
 	lg.eval(t, `window.__tegoMark = "kept"`)
 	allRows := lg.eval(t, `document.querySelectorAll("#lq-rows tr.lq-r").length`)
-	lg.eval(t, `document.querySelector("details.fsheet").open = true; document.querySelector("details.lq-adv").open = true`)
+	lg.eval(t, `document.querySelector("details.lq-adv").open = true`)
 	facet := `Array.prototype.find.call(document.querySelectorAll(".lq-facets a.lq-add"), function (a) { return a.querySelector(".lq-l").textContent === "Allowed"; })`
 	if lg.eval(t, `!!`+facet) != "true" {
 		t.Fatalf("no Allowed facet: %s", lg.eval(t, `document.querySelector(".lq-facets").textContent`))
@@ -226,10 +226,10 @@ func TestKeepPlaceInChrome(t *testing.T) {
 	kept(lg, "after the facet")
 	near(t, lg, "Logs scrollY after the facet", `window.scrollY`, y0)
 	near(t, lg, "the facet's place in the window", `document.activeElement.getBoundingClientRect().top`, ftop)
-	if lg.eval(t, `document.querySelector("details.fsheet").open && document.querySelector("details.lq-adv").open`) != "true" {
+	if lg.eval(t, `document.querySelector("details.lq-adv").open`) != "true" {
 		t.Error("the filters folded away after the facet")
 	}
-	lg.until(t, "the facet and the rows' count said", `(document.getElementById("nav-say") || {}).textContent === "Allowed 151. 100 of 151 rows shown"`)
+	lg.until(t, "the facet and the rows' count said", `(document.getElementById("nav-say") || {}).textContent === "Allowed 151. 151 events · All time. 100 of 151 rows shown"`)
 	// The rows follow the new view: Older lines and the live tail are the new view's, with one set of listeners.
 	if lg.eval(t, `!!document.querySelector('[data-live="r-logs-rows"]')`) != "false" {
 		t.Error("the new view's rows region went back to live.js")
@@ -252,6 +252,7 @@ func TestKeepPlaceInChrome(t *testing.T) {
 	if !strings.Contains(lg.eval(t, `document.title`), "Logs") {
 		t.Error("the title lost the page's name")
 	}
+	c.closeTarget(t, lg.target)
 	// 7. A run page's tabs: Receipt in place (with its own stylesheet), Back to the timeline, which still follows the
 	// run: a new line comes in at the top, with one stream as before.
 	// Each EventSource the page makes is counted from before its scripts run.
@@ -260,7 +261,7 @@ func TestKeepPlaceInChrome(t *testing.T) {
 	rp.c.call(t, rp.session, "Page.enable", map[string]any{})
 	rp.c.call(t, rp.session, "Page.addScriptToEvaluateOnNewDocument", map[string]any{"source": `(function () { var E = window.EventSource; window.__es = 0;
 		window.EventSource = function (u, o) { window.__es++; return new E(u, o); }; window.EventSource.prototype = E.prototype; })()`})
-	rp.c.call(t, rp.session, "Page.navigate", map[string]any{"url": "http://" + addr + "/runs/" + harmRun})
+	rp.c.call(t, rp.session, "Page.navigate", map[string]any{"url": "http://" + addr + "/runs/" + harmRun + "?t=tok123"})
 	rp.until(t, "loaded", `document.readyState === "complete" && !!document.querySelector("#tl-rows[data-rows]")`)
 	rp.eval(t, `window.__tegoMark = "kept"`)
 	tabLink := func(word string) string {
@@ -275,7 +276,12 @@ func TestKeepPlaceInChrome(t *testing.T) {
 	rp.eval(t, `history.back()`)
 	rp.until(t, "Back to the timeline", `location.pathname === "/runs/`+harmRun+`" && !!document.querySelector("#tl-rows[data-rows]")`)
 	appendLine(t, root1, harmRun, line(harmRun, "demo-harm", 7, time.Date(2026, 10, 25, 12, 1, 7, 0, time.UTC), "fs", `"verdict":"allow","op":"open","path":"/p/after-the-tab.txt","flags":0`))
-	rp.until(t, "the new line at the top of the timeline", `/after-the-tab/.test(document.querySelector("#tl-rows").firstElementChild.textContent)`)
+	// The new line carries no model step: the first row of the timeline, under its group's header ("not tied") alone.
+	rp.until(t, "the new line at the top of the timeline", `(function () {
+		var top = document.querySelector("#tl-rows > .tl"), head = top.previousElementSibling;
+		return /after-the-tab/.test(top.textContent) && !!head && head.classList.contains("tl-step") && /^\s*Not tied to a model step/.test(head.textContent) &&
+			head === document.getElementById("tl-rows").firstElementChild;
+	})()`)
 	if n := rp.eval(t, `window.__es`); n != "1" { // one stream since the page loaded: a view change opens none
 		t.Errorf("the page opened %s event streams, want 1", n)
 	}
@@ -283,13 +289,14 @@ func TestKeepPlaceInChrome(t *testing.T) {
 
 	// 7b. A keyboard's Deny (posted in the background; with no broker it fails and the card stays): the focus comes
 	// back to the button its sending disabled, not to nothing.
-	rp.eval(t, `(function () { var b = document.querySelector('#ask-7 button[value="deny"]'); b.focus(); document.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true})); b.form.requestSubmit(b); })()`)
+	rp.eval(t, `(function () { var b = document.querySelector('#ask-banner button[value="deny"]'); b.focus(); document.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true})); b.form.requestSubmit(b); })()`)
 	rp.until(t, "the failed Deny's toast", `!!document.querySelector(".toast-err") && document.querySelector(".toast-err").textContent.indexOf("Not done") >= 0`)
-	rp.until(t, "the focus back on Deny", `document.activeElement === document.querySelector('#ask-7 button[value="deny"]')`)
+	rp.until(t, "the focus back on Deny", `document.activeElement === document.querySelector('#ask-banner button[value="deny"]')`)
 	kept(rp, "after the keyboard's Deny")
 
+	c.closeTarget(t, rp.target)
 	// 8. Compare's picks: another run B, compared in place; the form shows the pair the page compares.
-	cp := c.open(t, "compare", "http://"+addr+"/compare?a="+cleanRun+"&b="+harmRun)
+	cp := c.open(t, "compare", "http://"+addr+"/compare?a="+cleanRun+"&b="+harmRun+"&t=tok123")
 	cp.c.call(t, cp.session, "Emulation.setDeviceMetricsOverride", map[string]any{"width": 1440, "height": 900, "deviceScaleFactor": 1, "mobile": false})
 	cp.until(t, "loaded", `document.readyState === "complete" && !!document.querySelector("main .cmp-form")`)
 	cp.eval(t, `window.__tegoMark = "kept"`)
@@ -298,6 +305,7 @@ func TestKeepPlaceInChrome(t *testing.T) {
 	cp.until(t, "the new pair", `location.pathname === "/compare" && location.search.indexOf("b=`+other+`") >= 0 && document.querySelector('main .cmp-form select[name="b"]').value === "`+other+`" && document.querySelector("main").textContent.indexOf("demo-many") >= 0`)
 	kept(cp, "after Compare")
 
+	c.closeTarget(t, cp.target)
 	// 9. The Rules page's picker: another run of the same rules file, shown in place.
 	rf := newRulesFix(t)
 	_, raddr, _ := liveServer(t, rf.root, 10*time.Second, 30*time.Second)
@@ -311,5 +319,6 @@ func TestKeepPlaceInChrome(t *testing.T) {
 	ru.until(t, "the other run's rules", `location.search.indexOf("run=`+rulesRunB+`") >= 0 && document.querySelector('main .rules-pick select[name="run"]').value === "`+rulesRunB+`" && document.querySelector("main").textContent.indexOf("Contract · rules-demo") >= 0`)
 	kept(ru, "after the Rules picker")
 
+	c.closeTarget(t, ru.target)
 	fmt.Println("keep place in chrome: Runs chips and a Logs facet and search in place, at the same scroll, Back and Forward at theirs; no reload")
 }

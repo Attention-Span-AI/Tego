@@ -39,6 +39,8 @@ var contractMergeRows = []mergeRow{
 	keyRow("name", classOwn),
 	// revision names the version of the top-level file a run compiled; a profile's would name another file's.
 	keyRow("revision", classRefusedInProfile),
+	// History describes this top-level proposal, never a profile's.
+	keyRow("learn", classRefusedInProfile),
 	keyRow("extends", classOwn),
 	keyRow("command", classContractWins),
 

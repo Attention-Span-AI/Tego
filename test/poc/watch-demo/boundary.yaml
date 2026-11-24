@@ -3,7 +3,7 @@
 # The boundary the 'tego watch' demo holds agent.sh to (README.md). run.sh fills in @TIMEOUT@. Every line is a
 # decision about ANY agent, never about what this one is.
 version: 0
-name: demo-cage
+name: demo-boundary
 command: ["bash", "agent.sh"]
 record: full
 fs:

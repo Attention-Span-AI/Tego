@@ -20,6 +20,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/attention-span-ai/tego/internal/ledger"
+	"github.com/attention-span-ai/tego/pkg/spec/askproto"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -30,7 +31,7 @@ type Filter struct {
 	Sources  []record.Source  // producers to keep
 	Verdicts []record.Verdict // allow, ask, refused, observed
 	Rules    []string         // the declared entry an action matched, or "unmatched"
-	Steps    []int            // model steps, as attributed
+	Steps    []int            // model steps (record.Event.ModelStep); -1 is the lines tied to none
 	Since    time.Time        // wall-clock lower bound, inclusive
 	Until    time.Time        // wall-clock upper bound, exclusive
 	Limit    int              // at most this many events; 0 is no limit
@@ -51,9 +52,9 @@ func (f Filter) Match(e *record.Event) bool {
 		return false
 	}
 	if len(f.Steps) > 0 {
-		step := -1
-		if e.Attr != nil {
-			step = e.Attr.Step
+		step, tied := e.ModelStep() // a line tied to no step is -1, which --step -1 asks for
+		if !tied {
+			step = -1
 		}
 		if !slices.Contains(f.Steps, step) {
 			return false
@@ -217,6 +218,44 @@ func TableOf(ctx context.Context, w io.Writer, r *ledger.Reader, entries iter.Se
 	n, err := writeTable(ctx, newTable(bw), r.Dir(), entries, f)
 	// Flush what was rendered even when iteration failed: the rows before a corrupt line were correct, and
 	// §7 asks for the position of the bad line, not for the good output to be thrown away.
+	if ferr := bw.Flush(); err == nil {
+		err = ferr
+	}
+	return n, err
+}
+
+// CellsOf writes the matching events among entries, which r read, one line each, as the table's own cells of four
+// columns separated by one tab: seq, verdict, rule and detail (verdictCell, ruleCell and Summary, each through
+// record.Printable). It is the view for a script that wants what `tego events` shows, cell by cell, without a copy of
+// how the table is made: every control character is escaped by Printable, a tab included, so a tab or a line break in a
+// cell is the two characters \t or \n, never the separator, and a row is exactly one line of exactly four cells. The
+// time, kind and source columns are left out (the stored lines of --json hold them); a header is not written.
+func CellsOf(ctx context.Context, w io.Writer, r *ledger.Reader, entries iter.Seq2[ledger.Entry, error], f Filter) (int, error) {
+	bw := bufio.NewWriter(w)
+	n, read := 0, 0
+	var err error
+	for en, ierr := range entries {
+		if ierr != nil {
+			err = atPath(r.Dir(), ierr)
+			break
+		}
+		if read++; read%ctxEvery == 0 && ctx.Err() != nil {
+			err = ctx.Err()
+			break
+		}
+		e := en.Event
+		if !f.Match(e) {
+			continue
+		}
+		n++
+		if _, err = bw.WriteString(strconv.FormatUint(e.Seq, 10) + "\t" + record.Printable(verdictCell(e)) + "\t" +
+			record.Printable(ruleCell(e)) + "\t" + record.Printable(Summary(e)) + "\n"); err != nil {
+			break
+		}
+		if f.Limit > 0 && n >= f.Limit {
+			break
+		}
+	}
 	if ferr := bw.Flush(); err == nil {
 		err = ferr
 	}
@@ -592,7 +631,7 @@ func Summary(e *record.Event) string {
 			s = "not approved"
 		}
 		if by := str("by"); by != "" {
-			s += " by " + by
+			s += " by " + askproto.ByWords(by)
 		}
 		if a := num("after_s"); a != "" {
 			s += " after " + a + "s"

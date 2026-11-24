@@ -1,0 +1,83 @@
+{
+  "id": "s21-other-tool-empty-arguments",
+  "group": "scope",
+  "pins": [
+    "A019",
+    "B022"
+  ],
+  "why": "A019: registered get_service_info with object arguments outside the refund schema returns none, not adapter.missing.",
+  "bundle": {
+    "version": 1,
+    "adapter": "square.refund.v1",
+    "server": "square",
+    "rules": [
+      {
+        "id": "cap",
+        "kind": "per_call",
+        "currency": "USD",
+        "limit": "10000"
+      },
+      {
+        "id": "currencies",
+        "kind": "currencies",
+        "codes": [
+          "USD"
+        ]
+      }
+    ]
+  },
+  "bundle_wire_hex": null,
+  "request": {
+    "adapter": "square.refund.v1",
+    "call_hex": "7b226964223a312c226a736f6e727063223a22322e30222c226d6574686f64223a22746f6f6c732f63616c6c222c22706172616d73223a7b22617267756d656e7473223a7b7d2c226e616d65223a226765745f736572766963655f696e666f227d7d",
+    "contract_bundle_digest": "762086c3104e609f82fb5c5bbb9dc077417803897248181a048adf6b74c7b6f9",
+    "contract_verdict": "allow",
+    "evaluator_status": "ready",
+    "request_id": "1",
+    "run_id": "run1",
+    "server": "square",
+    "state": {
+      "bundle_digest": "762086c3104e609f82fb5c5bbb9dc077417803897248181a048adf6b74c7b6f9",
+      "epoch": "e1",
+      "revision": "0",
+      "run_id": "run1",
+      "seen_keys": [],
+      "server": "square",
+      "status": "ready",
+      "totals": []
+    },
+    "tool_source": "contract",
+    "topology": "exclusive",
+    "version": 1
+  },
+  "request_wire_hex": null,
+  "expected": {
+    "adapter": "square.refund.v1",
+    "bundle_digest": "762086c3104e609f82fb5c5bbb9dc077417803897248181a048adf6b74c7b6f9",
+    "business": {
+      "verdict": "none",
+      "rule_id": "",
+      "condition": "not_applicable"
+    },
+    "asks": [],
+    "call_digest": "41cfac5b306a762a2e354e0b031fe8002ec7423de4434be4d0495c9697403df7",
+    "facts": null,
+    "final": {
+      "verdict": "allow",
+      "source": "contract",
+      "condition": "contract.allow"
+    },
+    "record": {
+      "coverage": "none",
+      "delivery": "not_attempted",
+      "remote_outcome": "unknown",
+      "required": true,
+      "stage": "evaluated"
+    },
+    "request_id": "1",
+    "reservation": null,
+    "run_id": "run1",
+    "server": "square",
+    "version": 1
+  }
+}

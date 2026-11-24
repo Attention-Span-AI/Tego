@@ -4,11 +4,11 @@ package rulefile
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -17,6 +17,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/platform/sys"
+	"github.com/attention-span-ai/tego/internal/registry"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
@@ -40,6 +41,13 @@ type Guard struct {
 	// Refuse are more directories no contract may be under: tego's home (~/.tego) as the passwd database and $HOME
 	// name it (DefaultGuard).
 	Refuse []string
+	// NoSymlinks refuses linked directory components at the final descriptor open. Dashboard
+	// references already name real paths; resolving them again could redirect a later save.
+	NoSymlinks bool
+	// ExpectedDirectory binds writes to the directory reviewed by the caller.
+	ExpectedDirectory *registry.DirectoryIdentity
+	// BeforePublish repeats the owning service review check after the temporary file is synced.
+	BeforePublish func() error
 }
 
 // DefaultGuard is the guard for the runs under ledgerRoot: it refuses that root and tego's home, ~/.tego, both as the
@@ -66,6 +74,9 @@ type File struct {
 	// SHA256 is the hex sha256 of Text: the base a change carries so that it lands only on the text it was made from.
 	SHA256 string
 	Mode   os.FileMode
+	// Identity and DirectoryIdentity are read from the same descriptors as Text.
+	Identity          registry.FileIdentity
+	DirectoryIdentity registry.DirectoryIdentity
 }
 
 // Sum is the hex sha256 of b, the form a base, a journal line and a blob name use.
@@ -111,22 +122,27 @@ func Read(path string, g Guard) (*File, error) {
 // Every later open, rename and sync is relative to dir, so a directory swapped for a symlink after the pin changes
 // nothing this package touches.
 type pinned struct {
-	dir  *sys.FD
-	path string // the resolved absolute path, for messages and the journal
-	name string // the file's name in dir
+	dir           *sys.FD
+	path          string // the resolved absolute path, for messages and the journal
+	name          string // the file's name in dir
+	beforePublish func() error
 }
 
 // pin resolves path once (so a home reached through a symlink still works), refuses one under the ledger root or a
-// Refuse directory, opens the resolved directory with RESOLVE_NO_SYMLINKS and checks it: owned by this user or root,
+// Refuse directory, opens every resolved directory component without following links and checks it: owned by this user or root,
 // and not writable by others unless sticky.
 func pin(path string, g Guard) (*pinned, error) {
 	if !filepath.IsAbs(path) {
 		return nil, fmt.Errorf("%w: %s is not an absolute path", ErrGuard, path)
 	}
 	path = filepath.Clean(path)
-	dir, err := filepath.EvalSymlinks(filepath.Dir(path))
-	if err != nil {
-		return nil, err
+	dir := filepath.Dir(path)
+	if !g.NoSymlinks {
+		var err error
+		dir, err = filepath.EvalSymlinks(dir)
+		if err != nil {
+			return nil, err
+		}
 	}
 	name := filepath.Base(path)
 	if name == "." || name == ".." || name == "/" {
@@ -147,8 +163,11 @@ func pin(path string, g Guard) (*pinned, error) {
 	}
 	d, err := openDir(dir)
 	if err != nil {
-		if errors.Is(err, unix.ELOOP) || errors.Is(err, unix.EXDEV) {
-			return nil, fmt.Errorf("%w: a directory of %s became a symlink after it was resolved", ErrGuard, full)
+		if errors.Is(err, unix.ELOOP) || errors.Is(err, unix.EXDEV) || errors.Is(err, unix.ENOTDIR) {
+			if g.NoSymlinks {
+				return nil, fmt.Errorf("%w: the contract's folder contains a symbolic link or a non-directory; use its real path", ErrGuard)
+			}
+			return nil, fmt.Errorf("%w: a directory of %s became a symlink or a non-directory after it was resolved", ErrGuard, full)
 		}
 		return nil, fmt.Errorf("open %s: %w", dir, err)
 	}
@@ -169,22 +188,24 @@ func pin(path string, g Guard) (*pinned, error) {
 		_ = d.Close() // the refusal is the error to report
 		return nil, err
 	}
-	return &pinned{dir: d, path: full, name: name}, nil
+	identity := registry.DirectoryIdentity{Device: uint64(st.Dev), Inode: st.Ino}
+	if g.ExpectedDirectory != nil && identity != *g.ExpectedDirectory {
+		_ = d.Close() // The identity refusal is the error to report.
+		return nil, fmt.Errorf("%w: %w", ErrStale, registry.ErrFileChanged)
+	}
+	return &pinned{dir: d, path: full, name: name, beforePublish: g.BeforePublish}, nil
 }
 
 func (p *pinned) close() { _ = p.dir.Close() } // read-only and relative opens only: nothing to flush
 
 // openDir opens dir for reading (so it can be fsync'ed) with no symlink followed on the way.
 func openDir(dir string) (*sys.FD, error) {
-	for {
-		d, err := sys.Own(unix.Openat2(unix.AT_FDCWD, dir, &unix.OpenHow{
-			Flags:   unix.O_RDONLY | unix.O_DIRECTORY | unix.O_CLOEXEC,
-			Resolve: unix.RESOLVE_NO_SYMLINKS,
-		}))
-		if !errors.Is(err, unix.EINTR) && !errors.Is(err, unix.EAGAIN) {
-			return d, err
-		}
+	d, err := registry.OpenDirectory(dir, false)
+	if err != nil {
+		return nil, err
 	}
+	defer func() { _ = d.Close() }() // The returned duplicate keeps the same directory pinned.
+	return d.Dup()
 }
 
 // read opens the file in the pinned directory with O_NOFOLLOW and checks what fstat says of the descriptor it read:
@@ -212,14 +233,21 @@ func (p *pinned) read() (*File, error) {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }() // read-only
-	b, err := io.ReadAll(io.LimitReader(f, agent.MaxContractSize+1))
+	b, err := config.ReadRulesFile(context.Background(), f, p.path, agent.MaxContractSize+1)
 	if err != nil {
 		return nil, err
 	}
 	if len(b) > agent.MaxContractSize {
 		return nil, fmt.Errorf("%w: %s grew past %d bytes while it was read", ErrGuard, p.path, agent.MaxContractSize)
 	}
-	return &File{Path: p.path, Text: b, SHA256: Sum(b), Mode: os.FileMode(st.Mode & 0o777)}, nil
+	var ds unix.Stat_t
+	if err := p.dir.Fstat(&ds); err != nil {
+		return nil, err
+	}
+	sum := Sum(b)
+	return &File{Path: p.path, Text: b, SHA256: sum, Mode: os.FileMode(st.Mode & 0o777),
+		Identity:          registry.FileIdentity{Device: uint64(st.Dev), Inode: st.Ino, SHA256: sum},
+		DirectoryIdentity: registry.DirectoryIdentity{Device: uint64(ds.Dev), Inode: ds.Ino}}, nil
 }
 
 // fileOK is the file checks of read.

@@ -73,7 +73,7 @@ func BenchmarkEventsLast(b *testing.B) {
 				b.ReportAllocs()
 				for b.Loop() {
 					var out bytes.Buffer
-					if code := runEvents(context.Background(), dir, f, true, c.name == "json", &out, io.Discard); code != 0 || out.Len() == 0 {
+					if code := runEvents(context.Background(), dir, f, true, c.name == "json", false, &out, io.Discard); code != 0 || out.Len() == 0 {
 						b.Fatalf("exit %d, %d bytes", code, out.Len())
 					}
 				}

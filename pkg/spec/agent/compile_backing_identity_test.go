@@ -425,3 +425,43 @@ func TestCompileNestedUnplacedFileAlias(t *testing.T) {
 		})
 	}
 }
+
+func TestCompileUnplacedMemoryFileBindWarns(t *testing.T) {
+	for _, fs := range memoryFilesystemTypes {
+		t.Run(fs, func(t *testing.T) {
+			f := newFixture(t)
+			point := filepath.Join(f.project, "out", "bound")
+			f.file(point, "ordinary", 0644)
+			m := mount{id: "9000", parent: "1", dev: "0:90", root: "/storage/file", point: point, fstype: fs}
+			mt := &mountTable{probed: true, mounts: []mount{m, {id: "1", parent: "0", dev: "0:73", root: "/", point: "/", fstype: "overlay"}}}
+			mt.order()
+			old := statBackingFile
+			t.Cleanup(func() { statBackingFile = old })
+			statBackingFile = func(fd int, p string, flags, mask int, st *unix.Statx_t) error {
+				if p == point {
+					return unix.EIO
+				}
+				return old(fd, p, flags, mask, st)
+			}
+			var k compiler
+			k.warnOverlayBacking(mt, ownNames{absent: []string{"/absent/lower"}}, Pos{}, point, point)
+			if got := backingCount(k.ds.list); got != 1 {
+				t.Errorf("unverified file bind: got %d warnings, want 1: %s", got, render(k.ds.list))
+			}
+		})
+	}
+}
+
+func TestUnplacedMemoryFileWarningControlsMountIdentity(t *testing.T) {
+	old := statBackingFile
+	t.Cleanup(func() { statBackingFile = old })
+	statBackingFile = func(fd int, p string, flags, mask int, st *unix.Statx_t) error {
+		if err := unix.Statx(fd, p, flags, mask, st); err != nil {
+			return err
+		}
+		st.Mnt_id = 9000
+		st.Mask |= unix.STATX_MNT_ID
+		return nil
+	}
+	TestCompileUnplacedMemoryFileBindWarns(t)
+}

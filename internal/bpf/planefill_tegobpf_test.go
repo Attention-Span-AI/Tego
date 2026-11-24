@@ -100,7 +100,7 @@ func TestPlaneFillObjectShape(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Load %s: %v", plane, err)
 			}
-			for _, name := range []string{MapPlaneRows, MapPlaneExecRows, MapPlaneListenRows} {
+			for _, name := range []string{MapPlaneRows, MapPlaneExecRows, MapPlaneListenRows, MapPlaneBlocks} {
 				f, p := spec.Maps[name], pspec.Maps[name]
 				if f == nil || p == nil || f.Type != p.Type || f.KeySize != p.KeySize || f.ValueSize != p.ValueSize ||
 					f.MaxEntries != p.MaxEntries || f.Flags != p.Flags || f.InnerMap == nil || p.InnerMap == nil ||

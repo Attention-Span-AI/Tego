@@ -1,0 +1,83 @@
+{
+  "id": "l21-members-over-limit",
+  "group": "limits",
+  "pins": [
+    "W016",
+    "B049"
+  ],
+  "why": "W016: 65 members refuses at the parser bound.",
+  "bundle": {
+    "version": 1,
+    "adapter": "square.refund.v1",
+    "server": "square",
+    "rules": [
+      {
+        "id": "cap",
+        "kind": "per_call",
+        "currency": "USD",
+        "limit": "10000"
+      },
+      {
+        "id": "currencies",
+        "kind": "currencies",
+        "codes": [
+          "USD"
+        ]
+      }
+    ]
+  },
+  "bundle_wire_hex": null,
+  "request": {
+    "adapter": "square.refund.v1",
+    "call_hex": "7b226964223a312c226a736f6e727063223a22322e30222c226d6574686f64223a22746f6f6c732f63616c6c222c22706172616d73223a7b22617267756d656e7473223a7b226d6574686f64223a227061796d656e74222c2272657175657374223a7b22616d6f756e745f6d6f6e6579223a7b22616d6f756e74223a3130302c2263757272656e6379223a22555344227d2c226964656d706f74656e63795f6b6579223a226b31222c227061796d656e745f6964223a227031222c22783030223a302c22783031223a302c22783032223a302c22783033223a302c22783034223a302c22783035223a302c22783036223a302c22783037223a302c22783038223a302c22783039223a302c22783130223a302c22783131223a302c22783132223a302c22783133223a302c22783134223a302c22783135223a302c22783136223a302c22783137223a302c22783138223a302c22783139223a302c22783230223a302c22783231223a302c22783232223a302c22783233223a302c22783234223a302c22783235223a302c22783236223a302c22783237223a302c22783238223a302c22783239223a302c22783330223a302c22783331223a302c22783332223a302c22783333223a302c22783334223a302c22783335223a302c22783336223a302c22783337223a302c22783338223a302c22783339223a302c22783430223a302c22783431223a302c22783432223a302c22783433223a302c22783434223a302c22783435223a302c22783436223a302c22783437223a302c22783438223a302c22783439223a302c22783530223a302c22783531223a302c22783532223a302c22783533223a302c22783534223a302c22783535223a302c22783536223a302c22783537223a302c22783538223a302c22783539223a302c22783630223a302c22783631223a307d2c2273657276696365223a22726566756e6473227d2c226e616d65223a226d616b655f6170695f72657175657374227d7d",
+    "contract_bundle_digest": "762086c3104e609f82fb5c5bbb9dc077417803897248181a048adf6b74c7b6f9",
+    "contract_verdict": "allow",
+    "evaluator_status": "ready",
+    "request_id": "1",
+    "run_id": "run1",
+    "server": "square",
+    "state": {
+      "bundle_digest": "762086c3104e609f82fb5c5bbb9dc077417803897248181a048adf6b74c7b6f9",
+      "epoch": "e1",
+      "revision": "0",
+      "run_id": "run1",
+      "seen_keys": [],
+      "server": "square",
+      "status": "ready",
+      "totals": []
+    },
+    "tool_source": "contract",
+    "topology": "exclusive",
+    "version": 1
+  },
+  "request_wire_hex": null,
+  "expected": {
+    "adapter": "square.refund.v1",
+    "bundle_digest": "762086c3104e609f82fb5c5bbb9dc077417803897248181a048adf6b74c7b6f9",
+    "business": {
+      "verdict": "deny",
+      "rule_id": "$adapter",
+      "condition": "input.limit"
+    },
+    "asks": [],
+    "call_digest": "2fa41bf0485293c86ea47aa466566cb37118813a283e45383033fa40325f6acd",
+    "facts": null,
+    "final": {
+      "verdict": "deny",
+      "source": "business",
+      "condition": "input.limit"
+    },
+    "record": {
+      "coverage": "unknown",
+      "delivery": "not_attempted",
+      "remote_outcome": "unknown",
+      "required": true,
+      "stage": "evaluated"
+    },
+    "request_id": "1",
+    "reservation": null,
+    "run_id": "run1",
+    "server": "square",
+    "version": 1
+  }
+}

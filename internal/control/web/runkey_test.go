@@ -3,6 +3,7 @@
 package web
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -163,5 +164,49 @@ func TestRegionUnchanged204Reference(t *testing.T) {
 	appendLine(t, root, harmRun, line(harmRun, "demo-harm", 7, now, "fs", `"verdict":"allow","op":"open","path":"/p/a.txt","flags":0`))
 	if got := regionAsk(t, s, c, page, have); got != http.StatusOK {
 		t.Errorf("its reference run moved: %d, want 200", got)
+	}
+}
+
+// TestRegionAnswerFollowsABlocksTimeLimit: A live block's time limit passes with the clock, no ledger
+// line and no file change, so the key (which has no clock, because a duration ticks in the browser) answered 204
+// "nothing moved" for a page still showing the block in force. The key now holds each timed block's state at the page's
+// clock (in force, unblocked for now, past its limit on this clock, ended by the launcher's line) and the words of its
+// limit ("in 10 minutes"), so the answer when they move is the handler's, and then 204 again.
+func TestRegionAnswerFollowsABlocksTimeLimit(t *testing.T) {
+	s, c, dir := liveFenceServer(t)
+	now := time.Now()
+	s.cfg.Now = func() time.Time { return now }
+	by := "uid:1000 pid:9 cli"
+	limit := now.Add(10 * time.Minute)
+	if _, err := liveblock.Update(context.Background(), dir, adjRun, func(o *liveblock.Overlay) (bool, error) {
+		_, _, err := o.AddUntil(liveblock.KindExec, "/usr/bin/curl", by, now.Add(-time.Hour), limit)
+		return err == nil, err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	page := "/runs/" + adjRun
+	have := regionsIn(do(s, "GET", page, "127.0.0.1:8484", c).Body.String())
+	regionAsk(t, s, c, page, have)
+	if got := regionAsk(t, s, c, page, have); got != http.StatusNoContent {
+		t.Fatalf("a block inside its limit, nothing moved: %d, want 204", got)
+	}
+	now = now.Add(5 * time.Minute) // still inside the limit: the words "in 10 minutes" roll over to "in 5 minutes"
+	if got := regionAsk(t, s, c, page, have); got != http.StatusOK {
+		t.Fatalf("five minutes later, inside the limit: %d, want 200 (the block's words moved, so a refreshed region is never stale)", got)
+	}
+	if got := regionAsk(t, s, c, page, have); got != http.StatusNoContent {
+		t.Fatalf("the same minute again: %d, want 204", got)
+	}
+	now = limit.Add(time.Second)
+	if got := regionAsk(t, s, c, page, have); got != http.StatusOK {
+		t.Fatalf("after the block's limit: %d, want 200 (the page says its limit passed on this clock)", got)
+	}
+	if got := regionAsk(t, s, c, page, have); got != http.StatusNoContent {
+		t.Errorf("after the answer, nothing moved: %d, want 204", got)
+	}
+	// The launcher's line ends it: the page shows it ended.
+	appendLine(t, s.cfg.Ledger, adjRun, strings.ReplaceAll(limitGapLine(2, limit.Add(time.Second), "live-block-expired", "exec", "/usr/bin/curl", 1, limit), harmRun, adjRun))
+	if got := regionAsk(t, s, c, page, have); got != http.StatusOK {
+		t.Errorf("after the launcher recorded the end: %d, want 200 (the page shows it ended)", got)
 	}
 }

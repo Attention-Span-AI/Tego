@@ -62,15 +62,27 @@ func banned(pkgs, prefixes []string) []string {
 
 // TestEngineLinksNoControl: ./cmd/tego links nothing of the dashboard: no internal/control/**.
 func TestEngineLinksNoControl(t *testing.T) {
-	ban := []string{mod + "internal/control"}
 	for _, tags := range tagSets {
 		pkgs := deps(t, tags, "./cmd/tego")
-		if hit := banned(pkgs, ban); len(hit) > 0 {
+		if hit := engineLinks(pkgs); len(hit) > 0 {
 			t.Errorf("tags %q: ./cmd/tego links %v", tags, hit)
 		}
 		if !slices.Contains(pkgs, mod+"internal/handoff") || !slices.Contains(pkgs, mod+"internal/runtime") {
 			t.Fatalf("tags %q: ./cmd/tego's deps lack internal/handoff or internal/runtime; the gate reads the wrong build", tags)
 		}
+	}
+}
+
+// engineLinks preserves ADR 0100's whole-tree ban, including read projections.
+func engineLinks(pkgs []string) []string {
+	return banned(pkgs, []string{mod + "internal/control"})
+}
+
+func TestContractsLinkBoundary(t *testing.T) {
+	pkgs := []string{mod + "internal/control/ledgerview", mod + "internal/control/linewords",
+		mod + "internal/control/ledgerview/server", mod + "internal/control/api", mod + "internal/control/web", mod + "internal/control/cli"}
+	if hit := engineLinks(pkgs); !slices.Equal(hit, pkgs) {
+		t.Fatalf("engine must forbid every control package, including projections: got %v, want %v", hit, pkgs)
 	}
 }
 

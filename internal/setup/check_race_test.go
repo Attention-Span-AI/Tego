@@ -3,6 +3,7 @@
 package setup
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,6 +12,11 @@ import (
 
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
+
+// Create is the context-free convenience used only by these filesystem race fixtures.
+func Create(r *Result, dir string) ([]string, error) {
+	return CreateContext(context.Background(), r, dir)
+}
 
 // TestApplyRefusesALinkSwappedInAfterTheCheck: Draft checks the project and names the folders to make; a process of
 // the same uid then swaps a path component for a symbolic link to a folder outside the project, before Apply. Apply

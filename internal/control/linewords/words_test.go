@@ -121,6 +121,7 @@ func TestLabels(t *testing.T) {
 		{"argv_truncated", "Command line cut", true},
 		{"resources.memory_peak", "Peak memory", true},
 		{"live_block.by", "By", true},
+		{"live_block.note", "Note given with the lift", true},
 		{"capabilities.fs.deny_read", "What this protection level can do: fs.deny_read", true},
 		{"headers.user-agent", "Headers: user-agent", true},
 		{"gate_rule", "Gate rule", true},
@@ -166,6 +167,7 @@ func TestValues(t *testing.T) {
 		{"best_effort", `["fs.deny_write","net.unix"]`, "fs.deny_write, net.unix", false},
 		{"approved", `true`, "yes", true},
 		{"bpf_hash", `""`, "empty", true},
+		{"live_block.note", `"ticket 4411"`, "ticket 4411", false},
 		{"zz_unknown", `{"a":1}`, `{"a":1}`, false},
 	} {
 		got, ok := Value(tc.key, []byte(tc.raw))
@@ -179,14 +181,15 @@ func TestValues(t *testing.T) {
 func TestWho(t *testing.T) {
 	names := func(uid string) string { return map[string]string{"1000": "alice"}[uid] }
 	for by, want := range map[string]string{
-		"uid:1000 pid:4035742":           "alice",
-		"uid:1000 pid:51234 dashboard":   "alice, from the dashboard",
-		"uid:1001 pid:1 cli":             "user 1001, from the command line",
-		"service:deploy-nightly-triage":  "the service deploy-nightly-triage",
-		"standing:q-1":                   "an earlier answer for the rest of this run",
-		"human":                          "human",
-		"uid:1000 pid:4035742 always":    "alice",
-		"uid:1000 pid:4035742 somewhere": "alice (somewhere)",
+		"uid:1000 pid:4035742":               "alice",
+		"uid:1000 pid:51234 dashboard":       "alice, from the dashboard",
+		"uid:1000 pid:51234 dashboard relay": "alice, from the dashboard in a browser on another system (through its relay)",
+		"uid:1001 pid:1 cli":                 "user 1001, from the command line",
+		"service:deploy-nightly-triage":      "the service deploy-nightly-triage",
+		"standing:q-1":                       "an earlier answer for the rest of this run",
+		"human":                              "human",
+		"uid:1000 pid:4035742 always":        "alice",
+		"uid:1000 pid:4035742 somewhere":     "alice (somewhere)",
 	} {
 		if got := Who(by, names); got != want {
 			t.Errorf("Who(%q) = %q, want %q", by, got, want)

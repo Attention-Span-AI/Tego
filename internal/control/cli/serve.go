@@ -24,6 +24,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/handoff"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/profilesrc"
+	"github.com/attention-span-ai/tego/internal/runlock"
 	"github.com/attention-span-ai/tego/internal/setup"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
@@ -39,6 +40,9 @@ func cmdServe() Command {
 		Name:    "serve",
 		Summary: "start the local dashboard", // handoff.Nouns' line, held equal by TestHandoffNounsMatchControlCommands
 		Usage:   "[--addr 127.0.0.1:8484] [--ledger DIR] [--open] [--preview]",
+		// The dashboard holds the sign-in token, the CSRF and acknowledgement keys and, while a form handles it, a Vault
+		// value; mainWith makes the process undumpable before this runs (ADR 0100 (7), amended 2026-11-22).
+		HoldsSecrets: true,
 		Run: func(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			fs := flag.NewFlagSet(handoff.Name+" serve", flag.ContinueOnError)
 			fs.SetOutput(stderr)
@@ -61,25 +65,20 @@ func cmdServe() Command {
 				diag(stderr, handoff.Name+" serve: takes no arguments", codeUsage, "run "+handoff.Name+" serve --addr 127.0.0.1:8484")
 				return exits[codeUsage]
 			}
+			if os.Getenv("TEGO_HOST_KIND") == "windows" {
+				// A dashboard of its own here prints a 127.0.0.1 link that reaches WSL's forwarding from Windows, which
+				// the peer check refuses. The dashboard on Windows is tego dashboard's, opened through the Windows
+				// command's relay (docs/adr/0123-dashboard-threat-model.md, "A browser on Windows").
+				fmt.Fprintln(stderr, "tego serve: on Windows the dashboard opens with tego dashboard; in Tego's Linux shell, type exit, then run: tego dashboard")
+				return identity.ExitFinding
+			}
 			listen, err := loopbackAddr(*addr)
 			if err != nil {
 				diag(stderr, handoff.Name+" serve: "+err.Error(), codeUsage, "use --addr 127.0.0.1:<port>")
 				return exits[codeUsage]
 			}
-			// The machine config, read once for the startup lines: what it said is printed, never dropped.
-			mr := loadMachineReport()
-			if why, code := mr.envSkip(); why != "" && *ledger == "" {
-				// $TEGO_CONFIG names the ledger the person meant; serving the default one instead shows other runs
-				// under a calm page, so serve refuses to start (CO-P5). --ledger says which ledger outright.
-				fix := "create the file or fix what does not parse"
-				if code == config.CodeUntrusted {
-					fix = "make the file yours, mode 600, in a folder only you can write"
-				}
-				diag(stderr, fmt.Sprintf("%s serve: %s %s was skipped (%s), so the dashboard would show the default "+
-					"ledger, not that file's", handoff.Name, config.EnvConfigVar, record.Printable(mr.envFile), record.Printable(why)),
-					code, fix+", or unset "+config.EnvConfigVar+", or name the ledger with --ledger DIR")
-				return exits[codeIO]
-			}
+			// One snapshot supplies the report, served root, anchor and every current-rule check.
+			mr := loadMachineReport(config.TrustWarn)
 			addrSet := false
 			fs.Visit(func(f *flag.Flag) {
 				if f.Name == "addr" {
@@ -95,7 +94,7 @@ func cmdServe() Command {
 					diag(stderr, handoff.Name+" serve: machine config: "+mr.err.Error(), codeIO, "check the configuration file")
 					return exits[codeIO]
 				}
-				if root, err = ledgerRootOf(mr.m, mr.secure); err != nil {
+				if root, err = reportLedgerRoot(mr); err != nil {
 					diag(stderr, handoff.Name+" serve: ledger root: "+err.Error(), codeIO, "pass --ledger DIR")
 					return exits[codeIO]
 				}
@@ -116,9 +115,9 @@ func cmdServe() Command {
 			}
 			defer func() { _ = ln.Close() }()
 			// The chain anchor the run page and the overview verify against; unknown leaves every chain unchecked.
-			anchor, anchorErr := anchorPath()
+			anchor, anchorErr := reportAnchorPath(mr)
 			// The machine config the Rules page compiles each run's contract against; unreadable shows them uncompiled.
-			rs := ruleService(root, anchor, machine)
+			rs := ruleService(root, anchor, machine, mr.secure)
 			at := ln.Addr().(*net.TCPAddr) // the links name the address listened on: 127.0.0.1, another 127.x.y.z, or ::1
 			srv, err := web.New(web.Config{Ledger: root, Anchor: anchor, Host: at.IP.String(), Port: at.Port, Machine: machine,
 				Profiles: profilesrc.Chain(machine), Rules: rs, Setup: rs, Preview: *preview, SeverityFile: severityFile(),
@@ -132,6 +131,23 @@ func cmdServe() Command {
 			// follows on stderr, so "the dashboard shows another ledger" is visible at a glance.
 			if _, err := fmt.Fprintf(stdout, "Tego dashboard: %s\n", srv.URL()); err != nil {
 				return exits[codeIO]
+			}
+			// The program this dashboard runs, by the SHA-256 of its own bytes (handoff.ProgramLine), is the first line on
+			// stderr, which the unit's log holds beside stdout: tego dashboard and tego start reuse the dashboard when the
+			// program they would start has the same bytes. Not read: no line, and no later tego reuses this dashboard.
+			if sum, err := handoff.SelfSum(); err == nil {
+				_, _ = io.WriteString(stderr, handoff.ProgramLine(sum))
+			}
+			// The dashboard is non-dumpable, so a scan of this user's processes cannot read its program file. It holds a lock
+			// the scan can prove (runlock.HoldDashboard), as a launcher does for its run, so the scan names it and does not
+			// count it as a program it cannot read. A dashboard that cannot take the lock (another one holds it, or the
+			// folder is not writable) serves all the same and stays among the unreadable programs.
+			if home := dashboardLockHome(machine); home != "" {
+				if lock, err := runlock.HoldDashboard(home); err != nil {
+					_, _ = fmt.Fprintf(stderr, "%s serve: a scan of your processes will count this dashboard among the programs it cannot read: %v\n", handoff.Name, err)
+				} else {
+					defer func() { _ = lock.Close() }()
+				}
 			}
 			writeServeFacts(stderr, serveFacts{root: root, flagLedger: *ledger != "", machine: mr, anchor: anchor, anchorErr: anchorErr})
 			if *open {
@@ -152,6 +168,20 @@ func cmdServe() Command {
 	}
 }
 
+// machineLockHome is the home the dashboard's lock lives under: the machine's, else the account's; "" holds no lock.
+func machineLockHome(m *config.Machine) string {
+	if m != nil && m.Home != "" {
+		return m.Home
+	}
+	h, _ := os.UserHomeDir()
+	return h
+}
+
+// dashboardLockHome is machineLockHome in the product. A variable so a binary built with -tags tegotesthooks keeps the
+// lock where its tests say (dashboardlock_testhook.go), as it keeps the chain anchor, and a test of this package's own
+// keeps none in the developer's home (TestMain).
+var dashboardLockHome = machineLockHome
+
 // loopbackAddr accepts only a loopback IP and a port: 127.0.0.0/8 (localhost read as 127.0.0.1) or ::1. The peer
 // check reads an IPv6 client's socket in /proc/net/tcp6 and the governed check asks sock_diag in AF_INET6, so [::1]
 // is held as 127.0.0.1 is (web/peer.go, web/governed.go).
@@ -170,16 +200,6 @@ func loopbackAddr(addr string) (string, error) {
 	return net.JoinHostPort(ip.String(), port), nil
 }
 
-// machineLedgerRoot is the ledger_root tego writes runs to: the machine config's (TEGO_CONFIG, the layer files),
-// with a leading ~/ expanded against the passwd home, as tego's own runtime.LedgerRoot does.
-func machineLedgerRoot() (string, error) {
-	m, secure, err := loadMachine()
-	if err != nil {
-		return "", err
-	}
-	return ledgerRootOf(m, secure)
-}
-
 // anchorPath resolves the chain anchor the dashboard checks runs against. It is a variable so a binary built with
 // the tegotesthooks tag (anchor_testhook.go) reads the anchor its tests name, as tego's own test build does.
 var anchorPath = machineAnchorPath
@@ -188,81 +208,50 @@ var anchorPath = machineAnchorPath
 // tego's own launcher anchors by (internal/runtime's AnchorPath, which this package may not import,
 // TestControlLinksNoEngine, calls it too), over the invoking user's passwd home: its ~/.tego/chain.log, or for an
 // account with no home the chain.log beside the machine's ledger root, resolved as serve resolves the root it shows.
-func machineAnchorPath() (string, error) {
-	m, secure, err := loadMachine()
-	if err != nil {
-		return "", err
-	}
+func machineAnchorPath(m *config.Machine, secure bool) (string, error) {
 	return ledger.AnchorPath(m.Home, func() (string, error) { return ledgerRootOf(m, secure) })
 }
 
-// loadMachine is the machine config as tego loads it (TEGO_CONFIG, the layer files), and whether this is AT_SECURE.
-func loadMachine() (*config.Machine, bool, error) {
-	r := loadMachineReport()
+func reportLedgerRoot(r machineReport) (string, error) {
 	if r.err != nil {
-		return nil, false, r.err
+		return "", r.err
 	}
-	return r.m, r.secure, nil
+	if r.m == nil {
+		return "", errors.New("machine config could not be read")
+	}
+	return ledgerRootOf(r.m, r.secure)
 }
 
-// machineReport is one load of the machine config with what the load said about it: the layer $TEGO_CONFIG named
-// (envFile, "" when unset or AT_SECURE) and every diagnostic, so serve can print them instead of dropping them.
+func reportAnchorPath(r machineReport) (string, error) {
+	if r.err != nil {
+		return "", r.err
+	}
+	if r.m == nil {
+		return "", errors.New("machine config could not be read")
+	}
+	return anchorPath(r.m, r.secure)
+}
+
+// machineReport retains one config snapshot and every diagnostic, including unknown layer reasons.
 type machineReport struct {
-	m       *config.Machine
-	secure  bool
-	envFile string
-	diags   []config.Diagnostic
-	err     error
+	m      *config.Machine
+	secure bool
+	diags  []config.Diagnostic
+	err    error
 }
 
-// loadMachineReport loads the machine config as loadMachine does, keeping the diagnostics.
-func loadMachineReport() machineReport {
+var loadMachineSnapshot = config.LoadSources
+
+// loadMachineReport resolves and loads one invoking-user snapshot, retaining its diagnostics.
+func loadMachineReport(mode config.TrustMode) machineReport {
 	uid, _ := config.InvokingUID()
 	secure, err := config.DetectSecureExec()
 	if err != nil {
 		return machineReport{err: err}
 	}
 	src, home, diags := config.Resolve(uid, secure)
-	m, more, err := config.LoadSources(src, home, uid, config.TrustWarn)
-	return machineReport{m: m, secure: secure, envFile: src.EnvFile, diags: append(diags, more...), err: err}
-}
-
-// envSkipped says why the $TEGO_CONFIG layer was skipped, or "" when it was read (or none was named). In TrustWarn
-// mode a missing, untrusted or invalid layer is a warning on that file whose fix ends "The layer was skipped."
-// (pkg/spec/config skipOrAbort and demote); the first such message is the reason.
-func (r machineReport) envSkipped() string {
-	if r.envFile == "" {
-		return ""
-	}
-	if r.err != nil {
-		return r.err.Error()
-	}
-	for _, d := range r.diags {
-		if d.File == r.envFile && strings.Contains(d.Fix, "The layer was skipped") {
-			return d.Message
-		}
-	}
-	return ""
-}
-
-// envSkip is envSkipped with the skipped layer's reason code: config-untrusted for a file that failed the trust
-// check, config-invalid otherwise (a missing file, one that does not parse).
-func (r machineReport) envSkip() (why, code string) {
-	why = r.envSkipped()
-	if why == "" {
-		return "", ""
-	}
-	code = config.CodeInvalid
-	if r.err != nil {
-		code = config.CodeUntrusted
-	}
-	for _, d := range r.diags {
-		if d.File == r.envFile && strings.Contains(d.Fix, "The layer was skipped") && d.Code != "" {
-			code = d.Code
-			break
-		}
-	}
-	return why, code
+	m, more, err := loadMachineSnapshot(src, home, uid, mode)
+	return machineReport{m: m, secure: secure, diags: append(diags, more...), err: err}
 }
 
 // serveFacts is what serve says about what it serves, after the URL line.
@@ -276,9 +265,8 @@ type serveFacts struct {
 
 // writeServeFacts prints, on w, the ledger root with where it came from and how many runs it holds, the chain
 // anchor runs are checked against (or why there is none), and the machine config's diagnostics, so a dashboard
-// showing another ledger than the one meant is visible at start. A skipped $TEGO_CONFIG without --ledger never gets
-// here: serve refuses it before it listens (envSkip). It never changes serve's exit code: the dashboard of the ledger
-// it names is still useful.
+// showing a fallback ledger after a failed layer is visible at start, with the UNKNOWN baseline
+// and its cause. Read pages and stop remain useful; permission changes require a known config.
 func writeServeFacts(w io.Writer, f serveFacts) {
 	_, _ = fmt.Fprintf(w, "  ledger: %s (from %s), %s\n", record.Printable(f.root), ledgerOrigin(f), runCount(f.root))
 	if f.anchorErr != nil {
@@ -288,6 +276,9 @@ func writeServeFacts(w io.Writer, f serveFacts) {
 	}
 	for _, d := range f.machine.diags {
 		_, _ = fmt.Fprintf(w, "  config: %s\n", record.Printable(d.String()))
+	}
+	if f.machine.err != nil {
+		_, _ = fmt.Fprintf(w, "  config: baseline UNKNOWN: it could not be read: %s\n", record.Printable(f.machine.err.Error()))
 	}
 }
 
@@ -305,6 +296,11 @@ func ledgerOrigin(f serveFacts) string {
 	case src.Layer == config.LayerBuiltin || src.File == "":
 		return "default"
 	case src.Layer == config.LayerEnvFile:
+		// The settings file is a place and is named; a value that is not an absolute clean path is not echoed
+		// (pkg/spec/identity envtext.go, rules (b) and (c)).
+		if !identity.EnvPlace(src.File) {
+			return config.EnvConfigVar + " (not an absolute clean path; " + identity.EnvInspect(config.EnvConfigVar) + ")"
+		}
 		return config.EnvConfigVar + " " + record.Printable(src.File)
 	default:
 		return record.Printable(src.File)

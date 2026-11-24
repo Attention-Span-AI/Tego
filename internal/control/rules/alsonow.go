@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/attention-span-ai/tego/internal/check/livestatus"
 	"github.com/attention-span-ai/tego/internal/check/rule"
@@ -62,6 +63,22 @@ type LiveResult struct {
 	Observe bool
 	// Lift is a removal an Undo made of a block the change it undid had placed (lift.go), not a placement.
 	Lift bool
+	// By is who made the block or its removal (rulefile.LiveByChange, LiveByUndo, LiveByRedo); "" when not known.
+	By string
+	// Held is a placement that found the run's overlay holding the block already: the change did not make it, so it
+	// does not own it and its Undo leaves it. OK is false then, with Err saying so.
+	Held bool
+	// Pending is a lift or a placement begun and not recorded as finished (rulefile.Live.Pending).
+	Pending bool
+	// Epoch and At complete Serial as the identity of the add that made the block (liveblock.Own).
+	Epoch string
+	At    time.Time
+}
+
+// liveResult is a journal outcome as the service says it.
+func liveResult(l rulefile.Live) LiveResult {
+	return LiveResult{Run: l.Run, Block: l.Block, OK: l.OK, Err: l.Err, Lift: l.Lift, By: l.By, Serial: l.Serial, Held: l.Held,
+		Pending: l.Pending, Epoch: l.Epoch, At: l.At}
 }
 
 // The reasons a change has no live block, said as the rest of a "Next run: …" line.
@@ -397,7 +414,7 @@ func (s *Service) nowOptions(ctx context.Context, runs []string, changes []rule.
 				k = liveblock.KindPath
 			case k == liveblock.KindWrite && !facts.NarrowKinds():
 				k, v, why = "", "", whyOldWrite
-			case k == liveblock.KindWrite && facts.KernelDecidesChanges:
+			case k == liveblock.KindWrite && facts.KernelDecidesChanges && !facts.PlaneBlocks:
 				k, v, why = "", "", whyPlaneWrite
 			}
 			o := NowOption{Run: run, Kind: string(k), Value: v, OK: k != "", Why: why, Change: c.String(), Observe: facts.Observe, Cwd: cwd}
@@ -483,12 +500,20 @@ func (s *Service) applyNow(ctx context.Context, opts []NowOption, picked []strin
 				continue
 			}
 			placed = true
-			r := LiveResult{Run: run, Block: o.Block, OK: true, Observe: o.Observe}
+			r := LiveResult{Run: run, Block: o.Block, OK: true, Observe: o.Observe, By: rulefile.LiveByChange}
 			b, err := s.placeBlock(ctx, run, o.Kind, o.Value)
-			if err != nil {
+			switch {
+			case err != nil:
 				r.OK, r.Err = false, err.Error()
+			case !b.Fresh:
+				// The run held this block already (a person's, or an earlier change's): this change made none, so it
+				// owns none, and its Undo must leave it (lift.go).
+				r.OK, r.Held, r.Err = false, true, whyHeld
 			}
 			r.Serial = b.Serial
+			if b.Fresh {
+				r.Epoch, r.At = b.Epoch, b.At
+			}
 			out = append(out, r)
 		}
 		if !placed {
@@ -499,9 +524,55 @@ func (s *Service) applyNow(ctx context.Context, opts []NowOption, picked []strin
 	return out
 }
 
+// placeJournaled is applyNow for a placement that must not be in force unless the journal shows it, as an Undo's lift and a
+// Redo's placement already were (journaled): the change's own journal entry id must exist, the begun line of every
+// block that will be placed is written first, and only then is a block placed and its outcome written. A change
+// whose own journal line failed (id "") places nothing; begun lines that cannot be written place nothing. The second
+// answer is what went wrong, in words, "" when nothing did; every block that was not placed says so in its result.
+func (s *Service) placeJournaled(ctx context.Context, id string, opts []NowOption, picked []string) ([]LiveResult, string) {
+	var begun []LiveResult
+	for _, run := range dedupe(picked) {
+		for _, o := range opts {
+			if o.Run == run && o.OK {
+				begun = append(begun, LiveResult{Run: run, Block: o.Block, By: rulefile.LiveByChange, Pending: true, Observe: o.Observe,
+					Err: "placing was begun and its end was not recorded"})
+			}
+		}
+	}
+	notPlaced := func(why string) []LiveResult {
+		var out []LiveResult
+		for _, b := range begun {
+			out = append(out, LiveResult{Run: b.Run, Block: b.Block, By: b.By, Observe: b.Observe, Err: "not placed: " + why})
+		}
+		return out
+	}
+	if len(begun) > 0 {
+		if id == "" {
+			// The change is written and no journal line holds it, so a block placed now would be in force with no line
+			// in the journal to show it; the run gets the change at its next start.
+			why := "the journal does not show this change, so no live block was made that it could not show"
+			return notPlaced(why), "the live blocks were not placed: " + why
+		}
+		if err := s.writer().AppendLive(ctx, id, journalLive(begun)); err != nil {
+			return notPlaced("the journal could not record it first, so the block was not made"),
+				"the live blocks were not placed: the journal could not record them first: " + err.Error()
+		}
+	}
+	res := s.applyNow(ctx, opts, picked)
+	if id != "" && len(res) > 0 {
+		if err := s.writer().AppendLive(ctx, id, journalLive(res)); err != nil {
+			return res, "the live blocks were placed but their outcome was not journaled (the journal shows them as begun): " + err.Error()
+		}
+	}
+	return res, ""
+}
+
+// whyHeld is the outcome's words for a block the run held before the change asked for it.
+const whyHeld = "the run already held this block, so this change did not place it and its Undo leaves it"
+
 func (s *Service) placeBlock(ctx context.Context, run, kind, value string) (runact.Blocked, error) {
 	if s.block != nil {
-		return runact.Blocked{Run: run}, s.block(ctx, run, kind, value)
+		return s.block(ctx, run, kind, value)
 	}
 	// The block a contract change asks for refuses what the change takes away: an exec block refuses what the run
 	// grants under the removed entry only, where the run's launcher reads such a block (runact.BlockFromContract).
@@ -512,7 +583,8 @@ func (s *Service) placeBlock(ctx context.Context, run, kind, value string) (runa
 func journalLive(rs []LiveResult) []rulefile.Live {
 	out := make([]rulefile.Live, 0, len(rs))
 	for _, r := range rs {
-		out = append(out, rulefile.Live{Run: r.Run, Block: r.Block, OK: r.OK, Err: r.Err, Lift: r.Lift})
+		out = append(out, rulefile.Live{Run: r.Run, Block: r.Block, OK: r.OK, Err: r.Err, Lift: r.Lift, By: r.By, Serial: r.Serial,
+			Held: r.Held, Pending: r.Pending, Epoch: r.Epoch, At: r.At})
 	}
 	return out
 }
@@ -531,6 +603,9 @@ func dedupe(xs []string) []string {
 func (s *Service) path() string {
 	if s.PATH != "" {
 		return s.PATH
+	}
+	if s.caller != nil {
+		return s.caller.PATH
 	}
 	return os.Getenv("PATH")
 }

@@ -1,0 +1,11 @@
+{
+  "kind": "answer",
+  "minor": 37,
+  "payload": {
+    "ask_id": "q-0123456789abcdef0123456789abcdef",
+    "by": "unavailable",
+    "approved": false,
+    "system_cause": "unavailable",
+    "answer_reason": "ask-unavailable"
+  }
+}

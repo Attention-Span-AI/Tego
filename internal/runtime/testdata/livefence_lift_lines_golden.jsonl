@@ -1,0 +1,2 @@
+{"what":"enforce","why":"live-rule-lifted","live_block":{"op":"lift","kind":"read","value":"/srv/exports","rule":"live.fence[read:/srv/exports]","by":"uid:1000 pid:7 cli","serial":1,"at":"2026-11-23T12:00:00Z"}}
+{"what":"enforce","why":"live-rule-lifted","live_block":{"op":"lift","kind":"net","value":"192.0.2.9:443","rule":"live.fence[net:192.0.2.9:443]","by":"uid:1000 pid:8 dashboard","serial":2,"at":"2026-11-23T12:00:01Z","note":"ticket 4411"}}

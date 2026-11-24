@@ -1,11 +1,11 @@
 # Machine config (spec v0)
 
-Layers, read in order, each optional: built-in defaults; `/etc/tego/config.yaml`; `~/.tego/config.yaml` of the
-invoking user; `$TEGO_CONFIG`; then the contract. Two kinds of key:
+Layers, read in order: built-in defaults; optional `/etc/tego/config.yaml`; optional `~/.tego/config.yaml` of the
+invoking user; additive `$TEGO_CONFIG` (a selected missing file is an error); then the contract. Two ordinary kinds of key:
 - **ceilings** (`tier`, `capture`, `limits.*`): every layer, the contract included, may lower the value it inherited,
   never raise it. Built-in ceilings are unbounded. Raising is not an error: the inherited value stands and `compile`
   prints `ceiling <key>=<value> kept from <file>:<line>`.
-- **settings** (everything else): the last layer wins, except `denied_resolved_addresses`, a deny list every layer
+- **settings**: the last layer wins, except `denied_resolved_addresses`, a deny list every layer
   adds to and none removes from, and `landlock.audit`, a floor: once a layer sets `new-exec` a later `off` is not
   applied, and `compile` prints `floor landlock.audit=new-exec kept from <file>:<line>`.
 `tego compile` prints every effective value with the file and line it came from: the `machine` section under its
@@ -27,9 +27,15 @@ retention: 30d                    # tego gc default, and what a run start's pass
                                   # file's newest 20 changes still standing while the file is there (amended
                                   # 2026-11-02)
 gc_interval: 0s                   # how often a tego run start applies retention to the ledger root, as `tego gc`
-                                  # with no flags does (which counts as a pass): at most once per interval, for at
-                                  # most 2 s, stopping between runs (the next pass goes on); only ended or empty
-                                  # runs older than retention go, never a live one; 0 never (added 2026-10-26).
+                                  # with no flags does (which counts as a pass): at most once per interval, with a
+                                  # cooperative 2 s budget checked between runs and journal pruning operations.
+                                  # Before journal.lock the budget is checked; once held, the journal read,
+                                  # filter and rewrite finish as one operation, even after expiry. Other
+                                  # filesystem operations already in progress also finish;
+                                  # a blocked filesystem call can delay return indefinitely. Completed pruning
+                                  # stays committed and the journal stays consistent; leftover work waits for
+                                  # the next pass. Budget exhaustion is logged and never fails the starting run.
+                                  # Only ended or empty runs older than retention go, never a live one; 0 never.
                                   # chain.log keeps a removed run's line, so the runs left verify as before
 stop_grace: 10s                   # SIGTERM, then cgroup.kill
 limits:                           # ceilings; same keys and units as the contract's limits, one unit each: wall: 1h30m and memory: 1PiB are errors (amended 2026-09-29)
@@ -78,6 +84,15 @@ bpf:
                                   # ignored with a warning); any other value is an error at its line. auto prefers
                                   # lsm, then fmod_ret, then the fanotify fallback, by the doctor's probe; a
                                   # concrete name pins the mode (enforce-plane R18; ADR 0024; added 2026-09-29)
+tomoyo:
+  facts_dir: ""                   # honoured from /etc/tego/config.yaml only (set in any other layer it is ignored
+                                  # with a warning): "" reads TOMOYO's files at /sys/kernel/security/tomoyo; a clean
+                                  # absolute path reads self_domain, stat and profile there instead, for a
+                                  # container whose AppArmor profile hides the kernel's path. The directory must be a
+                                  # read-only bind of the host's /sys/kernel/security/tomoyo: each file is accepted
+                                  # only on securityfs, with mount root /tomoyo, read-only; anything else refuses
+                                  # held opens as before. No setting assumes TOMOYO enforces nothing (ADR 0041;
+                                  # added 2026-11-22)
 resolver: auto                    # unprivileged-tier UDP rule: auto = nameservers of /etc/resolv.conf at run start;
                                   # or a list of ip[:port] that replaces the file (port 53 when omitted); the
                                   # exception covers port 53 only, so a server on another port needs net.allow
@@ -143,7 +158,8 @@ users: {}                         # honoured from /etc/tego/config.yaml only (AD
   write it by any name (another owner, no group or other write bit, the invoking user not root), since R10 keeps
   every write entry off each layer's names and a second name is compared with nothing (ADR 0059, *added
   2026-10-20*); the price table, the profiles and the registry's entries follow the same rule. Otherwise `tego run` exits 125 with `machine config untrusted: <path> <owner> <mode> [config-untrusted]`;
-  `compile` and `doctor` warn and continue. (Precedent: `ssh` on `~/.ssh/config`.)
+  decision loads abort. `TrustWarn` is reserved for degraded observation and stop loads: a failed
+  layer is unknown, and `Machine.BaselineKnown()` is false (ADR 0144).
 - When the process runs with `AT_SECURE` set (the file-capability copy), `$TEGO_CONFIG` and `$HOME` are ignored; a
   static Go binary gets no loader secure-execution stripping, so the binary does it. Since ADR 0042 (3)(a) such a
   process is refused before the config loads (`[privileged-path-unsupported]`); the handling stays as defence in
@@ -160,3 +176,115 @@ users: {}                         # honoured from /etc/tego/config.yaml only (AD
 setting, integer 1..65535. `port:` may not be zero. The current dashboard's
 legacy default 8484 is protected as well. Set this before using `serve --addr`
 with another port; a per-command address is not machine policy.
+
+## Baseline schema (ADR 0144)
+
+`baseline:` is accepted in the system, passwd-home user and additive `$TEGO_CONFIG` file layers.
+The built-in value is empty. The compiler applies its immutable union once, preserving the source
+contract/hash and exposing a separate effective contract/hash. Unknown snapshots refuse decisions.
+Nonempty applied-baseline launches remain refused until the record and guest-proof slices close.
+Older binaries reject this key; upgrade launchers first.
+
+```yaml
+baseline:
+  fs:
+    deny_read: [~/secrets]
+    deny_write: [/srv/releases]
+  exec:
+    deny: [git push]
+  env:
+    deny: [PROD_TOKEN]
+```
+
+Only these four lists are allowed. Unknown keys, grants, asks, network entries, limits, nulls and
+wrong types (including contradictory YAML type tags) fail at their file and line. Entries are nonempty UTF-8 strings. File entries are literal
+absolute or `~/` paths, without globs; environment entries are variable names. The command compiler
+validates exec patterns after materialization. A layer may contain at most 100,000 baseline entries
+across all four lists, including duplicates; exceeding the limit fails at its file and line. Absent keys and `[]`
+add nothing. A union keeps the first position of each exact decoded string per key and every contributing layer/file/entry line. It never deduplicates
+or edits a contract. No override, include, YAML merge, null or duplicate key can remove another layer's
+entry. Includes/override keys and YAML aliases in baseline lists are rejected. `$TEGO_CONFIG` selects
+an additional layer, not a replacement for the fixed system and passwd-home user layers. There is no
+command-line config replacement flag. `AT_SECURE` leaves the explicit layer unselected as before.
+
+The immutable snapshot retains raw spellings. Its resolver accepts an explicit agent-owner uid/home
+(the compile's `WithHome` context, the agent owner's passwd home at adoption), never `$HOME` or the
+caller's home. It retains `~/` expansion without cleaning a symlink followed by `..`. Resolution reads
+metadata and creates nothing. Only resolving a `~/` entry needs an owner home. A missing home for that entry fails with
+its layer, file, line, uid and advice to give the entry an absolute path or run as a user with a
+passwd entry. Loading the raw union needs no home; no passwd home selects no user layer silently. A known home whose directory is
+absent can produce an absolute absent row. A missing system-only target retains its existing directory
+ancestor and remaining names, pending the later tier/grant checks; **this does not assert coverage**.
+An entry also contributed by another layer cannot use that exception. Missing user/explicit targets,
+dangling links (including a dangling ancestor), unplaceable paths, procfs paths, unreadable walks and
+other lookup errors fail with sources, owner and repair text. Later preparation must recheck identities; no launch calls this resolver yet.
+
+ADR 0144 defines two load classes, even when no baseline entries are configured. Class (a)
+`TrustAbort` decides rules: launches, compilation, checks, adoption and current in-force rule views
+refuse any unsafe, unreadable or malformed layer. No partial Machine is returned. Class (b)
+`TrustWarn` supports observation and stop: failed layers contribute no settings, but are recorded as
+`unknown` with their cause, and `Machine.BaselineKnown()` is false. UNKNOWN cannot be treated as
+an empty union, used to compile rules, or used to start or widen a run. Every output that would
+state the baseline says it could not be read and why. GC keeps working to report the problem but
+sweeps and deletes nothing while a layer is unknown, returning 125. Doctor JSON carries
+`baseline.known` and, when unknown, `baseline.reasons` with each failed layer, file and cause. The full caller classification is in
+[ADR 0144](../../../docs/adr/0144-machine-baseline.md#config-load-classes-amendment-2026-11-12).
+
+The system file and every directory/link placement it walks must be root-owned, with no group/other
+write authority; the regular file must be readable by governed users (normally 0644), and placement
+directories searchable by them. Sticky group-writable ancestors, such as a 1775 store, are refused.
+A user namespace that maps a placement owner to 65534 does not establish root ownership, even
+when the optional file is absent. Metadata checks keep I10's open boundary: the loader opens only
+layer files and their directories, not the placement ancestors. Complete I10 compliance is not
+established: the inherited procfs check makes link-following `statfs` calls on existing ancestor
+directories and on absolute path settings, which I10 does not record and the audit's tracer cannot
+decode; the inherited metadata/tracing debt remains open. User/explicit layers retain the generic R20
+checks. A present dangling layer link fails. Source observations distinguish exact-byte SHA-256 of
+an empty present file from absent/unselected inputs; absence and unknown have no digest.
+
+| Layer | Present and good | Present and bad (read, parse, ownership, mode, type/link) | Absent or unselected |
+|---|---|---|---|
+| Built-in | Empty known union | Not a file | Not applicable |
+| System | Parse and union, root placement checks | (a) Stop load; (b) unknown, degraded | Optional, recorded absent after checking existing placement |
+| Passwd-home user | Parse and union, generic R20 checks | (a) Stop load; (b) unknown, degraded | Optional file absent; no passwd home selects no user layer and prints no discovery warning |
+| Explicit `$TEGO_CONFIG` | Parse and union, generic R20 checks | (a) Stop load; (b) unknown, degraded | Selected missing path is (a) an error or (b) unknown; unset/secure is unselected |
+
+`TestBaselineLayerStateTable`, `TestBaselineSystemTrustWalk` and
+`TestBaselineProductionSystemTrustAndDanglingLayers` cover this table with filesystem fixtures and
+modeled root metadata. Real privileged ownership and governed layer edits remain **owed in a guest**.
+
+### Local approval authority (ADR 0154)
+
+`local_roles: owner_only` is honoured only from the trusted system layer
+`/etc/tego/config.yaml`. `off` or absence keeps personal approval behavior.
+`off` and `owner_only` are the exact, case-sensitive string enumeration. `auto`,
+empty strings, numbers, lists and every other spelling are invalid. An invalid
+or unreadable system layer refuses every launch until corrected; observation
+loads retain unknown authority and cannot provide a personal-mode fallback.
+User and explicit `$TEGO_CONFIG` layers cannot set or unset this floor.
+The floor binds only runs launched after it is set: it is fixed per run at launch, a run already live keeps
+same-user approvals until it ends, and every live run is to be stopped before relying on the floor (`tego doctor` lists
+the live runs of the selected ledger root that started without it).
+The existing system placement trust rules apply. An enabled run pins the source
+identity and exact-byte SHA-256; missing, unreadable, edited or replaced input
+refuses answers for that run. It never falls back to personal authority.
+The authority-drift refusal says the approval policy file changed since this run
+started, including when it became unreadable. Clients that reach the broker
+receive this cause before the root-only remedy. Approve's strict configuration
+load first refuses an unreadable system file without contacting the broker.
+Repair its mode on the original inode with the original bytes for a mode-only
+mistake. Deny's warning load and dashboard can reach the distinct broker refusal. Saving old
+text on a replacement inode does not repair the old run. Stop it as root with `sudo tego stop <run>`,
+then relaunch using the same ledger configuration. The [user guide](../../../docs/user/local-approvals.md)
+gives commands for an explicit `TEGO_CONFIG` and the edit outcome table.
+Only a root launcher in the initial user namespace with a verified non-root
+child, enforcement and recording may activate the floor. The packet credentials
+and process handle bind send-time identity. Only real UID 0 in the initial user
+namespace outside every governed run at the decision may answer once; namespace
+and scope facts are revalidated through that binding. Always and alternate answers are refused.
+Run the approval as root from a terminal outside any governed run.
+This is local approval authority, without shared dashboards or other role grants.
+
+[local-authority.schema.json](local-authority.schema.json) describes the closed
+local authority selector extracted from a machine layer. Its presence in a user
+layer supplies no authority. The full config uses the closed key vocabulary above.

@@ -143,3 +143,38 @@ func TestKernelDatagramsNameTheRefusingProgram(t *testing.T) {
 		}
 	}
 }
+
+// TestImportGuaranteeNeedsFilterOrPlane is ADR 0128's descriptor-import guard, amended: where the filter that runs
+// still answers recvmsg ENOSYS, the inherited filter's guarantee is the guard; where the filter leaves recvmsg to the
+// plane, the guard is the plane's socket_recvmsg, which needs the hook attached and this run's slot flagged for it. A
+// run with neither, and a filter that denies no import at all, has none and is refused before it starts.
+func TestImportGuaranteeNeedsFilterOrPlane(t *testing.T) {
+	hook := &fakePlane{attached: map[string]bool{bpf.PlaneHookSocketRecvmsg: true}}
+	other := &fakePlane{attached: map[string]bool{"socket_create": true}}
+	for _, tc := range []struct {
+		name    string
+		filter  bool // the inherited filter's SocketImportsDenied
+		left    bool // the filter leaves recvmsg to the plane
+		flagged bool // the slot header says imports are denied
+		plane   *fakePlane
+		want    bool
+	}{
+		{"the filter denies recvmsg", true, false, false, nil, true},
+		{"the filter denies recvmsg, a plane runs too", true, false, false, hook, true},
+		{"the plane's hook decides recvmsg", true, true, true, hook, true},
+		{"the plane's hook decides it but is not attached", true, true, true, other, false},
+		{"the plane's hook is attached but the slot is not flagged", true, true, false, hook, false},
+		{"the filter leaves recvmsg to no plane", true, true, true, nil, false},
+		{"no import guard in the filter", false, false, false, hook, false},
+		{"no import guard in the filter, recvmsg left to the plane", false, true, true, hook, false},
+	} {
+		h := &Handle{prepared: true, kern: &bpfKernel{}, inherited: guaranteeInherited{backend.NetworkGuarantees{SocketImportsDenied: tc.filter}},
+			importsInPlane: tc.left, importsFlagged: tc.flagged}
+		if tc.plane != nil {
+			h.plane = tc.plane
+		}
+		if got := h.NetworkGuarantees().SocketImportsDenied; got != tc.want {
+			t.Errorf("%s: SocketImportsDenied = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

@@ -52,9 +52,51 @@ github.com/attention-span-ai/tego/internal/check/rule.editPlanner.push	control-o
 github.com/attention-span-ai/tego/internal/check/rule.editPlanner.remove	control-only	ApplyEdits, reached as it is
 github.com/attention-span-ai/tego/internal/check/rule.hasString	control-only	ApplyEdits and Entries, reached as it is
 github.com/attention-span-ai/tego/internal/check/rule.relaxesMore	control-only	ApplyEdits, reached as it is
+github.com/attention-span-ai/tego/internal/check/askpair.Book.Bytes	test-api	internal/control/ledgerview tests read the weight of a run's open asks with it
+github.com/attention-span-ai/tego/internal/check/askpair.Book.Get	test-api	internal/control/ledgerview tests read one open ask with it
+github.com/attention-span-ai/tego/internal/check/askpair.Book.Each	control-only	internal/control/ledgerview lists the open asks of a run in the order they were asked with it
+github.com/attention-span-ai/tego/internal/check/livestatus.StatusAt	control-only	internal/control/rulesview and internal/control/web judge a timed block at the time of the page with it
+
+# internal/askclient
+github.com/attention-span-ai/tego/internal/askclient.WithVia	control-only	internal/control/web sends an answer given in the dashboard with the word that says so (actions.go)
+
+# internal/contracts
+github.com/attention-span-ai/tego/internal/contracts.RegisterHelperOperation	control-only	internal/control/pathcheck registers fixed control-image filesystem operations at initialization
+github.com/attention-span-ai/tego/internal/contracts.HelperExchange	control-only	internal/control/pathcheck sends dashboard operations through the shared own-image transport
+github.com/attention-span-ai/tego/internal/contracts.CompileNotFinishedUnclear	control-only	internal/control/draftcompile words a draft compile that ran out of time with it
+github.com/attention-span-ai/tego/internal/contracts.CompileNotFinishedWorking	control-only	internal/control/draftcompile words a draft compile that was working when time ran out with it
+github.com/attention-span-ai/tego/internal/contracts.CompileUnavailable	control-only	internal/control/draftcompile refuses a draft compile that could not start with it
+github.com/attention-span-ai/tego/internal/contracts.HasLocationClock	control-only	internal/control/pathcheck asks whether the parent context already runs a location clock with it
+github.com/attention-span-ai/tego/internal/contracts.IsCheckDisk	control-only	internal/control/pathcheck words a check that stopped on the disk with it
+github.com/attention-span-ai/tego/internal/contracts.IsCheckTooSlow	control-only	internal/control/pathcheck words a check that ran out of time with it
+github.com/attention-span-ai/tego/internal/contracts.IsCheckUnclear	control-only	internal/control/pathcheck words a check that stopped for an unclear reason with it
+github.com/attention-span-ai/tego/internal/contracts.IsCheckWorking	control-only	internal/control/pathcheck words a check that was still working when time ran out with it
+github.com/attention-span-ai/tego/internal/contracts.IsHelpersStuck	control-only	internal/control/pathcheck words a helper that does not answer with it
+github.com/attention-span-ai/tego/internal/contracts.IsLocationUnavailable	control-only	internal/control/pathcheck words a location that could not be reached with it
+github.com/attention-span-ai/tego/internal/contracts.IsStartFailure	control-only	internal/control/pathcheck words a helper that did not start with it
+github.com/attention-span-ai/tego/internal/contracts.LocationAsked	test-api	internal/control/web tests ask whether an exchange spent location time with it
+github.com/attention-span-ai/tego/internal/contracts.LocationLeft	test-api	internal/control/pathcheck tests read the location time an exchange has left with it
+github.com/attention-span-ai/tego/internal/contracts.NewWatch	control-only	internal/control/draftcompile watches its compile child with it
+github.com/attention-span-ai/tego/internal/contracts.PauseLocation	control-only	internal/control/draftcompile pauses the location clock while its compile child runs
+github.com/attention-span-ai/tego/internal/contracts.SameScope	test-api	internal/contracts and internal/control/web tests hold two exchanges to one budget scope with it
+github.com/attention-span-ai/tego/internal/contracts.ScopeLeft	test-api	internal/contracts and internal/control/web tests read how long a request scope has left with it
+github.com/attention-span-ai/tego/internal/contracts.WithBudget	control-only	internal/control/pathcheck gives a dashboard check its budgets with it
+github.com/attention-span-ai/tego/internal/contracts.WithHelperContext	control-only	internal/control/pathcheck derives a helper context from a parent with a location clock with it
+github.com/attention-span-ai/tego/internal/contracts.WithHelperDeadline	control-only	internal/control/pathcheck bounds a helper exchange with it
+github.com/attention-span-ai/tego/internal/contracts.WithRequestScope	control-only	internal/control/web bounds a dashboard page with it
+github.com/attention-span-ai/tego/internal/contracts.WithScope	control-only	internal/control/web opens the budget scope of a dashboard request with it
+github.com/attention-span-ai/tego/internal/contracts.helperDeadlineContext.Err	control-only	WithHelperDeadline, reached as it is
+github.com/attention-span-ai/tego/internal/contracts.locationClock.pause	control-only	PauseLocation, reached as it is
+github.com/attention-span-ai/tego/internal/contracts.locationClock.resume	control-only	PauseLocation, reached as it is
+github.com/attention-span-ai/tego/internal/contracts.pausedContext.Value	control-only	PauseLocation, reached as it is
+
+# internal/guide
+github.com/attention-span-ai/tego/internal/guide.ScanState.Key	control-only	internal/control/web keys the Overview's guide cache on the saved scan with it (setupguide.go)
 
 # internal/handoff, internal/ledger, internal/liveblock
 github.com/attention-span-ai/tego/internal/handoff.IsNoun	test-api	internal/cli's serve_test holds the command table to the noun list with it
+github.com/attention-span-ai/tego/internal/handoff.SelfSum	control-only	internal/control/cli's serve records the SHA-256 of its own bytes in the dashboard log with it; tego compares that with the hash it pinned (PinnedSum)
+github.com/attention-span-ai/tego/internal/handoff.sumOfProgram	control-only	SelfSum, reached as it is
 github.com/attention-span-ai/tego/internal/handoff.Spawn	pending	ADR 0100 (1e): the sealed child start, built ahead of its first caller
 github.com/attention-span-ai/tego/internal/handoff.readOnly	pending	Spawn, reached as it is
 github.com/attention-span-ai/tego/internal/ledger.AnchorHeads	control-only	internal/control/ledgerview reads a run's anchored head through it (anchorview.go); tego reads them inside VerifyRunDir
@@ -71,6 +113,8 @@ github.com/attention-span-ai/tego/internal/liveblock.TakesLink	control-only	inte
 # Packages both binaries link, where only tego-control reaches these
 github.com/attention-span-ai/tego/internal/mcptools.SHA256Base	control-only	internal/control/mcpact binds a preview to the file with it
 github.com/attention-span-ai/tego/internal/modelroutes.SHA256Base	control-only	internal/control/routeact binds a preview to the file with it
+github.com/attention-span-ai/tego/pkg/policy/modelroute.CountsOf	control-only	internal/control/routeact answers the Model routes page's request counts from the read model's tallies with it
+github.com/attention-span-ai/tego/internal/registry.Directory.Identity	control-only	internal/control/rules binds the reviewed destination identity through the shared descriptor publisher
 github.com/attention-span-ai/tego/internal/rulefile.AppendLive	control-only	internal/control/rules records what "also apply now" did with it
 github.com/attention-span-ai/tego/internal/rulefile.Blob	control-only	internal/control/rules reads a journaled text with it
 github.com/attention-span-ai/tego/internal/rulefile.Create	control-only	internal/control/rules writes a new contract with it
@@ -80,10 +124,10 @@ github.com/attention-span-ai/tego/internal/rulefile.History	control-only	interna
 github.com/attention-span-ai/tego/internal/rulefile.ReadJournal	control-only	internal/control/rules reads the journal with it
 github.com/attention-span-ai/tego/internal/rulefile.Revert	control-only	internal/control/rules reverts a change with it
 github.com/attention-span-ai/tego/internal/rulefile.foundAt	control-only	FindAtIn, reached as it is
-github.com/attention-span-ai/tego/internal/rulefile.noReplace	control-only	Create, reached as it is
 github.com/attention-span-ai/tego/internal/rulefile.pinned.create	control-only	Create, reached as it is
 github.com/attention-span-ai/tego/internal/rulefile.pinned.taken	control-only	Create, reached as it is
 github.com/attention-span-ai/tego/internal/rulefile.revert	control-only	Revert, reached as it is
+github.com/attention-span-ai/tego/internal/rulefile.settle	control-only	Fold, reached as it is
 github.com/attention-span-ai/tego/internal/rulefile.Undo	test-api	internal/control/rulesview and internal/control/web tests undo a change with it
 
 # internal/platform
@@ -95,17 +139,24 @@ github.com/attention-span-ai/tego/internal/platform/startphase.Stat	tag-only	int
 github.com/attention-span-ai/tego/internal/platform/sys.Accept4	pending	ADR 0023 C1/C2 owning helper, built ahead of FD-MID/FD-LATE (C5-C19), which move its callers onto it
 github.com/attention-span-ai/tego/internal/platform/sys.InertForTest	test-api	test fakes in other packages hand out a *FD that closes nothing; ADR 0023 C3's lint (F4) keeps every caller in a _test.go file
 github.com/attention-span-ai/tego/internal/platform/sys.PidfdOpenThreadFD	pending	ADR 0023 C1/C2 owning helper, built ahead of FD-MID/FD-LATE (C5-C19), which move its callers onto it
-github.com/attention-span-ai/tego/internal/platform/sys.Pipe2	pending	ADR 0023 C1/C2 owning helper, built ahead of FD-MID/FD-LATE (C5-C19), which move its callers onto it
 github.com/attention-span-ai/tego/internal/platform/sys.ReceiveRights	pending	ADR 0023 C1/C2 owning helper, built ahead of FD-LATE (ask and dnsbroker, C14), which calls it
 github.com/attention-span-ai/tego/internal/platform/sys.SeccompNewListenerFD	pending	ADR 0023 C1/C2 owning helper, built ahead of FD-LATE (supervisor, C8), which takes the listener as a *sys.FD
 github.com/attention-span-ai/tego/internal/platform/sys.Stdio	pending	ADR 0023 C1/C2 owning helper, built ahead of FD-MID/FD-LATE (C5-C19), which move its callers onto it
 
 github.com/attention-span-ai/tego/internal/platform/tomoyo.SetLoaderOmissionForTest	test-api	doctor and supervisor unit tests replace the loader-omission observation so passing rows never read the machine's kernel configuration
 
+# internal/pricetable
+github.com/attention-span-ai/tego/internal/pricetable.Identity	control-only	internal/control/web (receipt.go, receiptPricing) keys the Receipt tab's receipts by the price table file's identity; the engine never keeps a receipt
+github.com/attention-span-ai/tego/internal/pricetable.Load	test-api	internal/runtime/limits.Load (itself test-api) and the pricetable tests read a price table as it is, without FromMachine's trust rule
+github.com/attention-span-ai/tego/internal/pricetable.errKind	control-only	called by Identity (internal/control/web (receipt.go, receiptPricing) keys the Receipt tab's receipts by the price table file's identity)
+github.com/attention-span-ai/tego/internal/pricetable.fileStamps	control-only	called by identityAt, which Identity calls (internal/control/web (receipt.go, receiptPricing) keys the Receipt tab's receipts by the price table file's identity)
+github.com/attention-span-ai/tego/internal/pricetable.identityAt	control-only	called by Identity (internal/control/web (receipt.go, receiptPricing) keys the Receipt tab's receipts by the price table file's identity)
+
 # internal/policy, internal/runtime
 github.com/attention-span-ai/tego/internal/policy/decide.LandlockLinkRefusal	test-api	internal/runtime/observe's chain_link_test names the Landlock floor's link refusal by scan, the oracle for the recorder's indexed answer
 github.com/attention-span-ai/tego/internal/policy/decide.LandlockRenameRefusal	test-api	internal/runtime/observe's chain_link_test names the Landlock floor's rename refusal by scan, the oracle for the recorder's indexed answer
 github.com/attention-span-ai/tego/internal/policy/decide.PlaneNameTag	test-api	internal/bpf tests check the kernel rule_idx of a name refusal
+github.com/attention-span-ai/tego/internal/runlock.HoldDashboard	control-only	internal/control/cli serve takes the dashboard lock so tego scan names the non-dumpable dashboard (N80, F5)
 github.com/attention-span-ai/tego/internal/runtime.NewHookQueue	test-api	internal/runtime/observe stop-drain tests drive a real recorder through it
 github.com/attention-span-ai/tego/internal/runtime/derive.ServerToolUse.UnmarshalJSON	reflection	encoding/json calls it decoding the server_tool_use field inside anthropic.Usage.UnmarshalJSON (derive/anthropic/types.go), a call the analysis does not follow
 github.com/attention-span-ai/tego/internal/runtime/derive.plainName	reflection	ServerToolUse.UnmarshalJSON's name check, reached as it is
@@ -127,8 +178,46 @@ github.com/attention-span-ai/tego/internal/runtime/supervisor.ProtoOfSocket	test
 
 # internal/setup
 
+
+# internal/scan
+github.com/attention-span-ai/tego/internal/scan/result.PlainExclusion	control-only	PlainFooter, reached as it is
+github.com/attention-span-ai/tego/internal/scan/result.PlainFooter	control-only	internal/control/agents words the saved scan's footer for the Agents page with it
+github.com/attention-span-ai/tego/internal/scan/result.plainReason	control-only	PlainFooter, reached as it is
+github.com/attention-span-ai/tego/internal/scan/result.plural	control-only	PlainFooter, reached as it is
+
 # internal/watch
 github.com/attention-span-ai/tego/internal/watch/tree.Tree.PIDs	test-api	internal/watch/watcher tests count the watched processes with it (Watcher.Processes)
+
+# pkg/spec/bizrule: compiler imports DecodeBundle; the remaining frozen v1 API
+# and its tool closure are not the live relay (ADR 0152). Keep every finding
+# visible and remove classifications when that migration makes them reachable.
+github.com/attention-span-ai/tego/pkg/spec/bizrule.Compose	public-api	frozen business v1 library API (ADR 0151); live relay wiring remains open under ADR 0152
+github.com/attention-span-ai/tego/pkg/spec/bizrule.DecodeRequest	public-api	frozen business v1 library API (ADR 0151); live relay wiring remains open under ADR 0152
+github.com/attention-span-ai/tego/pkg/spec/bizrule.EncodeResult	public-api	frozen business v1 library API (ADR 0151); live relay wiring remains open under ADR 0152
+github.com/attention-span-ai/tego/pkg/spec/bizrule.Evaluate	public-api	frozen business v1 library API (ADR 0151); live relay wiring remains open under ADR 0152
+github.com/attention-span-ai/tego/pkg/spec/bizrule.EvaluateBundle	public-api	frozen business v1 library API (ADR 0151); live relay wiring remains open under ADR 0152
+github.com/attention-span-ai/tego/pkg/spec/bizrule.LocalRefusal	test-api	test/bizdiff compares W022 fixture diagnostics with it; production invalid envelopes receive no evaluator answer
+github.com/attention-span-ai/tego/pkg/spec/bizrule.Request.Canonical	public-api	frozen business v1 library API (ADR 0151); live relay wiring remains open under ADR 0152
+github.com/attention-span-ai/tego/pkg/spec/bizrule.answer	tool-only	tools/bizeval through DecodeRequest, Evaluate and EncodeResult; frozen v1 codec/evaluator closure, not live relay authority (ADR 0152)
+github.com/attention-span-ai/tego/pkg/spec/bizrule.appendValue	tool-only	tools/bizeval through DecodeRequest, Evaluate and EncodeResult; frozen v1 codec/evaluator closure, not live relay authority (ADR 0152)
+github.com/attention-span-ai/tego/pkg/spec/bizrule.checkState	tool-only	tools/bizeval through DecodeRequest, Evaluate and EncodeResult; frozen v1 codec/evaluator closure, not live relay authority (ADR 0152)
+github.com/attention-span-ai/tego/pkg/spec/bizrule.condition	tool-only	tools/bizeval through DecodeRequest, Evaluate and EncodeResult; frozen v1 codec/evaluator closure, not live relay authority (ADR 0152)
+github.com/attention-span-ai/tego/pkg/spec/bizrule.decimal	tool-only	tools/bizeval through DecodeRequest, Evaluate and EncodeResult; frozen v1 codec/evaluator closure, not live relay authority (ADR 0152)
+github.com/attention-span-ai/tego/pkg/spec/bizrule.envelope	tool-only	tools/bizeval through DecodeRequest, Evaluate and EncodeResult; frozen v1 codec/evaluator closure, not live relay authority (ADR 0152)
+github.com/attention-span-ai/tego/pkg/spec/bizrule.failure	tool-only	tools/bizeval through DecodeRequest, Evaluate and EncodeResult; frozen v1 codec/evaluator closure, not live relay authority (ADR 0152)
+github.com/attention-span-ai/tego/pkg/spec/bizrule.hashText	tool-only	tools/bizeval through DecodeRequest, Evaluate and EncodeResult; frozen v1 codec/evaluator closure, not live relay authority (ADR 0152)
+github.com/attention-span-ai/tego/pkg/spec/bizrule.hexText	tool-only	tools/bizeval through DecodeRequest, Evaluate and EncodeResult; frozen v1 codec/evaluator closure, not live relay authority (ADR 0152)
+github.com/attention-span-ai/tego/pkg/spec/bizrule.identifier	tool-only	tools/bizeval through DecodeRequest, Evaluate and EncodeResult; frozen v1 codec/evaluator closure, not live relay authority (ADR 0152)
+github.com/attention-span-ai/tego/pkg/spec/bizrule.null	tool-only	tools/bizeval through DecodeRequest, Evaluate and EncodeResult; frozen v1 codec/evaluator closure, not live relay authority (ADR 0152)
+github.com/attention-span-ai/tego/pkg/spec/bizrule.number	tool-only	tools/bizeval through DecodeRequest, Evaluate and EncodeResult; frozen v1 codec/evaluator closure, not live relay authority (ADR 0152)
+github.com/attention-span-ai/tego/pkg/spec/bizrule.object	tool-only	tools/bizeval through DecodeRequest, Evaluate and EncodeResult; frozen v1 codec/evaluator closure, not live relay authority (ADR 0152)
+github.com/attention-span-ai/tego/pkg/spec/bizrule.oneOf	tool-only	tools/bizeval through DecodeRequest, Evaluate and EncodeResult; frozen v1 codec/evaluator closure, not live relay authority (ADR 0152)
+github.com/attention-span-ai/tego/pkg/spec/bizrule.pair	tool-only	tools/bizeval through DecodeRequest, Evaluate and EncodeResult; frozen v1 codec/evaluator closure, not live relay authority (ADR 0152)
+github.com/attention-span-ai/tego/pkg/spec/bizrule.payloadShape	tool-only	tools/bizeval through DecodeRequest, Evaluate and EncodeResult; frozen v1 codec/evaluator closure, not live relay authority (ADR 0152)
+github.com/attention-span-ai/tego/pkg/spec/bizrule.rank	tool-only	tools/bizeval through DecodeRequest, Evaluate and EncodeResult; frozen v1 codec/evaluator closure, not live relay authority (ADR 0152)
+github.com/attention-span-ai/tego/pkg/spec/bizrule.shape	tool-only	tools/bizeval through DecodeRequest, Evaluate and EncodeResult; frozen v1 codec/evaluator closure, not live relay authority (ADR 0152)
+github.com/attention-span-ai/tego/pkg/spec/bizrule.stringValue	tool-only	tools/bizeval through DecodeRequest, Evaluate and EncodeResult; frozen v1 codec/evaluator closure, not live relay authority (ADR 0152)
+github.com/attention-span-ai/tego/pkg/spec/bizrule.validBusiness	tool-only	tools/bizeval through DecodeRequest, Evaluate and EncodeResult; frozen v1 codec/evaluator closure, not live relay authority (ADR 0152)
 
 # pkg/ (public API, docs/REPO-LAYOUT.md)
 github.com/attention-span-ai/tego/pkg/policy/fsplan.Contains	public-api	compares clean absolute paths at component boundaries, for consumers of pkg/policy
@@ -139,7 +228,6 @@ github.com/attention-span-ai/tego/pkg/spec/agent.BuiltInDenyWriteNames	test-api	
 github.com/attention-span-ai/tego/pkg/spec/agent.TestTable.Run	public-api	contract test tables (tego's examples and other consumers) run their rows with it
 github.com/attention-span-ai/tego/pkg/spec/agent.TestTable.RunBy	public-api	contract test tables run their rows with a caller's decider (pkg/policy/evaluate)
 github.com/attention-span-ai/tego/pkg/spec/agent.WithDNSTTL	public-api	the compile option setting the TTL handed to the launcher, for consumers of pkg/spec
-github.com/attention-span-ai/tego/pkg/spec/agent.WithMountInfo	public-api	the compile option naming the mountinfo file the compile print reads, for consumers of pkg/spec
 github.com/attention-span-ai/tego/pkg/spec/config.Load	public-api	reads the machine config layers under the trust rule, for consumers of pkg/spec
 github.com/attention-span-ai/tego/pkg/spec/config.LoadMode	public-api	Load with an explicit trust mode, for consumers of pkg/spec
 github.com/attention-span-ai/tego/pkg/spec/config.UserNamespace.String	public-api	names a user-namespace setting for consumers of pkg/spec
@@ -154,5 +242,12 @@ github.com/attention-span-ai/tego/pkg/spec/agent.MCPToolNameOK	public-api	says w
 github.com/attention-span-ai/tego/pkg/spec/harness.Names	public-api	every value the harness key takes, for consumers of pkg/spec
 github.com/attention-span-ai/tego/pkg/spec/harness.Parse	public-api	reads a harness: value, for consumers of pkg/spec
 github.com/attention-span-ai/tego/pkg/spec/record.FieldCode	public-api	the code of the FieldError in an error chain, for consumers of pkg/spec
+github.com/attention-span-ai/tego/pkg/spec/record.Strings	control-only	internal/control/rulesview reads each ledger line's kind, rule and command entry as data with it
+github.com/attention-span-ai/tego/pkg/spec/record.keyIs	control-only	record.Strings matches a line's keys with it, and only internal/control/rulesview calls Strings
 github.com/attention-span-ai/tego/pkg/spec/record/chaincheck.Check	public-api	ADR 0146: the exported byte-input integrity checker; the CLI uses the streaming Walk adapter
 github.com/attention-span-ai/tego/pkg/spec/record/chaincheck.Reason	public-api	ADR 0146: the exported structured verdict and reason mapping for Check and Walk consumers
+github.com/attention-span-ai/tego/pkg/spec/receipt.Codes	public-api	receipt specification vocabulary (every coverage code with its level and sentence) for readers outside tego
+github.com/attention-span-ai/tego/pkg/spec/receipt.LevelWords	control-only	internal/control/web/receipt.go words a coverage level on the Receipt tab
+github.com/attention-span-ai/tego/pkg/spec/receipt.Means	public-api	receipt specification vocabulary (one sentence per coverage code) for readers outside tego; internal/cli parity tests hold it
+github.com/attention-span-ai/tego/pkg/spec/record.LiveChangeWhys	control-only	internal/control/linewords/words.go words the live-change gap whys
+github.com/attention-span-ai/tego/pkg/spec/record.PriceGapWords	control-only	internal/control/linewords/words.go and internal/control/web/shown.go word the price gap whys

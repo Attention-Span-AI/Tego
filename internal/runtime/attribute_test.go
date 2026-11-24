@@ -68,6 +68,42 @@ func TestAttributeStageFollowsCapture(t *testing.T) {
 	})
 }
 
+// TestActionLineWrittenAfterTheRequestIsPlacedByItsOwnTime pins what the ledger's order does not say. The
+// supervisor writes an action's line once it has answered the call, stamped with the time the call arrived
+// (supervisor/events.go emit), so the agent can send its first request, and the forwarder write that
+// request's line, before the connect that preceded it is written: the line is after the ssl_request in the
+// file and before it in time. The stage places it by its own mono_ns, which is the step open then (here none,
+// the connect came before the first turn), while a line from after the request, written in any order, is the
+// turn's. A reader counting turns by file position would call the first one the turn's (the
+// fedora-7.0 failure of TestIntegrationForwarderCapturesTheModelCall, fix33).
+func TestActionLineWrittenAfterTheRequestIsPlacedByItsOwnTime(t *testing.T) {
+	r := newTestRunner(Deps{Capture: []source.Source{&plainSource{name: "forwarder"}}})
+	r.rt = &agent.RuleTable{}
+	handle := r.attributeStage()(func(*record.Event) {})
+
+	req := &record.Event{Kind: record.KindSSLRequest, Source: record.SourceForwarder, PID: 7, TID: 7, MonoNS: 2000}
+	if err := req.SetPayload(record.SSLRequestPayload{Host: "api.example.com", Method: "POST"}); err != nil {
+		t.Fatal(err)
+	}
+	handle(req)
+	connect := func(mono uint64) *record.Event {
+		ev := &record.Event{Kind: record.KindNet, Source: record.SourceSupervisor, PID: 7, TID: 7, MonoNS: mono,
+			Rule: "net.capture[127.0.0.1:1]", Verdict: record.VerdictAllow, Authority: record.AuthorityRule}
+		if err := ev.SetPayload(record.NetPayload{Proto: "tcp", Dst: "127.0.0.1:1"}); err != nil {
+			t.Fatal(err)
+		}
+		handle(ev)
+		return ev
+	}
+	before, after := connect(1000), connect(3000)
+	if before.Attr == nil || before.Attr.Method != record.MethodTime || before.Attr.Step != 0 {
+		t.Errorf("the connect that happened before the first turn but was written after its request: %+v, want step 0 by time", before.Attr)
+	}
+	if after.Attr == nil || after.Attr.Method != record.MethodTime || after.Attr.Step != 1 {
+		t.Errorf("an action that happened while the first turn was open: %+v, want step 1 by time", after.Attr)
+	}
+}
+
 // TestModelHostsReadsTheContract covers what decides which requests open a step.
 func TestModelHostsReadsTheContract(t *testing.T) {
 	if got := modelHosts(nil); got != nil {

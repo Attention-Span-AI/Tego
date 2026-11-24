@@ -41,16 +41,25 @@ type Filter struct {
 	// run's command starts with, an ask's or answer's target. A leading ~ is each run's home (RunHome).
 	PathPrefix string
 	Hosts      []string // Event.Host, case-insensitive
-	// Programs is the program the line's process was running (program.go), case-insensitive: curl, bash, codex.
+	// Steps are model steps (Event.ModelStep), any of: step:3 asks for the lines the record ties to step 3, and step:none
+	// (-1) for those tied to none, exactly the set tego events --step 3 and --step -1 print.
+	Steps []int
+	// Programs is the program the line's process was running (program.go): a name, case-insensitive (curl, bash, codex), or a
+	// path (a value with a /, or starting with ~) that is the program's pathname or a folder it is under (progWanted).
 	Programs []string
-	Source   string // the envelope's source (supervisor, kernel, ...)
-	Since    time.Time
-	Until    time.Time // Since inclusive, Until exclusive
+	// Targets are the By target groups' names (TargetKey): a line matches when what it names, in one spelling, is one.
+	Targets []string
+	Source  string // the envelope's source (supervisor, kernel, ...)
+	Since   time.Time
+	Until   time.Time // Since inclusive, Until exclusive
 	// After is a Row cursor: lines strictly newer than it in the Logs order (time, then run, then seq), so lines at the
 	// cursor's very time in other runs are neither lost nor listed twice.
 	After string
-	Words []string // each a literal substring of the haystack, like Text
-	Not   Exclude
+	// Appended keeps only the rows with a line appended since the Tail (tail.go): an append cursor, which, unlike
+	// After, loses no line whose time sorts before the newest row the page has.
+	Appended *Tail
+	Words    []string // each a literal substring of the haystack, like Text
+	Not      Exclude
 	// Facets asks Query for Page.Facets.
 	Facets bool
 	// Ledger asks Each for the ledger itself when f selects one whole run and nothing else (WholeRun): every line of
@@ -60,9 +69,12 @@ type Filter struct {
 	none bool
 }
 
+// NoStep is the step number of a line tied to no model step, in a Filter's Steps and in the CLI's events --step.
+const NoStep = -1
+
 // Exclude is what a Filter leaves out: lines that match any entry (the query's -key:value and -word).
 type Exclude struct {
-	Kinds, Verdicts, Rules, Hosts, Runs, Agents, Words, Programs []string
+	Kinds, Verdicts, Rules, Hosts, Runs, Agents, Words, Programs, Targets []string
 }
 
 // Row is a log row: one line, or identical refusals (same run, kind, rule, reason and target) folded into one.
@@ -70,6 +82,9 @@ type Row struct {
 	Event
 	// Label is the rule in words, with the exact list a default decision fell outside of (set by the web layer).
 	Label string
+	// StepKey and StepHead are the model-step group the row belongs to and, on the row that opens a group, its
+	// header words (GroupSteps, set by the web layer on a timeline page; "" everywhere else).
+	StepKey, StepHead string
 	// Program is the program the line's process was running (program.go), "" when the record does not say.
 	Program string
 	Count   int
@@ -180,7 +195,7 @@ func (f *Filter) plain() bool {
 func (f *Filter) lineFilters() bool {
 	n := &f.Not
 	return len(f.Kinds) > 0 || len(f.Agents) > 0 || f.PID != 0 || len(f.Rules) > 0 || f.PathPrefix != "" ||
-		len(f.Hosts) > 0 || len(f.Programs) > 0 || len(n.Programs) > 0 || f.Source != "" || !f.Since.IsZero() || !f.Until.IsZero() || f.After != "" ||
+		len(f.Hosts) > 0 || len(f.Steps) > 0 || len(f.Programs) > 0 || len(n.Programs) > 0 || len(f.Targets) > 0 || len(n.Targets) > 0 || f.Source != "" || !f.Since.IsZero() || !f.Until.IsZero() || f.After != "" ||
 		len(f.Words) > 0 || len(n.Kinds) > 0 || len(n.Verdicts) > 0 || len(n.Rules) > 0 || len(n.Hosts) > 0 ||
 		len(n.Agents) > 0 || len(n.Words) > 0 || f.none
 }
@@ -330,14 +345,15 @@ func (m *matcher) forRun(r *Run) (*runMatch, bool) {
 		rm.hits = r.textMatches(m.text)
 	}
 	if len(f.Programs) > 0 || len(f.Not.Programs) > 0 {
-		names, of := r.progs()
+		names, paths, of := r.progsFull()
 		rm.progOf, rm.progWant = of, make([]int8, len(names))
+		home := RunHome(r)
 		for k, n := range names {
 			n = strings.ToLower(n)
 			switch {
-			case slices.Contains(f.Not.Programs, n):
+			case progWanted(f.Not.Programs, n, paths[k], home):
 				rm.progWant[k] = -1
-			case slices.Contains(f.Programs, n):
+			case progWanted(f.Programs, n, paths[k], home):
 				rm.progWant[k] = 1
 			}
 		}
@@ -407,6 +423,30 @@ func (rm *runMatch) match(i int32, e *Event) (ok, sys bool) {
 	return true, false
 }
 
+// progWanted reports whether the prog: values name the program called name (lower case) that ran as pathname full: a
+// value with no / is the program's name; one with a / is a path read as path: reads one, the program's own path or a
+// folder it is under, whole names only, with ~ the run's home ("" when the run has none: no program is under ~ then).
+func progWanted(values []string, name, full, home string) bool {
+	for _, v := range values {
+		if !strings.Contains(v, "/") && !strings.HasPrefix(v, "~") {
+			if v == name {
+				return true
+			}
+			continue
+		}
+		if rest, ok := strings.CutPrefix(v, "~"); ok {
+			if home == "" {
+				continue
+			}
+			v = home + rest
+		}
+		if pathUnder(full, v, false) {
+			return true
+		}
+	}
+	return false
+}
+
 // matchProgram is the prog: key on line i: a line whose program is not known matches no prog: and is never left out.
 func (rm *runMatch) matchProgram(i int32) bool {
 	if rm.progOf == nil {
@@ -454,7 +494,16 @@ func (rm *runMatch) matchQuery(e *Event) bool {
 	if (len(f.Rules) > 0 && !ruleMatches(f.Rules, logsRule(e))) || (len(f.Not.Rules) > 0 && ruleMatches(f.Not.Rules, logsRule(e))) {
 		return false
 	}
-	if (len(rm.hosts) > 0 && !slices.Contains(rm.hosts, e.Host)) || (e.Host != "" && slices.Contains(rm.notHosts, e.Host)) {
+	if len(f.Steps) > 0 {
+		step, tied := e.ModelStep()
+		if !tied {
+			step = NoStep
+		}
+		if !slices.Contains(f.Steps, step) {
+			return false
+		}
+	}
+	if (len(rm.hosts) > 0 && !hostIn(rm.hosts, e.Host)) || (e.Host != "" && hostIn(rm.notHosts, e.Host)) {
 		return false
 	}
 	if len(f.Not.Verdicts) > 0 && slices.Contains(f.Not.Verdicts, verdictOf(e)) {
@@ -462,6 +511,12 @@ func (rm *runMatch) matchQuery(e *Event) bool {
 	}
 	if rm.path != "" && !pathHas(e, rm.path) {
 		return false
+	}
+	if len(f.Targets) > 0 || len(f.Not.Targets) > 0 {
+		k := TargetKey(e)
+		if (len(f.Targets) > 0 && !slices.Contains(f.Targets, k)) || slices.Contains(f.Not.Targets, k) {
+			return false
+		}
 	}
 	return true
 }
@@ -573,6 +628,11 @@ func (s *Snapshot) Query(f Filter) Page {
 		}
 		pg.Runs++ // a fold never spans runs, so a run with a row is a run with a matched line
 		pg.Groups += len(fr.reps)
+		if f.Appended != nil {
+			if fr.reps = f.Appended.keep(r, fr); len(fr.reps) == 0 {
+				continue
+			}
+		}
 		p := &part{folded: fr, run: r}
 		if c, ok := parseCursor(f.Before); ok {
 			p.pos = sort.Search(len(fr.reps), func(k int) bool {
@@ -724,6 +784,22 @@ func SystemNoise(e *Event) bool {
 		if strings.HasPrefix(e.Target, p) {
 			return true
 		}
+	}
+	return false
+}
+
+// hostIn reports whether a line's host is one a filter names. A filter names an address with its zone to mean that
+// link's host (fe80::1%2 is not fe80::1%3), or without one to mean the address on every link: the host facet keeps the
+// zone (HostOf), and a person who asks for 2001:db8::1 wants the lines to [2001:db8::1%1] as well.
+func hostIn(list []string, host string) bool {
+	if len(list) == 0 { // the common case: nothing is named, and parsing every line's host to see it would cost an allocation a line
+		return false
+	}
+	if slices.Contains(list, host) {
+		return true
+	}
+	if bare := BlockHostOf(host); bare != host {
+		return slices.Contains(list, bare)
 	}
 	return false
 }

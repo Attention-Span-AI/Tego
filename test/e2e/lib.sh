@@ -169,7 +169,7 @@ trap kt_cleanup EXIT
 kt_config() {
 	local dir="$1" ledger="${2:-$1/runs}" profiles prices
 	profiles="$(kt_repo_root)/examples/profiles"
-	prices="$(kt_repo_root)/internal/runtime/limits/testdata/prices.yaml"
+	prices="$(kt_repo_root)/internal/pricetable/testdata/prices.yaml"
 	rm -rf "$dir/profiles" "$dir/prices.yaml"
 	if [ -d "$profiles" ]; then
 		cp -R "$profiles" "$dir/profiles"

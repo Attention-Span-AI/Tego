@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tego.dev/spec/ci-receipt/v1/expect.schema.json",
+  "title": "Independent exact-attempt expectations",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "github",
+    "tego",
+    "attempt"
+  ],
+  "properties": {
+    "schema": {
+      "const": "tego.ci-expect/1"
+    },
+    "github": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "server_url",
+        "repository",
+        "repository_id",
+        "repository_owner_id",
+        "visibility",
+        "source_sha",
+        "source_ref",
+        "workflow_ref",
+        "workflow_sha",
+        "job_workflow_ref",
+        "job_workflow_sha",
+        "event",
+        "run_id",
+        "run_attempt",
+        "agent_job",
+        "signing_job",
+        "step",
+        "matrix_key",
+        "action_sha",
+        "checkout_sha",
+        "pull_request_head_sha"
+      ],
+      "properties": {
+        "server_url": {
+          "const": "https://github.com"
+        },
+        "repository": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        },
+        "repository_id": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "repository_owner_id": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "visibility": {
+          "enum": [
+            "public",
+            "private",
+            "internal"
+          ]
+        },
+        "source_sha": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "source_ref": {
+          "type": "string",
+          "pattern": "^refs/.+$"
+        },
+        "workflow_ref": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/\\.github/workflows/[^/@]+\\.ya?ml@[^@]+$"
+        },
+        "workflow_sha": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "job_workflow_ref": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/\\.github/workflows/[^/@]+\\.ya?ml@[^@]+$"
+        },
+        "job_workflow_sha": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "event": {
+          "enum": [
+            "push",
+            "schedule",
+            "workflow_dispatch",
+            "pull_request"
+          ]
+        },
+        "run_id": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "run_attempt": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "agent_job": {
+          "const": "agent"
+        },
+        "signing_job": {
+          "const": "sign"
+        },
+        "step": {
+          "const": "collect"
+        },
+        "matrix_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+        },
+        "action_sha": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "checkout_sha": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "pull_request_head_sha": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "event": {
+                "const": "pull_request"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "pull_request_head_sha": {
+                "type": "string",
+                "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "pull_request_head_sha": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "tego": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "commit"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        }
+      }
+    },
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "started_at",
+        "completed_at"
+      ],
+      "properties": {
+        "started_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "Z$"
+        },
+        "completed_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "Z$"
+        }
+      }
+    }
+  }
+}

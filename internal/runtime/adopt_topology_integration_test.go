@@ -115,8 +115,13 @@ func TestIntegrationAdoptFreezesTopologyAtMigration(t *testing.T) {
 	if err := spec.TypeByName("bpf_rdonly_cast", &rdonly); err == nil {
 		build = bpfobj.ObjectPlaneRdonly
 	}
+	// Adoption asks the selected plane for its live admission again after the migration lock
+	// (Handle.RecheckAdmission), and an fmod_ret plane with no checker is refused: doctor's report supplies one in
+	// a real run. This test is of what migration freezes, not of what admits the mode, so the checker is one that
+	// admits it; the refusals of a mode that is no longer admitted are cgroup's plane_admission_test.go's.
 	b, ds := enforce.Select(m, rt, backend.Probe{backend.TierCgroup: true},
-		enforce.Only(backend.TierCgroup), enforce.Plane(enforce.PlaneSetup{Mode: mode, Build: build}))
+		enforce.Only(backend.TierCgroup), enforce.Plane(enforce.PlaneSetup{Mode: mode, Build: build,
+			RecheckAdmission: func() error { return nil }}))
 	if b == nil {
 		t.Fatalf("select cgroup plane: %v", ds)
 	}

@@ -80,7 +80,7 @@ func TestNeverEndingRunHasBoundedResidentWindow(t *testing.T) {
 			t.Fatal(err)
 		}
 		st := s.runs[id]
-		if len(st.askOrder) != 0 || len(st.asks) != 0 || len(r.Pending) != 0 {
+		if st.asks.Len() != 0 || len(r.Pending) != 0 {
 			t.Fatal("answered asks accumulated outside the bounded event window")
 		}
 		if len(st.b.Events) > MaxLines {
@@ -143,11 +143,12 @@ func TestPendingAskBudgetSurvivesWindowRotation(t *testing.T) {
 			}
 			st := s.runs[id]
 			var retained int64
-			for _, a := range st.asks {
+			st.asks.Each(func(_ string, a Ask) bool {
 				retained += int64(len(a.Run) + len(a.Agent) + len(a.AskID) + len(a.Hold) + len(a.Op) + len(a.Target) + len(a.Rule))
-			}
-			if retained > maxPendingBytes || st.askBytes > maxPendingBytes {
-				t.Fatalf("pending %s strings escaped the budget after window rotation: retained=%d charged=%d limit=%d", field, retained, st.askBytes, maxPendingBytes)
+				return true
+			})
+			if retained > maxPendingBytes || st.asks.Bytes() > maxPendingBytes {
+				t.Fatalf("pending %s strings escaped the budget after window rotation: retained=%d charged=%d limit=%d", field, retained, st.asks.Bytes(), maxPendingBytes)
 			}
 			if !r.PendingCut || len(r.Pending) == 0 || len(r.Events) == 0 || r.Pending[0].Seq >= r.Events[0].Seq {
 				t.Fatal("expected labelled truncation with an older pending ask preserved beyond the event window")
@@ -155,12 +156,12 @@ func TestPendingAskBudgetSurvivesWindowRotation(t *testing.T) {
 			if a := r.Pending[0]; a.Hold != hold || a.Op != op {
 				t.Fatal("retained ask lost its operation or hold")
 			}
-			before := st.askBytes
+			before := st.asks.Bytes()
 			appendLines(t, root, id, line(id, "codex", 181, at, "answer", `"ask_id":"q-1","approved":true,"by":"owner"`))
 			if _, err := s.Run(id); err != nil {
 				t.Fatal(err)
 			}
-			if _, ok := st.asks["q-1"]; ok || st.askBytes >= before {
+			if _, ok := st.asks.Get("q-1"); ok || st.asks.Bytes() >= before {
 				t.Fatal("answer did not release pending state after window rotation")
 			}
 		})

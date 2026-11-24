@@ -91,7 +91,7 @@ func TestPlaneRunWalksTheMountTreeAsItStands(t *testing.T) {
 	}
 	hash := fmt.Sprintf("t6mtree%09d", os.Getpid())
 	b := New(Options{Machine: machineLinger(time.Hour), BPFFS: DefaultBPFFS, StateDir: pinState(t), Hash: hash,
-		Plane: PlaneSetup{Mode: mode, Build: build}})
+		Plane: PlaneSetup{Mode: mode, Build: build, RecheckAdmission: testPlaneAdmission}})
 	t.Cleanup(func() {
 		if pins, err := newPinLayout(DefaultBPFFS, hash); err == nil {
 			_ = pins.remove()

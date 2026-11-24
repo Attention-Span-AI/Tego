@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,5 +93,33 @@ func TestBlockThroughALinkOnAnOlderLauncher(t *testing.T) {
 	}
 	if e, ok := o.Find(liveblock.KindPath, value); !ok || e.Real != "" || o.V > liveblock.VersionModes {
 		t.Fatalf("overlay v%d holds %+v %v; want the value alone at a version an older launcher reads", o.V, e, ok)
+	}
+}
+
+// TestBlockSaysWhenTheMountTableCouldNotListEveryName (round 6, review G3): the block's confirmation says, in its own
+// sentence, that the mount table could not list every name of the file and what the block then covers; a whole list, an
+// exec block and a plain run say nothing of it.
+func TestBlockSaysWhenTheMountTableCouldNotListEveryName(t *testing.T) {
+	prev := blockOtherNames
+	blockOtherNames = func(p string) ([]string, error) {
+		if strings.HasSuffix(p, "/short") {
+			return []string{"/mnt/other" + p}, errors.New(`mount "/srv/x" has an unlinked directory root`)
+		}
+		return nil, nil
+	}
+	t.Cleanup(func() { blockOtherNames = prev })
+	_, id, _ := liveRun(t)
+	short := filepath.Join(t.TempDir(), "short")
+	code, out, errs := run(t, "block", id, "path", short)
+	if code != identity.ExitOK || !strings.Contains(out, "The mount table could not list every name of "+short+
+		` (mount "/srv/x" has an unlinked directory root): the block refuses the names it listed and that one, and no more.`) {
+		t.Fatalf("a short list: exit %d stdout %q stderr %q", code, out, errs)
+	}
+	whole := filepath.Join(t.TempDir(), "whole")
+	if code, out, errs = run(t, "block", id, "path", whole); code != identity.ExitOK || strings.Contains(out, "mount table") {
+		t.Fatalf("a whole list: exit %d stdout %q stderr %q", code, out, errs)
+	}
+	if code, out, errs = run(t, "block", id, "exec", "/usr/bin/short"); code != identity.ExitOK || strings.Contains(out, "mount table") {
+		t.Fatalf("an exec block: exit %d stdout %q stderr %q", code, out, errs)
 	}
 }

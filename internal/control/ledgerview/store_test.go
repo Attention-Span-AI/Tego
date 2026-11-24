@@ -122,7 +122,7 @@ func TestRevisions(t *testing.T) {
 		t.Fatal(err)
 	}
 	s7, _ := Load(root)
-	if s7.Rev <= s6.Rev || s7.Find(c) != nil || len(s7.Runs) != 2 {
+	if s7.Rev <= s6.Rev || s7.Find(c) == nil || s7.Find(c).ReadError == "" || len(s7.Runs) != 3 {
 		t.Fatalf("a removed run: rev %d -> %d, runs %d", s6.Rev, s7.Rev, len(s7.Runs))
 	}
 }

@@ -49,10 +49,14 @@
 //
 // Shortcut: no --grace from the dashboard.
 //
-// SelfGoverned (governed.go) is whether this process sits inside a run (runscope.InRun): a writer that would widen a
-// run's governance refuses then with ErrGoverned. It fails closed: a cgroup it cannot judge (a cgroup namespace, an unreadable file)
-// refuses too, since an agent could unshare a cgroup namespace to look like a container.
+// SelfGoverned (governed.go) is this process's own answer to "outside every run?" (internal/platform/peer.Self): a
+// writer that would widen a run's governance refuses with ErrGoverned unless the answer is outside. It fails closed:
+// a cgroup it cannot judge (an unreadable file, a cgroup namespace that has no proof) refuses too, since an agent
+// could unshare a cgroup namespace to look like a container.
 //
-// Imports: the standard library, internal/askclient, internal/check/livestatus, internal/runlock, internal/ledger, internal/liveblock, internal/runscope, pkg/spec/askproto, pkg/spec/record, internal/platform/sys, golang.org/x/sys/unix.
+// Alternate-file opens and browser-supplied live-block path resolution run in the bounded own-image filesystem
+// helper through internal/control/pathcheck. The initial selected ledger root remains a synchronous service input.
+//
+// Imports: internal/control/pathcheck, the standard library, internal/askclient, internal/check/livestatus, internal/runlock, internal/ledger, internal/liveblock, internal/runscope, internal/platform/peer, pkg/spec/askproto, pkg/spec/record, internal/platform/sys, golang.org/x/sys/unix.
 // Must not import: the engine (internal/runtime, internal/policy, internal/bpf, internal/cli).
 package runact

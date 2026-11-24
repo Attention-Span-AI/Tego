@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/netip"
 	"net/url"
 	"os"
@@ -97,6 +98,10 @@ type requestReader interface {
 // Options configure a Listener. The zero value is usable: it binds a loopback port, records bodies, and
 // derives nothing.
 type Options struct {
+	// Adjustable says the run is Adjustable (ADR 0125): its live model routes may take an endpoint off its own
+	// backend. The zero value is a Locked run, which keeps every endpoint on its own backend whatever the route
+	// overlay holds (ADR 0127, Amendment 2026-11-21), so a caller that does not say is Locked, never Adjustable.
+	Adjustable bool
 	// HTTPPolicy is an immutable policy for every declared upstream listener.
 	// Nil preserves ordinary capture-only forwarding.
 	HTTPPolicy *httppolicy.Policy
@@ -198,6 +203,9 @@ type Listener struct {
 	// lanes numbers each peer process's turns in flight, the thread a turn is keyed by (R34); one
 	// per run's Manager, shared by its listeners like the budget.
 	lanes *lanes
+	// holding counts the requests this listener holds inside Tego: read from the agent and not yet sent on to the
+	// model, from Tego's receipt of one to the moment its upstream connection is ready (holdRequest).
+	holding atomic.Int64
 	// activity reports relayed chunks to the run's stall check (Options.Activity); nil when nothing
 	// listens. One per run's Manager, shared by its listeners like the budget, and set before Serve.
 	activity *activityMeter
@@ -645,6 +653,14 @@ func (l *Listener) logUnforwarded(msg string, r *http.Request, pid int, err erro
 	}
 }
 
+// holdRequest marks one request as held inside Tego and returns what ends the hold, which may be called more than
+// once. The count is what Manager.HoldingRequest reports to the run's stall check.
+func (l *Listener) holdRequest() func() {
+	l.holding.Add(1)
+	var once sync.Once
+	return func() { once.Do(func() { l.holding.Add(-1) }) }
+}
+
 // forward is the whole proxy path: read the request, add the identity headers, record the request,
 // stream the response, record the response and whatever derive read out of it. pid is the run's process that
 // holds the connection, as admission resolved it: the exchange's lines carry it, and the turn is keyed by it
@@ -675,6 +691,11 @@ func (l *Listener) forward(w http.ResponseWriter, r *http.Request, pid int) {
 		return
 	}
 	x.pid, x.via = pid, via
+	// From here until the upstream connection is ready, Tego holds this request: its own approval, route, credential,
+	// connect and TLS work stands between the agent and the model, and the run's stall check does not count that
+	// time as the agent's silence (limits.WithHeld, through Manager.HoldingRequest).
+	releaseHold := l.holdRequest()
+	defer releaseHold()
 	w, finishAsk, ok := l.askExchange(w, r, pid, x)
 	if !ok {
 		return
@@ -737,7 +758,11 @@ func (l *Listener) forward(w http.ResponseWriter, r *http.Request, pid int) {
 	if via != nil {
 		leg = via.leg
 	}
+	// The connection to the model is Tego's to make: the hold ends when it is ready (net/http's GotConn), or when
+	// the round trip ends without one.
+	out = out.WithContext(httptrace.WithClientTrace(out.Context(), &httptrace.ClientTrace{GotConn: func(httptrace.GotConnInfo) { releaseHold() }}))
 	resp, err := leg.RoundTrip(out)
+	releaseHold()
 	if err != nil {
 		l.opts.Logger.Warn("forwarder: upstream failed", "run", l.runRef().ID, "host", l.model.Host, "route", via.taken(), "err", err)
 		x.guard.markClose(w)

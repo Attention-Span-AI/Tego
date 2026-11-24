@@ -1,0 +1,13 @@
+{
+  "kind": "run_start",
+  "minor": 37,
+  "payload": {
+    "record_minor": 37,
+    "local_approval_authority": {
+      "mode": "owner_only",
+      "sha256": "abababababababababababababababababababababababababababababababab",
+      "agent_uid": 1001,
+      "extra": "root"
+    }
+  }
+}

@@ -185,8 +185,9 @@ loopback servers (under a `net:` section a guarded port refuses unknown destinat
 - A per-request or weighted choice (load balancing, fallback on error): one route per endpoint at a time, by a person.
 - Saving a live route into the contract: a route lasts for the run; Change rules writes the contract.
 - The Locked and Adjustable modes: *amended 2026-11-11*, a Locked run's writers refuse every route but direct
-  ("Amendment 2026-11-11: Locked runs" below). The forwarder does not read the mode, so a route written into
-  `model-routes.json` some other way still applies (docs/GAPS.md C39).
+  ("Amendment 2026-11-11: Locked runs" below). ~~The forwarder does not read the mode, so a route written into
+  `model-routes.json` some other way still applies (docs/GAPS.md C39).~~ *Closed 2026-11-21*: it reads the mode
+  ("Amendment 2026-11-21: the Locked consumer" below).
 
 ## Consequences
 
@@ -262,8 +263,9 @@ same day builds it for MCP tool switches:
   holds gets `ErrNotRunning` first, from `liveblock.CheckLoosening` itself (so the preview of a route on it is refused
   too, with no acknowledgement); a lock that cannot be probed counts as held.
 - **Record.** A refusal writes no overlay change and no ledger line, as a writer's refusal of a lift writes none.
-- **Not covered.** The forwarder applies whatever `model-routes.json` holds and does not read the mode; a route
-  written there some other way still applies, with its `model-route-changed` line (GAPS C39, narrowed).
+- **Not covered.** ~~The forwarder applies whatever `model-routes.json` holds and does not read the mode; a route
+  written there some other way still applies, with its `model-route-changed` line (GAPS C39, narrowed).~~ *Closed
+  2026-11-21* without a record revision ("Amendment 2026-11-21: the Locked consumer" below).
 - **Consequence.** At tier landlock every run is Locked, so routes move live only on Adjustable runs (cgroup,
   bpflsm). `test/e2e/model-route-e2e.sh` now starts its run Adjustable through the test build's
   `TEGO_TEST_LIVE_ANY_TIER` hook; its previous version, run against the new build, stops at `tego route set` with
@@ -277,3 +279,58 @@ same day builds it for MCP tool switches:
   routeact's `TestEndedRun` (the preview of a route on a run no launcher holds is refused), which failed before
   `liveblock.CheckLoosening` refused that run itself; `test/e2e/model-route-e2e.sh` passes. Not verified: a root tier
   in a guest.
+
+## Amendment 2026-11-21: the Locked consumer
+
+Row C208 (D23). The forwarder, which applies the route overlay, reads the run's mode: `forwarder.Options.Adjustable`, set from
+the compiled table (`RuleTable.Adjustable`) where the launcher builds the forwarder. **The zero value is Locked**, so a caller
+that says nothing never gets the Adjustable behaviour; the mode is the launcher's in-process fact, which nothing in the run's
+folder can move.
+
+- **A Locked run keeps every endpoint on its own backend** whatever `model-routes.json` holds, whoever wrote it (an older
+  `tego`, a same-user process outside every run). Requests, held requests, the route a tunnel is refused off and the page's
+  counts all see `direct`. An overlay the forwarder cannot read changes nothing: the endpoint is on `direct` already.
+- **Each route held back has a line**, on the first read of the overlay as on a change read later: the existing
+  `model-route-changed` line with route `direct` (what is in force), the overlay's serial and the author's `by` followed by
+  "(not in force: the run is Locked, so the endpoint stays on its own backend)". A route the contract does not declare keeps
+  its log line only, as on an Adjustable run.
+- **The Model routes page** shows the endpoint on its own backend for a run whose run_start does not say it is Adjustable (Locked,
+  still starting or unreadable): what the forwarder decides, not a route it does not put in force.
+- **Record:** none new; `record_minor` stays 41. An older reader reads the held line as the revert to direct it looks like
+  (`by` is free text), which is what is in force. An older launcher does not read the mode and keeps the 2026-11-11 behaviour
+  (its writers refuse, its forwarder applies the file).
+- **Verified** (this host, as a user): `TestLockedRunKeepsTheEndpointOnItsOwnBackend`, `TestLockedRunHoldsEveryRouteTheOverlayNames`,
+  `TestLockedRunWithAnUnreadableOverlayStaysDirect`, `TestLockedRunStartsWithTheRoutesThatAreThere`,
+  `TestRouterWithoutAModeIsLocked` (forwarder) and `TestStateOfALockedRunShowsTheEndpointOnItsOwnBackend` (routeact), each
+  failing with the old source behind the names (`go test -overlay`). Not verified: a root tier in a guest.
+
+## Amendment 2026-11-22: which routing tables count as this host (D30)
+
+The `models[]` guard decides by one reading of this host that a live block, a `net to` gate rule, the resolved-address
+check and tier 2's rows share (`internal/platform/hostaddr`, GAPS C46). It read the `local`, `broadcast` and `anycast`
+routes of tables local, main and default only, so an AnyIP range an administrator put in another table with
+`ip rule add ... lookup 100` and `ip route add local 192.0.2.0/24 dev lo table 100` was not this host to any of them, and
+a `net` block on this host did not cover it.
+
+**Decision.** Read the policy rules first (`RTM_GETRULE`, both families, one more unprivileged dump) and count a
+non-standard table's routes as this host's when a rule the run's own traffic can match leads to it: an action that looks
+a table up, no `fwmark` whose mask covers it (`(mark & mask) != 0`, since unmarked traffic has mark 0), `iif` absent or `lo`, a `uidrange` that holds the run's user (any one when
+the supervisor is root and cannot know it), a rule marked `not` read by what it matches, and `from`, `to`, `tos`,
+`ipproto` and port selectors taken as matching, which can only count more. An `oif` rule and an `l3mdev` rule (a VRF)
+count: since Linux 5.7 an unprivileged process can `SO_BINDTODEVICE` a socket, and the filter does not refuse it, so the output
+interface is the agent's choice (the first version of this amendment said it needed `CAP_NET_RAW`; a later review showed it
+does not). The tables only a mark leads to are not read: setting a mark needs `CAP_NET_ADMIN`, which no run has.
+They are named, by number, in `tego doctor`'s `note routing:` line (`--json` `routing`) and once in the run's log, and
+GAPS C46 states the limit. Rules that cannot be read give no table at all (fail closed). Record minor 41 is unchanged.
+
+**Rejected:**
+
+- Read every table: a Cilium `local default dev lo table 2004` behind a mark, or a TPROXY table, would make every
+  destination "this host", and every `net` block and `net to` rule would refuse or misclassify all traffic.
+- Keep the limit and only name the tables doctor finds: leaves a plain `ip rule add from all lookup 100` range outside
+  every block, which a run's own traffic reaches.
+
+**Verified:** unit tests on netlink fixtures (`policyrules_test.go`: each selector, the `not` rule, both families, the
+fail-closed cases, a Cilium-shaped dump), red with the old reading behind the names (`go test -overlay`); on a real
+kernel as a user (`TestReadLocalTableReal` reads the rules); in an ubuntu-25.10 guest as root with a table-100 rule and
+route.

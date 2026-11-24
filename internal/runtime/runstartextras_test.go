@@ -29,6 +29,12 @@ var updateRunStartGolden = flag.Bool("update-runstart", false, "rewrite testdata
 // which a host may not have), so every other byte is compared.
 func runStartLine(t *testing.T, deps Deps) string {
 	t.Helper()
+	return runStartLineWith(t, deps, nil)
+}
+
+// runStartLineWith is runStartLine for a runner tweak has changed (a limit the scope held, say) before run_start is written.
+func runStartLineWith(t *testing.T, deps Deps, tweak func(*runner)) string {
+	t.Helper()
 	const id = "r-00000000-000000000000a-extra0"
 	dir := filepath.Join(t.TempDir(), id)
 	w, err := ledger.Open(dir, record.RunRef{ID: id, Agent: "retriever"}, ledger.WithAnchor(nopAnchor{}))
@@ -42,6 +48,9 @@ func runStartLine(t *testing.T, deps Deps) string {
 	r.writer = w
 	r.cmd = []string{"/bin/true"}
 	r.rt = &agent.RuleTable{ContractPath: "/elsewhere/contract.yaml", Contract: &agent.Contract{Name: "retriever"}}
+	if tweak != nil {
+		tweak(r)
+	}
 	if err := r.writeRunStart(); err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +153,9 @@ func TestRunRefusesExtrasItsMinorDoesNotReach(t *testing.T) {
 		{"shares", RunStartExtras{Shares: x.Shares}, record.MinorShares, "run_start.shares"},
 		{"every block", x, record.MinorShares, "run_start.deployment"},
 		{"vault alone", RunStartExtras{Vault: x.Vault}, 0, "run_start.vault"},
-		{"empty secrets list", RunStartExtras{Secrets: []record.SecretUse{}}, 0, "run_start.secrets"},
+		// An empty list is refused at every revision; below 33 as [below-minor] on the list itself, from 33 as the vault
+		// that must come with it (a launch writes revision 41, which is the second).
+		{"empty secrets list", RunStartExtras{Secrets: []record.SecretUse{}}, 0, "run_start.vault"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m, rt, root := startupFixture(t)
@@ -152,9 +163,9 @@ func TestRunRefusesExtrasItsMinorDoesNotReach(t *testing.T) {
 				Launcher: &launch.Launcher{Exe: filepath.Join(root, "must-never-start")}, Environ: []string{"PATH=/bin"},
 				RunStartExtras: tc.x}
 			res, err := Run(context.Background(), rt, []string{"/bin/true"}, deps)
-			if tc.need != 0 && record.Minor >= tc.need {
+			if tc.need != 0 && launchMinor >= tc.need {
 				if err == nil || errors.Is(err, ErrDeps) {
-					t.Fatalf("blocks at %d, Minor %d: Run = %v, want the child stage's own failure", tc.need, record.Minor, err)
+					t.Fatalf("blocks at %d, writer minor %d: Run = %v, want the child stage's own failure", tc.need, launchMinor, err)
 				}
 				return
 			}

@@ -100,10 +100,19 @@ func TestReferenceAllows(t *testing.T) {
 	}
 }
 
+// TestProgram: a run's program is read from its recorded arguments, so a path that holds a space is one program; a
+// run with no recorded arguments (a record too old to carry them) keeps the first word of its command text.
 func TestProgram(t *testing.T) {
 	for cmd, want := range map[string]string{"/usr/bin/codex --no-daemon": "codex", "codex": "codex", "": ""} {
-		if got := program(cmd); got != want {
-			t.Errorf("program(%q) = %q, want %q", cmd, got, want)
+		if got := (&Run{Command: cmd}).program(); got != want {
+			t.Errorf("program of the text %q = %q, want %q", cmd, got, want)
 		}
+	}
+	spaced := &Run{Command: "/opt/my tools/codex --no-daemon", command: []string{"/opt/my tools/codex", "--no-daemon"}}
+	if got := spaced.program(); got != "codex" {
+		t.Errorf("program of the recorded arguments = %q, want codex", got)
+	}
+	if !SameProgram(spaced, &Run{Command: "/usr/bin/codex"}) || SameProgram(spaced, &Run{Command: "/opt/my"}) {
+		t.Error("SameProgram does not read the recorded program")
 	}
 }

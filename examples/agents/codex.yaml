@@ -15,7 +15,7 @@
 #
 # Why it looks like this (docs/OPERATIONS.md, "Interactive Codex under a boundary"):
 #   - Codex's own sandbox must be off (`sandbox_mode = "danger-full-access"` and `approval_policy = "never"` in the config.toml
-#     that CODEX_HOME names): it cannot start inside the Landlock domain, and tego is the cage. The contract's `ask` is the approval.
+#     that CODEX_HOME names): it cannot start inside the Landlock domain, and tego enforces the contract. The contract's `ask` is the approval.
 #   - `--no-daemon`: Codex's shared background server would run the commands outside the boundary.
 #   - The forwarder dials api.openai.com:443 itself and resolves the name itself, so the agent needs no connection and no name
 #     lookup of its own: `net.allow` does not name the model host (a direct connection is not counted), and `net.dns.mode: off`.

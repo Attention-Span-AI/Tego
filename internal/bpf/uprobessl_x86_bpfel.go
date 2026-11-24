@@ -146,6 +146,8 @@ const (
 	uprobesslMapTegoReasonMap       = "tego_reason_map"
 	uprobesslMapTegoRunSet          = "tego_run_set"
 	uprobesslMapTegoSslCurrent      = "tego_ssl_current"
+	uprobesslMapTegoSslOwnstk       = "tego_ssl_ownstk"
+	uprobesslMapTegoSslOwnstkm      = "tego_ssl_ownstkm"
 	uprobesslMapTegoSslReads        = "tego_ssl_reads"
 	uprobesslMapTegoSslSeq          = "tego_ssl_seq"
 	uprobesslMapTegoTrackingFailed  = "tego_tracking_failed"
@@ -230,6 +232,8 @@ type uprobesslMapSpecs struct {
 	TegoReasonMap      *ebpf.MapSpec `ebpf:"tego_reason_map"`
 	TegoRunSet         *ebpf.MapSpec `ebpf:"tego_run_set"`
 	TegoSslCurrent     *ebpf.MapSpec `ebpf:"tego_ssl_current"`
+	TegoSslOwnstk      *ebpf.MapSpec `ebpf:"tego_ssl_ownstk"`
+	TegoSslOwnstkm     *ebpf.MapSpec `ebpf:"tego_ssl_ownstkm"`
 	TegoSslReads       *ebpf.MapSpec `ebpf:"tego_ssl_reads"`
 	TegoSslSeq         *ebpf.MapSpec `ebpf:"tego_ssl_seq"`
 	TegoTrackingFailed *ebpf.MapSpec `ebpf:"tego_tracking_failed"`
@@ -276,6 +280,8 @@ type uprobesslMaps struct {
 	TegoReasonMap      *ebpf.Map `ebpf:"tego_reason_map"`
 	TegoRunSet         *ebpf.Map `ebpf:"tego_run_set"`
 	TegoSslCurrent     *ebpf.Map `ebpf:"tego_ssl_current"`
+	TegoSslOwnstk      *ebpf.Map `ebpf:"tego_ssl_ownstk"`
+	TegoSslOwnstkm     *ebpf.Map `ebpf:"tego_ssl_ownstkm"`
 	TegoSslReads       *ebpf.Map `ebpf:"tego_ssl_reads"`
 	TegoSslSeq         *ebpf.Map `ebpf:"tego_ssl_seq"`
 	TegoTrackingFailed *ebpf.Map `ebpf:"tego_tracking_failed"`
@@ -294,6 +300,8 @@ func (m *uprobesslMaps) Close() error {
 		m.TegoReasonMap,
 		m.TegoRunSet,
 		m.TegoSslCurrent,
+		m.TegoSslOwnstk,
+		m.TegoSslOwnstkm,
 		m.TegoSslReads,
 		m.TegoSslSeq,
 		m.TegoTrackingFailed,

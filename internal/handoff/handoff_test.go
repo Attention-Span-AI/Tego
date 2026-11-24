@@ -3,6 +3,7 @@
 package handoff
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,10 +13,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -45,6 +49,12 @@ func TestMain(m *testing.M) {
 		reportFDs(len(os.Args) > 1 && os.Args[1] == "fds")
 		if os.Getenv(nofileEnv) != "" {
 			reportChildNofile()
+		}
+		if os.Getenv(selfSumEnv) != "" {
+			reportSelfSum()
+		}
+		if os.Getenv(stdinEnv) != "" {
+			reportStdin()
 		}
 		os.Exit(0)
 	case roleCaller:
@@ -102,6 +112,30 @@ func reportFDs(extra bool) {
 		b, err := io.ReadAll(os.NewFile(uintptr(fd), "extra"))
 		fmt.Printf("fd%d=%s %v\n", fd, b, err)
 	}
+}
+
+// selfSumEnv asks the control role to print its own program sum and the inode its /proc/self/exe names.
+const selfSumEnv = "TEGO_HANDOFF_TEST_SELFSUM"
+
+// reportSelfSum prints "selfsum=<sha256> ino=<inode>" for this process's own image.
+func reportSelfSum() {
+	sum, err := SelfSum()
+	var st unix.Stat_t
+	if e := unix.Stat("/proc/self/exe", &st); e != nil {
+		fmt.Printf("selfsum-stat-error=%v\n", e)
+	}
+	fmt.Printf("selfsum=%s ino=%d err=%v\n", sum, st.Ino, err)
+}
+
+// stdinEnv asks the control role to say whether its standard input is a terminal and to read one line from it.
+const stdinEnv = "TEGO_HANDOFF_TEST_STDIN"
+
+// reportStdin prints "stdin-tty=<bool> line=<first line read> err=<read error>": what a tego-control that was handed a
+// person's terminal sees on descriptor 0, as `tego rules undo` asks for its confirmation word from it.
+func reportStdin() {
+	_, err := unix.IoctlGetTermios(0, unix.TCGETS)
+	line, rerr := bufio.NewReader(os.Stdin).ReadString('\n')
+	fmt.Printf("stdin-tty=%t line=%q err=%v\n", err == nil, strings.TrimSpace(line), rerr)
 }
 
 // nofileEnv asks the control role to print the soft RLIMIT_NOFILE a child of it starts with; spawnEnv asks the
@@ -303,6 +337,91 @@ func TestHandoffExecsTheVerifiedCopy(t *testing.T) {
 	dir := t.TempDir()
 	pin := plant(t, dir)
 	wantVerified(t, runCaller(t, dir, pin, ""), "serve", "--listen", "x")
+}
+
+// openPty makes a pseudo-terminal pair: the master a test types at and reads the screen from, and the slave a process
+// takes as its terminal.
+func openPty(t *testing.T) (master, slave *os.File) {
+	t.Helper()
+	m, err := os.OpenFile("/dev/ptmx", os.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Skipf("no /dev/ptmx for a pseudo-terminal: %v", err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+	if err := unix.IoctlSetPointerInt(int(m.Fd()), unix.TIOCSPTLCK, 0); err != nil {
+		t.Skipf("the pseudo-terminal cannot be unlocked: %v", err)
+	}
+	n, err := unix.IoctlGetInt(int(m.Fd()), unix.TIOCGPTN)
+	if err != nil {
+		t.Skipf("the pseudo-terminal has no number: %v", err)
+	}
+	s, err := os.OpenFile(fmt.Sprintf("/dev/pts/%d", n), os.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Skipf("the pseudo-terminal's other end cannot be opened: %v", err)
+	}
+	return m, s
+}
+
+// TestHandoffPassesTheTerminalAndInput (C130): Exec replaces the process, so the terminal a person ran tego at, and what
+// they type there, reach tego-control as they are. A caller started on a pseudo-terminal as its controlling terminal
+// hands off; the tego-control it becomes sees a terminal on its standard input and reads the line typed at it, which is
+// how `tego rules undo` gets its confirmation word. With the input a pipe, the tego-control sees no terminal.
+func TestHandoffPassesTheTerminalAndInput(t *testing.T) {
+	dir := t.TempDir()
+	pin := plant(t, dir)
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := append(os.Environ(), roleEnv+"="+roleCaller, "TEGO_HANDOFF_TEST_DIR="+dir, "TEGO_HANDOFF_TEST_PIN="+pin,
+		euidEnv+"="+strconv.Itoa(callerEUID()), stdinEnv+"=1")
+
+	master, slave := openPty(t)
+	cmd := exec.Command(self)
+	cmd.Env = env
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = slave, slave, slave
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	_ = slave.Close()
+	screen := make(chan string, 1)
+	go func() { // the master reads EIO once the last process on the terminal has gone
+		b, _ := io.ReadAll(master)
+		screen <- string(b)
+	}()
+	if _, err := master.WriteString("undo\n"); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("the caller: %v", err)
+		}
+	case <-time.After(20 * time.Second):
+		_ = cmd.Process.Kill()
+		t.Fatal("the handed-off tego-control did not finish in 20 s")
+	}
+	var out string
+	select {
+	case out = <-screen:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the terminal was never closed")
+	}
+	if want := `stdin-tty=true line="undo" err=<nil>`; !strings.Contains(out, want) || !strings.Contains(out, verified) {
+		t.Errorf("on a terminal tego-control printed %q, want %s from the verified copy", out, want)
+	}
+
+	// With the input a pipe, the same handoff shows tego-control no terminal: the check above is not vacuous.
+	piped := exec.Command(self)
+	piped.Env = env
+	piped.Stdin = strings.NewReader("undo\n")
+	got, err := piped.CombinedOutput()
+	if err != nil || !strings.Contains(string(got), `stdin-tty=false line="undo"`) {
+		t.Errorf("on a pipe tego-control printed %q (%v), want stdin-tty=false", got, err)
+	}
 }
 
 // TestHandoffHandsOverTheSoftNofile: Go raises its own soft RLIMIT_NOFILE at start and gives what it execs or starts
@@ -761,4 +880,41 @@ func readOnlyFlags(info string) bool {
 		}
 	}
 	return false
+}
+
+// TestSelfSumIsTheSameForEveryMemfdLaunch is D1 of the Windows walkthrough: tego-control runs from a fresh sealed memfd
+// on every handoff, so its /proc/self/exe names another inode each time; the sum of its bytes does not change, and it
+// is the pinned hash, which is what tego dashboard compares a running dashboard's log with.
+func TestSelfSumIsTheSameForEveryMemfdLaunch(t *testing.T) {
+	dir := t.TempDir()
+	pin := plant(t, dir)
+	re := regexp.MustCompile(`selfsum=([0-9a-f]{64}) ino=(\d+) err=<nil>`)
+	var sums, inodes []string
+	for range 2 {
+		out := runCallerAs(t, callerEUID(), dir, pin, "", selfSumEnv+"=1")
+		m := re.FindStringSubmatch(out)
+		if m == nil {
+			t.Fatalf("no program sum in %q", out)
+		}
+		sums, inodes = append(sums, m[1]), append(inodes, m[2])
+	}
+	if inodes[0] == inodes[1] {
+		t.Fatalf("both launches ran inode %s: the premise (a fresh memfd per launch) does not hold here", inodes[0])
+	}
+	if sums[0] != sums[1] || sums[0] != pin {
+		t.Errorf("sums %v of the same bytes, want both the pin %s", sums, pin)
+	}
+}
+
+func TestProgramLineNamesOnlyAPinnedSum(t *testing.T) {
+	sum := strings.Repeat("ab", 32)
+	if got, ok := RecordedProgram([]byte("x\n" + ProgramLine(sum) + ProgramLine(strings.Repeat("cd", 32)))); !ok || got != sum {
+		t.Errorf("first line: %q %v, want %q", got, ok, sum)
+	}
+	if _, ok := RecordedProgram([]byte(ProgramLinePrefix + " " + sum[:63] + "\n")); ok {
+		t.Error("a short sum was read")
+	}
+	if _, ok := PinnedSum(); ok {
+		t.Error("the test binary has no pin")
+	}
 }

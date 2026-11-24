@@ -44,6 +44,8 @@ type Server struct {
 	Command []string
 	URL     string
 	Rules   mcptool.Rules
+	// BusinessRules forbids falling back to this legacy service (ADR 0152).
+	BusinessRules bool
 }
 
 // AskFunc asks a person on the run's broker (runtime.askRequest).
@@ -53,6 +55,10 @@ type AskFunc func(context.Context, ask.Request) (ask.Decision, error)
 type Options struct {
 	// Servers are the relayed servers; New refuses none.
 	Servers []Server
+	// Adjustable says the run is Adjustable (ADR 0125): its live MCP switches may loosen the contract's decision. The zero
+	// value is a Locked run, which holds every tool to its contract's decision or tighter whatever the overlay holds
+	// (ADR 0126, Amendment 2026-11-21), so a caller that does not say is Locked, never Adjustable.
+	Adjustable bool
 	// Exe is the tego executable the client config names for the shim; "" is os.Executable.
 	Exe string
 	// Logger receives the service's own notes; nil discards them.
@@ -87,10 +93,15 @@ type Service struct {
 	warned  mcptools.Signature // the overlay last warned of, so a retry every poll does not repeat it
 	serial  uint64
 	pending map[int]pendingStart // admitted shim pid -> what it may start, not yet started
+	asksOut int                  // asks waiting for a person, bounded at MaxBatch
 	seen    mcptools.Seen
 	conns   map[*stdioConn]struct{}
 	cfgPath string
 	stopped bool
+	// oversizeLines counts the oversize gap lines written per (why, server), and oversizeLost the messages past
+	// record.OversizeLines of one pair, which Gaps reports as one counted line per why.
+	oversizeLines map[[2]string]int
+	oversizeLost  map[string]int64
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -110,6 +121,11 @@ type pendingStart struct {
 // New binds the control listener (and one HTTP relay listener per relayed url server) on loopback, so the ports
 // exist before the run starts (source.LoopbackSource).
 func New(opts Options) (*Service, error) {
+	for _, s := range opts.Servers {
+		if s.BusinessRules {
+			return nil, ErrBusinessUnavailable
+		}
+	}
 	if len(opts.Servers) == 0 {
 		return nil, errors.New("mcprelay: no relayed server")
 	}
@@ -237,6 +253,7 @@ func (s *Service) Start(ctx context.Context, run source.RunRef, sink source.Sink
 	s.run, s.sink = run, sink
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	s.mu.Unlock()
+	s.opts.Logger.Debug("mcp relay: serving", "servers", len(s.servers), "adjustable", s.Adjustable())
 	s.loadOverlay(true)
 	s.wg.Add(2)
 	go s.acceptLoop()
@@ -272,8 +289,50 @@ func (s *Service) Stop() error {
 	return nil
 }
 
-// Gaps is nothing: the relay covers what it relays, and reports no shortfall at run_end.
-func (s *Service) Gaps() []source.Gap { return nil }
+// Gaps are the oversize messages the relay dropped past the lines it wrote for them (record.OversizeLines per server and
+// why): one line of the why with the count of them and no binary. Nothing else is a shortfall: the relay covers what it
+// relays.
+func (s *Service) Gaps() []source.Gap {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []source.Gap
+	for _, why := range []string{record.GapMCPResponseOversize, record.GapMCPStreamOversize} {
+		if n := s.oversizeLost[why]; n > 0 {
+			out = append(out, source.Gap{What: record.GapRecord, Why: why, Count: n})
+		}
+	}
+	return out
+}
+
+// emitOversize records one message the relay dropped for its size (record.GapMCPResponseOversize,
+// record.GapMCPStreamOversize): the server, the message's size (0 when the relay stopped reading at the limit) and the
+// limit it was held to. It also logs the drop. Past record.OversizeLines lines of a why for one server the message is
+// only counted (Gaps), so a server that answers with nothing but oversize lines cannot fill the record.
+func (s *Service) emitOversize(why, server string, size, limit int64) {
+	s.opts.Logger.Warn("mcp relay: dropped a message over the size bound", "server", server, "why", why, "size", size, "limit", limit)
+	s.mu.Lock()
+	run, sink := s.run, s.sink
+	if s.oversizeLines == nil {
+		s.oversizeLines, s.oversizeLost = map[[2]string]int{}, map[string]int64{}
+	}
+	k := [2]string{why, server}
+	over := s.oversizeLines[k] >= record.OversizeLines
+	if over {
+		s.oversizeLost[why]++
+	} else {
+		s.oversizeLines[k]++
+	}
+	s.mu.Unlock()
+	if over || sink == nil {
+		return
+	}
+	ev := oversizeEvent(why, server, size, limit)
+	if ev == nil {
+		return
+	}
+	ev.V, ev.TS, ev.MonoNS, ev.Run, ev.Agent, ev.Cgroup = record.Version, s.opts.Now(), s.opts.Mono(), run.ID, run.Agent, run.CgroupID
+	sink.Emit(ev)
+}
 
 // Relayed is the supervisor's gate (ADR 0126 §4): only the child pinned before its exec can consume the admitted
 // shim's one start. A live pidfd keeps p.pid bound to that process, even if the shim's parent relationship changes.
@@ -439,12 +498,34 @@ func (s *Service) loadOverlay(first bool) {
 	s.overlay, s.sig, s.serial = o, sig, o.Serial
 	s.mu.Unlock()
 	if first {
+		// The run starts with the switches that are there, and says nothing of them, except on a Locked run, which holds
+		// back those that loosen its contract: each of those gets its line, as a change read later does.
+		if !s.opts.Adjustable {
+			for _, e := range o.Tools {
+				if sv, ok := s.servers[e.Server]; ok && mcptool.Loosens(mcptool.Contract(sv.Rules, e.Server, e.Tool).Decision, e.Decision) {
+					s.opts.Logger.Warn("mcp relay: a live switch looser than the contract is not in force on a Locked run",
+						"server", e.Server, "tool", e.Tool, "decision", e.Decision, "by", e.By)
+					s.emitHeldChange(mcptools.Change{Serial: e.Serial, Op: mcptools.OpSet, Server: e.Server, Tool: e.Tool,
+						Decision: e.Decision, By: e.By, At: e.At})
+				}
+			}
+		}
 		return
 	}
 	for _, c := range changes {
-		if _, ok := s.servers[c.Server]; ok {
-			s.emitChange(c)
+		sv, ok := s.servers[c.Server]
+		if !ok {
+			continue
 		}
+		if !s.opts.Adjustable && c.Op != mcptools.OpReset && mcptool.Loosens(mcptool.Contract(sv.Rules, c.Server, c.Tool).Decision, c.Decision) {
+			// A Locked run does not put this one in force: the line says the contract decides the tool, and by whom the
+			// switch was asked, so the ledger never shows a loosening that did not happen.
+			s.opts.Logger.Warn("mcp relay: a live switch looser than the contract is not in force on a Locked run",
+				"server", c.Server, "tool", c.Tool, "decision", c.Decision, "by", c.By)
+			s.emitHeldChange(c)
+			continue
+		}
+		s.emitChange(c)
 	}
 }
 
@@ -457,8 +538,17 @@ func (s *Service) decide(server, tool string) mcptool.Result {
 		live = e.Decision
 	}
 	s.mu.Unlock()
-	return mcptool.Decide(s.servers[server].Rules, live, server, tool)
+	rules := s.servers[server].Rules
+	if !s.opts.Adjustable {
+		// A Locked run keeps to its contract: a switch looser than the contract's own decision is not in force, whoever
+		// wrote it into the overlay (ADR 0126, Amendment 2026-11-21). One that tightens is.
+		live = mcptool.WithinContract(rules, live, server, tool)
+	}
+	return mcptool.Decide(rules, live, server, tool)
 }
+
+// Adjustable reports whether the run's live switches may loosen its contract (Options.Adjustable).
+func (s *Service) Adjustable() bool { return s.opts.Adjustable }
 
 // denied is the tools/list filter of server: a tool decided deny now.
 func (s *Service) denied(server string) func(string) bool {
@@ -486,10 +576,20 @@ func (s *Service) noteSeen(server string, names []string) {
 func (s *Service) askPerson(ctx context.Context, server, tool, rule string, pid int) (bool, string) {
 	s.mu.Lock()
 	fn := s.ask
-	s.mu.Unlock()
-	if fn == nil {
+	// The cards a person is asked to answer are bounded for the whole relay at what one batch may raise: a client that sends
+	// batch after batch of asked calls cannot fill the Approvals page. The call past it is refused at once, as one with no
+	// broker is, and recorded.
+	if fn == nil || s.asksOut >= MaxBatch {
+		s.mu.Unlock()
 		return false, ask.ReasonUnavailable
 	}
+	s.asksOut++
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.asksOut--
+		s.mu.Unlock()
+	}()
 	d, err := fn(ctx, ask.Request{Op: OpMCPTool, Target: server + " " + tool, Rule: rule, Hold: "request", PID: pid, TID: pid})
 	if err == nil && d.Approved {
 		return true, ""
@@ -535,6 +635,15 @@ func (s *Service) emitChange(c mcptools.Change) {
 	}
 	ev.V, ev.TS, ev.MonoNS, ev.Run, ev.Agent, ev.Cgroup = record.Version, s.opts.Now(), s.opts.Mono(), run.ID, run.Agent, run.CgroupID
 	sink.Emit(ev)
+}
+
+// emitHeldChange writes the gap line of a live switch a Locked run did not put in force (loadOverlay): the same
+// mcp-tool-changed line, with decision reset (the contract decides the tool, which is what is in force) and the
+// switch's author with the reason after it, so a reader of the record sees the attempt and what became of it.
+func (s *Service) emitHeldChange(c mcptools.Change) {
+	c.Op, c.Decision = mcptools.OpReset, ""
+	c.By += HeldByLocked
+	s.emitChange(c)
 }
 
 func monoNow() uint64 {

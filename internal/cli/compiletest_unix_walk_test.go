@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/attention-span-ai/tego/internal/testutil"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
@@ -166,29 +167,11 @@ tests:
 	}
 }
 
-// sunPathDir is a temporary directory, removed when t ends, every symlink in its name resolved, short enough that a
-// socket name tail bytes long beneath it fits sun_path (107 bytes, which the contract's schema holds every unix: entry
-// and bind name to): beneath TMPDIR when that leaves room, else beneath /tmp. A test's own TempDir name outgrew it
-// beneath a TMPDIR of 40 bytes, and one beneath TMPDIR alone beneath one of 80 (-2c4-2).
+// sunPathDir is testutil.SunPathDir, the one short socket directory every socket fixture takes (-2c4-2: a test's own
+// TempDir name outgrew sun_path beneath a TMPDIR of 40 bytes, and one beneath TMPDIR alone beneath one of 80).
 func sunPathDir(t *testing.T, prefix string, tail int) string {
 	t.Helper()
-	const sunPathMax = 107
-	for _, base := range []string{"", "/tmp"} {
-		tmp, err := os.MkdirTemp(base, prefix)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = os.RemoveAll(tmp) })
-		dir, err := filepath.EvalSymlinks(tmp)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(dir)+tail <= sunPathMax {
-			return dir
-		}
-	}
-	t.Fatalf("no temporary directory leaves room for a %d-byte socket name in sun_path", tail)
-	return ""
+	return testutil.SunPathDir(t, prefix, tail)
 }
 
 // TestCompileTestUnixJoinsThePhysicalCwd: a relative unix row is joined to compile's working directory as getcwd(2)

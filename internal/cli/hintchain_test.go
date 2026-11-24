@@ -189,13 +189,15 @@ func TestWatchStopLineIsGuidance(t *testing.T) {
 // printed it: sudo doctor --require for a root tier a person's report lacked, tego setup for tier
 // landlock, and for a root report, which a sudo doctor printed, the sentence alone.
 func TestDoctorRequireHintKeepsTheTier(t *testing.T) {
+	// Exercise the command branch independently of the permissions of the test build's scratch path.
+	agentsSelf(t)
 	hintsAt(t, false, "on")
 	for _, tc := range []struct {
 		rep  doctor.Report
 		want string
 	}{
 		{doctor.Report{Tier: backend.TierLandlock, Require: backend.TierCgroup, Fix: "run as root"},
-			"\nnext: do what the fix: line above says, then check again:\n  sudo \"$(command -v tego)\" doctor --require cgroup\n"},
+			"\nnext: do what the fix: line above says, then check again:\n  " + selfSudo(t, "doctor --require cgroup") + "\n"},
 		{doctor.Report{Tier: backend.TierCgroup, Require: backend.TierBPFLSM, Root: true, Fix: "boot with lsm=bpf"},
 			"\nnext: do what the fix: line above says, then run this check again.\n"},
 		{doctor.Report{Require: backend.TierLandlock, Fix: "start tego inside a cgroup of your own"},
@@ -221,6 +223,7 @@ func TestLearnSaveRefusesSudo(t *testing.T) {
 	// sudo by the user 4242: as root InvokingUID reads it; as a user it is ignored and the stand-in euid below is root
 	// acting for this user. saveHarness's ownShell removed the one the test binary inherited, so this is the test's own.
 	t.Setenv("SUDO_UID", "4242")
+	// rootskips:ignore InvokingUID reads the SUDO_UID set just above, so a root run reads 4242 and does not skip; it skips only for a process that really is the invoking root user
 	if uid, _ := config.InvokingUID(); uid == 0 {
 		t.Skip("the invoking user is root; the refusal is for another user's sudo")
 	}

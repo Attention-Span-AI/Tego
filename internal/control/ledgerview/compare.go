@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/attention-span-ai/tego/internal/check/syslookup"
+	"github.com/attention-span-ai/tego/internal/control/linewords"
 )
 
 // The classes of a comparison row, in the order the table lists them.
@@ -399,15 +400,23 @@ func collect(r *Run, norm func(string) string) (map[rowKey]*acc, CmpSide) {
 				a.host = h
 			}
 		case "exec":
-			if f := strings.Fields(e.Target); len(f) > 0 {
-				get(ClassExec, path.Base(f[0])).add(e.Verdict)
+			if p := e.Argv0(); p != "" {
+				get(ClassExec, path.Base(p)).add(e.Verdict)
 			}
 		case "ask":
+			if e.askRepeat {
+				continue // malformed, and no second question (askpair)
+			}
 			if _, seen := asks[e.AskID]; !seen {
 				askOrder = append(askOrder, e.AskID)
 			}
-			asks[e.AskID] = askInfo{firstNonEmpty(e.askOp, e.Op), firstNonEmpty(e.askTarget, "a held "+e.Op)}
+			// A held file open is worded for what the person allows, a read or a write, never "open" (linewords.AskOp).
+			op := linewords.AskOp(firstNonEmpty(e.askOp, e.Op), e.Rule)
+			asks[e.AskID] = askInfo{op, firstNonEmpty(e.askTarget, "a held "+op)}
 		case "answer":
+			if e.answerUnpaired {
+				continue // an answer with no ask before it answers nothing (askpair)
+			}
 			var p struct {
 				Approved *bool `json:"approved"`
 			}

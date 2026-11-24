@@ -20,11 +20,21 @@
 // here, outside the run, from the contract and an overlay the agent cannot write; the decision itself is
 // pkg/policy/mcptool's.
 //
+// A JSON-RPC batch is decided member by member (planBatch, MaxBatch), and a Locked run (Options.Adjustable false, the
+// zero value) applies only the live switches that are no looser than the contract (mcptool.WithinContract): ADR 0126,
+// Amendment 2026-11-21.
+//
+// Business-bearing servers are refused before listener/client configuration or
+// legacy protocol admission. This service cannot establish the trusted worker
+// and durable admission owner required by ADR 0152. Defense at clientLine,
+// decideCall, serverLine and HTTP entry prevents a synthetic/miswired service
+// from falling through to ordinary forwarding.
+//
 // The service is a source.LoopbackSource the run lists in Deps.Extra: neither a capture nor an observe source. Its
 // listener's port is admitted to the run through Endpoints, and Vars gives the agent TEGO_MCP_RELAY and
 // TEGO_MCP_CONFIG (a Claude Code mcpServers file naming the shim for each relayed server).
 //
-// Imports: the standard library, internal/platform/proc, internal/platform/sys, internal/runtime/source,
+// Imports: the standard library, internal/platform/peer, internal/platform/proc, internal/platform/sys, internal/runtime/source,
 // internal/runtime/ask, internal/runtime/derive/mcp, internal/mcptools, pkg/policy/mcptool, pkg/spec/identity,
 // pkg/spec/record, golang.org/x/sys/unix.
 // Must not import: internal/check, internal/control, internal/runtime (the run imports this), internal/cli.

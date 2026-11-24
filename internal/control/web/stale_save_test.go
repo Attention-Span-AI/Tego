@@ -15,11 +15,12 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
 	"github.com/attention-span-ai/tego/internal/control/rules"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
 var (
 	formBase = regexp.MustCompile(`<form class="panel rc-confirm"[^>]*>[\s\S]*?name="base" value="([0-9a-f]*)"`)
-	formAck  = regexp.MustCompile(`<form class="panel rc-confirm"[\s\S]*?name="ack" value="([0-9a-f]*)"`)
+	formAck  = regexp.MustCompile(`<form class="panel rc-confirm"[\s\S]*?name="ack" value="([0-9a-f]{48}\.[0-9a-f]{64})"`)
 )
 
 func fileSum(t *testing.T, p string) string {
@@ -34,8 +35,8 @@ func fileSum(t *testing.T, p string) string {
 
 // TestStaleSaveRecovers: a Save refused because the rules file changed since the preview goes back to the
 // preview without the refused base, which plans on the file as it is now: its form carries the file's sha256 now, and
-// saving from it lands. A second POST of the same form (a double click) is not another refusal: the file already has
-// the change, the page says so, and nothing more is written. The Save button posts as a plain form, so a browser with
+// saving from it lands. A second POST of the same form (a double click) refuses the consumed review and asks
+// for review again, with no additional write. The Save button posts as a plain form, so a browser with
 // JavaScript gets the re-planned page too.
 func TestStaleSaveRecovers(t *testing.T) {
 	f := newChangeFix(t)
@@ -59,11 +60,8 @@ func TestStaleSaveRecovers(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := fileSum(t, f.source)
-	save := url.Values{"base": {m[1]}}
-	for k, v := range edit {
-		save[k] = v
-	}
-	save.Set("csrf", f.s.csrf)
+	save := builderLostStructuredForm(t, preview)
+	save.Del("now") // This journey changes the next run only, with no live-block journal entry.
 	w := post(f.s, "/rules/change", save, own, "", f.c)
 	loc := w.Header().Get("Location")
 	if w.Code != http.StatusSeeOther || !strings.HasPrefix(loc, "/rules/change/preview?") || strings.Contains(loc, "base=") {
@@ -81,25 +79,21 @@ func TestStaleSaveRecovers(t *testing.T) {
 		t.Fatalf("the re-planned form's base %v, want the file's sha256 now %s", m, now)
 	}
 
-	save.Set("base", m[1])
+	save = builderLostStructuredForm(t, again)
+	save.Del("now")
 	w = post(f.s, "/rules/change", save, own, "", f.c)
 	if loc := w.Header().Get("Location"); w.Code != http.StatusSeeOther || !strings.HasPrefix(loc, "/rules/change/saved?") {
-		t.Fatalf("the Save from the re-planned preview answered %d %q", w.Code, loc)
+		t.Fatalf("the Save from the re-planned preview answered %d %q: %s", w.Code, loc, w.Body.String())
 	}
 	after := readText(t, f.source)
 	if strings.Contains(after, "git]") || strings.Contains(after, "git,") || !strings.Contains(after, "# changed by hand") || journalLen(t, f.root) != 1 {
 		t.Fatalf("the change did not land on the file as it was:\n%s", after)
 	}
 
-	// The same form posted again: the file already has the change.
+	// The same form posted again cannot reuse its consumed review.
 	w = post(f.s, "/rules/change", save, own, "", f.c)
-	loc = w.Header().Get("Location")
-	if w.Code != http.StatusSeeOther || !strings.HasPrefix(loc, "/rules/change/preview?") || strings.Contains(loc, "base=") {
-		t.Fatalf("the second POST answered %d %q", w.Code, loc)
-	}
-	body := follow(t, f.s, f.c, w)
-	if !strings.Contains(body, "Already in the contract") || strings.Contains(body, "changed since you looked") {
-		t.Errorf("the second POST's page does not say the file already has the change:\n%s", body)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), rules.ErrReviewGone.Error()) {
+		t.Fatalf("the second POST reused its review: %d %s", w.Code, w.Body.String())
 	}
 	if readText(t, f.source) != after || journalLen(t, f.root) != 1 {
 		t.Error("the second POST wrote again")
@@ -128,8 +122,8 @@ func TestStaleWideningGetsTheNewAck(t *testing.T) {
 		t.Fatalf("the re-planned widening's ack %v base %v (old ack %s)", ack, base, old[1])
 	}
 	p, err := f.svc.PlanChange(context.Background(), rules.ChangeReq{Ref: ref.Ref, Edits: []rules.Edit{{Op: "add", Key: "fs.write", Entry: "./more/"}}})
-	if err != nil || p.Ack != ack[1] {
-		t.Fatalf("the form's ack is not the re-planned preview's: %v %v", p, err)
+	if err != nil || p.Err != "" || p.Ack == ack[1] || p.Base != base[1] {
+		t.Fatalf("equal later Preview did not get an independent review at the same base: %v %v", p, err)
 	}
 	q.Set("ack", ack[1])
 	q.Set("base", base[1])
@@ -218,7 +212,7 @@ func TestSavedPageTurnsLiveNowInPlace(t *testing.T) {
 		Now: []rules.NowOption{{Run: actRun, Kind: "read", Value: "/p/vault", Block: "read:/p/vault", OK: true, Cwd: "/p"}}}
 	fc := &fakeChange{plan: plan, applied: &rules.Applied{Plan: plan, ID: "rc-1",
 		Live: []rules.LiveResult{{Run: actRun, Block: "read:/p/vault", OK: true, Serial: 1}}}}
-	s, err := New(Config{Ledger: root, Port: port, Token: "tok123", Rules: fc})
+	s, err := New(Config{Ledger: root, Port: port, Token: "tok123", Machine: config.Builtin(), Rules: fc})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +242,10 @@ func TestSavedPageTurnsLiveNowInPlace(t *testing.T) {
 func TestStaleUndoSaysSo(t *testing.T) {
 	f := newChangeFix(t)
 	ref := f.ref(t, f.source)
-	_, saved := f.save(t, "/rules/change", url.Values{"c": {ref.Ref}, "base": {ref.Base}, "op": {"remove"}, "key": {"exec.allow"}, "v": {"git"}})
+	form := url.Values{"c": {ref.Ref}, "base": {ref.Base}, "op": {"remove"}, "key": {"exec.allow"}, "v": {"git"}}
+	_, preview := f.get(t, "/rules/change/preview?"+form.Encode())
+	form.Set("ack", hiddenAckIn(t, preview))
+	_, saved := f.save(t, "/rules/change", form)
 	id := regexp.MustCompile(`name="id" value="([^"]+)"`).FindStringSubmatch(saved)
 	base := formUndoBase.FindStringSubmatch(saved)
 	if id == nil || base == nil {

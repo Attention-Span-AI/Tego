@@ -384,3 +384,72 @@ func TestOwnStateGapNamesEachPath(t *testing.T) {
 		t.Fatalf("gap lines %+v, want %+v", got, want)
 	}
 }
+
+// TestRestoreOwnStateGivesBackTheRunDirectoriesUnderTheRoot (A48): an agent that took its own run directory while it
+// ran, and the files in it, left tego status, events, stop and the dashboard out of it; no run end restored an
+// orphaned or earlier run's directory. A run's start now gives the owner their rights back on every run directory
+// under the root, adding the owner's bits and nothing else.
+func TestRestoreOwnStateGivesBackTheRunDirectoriesUnderTheRoot(t *testing.T) {
+	tr := newOwnStateTree(t)
+	live := filepath.Join(tr.root, "r-0a0a0a0a-0000000000001-aaaaaa")    // taken whole, while live
+	earlier := filepath.Join(tr.root, "r-0a0a0a0a-0000000000002-bbbbbb") // its events file taken
+	orphan := filepath.Join(tr.root, "r-0a0a0a0a-0000000000003-cccccc")  // blobs/ taken, with the group's rights kept
+	fine := filepath.Join(tr.root, "r-0a0a0a0a-0000000000004-dddddd")    // nothing taken: not touched
+	named := filepath.Join(tr.root, "r-0a0a0a0a-0000000000005-eeeeee")   // a file with a run's name
+	for _, d := range []string{live, earlier, orphan, fine} {
+		if err := os.MkdirAll(filepath.Join(d, ledger.BlobsDir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range []string{ledger.EventsFile, ledger.LockFile} {
+			if err := os.WriteFile(filepath.Join(d, f), nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := os.WriteFile(named, nil, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	asOwnerOf(t, tr.root)
+	t.Cleanup(func() { ownerRightsBack(tr.root) })
+	liveEvents, earlierEvents := filepath.Join(live, ledger.EventsFile), filepath.Join(earlier, ledger.EventsFile)
+	orphanBlobs := filepath.Join(orphan, ledger.BlobsDir)
+	chmodAll(t, 0, liveEvents, filepath.Join(live, ledger.BlobsDir), live, earlierEvents, orphanBlobs)
+	chmodAll(t, 0o070, orphan) // the group's rights stay: the checks judge them
+	got, err := RestoreOwnState(OwnState{Anchor: tr.anchor, Root: tr.root})
+	if err != nil {
+		t.Fatalf("RestoreOwnState: %v", err)
+	}
+	want := map[string]os.FileMode{live: 0o700, liveEvents: 0o600, filepath.Join(live, ledger.BlobsDir): 0o700,
+		earlierEvents: 0o600, orphan: 0o770, orphanBlobs: 0o700}
+	have := map[string]os.FileMode{}
+	for _, m := range got {
+		have[m.Path] = os.FileMode(m.To)
+	}
+	for p, mode := range want {
+		if have[p] != mode || modeOf(t, p) != mode {
+			t.Errorf("%s: restored to %04o, now %04o; want %04o (all restored: %v)", p, have[p], modeOf(t, p), mode, got)
+		}
+	}
+	for _, p := range []string{fine, earlier, named} {
+		if _, ok := have[p]; ok {
+			t.Errorf("%s was restored though it lacked no owner right", p)
+		}
+	}
+	if mode := modeOf(t, named); mode != 0 {
+		t.Errorf("a file with a run's name has mode %04o, want it left at 0000", mode)
+	}
+	if again, err := RestoreOwnState(OwnState{Anchor: tr.anchor, Root: tr.root}); err != nil || again != nil {
+		t.Errorf("a second pass restored %v, %v; want nothing", again, err)
+	}
+	// Another user's run directory is nobody's to restore here.
+	chmodAll(t, 0, earlier)
+	owner := launcherEUID()
+	launcherEUID = func() int { return owner + 1 }
+	if got, err := RestoreOwnState(OwnState{Anchor: tr.anchor, Root: tr.root}); err != nil || got != nil {
+		t.Errorf("as another uid: restored %v, %v; want nothing", got, err)
+	}
+	launcherEUID = func() int { return owner }
+	if mode := modeOf(t, earlier); mode != 0 {
+		t.Errorf("another user's run directory has mode %04o, want it left at 0000", mode)
+	}
+}

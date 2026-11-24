@@ -303,11 +303,18 @@ func compareLine(a, b leakLine, an, bn string) int {
 	return strings.Compare(an, bn)
 }
 
-// held maps each address a leak was reached at to its leak, and marks a leak the record holds only by host name.
+// held maps each address a leak was reached at to its leak, and marks a leak the record holds only by host name. An
+// address that two leaks stand for (a destination keyed by the name a line carried and another keyed by the bare
+// address, both next to a secret read) goes to the one the run reached first, whatever order the map r.sends is read
+// in. Either leak withholds the same entry, so the entries the proposal keeps and leaves out never depended on the
+// order; what did was which leak owns the exclusion, and with it the warning that lists the leak, its label and its
+// count: the later of the two used to win, so one record said different things from one `tego learn` to the next.
 func (r *leakRule) held(leaks []*Leak) map[netKey]*Leak {
 	byKey := make(map[string]*Leak, len(leaks))
-	for _, lk := range leaks {
+	rank := make(map[*Leak]int, len(leaks)) // leaks are in the order the run reached them (judge)
+	for i, lk := range leaks {
 		byKey[lk.Dest] = lk
+		rank[lk] = i
 		lk.ByName = !hasAddress(lk.Dest)
 		lk.Local = strings.HasPrefix(lk.Dest, "unix:")
 		lk.Resolver = onPort53(lk.Dest)
@@ -318,7 +325,9 @@ func (r *leakRule) held(leaks []*Leak) map[netKey]*Leak {
 		if lk == nil {
 			continue
 		}
-		out[s.addr] = lk
+		if prev, ok := out[s.addr]; !ok || rank[lk] < rank[prev] {
+			out[s.addr] = lk
+		}
 		if addressed(s.addr) {
 			lk.ByName = false
 		}
@@ -413,6 +422,9 @@ func (p *Proposal) withhold(held map[netKey]*Leak, k netKey, entry string, n int
 		return false
 	}
 	lk.Entries = append(lk.Entries, entry)
+	if endpoint, ok := record.LearnEndpoint(k.proto + "://" + k.dst); ok {
+		p.withheld = append(p.withheld, endpoint)
+	}
 	p.Left = append(p.Left, Excluded{Section: "net", What: record.Printable(entry), Why: leakEntryWhy, Count: n})
 	return true
 }
@@ -498,7 +510,9 @@ func (p *Proposal) Warnings() []string {
 	}
 	opened := "this run opened " + names + " for reading, or tried to,"
 	if len(withheld) > 0 {
-		out = append(out, fmt.Sprintf("%s next to a send to %s, which is how a leak looks in the record: the proposal leaves that out; add an address back only if you know it is the agent's own service",
+		out = append(out, fmt.Sprintf("%s next to a send to %s, which is how a leak looks in the record: the proposal leaves that out; add an address back only if you know it is the agent's own service. "+
+			"Which addresses are left out depends on this recording alone: a site that answers from other addresses, or in another order or "+
+			"at another time, gives another set when you record the agent again",
 			opened, listNames(withheld)))
 	}
 	if len(other) > 0 {

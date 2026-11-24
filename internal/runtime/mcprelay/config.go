@@ -26,6 +26,9 @@ func ClientConfig(exe string, servers []Server, urls map[string]string) ([]byte,
 		MCPServers map[string]clientServer `json:"mcpServers"`
 	}{MCPServers: map[string]clientServer{}}
 	for _, s := range servers {
+		if s.BusinessRules {
+			return nil, ErrBusinessUnavailable
+		}
 		if s.URL != "" {
 			u, ok := urls[s.Name]
 			if !ok {

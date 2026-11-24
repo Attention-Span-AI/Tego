@@ -1,0 +1,39 @@
+Contracts found: 9
+NAME       FILE                                   CHECK     CONTRACT HASH                                                     LAST RAN              TIER      SAME TEXT AS LAST RUN
+changed    <PROJECT>/known/changed.yaml           compiles  a2a59d1387b7c5b3ad2ba18613eb44a46d2d934bf7574c47cb75495c1dee7eb6  2023-11-14T22:13:20Z  cgroup    no
+directory  <PROJECT>/known/directory.yaml         unsafe    unknown                                                           2023-11-14T22:13:20Z  landlock  unknown
+missing    <PROJECT>/known/missing.yaml           missing   unknown                                                           2023-11-14T22:13:20Z  landlock  unknown
+never      <HOME>/.config/tego/agents/never.yaml  compiles  46b913543af01357f311042c463ff4a4b947c7ac84b55b4f78a70d8ff4655a0f  never                 -         -
+observe    <PROJECT>/known/observe.yaml           compiles  064fcbc736d8258e5c4878c90a131b9ed2ce056d23a0de123d3a9c8b284ca580  2023-11-14T22:13:20Z  observe   not-enforced
+old        <PROJECT>/known/old.yaml               compiles  bf66b13f26ecb8b949c72f7b15a678847e6b9e5b34af223d323db3ae8986ad4b  2023-11-14T22:13:20Z  landlock  unknown
+parse      <PROJECT>/known/parse.yaml             invalid   unknown                                                           2023-11-14T22:13:20Z  landlock  unknown
+same       <PROJECT>/known/same.yaml              compiles  48f2a97e5ba9ea45a443290bdb8ee6c1324b8211c09c5eafcaacb85c676daed5  2023-11-14T22:13:20Z  landlock  yes
+symlink    <PROJECT>/known/symlink.yaml           unsafe    unknown                                                           2023-11-14T22:13:20Z  landlock  unknown
+<PROJECT>/known/changed.yaml: cwd <PROJECT>; found in run
+  last run unknown; recorded contract hash 0000000000000000000000000000000000000000000000000000000000000000
+<PROJECT>/known/directory.yaml: cwd <PROJECT>; found in run
+  last run unknown; recorded contract hash unknown
+  <PROJECT>/known/directory.yaml: rulefile: refused: <PROJECT>/known/directory.yaml is not a regular file [source-unreadable]
+<PROJECT>/known/missing.yaml: cwd <PROJECT>; found in run
+  last run unknown; recorded contract hash unknown
+  <PROJECT>/known/missing.yaml: the contract <PROJECT>/known/missing.yaml is gone: no such file or directory [source-unreadable]
+<HOME>/.config/tego/agents/never.yaml: cwd <PROJECT>; found in user
+<PROJECT>/known/observe.yaml: cwd <PROJECT>; found in run
+  last run unknown; recorded contract hash 064fcbc736d8258e5c4878c90a131b9ed2ce056d23a0de123d3a9c8b284ca580
+<PROJECT>/known/old.yaml: cwd <PROJECT>; found in run
+  last run unknown; recorded contract hash unknown
+<PROJECT>/known/parse.yaml: cwd <PROJECT>; found in run
+  last run unknown; recorded contract hash unknown
+  <PROJECT>/known/parse.yaml:3:1: unknown field "unknown" in the top level [schema]
+<PROJECT>/known/same.yaml: cwd <PROJECT>; found in run
+  last run unknown; recorded contract hash 48f2a97e5ba9ea45a443290bdb8ee6c1324b8211c09c5eafcaacb85c676daed5
+<PROJECT>/known/symlink.yaml: cwd <PROJECT>; found in run
+  last run unknown; recorded contract hash unknown
+  <PROJECT>/known/symlink.yaml: rulefile: refused: <PROJECT>/known/symlink.yaml is a symlink; change the file it points to and run that [source-unreadable]
+Looked in:
+  ledger: <HOME>/.tego/runs (absent)
+  project: <PROJECT>/agent.yaml (absent)
+  project: <PROJECT>/.tego/agents (absent)
+  user: <HOME>/.config/tego/agents (present)
+Checked offline with today's files and machine config. DNS is deferred; the contract's program is not executed and no backend is probed. PATH is the current caller's, not a recorded run's. Hash equality compares merged contract text, not enforcement or comments.
+These are the contracts Tego found in these registries and runs. Files outside them may be missing. Contracts in folders Tego has never seen are not included. Other users' contracts are not included without root. No other homes are searched.

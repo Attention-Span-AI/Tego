@@ -12,20 +12,32 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/check/livestatus"
+	"github.com/attention-span-ai/tego/internal/control/runact"
+	"github.com/attention-span-ai/tego/internal/liveblock"
 	"github.com/attention-span-ai/tego/internal/rulefile"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
-// Via is what the journal records as the writer of every change the service makes.
+// Via is what the journal records as the writer of every change the service makes, unless the request names its own
+// (RevertReq.Via).
 const Via = "dashboard"
+
+// ViaCLI is what the journal records for a revert asked from a terminal (`tego rules undo`, RevertReq.Via): the same
+// word rulefile writes for a change made through the command line.
+const ViaCLI = "cli"
 
 // Service makes and changes rules for the runs under Ledger.
 type Service struct {
-	Ledger string
+	draftLease    bool
+	drafts        draftStore
+	proposalBuilt func(string)
+	ledgerOnly    bool
+	caller        *config.CallerContext
+	Ledger        string
 	// Home is the invoking user's home, for ~/ entries.
 	Home string
-	// Now is the clock the changed line's date is read from; nil is time.Now.
+	// Now overrides the changed line's date; nil uses the caller's captured clock. Draft expiry uses wall time.
 	Now func() time.Time
 	// Machine is the machine config every compile runs against (check.go); nil refuses every write.
 	Machine *config.Machine
@@ -41,7 +53,7 @@ type Service struct {
 	// Check is Compile in its older form, the contract's path and the run's working directory only, which the web
 	// package's tests still set; Compile wins when both are set.
 	Check func(contract, cwd string, text []byte) error
-	// Writer is the authority writes go through; nil is internal/rulefile in this process (localWriter).
+	// Writer is the test authority writes go through; production uses internal/rulefile inside its helper (localWriter).
 	Writer Writer
 	// Resolver looks up the host names a change adds, for the preview's warning (hosts.go); nil is the system's.
 	Resolver agent.Resolver
@@ -56,10 +68,10 @@ type Service struct {
 	// waits for the host names a change adds to resolve (hosts.go), 0 for nextrun.HostBudget.
 	live       func(dir string) bool
 	readsHeld  func(run string) (bool, string)
-	block      func(ctx context.Context, run, kind, value string) error
+	block      func(ctx context.Context, run, kind, value string) (runact.Blocked, error)
 	facts      func(run string) livestatus.Facts
-	unblock    func(ctx context.Context, run, kind, value string) error
-	overlay    func(run string) []string
+	unblock    func(ctx context.Context, run, kind, value string, own liveblock.Own) error
+	overlay    func(run string) map[string]liveblock.Own
 	clock      func() time.Time
 	hostBudget time.Duration
 
@@ -102,11 +114,14 @@ func (s *Service) found(run string, seq uint64, hint *rulefile.Hint) (*rulefile.
 }
 
 func (s *Service) date() string {
-	now := time.Now
 	if s.Now != nil {
-		now = s.Now
+		return s.Now().Format(time.DateOnly)
 	}
-	return now().Format(time.DateOnly)
+	caller := s.callerContext()
+	if caller.RuleDate != "" {
+		return caller.RuleDate
+	}
+	return caller.CheckedAt.Format(time.DateOnly)
 }
 
 // runID is the run ids the dashboard reads (ledgerview's rule): r-, then lower-case letters, digits and dashes, so

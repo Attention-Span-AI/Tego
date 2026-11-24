@@ -1,0 +1,11 @@
+# MCP_CANARY_18
+[mcp_servers.local]
+command = '/opt/codex' # MCP_CANARY_18
+args = ["--token", "MCP_CANARY_18", '--header=MCP_CANARY_18']
+env = {TOKEN = 'MCP_CANARY_18', nested = {key = "MCP_CANARY_18"}}
+http_headers = {Authorization = 'MCP_CANARY_18'}
+[mcp_servers.remote]
+url = 'https://user:MCP_CANARY_18@example.invalid/MCP_CANARY_18?token=MCP_CANARY_18'
+bearer_token_env_var = 'MCP_CANARY_18'
+[mcp_servers.remote.headers]
+Authorization = 'MCP_CANARY_18'

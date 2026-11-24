@@ -97,11 +97,11 @@ The forwarder passes every header on as the agent sent it.
   R16a's derived rule). Under a `net:` section that does not itself admit the URL, the agent's only route is the relay.
   With no `net:` section every destination is admitted, the URL included, so the agent can reach the server around
   the relay; compile warns (`unenforced`). The relay admits the peer as the forwarder does,
-  decides each JSON-RPC message of a POST body the same way (a batch holding a refused or held `tools/call` is
-  answered with errors for every member; *amended 2026-11-01*: a body refused unread, or one past 4 MiB, is recorded as
+  decides each JSON-RPC message of a POST body the same way (a batch is decided member by member, *amended 2026-11-21*,
+  "Amendment 2026-11-21" below; *amended 2026-11-01*: a body refused unread, or one past 4 MiB, is recorded as
   such a stdio line is, one `mcp` line under rule `mcp[<name>].relay`), filters `tools/list` in a JSON or SSE response, and forwards the rest over
-  TLS (http for an `http://` URL) to the declared URL. A GET event stream from the server passes unfiltered (it
-  carries no client call). Only a POST body is decided, so a request by any other method that carries a body is
+  TLS (http for an `http://` URL) to the declared URL. An event stream from the server, a GET's too, is read by
+  whole events and every answer in it with a tools array is filtered (*amended 2026-11-21*). Only a POST body is decided, so a request by any other method that carries a body is
   refused 405 with an `mcp` line under rule `mcp[<name>].relay`, and never reaches the server (*amended 2026-11-01*:
   such a body used to be forwarded undecided).
 - **Ask.** A held call is an `ask.Request{Op: "mcp_tool", Target: "<server> <tool>", Rule, Hold: "request", PID,
@@ -229,10 +229,11 @@ Locked run while it ran (docs/GAPS.md C39). Built:
   be probed counts as held.
 - **Record.** A refusal writes nothing: no overlay change and no ledger line, as a writer's refusal of a lift writes
   none (ADR 0125 decision 5: lines come from what took effect). No record field changed.
-- **Not covered.** The relay applies whatever `mcp-tools.json` holds and does not read the mode. A switch written there
+- **Not covered.** ~~The relay applies whatever `mcp-tools.json` holds and does not read the mode. A switch written there
   some other way (an older `tego`, or a same-user process outside every run writing the file) still loosens a Locked
   run, with its `mcp-tool-changed` line. Refusing it in the relay needs a record shape for that refusal, so a record
-  revision; not built (GAPS C39, narrowed).
+  revision; not built (GAPS C39, narrowed).~~ *Closed 2026-11-21* without a record revision: the relay reads the mode
+  ("Amendment 2026-11-21" below, "The Locked consumer").
 - **Consequence.** At tier landlock every run is Locked (Adjustable is refused there, ADR 0125 decision 7), so live MCP
   loosening is gone at landlock; it stays on Adjustable runs at cgroup and bpflsm.
 - **Verified** (on this host, as a user, 2026-11-11): unit tests in liveblock (`TestCheckLoosening`), runact
@@ -242,6 +243,268 @@ Locked run while it ran (docs/GAPS.md C39). Built:
   dashboard, the tightening, and a second, Adjustable run through the test build's `TEGO_TEST_LIVE_ANY_TIER` hook
   that takes the allow live). With the checks removed (`go test -overlay`, `go build -overlay`) the new tests and 10
   of the e2e's checks fail. Not verified: a root tier (an Adjustable run at cgroup or bpflsm) in a guest.
+
+## Amendment 2026-11-21: batches, listings, the HTTP holder and the Locked consumer
+
+One rule: **a governed agent reaches only the tools the contract and the person's
+approvals allow, and no message rides on another's decision.** No record field, reason, rule, line shape or revision is new
+(`record_minor` stays 41); what each change writes is said below.
+
+- **A batch is decided member by member.** The all-or-nothing answer of §4 (a batch holding a refused or held call was
+  answered with an error for every member, the allowed ones included) is replaced. Each member of a JSON-RPC batch, from a
+  stdio line or a POST body, gets its own decision, as a single message does:
+  - a `tools/call` is allowed, denied or asked by the rules; a call the relay cannot name is refused by `mcp[<s>].relay`;
+  - every other member (a notification, another request, the client's own response) passes;
+  - a request whose id another request of the batch also has is refused, with every request of that id, by
+    `mcp[<s>].relay` ("another message of this batch has the same id"): two answers under one id could be told apart by no
+    client, so a refusal could be read as the allowed call's result. Ids compare as the JSON the client sent (`1` and `"1"`
+    differ); a notification has none;
+  - the members that pass go on as a batch of their own members (a batch of one stays an array); each refused member that
+    has an id is answered with an error of its own, in one array, at once; a refused member with no id has no one to answer
+    and is recorded all the same; a member that is asked is held as a single call is (stdio: on its own goroutine, and it
+    goes on alone, as the one message it was, when a person approves it; HTTP: all the batch's asks are put together, since
+    the one answer waits for all of them) and an approval is decided again against a Deny that landed meanwhile;
+  - every refused member is one `mcp` line (rule and reason of its own), and every allowed call one allow line, as for
+    single messages. A batch of more than **128** members (`MaxBatch`) is refused whole and unread: one `mcp` line under
+    `mcp[<s>].relay`, one error with no id (code -32600), nothing sent on; a batch with a member that is not a message is
+    refused whole as an unreadable line is (-32700, one line).
+  - On HTTP the one answer carries both: the server's JSON array gets the refusals as more members; an event stream gets
+    them as its first event; a server that answers 202 (the passed members were notifications) is replaced by a 200 with
+    the refusals; an answer that is not JSON or an event stream, or a JSON that is not an answer, is not passed on and is
+    a 502 with a line of the record (the refusals could not be added to it). A server's own error status passes as it
+    came, and the refusals ride nowhere then: the whole POST failed and nothing it held ran. On stdio the refusals and the
+    passed members are two frames (the client sees two arrays); clients match answers by id.
+- **Listings are filtered however they were asked.** An answer that has a `result` with a `tools`
+  array is filtered by that shape, **whatever its id is** (one spelt 1.0 for 1, one no request waits on, none at all), in a
+  batch answer, in an event stream and in a JSON answer whose type is spelt in any case or as `+json`. The relay asks the
+  server for the answer as the relay reads it (`Accept-Encoding: identity`, whatever the client accepts); an answer in another
+  `Content-Encoding`, and a tools/list's answer that is not JSON or not an event stream, is not passed on (502, one line of
+  the record). An event stream is read by whole events as a client reads them (lines end at LF, CR or CRLF, the `data:` lines
+  of an event are one message joined by LF), so a message spread over several lines is filtered; the other fields of an event
+  pass; a message that is not complete JSON passes, except that when a tools/list was asked it is dropped and recorded. This
+  holds for a GET too (a resumed stream replays answers). Ids are values (`idKey`): 1, 1.0 and 1e0 are one id, "1" another.
+  On stdio the relay remembers the ids of the requests it passed until their answers come, and refuses a request whose id
+  is still waiting (a call's answer would take a list's entry, and no client could tell the two answers apart), or past 1024
+  waiting, with an error of its own and a line of the record: the filter does not rest on this table.
+- **The HTTP holder.** An ask of an HTTP client is placed on the process that holds its connection. The search lists
+  the descriptors of the run's own processes only, in the cgroup the socket was made in and then the run's. A process that
+  hides its descriptors from its own user (`PR_SET_DUMPABLE 0`, which hardened agent CLIs set) used to be missed, so every
+  ask it made was refused `ask-unavailable`. It is now placed **by exclusion**: no process whose descriptors could be
+  read holds the socket, and exactly one process hides them, so the socket is that one's (admission proved the peer is in
+  the run by the socket's cgroup). With two such processes, or one whose descriptors could not be listed for another
+  reason, no process is named and the call is refused `ask-unavailable` and recorded, as before: a pid is never guessed.
+  A connection whose holder could not be named is not searched for again by its next calls for 2 seconds. A placement by
+  exclusion is kept only while that process still hides its descriptors. Asks waiting for a person are bounded for the whole
+  relay at 128 (`MaxBatch`), across batches and calls: the call past it is refused `ask-unavailable` and recorded. A refused
+  call that has no id (a notification) is recorded and gets no error. The residual of
+  exclusion: a socket handed (SCM_RIGHTS) to a process outside the run's cgroups, while the run has one process that hides its
+  descriptors, is named as that process; the call is still the run's by the socket's cgroup, and only its card's pid is
+  wrong (the broker re-checks the pid is in the run). The same holds for a child that another user's or `sudo`'s run makes
+  hidden, and for a process in a nested pid namespace, which `cgroup.procs` does not list, so a hidden process beside it can
+  be named in its place: attribution inside the run, never a decision. A socket held by no process in either cgroup (its holder exited) is the refusal above.
+- **Admission reads the kernel once.** A peer's socket is placed by one exact `sock_diag` lookup
+  (`peer.TCPSocketInfo`: its cgroup and its inode, the dashboard's lookup), not by a read of `/proc/net/tcp` row by row,
+  in the stdio shim's admission and the HTTP holder; the table is the fallback where the kernel has no TCP socket
+  diagnostics or the lookup fails, and an error is never an admission. An HTTP connection is admitted once and keeps its
+  socket's lookup and its holder for its later requests (a start-time read and at most one descriptor listing each, not a
+  new search); a descendant cgroup is found by one walk of the run's own subtree and kept. Left as it was: the gate's check
+  of an admitted shim (`procStillShim`) reads the shim's own network namespace's TCP table once per server start, to prove
+  the admitted socket is the only TCP socket it holds; it is per start, not per connection or per call.
+- **The Locked consumer.** The relay and the model forwarder read the run's mode: `mcprelay.Options.Adjustable`
+  and `forwarder.Options.Adjustable`, set from the compiled table (`RuleTable.Adjustable`, the contract's `live.mode`)
+  where the launcher builds them. **The zero value is Locked**: a caller that says nothing never gets the Adjustable
+  behaviour, and the mode is the launcher's in-process fact, which no file in the run's folder (and so no change of one
+  mid-batch) can move. On a Locked run:
+  - an overlay entry looser than the contract's own decision for the tool (`mcptool.WithinContract`: deny to ask or allow, ask
+    to allow, by the writers' own comparison, `mcptool.Loosens`) is not in force, whoever wrote it; one that tightens is, as
+    a live block is. A tool is decided by the contract, or by the tighter switch, for every call, listing and ask.
+  - A model route other than direct is not in force; the endpoint stays on its own backend.
+  - Each held switch or route has a line, on the first read of the overlay too (a run starts with the overlay it finds): the
+    **existing** `mcp-tool-changed` line with decision `reset` (the contract decides the tool, which is what is in force)
+    and the author's `by` followed by `HeldByLocked` ("... (not in force: the run is Locked, so the contract decides this
+    tool)"); the existing `model-route-changed` line with route `direct` and the author's `by` followed by the forwarder's
+    `HeldByLocked`. Each call the held switch would have let through is refused by the contract's rule with its own `mcp`
+    line, so the ledger never shows a loosening that did not happen. An overlay that cannot be read leaves the contract (or
+    the last tightening read) in force, as it does for an Adjustable run, so it never reads as an open door.
+  - The MCP tools and Model routes pages (mcpact, routeact `State`) show what the relay and forwarder decide: for a run whose
+    run_start does not say it is Adjustable (Locked, still starting, or unreadable) the contract's decision or route, not a
+    held switch.
+  - **What an older reader sees:** the same two lines it read before. The held line is an `mcp-tool-changed` of decision
+    `reset` or a `model-route-changed` of route `direct`, each with a longer `by`, which no reader checks (`by` and `at` are
+    free text); a reader of an older launcher's record reads a reset or a revert, which is what is in force. A newer
+    launcher's Locked run's record carries no line an older verifier refuses. An older launcher (older `tego`) neither
+    reads the mode nor writes these lines, and keeps the behaviour of the 2026-11-11 amendment: only its writers refused.
+- **Not covered.** A `tools/call` notification (no id) is a call the shared reader does not name, so it is refused by
+  `mcp[<s>].relay`, not by the tool's own rule. A batch's refusals on stdio and the passed members are two frames, not one
+  array. A member's refusal does not stop an id reused across two separate messages (the client's own bookkeeping).
+  Duplicate ids are refused only among the requests of one batch. Root-tier and multi-user guests were not run
+  (`docs/GAPS.md` C39 lists what remains).
+- **Verified** (this host, as a user, 2026-11-21): `internal/runtime/mcprelay` (`TestBatchMembersAreDecidedOnTheirOwn` and the
+  batch tests, `TestBatchedToolsListAnswerIsFiltered`, `TestToolsListWithOneIDTwiceIsRefusedTheSecondTime`,
+  `TestManyRequestsInFlightAreRefusedPastTheBound`, its review tests, the HTTP listing and merge tests, `TestHTTPAskPlacesAClientThatHidesItsDescriptorsByExclusion`
+  and its refusals, `TestHTTPConnectionSearchesForItsHolderOnce`, `TestPeerSocketInodeTakesTheExactLookup`,
+  `TestRealProcsTellAHiddenProcessFromOneThatHoldsNothing` with a real process that is not dumpable,
+  `TestLockedRunHoldsLooseningSwitchesOutOfForce` and its start, unreadable-overlay, mid-batch and HTTP cases),
+  `internal/runtime/capture/forwarder` (`TestLockedRunKeepsTheEndpointOnItsOwnBackend` and its siblings),
+  `internal/control/mcpact` and `routeact` (the page's state), `internal/platform/peer` (`TestTCPSocketInfoNamesTheSocketByItsInode`),
+  `pkg/policy/mcptool`. The tests of a changed behaviour (34 of the relay's, 4 of the forwarder's, 2 of the pages', 2 of the launcher's wiring) fail with the old source behind the same names
+  (`go test -overlay`); the helpers that are new in this change (the real-`/proc` view, the cgroup walk, the socket-diag parse,
+  `WithinContract`) have no old source to run against.
+
+## Amendment 2026-11-21: the secret-holding launcher is not dumpable
+
+Closing the SHOULD that §2 left open ("the launcher is not made non-dumpable"). One rule:
+**every Tego process that holds a secret sets `PR_SET_DUMPABLE 0` before the secret enters its memory and keeps it there.** A
+process of the same user, the agent included, then cannot read that memory through `/proc/<pid>/mem`, `process_vm_readv` or
+`ptrace`, nor its environment or descriptors through `/proc/<pid>/environ`, `/proc/<pid>/fd` or `pidfd_getfd`. No record
+field, reason, rule or line is new (`record_minor` stays 41).
+
+**Why it matters on a default host.** With Yama `ptrace_scope` 1, a process cannot attach to its parent, so `mem` was closed to
+the agent; `environ`, `fd` and `fdinfo` are opened in the read mode, which Yama does not gate, and were open to any process of the
+user (measured: a child and a sibling of a dumpable process read its `environ` and `fd`; `TestMakeUndumpable`
+fails without the hold). The launcher's environment is the one the person typed `tego run` in, whatever the contract's
+`env.pass` gave the agent. With `ptrace_scope` 0, `mem` and `ptrace` were open too, which is the residual §3 named.
+The processes that gained are the ones outside the run (any program of the user, a build step, an editor plugin) and an agent that
+runs under no Landlock domain (`tego watch` with no `--boundary`, `--observe`): inside an enforcing tier every Landlock domain
+already refuses `ptrace`, `process_vm_readv`, `/proc/<pid>/mem` and the read-mode files of a process outside its own domain
+(`security/landlock/task.c`, docs/ARCHITECTURE.md), and the supervisor refuses the agent's `pidfd_getfd` (`handlePidfdGetfd`); a guest
+probe (below) measured what a governed agent at tier landlock gets from each of its ancestors, the launcher among them.
+
+**Who holds what, before and after** (every Tego process that started in this tree, read from the code):
+
+| Process | Holds | Before | After |
+|---|---|---|---|
+| `tego run`, `tego watch` (the outer process and the re-entered `__user_scope` one) | the caller's whole environment, and the saved logins `run` adds to it | dumpable | undumpable from the dispatch (the re-entered process, before it reads the request that carries the environment) |
+| `tego adopt` | the adopter's environment | dumpable | undumpable |
+| `tego start`, `tego setup` (the guide) | a token or key a person types or `claude setup-token` prints, the saved logins | dumpable | undumpable |
+| the reaper, the adoption reaper, the linger timer, the ring trimmer, the probe remover | nothing: an environment of `PATH` alone, no config, no ledger home | dumpable | unchanged: it holds nothing |
+| the open deputy | nothing of the person's (it walks paths); undumpable since ADR 0041 | undumpable | unchanged |
+| the child stage and the agent | the agent's own environment (`env.pass`); out of scope: the stage sets `PR_SET_DUMPABLE 1` for `pidfd_getfd`, and the agent keeps its own debugging | dumpable | unchanged |
+| `tego-control serve` (the dashboard) | the sign-in token, the CSRF key and the acknowledgement keys | dumpable | undumpable since 2026-11-22 (ADR 0100 (7), amended 2026-11-22; closed below) |
+
+The hold is `Command.HoldsSecrets`, set on `run`, `watch`, `adopt`, `start` and `setup`; `runCommand` makes the process
+undumpable before it reads a flag and refuses to run the command (exit 125, `[undumpable]`) when it cannot
+(`sys.MakeUndumpable` sets the flag and reads it back). `TestSecretHoldingCommandsAreExactlyThese` holds the set exact, so a new
+command decides which side it is on. An exec makes a process dumpable again, so every helper the
+launcher starts is dumpable until it chooses otherwise, and none holds a secret.
+
+**Readers of a launcher's `/proc`, each checked against a real undumpable process.** An undumpable process keeps `stat`, `status`,
+`cmdline`, `cgroup`, `comm`, `mountinfo`, `limits` and the `task/*/stat` files readable and hides `environ`, `mem`, `maps`, `fd`,
+`fdinfo`, `exe`, `cwd`, `root`, `ns/*`, `io` and `syscall` from a caller without `CAP_SYS_PTRACE` (measured for a caller that is not root, on Linux 6.12, 6.17 and 6.19; a root caller that lacks only `CAP_SYS_PTRACE` is refused `environ`, `maps` and `auxv` on 6.12 and reads them, with `smaps_rollup`, on 6.17 and 6.19); `pidfd_open`, `pidfd_send_signal`
+and polling a pidfd need none of it, and `pidfd_getfd` and `ptrace` are refused. Its own reads of `/proc/self` are not affected
+(`/proc/self/fd`, `exe`, `ns/*`, `cgroup`, `status`, `mountinfo`, `loginuid` and `uid_map` open; `auxv` does not, and
+`config.AtSecure` already reads the runtime's copy first; `oom_score_adj` cannot be written, and only the exec'd reapers write it).
+
+| Reader | What it takes from the launcher | Result |
+|---|---|---|
+| `tego status`, the dashboard's run chip, `tego pause`, `resume`, the sweep (`runlock.LauncherCheck`) | the lock line's pid and start time (`stat`), a pidfd, and the proof that the pid holds the run's flock | works. Where `/proc/locks` prints the device `stat` shows (ext4) the exact row proves it. Where it does not (a btrfs subvolume) a caller that signals only itself takes the row on the superblock device of the mount that holds the lock file (below); any other caller without `CAP_SYS_PTRACE` reads the launcher Unknown, never Gone, in words that say so (`runlock.UnknownRecovery`). A caller with `CAP_SYS_PTRACE` reads the descriptors. |
+| `tego stop`, the dashboard's Stop, `tego ask`, `approve`, `deny`, the dashboard's answers (`runlock.OpenStopTargetFor`, `askclient.Launcher`) | the same, and a pidfd to signal | the same; a refusal says that the launcher's descriptors are hidden and that a caller with `CAP_SYS_PTRACE` (root, unless a container or a service unit drops it) reads them (`hiddenLauncherWhy`), and is never "not running" |
+| the global lock table | a read of `/proc/locks`, which is paginated: a lock taken or dropped meanwhile can leave the held row out of one read | read up to four times, 3, 6 and 9 ms apart, for a launcher whose descriptors are hidden (the omission comes from lock churn that is over in that time, and the refusal that remains is Unknown, never Gone); one read for a launcher whose descriptors are readable |
+| `tego scan`, `tego agents` | `exe` and `environ` of every process of the user | **a live undumpable launcher is reported as an unreadable program** (`unreadable-program`, `permission`, its pid in `unreadable_program_pids`), as `ssh-agent`, a browser or a password manager already is; the snapshot is partial and `tego scan --check` exits unreadable unless `--allow-unreadable-programs`. Never omitted and never guessed not to be an agent: `tego scan` also prints, on stderr and only for a pid that is the proved lock holder of a live run (the proof `tego stop` makes), `pid N is the launcher of run R`, beside the count and with the exit code unchanged. A lock line alone names nothing: a program that wrote one could otherwise make itself disappear from the scan. The one exception is the dashboard, which holds `~/.tego/dashboard/lock` while it serves; a basic scan proves that lock as it proves a launcher's (`runlock.DashboardPID`: the kernel's lock table and the pid's start time) and leaves that pid out of the unreadable programs, so a running dashboard does not make `tego scan --check` exit 3. It proves who holds the lock, not that the holder is the real dashboard (a process of the user that takes the lock while no dashboard runs is left out too), which is why exit 0 never means that no agent runs. `tego agents` runs as root and reads it. |
+| peer identification (`peer.Identify`: the ask broker, the operator socket, the forwarder's peers) | the connecting process's cgroup namespace (`ns/cgroup`) | an undumpable **peer** has no readable cgroup namespace. No launcher is a peer of any server that identifies: only `tego ask`, `approve`, `deny` and `tego-control` connect to a broker. Since 2026-11-22 `peer.Identify` proves from files that stay readable (the owner of `environ`, `status`'s uids and `CapPrm`) that a hidden namespace is hidden by the dumpable flag alone, and `peer.Refuse` judges that peer on everything else as any peer's (ADR 0100 (7), amended 2026-11-22), so the dashboard is undumpable and still answers. |
+| the MCP relay's holder placement (`mcprelay.holderSearch`) | the descriptors of the processes in the run's cgroup | the launcher is not a member of the run's cgroup (the run's reaper kills that cgroup when the launcher dies, docs/ARCHITECTURE.md "Supervisor death"), so it is not searched; a client that is undumpable is placed by exclusion or refused, as the admission change above made it |
+| the adoption's release and the adoption reaper (`adopterAlive`, `awaitRelease`) | the adopter's `stat` identity and a pidfd | works (`TestUndumpableLauncherIsAliveToStatus`: stat, `Process`, pidfd, signal 0) |
+| the run's reaper and the build's helpers | the launcher's pidfd, inherited | works: a pidfd poll needs no `/proc` entry |
+
+**What the agent's processes can still see of the launcher** (`TestMakeUndumpable`, from a child of
+the undumpable process): `stat`, `status` (uids, capabilities, seccomp), `cmdline` (the contract path and flags; a value never is an
+argument), `cgroup`, `comm`, `mountinfo`, the socket tables of `/proc/net` (addresses and inodes, not whose), and whatever a run's
+own rules say of signalling it. It can no longer read `environ`, `mem`, `maps`, `fd`, `fdinfo`, `exe`, `cwd`, `root`, `ns/*`, `io`
+or `syscall`, attach to it, read its memory with `process_vm_readv`, or take a descriptor with `pidfd_getfd`. The agent's own
+processes stay dumpable.
+
+**What stays open, said plainly.**
+
+- **`tego-control serve` was dumpable; it is not since 2026-11-22.** It holds the sign-in token (also in a 0600 file the
+  same user reads), its CSRF and acknowledgement keys, and it is the ask broker's operator peer, which the broker admitted only after reading the peer's `ns/cgroup`. This
+  stood until then: inside an enforcing tier a governed agent is refused `ptrace`,
+  `process_vm_readv`, `/proc/<pid>/mem` and `pidfd_getfd` toward a process outside its run, but a run with no Landlock domain
+  (`tego watch` with no `--boundary`, `--observe`) on a Yama 0 host could attach to the dashboard and read its keys. Now
+  `tego-control serve` is `Command.HoldsSecrets`: `mainWith` makes the process undumpable (`sys.MakeUndumpable`, with its
+  read-back) before the command runs and it does not start when that fails (exit 125, `[undumpable]`), and the broker admits it
+  by the peer's `SO_PEERCRED` uid, its pidfd and its cgroup path, which `/proc` keeps readable: the first of the three designs
+  the ruling named. Why an agent in a run cannot pass it, what each reader of the dashboard's `/proc` needed, and the tests
+  are in ADR 0100, "Amendment, 2026-11-22: the peer check admits an undumpable peer". The sign-in token alone still reaches nothing, since the loopback
+  listener refuses a request whose socket was made inside a run (`peer/tcp.go`, `sock_diag`), which `/proc` does not hide.
+- **The superblock proof on a btrfs subvolume.** `/proc/locks` prints `sb->s_dev` and `stat` the subvolume's anonymous
+  device, so on btrfs (and bcachefs, overlayfs) the exact row never matches. A caller that cannot read the launcher's descriptors
+  (no `CAP_SYS_PTRACE`) now takes the row for the lock file's inode and the launcher's pid when its device is the superblock
+  device of the mount that holds the file: `statx` (`STATX_MNT_ID`, Linux 5.8) on the descriptor gives the mount id (fdinfo's `mnt_id:`), `/proc/self/mountinfo` gives that mount's
+  `major:minor` (`sb->s_dev`), and the mount id is read again after the table to catch a move (`runlock.superblockProof`,
+  `rowOnDevice`). It is allowed only to a caller that is not root (real or effective), holds neither `CAP_KILL` nor
+  `CAP_SYS_PTRACE` in its effective or permitted set, and whose launcher's real, effective, saved and filesystem uids all equal the
+  caller's uid (`signalsOnlyItself`). A root or capable caller never takes it: it keeps the exact device and the descriptors, which
+  `CAP_SYS_PTRACE` reads. **Why a forged proof gives nothing.** Two subvolumes of one btrfs print one device and number inodes
+  from 257 each, so the row alone is ambiguous: a user can create a subvolume, a file of inode N, and a lock line that names a
+  victim pid holding a lock on its own inode N elsewhere. What such a forgery buys is a `tego stop` that signals the victim, an
+  `ask`, `approve` or `deny` that connects to a socket the victim does not serve (the broker's own peer check still names the
+  socket's server, and it is not the victim), and a status that calls a process a launcher. The signal goes only to a process
+  whose four uids are the caller's, which the caller could already signal with `kill(2)`, and a caller that could signal more
+  (`CAP_KILL`, root) is not given the shortcut. The residual is that a same-user process which can write a run directory (the agent
+  cannot) can pose as the broker of a run; it is a same-user process with the user's own powers, and that stays as it was.
+  `TestSignalsOnlyItself`, `TestSuperblockProof` (the gate, another device, pid, inode, no table, a mount that is not listed, a
+  mount that moved) and the guest evidence below.
+- **The caller the superblock proof does not serve (2026-11-24).** Root without `CAP_SYS_PTRACE` (Docker's default),
+  a caller with `CAP_KILL`, and a caller that is not the launcher's user cannot read an undumpable launcher's descriptors and do not
+  take the superblock row, so on a filesystem whose `/proc/locks` prints the superblock's device (btrfs, overlayfs, bcachefs) they read
+  the run as launcher unknown, and `tego stop`, `ask`, `approve`, `deny` and `pause` refuse (exit 125) and signal nothing. This is
+  a limit of what such a reader can prove, not a defect, and it is the price of the gate above: the row `(device, inode)` cannot
+  tell the lock file from a file of another subvolume of the same filesystem that has the same inode number and is locked by
+  some other process, and the lock line that names that process is written by the run's user. Reading the launcher's `mountinfo`
+  does not separate them (a nested subvolume is not a mount). The reader now says exactly that: when the table lists the launcher's
+  flock only under the superblock's device it names that device and why this caller does not take the row, and a caller that is
+  refused every descriptor's `fdinfo` (root lists the directory) is told the descriptors are hidden from it instead of "no
+  descriptor proves the run's flock". What proves it for such a caller is `CAP_SYS_PTRACE` (the descriptors), the launcher's own
+  user (the row), or a filesystem whose two devices agree (the exact row: ext4, xfs, tmpfs). The launcher-answers design (the
+  launcher passes its lock descriptor over the run's socket and the verifier reads the FLOCK row from the received descriptor's
+  `fdinfo`) would prove it everywhere and needs a running, answering launcher, which is not the case a stop is wanted most. Guests: Fedora 7.0
+  (6.19.10, btrfs `/home`), Ubuntu 25.10 (6.17) and Debian 13 (6.12) on a loop btrfs, with the capability removed by
+  `setpriv --bounding-set`; ext4 on a loop file as the control.
+- **A run started inside a run.** An undumpable process of a governed run cannot be read by the run's supervisor (the
+  descriptors and working directory it needs to decide a file operation are hidden, GAPS C44), so it refuses that process's
+  file operations fail-closed. A nested `tego run` that held itself undumpable was therefore refused at its first open ("chain
+  anchor: permission denied") instead of at the seccomp listener (EBUSY), still exit 125 and the outer run untouched, but for a
+  reason the person could not read. `run`, `watch` and `adopt` now check, before the hold and before anything is loaded, whether
+  this process's cgroup path shows a run (`runscope.LooksGoverned`, the guard every other command reads) and refuse with
+  "a run cannot start inside a run", naming the outer run (`cli.refuseNestedRun`, `TestARunCannotStartInsideARun`). Other
+  secret-holding commands are not touched. The hold is not made earlier or later, and no secret is loaded while dumpable.
+- **The window before the hold.** The kernel gives a process its environment at `exec`, so for the milliseconds the Go runtime
+  and `main` take before dispatch the environment of a `tego run` is readable as before. Nothing a command reads later (a saved
+  login, the key, a value) is in that window.
+- **A process with `CAP_SYS_PTRACE`, root, the kernel, swap and a crash of the host** read the memory whatever the flag says; the
+  flag also ends core dumps of the process, which is wanted. A debugger of the same user cannot attach to a `tego run` either;
+  `sudo gdb -p` can.
+
+**Verified** (this host, Linux 6.17, ext4, Yama `ptrace_scope` 1, as a user in an empty-home view): `internal/platform/sys`
+(`TestMakeUndumpable`), `internal/cli` (`TestSecretHoldingCommandsAreExactlyThese`, `TestUndumpableBeforeAnyThingACommandDoes`,
+`TestACommandThatCannotBeMadeUndumpableDoesNotRun`, the scope protocol's new
+case), `internal/runlock` (`TestUndumpableLauncherProofReadsTheTableAgain`,
+`TestUndumpableLauncherIsAliveToStatus`) and `internal/scan` (`TestScanSaysAnUndumpableProcessIsUnreadable`).
+**Not proved:** a root-tier run's launcher (it is already undumpable after its first credential change and unchanged here) and a
+kernel with `fs.suid_dumpable` 1 (both hosts measured had 2).
+
+**Guest evidence for the review fixes** (Fedora cloud image, kernel 6.19.10, root and `/home` on btrfs subvolumes, Yama
+`ptrace_scope` 0, SELinux enforcing, user `probe` uid 1000, no sudo in the probe; the retained logs are kept outside this repository). A real `tego run` at tier
+landlock with an `fs.ask` entry, started and answered by the same user:
+
+- **btrfs.** For the run's lock file `stat` says device 0:51 and `/proc/locks` prints 0:32, which is what `mountinfo` gives for the
+  mount that holds it (`evidence/btrfs-lockdev.txt`). The launcher's `environ`, `mem`, `maps`, `fd` and `exe` are refused to the
+  user, its `stat` is readable. This change's `tego status` shows the run with no "(launcher unknown)"; `tego ask` lists the ask,
+  `tego deny` and `tego approve` answer the agent's two held writes (the first write fails, the second goes through), `tego stop`
+  stops a run, and the dashboard's Stop (`tego-control serve`, signed in with its link, the confirm page's CSRF field, a POST with
+  its own Origin) says "Stopped" and the launcher is gone. The reviewed build (`dc1faf6b1`) against the same kind of run: `status`
+  shows "(launcher unknown)"; `ask`, `deny`, `approve` and `stop` exit 125 with "does not hold the run's lock"; the dashboard says
+  "Not done: the run could not be stopped".
+- **ext4** (a loop-mounted file in the same guest, the same flow): `/proc/locks`, `stat` and `mountinfo` print one device, and the
+  old and the new build behave alike (status, ask, deny, approve, CLI and dashboard stop all work): the exact-device path is unchanged.
+- **What a governed agent gets.** The agent walks its ancestors (the launcher, its parent, a login shell outside the run, `sshd`)
+  and tries `environ`, `mem`, `maps`, a listing of `fd`, `PTRACE_ATTACH`, `process_vm_readv` and `pidfd_getfd`. Every ancestor
+  refuses them (`EACCES`; `EPERM` for the attach and the read, on a guest whose Yama scope 0 would allow both to a dumpable process of
+  the same user), the launcher and the dumpable login shell alike: Landlock's domain scoping and the supervisor's `pidfd_getfd`
+  refusal, measured (`evidence/*-agent-probe.log`). A run with no Landlock domain was not run in the guest.
+- The `runlock` test binary on that btrfs (`TestSuperblockProof`, `TestSignalsOnlyItself`, `TestUndumpableLauncherProofReadsTheTableAgain`,
+  `TestUndumpableLauncherIsAliveToStatus`, `TestLockHolderProofForNonDumpableLauncher`) passes: the stand-in launcher is proved
+  Alive by the superblock device through the real `statx`, `mountinfo` and `/proc/locks`.
 
 ## Proposed amendment 2026-11-03: preview or security boundary
 

@@ -17,7 +17,7 @@ import (
 	bpfobj "github.com/attention-span-ai/tego/internal/bpf"
 	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/internal/runtime/cgroup"
-	"github.com/attention-span-ai/tego/internal/shellword"
+	"github.com/attention-span-ai/tego/internal/selfbin"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
@@ -51,7 +51,8 @@ type Result struct {
 	Skipped bool `json:"skipped,omitempty"`
 	// beside is D3 failed only because this process runs beside its user manager's cgroup, which it found delegated
 	// (cgroup.ErrBesideSubtree): a shell inside it passes (Report.OutsideUserManager).
-	beside bool
+	beside           bool
+	throughUserScope bool
 	// noManager is D3 failed because no user manager runs for the uid (cgroup.ErrNoUserManager): starting one that
 	// runs without a login cures it (Report.NoUserManager).
 	noManager bool
@@ -211,15 +212,40 @@ func probeCgroup(uid int, ceilings []config.Value) Result {
 // cannot produce (case 39 needs a cgroup namespace the test process is not in) can still be driven
 // through the code that turns it into D3's Result.
 func probeCgroupWith(uid int, ceilings []config.Value, detect func(uid int) (*cgroup.FS, error)) Result {
+	return probeCgroupAt(uid, ceilings, detect, false)
+}
+
+func probeCgroupPlacement(uid int, ceilings []config.Value, throughScope bool) Result {
+	if !throughScope {
+		return probeCgroup(uid, ceilings)
+	}
+	return probeCgroupAt(uid, ceilings, cgroup.Detect, throughScope)
+}
+
+func probeCgroupAt(uid int, ceilings []config.Value, detect func(uid int) (*cgroup.FS, error), throughScope bool) Result {
 	fs, err := detect(uid)
 	if err == nil {
 		err = fs.CanPlace()
 	}
-	if err != nil {
+	return probeCgroupResolved(fs, err, ceilings, throughScope)
+}
+
+func probeCgroupResolved(fs *cgroup.FS, err error, ceilings []config.Value, throughScope bool) Result {
+	beside := throughScope && fs != nil && errors.Is(err, cgroup.ErrBesideSubtree)
+	if err != nil && !beside {
 		detail, fix := detectFailure(err)
 		return Result{ID: CheckCgroupV2, Detail: detail, Fix: fix, beside: errors.Is(err, cgroup.ErrBesideSubtree),
 			noManager: errors.Is(err, cgroup.ErrNoUserManager)}
 	}
+	r := probeDelegatedCgroup(fs, ceilings)
+	if beside && r.OK {
+		r.beside, r.throughUserScope = true, true
+		r.Detail = "this shell is outside the user manager's cgroup; entry into a user scope was just shown to work; " + r.Detail
+	}
+	return r
+}
+
+func probeDelegatedCgroup(fs *cgroup.FS, ceilings []config.Value) Result {
 	fix := delegateFix
 	root := fs.Root()
 	for _, name := range []string{"cgroup.procs", "cgroup.subtree_control"} {
@@ -389,18 +415,20 @@ func writeResults(w io.Writer, rs []Result, off func(Result) bool) error {
 // executable is os.Executable, a variable so a test can name the binary the fix lines print.
 var executable = os.Executable
 
+// namedSelf is selfbin.Named for this process's executable: the running tego as a sudo line names it, or why it cannot
+// be named. A variable so a test describes the binary.
+var namedSelf = func() (string, string) { return selfbin.Named(executable) }
+
 // sudoDoctor is the command that re-runs this doctor as root, for a fix line. It names this binary by its
 // absolute path: sudo resets PATH to its secure_path, which on Ubuntu leaves out $HOME/.local/bin, where the
-// install script puts tego, so `sudo tego doctor` answered "command not found" on the default install.
-// A path the shell would split or expand is single-quoted (shellword.Quote, the dashboard's terminal twins' rule);
-// a binary whose path cannot be read is named tego, as before.
+// install script puts tego, so `sudo tego doctor` answered "command not found" on the default install. A path the
+// shell would split is one quoted word (selfbin.Named). A binary that cannot be named safely (unreadable, replaced
+// since it started, a character that does not print, not executable, or its path ownership/write authority cannot be verified) gives no command: the fix says so, and never
+// falls back to a lookup of tego in the reader's PATH, which would select another binary and run it as root.
 func sudoDoctor() string {
-	path, err := executable()
-	if err != nil || path == "" {
-		return "sudo tego machine check"
+	command, why := selfbin.Sudo("machine check", namedSelf)
+	if why != "" {
+		return "run this tego as root with sudo (" + strings.TrimSuffix(why, ".") + ")"
 	}
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		path = resolved
-	}
-	return "sudo " + shellword.Quote(path) + " doctor"
+	return command
 }

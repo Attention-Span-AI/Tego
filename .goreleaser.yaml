@@ -78,7 +78,21 @@ builds:
     goos: [linux]
     goarch: [amd64, arm64]
 
+  - id: tego-windows
+    main: ./cmd/tego-windows
+    binary: tego
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath, -buildmode=exe]
+    ldflags: [-s -w]
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    goos: [windows]
+    goarch: [amd64, arm64]
+
 archives:
+  - id: tego-windows
+    ids: [tego-windows]
+    formats: [binary]
+    name_template: 'tego_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
   - id: tego
     ids: [tego, tego-control]
     formats: [binary]
@@ -117,6 +131,9 @@ checksum:
   # before the script runs (docs/GAPS.md B11).
   extra_files:
     - glob: ./scripts/install.sh
+    - glob: ./scripts/install.ps1
+    - glob: ./scripts/windows-provision.sh
+    - glob: ./scripts/windows-entry.py
     - glob: ./examples/lima/tego.yaml
 
 # docs/CHANGELOG.md is the hand-maintained record (VERSIONING.md §5); no second, commit-log-derived one. release.yml
@@ -140,4 +157,7 @@ release:
   # installs docs/INSTALL.md gives take these assets, never a branch's copy.
   extra_files:
     - glob: ./scripts/install.sh
+    - glob: ./scripts/install.ps1
+    - glob: ./scripts/windows-provision.sh
+    - glob: ./scripts/windows-entry.py
     - glob: ./examples/lima/tego.yaml

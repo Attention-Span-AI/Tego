@@ -9,7 +9,10 @@ import (
 	"testing"
 )
 
-func securityNotes(t *testing.T) string {
+// securityNotes is the "### Security" notes of the changelog section that starts with heading ("## Unreleased\n",
+// "## v0.1.3 "): the section's own notes, never a later release's, so a section that has none fails here instead of
+// reading the next release's (the Unreleased section had no security notes while this test read v0.1.3's).
+func securityNotes(t *testing.T, heading string) string {
 	t.Helper()
 	data, err := os.ReadFile("../../tools/oss/testdata/overlay/docs/CHANGELOG.md")
 	if os.IsNotExist(err) {
@@ -18,22 +21,23 @@ func securityNotes(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, unreleased, ok := strings.Cut(string(data), "## Unreleased\n")
+	_, section, ok := strings.Cut(string(data), "\n"+heading)
 	if !ok {
-		t.Fatal("missing Unreleased section")
+		t.Fatalf("missing changelog section %q", strings.TrimSpace(heading))
 	}
-	_, security, ok := strings.Cut(unreleased, "### Security\n")
+	section, _, _ = strings.Cut(section, "\n## ")
+	_, security, ok := strings.Cut(section, "### Security\n")
 	if !ok {
-		t.Fatal("missing Unreleased security notes")
+		t.Fatalf("missing security notes in %q", strings.TrimSpace(heading))
 	}
 	security, _, _ = strings.Cut(security, "\n##")
 	return security
 }
 
-// TestUnreleasedCommandRuleNotes keeps the affected rules and tools visible in
-// the public notice, and keeps opaque wording from returning.
-func TestUnreleasedCommandRuleNotes(t *testing.T) {
-	notes := securityNotes(t)
+// TestCommandRuleSecurityNotes keeps the affected rules and tools visible in the public notice of the release that
+// fixed the command rules (v0.1.3), and keeps opaque wording out of that notice and the Unreleased one.
+func TestCommandRuleSecurityNotes(t *testing.T) {
+	notes := securityNotes(t, "## v0.1.3 ")
 	for _, rule := range []string{"exec.deny", "exec.ask"} {
 		if !strings.Contains(notes, rule) {
 			t.Errorf("security notice omits %s", rule)
@@ -44,9 +48,11 @@ func TestUnreleasedCommandRuleNotes(t *testing.T) {
 			t.Errorf("security notice omits %s", tool)
 		}
 	}
-	for _, jargon := range []string{"verified tool parser", "unstable command-position terminator"} {
-		if strings.Contains(notes, jargon) {
-			t.Errorf("security notice uses opaque wording %q", jargon)
+	for _, heading := range []string{"## Unreleased\n", "## v0.1.3 "} {
+		for _, jargon := range []string{"verified tool parser", "unstable command-position terminator"} {
+			if strings.Contains(securityNotes(t, heading), jargon) {
+				t.Errorf("security notice of %q uses opaque wording %q", strings.TrimSpace(heading), jargon)
+			}
 		}
 	}
 }

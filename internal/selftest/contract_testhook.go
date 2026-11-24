@@ -10,6 +10,7 @@ import (
 	"text/template"
 
 	"github.com/attention-span-ai/tego/pkg/spec/config"
+	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
 // EnvTestContract names a contract template that a binary built with -tags tegotesthooks fills, with the data the
@@ -38,6 +39,9 @@ func init() {
 // readContractTemplate parses the template at p with missingkey=error: a name writeContract's data does not hold
 // fails the fill instead of writing "<no value>" into the contract.
 func readContractTemplate(p string) (*template.Template, error) {
+	if !identity.EnvPlace(p) { // not a place: never echoed (identity envtext.go, rule (b))
+		return nil, fmt.Errorf("the %s value is not an absolute clean path; %s", EnvTestContract, identity.EnvInspect(EnvTestContract))
+	}
 	b, err := os.ReadFile(p)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", EnvTestContract, err)

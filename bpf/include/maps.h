@@ -332,6 +332,27 @@ struct {
     __type(value, __u64);             /* ssl_ptr */
 } tego_ssl_current SEC(".maps");
 
+/* Two empty program arrays that only the capture programs' tail calls name (bpf/uprobe_ssl.bpf.c TEGO_OWN_STACK,
+ * ADR 0150): tego_ssl_ownstk the six single programs', tego_ssl_ownstkm the multi pair's, since an array takes
+ * programs of one expected attach type. Every probe hit attempts a call; the empty slot makes it fall through.
+ * Nothing is ever put here. The live call excludes the program from the per-CPU private stack. Pinned by name like every map here, so a
+ * build's later runs adopt the programs that read them. */
+struct {
+    __uint(type, BPF_MAP_TYPE_PROG_ARRAY);
+    __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
+    __type(key, __u32);
+    __type(value, __u32);
+} tego_ssl_ownstk SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_PROG_ARRAY);
+    __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
+    __type(key, __u32);
+    __type(value, __u32);
+} tego_ssl_ownstkm SEC(".maps");
+
 #endif /* TEGO_CAPTURE_MAPS */
 
 /* Each task's last plane decision and its walk arguments (struct tego_plane_decision). TASK_STORAGE needs
@@ -406,6 +427,29 @@ struct {
     __type(key, __u32);
     __array(values, struct tego_plane_listen_inner);
 } tego_plane_listen_rows SEC(".maps");
+
+/* The prototype of a slot's live-block map (ADR 0124, amendment 2026-11-21): a struct inode *, or a directory's and a
+ * name's mixed key (tego_block_name_key), -> struct tego_plane_block_row. NO_PREALLOC: a slot charges only for the rows
+ * of the blocks its run holds. */
+struct tego_plane_block_inner {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(map_flags, BPF_F_NO_PREALLOC);
+    __uint(max_entries, TEGO_PLANE_BLOCK_ROWS_MAX);
+    __type(key, __u64);
+    __type(value, struct tego_plane_block_row);
+};
+const struct tego_plane_block_row *tego_btf_block_map_row;
+
+/* Each slot's live-block rows, at its run_idx, kept across runs with gen like tego_plane_rows. The fill writes and
+ * deletes them in the kernel from the launcher's descriptors; the walk of every fs hook reads them while the slot's
+ * block state is on. */
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH_OF_MAPS);
+    __uint(max_entries, TEGO_MAX_SLOTS);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
+    __type(key, __u32);               /* run_idx */
+    __array(values, struct tego_plane_block_inner);
+} tego_plane_blocks SEC(".maps");
 
 /* Each slot's rows map, at its run_idx, like its rings (ADR 0025 (1) as T0 amended it): a slot keeps its map across
  * runs, because an outer insert or delete waits an RCU grace period (12-80 ms a run); every row carries the gen of
@@ -532,6 +576,18 @@ struct {
     __type(key, __u32);               /* run_idx */
     __type(value, struct tego_plane_slot);
 } tego_plane_slots SEC(".maps");
+#endif
+
+/* Each slot's live-block state (struct tego_plane_block_state), by run_idx, written whole by the launcher (Prepare with
+ * the run's gen, then around every change of the slot's block rows). The fill has no use for it. */
+#ifndef TEGO_PLANE_FILL_MAPS
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, TEGO_MAX_SLOTS);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
+    __type(key, __u32);               /* run_idx */
+    __type(value, struct tego_plane_block_state);
+} tego_plane_block_states SEC(".maps");
 #endif
 
 /* Each slot's unix policy for step D's hooks (struct tego_plane_unix), by run_idx, written with the run's gen by

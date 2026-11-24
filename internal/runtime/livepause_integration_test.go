@@ -115,15 +115,21 @@ func controlWhys(t *testing.T, dir string) []string {
 	return whys
 }
 
-// waitWhy waits up to 5 s for the run's pause lines to end with why.
+// pauseHangGuard ends a test whose pause line never comes. It is not a speed estimate. A pause that missed is tried
+// again by the launcher after 2 s, then 4 s, 8 s and so on up to 30 s (pauseRetryFirst, pauseRetryMax), and how many
+// tries a busy host lets miss in a row is not the test's to guess: with a 5 s wait, two misses in a row (2 s + 4 s)
+// failed the gate's run with the run's pause lines all there but the last confirmation.
+const pauseHangGuard = 5 * time.Minute
+
+// waitWhy waits until the run's pause lines end with why (the launcher's own retries bound how long that takes).
 func waitWhy(t *testing.T, dir, why string) {
 	t.Helper()
-	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+	for deadline := time.Now().Add(pauseHangGuard); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
 		if w := controlWhys(t, dir); len(w) > 0 && w[len(w)-1] == why {
 			return
 		}
 	}
-	t.Fatalf("no %s line within 5 s: the run's pause lines are %v", why, controlWhys(t, dir))
+	t.Fatalf("no %s line within the %s hang guard: the run's pause lines are %v", why, pauseHangGuard, controlWhys(t, dir))
 }
 
 // progress is how many beats the agent wrote over d.

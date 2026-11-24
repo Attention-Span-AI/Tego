@@ -1,7 +1,7 @@
 {{/* SPDX-License-Identifier: Apache-2.0 */}}
 {{/* mcp-preview: the check before a switch that loosens an MCP tool (mcp_tools.go, mcpact.Plan). */}}
-{{define "content"}}<link rel="stylesheet" href="/static/mcp.css">{{with .Data}}{{$d := .}}
-<div class="head"><div><h1>Check this change</h1>{{if not .Err}}<p class="lede">This gives the agent more than it has now. Nothing changes until you confirm.</p>{{end}}</div></div>
+{{define "content"}}<link rel="stylesheet" href="/static/mcp.css">{{with .Data}}<div class="page-interior layer-page">{{$d := .}}
+<div class="head"><div>{{if $.Tour}}<h2 class="h1-obj">{{else}}<h1 class="h1-obj">{{end}}Check this change{{if $.Tour}}</h2>{{else}}</h1>{{end}}{{if not .Err}}<p class="lede" data-number="editor.preview-written">This gives the agent more than it has now. Nothing changes until you confirm.</p>{{end}}</div></div>
 {{with .Err}}<section class="banner banner-danger" role="alert">{{template "i" "i-triangle-alert"}}<div class="grow"><strong>Not done: {{.}}</strong></div></section>{{end}}
 {{with .Plan}}{{$p := .}}
 <section class="panel mcp-preview">
@@ -10,7 +10,7 @@
 <dt>Tool</dt><dd class="mono">{{.Tool}}</dd>
 <dt>Now</dt><dd><span class="mcp-d mcp-d-{{.From.Decision}}">{{.From.Decision}}</span> <span class="soft mono">by {{.From.Rule}}</span></dd>
 <dt>After</dt><dd><span class="mcp-d mcp-d-{{.To}}">{{.To}}</span>{{if .Reset}} <span class="soft">(the contract's rule again)</span>{{end}}</dd>
-<dt>Run</dt><dd class="mono">{{rid .Run}}</dd>
+<dt>Run</dt><dd class="mono"><a class="text-link" href="/runs/{{pathEsc .Run}}" data-number-exclude="mcp.preview-run">{{.Run}}</a></dd>
 </dl>
 {{if $d.Err}}<a class="btn" href="{{$d.Back}}">Back to MCP tools</a>{{else if .Loosens}}
 <form method="post" action="{{if .Reset}}/mcp/reset{{else}}/mcp/set{{end}}" class="mcp-confirm"><input type="hidden" name="csrf" value="{{$d.CSRF}}"><input type="hidden" name="run" value="{{.Run}}"><input type="hidden" name="server" value="{{.Server}}"><input type="hidden" name="tool" value="{{.Tool}}"><input type="hidden" name="decision" value="{{.To}}">
@@ -19,4 +19,4 @@
 </form>{{else}}<p>This change does not loosen anything; go back and apply it from the page.</p><a class="btn" href="{{$d.Back}}">Back to MCP tools</a>{{end}}
 </section>{{end}}
 {{if not .Plan}}<a class="btn" href="{{.Back}}">Back to MCP tools</a>{{end}}
-{{end}}{{end}}
+</div>{{end}}{{end}}

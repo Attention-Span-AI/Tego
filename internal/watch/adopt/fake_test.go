@@ -4,6 +4,7 @@ package adopt
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -49,6 +50,8 @@ type machine struct {
 	frozen  map[string]bool
 	// refuse makes Add into the named directory (absolute) fail with the errno.
 	refuse map[string]syscall.Errno
+	// noMake makes Make of the named directory (absolute) fail with the errno.
+	noMake map[string]syscall.Errno
 	// onAdd runs after each successful Add, with the lock released: a test forks or exits a process there.
 	onAdd func(m *machine, dir string, pid int)
 	// statHook runs before each Stat: a test replaces a process under its pid there.
@@ -62,7 +65,7 @@ type machine struct {
 
 func newMachine() *machine {
 	return &machine{mount: "/sys/fs/cgroup", procs: map[int]*fakeProc{}, cgroups: map[string]bool{"/": true},
-		frozen: map[string]bool{}, refuse: map[string]syscall.Errno{}, exited: map[int]bool{}, statCalls: map[int]int{}}
+		frozen: map[string]bool{}, refuse: map[string]syscall.Errno{}, noMake: map[string]syscall.Errno{}, exited: map[int]bool{}, statCalls: map[int]int{}}
 }
 
 // add puts a process on the machine, in cgroup cg (relative), creating the cgroup.
@@ -334,6 +337,24 @@ func (m *machine) Freeze(dir string, frozen bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.frozen[m.rel(dir)] = frozen
+	return nil
+}
+
+// Make creates dir as an empty cgroup under a parent that exists, as mkdir(2) in a cgroup2 hierarchy does.
+func (m *machine) Make(dir string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if e, ok := m.noMake[dir]; ok {
+		return e
+	}
+	rel := m.rel(dir)
+	if m.cgroups[rel] {
+		return syscall.EEXIST
+	}
+	if !m.cgroups[path.Dir(rel)] {
+		return syscall.ENOENT
+	}
+	m.cgroups[rel] = true
 	return nil
 }
 

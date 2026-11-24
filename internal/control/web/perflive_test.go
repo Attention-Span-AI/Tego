@@ -203,7 +203,7 @@ func TestRunsPaging(t *testing.T) {
 	if len(rest) != runsPage || rest[0][1] != cleanRun {
 		t.Fatalf("first page: %d rows starting %v, want %d starting with the newest ended run", len(rest), rest[:1], runsPage)
 	}
-	if !strings.Contains(b, "<h1>207 runs</h1>") || !strings.Contains(b, "Ended 206") {
+	if !strings.Contains(b, "<h1>What is running?</h1>") || !strings.Contains(b, "All 207") || !strings.Contains(b, "Ended 206") {
 		t.Errorf("the counts are not the whole ledger's")
 	}
 	if !strings.Contains(b, "runs 1–100 of the 206 not running") {

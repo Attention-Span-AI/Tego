@@ -92,7 +92,8 @@ type field struct {
 // R2: id = hex(sha256(line)) where line is this same serialization with id set to 64 zero characters; the returned bytes
 // carry the real id at the same offset, so VerifyLine recomputes the digest by zeroing it again.
 // R3: Payload is a JSON object spliced into the top level, its keys sorted; nested values are kept verbatim.
-// E18: invalid UTF-8 in any string is replaced by U+FFFD, one per byte, never written raw and never an error --
+// Baseline evidence is validated on original bytes before E18 repair.
+// E18: invalid UTF-8 in any other string is replaced by U+FFFD, one per byte, never written raw and never an error --
 // except in a payload key, where two keys that differ only in invalid bytes are one key once sanitized and so
 // are rejected as a duplicate (ErrInvalidEvent) rather than written twice onto one line.
 //
@@ -112,6 +113,11 @@ func (e *Event) MarshalLineAt(minor int) ([]byte, error) {
 
 // marshalLine is MarshalLine, and with minor 0 or more MarshalLineAt.
 func (e *Event) marshalLine(minor int) ([]byte, error) {
+	if e.Kind == KindRunStart {
+		if err := validateWriterBaseline(e.Payload); err != nil {
+			return nil, err
+		}
+	}
 	payload, shared, err := payloadFields(e.Payload)
 	if err != nil {
 		return nil, err
@@ -364,6 +370,7 @@ func payloadFields(raw []byte) ([]field, sharedFields, error) {
 // Decode parses one line (with or without its "\n" terminator) into an Event.
 //
 // R5: v is checked first and anything but 1 is ErrUnsupportedVersion, an integer v above 1 ErrNewerVersion too; unknown top-level keys are never an error.
+// Run-start baseline evidence and revision support are checked on raw bytes before projection (ADR 0144).
 // Every key that is not a reserved common field becomes part of Payload, rebuilt as a compact object with sorted
 // keys (the shared keys rule and reason appear both on the Event and in Payload), so MarshalLine(Decode(line))
 // reproduces a canonical line byte for byte (I9) even when a newer v1 writer added an optional field this binary
@@ -371,9 +378,16 @@ func payloadFields(raw []byte) ([]field, sharedFields, error) {
 // fields, attribution presence).
 func Decode(line []byte) (*Event, error) {
 	line = bytes.TrimSuffix(line, []byte{'\n'})
-	fields, err := objectFields(line)
+	fields, err := objectFieldsRaw(line)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w: %w", ErrMalformedLine, errMalformedObject, err)
+	}
+	// Preserve common-field E18 handling and error precedence while keeping
+	// payload evidence untouched until its raw gate has run.
+	for i := range fields {
+		if IsCommonField(fields[i].key) {
+			fields[i].val = compactValue(fields[i].val)
+		}
 	}
 	e := &Event{}
 	vi := slices.IndexFunc(fields, func(f field) bool { return f.key == "v" })
@@ -389,6 +403,16 @@ func Decode(line []byte) (*Event, error) {
 	e.V = Version
 	if err := e.decodeCommon(fields); err != nil {
 		return nil, err
+	}
+	if e.Kind == KindRunStart {
+		if err := ValidateRunStartBaseline(line); err != nil {
+			return nil, err
+		}
+	}
+	for i := range fields {
+		if !IsCommonField(fields[i].key) {
+			fields[i].val = compactValue(fields[i].val)
+		}
 	}
 	e.Payload = joinPayload(fields)
 	return e, nil
@@ -552,4 +576,21 @@ func isHex(b []byte) bool {
 		}
 	}
 	return true
+}
+
+// MarshalLine keeps its legacy Validate-only behavior for non-baseline revisions.
+// Baseline bytes (including a baseline revision missing its evidence) must go
+// through the raw gate before payloadFields can repair their strings.
+func validateWriterBaseline(raw []byte) error {
+	fields, err := objectFieldsRaw(raw)
+	if err != nil {
+		return nil
+	} // payloadFields reports malformed objects with its existing diagnostics
+	for _, member := range fields {
+		if foldEqual(member.key, "baseline") || foldEqual(member.key, "effective_hash") ||
+			foldEqual(member.key, "record_minor") && bytes.Equal(bytes.TrimSpace(member.val), []byte(strconv.Itoa(MinorBaseline))) {
+			return ValidateRunStartBaseline(raw)
+		}
+	}
+	return nil
 }

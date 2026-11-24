@@ -278,3 +278,60 @@ that axis. The Debian default-LSM matrix instead lost its conformance process to
 binaries) until the parent ended, while the kernel fixtures ran. It now removes each tree immediately after reading
 its columns; those columns alone survive into the axes. `TestGeneratedColumnsReleaseTemporaryTrees` holds that
 lifetime independently of the guest's RAM size. No required axis or verdict check is removed.
+
+### Overlay ledger baseline scope, 2026-11-12
+
+The three `mounts/mprotect-exec-overlay-library` ledger baselines now require
+`kernel_min: 6.8`, using the existing `where` design. AL2023 6.1 passes this check
+on both boots (run 43152191607); an unscoped entry incorrectly failed the stale
+baseline ratchet there. The anonymous backing-file attribution limit remains
+baselined on 6.8+, where overlayfs uses `struct backing_file`. The kernel refusal
+and all invariants remain required. The 6.8 boundary comes from kernel history;
+a real 6.8 guest control remains owed. No bind-alias cell or baseline changes here.
+
+### Compile fixture lifetime, 2026-11-12
+
+`TestConformanceCompile` now gives each fixture a sequential subtest. Its tree,
+listeners and host helpers are cleaned up after that fixture's comparisons,
+before the next fixture is materialized. Every fixture still has its own actor
+copy and project. The baseline settles once after all comparisons, as before.
+Run 43152191607 exhausted guest tmpfs copying actor 88/89 on five rows. A unit
+measurement with 64 grid fixtures and a fixed 1 MiB actor retained 67,366,758
+regular-file bytes at peak before this change, 1,052,738 after, and zero fixture
+bytes after comparisons. These are fixture file bytes, not a guest RSS or tmpfs
+capacity measurement. The full compile runner passes with zero disagreements;
+its 1536M guest acceptance remains owed.
+
+### Row-scoped root skips, 2026-11-12
+
+The three tagged Btrfs identity omissions are scoped to `row=rhel-9` in the
+root skip registry. `skipgate.sh --row ROW` admits a scoped entry only for that
+exact row; an absent or different row cannot use it. The root runner passes
+its validated row to both build gates. Every other full matrix row requires
+Btrfs even when `VM_MODULES` is overridden: built-in drivers, such as Fedora's,
+are requirements too. The mount must still fail and readable `/proc/filesystems`
+must confirm absence before RHEL may skip. A present driver with a failed mount
+fails. This closes the global exception without weakening a fixture.
+
+Scoped must-pass entries can accompany a global skip only when the named row
+exists in `fetch-kernel.py --list` and the hosted matrix schedules the package
+there. `check-skiplists.sh` now validates both facts offline, through
+`scripts/check-skiprows.py`. The dispatch check accepts a direct full-package
+root-suite step with literal package selectors and the supported row conditions;
+it refuses unsupported forms. `TestScopedMustPassHasAScheduledRow` rejects a
+misspelled row and a valid row where the package never runs, as well as removed,
+commented, conditional or narrowed dispatches. These fixtures establish schedule
+validation only. Runtime and merged-head acceptance remain owed in a guest.
+
+## Amendment 2026-11-12: validate fixture contracts on the host
+
+The host tests strictly load every handwritten fixture contract and every declared variant with
+`agent.LoadBytes`, even when no cell has a compile row. Fixtures with compile rows also pass through
+`agent.Compile` offline over the laid-out files. This catches schema defects before guest time is spent:
+the removed `ask.notify: []` in mounts-bindask is a load error, not a kernel refusal. A go test overlay
+that restores that key must fail at strict load with the schema diagnostic.
+
+Optional table metadata `contract_error` declares an intentional negative contract: load or compile
+stage, diagnostic code, message fragment and reason. Every cell then says `no_compile`; the host test
+requires the declared error, never any error or unexpected success. No existing fixture needs this
+metadata. This changes only suite inputs and host validation, not the product contract schema or kernel rules.

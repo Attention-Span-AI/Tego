@@ -86,30 +86,115 @@ func globRegexp(glob string) *regexp.Regexp {
 }
 
 // governs reports whether the rule names the product file rel (a slash path below the repository root): a
-// non-negated pattern matches it and no negated one excludes it. The $all pattern names no directory, so it does not
-// count, "!$test" excludes only test files, and a rule that lists $test is for test files alone.
+// non-negated pattern matches it and no negated one excludes it. Explicit layer coverage excludes $all and
+// rules that name $test, while "!$test" excludes only test files.
 func (r depguardRule) governs(rel string) bool {
+	if slices.Contains(r.Files, "$test") {
+		return false
+	}
+	return r.matchesProduct(rel, false)
+}
+
+// appliesToProduct evaluates a rule's selection, including $all. A global deny
+// list need not name each directory it protects; governs checks that separate
+// requirement for the directory-specific layer rules. Positive patterns are a
+// union, absent positive patterns select all files, and every exclusion applies.
+func (r depguardRule) appliesToProduct(rel string) bool {
+	return r.matchesProduct(rel, true)
+}
+
+func (r depguardRule) matchesProduct(rel string, includeAll bool) bool {
 	path := "/" + rel
-	named := false
+	selected, hasPositive := false, false
 	for _, p := range r.Files {
 		switch {
 		case p == "$test":
-			return false // a rule for test files alone governs no product file
+			hasPositive = true // this positive pattern matches no product file
 		case p == "$all":
+			hasPositive = true
+			selected = selected || includeAll
 		case strings.HasPrefix(p, "!"):
 			neg := p[1:]
-			if neg != "$test" && !strings.HasPrefix(neg, "$") && globRegexp(neg).MatchString(path) {
+			if neg == "$all" || neg != "$test" && !strings.HasPrefix(neg, "$") && globRegexp(neg).MatchString(path) {
 				return false
 			}
-		case globRegexp(p).MatchString(path):
-			named = true
+		default:
+			hasPositive = true
+			selected = selected || globRegexp(p).MatchString(path)
 		}
 	}
-	return named
+	return selected || includeAll && !hasPositive
+}
+
+func TestDepguardProductSelectionIncludesAll(t *testing.T) {
+	for _, tc := range []struct {
+		name, rel string
+		files     []string
+		applies   bool
+		governs   bool
+	}{
+		{"all", "internal/contracts/catalog.go", []string{"$all"}, true, false},
+		{"excluded", "internal/contracts/catalog.go", []string{"$all", "!**/internal/contracts/**"}, false, false},
+		{"other exclusion", "internal/contracts/catalog.go", []string{"$all", "!**/internal/control/**"}, true, false},
+		{"tests only", "internal/contracts/catalog.go", []string{"$test"}, false, false},
+		{"all and tests", "internal/contracts/catalog.go", []string{"$all", "$test"}, true, false},
+		{"explicit and tests", "internal/contracts/catalog.go", []string{"**/internal/contracts/**", "$test"}, true, false},
+		{"default all", "internal/contracts/catalog.go", nil, true, false},
+		{"negative only", "internal/contracts/catalog.go", []string{"!**/internal/control/**"}, true, false},
+		{"negative only excluded", "internal/contracts/catalog.go", []string{"!**/internal/contracts/**"}, false, false},
+		{"excluding tests", "internal/contracts/catalog.go", []string{"$all", "!$test"}, true, false},
+		{"explicit", "internal/contracts/catalog.go", []string{"**/internal/contracts/**"}, true, true},
+		{"other explicit", "internal/contracts/catalog.go", []string{"**/internal/registry/**"}, false, false},
+		{"exclude all", "internal/contracts/catalog.go", []string{"$all", "!$all"}, false, false},
+		{"exclude explicit", "internal/contracts/catalog.go", []string{"**/internal/contracts/**", "!$all"}, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := depguardRule{Files: tc.files}
+			if got := r.appliesToProduct(tc.rel); got != tc.applies {
+				t.Errorf("appliesToProduct = %v, want %v", got, tc.applies)
+			}
+			if got := r.governs(tc.rel); got != tc.governs {
+				t.Errorf("governs = %v, want %v", got, tc.governs)
+			}
+		})
+	}
 }
 
 // layeredFixedDirs are the single directories to govern; the wildcard roots are in layeredDirs.
-var layeredFixedDirs = []string{"internal/setup", "internal/selftest", "tools/launchfacts", "tools/publiccheck", "tools/readmecheck"}
+var layeredFixedDirs = []string{"internal/scan", "internal/scan/catalog", "internal/scan/result", "internal/setup", "internal/selftest", "internal/contracts", "tools/launchfacts", "tools/publiccheck", "tools/readmecheck"}
+
+// The contracts view is above discovery and read-side projection. The engine
+// cannot acquire a dependency on it as later baseline slices are built.
+func TestContractsLayerRule(t *testing.T) {
+	rules, err := loadDepguardRules(filepath.Join("..", "..", ".golangci.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, ok := rules["contracts-read-side"]
+	if !ok || r.ListMode != "strict" || !r.governs("internal/contracts/catalog.go") {
+		t.Fatal("catalog has no strict layer rule")
+	}
+	for _, want := range []string{"$gostd", "github.com/attention-span-ai/tego/internal/registry$", "github.com/attention-span-ai/tego/internal/ledger/runstart$", "github.com/attention-span-ai/tego/internal/rulefile$"} {
+		if !slices.Contains(r.Allow, want) {
+			t.Errorf("catalog rule lacks %s", want)
+		}
+	}
+	for _, a := range r.Allow {
+		if strings.Contains(a, "internal/runtime") || strings.Contains(a, "internal/cli") || strings.Contains(a, "internal/control") {
+			t.Errorf("catalog may import %s", a)
+		}
+	}
+	if !rules["engine-never-imports-control"].appliesToProduct("internal/contracts/catalog.go") {
+		t.Error("catalog escapes the control import ban")
+	}
+	engine := rules["runtime-never-imports-check"]
+	for _, d := range engine.Deny {
+		if d.Pkg == "github.com/attention-span-ai/tego/internal/contracts" {
+			return
+		}
+	}
+	t.Fatal("engine may import the catalog")
+}
 
 // layeredDirs returns the existing directories the layer rules must govern: a child of internal/adapters,
 // internal/check or pkg/spec, and the fixed ones. Slash paths below root, sorted.
@@ -326,7 +411,7 @@ const mod = "github.com/attention-span-ai/tego/"
 var layerRuleSpecs = []layerRuleSpec{
 	{name: "reason-spec-is-leaf", dir: "pkg/spec/reason", strict: []string{"$gostd", mod + "pkg/spec/record"}},
 	{name: "harness-spec-is-leaf", dir: "pkg/spec/harness", strict: []string{"$gostd"}},
-	{name: "receipt-spec-is-a-leaf", dir: "pkg/spec/receipt", strict: []string{"$gostd"}},
+	{name: "receipt-spec-is-a-leaf", dir: "pkg/spec/receipt", strict: []string{"$gostd", mod + "pkg/spec/record"}},
 	{name: "claudecode-imports", dir: "internal/adapters/claudecode", strict: []string{"$gostd", "golang.org/x/sys/unix", mod + "pkg/spec/reason", mod + "pkg/spec/harness"}},
 	{name: "adapters-never-import-engine", dir: "internal/adapters/openaicodex", deny: []string{
 		mod + "internal/runtime", mod + "internal/ledger", mod + "internal/check", mod + "internal/serve", mod + "internal/cli",

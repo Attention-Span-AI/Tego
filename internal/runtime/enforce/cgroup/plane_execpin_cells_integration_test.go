@@ -97,22 +97,6 @@ func logRaceShape(t *testing.T, events []map[string]any) {
 	t.Logf("exec lines by shape: %v; gaps: %v", shapes, gapCounts(events))
 }
 
-// gapCounts sums the run's gap lines by why.
-func gapCounts(events []map[string]any) map[string]int {
-	gaps := map[string]int{}
-	for _, e := range events {
-		if e["kind"] == "gap" {
-			c, _ := e["count"].(float64)
-			gaps[fmt.Sprint(e["why"])] += max(int(c), 1)
-		}
-	}
-	return gaps
-}
-
-// recordLossGaps are the gaps of records the run lost on their way to the ledger: past one, a race cell's exact
-// counts cannot hold, so the cell says the loss rather than a count.
-var recordLossGaps = []string{"ringbuf-full", "channel-full", "exec-fragment-overflow"}
-
 // wantExits checks the agent's exit status for each spec.
 func wantExits(t *testing.T, out string, want map[string]int) {
 	t.Helper()
@@ -286,7 +270,7 @@ func TestPlaneRunExecPinSymlinkSwap(t *testing.T) {
 			rep, events := runPinRace(t, bin, uid, gid, cell, execPinRaceContract("-swap", "./out/l", "./out/l",
 				"../bin/a/git", "../bin/b/git"), map[string]string{"bin/execracer": racer, "bin/a/git": string(tool),
 				"bin/b/git": string(tool)})
-			checkPinRace(t, cell, rep, events, "pin-mismatch", "")
+			checkPinSwapRace(t, cell, rep, events)
 		})
 	}
 }
@@ -307,7 +291,7 @@ func TestPlaneRunExecPinInterpreterSwap(t *testing.T) {
 			rep, events := runPinRace(t, bin, uid, gid, cell, execPinRaceContract("-swap", "./out/git", "./out/l",
 				"../bin/a/sh", "../bin/b/sh"), map[string]string{"bin/execracer": racer, "bin/a/sh": string(sh),
 				"bin/b/sh": string(sh), "out/git": "#!./out/l\nexit 0\n"})
-			checkPinRace(t, cell, rep, events, "pin-mismatch", "")
+			checkPinSwapRace(t, cell, rep, events)
 		})
 	}
 }
@@ -359,9 +343,6 @@ env:
 record: full
 `, mode, strings.Join(q, ", "), execPinRaceAttempts2)
 }
-
-// racerReport is execracer's tally.
-type racerReport struct{ attempts, eacces, ran, other, busy int }
 
 // buildExecRacer builds test/workloads/execracer and returns its image.
 func buildExecRacer(t *testing.T) string {
@@ -425,13 +406,21 @@ func runPinRaceEnv(t *testing.T, bin string, uid, gid int, cell, contract string
 	return r, runEvents(t, p.ledger), p
 }
 
-// checkPinRace checks a K6 race cell against its report: every attempt that ran is one line that says kernel_pinned;
-// every attempt refused EACCES is one bprm_check refusal with refusedReason (exec.pin, no signal); every attempt that
-// ended otherwise is one kill with killedReason (exec.pin, SIGKILL); run_end counts both; and on a machine with more
-// than one CPU the plane acted at least once. Attempts the racer's own write made fail ETXTBSY reach no exec line.
+// checkPinRace checks a K6 race cell against its report (judgePinRace): every attempt that ran is one line that says
+// kernel_pinned; every attempt refused EACCES is one bprm_check refusal with refusedReason (exec.pin, no signal); every
+// attempt that ended otherwise is one kill with killedReason (exec.pin, SIGKILL); run_end counts both; and on a machine
+// with more than one CPU the plane acted at least once. Attempts the racer's own write made fail ETXTBSY reach no exec
+// line. A stated record loss is tolerated in the two swap cells only (checkPinSwapRace); here the ledger must match.
 func checkPinRace(t *testing.T, cell string, rep racerReport, events []map[string]any, refusedReason, killedReason string) {
 	t.Helper()
-	checkPinRaceKill(t, cell, rep, events, refusedReason, killedReason, 0)
+	checkPinRaceWant(t, cell, rep, events, pinRaceWant{refusedReason: refusedReason, killedReason: killedReason})
+}
+
+// checkPinSwapRace is checkPinRace for a swap race (TestPlaneRunExecPinSymlinkSwap, TestPlaneRunExecPinInterpreterSwap):
+// the racer's every attempt was refused EACCES (pin-mismatch) or ran, none killed and none ETXTBSY.
+func checkPinSwapRace(t *testing.T, cell string, rep racerReport, events []map[string]any) {
+	t.Helper()
+	checkPinRaceWant(t, cell, rep, events, pinRaceWant{refusedReason: "pin-mismatch", swap: true})
 }
 
 // checkPinRaceKill is checkPinRace where every kill's send is said to have failed with killErr (0: none did): each
@@ -440,60 +429,24 @@ func checkPinRace(t *testing.T, cell string, rep racerReport, events []map[strin
 func checkPinRaceKill(t *testing.T, cell string, rep racerReport, events []map[string]any, refusedReason,
 	killedReason string, killErr int) {
 	t.Helper()
-	var ran, refused, killed, busy, odd int
-	for _, e := range events {
-		if e["kind"] != "exec" || strings.HasSuffix(fmt.Sprint(e["path"]), "/bin/execracer") {
-			continue
-		}
-		switch {
-		case e["syscall_ret"] == float64(-26):
-			busy++ // ETXTBSY: the racer's write held the file
+	checkPinRaceWant(t, cell, rep, events, pinRaceWant{refusedReason: refusedReason, killedReason: killedReason,
+		killErr: killErr})
+}
 
-		case e["verdict"] == "refused" && e["rule"] == "exec.pin" && e["signal"] == nil && refusedReason != "":
-			refused++
-			if e["plane_reason"] != refusedReason {
-				t.Errorf("a pin refusal: %v, want plane_reason %s", e, refusedReason)
-			}
-		case e["verdict"] == "refused" && e["rule"] == "exec.pin" && e["signal"] == "SIGKILL" && killedReason != "":
-			killed++
-			if killErr == 0 && (e["plane_reason"] != killedReason || e["kill_failed"] != nil) ||
-				killErr != 0 && (e["plane_reason"] != killedReason || e["kill_failed"] != float64(killErr) ||
-					e["detected_bypass"] != true) {
-				t.Errorf("a kill: %v, want plane_reason %s and kill_failed %d", e, killedReason, killErr)
-			}
-		case e["verdict"] != "refused" && e["argv_facts"] == "kernel_pinned":
-			ran++
-		default:
-			if odd++; odd <= 3 {
-				t.Errorf("an exec line that is neither a pinned run, the plane's refusal nor its kill: %v", e)
-			}
-		}
+func checkPinRaceWant(t *testing.T, cell string, rep racerReport, events []map[string]any, w pinRaceWant) {
+	t.Helper()
+	v := judgePinRace(rep, events, w)
+	for _, n := range v.notes {
+		t.Log(n)
 	}
-	rules := execRulesOf(t, events)
-	gaps := gapCounts(events)
-	for _, why := range recordLossGaps {
-		if gaps[why] != 0 {
-			t.Errorf("the run lost records (%s: %d): the race overran the record, so its counts below cannot be exact", why,
-				gaps[why])
-		}
+	for _, p := range v.problems {
+		t.Error(p)
 	}
-	if refused != rep.eacces || killed != rep.other || ran != rep.ran || busy != rep.busy {
-		t.Errorf("%+v: the ledger has %d refusals, %d kills, %d pinned runs and %d ETXTBSY", rep, refused, killed, ran, busy)
+	if len(v.problems) != 0 {
 		logRaceShape(t, events)
 	}
-	wantFailed := any(nil)
-	if killErr != 0 && killed != 0 {
-		wantFailed = float64(killed)
-	}
-	if rules == nil || refused != 0 && rules["pin_refused"] != float64(refused) || killed != 0 && rules["killed"] != float64(killed) ||
-		rules["kill_failed"] != wantFailed {
-		t.Errorf("run_end exec_rules %v, want pin_refused %d, killed %d and kill_failed %v", rules, refused, killed, wantFailed)
-	}
-	if killErr != 0 && gaps["exec-pin-kill-failed"] != killed {
-		t.Errorf("%d exec-pin-kill-failed gaps, want one a kill (%d)", gaps["exec-pin-kill-failed"], killed)
-	}
-	t.Logf("%s: %+v (ledger: refused %d, killed %d, ran %d)", cell, rep, refused, killed, ran)
-	if refused+killed == 0 && runtime.NumCPU() > 1 {
+	t.Logf("%s: %+v (ledger: refused %d, killed %d, ran %d)", cell, rep, v.refused, v.killed, v.ran)
+	if v.refused+v.killed == 0 && runtime.NumCPU() > 1 {
 		t.Errorf("the plane neither refused nor killed in %d attempts: the race was not run", rep.attempts)
 	}
 }

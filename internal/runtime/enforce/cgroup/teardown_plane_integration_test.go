@@ -35,7 +35,7 @@ func TestPlaneRemovalReleasesLinksBeforeReturn(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = pins.remove() })
 	b := New(Options{Machine: machineLinger(time.Hour), BPFFS: DefaultBPFFS, StateDir: pinState(t), Hash: hash,
-		Events: &sink{}, Plane: PlaneSetup{Mode: mode, Build: build}, startTimer: func(string) error { return nil }})
+		Events: &sink{}, Plane: PlaneSetup{Mode: mode, Build: build, RecheckAdmission: testPlaneAdmission}, startTimer: func(string) error { return nil }})
 	rel, _, id := runCgroupUnderSelf(t, "teardown")
 	rt := &agent.RuleTable{Tier: backend.TierCgroup, Record: agent.RecordSummary, Contract: &agent.Contract{},
 		FS: []agent.FSRule{{Path: t.TempDir(), Kind: agent.FSDenyRead}}}

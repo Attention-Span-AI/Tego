@@ -32,28 +32,45 @@ import (
 // cannot read or match is an error: a caller that refuses on the error fails closed. A miss on a kernel that has no
 // TCP socket diagnostics loaded is ErrNoTCPDiag, not ErrNoSocket, so the refusal names what the machine lacks.
 func TCPSocketCgroup(client, server netip.AddrPort) (uint64, error) {
-	id, err := tcpSocketCgroup(client, server)
-	if errors.Is(err, ErrNoSocket) && tcpDiagMissing() {
-		return 0, ErrNoTCPDiag
-	}
-	return id, err
+	info, err := TCPSocketInfo(client, server)
+	return info.CgroupID, err
 }
 
-// tcpSocketCgroup is TCPSocketCgroup's lookup: the v4 family, then the v4-mapped v6 one, or the v6 family.
-func tcpSocketCgroup(client, server netip.AddrPort) (uint64, error) {
+// SocketInfo is what one sock_diag lookup tells of a TCP socket: the id of the cgroup it was made in (see
+// TCPSocketCgroup) and its inode, the number a process's /proc/<pid>/fd link "socket:[<inode>]" names it by.
+type SocketInfo struct {
+	CgroupID uint64
+	Inode    uint64
+}
+
+// TCPSocketInfo is TCPSocketCgroup for a caller that also needs the socket's inode, from the same one exact lookup: the
+// MCP relay places a peer by the inode (which process holds it) and proves the run by the cgroup. The inode is the
+// kernel's own record of the socket, so it replaces a read of every row of /proc/net/tcp, whose cost grows with every
+// socket on the host. The inode is 0 for a socket no process holds any more (an orphan closed by its process and
+// lingering in a closing state): a caller treats that as a peer it cannot place. Errors are TCPSocketCgroup's.
+func TCPSocketInfo(client, server netip.AddrPort) (SocketInfo, error) {
+	info, err := tcpSocketInfo(client, server)
+	if errors.Is(err, ErrNoSocket) && tcpDiagMissing() {
+		return SocketInfo{}, ErrNoTCPDiag
+	}
+	return info, err
+}
+
+// tcpSocketInfo is TCPSocketInfo's lookup: the v4 family, then the v4-mapped v6 one, or the v6 family.
+func tcpSocketInfo(client, server netip.AddrPort) (SocketInfo, error) {
 	client, server = unmapAP(client), unmapAP(server)
 	if client.Addr().Is4() && server.Addr().Is4() {
-		id, err := sockDiagCgroup(unix.AF_INET, client, server)
+		info, err := sockDiagInfo(unix.AF_INET, client, server)
 		if err == nil {
-			return id, nil
+			return info, nil
 		}
 		// A dual-stack client socket carries a v4 connection in AF_INET6, with v4-mapped addresses.
-		if id, err6 := sockDiagCgroup(unix.AF_INET6, mapAP(client), mapAP(server)); err6 == nil {
-			return id, nil
+		if info, err6 := sockDiagInfo(unix.AF_INET6, mapAP(client), mapAP(server)); err6 == nil {
+			return info, nil
 		}
-		return 0, err
+		return SocketInfo{}, err
 	}
-	return sockDiagCgroup(unix.AF_INET6, client, server)
+	return sockDiagInfo(unix.AF_INET6, client, server)
 }
 
 // ErrNoSocket is a lookup the kernel answered with no socket for the tuple (the client closed it already).
@@ -84,13 +101,13 @@ const (
 	diagMaxAttrs     = 64                     // attributes read before an answer is refused as malformed
 )
 
-// sockDiagCgroup is one exact lookup in one address family.
-func sockDiagCgroup(family uint8, client, server netip.AddrPort) (uint64, error) {
+// sockDiagInfo is one exact lookup in one address family.
+func sockDiagInfo(family uint8, client, server netip.AddrPort) (SocketInfo, error) {
 	reply, err := diagExchange(diagRequest(family, client, server))
 	if err != nil {
-		return 0, err
+		return SocketInfo{}, err
 	}
-	return parseDiagCgroup(reply, family, client, server)
+	return parseDiagInfo(reply, family, client, server)
 }
 
 // tcpDiagMissing reports whether the kernel has no TCP socket diagnostics: asked for a dump of the TCP sockets in no
@@ -182,70 +199,73 @@ func putDiagTuple(id []byte, family uint8, src, dst netip.AddrPort) {
 	copy(id[20:], d[:])
 }
 
-// parseDiagCgroup reads the kernel's answer: an inet_diag_msg for the socket with its attributes, or an NLMSG_ERROR
+// parseDiagInfo reads the kernel's answer: an inet_diag_msg for the socket with its attributes, or an NLMSG_ERROR
 // whose errno is ENOENT for a tuple no socket has. The reply's own tuple is checked against the question, so an
 // answer about any other socket is never taken for this connection's.
-func parseDiagCgroup(msg []byte, family uint8, client, server netip.AddrPort) (uint64, error) {
+// The socket's inode is the last word of the inet_diag_msg.
+func parseDiagInfo(msg []byte, family uint8, client, server netip.AddrPort) (SocketInfo, error) {
 	ne := binary.NativeEndian
 	if len(msg) < diagHdrLen {
-		return 0, fmt.Errorf("sock_diag: short reply of %d bytes", len(msg))
+		return SocketInfo{}, fmt.Errorf("sock_diag: short reply of %d bytes", len(msg))
 	}
 	total := int(ne.Uint32(msg[0:]))
 	if total < diagHdrLen || total > len(msg) {
-		return 0, fmt.Errorf("sock_diag: reply length %d of %d bytes", total, len(msg))
+		return SocketInfo{}, fmt.Errorf("sock_diag: reply length %d of %d bytes", total, len(msg))
 	}
 	msg = msg[:total]
 	switch typ := ne.Uint16(msg[4:]); typ {
 	case diagErrorType:
 		if len(msg) < diagHdrLen+4 {
-			return 0, errors.New("sock_diag: short error reply")
+			return SocketInfo{}, errors.New("sock_diag: short error reply")
 		}
 		errno := unix.Errno(-int32(ne.Uint32(msg[diagHdrLen:])))
 		if errno == unix.ENOENT {
-			return 0, ErrNoSocket
+			return SocketInfo{}, ErrNoSocket
 		}
-		return 0, fmt.Errorf("sock_diag: %w", errno)
+		return SocketInfo{}, fmt.Errorf("sock_diag: %w", errno)
 	case unix.SOCK_DIAG_BY_FAMILY:
 	default:
-		return 0, fmt.Errorf("sock_diag: reply of type %d", typ)
+		return SocketInfo{}, fmt.Errorf("sock_diag: reply of type %d", typ)
 	}
 	body := msg[diagHdrLen:]
 	if len(body) < diagMsgLen || body[0] != family {
-		return 0, errors.New("sock_diag: reply is not an inet_diag_msg of the family asked")
+		return SocketInfo{}, errors.New("sock_diag: reply is not an inet_diag_msg of the family asked")
 	}
 	want := make([]byte, diagTupleLen)
 	putDiagTuple(want, family, client, server)
 	for i := range diagTupleLen {
 		if body[4+i] != want[i] {
-			return 0, errors.New("sock_diag: reply names another socket")
+			return SocketInfo{}, errors.New("sock_diag: reply names another socket")
 		}
 	}
+	// struct inet_diag_msg ends with idiag_inode, after expires, rqueue, wqueue and uid (4 bytes each).
+	inode := uint64(ne.Uint32(body[diagMsgLen-4:]))
 	attrs := body[diagMsgLen:]
 	for range diagMaxAttrs {
 		if len(attrs) < 4 {
-			return 0, ErrNoCgroupID
+			return SocketInfo{}, ErrNoCgroupID
 		}
 		l, t := int(ne.Uint16(attrs[0:])), ne.Uint16(attrs[2:]) // struct rtattr: len (header included), type
 		if l < 4 || l > len(attrs) {
-			return 0, fmt.Errorf("sock_diag: attribute length %d of %d bytes", l, len(attrs))
+			return SocketInfo{}, fmt.Errorf("sock_diag: attribute length %d of %d bytes", l, len(attrs))
 		}
 		if t == diagAttrCgroupID {
 			if l != 4+8 {
-				return 0, fmt.Errorf("sock_diag: cgroup id of %d bytes", l-4)
+				return SocketInfo{}, fmt.Errorf("sock_diag: cgroup id of %d bytes", l-4)
 			}
 			id := ne.Uint64(attrs[4:])
 			if id == 0 {
-				return 0, errors.New("sock_diag: cgroup id 0")
+				return SocketInfo{}, errors.New("sock_diag: cgroup id 0")
 			}
-			return id, nil
+			return SocketInfo{CgroupID: id, Inode: inode}, nil
 		}
 		step := (l + 3) &^ 3 // RTA_ALIGN
 		if step >= len(attrs) {
-			return 0, ErrNoCgroupID
+			return SocketInfo{}, ErrNoCgroupID
 		}
 		attrs = attrs[step:]
 	}
-	return 0, errors.New("sock_diag: too many attributes")
+	return SocketInfo{}, errors.New("sock_diag: too many attributes")
 }
 
 func unmapAP(ap netip.AddrPort) netip.AddrPort {

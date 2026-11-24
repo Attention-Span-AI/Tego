@@ -3,6 +3,7 @@
 package web
 
 import (
+	"context"
 	"net/url"
 	"slices"
 	"strconv"
@@ -20,7 +21,8 @@ import (
 // service (ChangeFeed, rules.Service.Feed); this file only places them and decides nothing.
 //
 // Logs shows them while the search narrows only by run, agent and time (a kind, verdict, text, rule, path or host
-// term is about ledger lines, which a rule change is not). A run's timeline shows the changes of its rules file made
+// term is about ledger lines, which a rule change is not), and always for kind:change, the term that asks for them. A
+// search with no event line in it still shows the changes made in its window. A run's timeline shows the changes of its rules file made
 // while it ran (the run kept the rules it started with: they are what its next run gets), the ones made from one of
 // its lines, and the ones that placed or lifted a live block on it.
 
@@ -69,10 +71,13 @@ func placed(rows []ledgerview.Row, cs []changeRow, top, bottom bool) changesAt {
 }
 
 // feed is the rule service's journal feed, nil without one or when it cannot be read.
-func (s *Server) feed() []rules.FeedEntry {
+func (s *Server) feed(ctx context.Context) []rules.FeedEntry {
 	f, ok := s.cfg.Rules.(ChangeFeed)
 	if !ok {
 		return nil
+	}
+	if local, ok := f.(*rules.Service); ok {
+		f = local.ForRequest(ctx)
 	}
 	es, err := f.Feed()
 	if err != nil {
@@ -131,6 +136,17 @@ func changesOfRun(feed []rules.FeedEntry, run *ledgerview.Run) []changeRow {
 	return out
 }
 
+// changesOfLine is the feed's entries made from line seq of run (FeedEntry.Run and Line), newest first as the feed is.
+func changesOfLine(feed []rules.FeedEntry, run string, seq uint64) []changeRow {
+	var out []changeRow
+	for _, e := range feed {
+		if e.Run == run && e.Line == seq {
+			out = append(out, rowOf(e, run))
+		}
+	}
+	return out
+}
+
 // aboutRun reports whether e is about run: made from one of its lines, placing or lifting a live block on it, or a
 // change of its rules file made after it started and before it ended.
 func aboutRun(e rules.FeedEntry, run *ledgerview.Run) bool {
@@ -154,7 +170,7 @@ func aboutRun(e rules.FeedEntry, run *ledgerview.Run) bool {
 // agent and time; else each entry about a run it names (aboutRun), of an agent it names (the name the entry's text
 // gives), and inside its time range.
 func logsChanges(feed []rules.FeedEntry, f ledgerview.Filter, snap *ledgerview.Snapshot) []changeRow {
-	if len(feed) == 0 || !contextOnly(f) {
+	if len(feed) == 0 || !wantsChanges(f) {
 		return nil
 	}
 	runs := append([]string{}, f.Runs...)
@@ -181,12 +197,29 @@ func logsChanges(feed []rules.FeedEntry, f ledgerview.Filter, snap *ledgerview.S
 	return out
 }
 
+// changeKind is the query term kind:change, which asks for the rule changes directly (ledgerview's querylang).
+const changeKind = "change"
+
+// wantsChanges reports whether a Logs search shows the rule changes: one that narrows only by run, agent and time, or
+// that asks for them with kind:change (which leaves the kind terms out of that test, so kind:change kind:exec shows
+// both, and a term about ledger lines, a verdict or a word, still shows none). -kind:change leaves them out.
+func wantsChanges(f ledgerview.Filter) bool {
+	if slices.Contains(f.Not.Kinds, changeKind) {
+		return false
+	}
+	if slices.Contains(f.Kinds, changeKind) {
+		f.Kinds, f.Not.Kinds = nil, nil
+	}
+	return contextOnly(f)
+}
+
 // contextOnly reports whether f narrows Logs only by run, agent and time.
 func contextOnly(f ledgerview.Filter) bool {
 	n := f.Not
 	return f.Kind == "" && len(f.Kinds) == 0 && len(f.Verdicts) == 0 && f.Text == "" && len(f.Words) == 0 &&
 		len(f.Rules) == 0 && f.PathPrefix == "" && len(f.Hosts) == 0 && f.Source == "" && f.PID == 0 && !f.OnlyRefus &&
-		len(n.Kinds) == 0 && len(n.Verdicts) == 0 && len(n.Rules) == 0 && len(n.Hosts) == 0 && len(n.Words) == 0
+		len(n.Kinds) == 0 && len(n.Verdicts) == 0 && len(n.Rules) == 0 && len(n.Hosts) == 0 && len(n.Words) == 0 &&
+		len(f.Programs) == 0 && len(f.Steps) == 0 && len(f.Targets) == 0 && len(n.Programs) == 0 && len(n.Targets) == 0
 }
 
 // anyRun reports whether e is about one of the runs ids names.

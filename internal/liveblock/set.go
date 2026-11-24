@@ -24,6 +24,10 @@ type Resolved struct {
 	// Boot maps a block's limit, by DeadlineKey of its key and instant (an until or a from), to its BOOTTIME pin: the
 	// launcher pins each the first time it sees it (Clock.Pin). A limit with no pin is judged on the wall clock alone.
 	Boot map[string]time.Duration
+	// Others maps a path, read or write block's value (and its Real) to the other names the mount table gave its file
+	// when the launcher first saw the block (agent.OtherNames, compile's computation; ADR 0011, amended 2026-11-19,
+	// round 5): the block refuses the file under each, under its own rule. Mounts made later are not seen.
+	Others map[string][]string
 }
 
 // Set is an overlay compiled for matching at decision time. It is immutable; the launcher builds a new one for
@@ -146,6 +150,17 @@ func CompileEntries(entries []Entry, serial uint64, res Resolved) *Set {
 				// The block was written through a link (Entry.Real): the supervisor sees the real path, so both
 				// spellings refuse, under one rule.
 				s.fs = append(s.fs, fsBlock{e: e, w: w, acc: e.Kind.Access(), path: e.Real, alias: true})
+			}
+			// And every other name the mount table gave the file when the block was added (a bind, WSLg's
+			// /mnt/wslg/distro): a refusal is about the file, not one of its names.
+			seen := map[string]bool{e.Value: true, e.Real: true}
+			for _, v := range []string{e.Value, e.Real} {
+				for _, o := range res.Others[v] {
+					if !seen[o] {
+						seen[o] = true
+						s.fs = append(s.fs, fsBlock{e: e, w: w, acc: e.Kind.Access(), path: o, alias: true})
+					}
+				}
 			}
 		}
 	}

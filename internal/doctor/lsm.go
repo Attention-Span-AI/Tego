@@ -316,14 +316,25 @@ func tomoyoHeldOpenDetail(state LSMState, read func(string) ([]byte, error)) str
 		if name != "tomoyo" {
 			continue
 		}
-		if err := tomoyo.Check(read); err != nil {
-			detail := fmt.Sprintf("; TOMOYO: held opens are refused on this machine (%v)", err)
-			if strings.Contains(err.Error(), "/sys/kernel/security/tomoyo/") {
-				detail += "; expose readable /sys/kernel/security/tomoyo"
+		// Which files the facts come from: the kernel's own path, or the administrator's tomoyo.facts_dir.
+		from := "; TOMOYO facts read from " + tomoyo.FactsDir()
+		if tomoyo.Configured() {
+			from += " (tomoyo.facts_dir)"
+		}
+		viaProfile, err := tomoyo.CheckVia(read)
+		if err != nil {
+			detail := fmt.Sprintf("; TOMOYO: held opens are refused on this machine (%v)", err) + from
+			if !tomoyo.Configured() && strings.Contains(err.Error(), "/sys/kernel/security/tomoyo/") {
+				detail += "; expose readable /sys/kernel/security/tomoyo, or in a container bind the host's /sys/kernel/security/tomoyo read-only at another path and name it in /etc/tego/config.yaml tomoyo.facts_dir (no setting assumes TOMOYO enforces nothing)"
 			}
 			return detail
 		}
-		return "; TOMOYO has no policy update since boot and does not prevent held file opens"
+		if viaProfile {
+			// The counter moved (or the build omits the loader), and this thread read the whole profile between two reads of
+			// the update line: nothing in any namespace enforces.
+			return "; TOMOYO's policy was updated since boot, and its profile, read now, enforces nothing: held file opens are not prevented" + from
+		}
+		return "; TOMOYO has no policy update since boot and does not prevent held file opens" + from
 	}
 	return ""
 }

@@ -11,7 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"os"
 	"path/filepath"
 	"slices"
@@ -91,6 +91,11 @@ func SentenceLine(before, after string) string {
 
 // Live is one live block "also apply now" placed (or failed to place) on a running run, or, with Lift, one an Undo
 // lifted (or failed to lift) from it.
+//
+// By, Serial, Epoch, At, Held and Pending are optional and written only when they say something. Each is read as "not known" when
+// it is absent, which is what a line from before them says, and every reader that ignores them (a tego from before
+// them, or one that does not know the field) reads the line by Run, Block, OK, Err and Lift alone, in the direction
+// that keeps a block in force: see doc.go, "Live outcomes and older readers".
 type Live struct {
 	Run   string `json:"run"`
 	Block string `json:"block"` // the live block, as liveblock spells it: exec:git, net:h:443, path:/abs
@@ -98,10 +103,43 @@ type Live struct {
 	Err   string `json:"err,omitempty"`
 	// Lift marks a removal: an Undo lifted the block the change it undid had placed (recorded on the revert).
 	Lift bool `json:"lift,omitempty"`
+	// By is who made the block (or its removal): LiveByChange for a block a rules change placed (Also apply now, Apply
+	// now), LiveByUndo for a lift an Undo made, LiveByRedo for a block a Redo put back. "" is not known: a line from
+	// before the field, which only the person's rules change or an Undo ever journaled.
+	By string `json:"by,omitempty"`
+	// Serial is the live overlay's serial after the write that placed the block, or lifted it: the add's own, never
+	// reused, so that a later writer's block of the same key is told from this one (liveblock.Overlay.AddIdentity). 0 is
+	// not known.
+	Serial uint64 `json:"serial,omitempty"`
+	// Epoch and At complete Serial's identity of the add: the overlay file's id (liveblock.Overlay.Epoch; serials start
+	// again at 1 in a file removed and written again) and the instant the add was recorded at. A block is the change's
+	// own only while the overlay's newest word on its key has all three. Absent on a line written before them.
+	Epoch string    `json:"epoch,omitempty"`
+	At    time.Time `json:"at,omitzero"`
+	// Held says the run's overlay held the block already when the change asked for it, so the change did not make it
+	// and does not own it (its Undo leaves it). OK is false on such a line, so a reader that does not know Held reads
+	// "not placed", never a block this change made.
+	Held bool `json:"held,omitempty"`
+	// Pending is the line written before a lift (or a restore) is made: it says the removal was started and its outcome
+	// is not recorded. A later line for the same run, block and kind of work replaces it (Fold); one left alone says
+	// the truth about a write that was begun and not recorded. OK is false on it.
+	Pending bool `json:"pending,omitempty"`
 }
 
-// Placed reports whether l records a live block placed on its run: done, and not a lift.
-func (l Live) Placed() bool { return l.OK && !l.Lift && l.Block != "" }
+// Who made a live block, or its removal (Live.By).
+const (
+	LiveByChange = "change"
+	LiveByUndo   = "undo"
+	LiveByRedo   = "redo"
+)
+
+// Placed reports whether l records a live block its change made on its run: done, not a lift, not a block the run
+// already held, not a line begun and not finished.
+func (l Live) Placed() bool { return l.OK && !l.Lift && !l.Held && !l.Pending && l.Block != "" }
+
+// Lifted reports whether l records a live block an Undo removed from its run: done, a lift, not a line begun and not
+// finished.
+func (l Live) Lifted() bool { return l.OK && l.Lift && !l.Pending && l.Block != "" }
 
 // Entry is one journal line (doc.go).
 type Entry struct {
@@ -140,6 +178,9 @@ func Replace(ctx context.Context, g Guard, path, base string, text []byte, c Cha
 }
 
 func replace(ctx context.Context, g Guard, path, base string, text []byte, c Change, op, reverts string) (*Entry, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if g.LedgerRoot == "" {
 		return nil, errors.New("rulefile: no ledger root to journal the change in, so nothing is written")
 	}
@@ -151,6 +192,9 @@ func replace(ctx context.Context, g Guard, path, base string, text []byte, c Cha
 		return nil, err
 	}
 	defer p.close()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	j, err := openJournal(g.LedgerRoot)
 	if err != nil {
 		return nil, err
@@ -187,7 +231,7 @@ func replace(ctx context.Context, g Guard, path, base string, text []byte, c Cha
 	if err := j.putBlob(text, next); err != nil {
 		return nil, fmt.Errorf("journal the new text: %w", err)
 	}
-	bak, err := p.replace(cur, text)
+	bak, err := p.replace(ctx, cur, text)
 	if err != nil {
 		return nil, err
 	}
@@ -218,6 +262,9 @@ type RevertOptions struct {
 // wrote (ErrStale otherwise: something changed it since, and a revert would lose that). The old text comes from the
 // change's blob, checked against its sha256. It is journaled as a revert of id.
 func Revert(ctx context.Context, g Guard, id string, o RevertOptions) (*Entry, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	es, err := ReadJournal(g.LedgerRoot)
 	if err != nil {
 		return nil, err
@@ -234,6 +281,9 @@ func Revert(ctx context.Context, g Guard, id string, o RevertOptions) (*Entry, e
 // so repeated Undos walk back through every change the journal holds: all of them inside the retention, and at least
 // the newest KeepChanges that stand beyond it while the file is there (Prune). ErrNoChange when there is none.
 func Undo(ctx context.Context, g Guard, path string, o RevertOptions) (*Entry, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	cur, err := Read(path, g)
 	if err != nil {
 		return nil, err
@@ -350,7 +400,7 @@ func Fold(es []Entry, keep func(Entry) bool) []Entry {
 		}
 	}
 	for i := range out {
-		out[i].Live = append(slices.Clip(out[i].Live), live[out[i].ID]...)
+		out[i].Live = settle(append(slices.Clip(out[i].Live), live[out[i].ID]...))
 	}
 	// A revert undoes its target unless it is undone itself: walk newest first, so a revert's own state is known
 	// before the entry it reverts is looked at.
@@ -362,6 +412,25 @@ func Fold(es []Entry, keep func(Entry) bool) []Entry {
 		}
 	}
 	slices.Reverse(out)
+	return out
+}
+
+// settle drops each Pending line that a later line of the same run, block and kind of work (lift or placement)
+// replaces: the line written before a removal is made says it was started, and the line after it says how it ended.
+// One with nothing after it stays, and says the removal was begun and its outcome was not recorded.
+func settle(ls []Live) []Live {
+	if !slices.ContainsFunc(ls, func(l Live) bool { return l.Pending }) {
+		return ls
+	}
+	out := make([]Live, 0, len(ls))
+	for i, l := range ls {
+		if l.Pending && slices.ContainsFunc(ls[i+1:], func(n Live) bool {
+			return !n.Pending && n.Run == l.Run && n.Block == l.Block && n.Lift == l.Lift
+		}) {
+			continue
+		}
+		out = append(out, l)
+	}
 	return out
 }
 
@@ -504,13 +573,27 @@ func (j *journal) share(ctx context.Context) (func(), error) {
 // name again instead.
 func (j *journal) flock(ctx context.Context, name string, how int, busy string) (func(), error) {
 	deadline := time.Now().Add(lockWait)
+	waited := false
 	for {
+		if err := ctx.Err(); err != nil {
+			if waited {
+				return nil, fmt.Errorf("lock: %s: %w", busy, err)
+			}
+			return nil, err
+		}
 		l, err := sys.Strict(j.locks.Openat(name, unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600))
 		if err != nil {
 			return nil, fmt.Errorf("lock: %w", err)
 		}
 		if err := step("lock"); err != nil {
 			_ = l.Close() // the step's error is the one to report
+			return nil, err
+		}
+		if err := ctx.Err(); err != nil {
+			_ = l.Close()
+			if waited {
+				return nil, fmt.Errorf("lock: %s: %w", busy, err)
+			}
 			return nil, err
 		}
 		err = l.Flock(how | unix.LOCK_NB)
@@ -520,6 +603,9 @@ func (j *journal) flock(ctx context.Context, name string, how int, busy string) 
 		_ = l.Close() // not locked, or locked on a file Prune removed meanwhile: the next turn opens the name again
 		if err == nil {
 			err = unix.EWOULDBLOCK
+		}
+		if errors.Is(err, unix.EWOULDBLOCK) {
+			waited = true
 		}
 		if !errors.Is(err, unix.EWOULDBLOCK) || time.Now().After(deadline) || ctx.Err() != nil {
 			if errors.Is(err, unix.EWOULDBLOCK) {
@@ -626,7 +712,7 @@ func (j *journal) readBlob(sum string) ([]byte, error) {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }() // read-only
-	b, err := io.ReadAll(io.LimitReader(f, agent.MaxContractSize+1))
+	b, err := config.ReadRulesFile(context.Background(), f, "the journal's blob "+sum+".yaml", agent.MaxContractSize+1)
 	if err != nil {
 		return nil, err
 	}

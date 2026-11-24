@@ -19,6 +19,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/platform/proc"
 	"github.com/attention-span-ai/tego/internal/platform/sys"
+	"github.com/attention-span-ai/tego/internal/testutil"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
@@ -208,7 +209,7 @@ func TestTheReaperFailsClosedOnItsInheritedDescriptors(t *testing.T) {
 				t.Fatalf("reaper exit %d, hold %t, stderr %q: want exit %d before it acts", r.code, r.hold, r.stderr,
 					identity.ExitError)
 			}
-			lines := strings.Split(strings.TrimSuffix(r.stderr, "\n"), "\n")
+			lines := strings.Split(strings.TrimSuffix(string(testutil.WithoutCoverageDiagnostics([]byte(r.stderr))), "\n"), "\n")
 			if len(lines) != 1 || !strings.HasPrefix(lines[0], "tego "+ReapCommand+": ") {
 				t.Fatalf("reaper stderr %q: want its one refusal line and nothing after it", r.stderr)
 			}

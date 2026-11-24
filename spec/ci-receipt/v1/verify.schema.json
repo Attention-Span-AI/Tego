@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tego.dev/spec/ci-receipt/v1/verify.schema.json",
+  "title": "CI evidence verification result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "result",
+    "signer_uri",
+    "signer_digest",
+    "caller_uri",
+    "caller_digest",
+    "repository",
+    "repository_id",
+    "repository_owner_id",
+    "source_sha",
+    "run_id",
+    "run_attempt",
+    "trigger",
+    "runner_environment",
+    "receipt_sha256",
+    "integrated_times",
+    "ended",
+    "coverage_complete",
+    "run_facts",
+    "checks",
+    "not_compared",
+    "limits"
+  ],
+  "properties": {
+    "schema": {
+      "const": "tego.ci-verify/1"
+    },
+    "result": {
+      "enum": [
+        "match",
+        "mismatch",
+        "cannot-check"
+      ]
+    },
+    "signer_uri": {
+      "type": "string"
+    },
+    "signer_digest": {
+      "type": "string"
+    },
+    "caller_uri": {
+      "type": "string"
+    },
+    "caller_digest": {
+      "type": "string"
+    },
+    "repository": {
+      "type": "string"
+    },
+    "repository_id": {
+      "type": "string"
+    },
+    "repository_owner_id": {
+      "type": "string"
+    },
+    "source_sha": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "run_attempt": {
+      "type": "string"
+    },
+    "trigger": {
+      "type": "string"
+    },
+    "runner_environment": {
+      "type": "string"
+    },
+    "receipt_sha256": {
+      "type": "string"
+    },
+    "integrated_times": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "ended": {
+      "type": "boolean"
+    },
+    "coverage_complete": {
+      "type": "boolean"
+    },
+    "run_facts": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "tier",
+            "capabilities",
+            "best_effort",
+            "reads_notified",
+            "runtime_grants",
+            "run_command_grant"
+          ],
+          "properties": {
+            "tier": {
+              "type": "string"
+            },
+            "capabilities": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "boolean"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "best_effort": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "reads_notified": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "notified",
+                    "why"
+                  ],
+                  "properties": {
+                    "notified": {
+                      "type": "boolean"
+                    },
+                    "why": {
+                      "type": "string"
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runtime_grants": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "run_command_grant": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "result",
+          "statement",
+          "why"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "result": {
+            "enum": [
+              "pass",
+              "fail",
+              "not-checked"
+            ]
+          },
+          "statement": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "not_compared": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "limits": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

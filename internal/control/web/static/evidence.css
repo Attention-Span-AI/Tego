@@ -1,0 +1,87 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Page rules loaded only with their owning page. */
+
+/* The Detections page (detections.tmpl). */
+.dt-filter { margin-bottom: var(--space-4); }
+.dt-filter .chip { gap: var(--space-2); font-variant-numeric: tabular-nums; }
+.dt-table td { vertical-align: top; }
+.dt-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.dt-table .meta { margin-top: var(--space-1); font-size: var(--text-xs); color: var(--c-text3); }
+.dt-low > summary { display: block; cursor: pointer; padding: var(--space-3) var(--space-4); color: var(--c-text2); border-top: 1px solid var(--c-border); }
+/* The Investigate page (investigate.tmpl): four parts, labels not sentences. */
+.iv-head h1 { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.iv-verb { color: var(--c-text2); font-weight: var(--weight-regular); }
+.iv-pos { font-variant-numeric: tabular-nums; }
+.iv-facts { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-2) var(--space-5); margin: 0; }
+.iv-facts dt { color: var(--c-text3); font-size: var(--text-sm); }
+.iv-facts dd { margin: 0; }
+.iv-chain { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
+.iv-chain li { display: inline-flex; align-items: center; gap: var(--space-2); font-family: var(--font-mono); font-size: var(--text-sm); }
+.iv-chain li + li::before { content: "→"; color: var(--c-text3); font-family: var(--font-sans); }
+.iv-argv { margin: var(--space-3) 0 0; padding: var(--space-2) var(--space-3); background: var(--c-sunken); border-radius: var(--radius-sm); font-size: var(--text-xs); color: var(--c-text2); overflow-wrap: anywhere; }
+.iv-now { gap: var(--space-2); }
+@media (max-width: 640px) {
+  .dt-table td.dt-act { grid-column: 1 / -1; }
+}
+
+.dt-ch { scrollbar-width: none; } /* a tab's -1px margin overflows the strip by a pixel: no bar for that */
+/* Detections rows read as one clickable thing: hover, and a chevron at the end. */
+.dt-row:hover { background: var(--c-sunken); }
+.dt-go { width: 1%; text-align: right; white-space: nowrap; }
+.dt-go a { color: var(--c-text3); text-decoration: none; font-size: var(--text-lg); padding: 0 var(--space-2); }
+.dt-row:hover .dt-go a { color: var(--c-link); }
+/* Reviewed detections (review.js): quieter, with a check where the chevron was. */
+.dt-row.is-reviewed td { color: var(--c-text3); }
+.dt-row.is-reviewed .dt-go a::before { content: "✓ "; color: var(--c-text2); }
+/* Page-package interiors. Existing Run/Overview styles above stay scoped there. */
+.dt-table .sp, .dt-table .sp > *, .iv-target .ut { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+.iv-target p { margin: 0 0 var(--space-2); }
+.iv-question > summary { display: flex; align-items: center; min-height: 44px; padding: var(--space-3) var(--space-4); cursor: pointer; font-weight: var(--weight-semibold); }
+.iv-facts { grid-template-columns: max-content minmax(0,1fr); }
+.iv-facts dd { min-width: 0; overflow-wrap: anywhere; }
+@supports selector(::details-content){
+@media screen and (min-width: 1100px) {
+  .iv-question::details-content { display: block; content-visibility: visible; }
+  .iv-question > summary { display: none; }
+}
+}
+
+@media screen and (max-width: 1099px) {
+  .dt-desktop { display: none; }
+}
+
+@media screen and (max-width: 600px) {
+  .iv-facts { grid-template-columns: minmax(0,1fr); gap: 8px; }
+  .iv-facts dt { font-size: 13px; }
+  .iv-facts dd { font-size: 16px; }
+  .iv-facts a { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; }
+  .iv-chain li { font-size: 13px; overflow-wrap: anywhere; }
+  .iv-chain .ut, .iv-argv, .iv-target .ut { font-size: 16px; }
+}
+
+
+.dt-table { table-layout: fixed; }
+.dt-table th:first-child { width: 12%; }
+.dt-table th:nth-child(2) { width: 34%; }
+.dt-table th:nth-child(3) { width: 24%; }
+.dt-table th:nth-child(4) { width: 8%; }
+.dt-table th:nth-child(5) { width: 18%; }
+.dt-table th:last-child { width: 4%; }
+.dt-table td, .dt-table .nb { white-space: normal; overflow-wrap: anywhere; }
+.dt-table .sev { height: auto; white-space: normal; overflow-wrap: anywhere; }
+.dt-table th { white-space: normal; overflow-wrap: anywhere; }
+.iv-summary { display: none; }
+.iv-facts-detail > summary { display: flex; align-items: center; min-height: 44px; padding: var(--space-3) var(--space-4); font-weight: var(--weight-semibold); cursor: pointer; }
+@supports selector(::details-content){
+@media screen and (min-width: 1100px) {
+ .iv-facts-detail::details-content { display: block; content-visibility: visible; }
+ .iv-facts-detail > summary { display: none; }
+}
+}
+
+@media screen and (max-width: 1099px) {
+ .iv-summary { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 0 16px 12px; }
+ .iv-summary p { flex-basis: 100%; margin: 0; font-size: 16px; }
+}
+
+

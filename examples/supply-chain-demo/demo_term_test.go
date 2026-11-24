@@ -86,6 +86,9 @@ for _i in range(30):
 // TestCheckKnowsTheDemosOwnDashboard: a retake used to FAIL check on the demo's own dashboard, forcing a
 // Ctrl-C and a new sign-in in front of the audience. A tego-control serve of the demo's config on the dashboard
 // address is ok, and stays ok across a reset; any other program there, or a dashboard of another config, still fails.
+// The dashboard is undumpable (ADR 0100 (7)): no other process reads its environment, working directory or descriptors,
+// so check knows it by what its command line says (`demo.sh dashboard` names the ledger outright, as an absolute path) and
+// refuses one whose command line does not prove it (no --ledger, a relative one).
 func TestCheckKnowsTheDemosOwnDashboard(t *testing.T) {
 	if _, err := exec.LookPath("ss"); err != nil {
 		t.Skip("ss (iproute2) is not installed")
@@ -122,7 +125,8 @@ func TestCheckKnowsTheDemosOwnDashboard(t *testing.T) {
 	// and tego-control is built with the test hooks, so the dashboards here never read the invoking user's anchor.
 	ours := append(append([]string{}, w.envList...), "TEGO_CONFIG="+w.cfg)
 
-	stop := start(w.ctl, ours, "serve", "--addr", addr)
+	// The command `demo.sh dashboard` runs (cmd_dashboard): the demo's config and its ledger named outright.
+	stop := start(w.ctl, ours, "serve", "--addr", addr, "--ledger", w.ledger)
 	out, code := w.demo("check")
 	if code != 0 || !strings.Contains(out, "ok    the demo's dashboard is running (reset keeps it; it follows the new ledger)") {
 		t.Errorf("check with the demo's dashboard: exit %d\n%s", code, out)
@@ -130,13 +134,6 @@ func TestCheckKnowsTheDemosOwnDashboard(t *testing.T) {
 	w.mustDemo("reset")
 	if out, code := w.demo("check"); code != 0 || !strings.Contains(out, "the demo's dashboard is running") || !strings.Contains(out, "READY") {
 		t.Errorf("check after a reset with the dashboard up: exit %d\n%s", code, out)
-	}
-	stop()
-
-	// A relative --ledger is the dashboard's own, read against its working directory, not against demo.sh's.
-	stop = startIn(w.base, w.ctl, ours, "serve", "--addr", addr, "--ledger", filepath.Base(w.ledger))
-	if out, code := w.demo("check"); code != 0 || !strings.Contains(out, "the demo's dashboard is running") {
-		t.Errorf("check with the demo's dashboard on a relative --ledger: exit %d\n%s", code, out)
 	}
 	stop()
 
@@ -150,6 +147,12 @@ func TestCheckKnowsTheDemosOwnDashboard(t *testing.T) {
 		},
 		"a dashboard of another config": func() func() {
 			return start(w.ctl, append(append([]string{}, w.envList...), "TEGO_CONFIG="+other), "serve", "--addr", addr)
+		},
+		"a dashboard with no --ledger (its config is hidden from check)": func() func() {
+			return start(w.ctl, ours, "serve", "--addr", addr)
+		},
+		"a relative --ledger (its working directory is hidden from check)": func() func() {
+			return startIn(w.base, w.ctl, ours, "serve", "--addr", addr, "--ledger", filepath.Base(w.ledger))
 		},
 		"a dashboard of another ledger": func() func() {
 			return start(w.ctl, ours, "serve", "--addr", addr, "--ledger", filepath.Join(w.base, "other-ledger"))
@@ -297,9 +300,9 @@ func TestProofRowsKeepTwoSpacesWhole(t *testing.T) {
 }
 
 // TestProofRowsReadLikeTheEventsTable: proof prints each attack row's verdict, rule and detail as the table of `tego
-// events` writes them, so the take's proof reads as it did when it read that table. PROOF_ROWS rebuilds the cells from
-// the stored lines (events.Summary and the verdict and rule cells, through record.Printable); here every kind
-// Summary words, each number form, two spaces in a row, the controls and invisible characters Printable escapes and
+// events` writes them, so the take's proof reads as it did when it read that table. PROOF_ROWS takes the cells from
+// `tego events --cells` (events.CellsOf, the table's own verdict, rule and detail cells), keeping no copy of how they
+// are made; here every kind Summary words, each number form, two spaces in a row, the controls and invisible characters Printable escapes and
 // the spaces TrimSpace drops (and one it keeps) go through both, and each row must read the same in both.
 func TestProofRowsReadLikeTheEventsTable(t *testing.T) {
 	// deny keeps a row in refused mode whatever its detail. U+E0002 is unassigned: Printable escapes the tag block by
@@ -442,13 +445,34 @@ func TestAttackerPanelAndTheStageUnderHome(t *testing.T) {
 	})
 }
 
-// proofRows runs demo.sh's PROOF_ROWS, as proof does, on stdin, the lines of `tego events --json`; args are the stage,
-// the mode, the attacker's port and the agent's name.
-func proofRows(t *testing.T, stdin []byte, args ...string) string {
+// eventCells is what `tego events --cells` writes for the stored lines: the product's own cells (events.CellsOf), read
+// from a run directory holding them as its events.jsonl.
+func eventCells(t *testing.T, lines []byte) []byte {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ledger.EventsFile), lines, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r, err := ledger.OpenReader(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = r.Close() }()
+	var out bytes.Buffer
+	if _, err := events.CellsOf(context.Background(), &out, r, r.Entries(), events.Filter{}); err != nil {
+		t.Fatalf("events.CellsOf: %v", err)
+	}
+	return out.Bytes()
+}
+
+// proofRows runs demo.sh's PROOF_ROWS, as proof does, on stdin: the cells `tego events --cells` writes for the stored
+// lines given; args are the stage, the mode, the attacker's port and the agent's name.
+func proofRows(t *testing.T, lines []byte, args ...string) string {
 	t.Helper()
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 is not installed")
 	}
+	stdin := eventCells(t, lines)
 	const open = "PROOF_ROWS='\n"
 	script := readFile(t, "demo.sh")
 	start := strings.Index(script, open)

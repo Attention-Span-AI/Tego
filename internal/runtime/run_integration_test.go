@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -1122,6 +1123,48 @@ func sslPairs(t *testing.T, evs []*record.Event) (reqs []record.SSLRequestPayloa
 	return reqs, resps
 }
 
+// turnsOpenAt is how many model turns had opened by the monotonic time mono: the ssl_requests whose own
+// mono_ns is not after it. It is the order derive attributes by (epochs are placed by mono_ns), not the order of
+// the file, which a late-written action line does not follow.
+func turnsOpenAt(evs []*record.Event, mono uint64) int {
+	n := 0
+	for _, e := range evs {
+		if e.Kind == record.KindSSLRequest && e.MonoNS <= mono {
+			n++
+		}
+	}
+	return n
+}
+
+// requestMonos lists the turn opens' mono_ns, for a failure message.
+func requestMonos(evs []*record.Event) []uint64 {
+	var out []uint64
+	for _, e := range evs {
+		if e.Kind == record.KindSSLRequest {
+			out = append(out, e.MonoNS)
+		}
+	}
+	return out
+}
+
+// TestTurnsOpenAtFollowsTimeNotFileOrder is the helper's own check: a line written after a request that
+// happened before it is in no turn yet.
+func TestTurnsOpenAtFollowsTimeNotFileOrder(t *testing.T) {
+	evs := []*record.Event{
+		{Kind: record.KindSSLRequest, MonoNS: 2000},
+		{Kind: record.KindNet, MonoNS: 1000}, // written second, happened first
+		{Kind: record.KindNet, MonoNS: 3000},
+	}
+	for _, c := range []struct {
+		mono uint64
+		want int
+	}{{1000, 0}, {2000, 1}, {3000, 1}} {
+		if got := turnsOpenAt(evs, c.mono); got != c.want {
+			t.Errorf("turnsOpenAt(%d) = %d, want %d", c.mono, got, c.want)
+		}
+	}
+}
+
 // TestIntegrationForwarderCapturesTheModelCall is the whole wire this ticket closed, driven through the
 // real CLI: `tego run` selects the forwarder, the run admits its loopback port and names it in the
 // agent's environment, the agent calls the model through it, and the ledger gains the
@@ -1196,17 +1239,17 @@ func TestIntegrationForwarderCapturesTheModelCall(t *testing.T) {
 	}
 
 	// A run that captures model traffic derives turns from it and attributes actions to them
-	// by time. Walking the ledger in order is what makes the assertion exact:
-	// an action recorded before the first request cannot belong to a turn and must carry step 0,
-	// and one recorded after must carry the step that was open when it happened. This workload
-	// front-loads its actions, so step 0 on them is the correct answer rather than a missing one;
+	// by time: an action carries the step that was open at the monotonic time it happened, which is
+	// not the order the ledger holds it in. The supervisor writes an action's line once it has answered
+	// the call (events.go emit), so the agent can send its first request, and the forwarder write that
+	// request's line, before the connect that preceded it is in the ledger: the line is then after the
+	// ssl_request and still belongs to the time before the turn (derive's asOf). The expected step is
+	// therefore the turns opened by the action's own mono_ns, never by its place in the file.
+	// An action before the first request cannot belong to a turn and must carry step 0.
+	// This workload front-loads its actions, so step 0 on them is the correct answer rather than a missing one;
 	// what would be wrong is method none, which would mean no attribution was attempted at all.
-	open, actions := 0, 0
+	actions := 0
 	for _, e := range evs {
-		if e.Kind == record.KindSSLRequest {
-			open++
-			continue
-		}
 		if !e.Kind.IsAction() {
 			continue
 		}
@@ -1218,15 +1261,15 @@ func TestIntegrationForwarderCapturesTheModelCall(t *testing.T) {
 			t.Errorf("action %d (%s) carries method %q, want %q: the run had turns to derive from",
 				e.Seq, e.Kind, e.Attr.Method, record.MethodTime)
 		}
-		if e.Attr.Step != open {
-			t.Errorf("action %d (%s) is attributed to step %d, want %d: %d turns had opened by then",
-				e.Seq, e.Kind, e.Attr.Step, open, open)
+		if want := turnsOpenAt(evs, e.MonoNS); e.Attr.Step != want {
+			t.Errorf("action %d (%s, mono_ns %d) is attributed to step %d, want %d: %d turns had opened by then (turn opens at mono_ns %v)",
+				e.Seq, e.Kind, e.MonoNS, e.Attr.Step, want, want, requestMonos(evs))
 		}
 	}
 	if actions == 0 {
 		t.Fatal("the run recorded no action to attribute")
 	}
-	if open != 2 {
+	if open := turnsOpenAt(evs, math.MaxUint64); open != 2 {
 		t.Errorf("%d turns opened, want 2", open)
 	}
 }

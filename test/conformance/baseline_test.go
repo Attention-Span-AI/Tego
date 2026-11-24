@@ -1178,3 +1178,41 @@ func TestUpdateFlagIsRegistered(t *testing.T) {
 		t.Errorf("-%s defaults to %q: an update must be asked for", updateFlag, f.DefValue)
 	}
 }
+
+// The overlay attribution limit is absent on AL2023 6.1. An unscoped entry made
+// that passing kernel stale, while newer kernels still need the ledger baseline.
+func TestOverlayNamingBaselineScope(t *testing.T) {
+	base, err := LoadBaseline(baselinePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, entry := range base {
+		if entry.Cell != "mounts/mprotect-exec-overlay-library" {
+			continue
+		}
+		count++
+		key := entry.Key()
+		for _, kernel := range []string{"6.1", "6.7", "6.8", "6.12", "7.2"} {
+			m := mach(kernel, 2, "amd64", true, "")
+			limited := kernel != "6.1" && kernel != "6.7"
+			failures := map[string]string{}
+			if limited {
+				failures[key] = "refusal names anonymous"
+			}
+			fresh, stale := Ratchet([]BaselineEntry{entry}, map[string]bool{entry.Runner + "|" + entry.Tier: true}, failures, m)
+			if len(fresh) != 0 || len(stale) != 0 {
+				t.Errorf("%s on %s: new=%v stale=%v", key, kernel, fresh, stale)
+			}
+			if limited {
+				_, stale = Ratchet([]BaselineEntry{entry}, map[string]bool{entry.Runner + "|" + entry.Tier: true}, nil, m)
+				if len(stale) != 1 {
+					t.Errorf("%s on %s: a corrected ledger must still trip the ratchet", key, kernel)
+				}
+			}
+		}
+	}
+	if count != 3 {
+		t.Fatalf("found %d overlay naming entries, want 3", count)
+	}
+}

@@ -40,6 +40,8 @@ type Facets struct {
 	// WatchedRules is the rule keys among Rule.Values whose every counted line is of a watched run (tier observe):
 	// no rule decided those lines, tego watch only recorded them, so Logs words them as watched, not as the rule.
 	WatchedRules map[string]bool
+	// MixedRules are keys with both watched and enforced lines.
+	MixedRules map[string]bool
 }
 
 // runTally is one run's matched lines counted by each facet. Kinds and verdicts are few, so they are counted in
@@ -134,9 +136,13 @@ func facetKey(f *Filter) (string, bool) {
 		sep()
 	}
 	for _, l := range [][]string{f.Verdicts, f.Kinds, f.Agents, f.Rules, f.Hosts, f.Words, f.Not.Kinds, f.Not.Verdicts,
-		f.Not.Rules, f.Not.Hosts, f.Not.Agents, f.Not.Words, f.Programs, f.Not.Programs} {
+		f.Not.Rules, f.Not.Hosts, f.Not.Agents, f.Not.Words, f.Programs, f.Not.Programs, f.Targets, f.Not.Targets} {
 		list(l)
 	}
+	for _, n := range f.Steps {
+		b.WriteString("t" + strconv.Itoa(n))
+	}
+	sep()
 	b.WriteString(strconv.FormatBool(f.HideSys) + strconv.FormatBool(f.HideNoise) + strconv.FormatBool(f.OnlyRefus) + strconv.Itoa(f.PID))
 	if !f.Since.IsZero() {
 		b.WriteString("s" + strconv.FormatInt(f.Since.UnixNano(), 10))
@@ -289,6 +295,12 @@ func (fc *facetCounter) facets() *Facets {
 	out := &Facets{Kind: topOf(fc.kinds), Verdict: topOf(fc.verdts), Rule: topOf(fc.rules), Host: topOf(fc.hosts),
 		Run: top(fc.runs), Program: topOf(fc.progs)}
 	for _, v := range out.Rule.Values {
+		if fc.ruleRuns[v.Value] == ruleWatched|ruleEnforced {
+			if out.MixedRules == nil {
+				out.MixedRules = map[string]bool{}
+			}
+			out.MixedRules[v.Value] = true
+		}
 		if fc.ruleRuns[v.Value] == ruleWatched {
 			if out.WatchedRules == nil {
 				out.WatchedRules = map[string]bool{}

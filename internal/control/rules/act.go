@@ -5,11 +5,14 @@ package rules
 import (
 	"context"
 	"errors"
-	"fmt"
 	"path/filepath"
+	"slices"
+	"strings"
 
+	"github.com/attention-span-ai/tego/internal/check/inforce"
 	"github.com/attention-span-ai/tego/internal/check/rule"
 	"github.com/attention-span-ai/tego/internal/rulefile"
+	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
 // Scope is what a rule from one event names: a read or written file's folder level (0 the file, 1 its folder, n an
@@ -60,8 +63,12 @@ type ActPlan struct {
 	Action                string
 	Scope                 Scope
 	Summary, Effect, Diff string
-	// Direction is the picked change's: narrows, widens or mixed.
+	// Direction is the picked change's: narrows, widens or mixed, from the compiled comparison of the contract before and
+	// after (a Choice's own Direction is only the action's: a block narrows, an allow widens).
 	Direction string
+	// Review lists what the picked change newly allows and the families whose change Tego cannot order, which the
+	// confirmation of a change that is not a narrowing names.
+	Review []string
 	// Sentences are the picked change in words, before and after (rule.Result.Sentences); empty for a change of a
 	// list the words do not cover (a command entry), where Effect says it.
 	Sentences []Sentence
@@ -127,6 +134,10 @@ type LineHint = rulefile.Hint
 // r.Ack, the plan's own Ack; without it the plan comes back with NeedsAck and PickErr (ErrNeedsAck's words) and
 // nothing is written.
 func (s *Service) ActOn(ctx context.Context, r ActReq) (*ActPlan, error) {
+	if s.remote() {
+		return remoteService[*ActPlan](s, ctx, "ActOn", struct{ R ActReq }{r})
+	}
+
 	hint := r.Hint
 	if r.Write {
 		hint = nil // the write's authority re-reads the line from the start, as tego rule does
@@ -171,12 +182,23 @@ func (s *Service) ActOn(ctx context.Context, r ActReq) (*ActPlan, error) {
 		p.Dest, p.Host = t.Dest, rule.HostOf(t.Dest)
 		scopes = []Scope{{}, {Host: true}}
 	}
+	// A socket a built-in refusal always refuses (ADR 0113) can be neither allowed nor asked about: the compiler refuses
+	// the entry as a contradiction, and a choice that fails at the confirm is not one to offer. Only such a line pays
+	// for the compile, once per choice (ADR 0113, amendment of 2026-11-11).
+	unixLine := t.Kind == rule.KindNet && strings.HasPrefix(t.Dest, "unix:")
 	for _, sc := range scopes {
 		for _, a := range []rule.Action{rule.Block, rule.Ask, rule.Allow} {
-			res, err := rule.Apply(req(a, sc, nil))
+			var chk func([]byte) error
+			if unixLine && a != rule.Block || a == rule.Block && (t.Kind == rule.KindRead || t.Kind == rule.KindWrite) {
+				// A refusal of a name must be one the compiler accepts: a deny_read or deny_write entry for a name
+				// that is not there yet is refused (path-missing), so the effect shown for it is not one a person
+				// can have. The choice says so instead of offering it.
+				chk = s.check(ctx, cc)
+			}
+			res, err := rule.Apply(req(a, sc, chk))
 			c := Choice{Action: string(a), Scope: sc, OK: err == nil}
 			if err != nil {
-				c.Why = err.Error()
+				c.Why = builtinWhy(err)
 			} else {
 				c.Effect, c.Direction = res.Effect, string(res.Direction)
 			}
@@ -187,18 +209,52 @@ func (s *Service) ActOn(ctx context.Context, r ActReq) (*ActPlan, error) {
 		return p, nil
 	}
 	p.Action, p.Scope = r.Action, r.Scope
-	res, err := rule.Apply(req(rule.Action(r.Action), r.Scope, s.check(ctx, cc)))
+	pick := req(rule.Action(r.Action), r.Scope, s.check(ctx, cc))
+	res, err := rule.Apply(pick)
 	if err != nil {
-		p.PickErr, p.Nothing = err.Error(), errors.Is(err, rule.ErrNothing)
+		p.PickErr, p.Nothing = builtinWhy(err), errors.Is(err, rule.ErrNothing)
 		return p, nil
 	}
-	p.Summary, p.Effect, p.Diff, p.Direction = res.Summary, res.Effect, res.Diff, string(res.Direction)
+	// The picked change's direction is the compiled comparison's, as the Change rules form's is; the action's own word
+	// (a block narrows, an allow widens) stays only on the menu of choices above and where a test compiler is set.
+	cmp := &ChangePlan{}
+	var cmpErr error
+	cmp.NewlyAllows, cmpErr = s.newlyAllows(ctx, cc, pick.Contract, res.Text, cmp)
+	direction, review := res.Direction, false
+	switch {
+	case cmpErr != nil:
+		p.PickErr = "Tego could not compare what the contract allows before and after this change, so it proposes nothing: " + cmpErr.Error()
+		return p, nil
+	case cmp.compared:
+		direction, _ = compiledDirection(cmp.rows)
+		review = len(cmp.NewlyAllows) > 0 || len(cmp.ComparisonReview) > 0
+		p.Review = append(slices.Clone(cmp.NewlyAllows), cmp.ComparisonReview...)
+	case cmp.repair:
+		direction, review = rule.Mixed, true
+	case s.testCompiler():
+	default:
+		p.PickErr = "Tego could not compare what the contract allows before and after this change, so it proposes nothing"
+		return p, nil
+	}
+	if direction == rule.Narrows && review {
+		direction = rule.Mixed
+	}
+	p.Summary, p.Effect, p.Diff, p.Direction = res.Summary, res.Effect, res.Diff, string(direction)
 	ref, newSum := actRef(r.Run, r.Seq), rulefile.Sum(res.Text)
 	p.Ack = s.ack(ref, p.Base, newSum)
 	for _, sn := range res.Sentences {
-		p.Sentences = append(p.Sentences, Sentence{Before: sn.Before, After: sn.After, Direction: string(sn.Direction)})
+		d, after := string(sn.Direction), sn.After
+		if cmp.compared {
+			d = string(sentenceDirection(cmp.rows, sn.Key))
+			if sentenceUnchanged(cmp.rows, sn.Key) {
+				after = noChangeWords
+			}
+		} else if cmp.repair {
+			d = string(rule.Mixed)
+		}
+		p.Sentences = append(p.Sentences, Sentence{Before: sn.Before, After: after, Direction: d})
 	}
-	if res.Direction == rule.Narrows {
+	if direction == rule.Narrows {
 		p.Now = s.nowOptions(ctx, s.liveRunsOf(found.Contract), res.Changes, cwd, entriesOf(res.Text))
 	}
 	if !r.Write {
@@ -210,13 +266,13 @@ func (s *Service) ActOn(ctx context.Context, r ActReq) (*ActPlan, error) {
 			"look at the change again", true
 		return p, nil
 	}
-	if res.Direction != rule.Narrows && !s.ackOK(r.Ack, ref, p.Base, newSum) {
+	if direction != rule.Narrows && !s.ackOK(r.Ack, ref, p.Base, newSum) {
 		err := ackErr(r.Ack)
 		p.PickErr, p.NeedsAck, p.AckMismatch = "nothing was written: "+err.Error(), true, errors.Is(err, ErrAckMismatch)
 		return p, nil
 	}
 	e, err := s.writer().Replace(ctx, found.Contract, r.Base, res.Text, rulefile.Change{Via: Via, Run: found.Run,
-		Line: found.Event.Seq, Summary: res.Summary, Sentences: sentenceLines(p.Sentences), Direction: string(res.Direction)})
+		Line: found.Event.Seq, Summary: res.Summary, Sentences: sentenceLines(p.Sentences), Direction: string(direction)})
 	if e != nil {
 		p.ID, p.Bak, p.NewBase = e.ID, e.Bak, e.NewSHA256
 	}
@@ -235,14 +291,35 @@ func (s *Service) ActOn(ctx context.Context, r ActReq) (*ActPlan, error) {
 		p.PickErr = err.Error() // written, not journaled: the page says so and where the old text is
 	}
 	if len(r.AlsoNow) > 0 {
-		p.Live = s.applyNow(ctx, p.Now, r.AlsoNow)
-		if p.ID != "" {
-			if err := s.writer().AppendLive(ctx, p.ID, journalLive(p.Live)); err != nil {
-				p.PickErr = fmt.Sprintf("the live blocks were placed but not journaled: %v", err)
-			}
+		var warn string
+		p.Live, warn = s.placeJournaled(ctx, p.ID, p.Now, r.AlsoNow)
+		if warn != "" && p.PickErr == "" {
+			p.PickErr = warn
+		} else if warn != "" {
+			p.PickErr += "; " + warn
 		}
 	}
 	return p, nil
+}
+
+// builtinWhy is err in words for the page. A change the compiler refuses as the contradiction of an entry a built-in
+// refusal always refuses ([contradiction] naming builtin.host_ipc or builtin.tego_surface, ADR 0113) is said
+// as what it is, with the label the pages give that refusal (inforce.Words: "Host IPC refused", "Tego control
+// refused"), not as the compiler's sentence about an entry the person did not write; any other error is its own text.
+func builtinWhy(err error) string {
+	msg := err.Error()
+	if strings.Contains(msg, "["+agent.CodePathMissing+"]") {
+		return missingNameWhy(msg)
+	}
+	if !strings.Contains(msg, "["+agent.CodeContradiction+"]") { // the compile error reaches here as text (nextrun.DiagError)
+		return msg
+	}
+	for _, id := range []string{agent.BuiltinHostIPC, agent.BuiltinTegoSurface} {
+		if strings.Contains(msg, "refused by "+id+" in every enforcing run") {
+			return "Built in (" + inforce.Words(id) + "): this socket is refused in every run, so no contract line can allow it or ask about it"
+		}
+	}
+	return err.Error()
 }
 
 // liveRunsOf is the running runs, newest first, whose contract_source is the contract at path.
@@ -259,4 +336,22 @@ func (s *Service) liveRunsOf(path string) []string {
 		}
 	}
 	return out
+}
+
+// missingNameWhy is the compiler's path-missing refusal of a rule for a name that is not there, in words that say what
+// the person can do: a refusal names something that exists when the run starts, so for a name that does not yet it
+// can only name the folder that holds it.
+func missingNameWhy(msg string) string {
+	name := ""
+	if i := strings.Index(msg, "\": "); i >= 0 {
+		rest := msg[i+3:]
+		if j := strings.Index(rest, " does not exist"); j >= 0 {
+			name = rest[:j]
+		}
+	}
+	if name == "" {
+		name = "this name"
+	}
+	return name + " does not exist yet, and Tego can refuse only a name that is there when the run starts. " +
+		"Name the folder that holds it, or leave it asking."
 }

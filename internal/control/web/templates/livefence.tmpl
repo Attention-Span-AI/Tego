@@ -1,22 +1,24 @@
 {{/* SPDX-License-Identifier: Apache-2.0 */}}
 {{/* livefence: the preview of a lift or a grant of an Adjustable run's fence entry (livefence.go, ADR 0125). Its confirm posts the acknowledgement LiveAck made for exactly this change. */}}
-{{define "content"}}{{with .Data}}{{$r := .Run}}
-<div class="head"><div><nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/{{pathEsc $r.ID}}">{{if $r.Agent}}{{$r.Agent}}{{else}}Run{{end}}</a> · <a href="{{.Back}}">Rules</a></nav><h1>{{if .Grant}}Grant{{else}}Lift{{end}}: {{.What}}</h1><div class="sub-h1">{{template "state" $r}}<span class="b b-asked b-mode">Adjustable</span><span class="mono" title="{{$r.ID}}">{{rid $r.ID}}</span></div></div></div>
+{{define "content"}}{{with .Data}}<div class="page-interior contracts-page">{{$r := .Run}}
+<div class="head"><div><nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/{{pathEsc $r.ID}}" data-number-exclude="livefence.agent-1">{{if $r.Agent}}{{$r.Agent}}{{else}}Run{{end}}</a> · <a href="{{.Back}}">Rules</a></nav>{{if $.Tour}}<h2 class="h1-obj">{{else}}<h1 class="h1-obj">{{end}}<span data-number-exclude="lift.target-headline">{{if .Grant}}Grant{{else}}Lift{{end}}: {{.What}}</span>{{if $.Tour}}</h2>{{else}}</h1>{{end}}<div class="sub-h1">{{template "state" $r}}<span class="b b-neutral b-mode">{{template "i" "i-shield"}}Adjustable</span><span class="mono" title="{{$r.ID}}" data-number-exclude="lift.run">{{rid $r.ID}}</span></div></div></div>
 <section class="panel lf-preview" aria-labelledby="h-lift"><div class="panel-head"><h2 id="h-lift">{{if .Grant}}Grant new access now{{else}}Lift one of the contract's refusals now{{end}}</h2></div>
-<div class="panel-body stack-lg">
-{{if .Err}}<section class="banner banner-warn" role="status">{{template "i" "i-triangle-alert"}}<div class="grow"><strong>No {{if .Grant}}grant{{else}}lift{{end}} can be confirmed here.</strong> {{.Err}}</div></section>
+<div class="panel-body stack-lg"><p class="page-intro phone-only">For <a class="text-link" href="/runs/{{pathEsc $r.ID}}" data-number-exclude="livefence.agent-2">{{if $r.Agent}}{{$r.Agent}}{{else}}{{$r.ID}}{{end}}</a>.</p>
+{{if .Err}}<section class="banner banner-warn" role="status">{{template "i" "i-triangle-alert"}}<div class="grow"><strong data-number="shared.configuration">No {{if .Grant}}grant{{else}}lift{{end}} can be confirmed here.</strong> {{.Err}}</div></section>
 <div class="row"><a class="btn" href="{{.Back}}">Back to the rules</a></div>
 {{else}}
-<p class="lf-say"><strong>This run will be able to {{.What}} now, {{.When}}.</strong>{{if .Permanent}} The lift has no end on this run; Change rules then opens, to keep it from the next run (its own preview and confirm).{{end}}</p>
+<p class="lf-say"><strong data-number-exclude="lift.limit">This run will be able to {{.What}} now, {{.When}}.</strong>{{if .Permanent}} <span data-number="shared.configuration">The lift has no end on this run; Change rules then opens, to keep it from the next run (its own preview and confirm).</span>{{end}}</p>
+<dl class="kv"><dt>Access kind</dt><dd>{{.Kind}}</dd><dt>Exact target</dt><dd class="detail-value mono" data-number-exclude="lift.target">{{.Value}}</dd></dl>
 <ul class="rp-list lf-warn">
-<li><span title="Enforced by Tego's live layer, not the kernel. A time limit stops new access; anything already read or copied, files still open and live connections stay.">Live layer · time limit stops new access only</span></li>
+<li><span title="Enforced by Tego's live layer, not the kernel. A time limit stops new access; anything already read or copied, files still open and live connections stay."><span data-number="shared.policy">Tego’s live layer enforces this access. A time limit stops new access only. Anything already read or copied, files still open and live connections remain.</span></span></li>
 {{if .Exec}}<li>Copies under another name not covered</li>{{end}}
 <li>Restore blocks it again · Contracts page or <span class="mono">tego restore</span></li>
 </ul>
 <form class="stack" method="post" action="/runs/{{pathEsc $r.ID}}/lift"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="kind" value="{{.Kind}}"><input type="hidden" name="value" value="{{.Value}}"><input type="hidden" name="until" value="{{.Until}}"><input type="hidden" name="serial" value="{{.Serial}}"><input type="hidden" name="permanent" value="{{if .Permanent}}1{{end}}"><input type="hidden" name="ack" value="{{.Ack}}">
+<label class="field">Note for the record (optional)<input class="input" type="text" name="note" maxlength="200" autocomplete="off" placeholder="Why this is allowed now"></label>
 <label class="rc-ack"><input type="checkbox" name="understand" value="yes" required> I understand this run gets this access now</label>
 <div class="row"><button class="btn btn-primary" type="submit">{{template "i" "i-check"}}{{if .Grant}}Grant now{{else}}Lift now{{end}}</button><a class="btn" href="{{.Back}}">Cancel</a></div></form>
 {{end}}
-{{with .CLI}}<div class="cli-pair"><span class="lbl">Same in a terminal</span><div class="cli cli-wrap"><code>{{.}}</code></div></div>{{end}}
+{{with .CLI}}<div class="cli-pair"><span class="lbl">Same in a terminal</span><div class="cli cli-wrap"><code data-number-exclude="lift.command">{{cmd .}}</code></div></div>{{end}}
 </div></section>
-{{end}}{{end}}
+</div>{{end}}{{end}}

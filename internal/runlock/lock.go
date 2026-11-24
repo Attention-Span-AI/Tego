@@ -179,10 +179,62 @@ func OpenStopTargetIn(d Dir, info LockInfo) (*StopTarget, error) {
 		return nil, err
 	}
 	if err := requireLockHolder(d, pid); err != nil {
+		left := launcherLeft(t, err)
 		_ = t.Close()
+		if left {
+			// The launcher was alive when its pidfd was opened and has left since, so there is no holder to prove: the
+			// run ended while it was being looked at. Not ErrNotLockHolder: nothing here holds the lock, and a reader that
+			// calls it unknown would never learn the run is over. (A launcher that released the lock and is still alive,
+			// finishing, is not stale: the sweep reads ErrStale as a launcher gone with the lock held, and kills the run's
+			// tree. Readers that only judge ask LockFree.)
+			return nil, fmt.Errorf("%w: pid %d left while the run's lock was being proved (%v)", ErrStale, pid, err)
+		}
 		return nil, err
 	}
 	return t, nil
+}
+
+// LockFree says no process holds the run's lock at this moment (the probe takes it for an instant). A reader whose proof that
+// a process holds the lock failed asks it again: the ledger's close releases the flock before the launcher process exits (it
+// prints its summary and closes its other files first), so a proof that began on a held lock can fail on a run that ended
+// meanwhile, and that run is over, not a launcher that cannot be judged.
+func LockFree(runDir string) bool {
+	held, _, err := ProbeLock(runDir)
+	return err == nil && !held
+}
+
+// errDescriptorsReleased is requireFDLockHolder finding the launcher's descriptor directory empty and its address space
+// gone: a live launcher has its lock descriptor and its standard three at least, so a process with neither descriptors
+// nor memory has been through exit's release of both (the kernel does that before the task work that drops its flock and
+// before its pidfd turns readable) and is exiting.
+var errDescriptorsReleased = errors.New("the launcher has released its descriptors")
+
+// releasedItsMemory says the process under proc (a /proc/<pid> directory) has no address space left: its status has no Vm
+// lines, which the kernel prints only for a process with an mm, and exit gives up the mm before the descriptor table. With
+// an empty descriptor directory it tells a launcher in exit from a live process that merely holds no descriptor.
+func releasedItsMemory(proc string) bool {
+	b, err := readProofFile(proc+"/status", lockProofTableLimit)
+	if err != nil || len(b) == 0 {
+		return false
+	}
+	return !strings.Contains(string(b), "\nVmSize:")
+}
+
+// launcherExitWait bounds how long a launcher that has released its descriptors is waited for to finish exiting: the end
+// of exit is a few task works after the release, and the wait ends the moment the pidfd turns readable.
+var launcherExitWait = 2 * time.Second
+
+// launcherLeft says the process behind t, which was alive when t was opened, has left by the time a proof of its lock
+// failed with err: its pidfd is readable, or err says it has released its descriptors and it finishes exiting within
+// launcherExitWait. A launcher that is still running (a refusal that is the proof's own: another process holds the lock, or
+// the descriptors are hidden) is not left, and its refusal stands.
+func launcherLeft(t *StopTarget, err error) bool {
+	timeout := time.Duration(0)
+	if errors.Is(err, errDescriptorsReleased) {
+		timeout = launcherExitWait
+	}
+	exited, perr := pidfdExitedWithin(t.fd, timeout)
+	return perr == nil && exited
 }
 
 // requireLockHolder proves that pid holds the flock on the exact run lock. A positive global kernel
@@ -199,8 +251,209 @@ func requireLockHolder(d Dir, pid int) error {
 	if err := sys.FileDo(f, func(fd int) error { return syscall.Fstat(fd, &st) }); err != nil {
 		return fmt.Errorf("%w: pid %d: %w", ErrNotLockHolder, pid, err)
 	}
-	b, _ := readLockProofFile("/proc/locks", lockProofTableLimit) // unavailable global evidence still permits descriptor proof
-	return requireLockHolderFromSnapshot(b, pid, st)
+	table := readLocksTable()
+	err = requireLockHolderFromSnapshot(table, pid, st)
+	if err == nil || !errors.Is(err, fs.ErrPermission) {
+		return err
+	}
+	// A launcher that is not dumpable (it holds secrets, ADR 0126, "Amendment 2026-11-21: the secret-holding launcher
+	// is not dumpable") hides its descriptors from a caller without CAP_SYS_PTRACE, so the global table is the only
+	// proof it leaves. Two things follow.
+	//
+	// The table is paginated: another process taking or dropping a lock between two of its fills can leave the held
+	// row out of one read, so a read that does not show it is made again, a few times with a pause between, before the
+	// launcher is called no holder. A launcher whose descriptors are readable is proved by them at once and the table
+	// is read once.
+	//
+	// The table prints the superblock's device and stat the subvolume's, on a btrfs subvolume (and bcachefs, and
+	// overlayfs), so the exact device never matches there. A caller that cannot signal beyond its own uid (superblockProof)
+	// may then take the row on the device of the mount that holds the file: a proof forged by a user can at most make
+	// that caller signal a process it could already signal.
+	alt, mnt, relaxed := superblockProof(f, pid)
+	sbDev, sbOK := alt, relaxed
+	if !relaxed {
+		// A caller the gate refuses (root, CAP_KILL, CAP_SYS_PTRACE, another user's launcher) takes no row on the
+		// superblock's device, but its refusal says when the table lists one: that is the cause of the refusal, and
+		// "no row" would be false.
+		sbDev, _, sbOK = superblockDevice(f)
+	}
+	withheld := false
+	for i := 0; ; i++ {
+		if relaxed && rowOnDevice(table, pid, st, alt) && mountIDOf(f) == mnt {
+			return nil
+		}
+		withheld = withheld || !relaxed && sbOK && rowOnDevice(table, pid, st, sbDev)
+		if i+1 >= lockProofTableReads {
+			break
+		}
+		time.Sleep(time.Duration(i+1) * lockProofBackoff)
+		table = readLocksTable()
+		if e := requireLockHolderFromSnapshot(table, pid, st); e == nil {
+			return nil
+		} else {
+			err = e
+		}
+	}
+	if withheld {
+		return fmt.Errorf("%w; %s", err, hiddenLauncherWithheldWhy(sbDev))
+	}
+	return fmt.Errorf("%w; %s", err, hiddenLauncherWhy)
+}
+
+// hiddenLauncherWithheldWhy is hiddenLauncherWhy for a refusal where /proc/locks does list the launcher's flock, but
+// under the device of the file's filesystem (btrfs, overlayfs and bcachefs print that, not the file's own), and the
+// caller is one superblockProof does not let take that row.
+func hiddenLauncherWithheldWhy(dev uint64) string {
+	return fmt.Sprintf("the launcher's descriptors are hidden from this user (it is not dumpable, as a launcher that holds "+
+		"secrets is, or it is another user's), and /proc/locks lists its flock only under %d:%d, the device of this file's whole "+
+		"filesystem (the filesystem prints that, not the file's own device), a row this caller does not take: only a caller that "+
+		"cannot signal another user's process takes it (not root, no CAP_KILL or CAP_SYS_PTRACE, and the launcher its own "+
+		"user's), because a lock line written by another user could otherwise point a caller that can signal anything at a process "+
+		"that holds a different file's lock with the same inode number; a caller with CAP_SYS_PTRACE (root, unless a container or a "+
+		"service unit drops it) reads the descriptors and proves it", unix.Major(dev), unix.Minor(dev))
+}
+
+// hiddenLauncherWhy is what a refusal says when the launcher's descriptors could not be read: why, and what proves it
+// anyway. Never a guess that the launcher holds the lock.
+const hiddenLauncherWhy = "the launcher's descriptors are hidden from this user (it is not dumpable, as a launcher that holds " +
+	"secrets is, or it is another user's), and /proc/locks showed no row of its flock for the device of this file's mount; " +
+	"a caller with CAP_SYS_PTRACE (root, unless a container or a service unit drops it) reads them"
+
+// lockProofTableReads is how many times the global lock table is read for a launcher whose descriptors are hidden, and
+// lockProofBackoff the pause after the first read, doubled and tripled after the next: a few milliseconds, since the
+// omission comes from lock churn that is over in that time.
+const lockProofTableReads = 4
+
+var lockProofBackoff = 3 * time.Millisecond
+
+// readLocksTable is the global lock table, nil when it cannot be read (no global evidence: the descriptors then
+// decide). A variable so a test can stand in a sequence of reads.
+var readLocksTable = func() []byte {
+	b, _ := readLockProofFile("/proc/locks", lockProofTableLimit)
+	return b
+}
+
+// readSelfProc reads /proc/self/<name> (mountinfo); a variable so a test can describe a mount the host does not have.
+var readSelfProc = func(name string) ([]byte, error) { return readLockProofFile("/proc/self/"+name, lockProofTableLimit) }
+
+// callerSignalsOnlyItself is the gate of the superblock proof: this caller is not root (real or effective), holds
+// neither CAP_KILL nor CAP_SYS_PTRACE in its effective or permitted set, and the process it is about to prove has
+// its real, effective, saved and filesystem uids all equal to the caller's effective uid. Such a caller can signal
+// that process whatever the proof says, so a proof a user forged gives it no power it lacks. A variable so a test can
+// describe a caller.
+var callerSignalsOnlyItself = func(pid int) bool {
+	eff, perm, _, err := sys.Capabilities()
+	if err != nil {
+		return false
+	}
+	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/status")
+	if err != nil {
+		return false
+	}
+	return signalsOnlyItself(os.Getuid(), os.Geteuid(), eff, perm, b)
+}
+
+// signalsOnlyItself is callerSignalsOnlyItself over its facts: the caller's real and effective uid and capability sets,
+// and the target's /proc status.
+func signalsOnlyItself(ruid, euid int, eff, perm uint64, status []byte) bool {
+	const powers = 1<<unix.CAP_KILL | 1<<unix.CAP_SYS_PTRACE
+	if ruid == 0 || euid == 0 || (eff|perm)&powers != 0 {
+		return false
+	}
+	for _, line := range strings.Split(string(status), "\n") {
+		rest, ok := strings.CutPrefix(line, "Uid:")
+		if !ok {
+			continue
+		}
+		f := strings.Fields(rest)
+		if len(f) != 4 {
+			return false
+		}
+		for _, v := range f {
+			if n, err := strconv.Atoi(v); err != nil || n != euid {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+// mountIDOf is the mount id of the mount that holds f, from statx(2)'s STATX_MNT_ID (Linux 5.8 and later; the same number
+// as fdinfo's "mnt_id:" and mountinfo's first field); -1 when it cannot be read, and then no superblock proof is made. A
+// variable so a test can describe a mount the host does not have, or one that moved.
+var mountIDOf = func(f *os.File) int {
+	id := -1
+	_ = sys.FileDo(f, func(fd int) error {
+		var stx unix.Statx_t
+		if err := unix.Statx(fd, "", unix.AT_EMPTY_PATH, unix.STATX_MNT_ID, &stx); err != nil || stx.Mask&unix.STATX_MNT_ID == 0 {
+			return err
+		}
+		id = int(stx.Mnt_id)
+		return nil
+	})
+	return id
+}
+
+// superblockProof is the device /proc/locks prints for f's file (the superblock's, from /proc/self/mountinfo's row of
+// the mount that holds f) and that mount's id, when the caller may rely on it: the gate holds and both are read.
+// ok is false otherwise, and then only the exact device and the descriptors prove a launcher.
+func superblockProof(f *os.File, pid int) (dev uint64, mnt int, ok bool) {
+	if !callerSignalsOnlyItself(pid) {
+		return 0, 0, false
+	}
+	return superblockDevice(f)
+}
+
+// superblockDevice is the device /proc/locks prints for f's file and the mount id it was read for: the device of the
+// mount that holds f, from /proc/self/mountinfo. It makes no judgement of the caller.
+func superblockDevice(f *os.File) (dev uint64, mnt int, ok bool) {
+	mnt = mountIDOf(f)
+	if mnt < 0 {
+		return 0, 0, false
+	}
+	b, err := readSelfProc("mountinfo")
+	if err != nil {
+		return 0, 0, false
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 5 || fields[0] != strconv.Itoa(mnt) {
+			continue
+		}
+		maj, min, found := strings.Cut(fields[2], ":")
+		major, e1 := strconv.ParseUint(maj, 10, 32)
+		minor, e2 := strconv.ParseUint(min, 10, 32)
+		if !found || e1 != nil || e2 != nil {
+			return 0, 0, false
+		}
+		return unix.Mkdev(uint32(major), uint32(minor)), mnt, true
+	}
+	return 0, 0, false
+}
+
+// rowOnDevice reports whether the table lists a granted FLOCK of pid on st's inode printed with device dev. The file
+// must be regular. It is requireLockHolderFromSnapshot's row test with the device the caller chose.
+func rowOnDevice(table []byte, pid int, st syscall.Stat_t, dev uint64) bool {
+	if st.Mode&syscall.S_IFMT != syscall.S_IFREG {
+		return false
+	}
+	for _, line := range strings.Split(string(table), "\n") {
+		row := fdInfoFlockRow([]byte("lock: "+line), pid, uint64(st.Ino))
+		if row == "" {
+			continue
+		}
+		id := strings.Split(strings.Fields(row)[5], ":")
+		if len(id) != 3 {
+			continue
+		}
+		major, majorErr := strconv.ParseUint(id[0], 16, 32)
+		minor, minorErr := strconv.ParseUint(id[1], 16, 32)
+		if majorErr == nil && minorErr == nil && unix.Mkdev(uint32(major), uint32(minor)) == dev {
+			return true
+		}
+	}
+	return false
 }
 
 // requireLockHolderFromSnapshot receives the observed table explicitly. It never accepts inode alone:
@@ -240,7 +493,7 @@ const (
 // entire descriptor list. Launchers acquire the ledger lock early, before composing even a 4095-row
 // Landlock table. Proof beyond these generous limits is unavailable and fails closed.
 func requireFDLockHolder(pid int, want syscall.Stat_t) error {
-	base := "/proc/" + strconv.Itoa(pid)
+	base := procRoot + "/" + strconv.Itoa(pid)
 	dir, err := os.Open(base + "/fd")
 	if err != nil {
 		return fmt.Errorf("read launcher descriptors: %w", err)
@@ -248,6 +501,7 @@ func requireFDLockHolder(pid int, want syscall.Stat_t) error {
 	defer func() { _ = dir.Close() }()
 	deadline := time.Now().Add(lockProofTimeLimit)
 	scanned := 0
+	var denied error // the first descriptor whose fdinfo this caller was refused: the launcher hides them
 	for {
 		entries, readErr := dir.ReadDir(128)
 		for _, entry := range entries {
@@ -261,6 +515,9 @@ func requireFDLockHolder(pid int, want syscall.Stat_t) error {
 			infoPath := base + "/fdinfo/" + entry.Name()
 			before, err := readFDLockRow(infoPath, pid, uint64(want.Ino))
 			if err != nil || before == "" {
+				if denied == nil && errors.Is(err, fs.ErrPermission) {
+					denied = err
+				}
 				continue // a closing descriptor, or another file, is not evidence
 			}
 			fdPath := base + "/fd/" + entry.Name()
@@ -279,6 +536,15 @@ func requireFDLockHolder(pid int, want syscall.Stat_t) error {
 		}
 		if readErr != nil {
 			if errors.Is(readErr, io.EOF) {
+				if scanned == 0 && releasedItsMemory(base) {
+					return errDescriptorsReleased
+				}
+				if denied != nil {
+					// The directory lists (root reads it, whoever owns it) and every descriptor's fdinfo is refused: the
+					// launcher is not dumpable and this caller lacks CAP_SYS_PTRACE. That is a hidden launcher, as an
+					// unreadable directory is, and not a launcher that holds no such lock.
+					return fmt.Errorf("read launcher descriptors: %w", denied)
+				}
 				return errors.New("no descriptor proves the run's flock")
 			}
 			return fmt.Errorf("read launcher descriptors: %w", readErr)
@@ -291,12 +557,19 @@ func sameLockFile(got, want syscall.Stat_t) bool {
 }
 
 func readFDLockRow(path string, pid int, ino uint64) (string, error) {
-	b, err := readLockProofFile(path, lockProofInfoLimit)
+	b, err := readProofFile(path, lockProofInfoLimit)
 	if err != nil {
 		return "", err
 	}
 	return fdInfoFlockRow(b, pid, ino), nil
 }
+
+// procRoot and readProofFile are what requireFDLockHolder reads a launcher's descriptors through: variables only so a test
+// can describe a launcher whose descriptor directory lists and whose fdinfo is refused (root without CAP_SYS_PTRACE).
+var (
+	procRoot      = "/proc"
+	readProofFile = readLockProofFile
+)
 
 // readLockProofFile discards partial or oversized evidence, so a complete-looking prefix is never
 // accepted from a read that exceeded its bound. The caller can still seek independent descriptor proof.
@@ -411,12 +684,18 @@ var startBootNS = StartBootNS
 
 // pidfdExited reports whether the process behind a process pidfd has exited: the pidfd polls readable then, reaped or
 // not. It does not wait.
-func pidfdExited(fd *sys.FD) (bool, error) {
+func pidfdExited(fd *sys.FD) (bool, error) { return pidfdExitedWithin(fd, 0) }
+
+// pidfdExitedWithin is pidfdExited that waits up to timeout for the exit: the poll returns the moment the process has
+// exited, so it never waits longer than the exit takes.
+func pidfdExitedWithin(fd *sys.FD, timeout time.Duration) (bool, error) {
 	var exited bool
 	err := fd.Borrow(func(n int) error {
 		pfd := []unix.PollFd{{Fd: int32(n), Events: unix.POLLIN}}
+		deadline := time.Now().Add(timeout)
 		for {
-			_, err := unix.Poll(pfd, 0)
+			wait := max(int(time.Until(deadline).Milliseconds()), 0)
+			_, err := unix.Poll(pfd, wait)
 			if errors.Is(err, unix.EINTR) {
 				continue
 			}

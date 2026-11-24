@@ -8,10 +8,8 @@ import (
 	"testing"
 )
 
-// TestColourStory (QU-2, one meaning per colour): a refusal chip is the stopped tone (green, kept safe), an allowed
-// line is grey, only what got through or a broken or lost record is red, states that are only states (running,
-// verified) are the neutral success grey, and links are their own blue. The chips' and links' text clears WCAG AA
-// (4.5:1) on what it is drawn on, in both themes.
+// TestColourStory pins the phone amendment at every width: orange waiting,
+// dashed red Refused, filled red Read allowed, and neutral routine states.
 func TestColourStory(t *testing.T) {
 	s := newServer(t, fixture(t))
 	c := login(t, s)
@@ -25,18 +23,24 @@ func TestColourStory(t *testing.T) {
 		}
 		return m[1]
 	}
-	if r := rule(app, ".b-refused"); !strings.Contains(r, "var(--c-stopped)") || !strings.Contains(r, "var(--c-stopped-soft)") {
+	if r := rule(app, ".b-refused"); !strings.Contains(r, "var(--c-stopped)") || !strings.Contains(r, "var(--c-stopped-soft)") || !strings.Contains(r, "border-style: dashed") {
 		t.Errorf(".b-refused is not the stopped tone: %s", r)
 	}
 	if r := rule(app, ".b-allowed, .b-timedout"); !strings.Contains(r, "var(--c-text2)") || !strings.Contains(r, "transparent") {
 		t.Errorf(".b-allowed is not neutral: %s", r)
 	}
-	if r := rule(app, ".b-lost, .b-halted, .b-broken"); !strings.Contains(r, "var(--c-danger)") {
-		t.Errorf("a lost, halted or broken badge is not red: %s", r)
+	if r := rule(app, ".b-lost, .b-broken"); !strings.Contains(r, "var(--c-danger)") {
+		t.Errorf("a lost or broken badge is not crimson: %s", r)
 	}
-	// A blocked row's edge is neutral: a blocked Low is not "kept safe", so it does not wear the green.
-	if r := rule(app, ".tl.v-refused"); !strings.Contains(r, "var(--c-control)") || strings.Contains(r, "stopped") {
-		t.Errorf("a blocked timeline row's edge is not neutral: %s", r)
+	if r := rule(app, ".b-halted"); strings.Contains(r, "danger") || strings.Contains(r, "through") || strings.Contains(r, "stopped") {
+		t.Errorf("a run that exited non-zero is drawn as an alarm or a refusal: %s", r)
+	}
+	if r := rule(app, ".b-waiting"); !strings.Contains(r, "var(--c-ask)") || !strings.Contains(r, "var(--c-on-ask)") {
+		t.Errorf("a waiting request is not the orange waiting chip: %s", r)
+	}
+	// A refused row retains its decision color whatever its severity.
+	if r := rule(app, ".tl.v-refused"); !strings.Contains(r, "var(--c-refused-edge)") || strings.Contains(r, "danger") || strings.Contains(r, "through") {
+		t.Errorf("a refused timeline row's edge is not the refusal's: %s", r)
 	}
 	for name, tk := range map[string]map[string]string{
 		"light": tokenBlock(t, tokens, ":root {\n"),
@@ -49,7 +53,13 @@ func TestColourStory(t *testing.T) {
 			}
 		}
 		if tk["stopped"] == tk["success"] {
-			t.Errorf("%s: the stopped tone %s is the success tone: green means kept safe only", name, tk["stopped"])
+			t.Errorf("%s: the stopped tone %s is the success tone: the refusal's colour means a refusal only", name, tk["stopped"])
+		}
+		if tk["stopped"] != tk["danger"] || tk["refused"] != tk["stopped"] || tk["through"] != tk["danger"] {
+			t.Errorf("%s: refused %s/%s and went through %s/%s do not share the red decision tone and aliases", name, tk["refused"], tk["stopped"], tk["through"], tk["danger"])
+		}
+		if tk["link"] != tk["text"] {
+			t.Errorf("%s: the link %s is not the ink %s: a link is ink with an underline", name, tk["link"], tk["text"])
 		}
 		if tk["success"] != tk["text2"] || tk["success-soft"] != tk["sunken"] {
 			t.Errorf("%s: the success tone %s/%s is not the neutral grey", name, tk["success"], tk["success-soft"])

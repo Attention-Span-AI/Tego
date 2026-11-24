@@ -635,7 +635,8 @@ func TestStageThatCannotBeQuotedIsRefused(t *testing.T) {
 		// A stage that is not refused starts a sink there, which a reset of that stage would not stop: stop it here.
 		t.Cleanup(func() {
 			if b, err := os.ReadFile(filepath.Join(stage, "sink.pid")); err == nil {
-				if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && pid > 0 {
+				// the file holds the pid and the process's start time
+				if pid, err := strconv.Atoi(strings.Fields(string(b) + " 0")[0]); err == nil && pid > 0 {
 					_ = syscall.Kill(pid, syscall.SIGTERM)
 				}
 			}
@@ -665,7 +666,7 @@ func copyKit(t *testing.T, dst string) {
 			t.Fatal(err)
 		}
 	}
-	for _, f := range []string{"demo.sh", "sink.py", "sockd.py", "modelsaw.py", "README.md"} {
+	for _, f := range []string{"demo.sh", "sink.py", "sockd.py", "procid.py", "modelsaw.py", "README.md"} {
 		b, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)

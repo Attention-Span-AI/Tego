@@ -1,0 +1,109 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package execmatch
+
+import (
+	"reflect"
+	"testing"
+)
+
+func tighteningObserverTest(t *testing.T) {
+	t.Helper()
+	t.Setenv("TEGO_EXECMATCH_JOURNAL", t.TempDir())
+	t.Setenv("TEGO_EXECMATCH_SIDE", "old")
+	t.Cleanup(func() {
+		tighteningJournal.Lock()
+		defer tighteningJournal.Unlock()
+		if tighteningJournal.file != nil {
+			_ = tighteningJournal.file.Close()
+			tighteningJournal.file = nil
+		}
+	})
+}
+
+func tighteningObserverSignature(ix *Index) string {
+	ix.observeTightening(&Facts{Requested: "tool", Argv: []string{"tool"}}, Result{})
+	return tighteningJournal.indexes[ix]
+}
+
+func tighteningObserverIndex(t *testing.T, rows *Rows, list List, opts IndexOptions) *Index {
+	t.Helper()
+	p, err := Parse("tool run", list, rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return NewIndex(rows, []*Pattern{p}, opts)
+}
+
+func TestTighteningObserverIgnoresCompiledState(t *testing.T) {
+	tighteningObserverTest(t)
+	rs := NewRows(&Row{Tool: "tool", Root: &Level{Subs: map[string]*Level{"run": {}}}})
+	a := tighteningObserverIndex(t, rs, ListAllow, IndexOptions{})
+	b := tighteningObserverIndex(t, rs, ListAllow, IndexOptions{})
+	// These are implementation results, never supplied constructor inputs.
+	b.mcNames = []string{"changed implementation output"}
+	b.tools["tool"].constrained = !b.tools["tool"].constrained
+	if tighteningObserverSignature(a) != tighteningObserverSignature(b) {
+		t.Fatal("compiled implementation state changed the raw input key")
+	}
+}
+
+func TestTighteningObserverSeparatesRawInputs(t *testing.T) {
+	tighteningObserverTest(t)
+	rows := func(alias string) *Rows {
+		return NewRows(&Row{Tool: "tool", Names: []string{alias}, Root: &Level{Subs: map[string]*Level{"run": {}}}})
+	}
+	baseRows := rows("alias")
+	base := tighteningObserverSignature(tighteningObserverIndex(t, baseRows, ListAllow, IndexOptions{}))
+	cases := map[string]*Index{
+		"custom row":      tighteningObserverIndex(t, rows("different"), ListAllow, IndexOptions{}),
+		"deny permission": tighteningObserverIndex(t, baseRows, ListDeny, IndexOptions{}),
+		"ask permission":  tighteningObserverIndex(t, baseRows, ListAsk, IndexOptions{}),
+		"identity":        tighteningObserverIndex(t, baseRows, ListAllow, IndexOptions{Identities: map[ID]string{{Dev: 1, Ino: 2}: "tool"}}),
+		"loader":          tighteningObserverIndex(t, baseRows, ListAllow, IndexOptions{Loaders: map[ID]bool{{Dev: 1, Ino: 2}: true}}),
+		"implicit grant":  tighteningObserverIndex(t, baseRows, ListAllow, IndexOptions{Unconstrained: map[string]bool{"tool": true}}),
+		"candidate names": tighteningObserverIndex(t, baseRows, ListAllow, IndexOptions{Candidates: NewCandidates([]string{"run"}, nil)}),
+	}
+	for name, ix := range cases {
+		t.Run(name, func(t *testing.T) {
+			if tighteningObserverSignature(ix) == base {
+				t.Fatal("different raw input collided")
+			}
+		})
+	}
+	a := tighteningObserverIndex(t, baseRows, ListAllow, IndexOptions{Candidates: NewCandidates([]string{"run"}, nil)})
+	b := tighteningObserverIndex(t, baseRows, ListAllow, IndexOptions{Candidates: NewCandidates([]string{"run"}, []string{"run"})})
+	if tighteningObserverSignature(a) == tighteningObserverSignature(b) {
+		t.Fatal("candidate common group collided")
+	}
+	c := tighteningObserverIndex(t, baseRows, ListAllow, IndexOptions{Candidates: NewCandidates([]string{"run", "run"}, nil)})
+	if tighteningObserverSignature(a) == tighteningObserverSignature(c) {
+		t.Fatal("raw candidate constructor inputs were replaced by normalized outputs")
+	}
+}
+
+func TestTighteningObserverBuiltinIdentityAndCustomSchema(t *testing.T) {
+	tighteningObserverTest(t)
+	makeRows := func(alias string) *Rows {
+		return NewRows(&Row{Tool: "tool", Names: []string{alias}, Root: &Level{Subs: map[string]*Level{"run": {}}}})
+	}
+	a := tighteningObserverIndex(t, TighteningBuiltinRows(makeRows("old implementation")), ListAllow, IndexOptions{})
+	b := tighteningObserverIndex(t, TighteningBuiltinRows(makeRows("new implementation")), ListAllow, IndexOptions{})
+	if tighteningObserverSignature(a) != tighteningObserverSignature(b) {
+		t.Fatal("builtin implementation data changed the raw input identity")
+	}
+	oldSchema := struct{ Tool string }{Tool: "tool"}
+	newSchema := struct {
+		Tool      string
+		AddedZero bool
+	}{Tool: "tool"}
+	old := tighteningValueMode(reflect.ValueOf(oldSchema), nil, true)
+	new := tighteningValueMode(reflect.ValueOf(newSchema), nil, true)
+	if tighteningDigest(old) != tighteningDigest(new) {
+		t.Fatal("new zero-valued schema field changed custom raw input identity")
+	}
+	newSchema.AddedZero = true
+	if tighteningDigest(old) == tighteningDigest(tighteningValueMode(reflect.ValueOf(newSchema), nil, true)) {
+		t.Fatal("nonzero custom input field was discarded")
+	}
+}

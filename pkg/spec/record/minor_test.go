@@ -15,15 +15,11 @@ import (
 
 // declaredAheadMinors are the reserved record revisions, declared before their writers (ADR 0100): above Minor no ledger holds them yet, so they open no gap a reader could misread. TestRecordMinorsHaveNoGap
 // and TestRecordMinorsAreContiguous admit them above Minor, and no other constant.
-var declaredAheadMinors = map[string]int{"MinorStoppedBy": 35, "MinorDeployment": 32, "MinorSecrets": 33, "MinorShares": 34}
+var declaredAheadMinors = map[string]int{"MinorStoppedBy": 35, "MinorDeployment": 32, "MinorSecrets": 33, "MinorShares": 34, "MinorPrincipal": 36}
 
-// TestRecordMinorsAreContiguous holds the rule that numbers a revision (spec/record/v1/README.md, "Revisions"): a
-// revision is the next free number in the build that holds it, so the revisions a build writes are 1 to Minor, each
-// once. A reader decides what a ledger holds by comparing record_minor with a revision ("absent at 17 or later means
-// ..."), and a build that wrote 19 while holding neither 17 nor 18 would make every such rule a later build adds for
-// 17 or 18 misread its ledgers. Two lanes that chose one number fail here when merged,
-// and so does a lane that kept a planned number past a gap: each Minor<Name> constant names one revision, every
-// revision from 1 to Minor has one, and the Minor doc lists them in order.
+// TestRecordMinorsAreContiguous pins named meanings and the explicit unsupported
+// gaps allocated to other branches. Every supported revision has one constant;
+// the doc lists both understood meanings and the three reserved gaps in order.
 func TestRecordMinorsAreContiguous(t *testing.T) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "record.go", nil, parser.ParseComments)
@@ -61,6 +57,9 @@ func TestRecordMinorsAreContiguous(t *testing.T) {
 		}
 	}
 	for r := 1; r <= Minor; r++ {
+		if !SupportsMinor(r) {
+			continue
+		}
 		if len(named[r]) != 1 {
 			t.Errorf("revision %d is named by %q; every revision from 1 to Minor (%d) is named by exactly one constant", r, named[r], Minor)
 		}

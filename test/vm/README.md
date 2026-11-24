@@ -17,7 +17,12 @@ refuses every sign-in). The decision plane's overlayfs cell (`internal/bpf`
 `TestPlaneStepAHooksDecide`'s `overlay` subtest) needs overlay: without it the subtest skips, and `root-skips.txt` allows
 that only on a kernel with no overlayfs. `internal/runtime/enforce/cgroup`'s `TestPlaneRunBtrfsSubvolumeInodeIdentity`
 needs btrfs: it mounts a loop-file copy of an embedded empty btrfs (no btrfs-progs), and `root-skips.txt` allows its
-skip only in the plain build, so the tegobpf build fails without the module (*added 2026-10-05*). `unix_diag` and
+plain-build skip. The tagged build may skip its three nested mode/tier cells only on `rhel-9`, after the mount fails and
+a readable `/proc/filesystems` confirms no registered Btrfs driver. The registry scopes these entries by row.
+Every other full matrix row requires Btrfs independently of `VM_MODULES`, including Fedora
+7.0 and 7.2, whose built-in driver passed the identity and `mounts-btrfs` fixtures in run 43152191607. `TEGO_CONFORMANCE_FS_REQUIRE=btrfs`
+makes absence a failure; any mount failure with a registered driver also fails. This permits the driverless
+RHEL row without excusing a broken supported fixture. `unix_diag` and
 `tcp_diag` answer the supervisor's and the dashboard's sock_diag lookups, which refuse what they cannot look up. On a
 hosted runner (`VM_HOST=sudo`) the kernel loads each on demand. `VM_MODULES=""` loads none.
 
@@ -33,7 +38,9 @@ row's name in its environment, where `test/conformance` reads it as a baseline e
 integration tests read it to hold `fedora-7.2` to Landlock ABI 10. `host` is this box's own kernel. A name that is not a row, a
 doctor-only row (no tier is offered there, so no suite has anything to run), `VM_HOST=sudo` and a `TEGO_VM_KERNEL` that
 names another row's kernel are usage errors (exit 2) before anything is built. `root-suites.sh` prepares authenticated row modules by default on Debian 13 and Amazon Linux 2023
-(`overlay crc32c_generic loop btrfs unix_diag tcp_diag`), and Fedora (`loop`; btrfs and Unix diagnostics are built in).
+(`overlay crc32c_generic loop btrfs unix_diag tcp_diag`), Fedora (`loop`; btrfs and Unix diagnostics are built in), and Ubuntu 24.04/25.10
+(`overlay btrfs unix_diag inet_diag tcp_diag`; loop is built in). Doctor receives the same module set on every row, including Debian, Amazon Linux, Fedora and the host row,
+so its capability checks see the same kernel facilities as the suites. This change is not limited to Ubuntu.
 Without Unix diagnostics the supervisor correctly refuses the run's own socket with `unix-origin-unread`; without
 Fedora's loop driver the embedded btrfs image cannot mount. `VM_MODULES` overrides the list, including an explicit
 empty value for missing-feature tests. Other rows keep their previous empty list. The matrix runs it as
@@ -155,7 +162,11 @@ another package removes it with the old image. Debian's image DEB and Amazon Lin
 publisher-signed `kernel-modules-core` RPM of exactly the image's version/release and signing key; that retained
 companion is authenticated again on each call, and its signature evidence and digest are recorded in
 `mods/packages.json`. Independent image/package manifest pins do not additionally pin this companion; its publisher
-signature is required. Ubuntu's separate `linux-modules-<release>` package is still unsupported here (exit 97).
+signature is required. Ubuntu's separate `linux-modules-<release>` DEB is authenticated against the
+image's retained signed InRelease/Packages snapshot, with the exact release and version required. Its digest and
+signature evidence are recorded in `mods/packages.json`. Cached companion bytes are rechecked and the Ubuntu tree
+is re-extracted before use, replacing mutable cached modules. An absent companion requires `--refresh` of the
+whole image snapshot; the module fetch never pairs an old image with a refreshed index.
 `kvm-run.sh` refuses a `--module` on a row with no prepared tree, naming this command.
 `kvm-run.sh` loads a module after what modinfo's `depends:` names, not its `softdep:`s. On debian-13's 6.12 btrfs
 needs `libcrc32c`, whose init needs a crc32c algorithm that Debian builds as a module, so a guest that loads btrfs
@@ -215,6 +226,80 @@ since ADR 0016 step 3 is the supervisor's line (failed on every kernel, 6.17 too
 The 2026-09-29 rows count the six required individual TLS programs. ADR 0026 (8)'s 2026-10-04 implementation adds
 two optional multi dispatchers, which the kernel's measured multi-link capability selects; a kernel without it keeps
 individual capture. No dated result of both delivery paths is recorded here yet.
+
+### Loaded capture stack invariant
+
+`test/vm/capture-stack.sh ROW OUT` builds the tagged doctor integration binary and
+runs `TestCaptureStackInvariantOnThisKernel` as root in a fresh row guest. Every
+full row's hosted `row` job runs it, including RHEL 9. The ordinary root suites
+also require its pass through `root-must-pass.txt`. A skip, missing pass, failed
+read-back or lost guest cannot pass this check.
+
+The test loads all eight capture program bodies and reads their translated
+instructions back through the program-info call. Each must retain the live tail
+call. It then loads the production capture collection and requires all six
+doctor capture probes to attach and uprobe capture to remain offered at both
+root tiers. Where the kernel lacks the optional multi-uprobe interface, the two
+dispatcher bodies are tested with expected attach type `NONE`, and the console
+says so. Production then loads its six individual programs. This proves neither
+native multi attachment nor eight production programs on such a row.
+
+The script enables `TEGO_CAPTURE_STACK_DUMP=1`. Its console contains the actual
+translated instructions in numbered hexadecimal chunks, with byte lengths and
+SHA256 values. Preserve these with the guest status. Only complete, hash-checked
+reassembly can become captured scanner testdata; source-derived fixtures are
+not captured kernel evidence.
+
+The live-call source `353d5ce4a` passed all eight x86-64 rows below with a disclosed dump-only test overlay.
+Every body loaded and retained the call; fresh and adopted production collections passed, all six doctor probes
+attached and uprobe capture was offered. Every final guest status and harness exit was zero with no nested skip.
+The stock exporter failed on all eight rows because its encoder rejected kernel-translated helper offsets. The
+overlay preserved the library's raw translated bytes without changing loading, scanning or production checks.
+All 64 authentic fixtures, digests and provenance are committed in `internal/bpf/testdata/capture-stack/`.
+
+| Row | Actual kernel | Measured result with dump-only overlay |
+|---|---|---|
+| `rhel-9` | 5.14.0-687.53.1.el9_8.x86_64 | PASS |
+| `al2023` | 6.1.188-233.386.amzn2023.x86_64 | PASS; dispatcher bodies use attach type NONE |
+| `ubuntu-24.04` | 6.8.0-146-generic | PASS |
+| `debian-13` | 6.12.107+deb13-amd64 | PASS |
+| `al2023-6.12` | 6.12.110-135.202.amzn2023.x86_64 | PASS |
+| `ubuntu-25.10` | 6.17.0-41-generic | PASS |
+| `fedora-7.0` | 7.0.14-201.fc44.x86_64 | PASS |
+| `fedora-7.2` | 7.2.9-300.fc45.x86_64 | PASS |
+
+The stock exporter now preserves translated numeric helper offsets. Host tests round-trip all 64 fixtures and
+scan them for the retained call; these do not establish that the corrected stock guest command passes. Its reruns
+on one old and one new kernel, RHEL 9 and Fedora 7.2, remain **owed in a guest**. Arm64 acceptance remains
+**owed in a guest** separately. Run the following exact commands from the repository root, sequentially, with
+fresh output directories. These commands are instructions for the owed checks, not completed runs:
+
+```bash
+O="${XDG_CACHE_HOME:-$HOME/.cache}/tego-capture-check"
+mkdir -p "$O/tmp"
+capture_check() {
+  env \
+    TMPDIR="$O/tmp" GOTMPDIR="$O/tmp" GOMAXPROCS=2 GOMEMLIMIT=2GiB GOFLAGS=-p=1 \
+    PATH="/usr/bin:$HOME/.local/go/bin:$HOME/go/bin:$PATH" TEGO_VM_MEM=2560M \
+    TEGO_VM_CACHE="$O/cache" TEGO_VM_SMP=4 TEGO_VM_LOCKDOWN=none \
+    test/vm/capture-stack.sh "$1" "$O/$1"
+}
+capture_check rhel-9
+capture_check fedora-7.2
+```
+
+The separate live-call concurrent regression passed 9/9 Fedora 7.0 lazy and 6/6 Ubuntu 6.17 full-preemption rounds,
+each with 2, 8 and 32 agents and forty exchanges per run: 25,200 exchanges across 630 runs, zero kernel faults,
+capture losses or capture-caused run errors. All 45 per-subround and 15 whole-guest logs were readable. Both outer
+root-suite commands exited 1 because the plain binaries skipped the kernel test without objects; tagged test
+passes supply this evidence. The complete harness is not claimed green.
+
+`TestIntegrationRecordOffTLSCallCost` compared `bf663b7a5` with `353d5ce4a` in separate fresh Fedora 7.0 lazy guests,
+once per build, with nine rounds of three arms and 3,000 TLS round trips per arm. Measured incremental live-call
+cost is **within noise**, including hits outside runs. These BPF-runtime statistics per actual probe hit do not
+measure TLS wall time or complete trap cost and establish no speedup or zero cost. ADR 0150 records all medians
+and ranges. Full consoles and runtime samples remain external evidence; the committed fixture manifest records
+source-console names and digests. Complete integrated hosted matrix acceptance remains separate.
 
 Results of 2026-09-30, tier 3 (TIER3-PLAN T11; `matrix.sh` per row with `VM_KT4_TOOLS=1`, 1536M guests;
 `VM_BOOTS=both root-suites.sh` on the 6.17 guest):
@@ -636,7 +721,11 @@ tests load the objects), and, on a run of every package with no `VM_RUN` and no 
 `root-must-pass.txt` names must have passed in some build and failed in none. An entry with `row=ROW` applies on
 that row only (`TEGO_VM_ROW`), and on a run of named packages there too, for the packages the run ran: vm-matrix's
 row job runs `internal/cli` on fedora-7.0 so that `TestIntegrationAdoptSkipIsRecordedAtOnce`, which may skip
-elsewhere, must pass there. `scripts/check-skiplists.sh` checks that both lists name tests that exist.
+elsewhere, must pass there. `scripts/check-skiplists.sh` checks that both lists name tests that exist and that
+scoped row names occur in `fetch-kernel.py --list`. A scoped must-pass entry also needs a scheduled full package
+run on its row in `vm-matrix.yml`. The check recognises direct root-suite steps with literal package selectors;
+an unsupported dispatch form fails validation until the checker supports it. This is an offline schedule check;
+the Fedora step's runtime and merged-head behavior are owed in a guest.
 
 ### CI's shards: `VM_SHARD` and `--gather`
 
@@ -648,8 +737,13 @@ each, and `VM_SHARD=<name> test/vm/root-suites.sh` is one of them: its packages 
 no other shard names), and with a part `j/n` only part j of each of their suites' top-level tests. A part is every
 n-th test of the suite's `.list`, read from its sources, from the j-th, given to the binary as `-test.run`; part n
 instead skips the other parts' tests with `-test.skip`, so it also runs the fuzz targets and anything the list
-misses, and the parts run every test once. On that run's numbers every-4th parts of enforce/cgroup sum to 12.4 to
-14 minutes of its two suites each. A shard runs the skip gate over its own suites (each skip is judged alone, so a
+misses, and the parts run every test once. The parts are `ROOT_SPLITS` in `test/vm/suites.sh`, 6 for enforce/cgroup (on
+the green KVM run of 2026-11-19 its tegobpf suite took 5093 s whole and 1111 s at most in a part, its plain suite 599 s
+and 218 s; the whole suite had run out of its 5700 s go timeout on a host 20% slower). A run of such a package without
+`VM_SHARD` (`make vm-root-test`, vm-matrix.yml's tier 3 steps, a named package) runs its parts one after another, each its
+own guest and its own row of `summary.json` (`internal_runtime_enforce_cgroup.tegobpf.p3`), all of the same package, so
+the skip gate matches a `root-skips.txt` row whichever part ran the test; a `VM_RUN` runs the package whole. The cap
+`VM_SUITE_TIMEOUT` names for a package or a build (`internal_runtime_enforce_cgroup.tegobpf=9000`) is each part's. A shard runs the skip gate over its own suites (each skip is judged alone, so a
 shard judges its skips as the whole run would) and the doctor check, and writes `VM_OUT/shard.done`.
 
 The must-pass gate needs every shard's logs together: CI's `root-suites` job, the check the ruleset requires,
@@ -661,7 +755,7 @@ finds what the suites before it in one job left on the host (the cgroup suite's 
 which is how each guest has always run them. To run the shards here, one after another:
 
 ```sh
-for s in cgroup-1 cgroup-2 cgroup-3 cgroup-4 runtime conformance rest; do
+for s in cgroup-1 cgroup-2 cgroup-3 cgroup-4 cgroup-5 cgroup-6 runtime conformance rest; do
 	VM_SHARD=$s VM_OUT=bin/vm-shards/$s VM_BPF=yes test/vm/root-suites.sh
 done
 test/vm/root-suites.sh --gather bin/vm-shards
@@ -761,6 +855,9 @@ after that:
      findutils, grep, sed, mawk, util-linux, mount, procps, iproute2, libc-bin (so `ldconfig -p`
      works), kmod, python3 (the host's own version, from python-pkgs.sh), bubblewrap, openssl, libssl3t64 (a real OpenSSL for the uprobe tests),
      bpftool, strace and AppArmor's parser (SEC08 loads a disposable policy in the guest);
+   - python3, git and nodejs are the host's installed versions, not pinned or verified by hash: each
+     `root-suites.sh` run records them in `host-packages.txt` and its log (`host-facts.sh`), so runs on two
+     machines can be compared;
    - every shared library those binaries load, with symlinks and hard links kept as they are on the
      host, so `/bin/sleep` is the same uutils link it is here.
 
@@ -815,23 +912,55 @@ kvm-run.sh, which then read qemu's 137 as its own bound, called it a timeout; on
 qemu's own `terminating on signal <n>` line, which it prints before it exits 0 on a TERM, INT or HUP, is read as that
 signal too.
 
-The command in these guests runs under the guest's own `/init` and reports over the serial console, so no connection
-can end it early. A full distribution reached over SSH is another matter: `ssh-suite.sh` runs one long command there
-(a root suite on AlmaLinux 9.8, a release kit's guest) under a supervisor of its own in the guest. The start writes the
-run's files into a 0700 state directory, reads each back (cksum) before anything runs, and is found again by its nonce if
-its answer is lost, so it never runs twice. The supervisor (`setsid`, `nohup`) records the guest's boot id, its pid and
-that pid's start time, runs the command in a process group of its own from another directory, ends that group past
-`--timeout` (SIGTERM, then SIGKILL `--grace` seconds later, until none of it is left), and writes its result, with the
-run's nonce, last. Each poll is a fresh SSH call, ended by `bounded-run.sh` at `--call-timeout`, that fetches the log's
-new bytes; the run is over only when the supervisor, by boot id, pid and start time, is gone and its result carries the
-nonce, so a file the command writes, a reboot or a reused pid ends nothing. When a call fails it asks qemu
-(`--qemu-pid`, and `--qemu-status`, the `signal <n>` or `exit <n>` line the guest's starter writes when qemu ends): a
-qemu that ended, a guest silent past `--unreachable` while qemu runs, a supervisor gone without its result and a
-reboot are each a `GUEST-LOST:` line and exit 98 (the `--status` word, `lost ...` against `guest 98`, tells it from a
-command that exits 98). `--sudo` runs the supervisor as root, so it can end a root suite's whole group.
-`ssh-suite_test.sh` holds all of this to stand-ins (an SSH wrapper that ends each session with a SIGHUP, as sshd does,
-and markers that fail a call as a dropped connection does, hang ignoring SIGTERM, lose an answer after the call ran,
-drop an answer's payload, or find a cksum that disagrees), each fault injected only once the run has said it started.
+The command in these guests runs under the guest's own `/init` and reports over the serial console. Full
+systemd distributions reached over SSH use `ssh-suite.sh`. It requires root, either the SSH account or `--sudo`,
+and the system systemd manager. The SSH image matrix (`service-install-images.json`: Debian 13, Fedora 7.0 and
+AlmaLinux 9.8) uses systemd distributions. Each has root; `service-install.py` provisions `tego-admin` with
+passwordless sudo and `tego` without sudo on all three. Use the administrator wrapper with `--sudo`, not the
+unprivileged `tego` login. The driver needs no new guest account. Images without a system manager or root access
+are refused; user-manager services are not used.
+
+The start writes the run's files into a 0700 state directory and reads each back before launch. A lost startup
+reply is reconciled by nonce without launching twice. `systemd-run` starts the supervisor as
+`tego-ssh-suite-<nonce>.service`, independent of the SSH login session. The supervisor records boot id, pid and
+process start time, runs the command in its own process group from `DIR/NAME.work`, logs to `DIR/NAME/log`, and
+ends that group past `--timeout` (TERM, then KILL after `--grace`). The result file records the nonce, end kind,
+code and whether the group is gone. The supervisor then exits with the command's wait status, or 124 for its
+watchdog. A timeout whose group is still present is explicitly reported as `group-left`; cleanup is not claimed
+as confirmed.
+All three path arguments handed to the manager escape dollars as `$$` before remote shell quoting, so a literal
+`${NAME}` in a directory name cannot redirect ExecStart to a different script, state or work directory.
+
+PID 1 retains its own wait on the supervisor. Every fresh SSH poll is bounded by `bounded-run.sh` and checks
+`systemctl show` as well as the files: the original `InvocationID`, terminal service state, `ExecMainCode=1`
+(normal exit), and matching `ExecMainStatus` are required before accepting completion. Boot and process identity
+checks remain. The nonce is a run identifier, not a completion credential: a command reading the real nonce,
+writing a success result and killing its supervisor is `lost suite-gone`, never `guest 0`. A file and the absence
+of the supervisor alone are insufficient. Completed/failed units remain for diagnosis; after collecting the
+result, stop the unit and reset its failure state, or discard the guest.
+
+The command runs as root. A root command **can still forge guest evidence** by modifying the supervisor code,
+service units or manager, guest utilities, `/proc` view or SSH responses. The driver cross-checks the file with
+PID 1's own wait and the pinned invocation, and trusts the guest OS and root tests not to compromise those
+authorities. A live host qemu proves no test outcome. This driver is not an integrity boundary against hostile
+root in the guest.
+
+When a call fails, the driver asks the host's qemu status (`--qemu-pid`, `--qemu-status`). A qemu that ended, guest
+silence past `--unreachable`, missing or replaced supervisor service, disagreement with its wait status, or a
+reboot produces `GUEST-LOST:` and exit 98. The status word distinguishes `lost ...` from a command's `guest 98`.
+`ssh-suite_test.sh` uses stand-ins for SSH, qemu and the service manager. It checks quoting, setup read-back,
+bounded calls, dropped and lost startup replies, boot/pid reuse, timeout descendants, short logs, command exit
+98, real-nonce forgery with supervisor loss, mismatched wait status and a replaced invocation. Its manager
+stand-in waits on a real child but does not establish a privilege boundary on this host.
+The literal-dollar path case models the manager's expansion. The checksum case asserts that the injected
+checksum command was reached and reported the read-back failure. Faults in the dropped-connection, reboot and
+short-log cases use command release files or an acknowledged polling pause instead of completion-time sleeps.
+
+The revised manager path is **owed in a guest** on AlmaLinux 9.8 through `--sudo`: ordinary success (`guest 0`),
+nonzero completion (`guest 23`), timeout with confirmed group cleanup (`timeout`), and a real-nonce forgery that
+kills the supervisor (`lost suite-gone`, exit 98, `GUEST-LOST:`). The [completion decision record](ssh-suite-completion.md)
+gives exact commands and expected manager/output evidence for all four. Earlier AlmaLinux executions used the
+previous file-only protocol and do not prove this revision. No guest ran in this fix round.
 
 ## Trusted kernel digests
 
@@ -969,3 +1098,20 @@ landlock in a real Docker container, not a proof for unchanged Docker seccomp de
 tiers, every container manager, or safe automatic inference of AppArmor namespace visibility. The default
 still refuses unreadable depth; administrators explicitly accepting that residual can set
 `fs.apparmor_assume_root_namespace: true`. The Docker proof is separate from the SELinux/Smack CI jobs.
+
+## Guest proofs of the user commands: `test/vm/guest-proof.py`
+
+Two proofs that need a distribution's own systemd and an ordinary user, which the kernel-matrix guests (a host
+userland in an initramfs) do not have. `guest-proof.py` boots one pinned cloud image (the SHA-256 is checked first;
+`service-install-images.json` pins the rows it shares), makes an admin and an ordinary user `tego`, mounts a payload
+holding two pairs of `tego` and `tego-control` built by the caller (pair B's `tego-control` has other bytes, for
+example `-ldflags -buildid=other`), and runs one script from `guest-proof/` as that user in a user scope. No tego
+binary runs on the host. Every check prints `CHECK PASS` or `CHECK FAIL`; the script ends with `FAILS=<n>`.
+
+| Proof | What it shows |
+|---|---|
+| `dashboard-reuse` | `tego dashboard` and `tego start` (driven in a pseudo-terminal by `drive-start.py`) reuse a running dashboard that runs the bytes of the tego-control they would start, and start another for other bytes; the dashboard is undumpable (its own user cannot read `/proc/<pid>/exe`) and reuse still works |
+| `uninstall-dropin` | `tego uninstall --yes --stop-agents` with the service guide's `10-delegate.conf` beside a copy of the template: the drop-in and its empty folder go; another file, or an edited `10-delegate.conf`, is named and left; without `--stop-agents` the drop-in stays |
+
+`scripts/load-repeat.sh` repeats one compiled integration test under busy loops (none for a quiet host), in the
+empty-home isolated view, and does not start or continue while `tego-gate.service` is active.

@@ -266,6 +266,10 @@ func TestPendingMutationAskShowsBothNames(t *testing.T) {
 // and an ended run's is its end line's.
 func TestDurationOfALostRun(t *testing.T) {
 	root := t.TempDir()
+	// An empty readable index establishes that no run is listed as live.
+	if err := os.Mkdir(filepath.Join(root, ".live"), 0700); err != nil {
+		t.Fatal(err)
+	}
 	t0 := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
 	const lost, ended = "r-aaaa-0031-lostxx", "r-aaaa-0032-endedx"
 	writeRun(t, root, lost,
@@ -292,5 +296,42 @@ func TestDurationOfALostRun(t *testing.T) {
 	r.Live = true
 	if got := r.Duration(later); got != 1000*time.Hour {
 		t.Errorf("a running run lasted %s", got)
+	}
+}
+
+// TestRunsCutKeepsNewestWithTiedTimes: runs whose record files carry the same modification time (a kernel stamps
+// files written within one clock tick alike, and a ledger copied or restored does too) are cut by a fixed order, the
+// greatest run IDs first, not by the order the directory happened to list or sort.Slice happened to leave them in.
+func TestRunsCutKeepsNewestWithTiedTimes(t *testing.T) {
+	defer func(runs int) { MaxRuns = runs }(MaxRuns)
+	MaxRuns = 3
+	root := t.TempDir()
+	t0 := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+	same := time.Date(2026, 10, 25, 12, 30, 0, 0, time.UTC)
+	for i := 0; i < 40; i++ { // more than sort.Slice's insertion-sort size, so a tie is left to its pivot choices
+		id := fmt.Sprintf("r-aaaa-%04d-tiedxx", (i*17)%40)
+		writeRun(t, root, id, line(id, "t", 0, t0, "run_start", ""))
+		if err := os.Chtimes(filepath.Join(root, id, "events.jsonl"), same, same); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := []string{"r-aaaa-0039-tiedxx", "r-aaaa-0038-tiedxx", "r-aaaa-0037-tiedxx"}
+	for pass := 0; pass < 5; pass++ {
+		s, err := Load(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !s.RunsCut || len(s.Runs) != 3 {
+			t.Fatalf("pass %d: cut %v with %d runs", pass, s.RunsCut, len(s.Runs))
+		}
+		got := map[string]bool{}
+		for _, r := range s.Runs {
+			got[r.ID] = true
+		}
+		for _, id := range want {
+			if !got[id] {
+				t.Fatalf("pass %d: kept %v, want %v", pass, got, want)
+			}
+		}
 	}
 }

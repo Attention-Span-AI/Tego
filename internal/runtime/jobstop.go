@@ -6,12 +6,14 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	goruntime "runtime"
 	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/platform/sys"
+	"github.com/attention-span-ai/tego/internal/runtime/launch"
 )
 
 // stopPoll is the backstop of followStops: SIGCHLD is coalesced and can be taken by another subscriber, so the
@@ -79,19 +81,71 @@ func (r *runner) followStops(ctx context.Context, term *sharedTerminal) {
 // that was in front at the stop, puts the agent's modes back, and continues the agent's group; continued in the
 // background (bg) it only continues the agent's group, without touching the terminal.
 func (r *runner) answerStop(ctx context.Context, term *sharedTerminal, sig syscall.Signal, cont <-chan os.Signal) {
+	answerJobStop(ctx, term, r.child.PID, sig, cont, func() { _ = r.child.Signal(syscall.SIGCONT) })
+}
+
+// JobControl lets a waiting CLI parent follow the launcher's stops with the same terminal protocol as a run.
+// The direct child must remain unreaped throughout Follow, so its pid and process group cannot be reused.
+type JobControl struct {
+	term *sharedTerminal
+	cont chan os.Signal
+}
+
+// NewJobControl captures the terminal before starting the launcher and subscribes before any stop can happen.
+// Close must be called after waiting for that child.
+func NewJobControl(s Stdio) *JobControl {
+	j := &JobControl{term: saveTerminal(s), cont: make(chan os.Signal, 1)}
+	signal.Notify(j.cont, syscall.SIGCONT)
+	return j
+}
+
+// Close releases the continuation subscription.
+func (j *JobControl) Close() { signal.Stop(j.cont) }
+
+// Follow stops this parent with its still-stopped child, then restores the foreground group and continues the
+// child on fg or bg. A saved stop can arrive after fg has already continued the whole job.
+func (j *JobControl) Follow(ctx context.Context, pid int, sig syscall.Signal) {
+	if !launch.StillStopped(pid) {
+		return
+	}
+	answerJobStop(ctx, j.term, pid, sig, j.cont, func() { _ = unix.Kill(pid, syscall.SIGCONT) })
+}
+
+// answerJobStop is shared by the direct agent follower and the outer scope parent. Without a terminal, an outer
+// parent still follows its child's stop so a supervisor observing the parent sees that the job is stopped.
+func answerJobStop(ctx context.Context, term *sharedTerminal, pid int, sig syscall.Signal, cont <-chan os.Signal, resume func()) {
 	own := unix.Getpgrp()
-	agent, err := unix.Getpgid(r.child.PID)
+	agent, err := unix.Getpgid(pid)
 	if err != nil {
 		return // gone between the stop and now
 	}
-	front, err := term.foreground()
+	front := own
+	if term != nil {
+		front, err = term.foreground()
+	}
 	if err != nil || front != own && front != agent {
-		r.log.Debug("run: the agent stopped in the background", "signal", sig)
 		return
 	}
-	modes, err := termiosOf(term.modes)
-	if err == nil && *modes != term.saved {
-		_ = sys.FileDo(term.modes, func(fd int) error { return unix.IoctlSetTermios(fd, unix.TCSETS, &term.saved) })
+	var modes *unix.Termios
+	changed := false
+	if term != nil {
+		modes, err = termiosOf(term.modes)
+		_ = jobTerminalChange(term.modes, func(fd int) error {
+			// An outer parent must see its child's group in front before following this stop. SIGTTOU is blocked
+			// on this thread for the transfer from the stopped agent's group, without changing inherited dispositions.
+			if front == agent && agent != own {
+				if err := unix.IoctlSetPointerInt(fd, unix.TIOCSPGRP, own); err != nil {
+					return err
+				}
+			}
+			if err == nil && modes != nil && *modes != term.saved {
+				if err := unix.IoctlSetTermios(fd, unix.TCSETS, &term.saved); err != nil {
+					return err
+				}
+				changed = true
+			}
+			return nil
+		})
 	}
 	raise := sig
 	if signal.Ignored(sig) {
@@ -100,10 +154,7 @@ func (r *runner) answerStop(ctx context.Context, term *sharedTerminal, sig sysca
 	for len(cont) > 0 {
 		<-cont
 	}
-	r.log.Debug("run: the agent stopped; tego stops with it", "signal", sig)
-	if err := unix.Kill(os.Getpid(), raise); err != nil {
-		r.log.Debug("run: could not stop with the agent", "err", err)
-	}
+	_ = unix.Kill(os.Getpid(), raise) // a discarded orphan-group stop is bounded by stopSettle
 	settle := time.NewTimer(stopSettle)
 	select {
 	case <-cont:
@@ -111,21 +162,41 @@ func (r *runner) answerStop(ctx context.Context, term *sharedTerminal, sig sysca
 	case <-ctx.Done():
 	}
 	settle.Stop()
-	if back, err := term.foreground(); err == nil && back == own {
-		_ = sys.FileDo(term.modes, func(fd int) error {
-			if front == agent && agent != own {
-				_ = unix.IoctlSetPointerInt(fd, unix.TIOCSPGRP, agent)
-			}
-			if modes != nil {
-				return unix.IoctlSetTermios(fd, unix.TCSETS, modes)
-			}
-			return nil
-		})
+	if term != nil {
+		if back, err := term.foreground(); err == nil && back == own {
+			_ = jobTerminalChange(term.modes, func(fd int) error {
+				// Outer followers see the cooked modes the inner follower saved. Restoring an unchanged snapshot here
+				// could overwrite the inner launcher's raw-mode restore when fg continues both processes at once.
+				if changed {
+					if err := unix.IoctlSetTermios(fd, unix.TCSETS, modes); err != nil {
+						return err
+					}
+				}
+				if front == agent && agent != own {
+					return unix.IoctlSetPointerInt(fd, unix.TIOCSPGRP, agent)
+				}
+				return nil
+			})
+		}
 	}
 	if err := unix.Kill(-agent, syscall.SIGCONT); err != nil {
-		_ = r.child.Signal(syscall.SIGCONT)
+		resume()
 	}
-	r.log.Debug("run: continued; the agent resumes")
+}
+
+// jobTerminalChange permits a foreground transfer from the stopped child's group without a background
+// SIGTTOU stopping this entire job halfway through restoration. Only this locked thread blocks the signal,
+// for the ioctls, and its original mask is restored before returning. No ignore disposition reaches a child.
+func jobTerminalChange(f *os.File, fn func(int) error) error {
+	goruntime.LockOSThread()
+	defer goruntime.UnlockOSThread()
+	var block, old unix.Sigset_t
+	block.Val[0] = 1 << (uint(syscall.SIGTTOU) - 1)
+	if err := unix.PthreadSigmask(unix.SIG_BLOCK, &block, &old); err != nil {
+		return err
+	}
+	defer func() { _ = unix.PthreadSigmask(unix.SIG_SETMASK, &old, nil) }()
+	return sys.FileDo(f, fn)
 }
 
 // foreground is the process group in front of the terminal, an error when it is not this process's controlling

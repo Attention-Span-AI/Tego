@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"container/list"
 	"crypto/sha256"
-	"encoding/json"
 	"errors"
 	"io"
 	"path/filepath"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/ledger"
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 // Result caches: the run page's heavy tabs (Receipt here; Least privilege and Unused in internal/control/rulesview)
@@ -31,8 +31,9 @@ import (
 // most once every 9 s, a third of one core however many viewers), and while another request is already computing
 // the run's next one (so ten viewers start one computation, not ten). A result that is cheap (every run at the demo's
 // scale) is never reused stale.
-// Every result is dropped after maxResultAge in any case: what a result reads outside its key (a program installed on
-// PATH, a dated contract entry that expired, a link under the ledger root) is seen within that time.
+// Every result is dropped after maxResultAge in any case: what a result reads outside its key (a program made
+// executable in place on PATH, a link under the ledger root) is seen within that time. A program installed or removed in a
+// PATH folder is in the key (rulesview.pathState).
 
 const (
 	// tailStamp is how much of the end of the events file a stamp hashes: more than a line's envelope, so the last
@@ -79,19 +80,24 @@ func StampRun(root, id string) (RunStamp, bool) {
 	if m, err := f.ReadAt(buf, fi.Size()-n); (err != nil && !errors.Is(err, io.EOF)) || int64(m) != n {
 		return RunStamp{}, false
 	}
-	return RunStamp{events: idOf(fi), tail: sha256.Sum256(buf), Live: herr == nil && held && !endsRun(buf)}, true
+	ended, err := endsRun(buf)
+	if err != nil {
+		return RunStamp{}, false // the uncached result reports the decoder's reason
+	}
+	return RunStamp{events: idOf(fi), tail: sha256.Sum256(buf), Live: herr == nil && held && !ended}, true
 }
 
 // endsRun reports whether the last terminated line in the tail b is run_end.
-func endsRun(b []byte) bool {
+func endsRun(b []byte) (bool, error) {
 	b = bytes.TrimSuffix(b, []byte{'\n'})
 	if i := bytes.LastIndexByte(b, '\n'); i >= 0 {
 		b = b[i+1:]
 	}
-	var head struct {
-		Kind string `json:"kind"`
+	e, err := record.Decode(b)
+	if err != nil {
+		return false, err
 	}
-	return json.Unmarshal(b, &head) == nil && head.Kind == "run_end"
+	return e.Kind == record.KindRunEnd, nil
 }
 
 // grewFrom reports whether s is the file of old, the same or longer: a live run's file that only had lines added.

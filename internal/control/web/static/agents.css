@@ -1,0 +1,68 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Standards-only: every feature is in the allow list of TestAgentsCSSFeaturesAreBaseline with the Firefox and Safari version that
+   first has it; overflow-wrap: anywhere keeps a break-word line before it for Safari older than 15.4. */
+/* The Agents page (templates/agents.tmpl): a list of rows that are each one link to the detail, and the detail. Tokens and
+   components are the shell's; nothing here sets a colour of its own. A row says three things on a phone (who, how far, when)
+   and the rest only from 601 px up, where the detail's facts also fit in the row. */
+.agents-page { display: grid; gap: var(--space-4); min-width: 0; }
+.agents-page > .lr { display: contents; }
+.ag-back { margin-bottom: var(--space-1); }
+.ag-back .link { display: inline-flex; align-items: center; gap: var(--space-1); min-height: var(--target-min); }
+.ag-next { border-color: var(--c-accent-line); background: var(--c-accent-soft); }
+.ag-next .cli { margin-top: var(--space-2); }
+.ag-scan-act { margin-bottom: 0; }
+.ag-scan-act .lbl { color: var(--c-text3); font-size: var(--text-sm); }
+
+.ag-rows { list-style: none; margin: 0; padding: 0; }
+.ag-row + .ag-row { border-top: var(--line) solid var(--c-border); }
+.ag-link { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "nm stage when" "ref ref ref" "id id id" "strip strip strip" "note note note"; align-items: center; gap: var(--space-1) var(--space-4); padding: var(--space-3) var(--space-5); min-height: var(--target); color: var(--c-text); text-decoration: none; }
+.ag-link:hover { background: var(--c-raised); }
+.ag-link:focus-visible { outline-offset: -3px; }
+.ag-nm { grid-area: nm; min-width: 0; font-weight: var(--weight-semibold); font-size: var(--text-lg); overflow-wrap: break-word; overflow-wrap: anywhere; }
+.ag-stage { grid-area: stage; justify-self: end; max-width: 100%; }
+.ag-when { grid-area: when; justify-self: end; white-space: nowrap; font-size: var(--text-sm); }
+.ag-id { grid-area: id; min-width: 0; color: var(--c-text2); font-family: var(--font-mono); font-size: var(--text-sm); overflow-wrap: break-word; overflow-wrap: anywhere; }
+.ag-ref { grid-area: ref; color: var(--c-text2); font-size: var(--text-sm); }
+.ag-strip { grid-area: strip; display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); margin: var(--space-1) 0 0; padding: 0; list-style: none; color: var(--c-text2); font-size: var(--text-sm); }
+.ag-strip li, .ag-stage-h { display: inline-flex; align-items: center; gap: var(--space-2); }
+.ag-pip { flex: none; width: 10px; height: 10px; border: var(--line-2) solid var(--c-control); border-radius: var(--radius-full); background: transparent; }
+.on > .ag-pip, .on > .ag-stage-h > .ag-pip { border-color: var(--c-text); background: var(--c-text); }
+.on { color: var(--c-text); }
+.ag-note { grid-area: note; color: var(--c-text2); font-size: var(--text-sm); }
+
+.ag-detail > .panel-head:not(:first-child) { border-top: var(--line) solid var(--c-border); }
+.ag-where { font-size: var(--text-lg); overflow-wrap: break-word; overflow-wrap: anywhere; }
+.ag-warn { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--radius); background: var(--c-warn-soft); box-shadow: inset var(--edge) 0 0 var(--c-warn-edge); }
+.ag-stages { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-4); }
+.ag-stages li { padding-left: var(--space-4); border-left: var(--line-2) solid var(--c-border); }
+.ag-stages li.on { border-left-color: var(--c-text); }
+.ag-stages li > p { margin-top: var(--space-1); overflow-wrap: break-word; overflow-wrap: anywhere; }
+.ag-obs { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.ag-obs li { overflow-wrap: break-word; overflow-wrap: anywhere; }
+.ag-forget > summary { cursor: pointer; list-style: none; }
+.ag-forget > summary::-webkit-details-marker { display: none; }
+.ag-forget form { margin-top: var(--space-3); max-width: var(--measure); }
+.ag-limits h3 { margin: var(--space-2) 0 0; font-size: var(--text-base, 1rem); font-weight: var(--weight-semibold); color: var(--c-text); }
+.ag-notlooked { padding-left: var(--space-4); border-left: var(--line-2) solid var(--c-border); }
+.ag-foot { white-space: pre-line; overflow-wrap: break-word; overflow-wrap: anywhere; max-width: var(--measure); }
+
+@media screen and (max-width: 600px) {
+  .ag-fold > summary { display: flex; align-items: center; min-height: var(--target); padding: 0 var(--space-4); border: var(--line) solid var(--c-border); border-radius: var(--radius-lg); background: var(--c-surface); font-weight: var(--weight-semibold); cursor: pointer; }
+  .ag-fold[open] > summary { margin-bottom: var(--space-3); }
+  .ag-link { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "nm when" "stage stage" "ref ref" "note note"; padding: var(--space-3) var(--space-4); min-height: 64px; }
+  .ag-stage { justify-self: start; }
+  .ag-when { white-space: normal; text-align: right; }
+  /* the list answers the first question; the scan that produced it and the limits follow */
+  .ag-scan { order: 2; }
+  .agents-page > [data-live="r-ag-main"] > .panel { order: 1; }
+  .agents-page > [data-live="r-ag-more"] > * { order: 3; }
+  .ag-id, .ag-strip { display: none; }
+  .agents-page .btn, .agents-page a.link, .agents-page summary { min-height: var(--target); }
+  .agents-page a.link { display: inline-flex; align-items: center; }
+  .ag-detail > .panel-body, .ag-detail > .panel-head { padding-left: var(--space-4); padding-right: var(--space-4); }
+}
+@media (forced-colors: active) {
+  .ag-pip { border-color: CanvasText; }
+  .on > .ag-pip, .on > .ag-stage-h > .ag-pip { background: CanvasText; }
+  .ag-link:hover { outline: var(--line) solid CanvasText; }
+}

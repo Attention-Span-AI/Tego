@@ -80,9 +80,14 @@ func TestVerdictUnderHeader(t *testing.T) {
 	s := newServer(t, root)
 	c := login(t, s)
 
+	// The RIGHT run read a file the person allowed, so its summary leads with that read (the shared attention order,
+	// ADR 0123) and keeps what Tego refused after it.
 	right := get(t, s, c, "/runs/"+vidRight)
-	if !vidBefore(right, `class="head"`, "verdict-ok") || !vidBefore(right, "verdict-ok", `data-live="r-run-live"`) {
-		t.Error("the RIGHT verdict is not between the header and the Block now panel")
+	if !vidBefore(right, "banner verdict", `class="head"`) || !vidBefore(right, "banner verdict", `data-live="r-run-live"`) {
+		t.Error("the RIGHT verdict does not lead the header and the Block now panel")
+	}
+	if summary := right[strings.Index(right, "banner verdict"):strings.Index(right, `class="head"`)]; !strings.Contains(summary, "Sensitive read recorded") || !strings.Contains(summary, "Protected: ") {
+		t.Errorf("the RIGHT summary lacks its read or what Tego refused: %s", f3Text(summary))
 	}
 	if n := strings.Count(right, "banner verdict"); n != 1 {
 		t.Errorf("the RIGHT page shows %d verdict banners, want 1", n)
@@ -108,7 +113,7 @@ func TestVerdictUnderHeader(t *testing.T) {
 	if strings.Contains(panel, "block-fold") {
 		t.Error("a run with a live block shows the folded line")
 	}
-	if !vidBefore(right, "verdict-ok", `id="block"`) {
+	if !vidBefore(right, "banner verdict", `id="block"`) {
 		t.Error("the verdict is not above the Block now panel with a block")
 	}
 
@@ -218,10 +223,9 @@ func TestLogsFormOneRow(t *testing.T) {
 	page := get(t, s, c, "/logs?q=token")
 	top := page[strings.Index(page, `<div class="frow lq-top">`):]
 	top = top[:strings.Index(top, "</div>")]
-	mustContain(t, "the one row", top, `name="q" value="token"`, `name="where"`, `type="submit"`)
-	mustContain(t, "the fold", page, `<details class="lq-adv"><summary class="lq-adv-s">Filters`, `name="run"`, `name="verdict"`, `data-live="r-logs-facets"`)
-	if !vidBefore(page, `<details class="lq-adv">`, `<section class="lq-side"`) || !vidBefore(page, `<section class="lq-side"`, `</div></details>
-</form></details>`) {
+	mustContain(t, "the one row", top, `name="q" value="token"`, `type="submit"`)
+	mustContain(t, "the fold", page, `<details class="lq-adv"><summary class="lq-adv-s">Filters`, `name="run"`, `name="verdict"`, `name="where"`, `data-live="r-logs-facets"`)
+	if !vidBefore(page, `<details class="lq-adv">`, `<section class="lq-side"`) || !vidBefore(page, `<section class="lq-side"`, `<details class="lq-help">`) {
 		t.Error("the facets are not under Filters")
 	}
 	for _, q := range []string{"/logs?q=token&verdict=refused", "/logs?q=token&run=" + vidRight, "/logs?q=token&sys=hide"} {
@@ -270,8 +274,10 @@ func TestProjectPathsReadDotSlash(t *testing.T) {
 }
 
 // TestVideoAskCardAnswersAndBand: Allow once and Deny are the same button, neither the filled default, on the card and
-// in the waiting banner; the "Tego asks you" band stands apart from the card in both themes (the dark one was
-// nearly the page's colour) and its words clear AA on it.
+// in the waiting banner; the card's "Tego asks you" band stands apart from the card in both themes (the dark one was
+// nearly the page's colour) and its words clear AA on it. Since the v0.2.0 design the card's band is the ask's solid
+// ink (--c-ask, the waiting chip's colour); --c-ask-bar is the waiting banner's ground, which a dark page sets apart by
+// its orange seam rather than by a light slab, so the seam clears 3:1 on the banner and on the page.
 func TestAskCardAnswersAndBand(t *testing.T) {
 	s := newServer(t, fixture(t))
 	c := login(t, s)
@@ -292,12 +298,27 @@ func TestAskCardAnswersAndBand(t *testing.T) {
 		"auto":  tokenBlock(t, tokens, `:root:not([data-theme="light"]) {`),
 		"dark":  tokenBlock(t, tokens, `:root[data-theme="dark"] {`),
 	} {
-		if r := contrast(tk["on-ask-bar"], tk["ask-bar"]); r < 4.5 {
+		if r := contrast(tk["on-ask"], tk["ask"]); r < 4.5 {
 			t.Errorf("%s: the band's words are %.2f:1 on it, under AA", name, r)
 		}
-		if r := contrast(tk["ask-bar"], tk["surface"]); r < 3 {
+		if r := contrast(tk["ask"], tk["surface"]); r < 3 {
 			t.Errorf("%s: the band is %.2f:1 against the card, under 3:1", name, r)
 		}
+		if r := contrast(tk["on-ask-bar"], tk["ask-bar"]); r < 4.5 {
+			t.Errorf("%s: the banner's words are %.2f:1 on it, under AA", name, r)
+		}
+		for _, bg := range []string{"ask-bar", "bg"} {
+			if r := contrast(tk["ask"], tk[bg]); r < 3 {
+				t.Errorf("%s: the banner's orange seam is %.2f:1 on --c-%s, under 3:1", name, r, bg)
+			}
+		}
+	}
+	app := get(t, s, c, "/static/app.css")
+	if m := regexp.MustCompile(`(?m)^\.ask-bar \{([^}]*)\}`).FindStringSubmatch(app); m == nil || !strings.Contains(m[1], "background: var(--c-ask);") || !strings.Contains(m[1], "color: var(--c-on-ask);") {
+		t.Errorf("the card's band is not drawn with --c-ask and --c-on-ask: %v", m)
+	}
+	if m := regexp.MustCompile(`(?m)^\.banner-ask \{([^}]*)\}`).FindStringSubmatch(app); m == nil || !strings.Contains(m[1], "border-top: var(--edge) solid var(--c-ask);") || !strings.Contains(m[1], "background: var(--c-ask-bar);") {
+		t.Errorf("the waiting banner is not the ask-bar ground with its orange seam: %v", m)
 	}
 }
 
@@ -314,7 +335,7 @@ func TestOverviewFoldsProgramsAndLeakHeadline(t *testing.T) {
 	s := newServer(t, root)
 	c := login(t, s)
 	ov := get(t, s, c, "/")
-	mustContain(t, "the Overview", ov, `<h1 class="verdict verdict-leak ov-verdict">`, "<span>1 run leaked secrets</span>")
+	mustContain(t, "the Overview", ov, `<p class="verdict verdict-leak ov-verdict" data-attention="leak" role="alert">`, "<span>1 run leaked secrets</span>")
 	refusals := ov[strings.Index(ov, `id="h-ref"`):]
 	if n := strings.Count(refusals, ">curl<"); n != 1 || strings.Contains(refusals, `<b class="sp-b">curl</b>`) {
 		t.Errorf("curl is listed %d times by name, or as a path", n)

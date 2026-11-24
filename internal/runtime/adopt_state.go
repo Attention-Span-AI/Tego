@@ -15,6 +15,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/ledger"
+	"github.com/attention-span-ai/tego/internal/platform/sys"
 	cgroupenforce "github.com/attention-span-ai/tego/internal/runtime/enforce/cgroup"
 	"github.com/attention-span-ai/tego/internal/runtime/hoststate"
 	"github.com/attention-span-ai/tego/internal/watch/adopt"
@@ -195,11 +196,16 @@ func (s *adoptStore) write(rec adoptRecord) error {
 	defer func() { _ = unix.Close(dfd) }()
 	tmp := "." + name + ".tmp"
 	_ = unix.Unlinkat(dfd, tmp, 0)
-	fd, err := unix.Openat(dfd, tmp, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
+	owned, err := sys.Own(unix.Openat(dfd, tmp, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600))
 	if err != nil {
 		return fmt.Errorf("runtime: adoption record: %w", &os.PathError{Op: "create", Path: filepath.Join(s.dir, tmp), Err: err})
 	}
-	f := os.NewFile(uintptr(fd), tmp)
+	defer owned.Close() //nolint:errcheck // owns nothing once released; closes only on an early return
+	f, err := owned.Release(tmp)
+	if err != nil {
+		_ = unix.Unlinkat(dfd, tmp, 0)
+		return fmt.Errorf("runtime: adoption record: %w", err)
+	}
 	_, werr := f.Write(b)
 	if werr == nil {
 		werr = f.Sync()
@@ -413,6 +419,9 @@ const movesLockName = "moves.lock"
 // passes over /proc (adopt.MaxRounds), tens of milliseconds; a holder this slow is refused, never waited on for ever.
 var movesLockWait = 10 * time.Second
 
+// movesFlock is the migration-lock syscall, replaceable by deterministic contention tests.
+var movesFlock = unix.Flock
+
 // ErrMovesBusy is an adoption that could not take the move lock within movesLockWait.
 var ErrMovesBusy = errors.New("runtime: another adoption is moving processes")
 
@@ -439,7 +448,7 @@ func (s *adoptStore) lockMoves(ctx context.Context) (*os.File, error) {
 	}
 	deadline := time.Now().Add(movesLockWait)
 	for {
-		err := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB)
+		err := movesFlock(fd, unix.LOCK_EX|unix.LOCK_NB)
 		if err == nil {
 			return f, nil
 		}

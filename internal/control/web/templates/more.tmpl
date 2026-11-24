@@ -1,0 +1,16 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{define "content"}}{{template "guide-show" $}}
+<div class="head"><div>{{if $.Tour}}<h2>{{else}}<h1>{{end}}More{{if $.Tour}}</h2>{{else}}</h1>{{end}}</div></div>
+<nav class="more-page phone-list" aria-label="More destinations">
+<a class="btn" href="/agents">Agents</a>
+<a class="btn" href="/overview">Overview</a>
+<a class="btn" href="/rules/new">New contract</a>
+<a class="btn" href="/rules">Contracts</a>
+<a class="btn" href="/detections">Detections</a>
+<a class="btn" href="/machine">This machine</a>
+<a class="btn" href="/guide">Guide</a>
+<a class="btn" href="/glossary">Glossary</a>
+{{if .Preview}}{{range layerNav}}{{if .Soon}}<span class="nav-soon">{{.Label}} <span class="soon-tag">Coming soon</span></span>{{else}}<a class="btn" href="{{.Href}}">{{.Label}}</a>{{end}}{{end}}{{end}}
+</nav>
+<div class="more-tools"><h2>Colour theme</h2><p class="soft">Auto follows your device.</p><div id="phone-theme"></div><noscript><p>Your device sets the theme while scripts are off.</p></noscript></div>
+{{end}}

@@ -1,0 +1,1536 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tego.dev/spec/record/v1/live-fields.schema.json",
+  "title": "Run record v1: the live changes' fields (21 to 41)",
+  "description": "One document per line, as mvp-fields.schema.json has it: the line's kind, the revision of its ledger (its run_start's record_minor) and its payload (a refused line also its rule). The schema describes a gap's live_block (a person's live block, a time limit's end, an Adjustable run's fence entry lifted, restored or refused) and live_control (a pause or a resume), run_start's live_mode and live_fence, the rules a refused line carries under live.fence[...], live.lift[...] and live.block[read:...], live.block[write:...], and the revision below which each is refused. A field the ledger writer moved to a blob (live_block_blob, live_control_blob) stands for the field. A member the schema does not name is ignored, as a reader of a later revision's line ignores it. pkg/spec/record (Event.ValidateAt) also refuses what JSON Schema cannot say: a key spelt with another letter case, a null anywhere in a field, a rule that is not live.block[<kind>:<value>] (or live.fence[...], live.lift[...]) of the change's own kind and value, a value of more than 4096 bytes (maxLength counts characters), a note of more than 200 bytes, or of text that is not printable (the schema holds the printable classes and 200 characters) [live-block], addrs that are not canonical, unmapped, sorted addresses with no repeat, a full list where addrs_more is above 0 [live-block] (the schema holds only that addrs_more above 0 needs a list of 32), a fence entry whose rule is not live.fence[<kind>:<value>] of its own, a fence listing a rule twice, and a repeated key, which is no I-JSON and is refused before the schema. spec/record/v1/fixtures/live holds the documents, and internal/testutil/jsonschema's TestRecordLiveFixturesAgainstSchema runs them through the real validator.",
+  "type": "object",
+  "required": [
+    "kind",
+    "minor",
+    "payload"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "type": "string"
+    },
+    "minor": {
+      "type": "integer",
+      "anyOf": [
+        {
+          "minimum": 0,
+          "maximum": 35
+        },
+        {
+          "const": 37
+        },
+        {
+          "const": 39
+        },
+        {
+          "const": 40
+        },
+        {
+          "const": 41
+        }
+      ]
+    },
+    "rule": {
+      "type": "string"
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gap"
+          },
+          "payload": {
+            "required": [
+              "why"
+            ],
+            "properties": {
+              "why": {
+                "const": "live-block-added"
+              }
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "what"
+            ],
+            "properties": {
+              "what": {
+                "const": "enforce"
+              },
+              "live_block": {
+                "$ref": "#/$defs/live_block",
+                "properties": {
+                  "op": {
+                    "const": "add"
+                  },
+                  "kind": {
+                    "enum": [
+                      "exec",
+                      "net",
+                      "path",
+                      "read",
+                      "write"
+                    ]
+                  },
+                  "rule": {
+                    "pattern": "^live\\.block\\["
+                  },
+                  "refused": false
+                }
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "live_block"
+                ]
+              },
+              {
+                "required": [
+                  "live_block_blob"
+                ]
+              }
+            ]
+          },
+          "minor": {
+            "minimum": 21
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gap"
+          },
+          "payload": {
+            "required": [
+              "why"
+            ],
+            "properties": {
+              "why": {
+                "const": "live-block-removed"
+              }
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "what"
+            ],
+            "properties": {
+              "what": {
+                "const": "enforce"
+              },
+              "live_block": {
+                "$ref": "#/$defs/live_block",
+                "properties": {
+                  "op": {
+                    "const": "remove"
+                  },
+                  "kind": {
+                    "enum": [
+                      "exec",
+                      "net",
+                      "path",
+                      "read",
+                      "write"
+                    ]
+                  },
+                  "rule": {
+                    "pattern": "^live\\.block\\["
+                  },
+                  "refused": false
+                }
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "live_block"
+                ]
+              },
+              {
+                "required": [
+                  "live_block_blob"
+                ]
+              }
+            ]
+          },
+          "minor": {
+            "minimum": 21
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gap"
+          },
+          "payload": {
+            "required": [
+              "why"
+            ],
+            "properties": {
+              "why": {
+                "const": "live-block-expired"
+              }
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "what"
+            ],
+            "properties": {
+              "what": {
+                "const": "enforce"
+              },
+              "live_block": {
+                "$ref": "#/$defs/live_block",
+                "properties": {
+                  "op": {
+                    "const": "expire"
+                  },
+                  "kind": {
+                    "enum": [
+                      "exec",
+                      "net",
+                      "path",
+                      "read",
+                      "write"
+                    ]
+                  },
+                  "rule": {
+                    "pattern": "^live\\.block\\["
+                  },
+                  "refused": false
+                },
+                "required": [
+                  "until"
+                ]
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "live_block"
+                ]
+              },
+              {
+                "required": [
+                  "live_block_blob"
+                ]
+              }
+            ]
+          },
+          "minor": {
+            "minimum": 26
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gap"
+          },
+          "payload": {
+            "required": [
+              "why"
+            ],
+            "properties": {
+              "why": {
+                "const": "live-unblock-expired"
+              }
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "what"
+            ],
+            "properties": {
+              "what": {
+                "const": "enforce"
+              },
+              "live_block": {
+                "$ref": "#/$defs/live_block",
+                "properties": {
+                  "op": {
+                    "const": "expire"
+                  },
+                  "kind": {
+                    "enum": [
+                      "exec",
+                      "net",
+                      "path",
+                      "read",
+                      "write"
+                    ]
+                  },
+                  "rule": {
+                    "pattern": "^live\\.block\\["
+                  },
+                  "refused": false
+                },
+                "required": [
+                  "until"
+                ]
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "live_block"
+                ]
+              },
+              {
+                "required": [
+                  "live_block_blob"
+                ]
+              }
+            ]
+          },
+          "minor": {
+            "minimum": 26
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gap"
+          },
+          "payload": {
+            "required": [
+              "why"
+            ],
+            "properties": {
+              "why": {
+                "const": "live-rule-lifted"
+              }
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "what"
+            ],
+            "properties": {
+              "what": {
+                "const": "enforce"
+              },
+              "live_block": {
+                "$ref": "#/$defs/live_block",
+                "properties": {
+                  "op": {
+                    "const": "lift"
+                  },
+                  "kind": {
+                    "enum": [
+                      "read",
+                      "net",
+                      "exec"
+                    ]
+                  },
+                  "rule": {
+                    "pattern": "^live\\.(fence|lift)\\["
+                  },
+                  "refused": false
+                }
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "live_block"
+                ]
+              },
+              {
+                "required": [
+                  "live_block_blob"
+                ]
+              }
+            ]
+          },
+          "minor": {
+            "minimum": 26
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gap"
+          },
+          "payload": {
+            "required": [
+              "why"
+            ],
+            "properties": {
+              "why": {
+                "const": "live-rule-restored"
+              }
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "what"
+            ],
+            "properties": {
+              "what": {
+                "const": "enforce"
+              },
+              "live_block": {
+                "$ref": "#/$defs/live_block",
+                "properties": {
+                  "op": {
+                    "const": "restore"
+                  },
+                  "kind": {
+                    "enum": [
+                      "read",
+                      "net",
+                      "exec"
+                    ]
+                  },
+                  "rule": {
+                    "pattern": "^live\\.(fence|lift)\\["
+                  },
+                  "refused": false
+                }
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "live_block"
+                ]
+              },
+              {
+                "required": [
+                  "live_block_blob"
+                ]
+              }
+            ]
+          },
+          "minor": {
+            "minimum": 26
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gap"
+          },
+          "payload": {
+            "required": [
+              "why"
+            ],
+            "properties": {
+              "why": {
+                "const": "live-lift-expired"
+              }
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "what"
+            ],
+            "properties": {
+              "what": {
+                "const": "enforce"
+              },
+              "live_block": {
+                "$ref": "#/$defs/live_block",
+                "properties": {
+                  "op": {
+                    "const": "expire"
+                  },
+                  "kind": {
+                    "enum": [
+                      "read",
+                      "net",
+                      "exec"
+                    ]
+                  },
+                  "rule": {
+                    "pattern": "^live\\.(fence|lift)\\["
+                  },
+                  "refused": false
+                },
+                "required": [
+                  "until"
+                ]
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "live_block"
+                ]
+              },
+              {
+                "required": [
+                  "live_block_blob"
+                ]
+              }
+            ]
+          },
+          "minor": {
+            "minimum": 26
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gap"
+          },
+          "payload": {
+            "required": [
+              "why"
+            ],
+            "properties": {
+              "why": {
+                "const": "live-lift-refused"
+              }
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "what"
+            ],
+            "properties": {
+              "what": {
+                "const": "enforce"
+              },
+              "live_block": {
+                "$ref": "#/$defs/live_block",
+                "properties": {
+                  "op": {
+                    "const": "lift"
+                  },
+                  "kind": {
+                    "enum": [
+                      "read",
+                      "net",
+                      "exec"
+                    ]
+                  },
+                  "rule": {
+                    "pattern": "^live\\.(fence|lift)\\["
+                  }
+                },
+                "required": [
+                  "refused"
+                ]
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "live_block"
+                ]
+              },
+              {
+                "required": [
+                  "live_block_blob"
+                ]
+              }
+            ]
+          },
+          "minor": {
+            "minimum": 26
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gap"
+          },
+          "payload": {
+            "required": [
+              "live_block"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "properties": {
+              "what": {
+                "const": "enforce"
+              },
+              "why": {
+                "enum": [
+                  "live-block-added",
+                  "live-block-removed",
+                  "live-block-expired",
+                  "live-unblock-expired",
+                  "live-rule-lifted",
+                  "live-rule-restored",
+                  "live-lift-expired",
+                  "live-lift-refused"
+                ]
+              }
+            },
+            "required": [
+              "what",
+              "why"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gap"
+          },
+          "payload": {
+            "required": [
+              "why"
+            ],
+            "properties": {
+              "why": {
+                "const": "run-paused"
+              }
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "what"
+            ],
+            "properties": {
+              "what": {
+                "const": "enforce"
+              },
+              "live_control": {
+                "$ref": "#/$defs/live_control",
+                "properties": {
+                  "op": {
+                    "const": "pause"
+                  }
+                }
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "live_control"
+                ]
+              },
+              {
+                "required": [
+                  "live_control_blob"
+                ]
+              }
+            ]
+          },
+          "minor": {
+            "minimum": 24
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gap"
+          },
+          "payload": {
+            "required": [
+              "why"
+            ],
+            "properties": {
+              "why": {
+                "const": "pause-failed"
+              }
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "what"
+            ],
+            "properties": {
+              "what": {
+                "const": "enforce"
+              },
+              "live_control": {
+                "$ref": "#/$defs/live_control",
+                "properties": {
+                  "op": {
+                    "const": "pause"
+                  }
+                }
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "live_control"
+                ]
+              },
+              {
+                "required": [
+                  "live_control_blob"
+                ]
+              }
+            ]
+          },
+          "minor": {
+            "minimum": 24
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gap"
+          },
+          "payload": {
+            "required": [
+              "why"
+            ],
+            "properties": {
+              "why": {
+                "const": "run-resumed"
+              }
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "what"
+            ],
+            "properties": {
+              "what": {
+                "const": "enforce"
+              },
+              "live_control": {
+                "$ref": "#/$defs/live_control",
+                "properties": {
+                  "op": {
+                    "const": "resume"
+                  }
+                }
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "live_control"
+                ]
+              },
+              {
+                "required": [
+                  "live_control_blob"
+                ]
+              }
+            ]
+          },
+          "minor": {
+            "minimum": 24
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gap"
+          },
+          "payload": {
+            "required": [
+              "why"
+            ],
+            "properties": {
+              "why": {
+                "const": "resume-failed"
+              }
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "what"
+            ],
+            "properties": {
+              "what": {
+                "const": "enforce"
+              },
+              "live_control": {
+                "$ref": "#/$defs/live_control",
+                "properties": {
+                  "op": {
+                    "const": "resume"
+                  }
+                }
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "live_control"
+                ]
+              },
+              {
+                "required": [
+                  "live_control_blob"
+                ]
+              }
+            ]
+          },
+          "minor": {
+            "minimum": 24
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gap"
+          },
+          "payload": {
+            "required": [
+              "live_control"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "properties": {
+              "what": {
+                "const": "enforce"
+              },
+              "why": {
+                "enum": [
+                  "run-paused",
+                  "pause-failed",
+                  "run-resumed",
+                  "resume-failed"
+                ]
+              }
+            },
+            "required": [
+              "what",
+              "why"
+            ]
+          },
+          "minor": {
+            "minimum": 24
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gap"
+          },
+          "payload": {
+            "properties": {
+              "live_block": {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "read",
+                      "write"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              }
+            },
+            "required": [
+              "live_block"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "minor": {
+            "minimum": 24
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gap"
+          },
+          "payload": {
+            "properties": {
+              "live_block": {
+                "required": [
+                  "until"
+                ]
+              }
+            },
+            "required": [
+              "live_block"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "minor": {
+            "minimum": 26
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gap"
+          },
+          "payload": {
+            "properties": {
+              "live_block": {
+                "required": [
+                  "refused"
+                ]
+              }
+            },
+            "required": [
+              "live_block"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "minor": {
+            "minimum": 26
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gap"
+          },
+          "payload": {
+            "properties": {
+              "live_block": {
+                "required": [
+                  "addrs"
+                ]
+              }
+            },
+            "required": [
+              "live_block"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "minor": {
+            "minimum": 41
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gap"
+          },
+          "payload": {
+            "properties": {
+              "live_block": {
+                "required": [
+                  "addrs_more"
+                ]
+              }
+            },
+            "required": [
+              "live_block"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "minor": {
+            "minimum": 41
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gap"
+          },
+          "payload": {
+            "properties": {
+              "live_block": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "addrs"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "addrs_more"
+                    ]
+                  }
+                ]
+              }
+            },
+            "required": [
+              "live_block"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "properties": {
+              "live_block": {
+                "properties": {
+                  "kind": {
+                    "const": "net"
+                  }
+                }
+              },
+              "why": {
+                "enum": [
+                  "live-block-added",
+                  "live-rule-restored"
+                ]
+              }
+            },
+            "required": [
+              "why"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gap"
+          },
+          "payload": {
+            "properties": {
+              "live_block": {
+                "required": [
+                  "note"
+                ]
+              }
+            },
+            "required": [
+              "live_block"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "minor": {
+            "minimum": 41
+          },
+          "payload": {
+            "properties": {
+              "why": {
+                "const": "live-rule-lifted"
+              }
+            },
+            "required": [
+              "why"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "run_start"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "required": [
+                  "live_mode"
+                ]
+              },
+              {
+                "required": [
+                  "live_fence"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "live_mode",
+              "live_fence"
+            ],
+            "properties": {
+              "live_mode": {
+                "const": "adjustable"
+              },
+              "live_fence": {
+                "$ref": "#/$defs/live_fence"
+              }
+            }
+          },
+          "minor": {
+            "minimum": 26
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "refused"
+          },
+          "rule": {
+            "pattern": "^live\\.(fence|lift)\\["
+          }
+        },
+        "required": [
+          "kind",
+          "rule"
+        ]
+      },
+      "then": {
+        "properties": {
+          "minor": {
+            "minimum": 26
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "refused"
+          },
+          "rule": {
+            "pattern": "^live\\.block\\[(read|write):"
+          }
+        },
+        "required": [
+          "kind",
+          "rule"
+        ]
+      },
+      "then": {
+        "properties": {
+          "minor": {
+            "minimum": 24
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "serial": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The change's serial in the overlay, from 1; an overlay numbers its changes in one sequence."
+    },
+    "time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "live_block": {
+      "type": "object",
+      "required": [
+        "op",
+        "kind",
+        "value",
+        "rule",
+        "by",
+        "serial",
+        "at"
+      ],
+      "properties": {
+        "op": {
+          "enum": [
+            "add",
+            "remove",
+            "expire",
+            "lift",
+            "restore"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "exec",
+            "net",
+            "path",
+            "read",
+            "write"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rule": {
+          "type": "string",
+          "pattern": "^live\\.(block|fence|lift)\\[(exec|net|path|read|write):.+\\]$"
+        },
+        "by": {
+          "type": "string"
+        },
+        "serial": {
+          "$ref": "#/$defs/serial"
+        },
+        "at": {
+          "$ref": "#/$defs/time"
+        },
+        "until": {
+          "$ref": "#/$defs/time"
+        },
+        "refused": {
+          "enum": [
+            "mac",
+            "outside-fence",
+            "locked",
+            "until"
+          ]
+        },
+        "addrs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32
+        },
+        "addrs_more": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^[\\p{L}\\p{M}\\p{N}\\p{P}\\p{S} ]*$",
+          "description": "The text the person who lifted the entry gave with the lift: at most 200 bytes (maxLength counts characters, so pkg/spec/record also holds the byte bound) of printable text, no control character, line break, tab or invisible format character. Only on a live-rule-lifted line, from revision 41. It is shown and never interpreted."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "addrs_more"
+            ],
+            "properties": {
+              "addrs_more": {
+                "minimum": 1
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "addrs"
+            ],
+            "properties": {
+              "addrs": {
+                "minItems": 32
+              }
+            }
+          }
+        }
+      ]
+    },
+    "live_control": {
+      "type": "object",
+      "required": [
+        "op",
+        "by",
+        "serial",
+        "at"
+      ],
+      "properties": {
+        "op": {
+          "enum": [
+            "pause",
+            "resume"
+          ]
+        },
+        "by": {
+          "type": "string"
+        },
+        "serial": {
+          "$ref": "#/$defs/serial"
+        },
+        "at": {
+          "$ref": "#/$defs/time"
+        }
+      }
+    },
+    "live_fence": {
+      "type": "object",
+      "required": [
+        "sha256",
+        "entries"
+      ],
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "entries": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/live_fence_entry"
+          }
+        }
+      }
+    },
+    "live_fence_entry": {
+      "type": "object",
+      "required": [
+        "kind",
+        "value",
+        "source",
+        "rule"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "read",
+            "net",
+            "exec"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "source": {
+          "enum": [
+            "deny",
+            "new"
+          ]
+        },
+        "rule": {
+          "type": "string",
+          "pattern": "^live\\.fence\\[(read|net|exec):.+\\]$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^/]+$"
+        }
+      },
+      "if": {
+        "required": [
+          "name"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "exec"
+          },
+          "source": {
+            "const": "deny"
+          }
+        }
+      }
+    }
+  }
+}

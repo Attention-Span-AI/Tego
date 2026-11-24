@@ -1,0 +1,718 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "$ref": "#/$defs/label"
+    },
+    "group": {
+      "enum": [
+        "money",
+        "parser",
+        "cumulative",
+        "composition",
+        "scope",
+        "bundle",
+        "limits"
+      ]
+    },
+    "pins": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[BAW][0-9]{3}$"
+      },
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true
+    },
+    "why": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 2048
+    },
+    "bundle": {
+      "$ref": "#/$defs/bundle"
+    },
+    "bundle_wire_hex": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/hex"
+        }
+      ]
+    },
+    "request": {
+      "$ref": "#/$defs/request"
+    },
+    "request_wire_hex": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/hex"
+        }
+      ]
+    },
+    "expected": {
+      "$ref": "#/$defs/result"
+    }
+  },
+  "required": [
+    "id",
+    "group",
+    "pins",
+    "why",
+    "bundle",
+    "bundle_wire_hex",
+    "request",
+    "request_wire_hex",
+    "expected"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tego:policy:bizrule:v1:fixture",
+  "$comment": "SPDX-License-Identifier: Apache-2.0. Shape only; canonical bytes, binding equality and arithmetic are specified in the Markdown requirements.",
+  "$defs": {
+    "label": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._/-]{1,64}$"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "hex": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{2})*$",
+      "maxLength": 2097152
+    },
+    "minor": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,18})$"
+    },
+    "uint": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,19})$"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,19}$"
+    },
+    "currency": {
+      "enum": [
+        "CAD",
+        "JPY",
+        "KWD",
+        "USD"
+      ]
+    },
+    "rule": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "currency": {
+              "$ref": "#/$defs/currency"
+            },
+            "id": {
+              "$ref": "#/$defs/label"
+            },
+            "kind": {
+              "const": "per_call"
+            },
+            "limit": {
+              "$ref": "#/$defs/minor"
+            }
+          },
+          "required": [
+            "currency",
+            "id",
+            "kind",
+            "limit"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "codes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/currency"
+              },
+              "minItems": 1,
+              "maxItems": 4,
+              "uniqueItems": true
+            },
+            "id": {
+              "$ref": "#/$defs/label"
+            },
+            "kind": {
+              "const": "currencies"
+            }
+          },
+          "required": [
+            "codes",
+            "id",
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "currency": {
+              "$ref": "#/$defs/currency"
+            },
+            "id": {
+              "$ref": "#/$defs/label"
+            },
+            "kind": {
+              "const": "per_run"
+            },
+            "limit": {
+              "$ref": "#/$defs/minor"
+            }
+          },
+          "required": [
+            "currency",
+            "id",
+            "kind",
+            "limit"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ask_above": {
+              "$ref": "#/$defs/minor"
+            },
+            "currency": {
+              "$ref": "#/$defs/currency"
+            },
+            "deny_above": {
+              "$ref": "#/$defs/minor"
+            },
+            "id": {
+              "$ref": "#/$defs/label"
+            },
+            "kind": {
+              "const": "threshold"
+            }
+          },
+          "required": [
+            "ask_above",
+            "currency",
+            "deny_above",
+            "id",
+            "kind"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "bundle": {
+      "type": "object",
+      "properties": {
+        "adapter": {
+          "const": "square.refund.v1"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rule"
+          },
+          "minItems": 1,
+          "maxItems": 32
+        },
+        "server": {
+          "$ref": "#/$defs/label"
+        },
+        "version": {
+          "const": 1
+        }
+      },
+      "required": [
+        "adapter",
+        "rules",
+        "server",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "state": {
+      "type": "object",
+      "properties": {
+        "bundle_digest": {
+          "$ref": "#/$defs/hash"
+        },
+        "epoch": {
+          "$ref": "#/$defs/label"
+        },
+        "revision": {
+          "$ref": "#/$defs/uint"
+        },
+        "run_id": {
+          "$ref": "#/$defs/label"
+        },
+        "seen_keys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/hash"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "server": {
+          "$ref": "#/$defs/label"
+        },
+        "status": {
+          "enum": [
+            "ready",
+            "lost",
+            "unavailable"
+          ]
+        },
+        "totals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "currency": {
+                "$ref": "#/$defs/currency"
+              },
+              "minor": {
+                "$ref": "#/$defs/minor"
+              }
+            },
+            "required": [
+              "currency",
+              "minor"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 4
+        }
+      },
+      "required": [
+        "bundle_digest",
+        "epoch",
+        "revision",
+        "run_id",
+        "seen_keys",
+        "server",
+        "status",
+        "totals"
+      ],
+      "additionalProperties": false
+    },
+    "request": {
+      "type": "object",
+      "properties": {
+        "adapter": {
+          "$ref": "#/$defs/label"
+        },
+        "call_hex": {
+          "$ref": "#/$defs/hex"
+        },
+        "contract_bundle_digest": {
+          "$ref": "#/$defs/hash"
+        },
+        "contract_verdict": {
+          "enum": [
+            "allow",
+            "ask",
+            "deny",
+            "unknown"
+          ]
+        },
+        "evaluator_status": {
+          "enum": [
+            "ready",
+            "missing",
+            "crashed",
+            "timed_out",
+            "nonsense",
+            "queue_full",
+            "late_reply",
+            "wrong_binding",
+            "extra_reply",
+            "restarted",
+            "record_failed"
+          ]
+        },
+        "request_id": {
+          "$ref": "#/$defs/id"
+        },
+        "run_id": {
+          "$ref": "#/$defs/label"
+        },
+        "server": {
+          "$ref": "#/$defs/label"
+        },
+        "state": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/state"
+            }
+          ]
+        },
+        "tool_source": {
+          "enum": [
+            "contract",
+            "live"
+          ]
+        },
+        "topology": {
+          "enum": [
+            "exclusive",
+            "unproven"
+          ]
+        },
+        "version": {
+          "const": 1
+        }
+      },
+      "required": [
+        "adapter",
+        "call_hex",
+        "contract_bundle_digest",
+        "contract_verdict",
+        "evaluator_status",
+        "request_id",
+        "run_id",
+        "server",
+        "state",
+        "tool_source",
+        "topology",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "facts": {
+      "type": "object",
+      "properties": {
+        "amount_minor": {
+          "$ref": "#/$defs/minor"
+        },
+        "currency": {
+          "$ref": "#/$defs/currency"
+        },
+        "exponent": {
+          "enum": [
+            0,
+            2,
+            3
+          ]
+        },
+        "source": {
+          "const": "submitted-call"
+        }
+      },
+      "required": [
+        "amount_minor",
+        "currency",
+        "exponent",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "reservation": {
+      "type": "object",
+      "properties": {
+        "after_minor": {
+          "$ref": "#/$defs/minor"
+        },
+        "amount_minor": {
+          "$ref": "#/$defs/minor"
+        },
+        "before_minor": {
+          "$ref": "#/$defs/minor"
+        },
+        "currency": {
+          "$ref": "#/$defs/currency"
+        },
+        "key_digest": {
+          "$ref": "#/$defs/hash"
+        },
+        "state_revision": {
+          "$ref": "#/$defs/uint"
+        }
+      },
+      "required": [
+        "after_minor",
+        "amount_minor",
+        "before_minor",
+        "currency",
+        "key_digest",
+        "state_revision"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "adapter": {
+          "$ref": "#/$defs/label"
+        },
+        "asks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "condition": {
+                "const": "threshold.ask"
+              },
+              "rule_id": {
+                "$ref": "#/$defs/label"
+              }
+            },
+            "required": [
+              "condition",
+              "rule_id"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 32
+        },
+        "bundle_digest": {
+          "$ref": "#/$defs/hash"
+        },
+        "business": {
+          "type": "object",
+          "properties": {
+            "condition": {
+              "enum": [
+                "satisfied",
+                "not_applicable",
+                "wire.invalid",
+                "bundle.invalid",
+                "bundle.digest",
+                "topology.unproven",
+                "input.json",
+                "input.canonical",
+                "input.duplicate",
+                "input.limit",
+                "adapter.envelope",
+                "adapter.dispatch",
+                "adapter.batch",
+                "adapter.missing",
+                "adapter.unknown",
+                "adapter.type",
+                "adapter.range",
+                "adapter.revision",
+                "state.unavailable",
+                "state.binding",
+                "state.invalid",
+                "state.replay",
+                "state.capacity",
+                "per_call.exceeded",
+                "currencies.not_listed",
+                "threshold.ask",
+                "threshold.deny",
+                "per_run.exceeded",
+                "per_run.overflow",
+                "evaluator.missing",
+                "evaluator.crashed",
+                "evaluator.timed_out",
+                "evaluator.nonsense",
+                "evaluator.queue_full",
+                "evaluator.late_reply",
+                "evaluator.wrong_binding",
+                "evaluator.extra_reply",
+                "evaluator.restarted",
+                "evaluator.record_failed"
+              ]
+            },
+            "rule_id": {
+              "type": "string",
+              "pattern": "^(?:[A-Za-z0-9._/-]{1,64}|\\$(?:bundle|evaluator|adapter|state|topology|wire))?$"
+            },
+            "verdict": {
+              "enum": [
+                "allow",
+                "ask",
+                "deny",
+                "none"
+              ]
+            }
+          },
+          "required": [
+            "condition",
+            "rule_id",
+            "verdict"
+          ],
+          "additionalProperties": false
+        },
+        "call_digest": {
+          "$ref": "#/$defs/hash"
+        },
+        "facts": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/facts"
+            }
+          ]
+        },
+        "final": {
+          "type": "object",
+          "properties": {
+            "condition": {
+              "enum": [
+                "satisfied",
+                "not_applicable",
+                "wire.invalid",
+                "bundle.invalid",
+                "bundle.digest",
+                "topology.unproven",
+                "input.json",
+                "input.canonical",
+                "input.duplicate",
+                "input.limit",
+                "adapter.envelope",
+                "adapter.dispatch",
+                "adapter.batch",
+                "adapter.missing",
+                "adapter.unknown",
+                "adapter.type",
+                "adapter.range",
+                "adapter.revision",
+                "state.unavailable",
+                "state.binding",
+                "state.invalid",
+                "state.replay",
+                "state.capacity",
+                "per_call.exceeded",
+                "currencies.not_listed",
+                "threshold.ask",
+                "threshold.deny",
+                "per_run.exceeded",
+                "per_run.overflow",
+                "evaluator.missing",
+                "evaluator.crashed",
+                "evaluator.timed_out",
+                "evaluator.nonsense",
+                "evaluator.queue_full",
+                "evaluator.late_reply",
+                "evaluator.wrong_binding",
+                "evaluator.extra_reply",
+                "evaluator.restarted",
+                "evaluator.record_failed",
+                "contract.allow",
+                "contract.ask",
+                "contract.deny",
+                "contract.unknown"
+              ]
+            },
+            "source": {
+              "enum": [
+                "business",
+                "contract",
+                "wire"
+              ]
+            },
+            "verdict": {
+              "enum": [
+                "allow",
+                "ask",
+                "deny"
+              ]
+            }
+          },
+          "required": [
+            "condition",
+            "source",
+            "verdict"
+          ],
+          "additionalProperties": false
+        },
+        "record": {
+          "type": "object",
+          "properties": {
+            "coverage": {
+              "enum": [
+                "mediated",
+                "none",
+                "unknown"
+              ]
+            },
+            "delivery": {
+              "const": "not_attempted"
+            },
+            "remote_outcome": {
+              "const": "unknown"
+            },
+            "required": {
+              "const": true
+            },
+            "stage": {
+              "enum": [
+                "evaluated",
+                "not_evaluated"
+              ]
+            }
+          },
+          "required": [
+            "coverage",
+            "delivery",
+            "remote_outcome",
+            "required",
+            "stage"
+          ],
+          "additionalProperties": false
+        },
+        "request_id": {
+          "$ref": "#/$defs/id"
+        },
+        "reservation": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/reservation"
+            }
+          ]
+        },
+        "run_id": {
+          "$ref": "#/$defs/label"
+        },
+        "server": {
+          "$ref": "#/$defs/label"
+        },
+        "version": {
+          "const": 1
+        }
+      },
+      "required": [
+        "adapter",
+        "asks",
+        "bundle_digest",
+        "business",
+        "call_digest",
+        "facts",
+        "final",
+        "record",
+        "request_id",
+        "reservation",
+        "run_id",
+        "server",
+        "version"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "title": "Business rule v1 complete handwritten fixture"
+}

@@ -160,7 +160,7 @@ func TestWatchLeavesTheAgentsFlagsAlone(t *testing.T) {
 	}
 }
 
-// launched is what a sandboxed launch was asked to start.
+// launched is what the test launch was asked to start.
 type launched struct {
 	command []string
 	name    string
@@ -242,13 +242,13 @@ func TestWatchTypoNamesTheCommandLine(t *testing.T) {
 	}
 }
 
-// The notice is the only thing between a person and the belief that a recording is a cage, and between "nothing
+// The notice is the only thing between a person and the belief that a recording enforces rules, and between "nothing
 // is refused" and what the fixed syscall guards still refuse, so each claim of the full text (watch -v) is pinned to
 // what the observe backend does (internal/runtime/enforce/observe/doc.go): the guards, the unrecorded calls, and the
 // record level in force.
 func TestWatchNoticeSaysWhatIsRecordedRefusedAndNotStopped(t *testing.T) {
 	always := []string{
-		"No rule refuses anything", "not a cage", "--boundary <agent.yaml> -- codex", "tego run <agent.yaml> -- codex",
+		"No rule refuses anything", "recording only", "--boundary <agent.yaml> -- codex", "tego run <agent.yaml> -- codex",
 		"still refused, and not recorded", "io_uring", "openat2", "clone3", "open_by_handle_at", "TIOCSTI", "TIOCLINUX", "MPTCP",
 		"the warnings that follow", "D-Bus",
 	}
@@ -275,7 +275,7 @@ func TestWatchNoticeSaysWhatIsRecordedRefusedAndNotStopped(t *testing.T) {
 		}
 	}
 	bound := watchNotice("codex", true, agent.RecordOff, false, false)
-	for _, bad := range []string{"No rule refuses anything", "not a cage", "nothing blocked", "still refused"} {
+	for _, bad := range []string{"No rule refuses anything", "recording only", "nothing blocked", "still refused"} {
 		if strings.Contains(bound, bad) {
 			t.Errorf("a bounded run's notice says %q:\n%s", bad, bound)
 		}
@@ -291,7 +291,7 @@ func TestWatchNoticeSaysWhatIsRecordedRefusedAndNotStopped(t *testing.T) {
 	}
 }
 
-// Without -v the notice is at most four lines: what is recorded and that no rule refuses anything, not a cage,
+// Without -v the notice is at most four lines: what is recorded and that no rule refuses anything, recording only,
 // and how to confine the command; the sentence about sockets only when a socket warning follows.
 func TestWatchNoticeIsShortWithoutVerbose(t *testing.T) {
 	for _, rec := range []agent.RecordMode{"", agent.RecordFull, agent.RecordSummary, agent.RecordOff} {
@@ -300,7 +300,7 @@ func TestWatchNoticeIsShortWithoutVerbose(t *testing.T) {
 			if n := strings.Count(got, "\n"); n > 4 {
 				t.Errorf("record %q sockets %v: %d lines, want at most 4:\n%s", rec, sockets, n, got)
 			}
-			for _, want := range []string{"No rule refuses anything", "not a cage", "tego run <agent.yaml> -- codex",
+			for _, want := range []string{"No rule refuses anything", "recording only", "tego run <agent.yaml> -- codex",
 				"tego watch --boundary <agent.yaml> -- codex", "tego watch -v -- codex"} {
 				if !strings.Contains(got, want) {
 					t.Errorf("record %q: the short notice lacks %q:\n%s", rec, want, got)
@@ -455,7 +455,7 @@ func TestWatchRunsThroughTheLaunchPath(t *testing.T) {
 
 	// A boundary turns it into an enforcing run under the user's contract, the command still the one given.
 	boundary := filepath.Join(t.TempDir(), "boundary.yaml")
-	if err := os.WriteFile(boundary, []byte("version: 0\nname: caged\ncommand: [\"true\"]\nnet: {}\n"), 0o600); err != nil {
+	if err := os.WriteFile(boundary, []byte("version: 0\nname: bounded\ncommand: [\"true\"]\nnet: {}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	*calls, errs = nil, bytes.Buffer{}
@@ -463,7 +463,7 @@ func TestWatchRunsThroughTheLaunchPath(t *testing.T) {
 	if code := mainWith(t.Context(), argv, io.Discard, &errs, []Command{cmdWatch()}); code != identity.ExitOK {
 		t.Fatalf("watch --boundary exit %d:\n%s", code, errs.String())
 	}
-	if len(*calls) != 1 || (*calls)[0].name != "caged" || (*calls)[0].tier == backend.TierObserve || strings.Contains(errs.String(), "No rule refuses anything") {
+	if len(*calls) != 1 || (*calls)[0].name != "bounded" || (*calls)[0].tier == backend.TierObserve || strings.Contains(errs.String(), "No rule refuses anything") {
 		t.Fatalf("with a boundary the launcher saw %+v\n%s", *calls, errs.String())
 	}
 	if strings.Contains(errs.String(), "--record off is in effect") {

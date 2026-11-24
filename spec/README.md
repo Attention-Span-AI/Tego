@@ -5,10 +5,12 @@ Language-neutral, versioned, published. `pkg/spec` in Go mirrors these files. Te
 | Dir | What | Version |
 |---|---|---|
 | `agent/v0/` | the agent contract: JSON Schema for `agent.yaml`, examples | v0 |
-| `record/v1/` | the run record: the field list in prose (`README.md`) and fixture ledgers; no JSON Schema yet; the chain check (`CHAIN.md`) and its handwritten vectors (`vectors/chain`), held to `pkg/spec/record/chaincheck` by `TestSharedChainVectors`; Go remains the only enforcer, and a second, independent checker is planned, not shipped | v1 |
+| `record/v1/` | the run record: the field list in prose (`README.md`) and fixture ledgers; a JSON Schema for the live changes' fields (`live-fields.schema.json`, held to `pkg/spec/record` by `TestLiveSchemaMatchesGo` and to the fixtures and boundaries by `internal/testutil/jsonschema`), none yet for the whole line; the chain check (`CHAIN.md`) and its handwritten vectors (`vectors/chain`), held to `pkg/spec/record/chaincheck` by `TestSharedChainVectors`; Go remains the only enforcer, and a second, independent checker is planned, not shipped | v1 |
+| `receipt/` | the run receipt: `receipt-v1.schema.json`, the JSON `tego receipt --json` prints (receipt_v 1), held to the types of `pkg/spec/receipt` by `TestSchemaMatchesTypes` and `TestCodesAreTheSchemasAndTheTables` and to what the builder writes by `TestWriterMatchesPublishedSchema`; `check-v1.schema.json`, the result of `tego receipt --check` | v1 |
 | `identity/` | run identity: env vars, cgroup path, id formats, exit codes | doc |
 | `reason/` | the reason channel: errno, reason record, file/socket, hook payload | doc |
 | `backend/` | backend capability matrix (`CAPABILITIES.md`); the conformance suite is `test/conformance`, ADR 0017 | doc |
+| `contracts/v1/` | read-only contracts catalog and compiled view: JSON Schema and source relations | v1 |
 | `config/v0/` | the machine config: layers, ceilings, settings; its Go mirror `pkg/spec/config` is checked for key names only | v0 |
 | `policy/` | policy semantics: defaults, precedence, matching, gate predicates | doc |
 | `policy/conformance/` | the filesystem conformance table, embedded as a Go package and run by `test/conformance` | doc |

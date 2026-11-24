@@ -29,6 +29,10 @@ func PrintRuleTable(w io.Writer, rt *RuleTable) error {
 	}
 	p := &printer{w: w}
 	p.header(rt)
+	if rt.BusinessRulesConfigured() {
+		p.line("business  %s", BusinessRulesUnavailable)
+	}
+	p.baseline(rt)
 	p.live(rt)
 	p.harness(rt)
 	p.limits(rt.Limits)
@@ -46,7 +50,7 @@ func PrintRuleTable(w io.Writer, rt *RuleTable) error {
 		p.line("reason    %s", s)
 	}
 	p.names(rt)
-	p.exec(rt.Exec, rt.ExecUnrestricted(), rt.Contract != nil && rt.Contract.Exec != nil)
+	p.exec(rt.Exec, rt.ExecUnrestricted(), rt.DecisionContract() != nil && rt.DecisionContract().Exec != nil)
 	p.execCommands(rt)
 	if rt.ExecutionAssurance() == ExecAssuranceKernel {
 		p.line("exec      assurance kernel (the run needs a decision plane that pins its execs, verified before launch)")
@@ -334,7 +338,7 @@ func (p *printer) exec(rules []ExecRule, unrestricted, hasSection bool) {
 // source, and the exact reading; the entry's notes under it; then the mode with the file that set it.
 func (p *printer) execCommands(rt *RuleTable) {
 	ec := rt.ExecCommands
-	if rt.Contract == nil || rt.Contract.Exec == nil {
+	if rt.DecisionContract() == nil || rt.DecisionContract().Exec == nil {
 		return
 	}
 	n := 0
@@ -352,7 +356,7 @@ func (p *printer) execCommands(rt *RuleTable) {
 			n++
 		}
 	}
-	file, key := rt.Contract.ExecModeSource()
+	file, key := rt.DecisionContract().ExecModeSource()
 	mode := "images restricted"
 	if rt.ExecUnrestricted() {
 		mode, key = "images unrestricted", "deny-list"
@@ -424,7 +428,17 @@ func (p *printer) env(rt *RuleTable) {
 		set = append(set, k+"="+rt.Set[k])
 	}
 	p.line("env       pass=%s deny=%s set=%s", pass, dash(strings.Join(rt.Deny, ",")), dash(strings.Join(set, ",")))
-	p.line("path      %s", dash(rt.PATH))
+	p.line("path      %s", pathRow(rt))
+}
+
+// pathRow is the table's PATH row. A PATH the contract sets is shown as the file has it. One inherited from the
+// caller's environment is named with where it comes from and not printed: the table shows what was asked for, and no
+// value taken from the caller's environment (pkg/spec/identity envtext.go, rule (d)). The JSON form carries the value.
+func pathRow(rt *RuleTable) string {
+	if _, set := rt.Set["PATH"]; set || rt.PATH == "" {
+		return dash(rt.PATH)
+	}
+	return "PATH, inherited from the caller's environment"
 }
 
 // accessLabel names the full write set in one word; anything else lists bits.

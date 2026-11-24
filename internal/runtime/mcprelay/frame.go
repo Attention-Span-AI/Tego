@@ -66,8 +66,10 @@ type Frame struct {
 	// C is a client line and S a server line (shim -> service).
 	C []byte `json:"c,omitempty"`
 	S []byte `json:"s,omitempty"`
-	// Oversize says a line of "c" or "s" over MaxLine was dropped (shim -> service).
+	// Oversize says a line of "c" or "s" over MaxLine was dropped (shim -> service), and Size how many bytes it had
+	// (0 from a shim that did not count).
 	Oversize string `json:"oversize,omitempty"`
+	Size     int64  `json:"size,omitempty"`
 	// Exit is the server's exit status once it ended (shim -> service).
 	Exit *int `json:"exit,omitempty"`
 	// ToServer and ToClient are lines the shim writes, with a newline (service -> shim).
@@ -133,9 +135,19 @@ func (f *FrameWriter) Write(fr Frame) error {
 // read to its end and dropped: oversize is true and line nil. io.EOF with no bytes is the end; a last line with no
 // newline is returned as a line.
 func ReadLine(r *bufio.Reader, limit int) (line []byte, oversize bool, err error) {
+	line, size, err := ReadLineSize(r, limit)
+	return line, size > 0, err
+}
+
+// ReadLineSize is ReadLine that says how long a dropped line was: size is 0 for a line returned whole, else the
+// bytes the line had, newline excluded (the number the limit was compared with, to within the line ending).
+func ReadLineSize(r *bufio.Reader, limit int) (line []byte, size int64, err error) {
 	var buf []byte
+	var oversize bool
+	var total int64
 	for {
 		chunk, err := r.ReadSlice('\n')
+		total += int64(len(chunk))
 		if !oversize {
 			if len(buf)+len(chunk) > limit+2 {
 				oversize, buf = true, nil
@@ -146,18 +158,18 @@ func ReadLine(r *bufio.Reader, limit int) (line []byte, oversize bool, err error
 		switch {
 		case err == nil:
 			if oversize {
-				return nil, true, nil
+				return nil, total - 1, nil
 			}
-			return trimEOL(buf), false, nil
+			return trimEOL(buf), 0, nil
 		case errors.Is(err, bufio.ErrBufferFull):
 			continue
 		case errors.Is(err, io.EOF) && (len(buf) > 0 || oversize):
 			if oversize {
-				return nil, true, nil
+				return nil, total, nil
 			}
-			return trimEOL(buf), false, nil
+			return trimEOL(buf), 0, nil
 		default:
-			return nil, false, err
+			return nil, 0, err
 		}
 	}
 }

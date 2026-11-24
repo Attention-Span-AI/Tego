@@ -4,6 +4,9 @@ package web
 
 import (
 	"crypto/subtle"
+	"io"
+	"net/http"
+	"strings"
 	"time"
 )
 
@@ -30,6 +33,11 @@ type openCode struct {
 // OpenURL is the address `serve --open` gives the browser opener: this server with a fresh one-time code that signs
 // in once, within a minute (openCodeTTL). URL is the reusable link for the person to read.
 func (s *Server) OpenURL() string {
+	return s.origin + "/?o=" + s.newOpenCode()
+}
+
+// newOpenCode mints one code (OpenURL, mintOpenCode).
+func (s *Server) newOpenCode() string {
 	c := randomHex(16)
 	s.openMu.Lock()
 	defer s.openMu.Unlock()
@@ -37,7 +45,30 @@ func (s *Server) OpenURL() string {
 		s.openCodes = s.openCodes[1:]
 	}
 	s.openCodes = append(s.openCodes, openCode{code: c, until: s.cfg.Now().Add(openCodeTTL)})
-	return s.origin + "/?o=" + c
+	return c
+}
+
+// openCodePath is where a browser opener of the person's own, outside this process, gets a one-time code: the
+// Windows dashboard relay's Linux end (docs/adr/0123-dashboard-threat-model.md, "A browser on Windows"), which opens
+// a Windows browser at the code and must not put the reusable token on a Windows command line. It is a POST, so it
+// is reached only after the Host check, the peer check (this uid's socket) and the governed check (a socket made
+// outside every run), none of which it changes; the request must then carry the sign-in token as a bearer
+// credential, which only a process that can read the dashboard's private log has. A browser cannot send it: it
+// carries no Authorization header of its own, and a page's script would need a CORS preflight, which is refused
+// (only GET, HEAD and POST are answered). A request with an Origin, which every browser POST carries, is refused
+// all the same.
+const openCodePath = "/_tego/open-code"
+
+// mintOpenCode answers openCodePath: one fresh code as text/plain, or 401 without the token.
+func (s *Server) mintOpenCode(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok || r.Header.Get("Origin") != "" || subtle.ConstantTimeCompare([]byte(tok), []byte(s.token)) != 1 {
+		http.Error(w, "tego-control serve: an open code needs the dashboard's sign-in token", http.StatusUnauthorized)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = io.WriteString(w, s.newOpenCode()+"\n")
 }
 
 // openCodeShape reports whether code looks like one OpenURL mints (32 lowercase hex), so a used or expired one is

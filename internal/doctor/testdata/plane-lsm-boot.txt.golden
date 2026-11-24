@@ -12,3 +12,5 @@ summary: tier bpflsm
 [capability matrix]
 
 tier: bpflsm
+
+business rules: business rules unavailable: the root-owned trusted worker, exclusive route and durable admission owner are not implemented; this build refuses business-bearing runs on every tier

@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	htmlnode "golang.org/x/net/html"
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/control/rules"
@@ -25,7 +26,7 @@ import (
 )
 
 // withRegistry gives the fixture's rule service a machine config whose user registry is a new folder under the
-// fixture's home, as tego learn --save would write to, and returns that folder.
+// fixture's home, as tego rules learn --save would write to, and returns that folder.
 func (f *rulesFix) withRegistry(t *testing.T) string {
 	t.Helper()
 	rs := f.withSetup(t)
@@ -47,7 +48,7 @@ func fromRunForm(f *rulesFix, id, name, base string, reads bool) url.Values {
 
 // TestMakeAContractFromThisRunSavesWhereLearnSaves (docs/DASHBOARD.md, From a run): the run page's Tighten tab links
 // to New contract from that run, which previews at once, saving to the user registry with refused reads recorded,
-// as tego learn --save does. Create writes <registry>/agents/<name>.yaml through registry.Save, mode 0600, with
+// as tego rules learn --save does. Create writes <registry>/agents/<name>.yaml through registry.Save, mode 0600, with
 // reason: reads: on, and the registry then resolves the name from the run's folder to that file, as tego run <name>
 // typed there does. A second Create of the name is refused and the file kept; with the switch off the draft has no
 // reason: block.
@@ -85,17 +86,37 @@ func TestMakeAContractFromThisRunSavesWhereLearnSaves(t *testing.T) {
 		}
 	}
 	code, body := f.get(t, "/rules/new?mode=run&from="+rulesRunA)
+	if code != http.StatusOK {
+		t.Fatalf("read preview: HTTP %d: %s", code, body)
+	}
+	if _, err := os.Stat(reg); !os.IsNotExist(err) {
+		t.Fatalf("read preview prepared registry: %v", err)
+	}
+	prepared := post(f.s, "/rules/new", builderRenderedSourceForm(t, body), own, "", f.c)
+	code, body = prepared.Code, prepared.Body.String()
 	file := filepath.Join(reg, "agents", "proj.yaml")
 	for _, want := range []string{
 		`name="to" value="registry" checked`, `name="to" value="project">`,
 		`name="reads" value="on" aria-describedby="nw-reads-cost" checked`, "Show refused reads (slower)", agent.ReasonReadCost,
-		"Writes <span class=\"code-i\">" + file + "</span>", "Save proj</button>",
+		"Save proj</button>",
 		"cd " + f.proj + " &amp;&amp; tego run proj</code>", "reads: on",
-		`<input type="hidden" name="to" value="registry"><input type="hidden" name="reads" value="on">`,
 	} {
 		if code != http.StatusOK || !strings.Contains(body, want) {
 			t.Errorf("the preview from the run lacks %q (%d)", want, code)
 		}
+	}
+	exactDestination := false
+	walk(parseHTML(t, "registry preview", body), func(n *htmlnode.Node) {
+		if n.Data == "p" && text(n) == "Writes "+file {
+			exactDestination = true
+		}
+	})
+	if !exactDestination {
+		t.Fatal("preview lost the complete destination text")
+	}
+	rendered := builderRenderedSaveForm(t, body)
+	if rendered.Get("to") != "registry" || rendered.Get("reads") != "on" {
+		t.Fatal("Save lost registry destination or read recording")
 	}
 	m := newBase.FindStringSubmatch(body)
 	if m == nil {
@@ -110,7 +131,7 @@ func TestMakeAContractFromThisRunSavesWhereLearnSaves(t *testing.T) {
 		t.Fatalf("Create went to %q: %d %s", loc, w.Code, w.Body)
 	}
 	page := follow(t, f.s, f.c, w)
-	for _, want := range []string{"proj · contract saved", "Saved proj: " + file, "cd " + f.proj + " &amp;&amp; tego run proj</code>"} {
+	for _, want := range []string{"proj · contract saved", "Saved proj.", file, "cd " + f.proj + " &amp;&amp; tego run proj</code>"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the saved page lacks %q", want)
 		}
@@ -126,9 +147,9 @@ func TestMakeAContractFromThisRunSavesWhereLearnSaves(t *testing.T) {
 		t.Fatalf("tego run proj from %s would not find it: %+v, %v", f.proj, e, err)
 	}
 
-	again := follow(t, f.s, f.c, post(f.s, "/rules/new", fromRunForm(f, rulesRunA, "proj", m[1], true), own, "", f.c))
-	if !strings.Contains(again, html.EscapeString(`The agent name "proj" is already the contract `+file+`: give another name.`)) {
-		t.Errorf("a second save of the name:\n%s", again)
+	again := post(f.s, "/rules/new", fromRunForm(f, rulesRunA, "proj", m[1], true), own, "", f.c)
+	if again.Code != http.StatusConflict || !strings.Contains(again.Body.String(), rules.ErrReviewGone.Error()) {
+		t.Errorf("a second save reused the review: %d %s", again.Code, again.Body.String())
 	}
 	if b, _ := os.ReadFile(file); string(b) != string(saved) {
 		t.Error("the saved file was written over")
@@ -174,11 +195,11 @@ func TestSaveFromARunRefusesWhatLearnSaveRefuses(t *testing.T) {
 	if b := preview("bot"); !strings.Contains(b, "The registry cannot say whether the agent name") || strings.Contains(b, `name="base"`) {
 		t.Errorf("an agents/ link out of the registry is not refused")
 	}
-	// Create straight from a form (no preview) is checked again and writes nothing.
+	// Create without a retained review refuses before publication and writes nothing.
 	for _, name := range []string{"../evil", "tool", "bot", ".hidden"} {
 		w := post(f.s, "/rules/new", fromRunForm(f, rulesRunA, name, strings.Repeat("0", 64), true), own, "", f.c)
-		if loc := w.Header().Get("Location"); !strings.HasPrefix(loc, "/rules/new?") || strings.Contains(loc, "created=") {
-			t.Errorf("%q: Create went to %q", name, loc)
+		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), rules.ErrReviewGone.Error()) || w.Header().Get("Location") != "" {
+			t.Errorf("%q: Create without review: HTTP %d, location %q", name, w.Code, w.Header().Get("Location"))
 		}
 	}
 	if ents, _ := os.ReadDir(outside); len(ents) != 0 {
@@ -196,6 +217,8 @@ func TestSaveFromARunTakesOnlyTheDashboardsOwnPost(t *testing.T) {
 	f := newRulesFix(t)
 	reg := f.withRegistry(t)
 	_, body := f.get(t, "/rules/new?mode=run&from="+rulesRunA)
+	prepared := post(f.s, "/rules/new", builderRenderedSourceForm(t, body), own, "", f.c)
+	body = prepared.Body.String()
 	m := newBase.FindStringSubmatch(body)
 	if m == nil {
 		t.Fatal("no Create form")
@@ -286,13 +309,15 @@ func TestAFailedSaveSaysNotSavedOnce(t *testing.T) {
 	}
 	cause := unwritableFolder(t, agents)
 	_, body := f.get(t, "/rules/new?mode=run&from="+rulesRunA)
+	prepared := post(f.s, "/rules/new", builderRenderedSourceForm(t, body), own, "", f.c)
+	body = prepared.Body.String()
 	m := newBase.FindStringSubmatch(body)
 	if m == nil {
 		t.Fatalf("no Save form:\n%s", body)
 	}
 	page := follow(t, f.s, f.c, post(f.s, "/rules/new", fromRunForm(f, rulesRunA, "proj", m[1], true), own, "", f.c))
 	file := filepath.Join(agents, "proj.yaml")
-	if want := html.EscapeString("Not saved: Tego could not create " + file + ": "); !strings.Contains(page, want) || !strings.Contains(page, cause) {
+	if want := html.EscapeString("Not saved: Tego could not write " + file + ": "); !strings.Contains(page, want) || !strings.Contains(page, cause) {
 		t.Errorf("the page lacks %q and the cause %q:\n%s", want, cause, page)
 	}
 	for _, stacked := range []string{"Not created", "refused: ", "Not saved: Not saved"} {
@@ -323,6 +348,7 @@ func unwritableFolder(t *testing.T, dir string) string {
 		}
 		t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
 	} else {
+		// rootskips:ignore as root this makes the folder immutable and skips only where the file system keeps no such flag, which the root run's tmp does; not a skip for want of root
 		setFlags := func(set bool) error {
 			fd, err := unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 			if err != nil {
@@ -364,7 +390,7 @@ func unwritableFolder(t *testing.T, dir string) string {
 }
 
 // TestPresetsDraftTakesTheRefusedReadsSwitch (docs/DASHBOARD.md, From a run): New contract from presets offers "Show refused reads
-// (slower)" too, off by default as tego init writes no reason: block. Ticked, the draft has reason: {reads: on} and
+// (slower)" too, off by default as tego rules create writes no reason: block. Ticked, the draft has reason: {reads: on} and
 // Create writes it; the Create form carries the switch back; unticked, there is no reason: block. The switch's
 // accessible name is its label alone and its cost the description, so a screen reader says each once.
 func TestPresetsDraftTakesTheRefusedReadsSwitch(t *testing.T) {
@@ -396,8 +422,7 @@ func TestPresetsDraftTakesTheRefusedReadsSwitch(t *testing.T) {
 	if m == nil {
 		t.Fatalf("no Create form:\n%s", on)
 	}
-	form := url.Values{"csrf": {f.s.csrf}, "dir": {dir}, "name": {"reads-proj"}, "preset": {"no-secrets"}, "cmd": {"sh"}, "mode": {"presets"},
-		"reads": {"on"}, "base": {m[1]}}
+	form := builderRenderedSaveForm(t, on)
 	if loc := post(f.s, "/rules/new", form, own, "", f.c).Header().Get("Location"); !strings.HasPrefix(loc, "/rules/new?created=") {
 		t.Fatalf("Create went to %q", loc)
 	}

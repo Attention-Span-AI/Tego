@@ -50,7 +50,16 @@ connect to.
 - **Read the record:** `events`, `drift`, `measure`, `status`, `gc`.
 - **Supervise other programs:** `watch`, `adopt`, `agents`. `adopt` and `agents` need root: run them with sudo.
 - **Tools for agents:** `mcp`, `route`, `dns`.
-- **About Tego:** `setup`, `serve`, `version`, `licenses`.
+- **About Tego:** `setup`, `serve`, `version`, `licenses`, `uninstall`.
+
+## Remove Tego
+
+| Command | What it does |
+| --- | --- |
+| `tego uninstall` | Lists what it will remove and asks once. Removes the units `tego start` and `tego dashboard` made (`tego-dashboard`, the clean-up timer), the installed `tego` and `tego-control`, the line `tego start` added to `~/.bashrc`, and the dashboard's own files. It keeps your records (`~/.tego`) and contracts (`~/.config/tego`) unless you answer yes to a second question, and your own `tego-agent@` services unless you answer yes to a third. Both default to no. |
+| `tego uninstall --yes` | The same without the first question, for scripts. It still keeps your records and agent services; `--delete-records` and `--stop-agents` answer the other two questions. |
+
+A system-wide install (files owned by root, `/etc/tego`, system units) is not removed by this command: it prints the exact `sudo` lines instead. On a Mac, `tego uninstall` runs on the Mac and also asks about Tego's VM. On Windows it removes Tego's Linux and everything in it, records included. See [Remove Tego](../../README.md#remove-tego).
 
 ## Older names
 

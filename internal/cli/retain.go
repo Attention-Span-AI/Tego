@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -27,21 +26,22 @@ import (
 // never run one together. It is not a run id, so no listing of the root reads it as a run.
 const retentionStamp = ".gc-stamp"
 
-// retentionBudget bounds a start's retention pass: the pass stops between two runs once it is spent, and the next
-// pass, one gc_interval later or the next `tego gc`, goes on from the oldest run left. A run's own work is bounded
-// on its own (a lost run's kill waits at most five seconds, tegoruntime.Sweep). A variable so a test can spend it.
+// retentionBudget is a cooperative budget for a start's retention pass, checked between runs and journal pruning
+// operations. An operation in progress is not interrupted: a blocked filesystem call can delay return indefinitely.
+// The next pass, one gc_interval later or the next `tego gc`, goes on from the oldest run left. A variable so a test
+// can spend it.
 var retentionBudget = 2 * time.Second
 
 // retainBeforeRun is the automatic retention: when the machine's gc_interval is set and the last pass began at
-// least that long ago, a `tego run` start applies `tego gc`'s pass with the machine's retention, within
+// least that long ago, a `tego run` start applies `tego gc`'s pass with the machine's retention and the cooperative
 // retentionBudget. It is gc's pass, so what may be removed is gc's rule: an ended or empty run older than retention;
 // never a run whose lock is held (a live run however old), and a lost run is ended orphaned first. chain.log is
 // never rewritten: a removed run's line stays, so the runs left verify as before and `events <removed> --verify`
 // reports the anchored ledger missing. The rule-change journal is pruned with the same retention in what is left of
 // the budget (pruneRuleChanges, which ds, the machine config's diagnostics, may stop), by a root start (`sudo tego
-// run`, which tiers 2 and 3 need) as the invoking user whose journal it is; a journal it leaves unpruned, or pruned
-// but for the rules files it could not look at, is in tego's own log. It never fails the run that is starting. Its
-// lines name cmd, the command starting the run.
+// run`, which tiers 2 and 3 need) as the invoking user whose journal it is. A prune failure, or rules files it could
+// not look at, is in tego's own log. With no passwd home, E9 keeps the journal silently. It never fails the run
+// that is starting. Its lines name cmd, the command starting the run.
 func retainBeforeRun(ctx context.Context, m *config.Machine, cmd string, ds []config.Diagnostic, stderr io.Writer) {
 	if m.GCInterval.Value <= 0 {
 		return
@@ -72,14 +72,15 @@ func retainBeforeRun(ctx context.Context, m *config.Machine, cmd string, ds []co
 		message(stderr, "", 0, 0, fmt.Sprintf("%s: retention removed %d ended run(s) older than %s, ended %d orphaned",
 			cmd, res.Deleted, config.FormatDuration(m.Retention.Value), res.Orphaned), codeSweep)
 	}
-	// Every journal the pass leaves unpruned, or prunes in part, is logged: a cause that recurs (a rules file on a stale
-	// mount, a budget the runs spend) otherwise stops the prune on every pass with no word of it.
-	pruned, perr := pruneRuleChanges(pass, root, m.Retention.Value, false, false, nil, ds)
+	// Prune failures are logged: a recurring cause (a rules file on a stale mount, a budget the
+	// runs spend) otherwise stops each pass without explanation. E9's missing-home skip is silent.
+	pruned, perr := pruneRuleChanges(pass, m, root, m.Retention.Value, false, false, nil, ds)
 	switch {
 	case perr == nil:
 	case errors.Is(perr, context.DeadlineExceeded):
-		logOwn(fmt.Sprintf("retention: rule-change journal: not pruned, the pass's %s budget ran out; the next pass "+
-			"prunes it", retentionBudget))
+		// The journal rewrite may already have committed, leaving only blob or lock cleanup.
+		logOwn(fmt.Sprintf("retention: rule-change journal: pruning incomplete (%v), the pass's %s budget ran out; "+
+			"the next pass continues", perr, retentionBudget))
 	default:
 		logOwn("retention: rule-change journal: " + perr.Error())
 	}
@@ -100,9 +101,17 @@ var errRetentionUnknown = errors.New("not pruned")
 // count as gone already. When keep is the machine's own (explicit false) and the machine config load skipped a layer
 // (ds), nothing is pruned (errRetentionUnknown): the retention that layer may set is not known, and history removed on
 // a guess does not come back; a --keep given on the command line is known. A root pass (`sudo tego run`, `sudo tego
-// gc`) prunes the invoking user's journal as that user (journalOwner).
-func pruneRuleChanges(ctx context.Context, root string, keep time.Duration, explicit, dryRun bool, gone []string,
+// gc`) prunes the invoking user's journal as that user (journalOwner). A missing passwd home
+// keeps the base loader's no-prune behavior unless --keep is explicit, without E9's old warning.
+func pruneRuleChanges(ctx context.Context, m *config.Machine, root string, keep time.Duration, explicit, dryRun bool, gone []string,
 	ds []config.Diagnostic) (rulefile.Pruned, error) {
+	if !explicit && m.Home == "" {
+		for _, source := range m.LayerSources() {
+			if source.Layer == config.LayerUser && source.State == config.LayerUnselected {
+				return rulefile.Pruned{}, nil
+			}
+		}
+	}
 	if d, ok := skippedLayer(ds); ok && !explicit {
 		what := "a machine config layer"
 		if d.File != "" {
@@ -176,13 +185,11 @@ func journalOwner(root string) (sys.TaskCreds, bool, error) {
 	return sys.TaskCreds{EUID: st.Uid, EGID: g, FSUID: st.Uid, FSGID: g, Groups: []uint32{g}}, true, nil
 }
 
-// skippedLayer is the first of ds that says the load left a machine config layer out: one TrustWarn skipped as
-// untrusted, invalid or missing, whose fix ends "The layer was skipped." (pkg/spec/config skipOrAbort and demote, as
-// serve's envSkipped reads it), or the per-user layer of a uid the passwd database does not name (E9).
+// skippedLayer identifies a degraded config observation. A failed layer can name retention,
+// ledger or registry settings, so a destructive consumer must do nothing instead of using defaults.
 func skippedLayer(ds []config.Diagnostic) (config.Diagnostic, bool) {
 	for _, d := range ds {
-		if strings.Contains(d.Fix, "The layer was skipped") ||
-			d.Code == config.CodeIgnored && strings.HasSuffix(d.Message, "config layer skipped") {
+		if d.Code == config.CodeBaselineUnknown {
 			return d, true
 		}
 	}

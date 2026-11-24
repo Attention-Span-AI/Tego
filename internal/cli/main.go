@@ -42,6 +42,15 @@ type Command struct {
 	// Supervises is a command whose process keeps a run going for as long as it lives (run, watch, adopt), so a
 	// write to a closed pipe must not end it (holdBrokenPipe).
 	Supervises bool
+	// HoldsSecrets is a command whose process takes a secret into its memory: the environment a run passes on, the
+	// saved logins `run` adds to it, the vault's private key and the values the forwarder unseals, a value `vault`
+	// reads or a token `start` takes. runCommand makes the process undumpable before it reads a flag (holdSecrets),
+	// and refuses to run the command when it cannot. A command that does not set it must hold no secret. A command
+	// a broker identifies (`tego ask`, `approve` and `deny`) holds none, so it stays dumpable by choice; it would not be
+	// refused for being undumpable, since the broker admits a peer whose cgroup namespace /proc hides when the kernel's own
+	// files show that the dumpable flag is the reason, and judges it on everything else (peer.Identify, ADR 0100 (7),
+	// amended 2026-11-22).
+	HoldsSecrets bool
 	// Raw, set instead of Run and Flags, is a noun tego hands to tego-control (handoff.go): it gets every argument
 	// after the noun verbatim, flags included, and tego parses none of them.
 	Raw func(ctx context.Context, args []string, stdout, stderr io.Writer) int
@@ -120,8 +129,16 @@ func dispatch(ctx context.Context, argv []string, stdout, stderr io.Writer, cmds
 		writeHelp(stderr, cmds, false)
 		return identity.ExitUsage, false // R25: usage error
 	}
+	if argv[1] == scopeVerb {
+		return scopedMain(ctx, stdout, stderr), true
+	}
+	if _, ok := ctx.Value(scopeKey{}).(scopeInvocation); !ok {
+		ctx = context.WithValue(ctx, scopeKey{}, scopeInvocation{argv: argv})
+	}
 	name := argv[1]
 	switch name {
+	case "--version", "-V":
+		name = "version"
 	case "help":
 		return runHelp(ctx, argv[2:], stdout, stderr, cmds), false
 	case "-h", "--help":
@@ -141,6 +158,14 @@ func dispatch(ctx context.Context, argv []string, stdout, stderr io.Writer, cmds
 func runCommand(ctx context.Context, display string, cmd Command, args []string, stdout, stderr io.Writer) (code int, passthrough bool) {
 	if cmd.Raw != nil {
 		return cmd.Raw(ctx, args, stdout, stderr), false
+	}
+	if cmd.HoldsSecrets {
+		if cmd.Supervises && refuseNestedRun(display, stderr) {
+			return identity.ExitError, false
+		}
+		if code, ok := holdSecrets(display, stderr); !ok {
+			return code, false
+		}
 	}
 	fs := flag.NewFlagSet("tego "+display, flag.ContinueOnError)
 	fs.SetOutput(stderr)

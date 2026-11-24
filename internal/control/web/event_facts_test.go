@@ -451,9 +451,8 @@ func TestLinePageRenderBudget(t *testing.T) {
 	page := func(when string) {
 		t.Helper()
 		body := w.Body.String()
-		_, h1, _ := strings.Cut(body, "<h1>")
-		h1, _, _ = strings.Cut(h1, "</h1>")
-		if w.Code != http.StatusOK || !strings.HasPrefix(h1, "Line #6000:") || !strings.Contains(body, "/p/f298.txt") {
+		h1, _ := headline(t, body)
+		if w.Code != http.StatusOK || !strings.Contains(body, `data-event-seq="6000"`) || !strings.Contains(body, "/p/f298.txt") {
 			t.Fatalf("%s render of %s: status %d, heading %q, want 200, line #6000 and its open of /p/f298.txt", when, p,
 				w.Code, h1)
 		}

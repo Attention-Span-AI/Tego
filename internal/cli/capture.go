@@ -114,8 +114,8 @@ func warnForwarderEnv(w io.Writer, rt *agent.RuleTable, compiled agent.CaptureMo
 // The source is built in Kernel mode and opens nothing here. Nothing of the build is pinned until the tier-2
 // backend has prepared the run, so the run itself hands the source the build its handle pinned and the
 // kernel record's exec, open and exit stream (source.KernelFollower), and the source's Start loads the
-// capture object under those pins. A source that cannot load then is one mechanism-unavailable gap, never a
-// failed run.
+// capture object under those pins. A source that cannot load reports mechanism-unavailable; the runtime
+// refuses explicit uprobe capture with recording enabled and budgets that would be unmetered.
 func uprobeFactory(rt *agent.RuleTable, m *config.Machine) capture.Factory {
 	if !bpf.Available() {
 		return nil
@@ -174,6 +174,9 @@ func forwarderFactory(rt *agent.RuleTable, m *config.Machine) capture.Factory {
 	}
 	return func() (capture.Source, error) {
 		return forwarder.NewManager(models, forwarder.Options{
+			// ADR 0125: only an Adjustable run's live routes may move an endpoint off its own backend; a Locked run, which is
+			// the one that says nothing, keeps every endpoint on it whatever the route overlay holds.
+			Adjustable:     rt.Adjustable(),
 			Credentials:    creds,
 			HTTPPolicy:     rt.HTTP,
 			Proxy:          rt.Proxy,

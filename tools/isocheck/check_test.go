@@ -178,6 +178,78 @@ func TestSH1AShellThatAssignsTegoConfigSetsTheIsolation(t *testing.T) {
 	}
 }
 
+// TestTheCIActionExemptsOnlyItsReviewedFiles: the CI receipt action's reviewed entry scripts and the one stub-only
+// TEGO_CONFIG line of security-tests.py are exempt; a new script under action/test/ or action/scripts/, and any other
+// unsafe line of security-tests.py, is still read by the shell rules.
+func TestTheCIActionExemptsOnlyItsReviewedFiles(t *testing.T) {
+	const unsafe = "export TEGO_CONFIG=\"$w/config.yaml\"\n"
+	cases := map[string]struct {
+		files map[string]string
+		want  []string
+	}{
+		"reviewed entry script": {map[string]string{"action/scripts/agent.sh": unsafe}, nil},
+		"new action script":     {map[string]string{"action/scripts/new.sh": unsafe}, []string{"action/scripts/new.sh:SH-1", "action/scripts/new.sh:SH-1"}},
+		"new test script":       {map[string]string{"action/test/new-tests.sh": unsafe}, []string{"action/test/new-tests.sh:SH-1", "action/test/new-tests.sh:SH-1"}},
+		"the stub-only line": {map[string]string{"action/test/security-tests.py": reviewedActionConfig},
+			nil},
+		"another line of that file": {map[string]string{"action/test/security-tests.py": "env = dict(os.environ, TEGO_CONFIG=str(cfg))\n"},
+			[]string{"action/test/security-tests.py:SH-1", "action/test/security-tests.py:SH-1"}},
+	}
+	for name, c := range cases {
+		if got := rules(t, tree(t, c.files)); !slices.Equal(got, c.want) {
+			t.Errorf("%s: got %v, want %v", name, got, c.want)
+		}
+	}
+}
+
+// reviewedActionConfig is the multiline assignment in test_collector_receives_private_ledger_configuration.
+// Keep the reviewed physical line literal here so changes to the exemption cannot broaden these fixtures.
+const reviewedActionConfig = `        env = dict(os.environ, HOME=str(self.d / 'original-home'), RUNNER_TEMP=str(self.d / 'runtime'),
+                   GITHUB_RUN_ID='42', GITHUB_RUN_ATTEMPT='1', TEGO_CONFIG='caller-config-must-not-win',
+                   GITHUB_WORKSPACE=str(self.caller_workspace()), CAPTURE=str(self.d / 'capture'))
+`
+
+func TestTheCIActionExemptsOnlyTheExactReviewedLine(t *testing.T) {
+	const reviewedFile = "action/test/security-tests.py"
+	const unsafe = "env = dict(os.environ, TEGO_CONFIG=str(cfg))\n"
+	cases := map[string]struct {
+		file string
+		body string
+		line int
+	}{
+		"exact reviewed assignment":              {reviewedFile, reviewedActionConfig, 0},
+		"unsafe assignment after reviewed line":  {reviewedFile, reviewedActionConfig + "\n" + unsafe, 5},
+		"unsafe assignment before reviewed line": {reviewedFile, unsafe + reviewedActionConfig, 1},
+		"modified line containing the marker": {reviewedFile,
+			strings.Replace(reviewedActionConfig, "GITHUB_RUN_ID='42'", "GITHUB_RUN_ID='99'", 1), 2},
+		"unsafe line containing the marker in a comment": {reviewedFile,
+			strings.TrimSuffix(unsafe, "\n") + " # TEGO_CONFIG='caller-config-must-not-win'\n", 1},
+		"same exact text in another file": {"action/test/other-tests.py", reviewedActionConfig, 2},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			got, err := check(tree(t, map[string]string{c.file: c.body}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.line == 0 {
+				if len(got) != 0 {
+					t.Fatalf("reviewed assignment flagged: %v", got)
+				}
+				return
+			}
+			if len(got) != 2 {
+				t.Fatalf("got %v, want two SH-1 findings at physical line %d", got, c.line)
+			}
+			for _, f := range got {
+				if f.File != c.file || f.Rule != "SH-1" || f.Line != c.line {
+					t.Errorf("got %v, want %s:%d: SH-1", f, c.file, c.line)
+				}
+			}
+		})
+	}
+}
+
 // TestSH2APseudoTerminalNeedsAHistoryFile: SH-2 and SH-3, the two ways a shell on a terminal writes the
 // operator's ~/.bash_history.
 func TestSH2APseudoTerminalNeedsAHistoryFile(t *testing.T) {

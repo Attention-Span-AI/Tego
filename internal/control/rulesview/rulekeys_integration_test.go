@@ -236,7 +236,13 @@ func TestIntegrationRuleKeysAreARunsKeys(t *testing.T) {
 		}
 	}
 	helpers := map[string]bool{} // the names of git's helper images in the table the view was built from
-	for _, r := range iv.Contract.Compiled.Exec {
+	// Complete policy internals stay in the helper-local core. Compare its rendered
+	// table to the process reply before inspecting its helper-image rows.
+	local := inForce(ctx, w.ledger, runID, o)
+	if local.Contract.Compiled == nil || local.Contract.Table != iv.Contract.Table {
+		t.Fatal("rendered reply differs from the helper-local compile")
+	}
+	for _, r := range local.Contract.Compiled.Exec {
 		for _, s := range strings.Split(r.Source, ",") {
 			if s == agent.ExecSourceHelper+":git" {
 				helpers[r.RuleName()] = true

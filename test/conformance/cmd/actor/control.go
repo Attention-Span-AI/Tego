@@ -41,7 +41,7 @@ const (
 )
 
 // controlOp are the ops performControl performs.
-var controlOp = map[string]bool{"ptrace-attach": true, "ptrace-traceme": true, "keyctl": true, "add-key": true, "request-key": true, "bpf": true}
+var controlOp = map[string]bool{"ptrace-attach": true, "ptrace-traceme": true, "keyctl": true, "add-key": true, "request-key": true, "bpf": true, "recv-fd": true}
 
 // performControl performs a process or control op; its value is the pid its hook names, "" for the others.
 func performControl(a Action) (string, error) {
@@ -72,8 +72,40 @@ func performControl(a Action) (string, error) {
 		return "", nil
 	case "bpf":
 		return "", bpfMapCreate()
+	case "recv-fd":
+		return "", recvFD()
 	}
 	return "", fmt.Errorf("unknown op %q", a.Op)
+}
+
+// recvFD is the descriptor-import guard's probe (ADR 0128): a socketpair of its own, one byte sent with one of its own
+// descriptors in SCM_RIGHTS, and the receive with a control buffer, recvmsg(2), which an unguarded kernel answers by
+// installing the descriptor. Its error is the receive's (EACCES where the plane refuses); a descriptor that did arrive
+// is closed. A failure to set the pair up or to send is reported with its own text, never as the receive's errno.
+func recvFD() error {
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return fmt.Errorf("recv-fd: socketpair: %w", err)
+	}
+	defer func() { _ = unix.Close(fds[0]); _ = unix.Close(fds[1]) }()
+	if err := unix.Sendmsg(fds[0], []byte{1}, unix.UnixRights(fds[0]), nil, 0); err != nil {
+		return fmt.Errorf("recv-fd: sendmsg: %w", err)
+	}
+	buf, oob := make([]byte, 1), make([]byte, unix.CmsgSpace(4))
+	_, oobn, _, _, err := unix.Recvmsg(fds[1], buf, oob, 0)
+	if err != nil {
+		return err
+	}
+	if msgs, perr := unix.ParseSocketControlMessage(oob[:oobn]); perr == nil {
+		for i := range msgs {
+			if got, rerr := unix.ParseUnixRights(&msgs[i]); rerr == nil {
+				for _, fd := range got {
+					_ = unix.Close(fd)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // ptraceAttach attaches to target (a child it starts, or a pid), waits for the stop and detaches. The tracer is the

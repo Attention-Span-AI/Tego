@@ -1,0 +1,1176 @@
+{
+  "distribution": "ubuntu-25.10-host",
+  "entries": [
+    {
+      "path": "etc/systemd/user/dbus-org.bluez.obex.service",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/obex.service"
+    },
+    {
+      "path": "etc/systemd/user/default.target.wants",
+      "kind": "directory"
+    },
+    {
+      "path": "etc/systemd/user/default.target.wants/filter-chain.service",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/filter-chain.service"
+    },
+    {
+      "path": "etc/systemd/user/default.target.wants/mpris-proxy.service",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/mpris-proxy.service"
+    },
+    {
+      "path": "etc/systemd/user/default.target.wants/openrazer-daemon.service",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/openrazer-daemon.service"
+    },
+    {
+      "path": "etc/systemd/user/default.target.wants/pipewire-pulse.service",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/pipewire-pulse.service"
+    },
+    {
+      "path": "etc/systemd/user/default.target.wants/pipewire.service",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/pipewire.service"
+    },
+    {
+      "path": "etc/systemd/user/default.target.wants/snap.prompting-client.daemon.service",
+      "kind": "symlink",
+      "target": "/etc/systemd/user/snap.prompting-client.daemon.service"
+    },
+    {
+      "path": "etc/systemd/user/default.target.wants/snap.snapd-desktop-integration.snapd-desktop-integration.service",
+      "kind": "symlink",
+      "target": "/etc/systemd/user/snap.snapd-desktop-integration.snapd-desktop-integration.service"
+    },
+    {
+      "path": "etc/systemd/user/default.target.wants/ubuntu-report.path",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/ubuntu-report.path"
+    },
+    {
+      "path": "etc/systemd/user/gnome-session.target.wants",
+      "kind": "directory"
+    },
+    {
+      "path": "etc/systemd/user/gnome-session.target.wants/localsearch-3.service",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/localsearch-3.service"
+    },
+    {
+      "path": "etc/systemd/user/gnome-session.target.wants/org.freedesktop.IBus.session.GNOME.service",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/org.freedesktop.IBus.session.GNOME.service"
+    },
+    {
+      "path": "etc/systemd/user/graphical-session-pre.target.wants",
+      "kind": "directory"
+    },
+    {
+      "path": "etc/systemd/user/graphical-session-pre.target.wants/gcr-ssh-agent.service",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/gcr-ssh-agent.service"
+    },
+    {
+      "path": "etc/systemd/user/graphical-session-pre.target.wants/gnome-keyring-daemon.service",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/gnome-keyring-daemon.service"
+    },
+    {
+      "path": "etc/systemd/user/graphical-session-pre.target.wants/session-migration.service",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/session-migration.service"
+    },
+    {
+      "path": "etc/systemd/user/graphical-session-pre.target.wants/xdg-desktop-portal-rewrite-launchers.service",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/xdg-desktop-portal-rewrite-launchers.service"
+    },
+    {
+      "path": "etc/systemd/user/graphical-session-pre.target.wants/xdg-user-dirs.service",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/xdg-user-dirs.service"
+    },
+    {
+      "path": "etc/systemd/user/pipewire.service.wants",
+      "kind": "directory"
+    },
+    {
+      "path": "etc/systemd/user/pipewire.service.wants/wireplumber.service",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/wireplumber.service"
+    },
+    {
+      "path": "etc/systemd/user/snap.firmware-updater.firmware-notifier.service",
+      "kind": "file",
+      "sha256": "1e69e6e05a9166462d0865e0342f99f59f02bf8ab4351857f9c7b6665ccf7c7c"
+    },
+    {
+      "path": "etc/systemd/user/snap.firmware-updater.firmware-notifier.timer",
+      "kind": "file",
+      "sha256": "640be96a7a4cc06f86abb8a0b05e1c3b748fadc462ced2fcd4f22fe33d628db5"
+    },
+    {
+      "path": "etc/systemd/user/snap.firmware-updater.firmware-updater-app.service",
+      "kind": "file",
+      "sha256": "0014e23451f26504765309e7a9785e0684bfc13f8bd2e44e59712db40c02abe7"
+    },
+    {
+      "path": "etc/systemd/user/snap.prompting-client.daemon.service",
+      "kind": "file",
+      "sha256": "93d4ffc91f6bf76dca535cf560a4e42e756f1f13ef327c2e7ba0265e0591a61f"
+    },
+    {
+      "path": "etc/systemd/user/snap.snap-store.packagekit-session-installer.service",
+      "kind": "file",
+      "sha256": "83734389f8e07cfc77f0bbfe01c684abe3bd8401b6538cf352653ada7a236d48"
+    },
+    {
+      "path": "etc/systemd/user/snap.snapd-desktop-integration.snapd-desktop-integration.service",
+      "kind": "file",
+      "sha256": "c3db82e6c5bd2b6a0d0bb0b86e3de42f6023081f8c517dda02e5f1d6d2111e5c"
+    },
+    {
+      "path": "etc/systemd/user/sockets.target.wants",
+      "kind": "directory"
+    },
+    {
+      "path": "etc/systemd/user/sockets.target.wants/dirmngr.socket",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/dirmngr.socket"
+    },
+    {
+      "path": "etc/systemd/user/sockets.target.wants/gcr-ssh-agent.socket",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/gcr-ssh-agent.socket"
+    },
+    {
+      "path": "etc/systemd/user/sockets.target.wants/gnome-keyring-daemon.socket",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/gnome-keyring-daemon.socket"
+    },
+    {
+      "path": "etc/systemd/user/sockets.target.wants/gpg-agent-browser.socket",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/gpg-agent-browser.socket"
+    },
+    {
+      "path": "etc/systemd/user/sockets.target.wants/gpg-agent-extra.socket",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/gpg-agent-extra.socket"
+    },
+    {
+      "path": "etc/systemd/user/sockets.target.wants/gpg-agent-ssh.socket",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/gpg-agent-ssh.socket"
+    },
+    {
+      "path": "etc/systemd/user/sockets.target.wants/gpg-agent.socket",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/gpg-agent.socket"
+    },
+    {
+      "path": "etc/systemd/user/sockets.target.wants/keyboxd.socket",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/keyboxd.socket"
+    },
+    {
+      "path": "etc/systemd/user/sockets.target.wants/pipewire-pulse.socket",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/pipewire-pulse.socket"
+    },
+    {
+      "path": "etc/systemd/user/sockets.target.wants/pipewire.socket",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/pipewire.socket"
+    },
+    {
+      "path": "etc/systemd/user/sockets.target.wants/pk-debconf-helper.socket",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/pk-debconf-helper.socket"
+    },
+    {
+      "path": "etc/systemd/user/sockets.target.wants/speech-dispatcher.socket",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/speech-dispatcher.socket"
+    },
+    {
+      "path": "etc/systemd/user/sockets.target.wants/ssh-agent.socket",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/ssh-agent.socket"
+    },
+    {
+      "path": "etc/systemd/user/timers.target.wants",
+      "kind": "directory"
+    },
+    {
+      "path": "etc/systemd/user/timers.target.wants/launchpadlib-cache-clean.timer",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/launchpadlib-cache-clean.timer"
+    },
+    {
+      "path": "etc/systemd/user/timers.target.wants/snap.firmware-updater.firmware-notifier.timer",
+      "kind": "symlink",
+      "target": "/etc/systemd/user/snap.firmware-updater.firmware-notifier.timer"
+    },
+    {
+      "path": "etc/systemd/user/timers.target.wants/ubuntu-insights-collect.timer",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/ubuntu-insights-collect.timer"
+    },
+    {
+      "path": "etc/systemd/user/timers.target.wants/ubuntu-insights-upload.timer",
+      "kind": "symlink",
+      "target": "/usr/lib/systemd/user/ubuntu-insights-upload.timer"
+    },
+    {
+      "path": "usr/lib/systemd/user/app-flatpak-.scope.d",
+      "kind": "directory"
+    },
+    {
+      "path": "usr/lib/systemd/user/app-flatpak-.scope.d/override.conf",
+      "kind": "file",
+      "sha256": "01ac96e59745030068d8b4af951258604f4a8ccc9cb6c7920e32742964072b39"
+    },
+    {
+      "path": "usr/lib/systemd/user/app-gnome-.scope.d",
+      "kind": "directory"
+    },
+    {
+      "path": "usr/lib/systemd/user/app-gnome-.scope.d/override.conf",
+      "kind": "file",
+      "sha256": "01ac96e59745030068d8b4af951258604f4a8ccc9cb6c7920e32742964072b39"
+    },
+    {
+      "path": "usr/lib/systemd/user/app.slice",
+      "kind": "file",
+      "sha256": "2f692ece5b1dd36e8a09cb2cca022ce68cca75bda22a1503c2e98ebd6584001e"
+    },
+    {
+      "path": "usr/lib/systemd/user/at-spi-dbus-bus.service",
+      "kind": "file",
+      "sha256": "23ebce4385cf58411c02ed79a2b612ef5985651c769835a2ed9e2b083c18f8c7"
+    },
+    {
+      "path": "usr/lib/systemd/user/background.slice",
+      "kind": "file",
+      "sha256": "64352a7d8e99827974ac7c51fb1672cfa00b90a0498e49bcf8db212efa2e861e"
+    },
+    {
+      "path": "usr/lib/systemd/user/basic.target",
+      "kind": "file",
+      "sha256": "0e24f3f2aba65c96ed47f17b50f8a338d840fc5314dc2f8f4d931ed2423bbdef"
+    },
+    {
+      "path": "usr/lib/systemd/user/bluetooth.target",
+      "kind": "file",
+      "sha256": "89d50249910596fc791debb2b07a21d2232a8d58c95ece6f9262a136fd9ad56e"
+    },
+    {
+      "path": "usr/lib/systemd/user/capsule@.target",
+      "kind": "file",
+      "sha256": "a5ce494dac50ced69d1f0f6f0cf6bf29855040f43e344790cc08d82bb86738f7"
+    },
+    {
+      "path": "usr/lib/systemd/user/colord-session.service",
+      "kind": "file",
+      "sha256": "6918480446d79748bd29c42a89a84eb6a2051857671c0b9801e6a610f1289883"
+    },
+    {
+      "path": "usr/lib/systemd/user/dbus-org.bluez.obex.service",
+      "kind": "symlink",
+      "target": "obex.service"
+    },
+    {
+      "path": "usr/lib/systemd/user/dbus.service",
+      "kind": "file",
+      "sha256": "a3156e86c7a5ea0af164a08d971eb6da110ec740a553cb64e2e2cf2cc2d33059"
+    },
+    {
+      "path": "usr/lib/systemd/user/dbus.socket",
+      "kind": "file",
+      "sha256": "eb9bcc798c347ea00544ca79f3ca07f3f6bd675235c9d73a42b6dcc9fd16a927"
+    },
+    {
+      "path": "usr/lib/systemd/user/dconf.service",
+      "kind": "file",
+      "sha256": "c3f3b85e365aed31fe2956f9949d22144d38a9e5e22e810d6668b8ec5259f045"
+    },
+    {
+      "path": "usr/lib/systemd/user/default.target",
+      "kind": "file",
+      "sha256": "64cd66152e3e1307bd80162c690a14fe32b98498588ebd6a642888b23e8307c3"
+    },
+    {
+      "path": "usr/lib/systemd/user/dirmngr.service",
+      "kind": "file",
+      "sha256": "43483226dd0817aaf0e76b60842a470e690f93ddd09e7d6a6e00338c34ade5eb"
+    },
+    {
+      "path": "usr/lib/systemd/user/dirmngr.socket",
+      "kind": "file",
+      "sha256": "ecf24112b56a505e2bf90bcefe07d5582a3804213218ff49a38fe0a3345c7e3b"
+    },
+    {
+      "path": "usr/lib/systemd/user/evolution-addressbook-factory.service",
+      "kind": "file",
+      "sha256": "71035c1de1da1cea235431d34faed60cbcf330e5d744b8d203586f15e4812167"
+    },
+    {
+      "path": "usr/lib/systemd/user/evolution-calendar-factory.service",
+      "kind": "file",
+      "sha256": "1971172854076be782484f088341b5b8fe2d0141f81def4ba73e54c54899d3cb"
+    },
+    {
+      "path": "usr/lib/systemd/user/evolution-source-registry.service",
+      "kind": "file",
+      "sha256": "ea8f53e2be45a995f7d867fe2a9fa1d3075902b2b74f754dcc952b958cb2f1af"
+    },
+    {
+      "path": "usr/lib/systemd/user/evolution-user-prompter.service",
+      "kind": "file",
+      "sha256": "48c488158ec5dd5512f0f51ff8616239dc5072a6b9a38a6c61a108489bb4abca"
+    },
+    {
+      "path": "usr/lib/systemd/user/exit.target",
+      "kind": "file",
+      "sha256": "ea3a61bbc985ccef387f841c24aeb3b7bb137405c3bb7a3edbfdfa254d900004"
+    },
+    {
+      "path": "usr/lib/systemd/user/filter-chain.service",
+      "kind": "file",
+      "sha256": "72baca9f9f13887086c6260ee6c12fe5e2e8f6e393a3e47b02cbc9fc5ef9cb97"
+    },
+    {
+      "path": "usr/lib/systemd/user/gamemoded.service",
+      "kind": "file",
+      "sha256": "18367325424d8da2a0a86c3e877597918942d5436339825484760648287d8c70"
+    },
+    {
+      "path": "usr/lib/systemd/user/gcr-ssh-agent.service",
+      "kind": "file",
+      "sha256": "62f5646d4d8e3c13b8767d43b58a5e3a886388cd9549954a7ee0c41e180a55d4"
+    },
+    {
+      "path": "usr/lib/systemd/user/gcr-ssh-agent.socket",
+      "kind": "file",
+      "sha256": "b10df8d92096e2f63aead1e414a7de234721c4e32c51970f20c5f5d86b32f342"
+    },
+    {
+      "path": "usr/lib/systemd/user/glib-pacrunner.service",
+      "kind": "file",
+      "sha256": "26be7c815d50ace0fbde850902dc87c0b86566caec1a628fc84f2b0ead671e1b"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-initial-setup-copy-worker.service",
+      "kind": "file",
+      "sha256": "24ded0587028bca59a3a7d7ea0070d4f1df6936280e69786750fa55d7058deab"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-initial-setup-first-login.service",
+      "kind": "file",
+      "sha256": "dcc63082d5677f84c68e8e6923ef5786145327c2e6543983bb142b111d9ff08c"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-initial-setup.service",
+      "kind": "file",
+      "sha256": "7e17544190cbd377f126a9b38cd634383ae94308ccba2c02877c5196569bedc0"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-keyring-daemon.service",
+      "kind": "file",
+      "sha256": "00fd9dc412bef3f31e4c45d51e5b85ed2bc3861056f3d181ac18f266f00da35d"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-keyring-daemon.socket",
+      "kind": "file",
+      "sha256": "dc525051ed1613edb13fd84c63dd9db601690ea9bc3e547f0d13fb2f93bd44fb"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-remote-desktop-handover.service",
+      "kind": "file",
+      "sha256": "09aec76153498016fc07ca89e7ded5fa6d9a6644bf9d86efecd7fee468ac7899"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-remote-desktop-headless.service",
+      "kind": "file",
+      "sha256": "856b5d72b56cadc172ba434ed198421e1b4cc32c79a6402d16c8407d7301f5cb"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-remote-desktop.service",
+      "kind": "file",
+      "sha256": "db4abfac69992492450ac12120716ec7344285ed7db08b4e1ea97ea93591953d"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session-basic-services.target",
+      "kind": "file",
+      "sha256": "c08c7031eb0b08e9d01347be5a25b1b345685260dd1c2ee74ba69b6fc76d2f5a"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session-initialized.target",
+      "kind": "file",
+      "sha256": "9e7109b231f35dcce65034e9010e47087e68ce32cbe90ee2db1dbb8a2318c4ad"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session-manager.target",
+      "kind": "file",
+      "sha256": "896273ca37395ab5be908facbdf495d076c10dc3ce50c6330ee61ad1e45a066b"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session-manager@.service",
+      "kind": "file",
+      "sha256": "b0637e0fd0878cb05241e140cffaabe4fc139cdb4705229737da0deffe21a823"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session-monitor.service",
+      "kind": "file",
+      "sha256": "a52e625009ade4c9ebc42b2596801d1c6e9314a0b6c6666697608eee9687d485"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session-pre.target",
+      "kind": "file",
+      "sha256": "a09703892c998db021801b8c024222be9837097855c0da034dd5fbca9a586d51"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session-restart-dbus.service",
+      "kind": "file",
+      "sha256": "a6190ad21e32732af7e14f781b9a34139be5dbbbca55d4d8fca1c885d00a71ea"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session-shutdown.target",
+      "kind": "file",
+      "sha256": "03951b27dfd34ec57955fa84cb567964164272a75394ae8f7c183991302331c8"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session-signal-init.service",
+      "kind": "file",
+      "sha256": "0c18d7008dc0f937c28ade790596a51a057a3e3f98f0a62aeaa182753f3137d7"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session-wayland.target",
+      "kind": "file",
+      "sha256": "94882a37e0a953ed8198a059ff26c7c55db62249b1fc32c42c8eed2e6a339544"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session-wayland@.target",
+      "kind": "file",
+      "sha256": "6ece7973718a83a8e801efb991409feffe3729928dd4e3e1a9634018eccfa938"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session-x11-services-ready.target",
+      "kind": "file",
+      "sha256": "8babfa5a48cd6ced493372dac832de5e87a05d11ce9b8e2bc30b761337798f47"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session-x11-services-ready.target.wants",
+      "kind": "directory"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session-x11-services-ready.target.wants/org.gnome.SettingsDaemon.XSettings.service",
+      "kind": "symlink",
+      "target": "../org.gnome.SettingsDaemon.XSettings.service"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session-x11-services.target",
+      "kind": "file",
+      "sha256": "73d99df03c324eaa0c82fa9fd85b57157422387b691940c85790129e46895788"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session-x11-services.target.wants",
+      "kind": "directory"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session-x11-services.target.wants/org.gnome.SettingsDaemon.XSettings.service",
+      "kind": "symlink",
+      "target": "../org.gnome.SettingsDaemon.XSettings.service"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session.target",
+      "kind": "file",
+      "sha256": "78113b39dcc1e8929767c6be3e5d31e27f3f5e2d6ab147513876a8a5c8b6bdce"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session.target.wants",
+      "kind": "directory"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session.target.wants/gnome-initial-setup-first-login.service",
+      "kind": "symlink",
+      "target": "../gnome-initial-setup-first-login.service"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session.target.wants/org.freedesktop.IBus.session.GNOME.service",
+      "kind": "symlink",
+      "target": "../org.freedesktop.IBus.session.GNOME.service"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session@.target",
+      "kind": "file",
+      "sha256": "6220e2777c91acccc44b2f2ac392a72c48be1acff7359073202228222262b22e"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session@gnome-initial-setup.target.d",
+      "kind": "directory"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session@gnome-initial-setup.target.d/gnome-initial-setup.conf",
+      "kind": "file",
+      "sha256": "3b3dbee0e89dddf5b917d562defddb8ba9e0cce4306ab58b385ab8bb3e35273f"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session@gnome-login.target.d",
+      "kind": "directory"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session@gnome-login.target.d/gnome-login.session.conf",
+      "kind": "file",
+      "sha256": "8b1a751ed692f34c5530309cb573ec1f1576c0c85c6fdaea254fdaf3a0adf80f"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session@ubuntu.target.d",
+      "kind": "directory"
+    },
+    {
+      "path": "usr/lib/systemd/user/gnome-session@ubuntu.target.d/gnome.session.conf",
+      "kind": "file",
+      "sha256": "022207bb7213e8c77319a93a23a69c25fbf156c0230cd0a8669c30cfdafffd04"
+    },
+    {
+      "path": "usr/lib/systemd/user/gpg-agent-browser.socket",
+      "kind": "file",
+      "sha256": "894cfb7aaa5e75092ad738cd6b3cb1b2ac05c6082ae89071ef38d25558ba289e"
+    },
+    {
+      "path": "usr/lib/systemd/user/gpg-agent-extra.socket",
+      "kind": "file",
+      "sha256": "cea4b6b204d6b6701407c67ae1a1a8452e11593ea7f1e9805272f6c31c725213"
+    },
+    {
+      "path": "usr/lib/systemd/user/gpg-agent-ssh.socket",
+      "kind": "file",
+      "sha256": "5868cc2b00ef97564a631c54e047818cbd47f92e153ea5e0132b32fe8a60824d"
+    },
+    {
+      "path": "usr/lib/systemd/user/gpg-agent.service",
+      "kind": "file",
+      "sha256": "8ea489a57edb0db9394bf2d6c0ec62205f881bb54efb919e4870209c7db01aa7"
+    },
+    {
+      "path": "usr/lib/systemd/user/gpg-agent.socket",
+      "kind": "file",
+      "sha256": "c8d953e540adc7da107915dec81393fdeb60b94c5d5b2968583e428dbe955c83"
+    },
+    {
+      "path": "usr/lib/systemd/user/graphical-session-pre.target",
+      "kind": "file",
+      "sha256": "52aec1721523cf15f1840ea5696c19824c24924cb32b0ad3d08237d25ddf2a81"
+    },
+    {
+      "path": "usr/lib/systemd/user/graphical-session-pre.target.wants",
+      "kind": "directory"
+    },
+    {
+      "path": "usr/lib/systemd/user/graphical-session-pre.target.wants/gnome-initial-setup-copy-worker.service",
+      "kind": "symlink",
+      "target": "../gnome-initial-setup-copy-worker.service"
+    },
+    {
+      "path": "usr/lib/systemd/user/graphical-session-pre.target.wants/session-migration.service",
+      "kind": "symlink",
+      "target": "../session-migration.service"
+    },
+    {
+      "path": "usr/lib/systemd/user/graphical-session-pre.target.wants/ssh-agent.service",
+      "kind": "symlink",
+      "target": "../ssh-agent.service"
+    },
+    {
+      "path": "usr/lib/systemd/user/graphical-session.target",
+      "kind": "file",
+      "sha256": "04e9c270987a7612887e78cb3667acaadd6e3c623e0f9f6f593efca52ab9a54c"
+    },
+    {
+      "path": "usr/lib/systemd/user/graphical-session.target.wants",
+      "kind": "directory"
+    },
+    {
+      "path": "usr/lib/systemd/user/graphical-session.target.wants/spice-vdagent.service",
+      "kind": "symlink",
+      "target": "../spice-vdagent.service"
+    },
+    {
+      "path": "usr/lib/systemd/user/graphical-session.target.wants/update-notifier-crash.path",
+      "kind": "symlink",
+      "target": "../update-notifier-crash.path"
+    },
+    {
+      "path": "usr/lib/systemd/user/graphical-session.target.wants/update-notifier-release.path",
+      "kind": "symlink",
+      "target": "../update-notifier-release.path"
+    },
+    {
+      "path": "usr/lib/systemd/user/gvfs-afc-volume-monitor.service",
+      "kind": "file",
+      "sha256": "f9c35b5c42dc51e5a8cd918218ebca43ba6f0202de581fb118b02f0c0b45b904"
+    },
+    {
+      "path": "usr/lib/systemd/user/gvfs-daemon.service",
+      "kind": "file",
+      "sha256": "af226ccb535b4e24c7e34c6a782333a1dbc887b48ea21f1aad475ed237399eba"
+    },
+    {
+      "path": "usr/lib/systemd/user/gvfs-goa-volume-monitor.service",
+      "kind": "file",
+      "sha256": "2ddd9ce05d96ce57e5f45488143c9c9278126edf581ce7443df680aba972d247"
+    },
+    {
+      "path": "usr/lib/systemd/user/gvfs-gphoto2-volume-monitor.service",
+      "kind": "file",
+      "sha256": "94596dbee34d54b6cf15e8259b2ac05ed5f88453b88a95a8d727df7abe2d3c1f"
+    },
+    {
+      "path": "usr/lib/systemd/user/gvfs-metadata.service",
+      "kind": "file",
+      "sha256": "8a1164937a2b1251b24440abdb40f3582f1d0e88b12daff87eebd8c4e940865e"
+    },
+    {
+      "path": "usr/lib/systemd/user/gvfs-mtp-volume-monitor.service",
+      "kind": "file",
+      "sha256": "57f5e067c0d513be465a56cdf539dcf7cf6e7ae60a90f824067c7c59e89fae79"
+    },
+    {
+      "path": "usr/lib/systemd/user/gvfs-udisks2-volume-monitor.service",
+      "kind": "file",
+      "sha256": "ae967e292536fec23e856b123af087b3a66c005e07820523b47e5c22538b15b8"
+    },
+    {
+      "path": "usr/lib/systemd/user/keyboxd.service",
+      "kind": "file",
+      "sha256": "cba1aa10c072d982135d2367a7e957d6787037ab232fd148144eca39a92ec2e6"
+    },
+    {
+      "path": "usr/lib/systemd/user/keyboxd.socket",
+      "kind": "file",
+      "sha256": "c3a1baabd1eb130bb4ae42e5952598c8983c094ed51d591875517387d4d999b4"
+    },
+    {
+      "path": "usr/lib/systemd/user/launchpadlib-cache-clean.service",
+      "kind": "file",
+      "sha256": "b4a9993161957a3f588140417080cbaec2f03e3b0d19abf3f15d94e1cb4a9063"
+    },
+    {
+      "path": "usr/lib/systemd/user/launchpadlib-cache-clean.timer",
+      "kind": "file",
+      "sha256": "2aad5faceba1104670893ac332fcd3702d148d6ee32420019bcdf76d184d34d1"
+    },
+    {
+      "path": "usr/lib/systemd/user/localsearch-3.service",
+      "kind": "file",
+      "sha256": "3ca2a529d770d881d9dd7bfdae1eae7fc22104215317b0480a348f8b83a25b8d"
+    },
+    {
+      "path": "usr/lib/systemd/user/localsearch-control-3.service",
+      "kind": "file",
+      "sha256": "de34471d802e71bea3af14be2beff09b9492900c86e9c9f5be8da55ea82f4e9c"
+    },
+    {
+      "path": "usr/lib/systemd/user/localsearch-writeback-3.service",
+      "kind": "file",
+      "sha256": "2021930604e9a6fc743c3498bd52e01c631e2991da12ff1d96324b69364971bc"
+    },
+    {
+      "path": "usr/lib/systemd/user/mpris-proxy.service",
+      "kind": "file",
+      "sha256": "7519c5efe91da5a4572850d26ac27dd16cfd573cd3630bbe6bde5e6846e9f841"
+    },
+    {
+      "path": "usr/lib/systemd/user/obex.service",
+      "kind": "file",
+      "sha256": "6f7b737a345f28c1e4b4e76a3738b3ac5fb4da8493315d29c32ebca45fc76335"
+    },
+    {
+      "path": "usr/lib/systemd/user/openrazer-daemon.service",
+      "kind": "file",
+      "sha256": "139109fb9af9201572375715ab005917a8d5626f68f6758ddfe1688d72d04da3"
+    },
+    {
+      "path": "usr/lib/systemd/user/orca.service",
+      "kind": "file",
+      "sha256": "995a395066b71e9d4417a61d7a965ded43e32b4917db615fd286bf7b3be76a16"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.freedesktop.IBus.session.GNOME.service",
+      "kind": "file",
+      "sha256": "5e8ee05c2774f39b53fd4b926c4703f045ab696d139b02629b21812a23f5fe8b"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.freedesktop.IBus.session.generic.service",
+      "kind": "file",
+      "sha256": "f8ef06c6e547902bd54c182de518e857e6aaed1abb4c621a9d82b7d19ed42bff"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.A11ySettings.service",
+      "kind": "file",
+      "sha256": "377efe7720ec7e33de8c7cfa3a1e51308b19b980b957ce6a9962cb76b10248d8"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.A11ySettings.target",
+      "kind": "file",
+      "sha256": "09af57506fbb1c03c2072463eee33b0d24c57c6b2066120568750b40907f34a0"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.Color.service",
+      "kind": "file",
+      "sha256": "c79defcbbf3688fc019734c834378b4bf125b6bcdc2d2ae8368f42b3123fbf61"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.Color.target",
+      "kind": "file",
+      "sha256": "1710af2c5f0e55d5eb872a5ed70292d6fcc5e0c309cfce71762810d46dcb5516"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.Datetime.service",
+      "kind": "file",
+      "sha256": "7e7620204b2d2695103bb446a79581b1dce2ed5dad80f4b3f5b83b0f5e5f7475"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.Datetime.target",
+      "kind": "file",
+      "sha256": "d598d8236795e7c353ac695916e6fde5dc0a1ca7ccf1c5588d13eb1040ca3386"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.Housekeeping.service",
+      "kind": "file",
+      "sha256": "5049b1758ab1106fa50a88cf4c7f8f7605e6aa62a758daf5a880fcfc637f13a8"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.Housekeeping.target",
+      "kind": "file",
+      "sha256": "0d227ffd6d801536cb2222ee7111852be6ad1f4f453c1a445f2527bf838a6da6"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.Keyboard.service",
+      "kind": "file",
+      "sha256": "4a79a4824ef8515908de496f073e6481610e2c36143a41bd90381336f6fee6c9"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.Keyboard.target",
+      "kind": "file",
+      "sha256": "206253e5dd4fba21a1c4859b4ee8f5debb43074f32ad44668fd63beb32b391aa"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.MediaKeys.service",
+      "kind": "file",
+      "sha256": "caabd83c6b813a30b2bae2a71e4a6e1227cb41392573d486e49ac70c0cfa63dd"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.MediaKeys.target",
+      "kind": "file",
+      "sha256": "e2e975d354859feed927391e33640b6e0a9145c549074f9750f57de5be7dcfd8"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.Power.service",
+      "kind": "file",
+      "sha256": "daf158747b78f84f2b77f51e24a452839dea7c83fb6c58540284ffb42c0e89b0"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.Power.target",
+      "kind": "file",
+      "sha256": "c8981be69419c1d2a6237d692c52673d239fadceb10f0efcfc270ad5a000372d"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.PrintNotifications.service",
+      "kind": "file",
+      "sha256": "edff7bbb609585fce0a96ce11bd37e83d79912e2139ad38630da354befb1db46"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.PrintNotifications.target",
+      "kind": "file",
+      "sha256": "6c946b5ea5487bec2bb2c3855db4852daa9dd7469eebe195492bcd7d1b7c33b2"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.Rfkill.service",
+      "kind": "file",
+      "sha256": "d5c38bd0b819d1120068c1533357c0af4aadb9eacf3da70588fcba1b06ad2a36"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.Rfkill.target",
+      "kind": "file",
+      "sha256": "960d79034f3402727e3d002d4c3bb553c74a2e082812a76886affb75862e5256"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.ScreensaverProxy.service",
+      "kind": "file",
+      "sha256": "04dc066516fb52e276d07dbdfd24d8a3c2278175f06bf57eba63cf97d308daf7"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.ScreensaverProxy.target",
+      "kind": "file",
+      "sha256": "94403a94f1c3790eb7acb6c1f8e9c41fdb436f2ecef0c368295ee1b8dec199b3"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.Sharing.service",
+      "kind": "file",
+      "sha256": "9a84c4204be576e5303a6ce37fa8c5aec51a9e74c217a9b698fe14da166596c5"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.Sharing.target",
+      "kind": "file",
+      "sha256": "7b4bc922f00abeb5844c88157488b7c2c9f875400c43ba740f9e365764e34235"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.Smartcard.service",
+      "kind": "file",
+      "sha256": "e939ac653b8dcaf86e55f574a00d16f74085c1ce82c01b2c143b519ffd6fdc8c"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.Smartcard.target",
+      "kind": "file",
+      "sha256": "c8bc5c9abb999f75dfbb7037759c3afbf71adfbd2244cc20934c2b7dc2789be9"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.Sound.service",
+      "kind": "file",
+      "sha256": "83b070ab8e24249d115410c7a50c22d7d212b03a8aa1c87c9745c23c1650aba0"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.Sound.target",
+      "kind": "file",
+      "sha256": "b5d962a3519617566c2e717e9116dbc0697c99a6d3922ef688bb5d115a8588b0"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.UsbProtection.service",
+      "kind": "file",
+      "sha256": "4c1a59b6ad8fa37af69acf07029d31f81b8dfdc1858d19c9580265e75c57ecd4"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.UsbProtection.target",
+      "kind": "file",
+      "sha256": "08368c17db72fdcd3cec192162167d611f7710c32024b58f803be5a1d91ef3f2"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.Wwan.service",
+      "kind": "file",
+      "sha256": "9ebb5dc6908a3570b0b19ce8aab7daae8d658766f5caf41426b31ae73a860df5"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.Wwan.target",
+      "kind": "file",
+      "sha256": "71d2ea866d0e064fe405c6c6134e7ef9f9000b3a254d63c9809d3d5fd2c9048c"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.XSettings.service",
+      "kind": "file",
+      "sha256": "9381f8ae40e4e2b970f5fc84d3a2e859442c23aadbd0229d1844d8979e068a7d"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.SettingsDaemon.XSettings.target",
+      "kind": "file",
+      "sha256": "8a753dbb5b616507f90662f9e889e42c5ccece3774a19862554050d6bd9de458"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.Shell-disable-extensions.service",
+      "kind": "file",
+      "sha256": "80539b236f7afbdb7c73437d72cab827ccd5c4390df06f0e2783bb1482c5583b"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.Shell.target",
+      "kind": "file",
+      "sha256": "459e3ff6f758889ecc8c26c7ffd8d9ac1c5b15610cd7315abd0c98c5c2dab291"
+    },
+    {
+      "path": "usr/lib/systemd/user/org.gnome.Shell@wayland.service",
+      "kind": "file",
+      "sha256": "e063c276d40d5de9c57b5aca86427a49a945377ffcfe27e5bc459ac19ceb9142"
+    },
+    {
+      "path": "usr/lib/systemd/user/paths.target",
+      "kind": "file",
+      "sha256": "5d1426401aa2b79ff4a9bb711ab781a5e70894a9da985e0a8b389121ecc8a0ce"
+    },
+    {
+      "path": "usr/lib/systemd/user/pipewire-pulse.service",
+      "kind": "file",
+      "sha256": "ca83270e11979c35e025dee7b450c6c1f9b94ad552bea51666cd6ad6f453e1e8"
+    },
+    {
+      "path": "usr/lib/systemd/user/pipewire-pulse.socket",
+      "kind": "file",
+      "sha256": "c3abbf9ac1fdd17c252dafbf40293cde60fdf11b545b79cef48129e632bcf414"
+    },
+    {
+      "path": "usr/lib/systemd/user/pipewire.service",
+      "kind": "file",
+      "sha256": "36e4dd4e2c1912889aa07a55ba02efe45b4cfc3279077e939af28a5af29c7a78"
+    },
+    {
+      "path": "usr/lib/systemd/user/pipewire.socket",
+      "kind": "file",
+      "sha256": "0314a8abf591bc159e8af842a627917bb99f78f8bd8fee6f5e0f9157ca9da208"
+    },
+    {
+      "path": "usr/lib/systemd/user/pk-debconf-helper.service",
+      "kind": "file",
+      "sha256": "53597c05acb3cbc740b1df64fa78c4bc411723436898b4b2fbbd633b5d10636f"
+    },
+    {
+      "path": "usr/lib/systemd/user/pk-debconf-helper.socket",
+      "kind": "file",
+      "sha256": "707d5397576405a1142f722f24bcc5bddcc9ef5bbb7bbad8a3ea99f456356a76"
+    },
+    {
+      "path": "usr/lib/systemd/user/printer.target",
+      "kind": "file",
+      "sha256": "3305ced145cb1c76a6f6c01d3d2ff56a5f3c3d1aaccee97a300e4df3bd7b14d1"
+    },
+    {
+      "path": "usr/lib/systemd/user/rygel.service",
+      "kind": "file",
+      "sha256": "bff5c1886577e577dabaaaf0bf46af70f10ec549f46d1432c4d1dfd1eb52b422"
+    },
+    {
+      "path": "usr/lib/systemd/user/session-migration.service",
+      "kind": "file",
+      "sha256": "16a8d03bb4ad2ac4357230e02c003c6e4862774fcdc0486ecc7c6b6d5a484a59"
+    },
+    {
+      "path": "usr/lib/systemd/user/session.slice",
+      "kind": "file",
+      "sha256": "bdc0526c3ea8634e7a22410ba70a7f4a9dc51a41a8bb7ed943c9bedd3c7069ae"
+    },
+    {
+      "path": "usr/lib/systemd/user/shutdown.target",
+      "kind": "file",
+      "sha256": "7d5236aa278c5f97c505d944c28d36ca8bbab2df92d21681f81c916eea2665dd"
+    },
+    {
+      "path": "usr/lib/systemd/user/smartcard.target",
+      "kind": "file",
+      "sha256": "a6a453b13a305db13ab9e87391199a7626700e7e1e3d8b1e5fb85137d2c25fb9"
+    },
+    {
+      "path": "usr/lib/systemd/user/snapd.session-agent.service",
+      "kind": "file",
+      "sha256": "5c03369ce53955394d41030c5e52970992c2289133d17e97672faec2ec50ff04"
+    },
+    {
+      "path": "usr/lib/systemd/user/snapd.session-agent.socket",
+      "kind": "file",
+      "sha256": "aac4edde42d58f6246a28bf53b4c3f917d3ccf5064ccf401f14d918df68eccfa"
+    },
+    {
+      "path": "usr/lib/systemd/user/snapd.session-agent.socket.d",
+      "kind": "directory"
+    },
+    {
+      "path": "usr/lib/systemd/user/snapd.session-agent.socket.d/70-gdm-skip.conf",
+      "kind": "file",
+      "sha256": "e8bf36dad92dc6d8391f0f5c3da5c83102b289135f990ec5a588eaa4248a759b"
+    },
+    {
+      "path": "usr/lib/systemd/user/sockets.target",
+      "kind": "file",
+      "sha256": "7b922fd160bf0d353c07f162ce1a889ba05bfeb34d51f315c7a7059dbacd6928"
+    },
+    {
+      "path": "usr/lib/systemd/user/sockets.target.wants",
+      "kind": "directory"
+    },
+    {
+      "path": "usr/lib/systemd/user/sockets.target.wants/dbus.socket",
+      "kind": "symlink",
+      "target": "../dbus.socket"
+    },
+    {
+      "path": "usr/lib/systemd/user/sockets.target.wants/snapd.session-agent.socket",
+      "kind": "symlink",
+      "target": "../snapd.session-agent.socket"
+    },
+    {
+      "path": "usr/lib/systemd/user/sound.target",
+      "kind": "file",
+      "sha256": "52c92b8cc874b85fc6fca72947ef210f9d02d46368ecfc1f98700f59ad529468"
+    },
+    {
+      "path": "usr/lib/systemd/user/speech-dispatcher.service",
+      "kind": "file",
+      "sha256": "127ae5fd7ad83c94687ddee42dccf2deaa8201a53b088cd67c5e799945c98e18"
+    },
+    {
+      "path": "usr/lib/systemd/user/speech-dispatcher.socket",
+      "kind": "file",
+      "sha256": "f5d46df9cd78a0bf7997c4bc6b0e7a1cef08b88a8b7e25ac8cb7843329447e6b"
+    },
+    {
+      "path": "usr/lib/systemd/user/spice-vdagent.service",
+      "kind": "file",
+      "sha256": "8a4310f8a778d889999ea5b4218ccbec62acad064786284bd64d5afcefa0efc9"
+    },
+    {
+      "path": "usr/lib/systemd/user/ssh-agent.service",
+      "kind": "file",
+      "sha256": "1a6b0d395a9d8186d3fa02618bd9e5619aeb8d36005d3653e3f26741648526c5"
+    },
+    {
+      "path": "usr/lib/systemd/user/ssh-agent.socket",
+      "kind": "file",
+      "sha256": "d832c5044298c90a3245565708e516fa35e5e5c77cf680ad39829ccbdcf5a94b"
+    },
+    {
+      "path": "usr/lib/systemd/user/systemd-exit.service",
+      "kind": "file",
+      "sha256": "b57f8eed3e3415326a82bdf839ad1b08ca5961c672b10de43d905c86abb6a2c8"
+    },
+    {
+      "path": "usr/lib/systemd/user/systemd-tmpfiles-clean.service",
+      "kind": "file",
+      "sha256": "d0c0dd7c3a2f46e3a8b28dbc3349a7a452914cb4d8f26886cc1bf6b8cb8df477"
+    },
+    {
+      "path": "usr/lib/systemd/user/systemd-tmpfiles-clean.timer",
+      "kind": "file",
+      "sha256": "7b4675a101566b70c56ca2b9b650b6c59ef24c4a829178872f130f998fdbea01"
+    },
+    {
+      "path": "usr/lib/systemd/user/systemd-tmpfiles-setup.service",
+      "kind": "file",
+      "sha256": "4b409bf7c19e45706f10695059e9fd7d4c0e71637a38e1a4b21f2150bd02200c"
+    },
+    {
+      "path": "usr/lib/systemd/user/timers.target",
+      "kind": "file",
+      "sha256": "664a530864df1f13f13b6a7faf556e7b421b808a9c6c8038fcb31158024b2a14"
+    },
+    {
+      "path": "usr/lib/systemd/user/tinysparql-xdg-portal-3.service",
+      "kind": "file",
+      "sha256": "2e0192d8e2201744b420b8a764f7a39a851a52f21ca9155dd317c452dfeb31dd"
+    },
+    {
+      "path": "usr/lib/systemd/user/ubuntu-insights-collect.service",
+      "kind": "file",
+      "sha256": "40b2cdc9e271967dc9572151318b91e922f07a01d3cde30e8170459ac88214a1"
+    },
+    {
+      "path": "usr/lib/systemd/user/ubuntu-insights-collect.timer",
+      "kind": "file",
+      "sha256": "da384bb2d0217b03f160eed30702303e2beb7cffc1c8b0cec9128aa5d6eab9e9"
+    },
+    {
+      "path": "usr/lib/systemd/user/ubuntu-insights-upload.service",
+      "kind": "file",
+      "sha256": "dd6b3878674724c3a61f3ec72a0643b4036693b5debc8cbbec5547f9ee0c8eca"
+    },
+    {
+      "path": "usr/lib/systemd/user/ubuntu-insights-upload.timer",
+      "kind": "file",
+      "sha256": "3218464233e63ab6e8e330c173ca34e3b4c436051d7c9d1a2938186b9bb7928d"
+    },
+    {
+      "path": "usr/lib/systemd/user/ubuntu-report.path",
+      "kind": "file",
+      "sha256": "977598815af4a3ea1b1ab03f0e2bfa16379d3201bb940423ff7099589d975df2"
+    },
+    {
+      "path": "usr/lib/systemd/user/ubuntu-report.service",
+      "kind": "file",
+      "sha256": "50c29650622a87fc2c13e9b53775d032677431d509eda10064655d382b5bd8c0"
+    },
+    {
+      "path": "usr/lib/systemd/user/update-notifier-crash.path",
+      "kind": "file",
+      "sha256": "c9f6916bd5593a2a0783e5e3ff390a0608759e5a6783271d9cd121d91166ec9e"
+    },
+    {
+      "path": "usr/lib/systemd/user/update-notifier-crash.service",
+      "kind": "file",
+      "sha256": "11e276a3c128de5b39b7ffb056d18837c5c70c5d2966d33a858d15884972e08e"
+    },
+    {
+      "path": "usr/lib/systemd/user/update-notifier-livepatch.path",
+      "kind": "file",
+      "sha256": "c356f88eb0bfaa9cdad55df9db80e9d181009e4517828bebfe09026796d29caa"
+    },
+    {
+      "path": "usr/lib/systemd/user/update-notifier-livepatch.service",
+      "kind": "file",
+      "sha256": "a424514da71982f1226ceab4c8e063f911e577c8839f727a28f2275300ec7940"
+    },
+    {
+      "path": "usr/lib/systemd/user/update-notifier-release.path",
+      "kind": "file",
+      "sha256": "de077b7cedfa1495f80777182b71b218447281919d6037519b5ab2781d507ec9"
+    },
+    {
+      "path": "usr/lib/systemd/user/update-notifier-release.service",
+      "kind": "file",
+      "sha256": "de5aaf33bb9672ba60bd8ec2d93af03c9ef56a19fd7ebd1be8ca4d7b86a9245d"
+    },
+    {
+      "path": "usr/lib/systemd/user/user-dirs-update-gtk.service",
+      "kind": "file",
+      "sha256": "7a7572ecf59b714ae6e33e0fcf340e750aa98f709bdd14e6dd5755c511f5743a"
+    },
+    {
+      "path": "usr/lib/systemd/user/vte-spawn-.scope.d",
+      "kind": "directory"
+    },
+    {
+      "path": "usr/lib/systemd/user/vte-spawn-.scope.d/defaults.conf",
+      "kind": "file",
+      "sha256": "656183e67e85eb559e492aaa61d855e471350815682899ba9277820c6010bc6c"
+    },
+    {
+      "path": "usr/lib/systemd/user/wireplumber.service",
+      "kind": "file",
+      "sha256": "fe283f0fb37dd2b7978f16681ceb0a3000a4006625c316dba231d056bdd51ba0"
+    },
+    {
+      "path": "usr/lib/systemd/user/wireplumber@.service",
+      "kind": "file",
+      "sha256": "ae06728a2563c98bae08868cf859379e213ce17a9e4f222e56daa5737c4bcb9f"
+    },
+    {
+      "path": "usr/lib/systemd/user/xdg-desktop-autostart.target",
+      "kind": "file",
+      "sha256": "b252b6346dede256eab63e28240477e4df4b2f7309ef9ee0d6d0adc80354161d"
+    },
+    {
+      "path": "usr/lib/systemd/user/xdg-desktop-portal-gnome.service",
+      "kind": "file",
+      "sha256": "90186c4beb33eb3c63c359ebdbff649cf7048f56ef3a2e3964e0e7b29457eecb"
+    },
+    {
+      "path": "usr/lib/systemd/user/xdg-desktop-portal-gtk.service",
+      "kind": "file",
+      "sha256": "25456199250fccd35cb821182970b1bfb36aa07f23e90fb21e74e1ce27878c5f"
+    },
+    {
+      "path": "usr/lib/systemd/user/xdg-desktop-portal-rewrite-launchers.service",
+      "kind": "file",
+      "sha256": "fdee760ce905de25df98ae60aacdb6d7c3132b481644cc7627e06992bb3499de"
+    },
+    {
+      "path": "usr/lib/systemd/user/xdg-desktop-portal.service",
+      "kind": "file",
+      "sha256": "9c2eef58c2af04f5dec56309e32c4484702819ce5e809b0938696f60542c3931"
+    },
+    {
+      "path": "usr/lib/systemd/user/xdg-document-portal.service",
+      "kind": "file",
+      "sha256": "f6bec9090ea243ca5f5d47152e8ad2d4dda1959790e264d73f6a650e2afad402"
+    },
+    {
+      "path": "usr/lib/systemd/user/xdg-permission-store.service",
+      "kind": "file",
+      "sha256": "9b7cf07cadeab9cd5cb4f4a7d00b9f3c203445d77fc136f54b76392ba28ea05d"
+    },
+    {
+      "path": "usr/lib/systemd/user/xdg-user-dirs.service",
+      "kind": "file",
+      "sha256": "fe250e998ea6b7b5bba123e6894b61a2b81e926bb1b7293b71dabd5a79488368"
+    }
+  ]
+}

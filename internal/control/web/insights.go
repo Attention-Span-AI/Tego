@@ -63,7 +63,12 @@ type tierFact struct {
 
 // machineData is the This machine page: which tiers this machine's runs used, and what the newest run's run_start
 // recorded about the machine.
+type machineCheck struct{ Label, State, Flag, Next string }
+
 type machineData struct {
+	Numbers      countScopes
+	Facts        countScopes
+	Checks       []machineCheck
 	Run          *ledgerview.Run
 	Tier, Kernel string
 	// Watch: the newest run was watch-only (tier observe), so it says nothing about the tiers; Best is the highest
@@ -87,7 +92,7 @@ func (s *Server) machine(w http.ResponseWriter, _ *http.Request) {
 	if !ok {
 		return
 	}
-	d := machineData{Now: s.cfg.Now()}
+	d := machineData{Now: s.cfg.Now(), Numbers: snapshotNumbers(snap)}
 	var newest *ledgerview.Run
 	for _, r := range snap.Runs {
 		if newest == nil || r.Start.After(newest.Start) {
@@ -106,6 +111,7 @@ func (s *Server) machine(w http.ResponseWriter, _ *http.Request) {
 		st, err := rulesview.RunStart(s.cfg.Ledger, newest.ID)
 		if err != nil {
 			d.Err = err.Error()
+			d.Facts.Aggregate = countScope{Error: d.Err}
 		}
 		d.Tier, d.Kernel, d.NetAssurance, d.Plane, d.BestEffort = st.Tier, st.Kernel, st.NetAssurance, st.DecisionPlane, st.BestEffort
 		for k, ok := range st.NetGuarantees {
@@ -126,13 +132,21 @@ func (s *Server) machine(w http.ResponseWriter, _ *http.Request) {
 			slices.Sort(xs)
 		}
 	}
+	for _, flag := range d.NoCaps {
+		d.Checks = append(d.Checks, machineCheck{Label: machineCheckLabel(flag), State: "Unavailable in this run", Flag: flag, Next: "Run tego machine check and follow this check’s setup step before relying on it."})
+	}
+	for _, flag := range d.BestEffort {
+		d.Checks = append(d.Checks, machineCheck{Label: machineCheckLabel(flag), State: "Best effort", Flag: flag, Next: "Run tego machine check for a stronger protection level; this check is not a kernel guarantee."})
+	}
+	for _, flag := range d.NetMissing {
+		d.Checks = append(d.Checks, machineCheck{Label: machineCheckLabel("net." + flag), State: "Not proved in this run", Flag: flag, Next: "Run tego machine check and check network support before relying on this connection check."})
+	}
 	s.render(w, http.StatusOK, "machine", s.chromeOf(snap, "This machine", "machine"), d)
 }
 
-// tierFacts is the three enforcement tiers against the runs the dashboard's snapshot holds (no ledger read): each
-// names the newest run that ran at it; a tier at or below the highest one used is on this machine, and each one
-// above it says what it needs. A watch-only run (tier observe) uses no tier, so a newest run that only watched
-// leaves the tiers as the runs before it showed them.
+// tierFacts keeps historical evidence for the three tiers (no ledger read). Used names the newest exact use;
+// Has only says a recorded run used this level or a higher one. Neither proves current availability, and Has
+// does not prove an exact use of a lower tier. A watched run uses no tier and leaves this history unchanged.
 func tierFacts(runs []*ledgerview.Run) []tierFact {
 	ts := []tierFact{
 		{N: "1", Name: "landlock", Word: "Landlock", Needs: "No admin rights"},
@@ -165,4 +179,29 @@ func tierFacts(runs []*ledgerview.Run) []tierFact {
 		}
 	}
 	return ts
+}
+
+// machineCheckLabel keeps the summary in plain words while the disclosure retains the exact flag.
+func machineCheckLabel(flag string) string {
+	switch flag {
+	case "fs.deny_read", "fs.read":
+		return "Protected file reads"
+	case "fs.write", "fs.deny_write":
+		return "File changes"
+	case "exec", "exec.allow", "exec.deny":
+		return "Programs the agent can start"
+	case "record.exec_open_connect":
+		return "Recording programs, files and connections"
+	case "record.reads_mmap_chmod", "record_reads":
+		return "Recording file reads"
+	case "ask":
+		return "Waiting for your approval"
+	case "net.tcp":
+		return "TCP connections"
+	case "net.udp":
+		return "UDP connections"
+	case "net.unix":
+		return "Local socket connections"
+	}
+	return "Additional protection check"
 }

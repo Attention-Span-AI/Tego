@@ -64,6 +64,7 @@ case "$1" in
 	shell)
 		echo "limactl $*" >>"$FAKE_LOG"
 		case "$*" in
+			*'uninstall "$@"'*) [ "${FAKE_UNINSTALL_FAIL:-}" != 1 ] ;;
 			*' version') [ "${FAKE_GUEST_VERSION:-v0.1.3}" != broken ] || exit 126; printf 'tego=%s\n' "${FAKE_GUEST_VERSION:-v0.1.3}"; [ "${FAKE_GUEST_FAIL:-}" != 1 ] ;;
 			*'curl -fsSL'* )
 				[ "${FAKE_UPDATE_FAIL:-}" != 1 ] || exit 42
@@ -173,6 +174,13 @@ absent() { # absent NAME TEXT: the text must not be in the output or the log
 	fi
 }
 
+absent_log() { # absent_log NAME TEXT: the text must not be in the log of the commands run
+	if grep -qF -- "$2" "$tmp/log" 2>/dev/null; then
+		echo "FAIL $1: unexpected \"$2\" in the log"
+		fails=$((fails + 1))
+	fi
+}
+
 finish_once() {
 	if [ "$(grep -c 'curl -fsSL .*install.sh |' "$tmp/out")" != 1 ]; then
 		echo "FAIL M4 $1: installer command repeated or missing"; fails=$((fails + 1))
@@ -209,10 +217,16 @@ run() {
 tty_run() {
 	code=0
 	python3 - "$script" "$tmp" "$bin" "$@" <<'PYTTY' >"$tmp/out" 2>&1 || code=$?
-import os, pty, select, sys, time
+import os, pty, select, signal, sys, time
 script, tmp, bin, answer = sys.argv[1:5]
 pid, fd = pty.fork()
 if pid == 0:
+    # The installer's INT and TERM traps only work if the signals are not ignored on entry (POSIX: a signal ignored when a
+    # shell starts stays ignored, and no trap changes that). A suite started as a background job (or by a runner that
+    # ignores SIGINT) passes that on through python to this terminal session, and the INT case then ended in the failure
+    # branch (exit 2) instead of the trap (130): the session gets the default dispositions, whatever started the suite.
+    for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGQUIT):
+        signal.signal(signum, signal.SIG_DFL)
     env = dict(HOME=tmp, TMPDIR=tmp, SHELL='/bin/zsh', PATH=bin+':/usr/bin:/bin',
                FAKE_LOG=tmp+'/log', FAKE_GUEST_TOOLS=tmp+'/guest-tools', FAKE_VM='Running', FAKE_GUEST_VERSION='v0.1.2')
     env.update(x.split('=', 1) for x in sys.argv[5:])
@@ -728,6 +742,142 @@ check "shell without arguments still enters project" 0 "last-project" "Type exit
 shim_run FAKE_NO_URL=1
 check "missing dashboard link gives a retry and log command" 1 "The dashboard did not start. Run tego dashboard to try again." "cat ~/.tego/dashboard.log"
 
+# tego uninstall, run by the generated Mac command: what it removes on the Mac, what it asks, what it leaves.
+# Each case has a home of its own holding a copy of the generated command, and the same stand-ins for Lima and SSH.
+un_home() { # un_home NAME: a fresh home with the command, a zsh start-up file and, unless NOLIMA, a Lima folder
+	uh="$tmp/un-$1"
+	rm -rf "$uh"
+	mkdir -p "$uh/.local/bin" "$uh/.lima/tego" "$uh/tmp"
+	cp "$tmp/.local/bin/tego" "$uh/.local/bin/tego"
+	# shellcheck disable=SC2016 # the lines are written as is, for the shell that reads the start-up file to expand
+	printf '# mine\nalias ll="ls -l"\nexport PATH="$HOME/.local/bin:$PATH" # added by the Tego installer\nexport PATH="$HOME/.local/bin:$PATH"\n' >"$uh/.zshrc"
+	printf '# tego-mac-provisioning: 1\nmounts: []\n' >"$uh/.lima/tego/lima.yaml"
+	printf 'master\n' >"$uh/.lima/tego/tego-dashboard.sock"
+	: >"$tmp/log"
+}
+un_exec() { # un_exec HOME COMMAND_FILE: runs the Mac command's uninstall with no terminal to ask on; un_args and un_vars are its arguments and its FAKE_* settings
+	ue_home=$1 ue_cmd=$2
+	code=0
+	# shellcheck disable=SC2086 # the arguments are fixed words of this test
+	python3 -c 'import os,sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' \
+		env -i HOME="$ue_home" TMPDIR="$ue_home/tmp" PATH="$bin:/usr/bin:/bin" FAKE_VM="${FAKE_VM_STATE-Running}" FAKE_LOG="$tmp/log" $un_vars \
+		sh "$ue_cmd" uninstall $un_args </dev/null >"$tmp/out" 2>&1 || code=$?
+}
+un_run() { # un_run NAME ARGS... [VAR=value...]
+	un_name=$1
+	shift
+	un_args=''
+	un_vars=''
+	for kv in "$@"; do
+		case "$kv" in FAKE_*|XDG_*) un_vars="$un_vars $kv" ;; *) un_args="$un_args $kv" ;; esac
+	done
+	un_exec "$tmp/un-$un_name" "$tmp/un-$un_name/.local/bin/tego"
+}
+un_home keep
+un_run keep --yes
+check "uninstall --yes keeps the VM and removes Tego inside it" 0 "Removed Tego inside the VM" "Removed the tego command" "The VM \"tego\" and your records stay"
+grep -q 'limactl shell --workdir / tego sh -c .*uninstall .* tego --yes' "$tmp/log" || { echo "FAIL uninstall --yes: the VM was not asked to uninstall with --yes"; fails=$((fails + 1)); }
+absent_log "uninstall --yes never deletes the VM" "limactl delete"
+[ ! -e "$tmp/un-keep/.local/bin/tego" ] || { echo "FAIL uninstall --yes: the command is still there"; fails=$((fails + 1)); }
+# shellcheck disable=SC2016 # compared as written
+printf '# mine\nalias ll="ls -l"\nexport PATH="$HOME/.local/bin:$PATH"\n' | cmp -s - "$tmp/un-keep/.zshrc" || { echo "FAIL uninstall --yes: .zshrc is not the original minus the one installer line"; fails=$((fails + 1)); }
+cmp -s "$tmp/un-keep/.zshrc.tego-backup" - <<'ORIG' || { echo "FAIL uninstall --yes: the backup is not the original .zshrc"; fails=$((fails + 1)); }
+# mine
+alias ll="ls -l"
+export PATH="$HOME/.local/bin:$PATH" # added by the Tego installer
+export PATH="$HOME/.local/bin:$PATH"
+ORIG
+grep -q 'ssh .*-O exit lima-tego' "$tmp/log" || { echo "FAIL uninstall --yes: the dashboard's tunnel was not closed"; fails=$((fails + 1)); }
+
+un_home gone
+un_run gone --yes --delete-records
+check "uninstall --delete-records deletes the marked VM" 0 "limactl delete -f tego" "Deleted the VM \"tego\", with your records and contracts"
+absent_log "uninstall deleting the VM does not run Tego inside it" "uninstall"
+
+un_home foreign
+printf 'mounts: []\n' >"$tmp/un-foreign/.lima/tego/lima.yaml"
+un_run foreign --yes --delete-records
+check "uninstall leaves a VM that is not marked as Tego's" 0 "is not marked as made by Tego's installer" "limactl delete -f tego"
+absent_log "uninstall never deletes an unmarked VM" "limactl delete"
+
+
+un_home missingvm
+rm -rf "$tmp/un-missingvm/.lima"
+un_args=--yes un_vars='' FAKE_VM_STATE='' un_exec "$tmp/un-missingvm" "$tmp/un-missingvm/.local/bin/tego"
+check "uninstall works when the VM is already gone" 0 "Tego is removed."
+[ ! -e "$tmp/un-missingvm/.local/bin/tego" ] || { echo "FAIL uninstall with no VM: the command is still there"; fails=$((fails + 1)); }
+
+# a second run: the command is gone, so a copy of it runs against the same home and finds nothing to do
+cp "$tmp/.local/bin/tego" "$tmp/un-missingvm-copy"
+un_args=--yes un_vars='' FAKE_VM_STATE='' un_exec "$tmp/un-missingvm" "$tmp/un-missingvm-copy"
+check "uninstall twice is safe" 0 "Tego is removed."
+cmp -s "$tmp/un-missingvm/.zshrc" "$tmp/un-keep/.zshrc" || { echo "FAIL uninstall twice: .zshrc changed again"; fails=$((fails + 1)); }
+[ ! -e "$tmp/un-missingvm/.zshrc.tego-backup-1" ] || { echo "FAIL uninstall twice: a second backup was made"; fails=$((fails + 1)); }
+
+un_home other
+printf 'x\n' >"$tmp/un-other/.local/bin/othertool"
+un_run other --yes
+check "uninstall keeps the PATH line while other programs need it" 0 "Left the PATH line" "still holds 1 other file(s)"
+grep -qF '# added by the Tego installer' "$tmp/un-other/.zshrc" || { echo "FAIL uninstall removed the PATH line other programs need"; fails=$((fails + 1)); }
+
+un_home fish
+mkdir -p "$tmp/un-fish/.config/fish/conf.d"
+# shellcheck disable=SC2016 # written as is
+printf '\nfish_add_path "$HOME/.local/bin" # added by the Tego installer\n' >"$tmp/un-fish/.config/fish/conf.d/tego.fish"
+un_run fish --yes
+check "uninstall removes Tego's own fish file with a backup" 0 "Removed the PATH line from"
+{ [ ! -e "$tmp/un-fish/.config/fish/conf.d/tego.fish" ] && [ -e "$tmp/un-fish/.config/fish/conf.d/tego.fish.tego-backup" ]; } || { echo "FAIL uninstall fish file"; fails=$((fails + 1)); }
+
+un_home fail
+un_run fail --yes FAKE_UNINSTALL_FAIL=1
+check "uninstall says when Tego inside the VM was not removed" 125 "Tego inside the VM was not removed completely"
+
+un_home noterm
+un_run noterm
+check "uninstall without a terminal or --yes asks nothing and changes nothing" 2 "runs in a terminal"
+[ -e "$tmp/un-noterm/.local/bin/tego" ] || { echo "FAIL uninstall without a terminal removed the command"; fails=$((fails + 1)); }
+
+un_home bad
+un_run bad --bogus
+check "uninstall rejects an unknown argument" 2 "usage: tego uninstall"
+[ -e "$tmp/un-bad/.local/bin/tego" ] || { echo "FAIL uninstall --bogus removed the command"; fails=$((fails + 1)); }
+
+# The questions, on a terminal: Enter takes the default of each; the VM's is no.
+un_home tty
+code=0
+python3 - "$tmp/un-tty" "$bin" "$tmp/log" <<'PYTTY' >"$tmp/out" 2>&1 || code=$?
+import os, pty, select, sys, time
+home, bin, log = sys.argv[1:4]
+pid, fd = pty.fork()
+if pid == 0:
+    os.execve('/bin/sh', ['sh', home + '/.local/bin/tego', 'uninstall'],
+              dict(HOME=home, TMPDIR=home + '/tmp', PATH=bin + ':/usr/bin:/bin', FAKE_LOG=log, FAKE_VM='Running'))
+output = b''
+answered = 0
+end = time.monotonic() + 10
+while time.monotonic() < end:
+    if select.select([fd], [], [], 0.1)[0]:
+        try:
+            data = os.read(fd, 65536)
+        except OSError:
+            break
+        if not data:
+            break
+        output += data
+        if (b'[Y/n]' in output and answered == 0) or (b'[y/N]' in output and answered == 1):
+            os.write(fd, b'\n')
+            answered += 1
+else:
+    os.kill(pid, 9)
+    print('FAIL terminal test timed out')
+_, status = os.waitpid(pid, 0)
+os.close(fd)
+sys.stdout.write(output.decode(errors='replace'))
+sys.exit(os.waitstatus_to_exitcode(status))
+PYTTY
+check "uninstall on a terminal: Enter removes Tego and keeps the VM" 0 "Remove what is listed" "Also delete the VM" "Kept: the VM \"tego\""
+absent_log "uninstall on a terminal never deletes the VM on Enter" "limactl delete"
+
 # Plant the former predictable log path: installation must leave its target unchanged.
 echo keep >"$tmp/outside"
 rm -f "$tmp/tego-install.log"
@@ -757,6 +907,15 @@ for failure in macos brew lima INT TERM saveTERM restore; do
     esac
     check "terminal settings restored after $failure, preserving exit status" "$want" "stty saved-terminal-settings"
 done
+
+# A caller that ignores SIGINT (the suite as a background job) must not change what the INT case proves.
+: >"$tmp/log"
+rm -f "$bin/limactl"
+trap '' INT
+tty_run '' TEGO_YES=1 FAKE_BREW_SIGNAL=INT
+trap 'rm -rf "$tmp"' INT
+check "INT ends the install with 130 even when the suite's own caller ignores SIGINT" 130 "stty saved-terminal-settings"
+cp "$bin.lima/limactl" "$bin/limactl" # as the loop above leaves it for the next case
 
 rm -f "$tmp/.local/bin/tego"
 : >"$tmp/log"

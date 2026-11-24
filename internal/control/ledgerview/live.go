@@ -27,6 +27,10 @@ type LiveFacts struct {
 	ConfirmedSeq uint64
 	// confirms is each confirming line's serial and seq, in ledger order (serials grow with it).
 	confirms []liveConfirm
+	// Limits are the time limits the launcher recorded as passed (live-block-expired, live-unblock-expired): its word
+	// on when a block ended, which a reader's wall clock cannot give after a clock step. Partial when the run's lines
+	// were read only in part.
+	Limits livestatus.Limits
 
 	// The run's pause as its launcher recorded it (record.MinorLiveControl): the last gap line what=enforce why
 	// run-paused, run-resumed, pause-failed or resume-failed. Paused is true from a run-paused or resume-failed line
@@ -63,6 +67,8 @@ func LiveFactsOf(r *Run) LiveFacts {
 	m.once.Do(func() { m.facts = liveFactsOf(r.AllEvents()) })
 	f := m.facts
 	f.Ended = r.Ended
+	f.PlaneBlocks = r.planeMarked
+	f.Limits.Partial = r.Cut
 	if f.Ended {
 		f.EndedPaused = f.Paused
 		f.Paused = false // run_end ends a pause: its processes were thawed or killed
@@ -84,14 +90,16 @@ func liveFactsOf(evs []Event) LiveFacts {
 				continue
 			}
 			f.Pause, f.PauseSeq, f.PauseSerial = p.Why, e.Seq, p.LiveControl.Serial
-			switch p.Why {
-			case record.GapRunPaused:
-				f.Paused, f.PausedBy, f.PausedAt = true, p.LiveControl.By, e.TS
-			case record.GapRunResumed:
-				f.Paused = false
-			case record.GapResumeFailed:
-				f.Paused = true // the thaw failed: the run stays frozen, paused by whoever paused it
+			if p.Why == record.GapRunPaused {
+				f.PausedBy, f.PausedAt = p.LiveControl.By, e.TS // a resume that failed keeps whoever paused it
 			}
+			f.Paused = record.PausedAfter(f.Paused, p.Why)
+		case e.Kind == string(record.KindGap) && limitGapWhy(e.Target) != "":
+			var p record.GapPayload
+			if json.Unmarshal([]byte(e.Raw), &p) != nil || p.LiveBlock == nil || p.LiveBlock.Until.IsZero() {
+				continue
+			}
+			f.Limits.Record(p.Why, p.LiveBlock.Kind, p.LiveBlock.Value, p.LiveBlock.Until)
 		case e.Kind == string(record.KindGap) && liveGapTarget(e.Target):
 			var p record.GapPayload
 			if json.Unmarshal([]byte(e.Raw), &p) != nil || p.LiveBlock == nil {
@@ -114,6 +122,15 @@ func liveFactsOf(evs []Event) LiveFacts {
 func liveGapTarget(t string) bool {
 	what, why, _ := strings.Cut(t, " ")
 	return what == record.GapEnforce && (why == record.GapLiveBlockAdded || why == record.GapLiveBlockRemoved)
+}
+
+// limitGapWhy is a gap line's why when its target ("<what> <why>") records that a block's time limit passed, else "".
+func limitGapWhy(t string) string {
+	what, why, _ := strings.Cut(t, " ")
+	if what == record.GapEnforce && (why == record.GapLiveBlockExpired || why == record.GapLiveUnblockExpired) {
+		return why
+	}
+	return ""
 }
 
 // pauseGapWhy is a gap line's why when its target ("<what> <why>") records a pause or a resume, else "".
@@ -140,6 +157,7 @@ func (f LiveFacts) Status(kind string, serial uint64) livestatus.Result {
 const (
 	LiveInForce      = string(livestatus.InForce)
 	LivePartial      = string(livestatus.Partial)
+	LivePartlyKernel = string(livestatus.PartlyKernel)
 	LiveWaiting      = string(livestatus.Waiting)
 	LiveRecordedOnly = string(livestatus.RecordedOnly)
 	LiveEnded        = string(livestatus.Ended)
@@ -164,10 +182,11 @@ func (f LiveFacts) StatusOf(kind string, serial uint64) LiveStatus {
 	return s
 }
 
-// StatusAt is StatusOf for a block that may carry a time limit (liveblock.Entry's From and Until), judged at now
-// (livestatus.StatusAt): dormant while it is unblocked for a while, expired once its limit passed.
-func (f LiveFacts) StatusAt(kind string, serial uint64, now, from, until time.Time) LiveStatus {
-	r := livestatus.StatusAt(kind, f.Facts, serial, f.Confirmed, now, from, until)
+// StatusAt is StatusOf for a block that may carry a time limit (liveblock.Entry's From and Until), judged as the run's
+// launcher did (livestatus.StatusRecorded): the limits it recorded as passed decide, with now only for what no line
+// can say. value is the block's value as the overlay holds it, which the launcher's lines name.
+func (f LiveFacts) StatusAt(kind, value string, serial uint64, now, from, until time.Time) LiveStatus {
+	r := livestatus.StatusRecorded(kind, value, f.Facts, serial, f.Confirmed, now, from, until, f.Limits)
 	s := LiveStatus{State: string(r.State), Sentence: r.Sentence}
 	if r.State == livestatus.Dormant || r.State == livestatus.Expired {
 		return s // refuses nothing now: no "since line #N"
@@ -176,6 +195,12 @@ func (f LiveFacts) StatusAt(kind string, serial uint64, now, from, until time.Ti
 		s.Since = seq
 	}
 	return s
+}
+
+// LimitAt is where the time limits of the block of kind and value stand at now, by the launcher's lines
+// (livestatus.Limits.At): what the run page says of a limit, apart from the block's state.
+func (f LiveFacts) LimitAt(kind, value string, now, from, until time.Time) livestatus.Standing {
+	return f.Limits.At(kind, value, now, from, until)
 }
 
 // Since is the seq of the first line that confirmed serial: the first confirming gap line whose serial is serial or

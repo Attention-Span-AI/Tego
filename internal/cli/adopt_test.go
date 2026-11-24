@@ -183,6 +183,13 @@ func sandboxAdopt(t *testing.T, p *cliProc, privileged bool) *adoptCalls {
 	calls := &adoptCalls{}
 	prevP, prevProc, prevSelf, prevPrep, prevRun := adoptPrivileged, adoptProc, adoptSelf, adoptPrepare, adoptRun
 	prevUID := adoptInvokingUID
+	prevHome := adoptHomeOf
+	home := t.TempDir()
+	if err := os.Mkdir(filepath.Join(home, ".tego"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	records, _ := ownRecordsDir(home)
+	adoptHomeOf = func(int) (string, error) { return home, nil }
 	adoptInvokingUID = func() int { return 1000 } // sudo, run by the operator (uid 1000)
 	adoptPrivileged = func() bool { return privileged }
 	adoptProc = func() adopt.Proc { return p }
@@ -192,7 +199,7 @@ func sandboxAdopt(t *testing.T, p *cliProc, privileged bool) *adoptCalls {
 	}
 	adoptPrepare = func(_ context.Context, m *config.Machine, o adoptOptions, tp adopt.Process, owner int, _ io.Writer) (*preparedAdoption, int) {
 		rt := &agent.RuleTable{Contract: &agent.Contract{Name: "adopt-claude"}, Tier: backend.TierCgroup, Record: agent.RecordFull}
-		return &preparedAdoption{rt: rt, m: m, cleanup: func() {}, boundary: o.boundary != ""}, identity.ExitOK
+		return &preparedAdoption{rt: rt, m: m, cleanup: func() {}, boundary: o.boundary != "", owner: owner, home: home, records: records}, identity.ExitOK
 	}
 	adoptRun = func(ctx context.Context, _ *agent.RuleTable, spec tegoruntime.AdoptSpec, _ tegoruntime.AdoptDeps) (tegoruntime.Result, error) {
 		calls.mu.Lock()
@@ -214,6 +221,7 @@ func sandboxAdopt(t *testing.T, p *cliProc, privileged bool) *adoptCalls {
 	t.Cleanup(func() {
 		adoptPrivileged, adoptProc, adoptSelf, adoptPrepare, adoptRun = prevP, prevProc, prevSelf, prevPrep, prevRun
 		adoptInvokingUID = prevUID
+		adoptHomeOf = prevHome
 	})
 	return calls
 }
@@ -1241,7 +1249,7 @@ func TestHomeWritableByIsTheModeTheOwnerHas(t *testing.T) {
 	}
 }
 
-// TestGuardBoundaryTableIsTheAgentOwners: the guard compiles its boundary once per listed uid, against that uid's home,
+// TestGuardBoundaryTableIsTheAgentOwners: the guard preflights its boundary for each uid, then compiles each adoption against that uid's home,
 // and adopts each agent under its owner's table; the recheck before the move refuses a root whose owner changed since,
 // even to another listed uid, whose table it was not prepared with.
 func TestGuardBoundaryTableIsTheAgentOwners(t *testing.T) {
@@ -1249,12 +1257,16 @@ func TestGuardBoundaryTableIsTheAgentOwners(t *testing.T) {
 	p.add(510, 300, "/usr/bin/claude", "/user.slice/user-1000.slice/session-2.scope", 1001)
 	calls := sandboxAdopt(t, p, true)
 	var prepared []int
-	adoptPrepare = func(_ context.Context, m *config.Machine, o adoptOptions, _ adopt.Process, owner int, _ io.Writer) (*preparedAdoption, int) {
-		prepared = append(prepared, owner)
-		rt := &agent.RuleTable{Contract: &agent.Contract{Name: fmt.Sprintf("b-%d", owner)}, Tier: backend.TierCgroup}
-		return &preparedAdoption{rt: rt, m: m, cleanup: func() {}, boundary: true, owner: owner}, identity.ExitOK
-	}
 	var mu sync.Mutex
+	adoptPrepare = func(_ context.Context, m *config.Machine, o adoptOptions, _ adopt.Process, owner int, _ io.Writer) (*preparedAdoption, int) {
+		mu.Lock()
+		prepared = append(prepared, owner)
+		mu.Unlock()
+		rt := &agent.RuleTable{Contract: &agent.Contract{Name: fmt.Sprintf("b-%d", owner)}, Tier: backend.TierCgroup}
+		home, _ := adoptHomeOf(owner)
+		records, _ := ownRecordsDir(home)
+		return &preparedAdoption{rt: rt, m: m, cleanup: func() {}, boundary: true, owner: owner, home: home, records: records}, identity.ExitOK
+	}
 	tables := map[int]string{}
 	run := adoptRun
 	adoptRun = func(ctx context.Context, rt *agent.RuleTable, spec tegoruntime.AdoptSpec, d tegoruntime.AdoptDeps) (tegoruntime.Result, error) {
@@ -1307,12 +1319,9 @@ func TestGuardBoundaryTableIsTheAgentOwners(t *testing.T) {
 	}
 }
 
-// TestGuardRecompilesATableWhoseOwnersRecordsChanged: the guard compiles each uid's boundary table once, at its start,
-// and R6a's deny of the owner's ~/.tego attaches to the directory that compile found. One replaced since (removed and
-// made again by the owner's next run) had every later agent adopted under a table that left the new one's records
-// readable. The guard compiles such a table again before the next adoption, once,
-// and adopts under the new one; a table that cannot be compiled again fails the adoption rather than adopt under the
-// stale one.
+// TestGuardRecompilesATableWhoseOwnersRecordsChanged: R6a's deny of the owner's ~/.tego attaches to the
+// directory a compile found. Every fresh adoption compiles its own table, including after that directory was
+// replaced. A failed fresh compile never borrows an earlier table.
 func TestGuardRecompilesATableWhoseOwnersRecordsChanged(t *testing.T) {
 	p := terminalProcs()
 	const sess = "/user.slice/user-1000.slice/session-2.scope"
@@ -1321,6 +1330,7 @@ func TestGuardRecompilesATableWhoseOwnersRecordsChanged(t *testing.T) {
 	p.add(530, 300, "/usr/bin/claude", sess, 1000)
 	calls := sandboxAdopt(t, p, true)
 	home := t.TempDir()
+	adoptHomeOf = func(int) (string, error) { return home, nil }
 	var mu sync.Mutex
 	prepared, failNext := 0, false
 	adoptPrepare = func(_ context.Context, m *config.Machine, o adoptOptions, _ adopt.Process, owner int, _ io.Writer) (*preparedAdoption, int) {
@@ -1380,16 +1390,12 @@ func TestGuardRecompilesATableWhoseOwnersRecordsChanged(t *testing.T) {
 	sight(520)
 	waitFor(t, func() bool { return len(calls.roots()) == 3 })
 	mu.Lock()
-	if tables[500] != "b-1" || tables[510] != "b-2" || tables[520] != "b-2" || prepared != 2 {
-		t.Errorf("adopted under %v with %d compiles; want 500 under the first table, 510 and 520 under the one compiled "+
-			"again once the owner's ~/.tego was replaced", tables, prepared)
+	if tables[500] != "b-2" || tables[510] != "b-3" || tables[520] != "b-4" || prepared != 4 {
+		t.Errorf("adopted under %v with %d compiles; want a preflight followed by one fresh compile per adoption", tables, prepared)
 	}
 	mu.Unlock()
 
-	// A stale table that cannot be compiled again: the adoption fails, nothing is adopted under the stale table.
-	g.sharedMu.Lock()
-	g.shared[1000].records = adopt.FileID{}
-	g.sharedMu.Unlock()
+	// A table that cannot be compiled again: the adoption fails, nothing borrows an earlier table.
 	mu.Lock()
 	failNext = true
 	mu.Unlock()
@@ -1411,11 +1417,9 @@ func TestGuardRecompilesATableWhoseOwnersRecordsChanged(t *testing.T) {
 	}
 }
 
-// TestGuardSelectsAgainWhenFmodRetLapses: the guard prepares each uid's boundary backend once and adopts many agents
-// under it, so a backend selected with the plane in fmod_ret mode would keep the mode after root changed the kernel's
-// preemption mode. Before each adoption the guard reads the mode again (ADR 0024 (16)): a
-// backend whose fmod_ret mode the kernel no longer admits is prepared again, which selects again, and an adoption is
-// never made under it; one that cannot be prepared again fails the adoption.
+// TestGuardSelectsAgainWhenFmodRetLapses: every fresh boundary preparation selects its backend again,
+// including after root changes the kernel's preemption mode (ADR 0024 (16)). A failed new selection never
+// borrows the old fmod_ret backend.
 func TestGuardSelectsAgainWhenFmodRetLapses(t *testing.T) {
 	p := terminalProcs()
 	const sess = "/user.slice/user-1000.slice/session-2.scope"
@@ -1425,19 +1429,19 @@ func TestGuardSelectsAgainWhenFmodRetLapses(t *testing.T) {
 	calls := sandboxAdopt(t, p, true)
 	var mu sync.Mutex
 	prepared, failNext, refused := 0, false, ""
-	refusedNow := adoptFmodRetRefused
-	adoptFmodRetRefused = func() string { mu.Lock(); defer mu.Unlock(); return refused }
-	t.Cleanup(func() { adoptFmodRetRefused = refusedNow })
-	adoptPrepare = func(_ context.Context, m *config.Machine, o adoptOptions, _ adopt.Process, owner int, _ io.Writer) (*preparedAdoption, int) {
+	adoptPrepare = func(_ context.Context, m *config.Machine, o adoptOptions, _ adopt.Process, owner int, out io.Writer) (*preparedAdoption, int) {
 		mu.Lock()
 		defer mu.Unlock()
 		if failNext {
+			fmt.Fprintf(out, "the kernel no longer admits the previous fmod_ret mode: %s", refused)
 			return nil, identity.ExitLauncher
 		}
 		prepared++
 		rt := &agent.RuleTable{Contract: &agent.Contract{Name: fmt.Sprintf("b-%d", prepared)}, Tier: backend.TierCgroup}
 		// Doctor selects fmod_ret mode while the kernel admits it, else another mode.
-		return &preparedAdoption{rt: rt, m: m, cleanup: func() {}, boundary: true, owner: owner, fmodRet: refused == ""},
+		home, _ := adoptHomeOf(owner)
+		records, _ := ownRecordsDir(home)
+		return &preparedAdoption{rt: rt, m: m, cleanup: func() {}, boundary: true, owner: owner, home: home, records: records},
 			identity.ExitOK
 	}
 	tables := map[int]string{}
@@ -1478,16 +1482,12 @@ func TestGuardSelectsAgainWhenFmodRetLapses(t *testing.T) {
 	sight(520)
 	waitFor(t, func() bool { return len(calls.roots()) == 3 })
 	mu.Lock()
-	if tables[500] != "b-1" || tables[510] != "b-2" || tables[520] != "b-2" || prepared != 2 {
-		t.Errorf("adopted under %v with %d preparations; want 500 under the fmod_ret backend, 510 and 520 under the one "+
-			"prepared again once the kernel no longer admitted fmod_ret mode", tables, prepared)
+	if tables[500] != "b-2" || tables[510] != "b-3" || tables[520] != "b-4" || prepared != 4 {
+		t.Errorf("adopted under %v with %d preparations; want a preflight followed by one fresh backend per adoption", tables, prepared)
 	}
 	mu.Unlock()
 
 	// A backend in fmod_ret mode the kernel no longer admits, which cannot be prepared again: the adoption fails.
-	g.sharedMu.Lock()
-	g.shared[1000].fmodRet = true
-	g.sharedMu.Unlock()
 	mu.Lock()
 	failNext = true
 	mu.Unlock()

@@ -46,7 +46,9 @@ func (k *compiler) builtinFIFOs() {
 			if errors.Is(err, os.ErrPermission) {
 				// Refuse this entire unreadable subtree instead of silently
 				// omitting potential FIFO endpoints. This also survives a later
-				// chmod by an outside process.
+				// chmod by an outside process. Root lists it and refuses only its
+				// FIFOs, so a root-tier prediction is unknown.
+				k.builtinCut(dir, err)
 				k.builtinReadTarget(dir)
 				continue
 			}
@@ -84,6 +86,7 @@ func (k *compiler) builtinFIFOs() {
 					// Listing permission does not imply search permission. An
 					// outside chmod must not expose FIFOs omitted by this stat.
 					if !protected {
+						k.builtinCut(p, err) // root stats it: a root-tier prediction is unknown
 						k.builtinReadTarget(dir)
 						protected = true
 					}
@@ -106,6 +109,7 @@ func (k *compiler) builtinFIFOs() {
 				resolved, err := filepath.EvalSymlinks(p)
 				if err != nil {
 					if errors.Is(err, os.ErrPermission) {
+						k.builtinCut(p, err) // root resolves it: a root-tier prediction is unknown
 						k.builtinReadTarget(dir)
 						break
 					}

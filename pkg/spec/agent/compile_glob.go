@@ -36,6 +36,18 @@ type globBudget struct {
 	left    int
 	matches int
 	end     time.Time
+	// cut, when set, is told each step of an expansion that failed: the name looked for, the directory stat'ed,
+	// the link resolved, the directory listed. An expansion reads such a step as "nothing there", which is the
+	// agent's own view; a deny_read expansion passes compiler.namePredictionUnavailable, so a root-tier prediction
+	// knows a permission failure hid names root's expansion finds.
+	cut func(path string, err error)
+}
+
+// failed tells cut of a step that failed.
+func (g *globBudget) failed(path string, err error) {
+	if g.cut != nil && err != nil {
+		g.cut(path, err)
+	}
 }
 
 func newGlobBudget() *globBudget {
@@ -62,6 +74,7 @@ func (g *globBudget) expand(pattern string) ([]string, globStop, error) {
 func (g *globBudget) glob(pattern string) ([]string, globStop) {
 	if !hasGlobMeta(pattern) {
 		if _, err := os.Lstat(pattern); err != nil {
+			g.failed(pattern, err)
 			return nil, globWhole
 		}
 		return []string{pattern}, globWhole
@@ -101,17 +114,22 @@ func (g *globBudget) glob(pattern string) ([]string, globStop) {
 func (g *globBudget) dirMatches(dir, file string) ([]string, globStop) {
 	st, err := os.Stat(dir)
 	if err != nil || !st.IsDir() {
+		g.failed(dir, err)
 		return nil, globWhole
 	}
 	list := dir
 	if lst, err := os.Lstat(dir); err == nil && lst.Mode()&os.ModeSymlink != 0 {
 		r, ok := resolveProbe(dir)
 		if !ok {
+			// The stat above followed the link, so the walk is permitted and something else failed (no /proc).
 			return nil, globWhole
 		}
 		list = r
 	}
 	es, more, err := listDir(list, g.left)
+	if len(es) == 0 {
+		g.failed(list, err) // a directory that could not be opened: its names are unread
+	}
 	g.left -= len(es)
 	var out []string
 	for _, e := range es {

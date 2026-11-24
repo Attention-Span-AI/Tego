@@ -14,9 +14,13 @@ func Instructions(reasonPath string) string {
 		"change it."
 }
 
-// HookNote is the sentence a harness hook that shows the agent each new refusal adds to Instructions (ADR 0063): a
-// fact about where refusals appear, never a command.
-const HookNote = "Each refusal is also reported once, in a note beside the tool result that follows it or at the end of the turn."
+// scopeNote prevents a run's refusal from being mistaken for a verdict on the
+// tool beside which the hook delivered it. Neither a PID nor delivery time proves
+// tool ownership (ADR 0063, amendment of 2026-11-11).
+const scopeNote = "Scope: whole run, including startup and background work; tool call and session attribution unavailable."
+
+// HookNote tells the agent when refusals appear and what their scope is (ADR 0063).
+const HookNote = "Pending refusals are reported at session start and after tools or at turn end. Later session starts may repeat pending refusals before a tool or turn-end hook reports them. " + scopeNote
 
 // HookInstructions is Instructions(reasonPath) and then HookNote: what such a hook tells the agent when a session
 // starts.

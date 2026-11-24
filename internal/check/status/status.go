@@ -12,6 +12,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/check/askpair"
 	"github.com/attention-span-ai/tego/internal/check/gaps"
 	"github.com/attention-span-ai/tego/internal/check/resources"
 	"github.com/attention-span-ai/tego/internal/ledger"
@@ -126,16 +127,33 @@ type Snapshot struct {
 	// ExtraRunEnds is the number of run_end lines after the first, which a healthy writer never produces
 	// (§6 case 5): the first by chain order is the run's end, and Anomalies names the rest.
 	ExtraRunEnds int
+	// RepeatedAsks and UnpairedAnswers are the malformed ask lines the record holds (askpair): ask lines that repeated an
+	// ask id already asked, and answer lines that pair with no ask. Anomalies names them.
+	RepeatedAsks, UnpairedAnswers int
 }
 
 // Anomalies are the ledger anomalies the snapshot met (§6 case 5), one line each, for the warning a CLI
 // prints and --json's ledger_anomalies. Nil for a healthy ledger.
 func (s *Snapshot) Anomalies() []string {
-	if s.ExtraRunEnds == 0 {
-		return nil
+	var out []string
+	if s.ExtraRunEnds > 0 {
+		out = append(out, fmt.Sprintf("%d run_end lines; the first by chain order is the run's end and the other %d are ignored",
+			s.ExtraRunEnds+1, s.ExtraRunEnds))
 	}
-	return []string{fmt.Sprintf("%d run_end lines; the first by chain order is the run's end and the other %d are ignored",
-		s.ExtraRunEnds+1, s.ExtraRunEnds)}
+	if n := s.RepeatedAsks; n > 0 {
+		out = append(out, fmt.Sprintf("%s (%d %s); only the first line of an ask id counts", askpair.RepeatedWords, n, lineWord(n)))
+	}
+	if n := s.UnpairedAnswers; n > 0 {
+		out = append(out, fmt.Sprintf("%s (%d %s); it is not counted as an answer", askpair.UnpairedWords, n, lineWord(n)))
+	}
+	return out
+}
+
+func lineWord(n int) string {
+	if n == 1 {
+		return "line"
+	}
+	return "lines"
 }
 
 // Sources of the stall_after ceiling.
@@ -329,8 +347,9 @@ func Derive(r *ledger.Reader, lockHeld bool, now time.Time, stallAfter time.Dura
 	s.Idle, s.IdleClock = idle(s, s.LockHeld, nowMono, now)
 	s.Gaps = statusGaps(gapTally.Counts(), costBudget)
 	if s.LockHeld && runEnd == nil {
-		s.PendingApprovals = len(approvals)
+		s.PendingApprovals = approvals.len()
 	}
+	s.RepeatedAsks, s.UnpairedAnswers = approvals.malformed()
 	s.St = state(s, runEnd, openRequest, toolPending)
 	if runEnd != nil && s.St == Done {
 		s.ExitReason, s.ExitCode = runEnd.Reason, runEnd.ExitCode
@@ -460,7 +479,7 @@ func DeriveDir(ctx context.Context, dir string, now time.Time) (*Snapshot, error
 	r.SkipNewerVersions()
 	held, err := LockHeld(dir)
 	if err != nil {
-		return nil, err
+		return nil, ledger.WithModeAdvice(dir, err)
 	}
 	s, err := Derive(r, held, now, 0, WithContext(ctx))
 	if err != nil {
@@ -520,10 +539,6 @@ func DeriveBorn(dir string, now time.Time) (*Snapshot, error) {
 // lock hung `tego status` in the open, and a link aimed a root status's flock at any file, R22).
 func LockHeld(dir string) (bool, error) { return ledger.LockHeld(dir) }
 
-// gapNoPriceTable is the why of the gap a run records when no price table loaded (limits.GapNoPriceTable; the read
-// side does not import the runtime, and a test in internal/cli keeps the two spelled alike).
-const gapNoPriceTable = "no-price-table"
-
 // statusGaps is the gap line status shows: every gap the run recorded, except record/no-price-table for a run with
 // no cost_usd budget, which no price table would have served (tokens are counted without one). The gap stays in the
 // ledger and in tego measure; only the status line is quiet about it (G10).
@@ -531,5 +546,5 @@ func statusGaps(cs []gaps.Count, costBudget bool) []gaps.Count {
 	if costBudget {
 		return cs
 	}
-	return slices.DeleteFunc(cs, func(c gaps.Count) bool { return c.What == record.GapRecord && c.Why == gapNoPriceTable })
+	return slices.DeleteFunc(cs, func(c gaps.Count) bool { return c.What == record.GapRecord && c.Why == record.GapNoPriceTable })
 }

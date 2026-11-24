@@ -32,9 +32,9 @@ func callerRun(t *testing.T, id string, err error) {
 // outsideEveryRun makes the commands see their caller outside every run, whatever cgroup the test itself runs in.
 func outsideEveryRun(t *testing.T) {
 	t.Helper()
-	old := selfInRun
-	selfInRun = func() (bool, error) { return false, nil }
-	t.Cleanup(func() { selfInRun = old })
+	old := selfAnswer
+	selfAnswer = answerOutside
+	t.Cleanup(func() { selfAnswer = old })
 }
 
 // TestBlockCrossRunRefused: a process inside run A may not block in run B, a process inside B may; outside
@@ -99,8 +99,10 @@ func TestBlockCrossRunRefused(t *testing.T) {
 				governedCaller(t, nil)
 				callerRun(t, "", errors.New("runscope: the cgroup file names no single cgroup v2 path"))
 			},
-			"InRun cannot tell": func(t *testing.T) {
-				governedCaller(t, errors.New("runscope: this process is in cgroup namespace 4026532000, not the initial one"))
+			// The rule's unknown: the path shows no run, and the process cannot be shown to be outside every run (a
+			// cgroup namespace that is not the machine's first one). It is not called a process inside a run.
+			"the rule cannot tell": func(t *testing.T) {
+				governedCaller(t, errors.New("open /proc/self/ns/cgroup: permission denied"))
 				callerRun(t, idB, nil) // a namespaced path may look like B's own; it is not trusted
 			},
 		} {
@@ -108,7 +110,14 @@ func TestBlockCrossRunRefused(t *testing.T) {
 				set(t)
 				before := blocks(dirB, idB)
 				code, _, errs := run(t, "block", idB, "exec", "sh")
-				if code != identity.ExitFinding || !strings.Contains(errs, "own run cannot be named") || !strings.Contains(errs, "[governed]") {
+				want := "own run cannot be named"
+				if name == "the rule cannot tell" {
+					want = "this process cannot be shown to be outside every tego run"
+					if strings.Contains(errs, "inside a tego run") || strings.Contains(errs, "a governed agent") {
+						t.Errorf("a process that cannot be shown to be outside is called one inside a run: %q", errs)
+					}
+				}
+				if code != identity.ExitFinding || !strings.Contains(errs, want) || !strings.Contains(errs, "[governed]") {
 					t.Errorf("exit %d stderr %q", code, errs)
 				}
 				if n := blocks(dirB, idB); n != before {
@@ -145,7 +154,7 @@ func liveRunWithGaps(t *testing.T, gaps []record.GapPayload) (dir, id string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := w.WriteRunStart(record.RunStartPayload{Command: []string{"true"}, Cwd: "/", Tier: "landlock", RecordMinor: record.Minor}); err != nil {
+	if err := w.WriteRunStart(record.RunStartPayload{Command: []string{"true"}, Cwd: "/", Tier: "landlock", RecordMinor: record.MinorLearn}); err != nil {
 		t.Fatal(err)
 	}
 	for _, g := range gaps {
@@ -275,8 +284,9 @@ func TestPauseFactState(t *testing.T) {
 	}
 }
 
-// TestLastPauseLineSkipsLongLines: a line longer than the reader's buffer is skipped, not taken for the end.
-func TestLastPauseLineSkipsLongLines(t *testing.T) {
+// TestScanPauseLinesReportsLongLineDamage: a malformed line larger than the read
+// buffer keeps its diagnostic alongside a later valid confirmation.
+func TestScanPauseLinesReportsLongLineDamage(t *testing.T) {
 	dir, _ := controlLedger(t, []record.GapPayload{pauseGap(record.GapRunPaused, 1)})
 	path := filepath.Join(dir, ledger.EventsFile)
 	data, err := os.ReadFile(path)
@@ -287,7 +297,7 @@ func TestLastPauseLineSkipsLongLines(t *testing.T) {
 	if err := os.WriteFile(path, append(long, data...), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if why, serial := lastPauseLine(path); why != record.GapRunPaused || serial != 1 {
-		t.Errorf("lastPauseLine = %q %d, want %q 1", why, serial, record.GapRunPaused)
+	if sc := scanPauseLines(path); sc.err == nil || !strings.Contains(sc.err.Error(), "byte offset") || sc.why != record.GapRunPaused || sc.confirmed != 1 || !sc.paused {
+		t.Errorf("scanPauseLines = %q %d paused %v (%v), want %q 1 paused with positioned damage", sc.why, sc.confirmed, sc.paused, sc.err, record.GapRunPaused)
 	}
 }

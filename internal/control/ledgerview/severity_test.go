@@ -121,7 +121,7 @@ func TestRefusedWritesOfAgentFiles(t *testing.T) {
 		[2]string{"refused", `"rule":"held-unsupported","reason":"fs-gate","op":"open","target":"/home/u/.codex/version.json"`},
 		[2]string{"refused", `"rule":"unmatched","reason":"write-outside-contract","op":"open","target":"/home/u/.codex/hooks.json"`},
 	)
-	r.Command = "codex --no-daemon"
+	r.Command, r.command = "codex --no-daemon", []string{"codex", "--no-daemon"}
 	s := computeSignal(r, Sensitive{Cwd: r.Cwd})
 	got := map[string]Severity{}
 	for _, g := range s.Groups {
@@ -149,7 +149,7 @@ func TestRefusedRenameOntoAFileThatRunsLater(t *testing.T) {
 	lines = append(lines, two("link", "write-outside-contract", "/w/proj/d.tmp", "/w/proj/.mcp.json")...)
 	lines = append(lines, two("symlink", "write-outside-contract", "/w/proj/e.tmp", "/home/u/.claude/settings.json")...)
 	r := burstRun(t, time.Minute, lines...)
-	r.Command = "claude"
+	r.Command, r.command = "claude", []string{"claude"}
 	s := computeSignal(r, Sensitive{Cwd: r.Cwd})
 	got := map[string]Group{}
 	for _, g := range s.Groups {
@@ -226,8 +226,18 @@ func TestCommandAgent(t *testing.T) {
 		"python3 agent.py":                  "",
 		"":                                  "",
 	} {
-		if got := CommandAgent(cmd); got != want {
+		if got := CommandAgent(strings.Fields(cmd)); got != want {
 			t.Errorf("CommandAgent(%q) = %q, want %q", cmd, got, want)
+		}
+	}
+	// The recorded arguments are read as they are: a path that holds a space is one program.
+	for want, argv := range map[string][]string{
+		"codex":  {"/opt/my tools/codex", "--no-daemon"},
+		"claude": {"env", "FOO=1", "/opt/my tools/claude"},
+		"":       {"/opt/my tools/run", "codex"},
+	} {
+		if got := CommandAgent(argv); got != want {
+			t.Errorf("CommandAgent(%q) = %q, want %q", argv, got, want)
 		}
 	}
 }

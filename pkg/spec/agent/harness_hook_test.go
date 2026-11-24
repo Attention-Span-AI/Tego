@@ -130,7 +130,7 @@ func TestWithHarnessHookRefusesAnInexactGrant(t *testing.T) {
 	}
 	linked := filepath.Join(f.bin, "tego-linked")
 	f.file(linked, string(elf64("", 2)), 0o755)
-	if err := os.Link(linked, filepath.Join(t.TempDir(), "tego-copy")); err != nil {
+	if err := os.Link(linked, filepath.Join(f.bin, "tego-copy")); err != nil { // next to it: a link cannot cross filesystems
 		t.Fatal(err)
 	}
 	for name, a := range map[string][]string{

@@ -64,7 +64,7 @@ tree() {
 	mkdir -p "$t/scripts" "$t/LICENSES" "$t/embed"
 	cp "$here/check-licenses.sh" "$t/scripts/"
 	cp "$repo/LICENSE" "$repo/NOTICE" "$t/"
-	cp "$repo/LICENSES/GPL-2.0-only.txt" "$repo/LICENSES/BSD-2-Clause.txt" "$repo/LICENSES/LGPL-2.1-only.txt" "$repo/LICENSES/Lucide.txt" "$t/LICENSES/"
+	cp "$repo/LICENSES/GPL-2.0-only.txt" "$repo/LICENSES/BSD-2-Clause.txt" "$repo/LICENSES/LGPL-2.1-only.txt" "$repo/LICENSES/Lucide.txt" "$repo/LICENSES/Anton.txt" "$t/LICENSES/"
 	printf '/* SPDX-License-Identifier: Apache-2.0 */\n' >"$t/embed/own.css"
 	printf '<svg><symbol id="logo"/><symbol id="i-kite"/></svg>\n' >"$t/embed/sprite.svg"
 	{
@@ -75,6 +75,7 @@ tree() {
 		echo "Files: embed/sprite.svg"
 		echo "Icons: kite, ship"
 		cat "$repo/LICENSES/Lucide.txt"
+		cat "$repo/LICENSES/Anton.txt"
 	} >"$t/THIRD_PARTY_NOTICES.txt"
 }
 check() { # check NAME WANT CMD...: CMD exits WANT
@@ -136,6 +137,11 @@ sed -i '/Permission to use, copy/d' "$tmp/nolucide/THIRD_PARTY_NOTICES.txt"
 check "the icons' licence missing from the notices fails" 1 "$tmp/nolucide/scripts/check-licenses.sh"
 grep -q 'Lucide.txt' "$tmp/out" || { echo "FAIL the refusal does not name the icons' licence" >&2; fail=1; }
 
+tree noanton
+sed -i '/The Anton Project Authors/d' "$tmp/noanton/THIRD_PARTY_NOTICES.txt"
+check "the font's licence missing from the notices fails" 1 "$tmp/noanton/scripts/check-licenses.sh"
+grep -q 'Anton.txt' "$tmp/out" || { echo "FAIL the refusal does not name the font's licence" >&2; fail=1; }
+
 tree noembed
 LICTEST_NOEMBED=1
 export LICTEST_NOEMBED
@@ -179,7 +185,7 @@ dist() { # dist NAME [FILE-TO-LEAVE-OUT]
 		cd "$tmp/good"
 		leave="${2:-none}"
 		set --
-		for f in LICENSE NOTICE THIRD_PARTY_NOTICES.txt LICENSES/GPL-2.0-only.txt LICENSES/BSD-2-Clause.txt LICENSES/LGPL-2.1-only.txt LICENSES/Lucide.txt; do
+		for f in LICENSE NOTICE THIRD_PARTY_NOTICES.txt LICENSES/GPL-2.0-only.txt LICENSES/BSD-2-Clause.txt LICENSES/LGPL-2.1-only.txt LICENSES/Lucide.txt LICENSES/Anton.txt; do
 			[ "$f" = "$leave" ] || set -- "$@" "$f"
 		done
 		tar -czf "$d/tego_0.0.0_licenses.tar.gz" "$@"
@@ -195,6 +201,8 @@ echo "0000000000000000000000000000000000000000000000000000000000000000  tego_0.0
 check "an archive the checksums do not cover fails" 1 "$tmp/good/scripts/check-licenses.sh" "$tmp/dist-badsum"
 dist dist-nolucide LICENSES/Lucide.txt
 check "an archive without the icons' licence fails" 1 "$tmp/good/scripts/check-licenses.sh" "$tmp/dist-nolucide"
+dist dist-noanton LICENSES/Anton.txt
+check "an archive without the font's licence fails" 1 "$tmp/good/scripts/check-licenses.sh" "$tmp/dist-noanton"
 mkdir -p "$tmp/dist-empty"
 check "a release directory with no archive fails" 1 "$tmp/good/scripts/check-licenses.sh" "$tmp/dist-empty"
 

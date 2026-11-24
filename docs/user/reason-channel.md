@@ -33,20 +33,42 @@ figures, and `run_start.reads_notified` says whether a run's reads were told to 
 
 `tego hook claude-code` is a Claude Code command hook. At
 session start it tells Claude the run's facts (the contract is fixed, what a refusal looks like, where the reason
-file is). After each tool call, after a batch of parallel calls, and when Claude would stop, it adds the refusals
-Claude has not been told yet as a note beside the tool result, each refusal once, in sentences such as:
+file is), then reports pending refusals as run context. After each tool call, after a batch of parallel calls, and
+when Claude would stop, it prints the refusals that belong to its session and that no hook has claimed yet, as a note beside the tool
+result, in sentences such as:
 
 ```
 Tego, this run's access control, refused 1 action:
+Scope: whole run, including startup and background work; tool call and session attribution unavailable.
 - Tego refused write "/home/user/out.txt": this run may not write to that path (rule fs.write).
 ```
 
-With nothing new it adds nothing. A refusal the reason file did not list yet when the hook ran (see the reason file
-above) is told by the next hook that runs once it does, one tool call or one turn later, and still once; when no
-hook runs after that (the session's last turn), it is not told, and the ledger still holds it. A note at the end of
-a turn keeps Claude going once; when Claude would stop
-again, the hook stays silent, and refusals that came meanwhile are told after the next tool call. It reads only the reason file and its own state (and the few files every Go program reads
-at start), never your home or Tego's configuration, so it never causes a refusal of its own. Outside a Tego run it does nothing at all.
+The note covers refusals of the whole Tego run that belong to this session, including its background work. Its
+place beside a tool result does not mean that tool caused every refusal. The reason file lists, for most refusals,
+the process that was refused and its ancestors; a hook takes a refusal as its session's when its harness (its
+nearest ancestor that is not a shell) is among them, so one session's hook does not take another session's
+refusal; when sessions nest, the inner one's refusals are its own. A refusal with no ancestry (one the kernel recorder's ring or
+the fanotify listener wrote, or one whose process had already exited when Tego read it), or whose ancestry names no
+session that has a hook (a process left behind by a session that ended), belongs to nobody in particular and goes to
+whichever hook claims it first. Any process of the run can rewrite the hook's state file, so this keeps honest sessions
+apart and does not hold against a hostile process of the run.
+Only the run's first SessionStart claims its pending report. Later starts preview pending refusals without
+advancing a cursor or the delivery counts; these previews may repeat until a tool or Stop hook claims them. Pending
+refusals are labelled as pending when the hook read the file. A startup refusal published later can still arrive
+beside a tool, with the same scope note.
+
+A claim takes two steps. The hook records the claim, prints the note, and then marks the claim printed. Printed
+means the hook's output was written to the harness without error; Tego cannot see whether the harness passed it to
+the model. A hook stopped before it marked the claim printed (killed, timed out, or its output write failed) leaves
+the refusal for the next hook of the same session, which may then print it twice. The ledger holds every refusal.
+
+With nothing new a tool or Stop hook adds nothing; SessionStart still states the run's facts. A refusal the reason
+file did not list yet when the hook ran (see the reason file above) stays eligible for a later hook once it does,
+one tool call or one turn later. When no hook runs after that (the session's last turn), it is not told, and the
+ledger still holds it. A note at the end of a turn keeps Claude going once; when Claude would stop again, the hook
+stays silent, and refusals that came meanwhile stay pending for the next tool call. It reads only the reason file
+and its own state (and the few files every Go program reads at start), never your home or Tego's configuration,
+so it never causes a refusal of its own. Outside a Tego run it does nothing at all.
 
 Tego installs the hook for you when the run's command is `claude` (or the contract says `harness: claude-code`). It
 writes a settings file for this run only, in the run's runtime directory, and starts Claude Code as

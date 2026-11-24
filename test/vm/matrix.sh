@@ -15,7 +15,7 @@
 # What goes into the guest: the tego binary with the BPF objects when `go build -tags tegobpf` works
 # (bpf/README.md), else the plain one (tier cgroup then reports "not built" and the root halves skip by
 # name); test/e2e, test/workloads, examples and test/vm, and the price table kt_config names
-# (internal/runtime/limits/testdata/prices.yaml); jq and the libraries it loads, which the kill tests
+# (internal/pricetable/testdata/prices.yaml); jq and the libraries it loads, which the kill tests
 # use and the guest's base image does not carry; and the Python packages test/e2e/pydeps.sh caches (pip,
 # the build workload's wheels, the Anthropic SDK, and the Claude Agent SDK with VM_KT7A=1), since the guest
 # has no network. npm, node and go go in only with VM_KT4_TOOLS=1, about 450 MB more of the guest's RAM;
@@ -161,7 +161,7 @@ for d in test/e2e test/workloads test/vm examples; do
 done
 # kt_config (test/e2e/lib.sh) gives each kill test's machine config the limits package's test price table: the
 # examples declare cost_usd, and a run of one with no price table loaded is refused [budget-unmetered].
-prices=internal/runtime/limits/testdata/prices.yaml
+prices=internal/pricetable/testdata/prices.yaml
 mkdir -p "$stage/src/$(dirname "$prices")"
 cp "$prices" "$stage/src/$prices" || { echo "matrix: could not stage $prices for the kill tests' machine config" >&2; exit 1; }
 # The agent a root run drops to reads the workloads and examples as the user.

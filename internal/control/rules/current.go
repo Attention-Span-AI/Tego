@@ -30,6 +30,10 @@ type Current struct {
 // Current reads the contract ref names through the guards: ErrNoContract for a ref outside the set, ErrNotWritable
 // for a file that fails a guard or whose folder now points elsewhere. It writes nothing.
 func (s *Service) Current(ref string) (*Current, error) {
+	if s.remote() {
+		return remoteService[*Current](s, unclassified(), "Current", struct{ Ref string }{ref})
+	}
+
 	c, f, err := s.writable(ref)
 	if err != nil {
 		return nil, err

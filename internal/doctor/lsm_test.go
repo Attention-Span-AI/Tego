@@ -3,6 +3,7 @@
 package doctor
 
 import (
+	"fmt"
 	"github.com/attention-span-ai/tego/internal/platform/tomoyo"
 	"os"
 	"path/filepath"
@@ -210,10 +211,15 @@ func TestBootFamilyOf(t *testing.T) {
 
 func TestTOMOYOHeldOpenDetail(t *testing.T) {
 	t.Cleanup(tomoyo.SetLoaderOmissionForTest(func() string { return "" }))
-	for _, tc := range []struct{ name, domain, missing, line, want string }{
+	moved := fmt.Sprintf("Policy %-30s %10d (Last: 2026/11/19 12:00:00)\n", "update:", 3)
+	for _, tc := range []struct{ name, domain, missing, line, profile, want string }{
 		{name: "Debian stock", domain: "<kernel>", want: "TOMOYO has no policy update since boot and does not prevent held file opens"},
 		{name: "loaded policy", domain: "<kernel> /usr/bin/tego", want: "held opens are refused on this machine"},
 		{name: "updated", domain: "<kernel>", line: "Policy update:                                 1\n", want: "until TOMOYO is unused again after a restart"},
+		{name: "updated, a root thread's profile proof", domain: "<kernel> /usr/bin/tego", line: moved, profile: "PROFILE_VERSION=20150505\n0-CONFIG={ mode=disabled grant_log=no reject_log=yes }\n",
+			want: "profile, read now, enforces nothing"},
+		{name: "updated, the profile enforces", domain: "<kernel>", line: moved, profile: "PROFILE_VERSION=20150505\n0-CONFIG={ mode=enforcing grant_log=no reject_log=yes }\n",
+			want: "held opens are refused on this machine (TOMOYO profile"},
 		{name: "hidden securityfs", missing: "/sys/kernel/security/tomoyo/stat", want: "expose readable /sys/kernel/security/tomoyo"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -223,6 +229,12 @@ func TestTOMOYOHeldOpenDetail(t *testing.T) {
 				}
 				if strings.HasSuffix(path, "self_domain") {
 					return []byte(tc.domain), nil
+				}
+				if strings.HasSuffix(path, "/profile") {
+					if tc.profile == "" {
+						return nil, os.ErrPermission // a thread that is not root
+					}
+					return []byte(tc.profile), nil
 				}
 				if tc.line != "" {
 					return []byte(tc.line), nil
@@ -237,5 +249,43 @@ func TestTOMOYOHeldOpenDetail(t *testing.T) {
 				t.Fatal(got)
 			}
 		})
+	}
+}
+
+// TestTOMOYOHeldOpenDetailNamesTheFactsPath: the doctor line names which files TOMOYO's facts came from, the kernel's
+// path or the administrator's tomoyo.facts_dir; a hidden kernel path is answered with the bind remedy, a configured one
+// that fails is not told to expose the kernel's path, and no wording offers to assume TOMOYO enforces nothing.
+func TestTOMOYOHeldOpenDetailNamesTheFactsPath(t *testing.T) {
+	t.Cleanup(tomoyo.SetLoaderOmissionForTest(func() string { return "" }))
+	t.Cleanup(func() { _ = tomoyo.SetFactsDir("") })
+	state := LSMState{Modules: []string{"tomoyo"}}
+	hidden := func(string) ([]byte, error) { return nil, os.ErrPermission }
+	stock := func(p string) ([]byte, error) {
+		if strings.HasSuffix(p, "self_domain") {
+			return []byte("<kernel>\n"), nil
+		}
+		return []byte("Policy update:                                 0\n"), nil
+	}
+	got := tomoyoHeldOpenDetail(state, hidden)
+	for _, want := range []string{"TOMOYO facts read from /sys/kernel/security/tomoyo", "tomoyo.facts_dir", "read-only"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("default, hidden: %q lacks %q", got, want)
+		}
+	}
+	if err := tomoyo.SetFactsDir("/run/tego-tomoyo"); err != nil {
+		t.Fatal(err)
+	}
+	if got := tomoyoHeldOpenDetail(state, stock); !strings.Contains(got, "TOMOYO facts read from /run/tego-tomoyo (tomoyo.facts_dir)") ||
+		!strings.Contains(got, "does not prevent held file opens") {
+		t.Errorf("configured, stock: %q", got)
+	}
+	got = tomoyoHeldOpenDetail(state, hidden)
+	if !strings.Contains(got, "TOMOYO facts read from /run/tego-tomoyo (tomoyo.facts_dir)") || strings.Contains(got, "expose readable") {
+		t.Errorf("configured, failing: %q", got)
+	}
+	for _, s := range []string{got, tomoyoHeldOpenDetail(state, stock)} {
+		if strings.Contains(strings.ToLower(s), "assume") {
+			t.Errorf("an assume-style wording: %q", s)
+		}
 	}
 }

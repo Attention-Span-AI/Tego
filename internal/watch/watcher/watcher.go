@@ -382,7 +382,7 @@ func (w *Watcher) consider(f facts, seen string) error {
 	return w.say(Sighting{
 		Event: EventAgentStarted, Session: s.ID, PID: root.TGID, PPID: root.PPID,
 		Exe: f.Exe, Argv: argv, ArgvTruncated: trunc, Comm: f.Comm, Rule: rule.Name, Seen: seen,
-		OutsideGovernedRun: &outside, RunID: envRun, RunCgroupID: cgRun, Cgroup: cg, Note: note, Start: f.start,
+		OutsideGovernedRun: &outside, RunID: envRunID(envRun), RunCgroupID: cgRun, Cgroup: cg, Note: note, Start: f.start,
 	})
 }
 

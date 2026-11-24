@@ -43,6 +43,15 @@ func cmdTest() Command {
 				message(stderr, "", 0, 0, "tego test: --tier: one of auto, landlock, cgroup, bpflsm", codeUsage)
 				return identity.ExitUsage // R25: usage error
 			}
+			if code, done := enterUserScope(ctx, stderr); done {
+				return code
+			}
+			m, ds, err := loadMachine(config.TrustAbort)
+			writeConfigDiagnostics(stderr, ds)
+			if err != nil {
+				configRefused(stderr, "tego test", err)
+				return identity.ExitConfig
+			}
 			exe, err := os.Executable()
 			if err != nil {
 				message(stderr, "", 0, 0, "tego test: find this tego binary: "+err.Error(), codeIO)
@@ -84,10 +93,10 @@ func cmdTest() Command {
 				// No run under Tego started. When that is only because this shell is outside the user manager's cgroup,
 				// the next step is the shell that is inside it: the check of doctor's D3 that
 				// tego setup makes, which is what refused the runs.
-				if m, _, err := loadMachine(config.TrustWarn); err == nil {
-					if pa, err := testProbe(ctx, m); err == nil && pa.outside {
-						outsideHint(stderr, "run this again there")
-					}
+				if pa, err := testProbe(ctx, m); err == nil && pa.outside {
+					outsideHint(stderr, "run this again there")
+				} else if err == nil && pa.noManager {
+					noManagerHint(stderr)
 				}
 			}
 			return code

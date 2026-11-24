@@ -95,6 +95,12 @@ type keepRows struct{ planeKernel }
 
 func (keepRows) clearSlot(uint32) error { return nil }
 
+// testPlaneAdmission is the explicit admission model for direct kernel fixtures.
+// These tests exercise rows, fills and cleanup on every kernel, including under
+// the suite's preemption waiver; they do not assert product admission. Product
+// admission is exercised through doctor and the CLI guest regressions instead.
+func testPlaneAdmission() error { return nil }
+
 // hostPlane is a plane mode and build this kernel runs: LSM mode where bpf is an active LSM, else fmod_ret; the
 // rdonly build where BTF has bpf_rdonly_cast.
 func hostPlane(t *testing.T) (ebpfbindings.PlaneMode, ebpfbindings.Object) {
@@ -141,7 +147,7 @@ func TestPlaneStaleRowsOfTheSlotsLastRunAreAbsent(t *testing.T) {
 	// A linger keeps the build, and its plane with A's rows, pinned between the two runs, as a build a run left does;
 	// the test removes it at the end.
 	b := New(Options{Machine: machineLinger(time.Hour), BPFFS: DefaultBPFFS, StateDir: state, Hash: hash,
-		Plane: PlaneSetup{Mode: mode, Build: build}, planeWrap: func(p planeKernel) planeKernel { return keepRows{p} }})
+		Plane: PlaneSetup{Mode: mode, Build: build, RecheckAdmission: testPlaneAdmission}, planeWrap: func(p planeKernel) planeKernel { return keepRows{p} }})
 	t.Cleanup(func() {
 		if pins, err := newPinLayout(DefaultBPFFS, hash); err == nil {
 			_ = pins.remove()

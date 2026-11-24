@@ -26,16 +26,16 @@ import (
 // pages' own templates' output, so escaping and content are the page's; they carry the form token like the page, so
 // they are never compressed.
 //
-// A clock that follows the wall clock rather than the ledger (a running run's duration so far, how long ago an ask
-// came) is marked data-ck: live.js rewrites its text every second, and hashRegion leaves its text out, so a region's
-// hash moves only when its data does and a live page is not sent a region whose only change is a clock.
+// data-ck leaves text out of hashRegion: ticking durations and full ask-card ages use it so a clock alone does not
+// resend the region. Outside the request band, live.js rewrites those clocks from data-since or data-ago every
+// second. The band's held-duration snapshot also uses data-ck, but does not tick; its asked-at time stays absolute.
 
 // regionHeader is the request header that asks for a page's changed regions instead of the page.
 const regionHeader = "X-Tego-Regions"
 
 // layoutRegions are the regions every page's layout has: the topbar's Live word, the side nav with the Approvals
 // count, and the waiting-ask banner with the page's notes.
-var layoutRegions = []string{"r-top", "r-nav", "r-banner"}
+var layoutRegions = []string{"r-top", "r-nav", "r-banner", "r-guide"}
 
 // pageRegions are each page's own regions. "content" is the whole page body, for pages whose every part follows
 // the ledger. A page left out has only the layout's.
@@ -44,6 +44,8 @@ var pageRegions = map[string][]string{
 	// line resends the Running now table and the counts it moved, not the page.
 	"overview":  {"r-ov-head", "r-ov-guide", "r-ov-tiles", "r-ov-live", "r-ov-asks", "r-ov-recent", "r-ov-refusals"},
 	"approvals": {"content"},
+	// Agents: the saved scan and its notices, the list or the one detail, and the other programs and limits.
+	"agents": {"r-ag-head", "r-ag-main", "r-ag-more"},
 	// Detections and Investigate read the ledger top to bottom; Severity and the Glossary read no line of it.
 	"detections":  {"content"},
 	"investigate": {"content"},
@@ -62,6 +64,10 @@ var pageRegions = map[string][]string{
 	"rules-new":    {"content"},
 	// The event page's Act on this panel: its Saved panel (?saved=<id>) and Block now change in place.
 	"event": {"r-act"},
+	// The MCP tools and Model routes pages: the whole body follows the ledger (a call's count, a switch another tab
+	// moved). Their preview pages stay still: a change being checked is not replaced under the person.
+	"mcp-tools":    {"content"},
+	"model-routes": {"content"},
 }
 
 // topOnly are the regions live.js refreshes only while the person is at the top of the page's first page (Logs'

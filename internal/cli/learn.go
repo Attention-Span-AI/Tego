@@ -274,7 +274,7 @@ func hostsRefusedHint(stderr io.Writer, dir string, m *config.Machine, o learnOp
 	if len(kept.hostArgs) == 0 {
 		text = "make it without --allow-host; learn allows the addresses it kept:"
 	}
-	writeHint(stderr, text, record.Printable(command+kept.shapingFlags()))
+	writeHint(stderr, text, command+kept.shapingFlags())
 }
 
 // codeAllowHost is the code of a refusal of an --allow-host name.
@@ -294,16 +294,12 @@ func pathArg(file string) string {
 // tego run finds a contract by name, and an agent held by Tego must not write the contract it, or another agent, will
 // be held to. It reports true when it refused.
 func refuseSaveGoverned(stderr io.Writer) bool {
-	in, err := selfInRun()
-	if !in {
+	a := selfAnswer()
+	if a.Outside() {
 		return false
 	}
-	why := "this process is inside a tego run's cgroup"
-	if err != nil {
-		why = "this process cannot be shown to be outside every tego run (" + err.Error() + ")"
-	}
-	message(stderr, "", 0, 0, "tego learn: --save: a governed agent cannot save a contract: "+why+"; nothing was written; "+
-		"run it from a terminal outside any tego run", codeGoverned)
+	message(stderr, "", 0, 0, notOutside("learn: --save", a, "cannot save a contract", "the contract was not saved",
+		"nothing was written"), codeGoverned)
 	return true
 }
 
@@ -326,7 +322,7 @@ func refuseSaveForAnother(stderr io.Writer) bool {
 
 // runLearn resolves the run, reads its record without the lock and renders one proposal.
 func runLearn(ctx context.Context, ref string, o learnOptions, stdout, stderr io.Writer) int {
-	mc := &machineOnce{stderr: stderr}
+	mc := &machineOnce{stderr: stderr, strict: o.save != "" || len(o.hosts) > 0}
 	dir, err := resolveRunDir("learn", ref, true, mc)
 	if err != nil {
 		return runRefFailed(stderr, "learn", err)
@@ -433,7 +429,14 @@ func runLearn(ctx context.Context, ref string, o learnOptions, stdout, stderr io
 				agent.ReasonReadCost, agent.ReasonReadWorkload)
 		}
 		hint, command = "run your agent under it:", "tego run "+o.save
-		if folderHere(p.Cwd) {
+		switch {
+		case !folderHere(p.Cwd):
+		case !faithful(p.Cwd):
+			// The folder comes from the record (run_start.cwd), which a record-only agent or a forged record chooses. A name
+			// with a newline or an escape cannot be shown as it is, and record.Printable would show another folder's name
+			// (backslash and n), so no command is given rather than one aimed at a different folder.
+			hint, command = unsafeFolderText, ""
+		default:
 			command = "cd " + shellword.Quote(p.Cwd) + " && " + command
 		}
 	case o.out != "":
@@ -500,7 +503,7 @@ func runLearn(ctx context.Context, ref string, o learnOptions, stdout, stderr io
 	}
 	warnNewer(stderr, "learn", dir, r.SkippedNewer())
 	warned = true
-	runHint(stderr, hint, record.Printable(command))
+	runHint(stderr, hint, command)
 	return identity.ExitOK
 }
 

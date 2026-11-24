@@ -1238,6 +1238,9 @@ var planeHelperHeld = map[string]int{}
 
 // planeHelperStepB answers step B's commands: creates, truncates, attribute changes, sockets (socket(2) and
 // io_uring's IORING_OP_SOCKET), a stat, and the TOCTOU loops.
+// planeHeldFd is the socket the helper's "hold" command keeps for "listen-held" (-1 for none).
+var planeHeldFd = -1
+
 func planeHelperStepB(f []string) (string, bool) {
 	switch f[0] {
 	case "mkdir":
@@ -1287,6 +1290,17 @@ func planeHelperStepB(f []string) (string, bool) {
 		return errnoString(unix.Setxattr(f[1], "system.posix_acl_access", planeACLValue, 0)), true
 	case "removeacl":
 		return errnoString(unix.Removexattr(f[1], "system.posix_acl_access")), true
+	case "recvctl":
+		return planeRecvCtl(), true
+	case "recvctl-child":
+		// A process of the run that is not this one: this binary again, which makes one receive and exits.
+		cmd := exec.Command("/proc/self/exe")
+		cmd.Env = append(os.Environ(), planeDeputyEnv+"=1", planeHelperEnv+"=0")
+		out, err := cmd.Output()
+		if err != nil {
+			return "err child " + err.Error(), true
+		}
+		return strings.TrimSpace(string(out)), true
 	case "stat":
 		var st unix.Stat_t
 		return errnoString(unix.Lstat(f[1], &st)), true
@@ -1340,6 +1354,65 @@ func planeHelperStepB(f []string) (string, bool) {
 			return errnoString(err), true
 		}
 		res, err := uring.Socket(n[0], n[1], n[2])
+		if err != nil {
+			return "err " + err.Error(), true
+		}
+		return strconv.Itoa(int(-res)), true
+	case "listen", "uring-listen":
+		// A socket made by socket(2), then listened on with no bind: listen(2) or io_uring's IORING_OP_LISTEN (6.11+),
+		// which reaches security_socket_listen with no listen syscall for a seccomp filter to see. The answer is the
+		// errno of the listen alone; a refused socket(2) is "socket <errno>".
+		var n [3]int
+		for i := range n {
+			n[i], _ = strconv.Atoi(f[1+i])
+		}
+		fd, err := unix.Socket(n[0], n[1]|unix.SOCK_CLOEXEC, n[2])
+		if err != nil {
+			return "socket " + errnoString(err), true
+		}
+		defer unix.Close(fd)
+		if n[0] == unix.AF_UNIX {
+			// The kernel refuses a listen on an unbound unix socket (EINVAL): a unix listen is one of a bound name.
+			if err := unix.Bind(fd, &unix.SockaddrUnix{Name: "@tego-d28-" + strconv.Itoa(os.Getpid()) + "-" + strconv.Itoa(fd)}); err != nil {
+				return "bind " + errnoString(err), true
+			}
+		}
+		if f[0] == "listen" {
+			return errnoString(unix.Listen(fd, 4)), true
+		}
+		res, err := uring.Listen(fd, 4)
+		if err != nil {
+			return "err " + err.Error(), true
+		}
+		return strconv.Itoa(int(-res)), true
+	case "holdsock":
+		// A socket made by socket(2) and kept, for the listen cells whose socket the net flag would refuse to create
+		// (MPTCP): made with the flag clear, listened on later with it set, as a socket imported into the run is.
+		var n [3]int
+		for i := range n {
+			n[i], _ = strconv.Atoi(f[1+i])
+		}
+		if planeHeldFd >= 0 {
+			_ = unix.Close(planeHeldFd)
+			planeHeldFd = -1
+		}
+		fd, err := unix.Socket(n[0], n[1]|unix.SOCK_CLOEXEC, n[2])
+		if err != nil {
+			return errnoString(err), true
+		}
+		planeHeldFd = fd
+		return "0", true
+	case "listen-held", "uring-listen-held":
+		if planeHeldFd < 0 {
+			return "err no held socket", true
+		}
+		fd := planeHeldFd
+		planeHeldFd = -1
+		defer unix.Close(fd)
+		if f[0] == "listen-held" {
+			return errnoString(unix.Listen(fd, 4)), true
+		}
+		res, err := uring.Listen(fd, 4)
 		if err != nil {
 			return "err " + err.Error(), true
 		}
@@ -1559,6 +1632,7 @@ func planeStepBCells(t *testing.T, coll *ebpf.Collection, mode PlaneMode, runIdx
 	}
 	setSlot(gen, PlaneSlotExecDecides)
 	notPlane("AF_VSOCK with the header's net flag clear", "socket", vsock, stream, "0")
+	planeListenNetCells(t, helper, hook, check, scratch, setSlot, gen)
 
 	// TOCTOU (§6 E8): a symlink repointed during the decisions between a write entry's file and the deny_write
 	// target's; every decision is on the object the kernel resolved, so the target never changes.
@@ -1609,7 +1683,104 @@ func planeStepBCells(t *testing.T, coll *ebpf.Collection, mode PlaneMode, runIdx
 	if !strings.Contains(chmods, "refused=") || strings.Contains(chmods, "refused=0 ") && strings.Contains(truncs, "refused=0 ") {
 		t.Logf("TOCTOU: no decision landed on the target this time (%s, %s); the target's state is what the cell asserts", chmods, truncs)
 	}
+	planeDeputyCells(t, coll, runIdx, gen, helper, setSlot)
 	_ = mode
+}
+
+// planeDeputyEnv makes this test binary, started by the plane helper, one control-bearing receive and exit: a process of
+// the run that is not the helper (a child it starts), with its own thread-group id.
+const planeDeputyEnv = "TEGO_PLANE_RECV_CHILD"
+
+func init() {
+	if os.Getenv(planeDeputyEnv) != "1" {
+		return
+	}
+	fmt.Println(planeRecvCtl())
+	os.Exit(0)
+}
+
+// planeRecvCtl is one SCM_RIGHTS receive on a fresh unix datagram pair: "0" or the errno, and an import, had one
+// happened, is closed.
+func planeRecvCtl() string {
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return errnoString(err)
+	}
+	defer unix.Close(fds[0])
+	defer unix.Close(fds[1])
+	if err := unix.Sendmsg(fds[0], []byte("x"), unix.UnixRights(fds[0]), nil, 0); err != nil {
+		return "err send " + err.Error()
+	}
+	buf, oob := make([]byte, 8), make([]byte, unix.CmsgSpace(4))
+	_, oobn, _, _, err := unix.Recvmsg(fds[1], buf, oob, unix.MSG_CMSG_CLOEXEC)
+	if err == nil && oobn > 0 {
+		if cms, perr := unix.ParseSocketControlMessage(oob[:oobn]); perr == nil {
+			for _, cm := range cms {
+				if got, rerr := unix.ParseUnixRights(&cm); rerr == nil {
+					for _, fd := range got {
+						_ = unix.Close(fd)
+					}
+				}
+			}
+		}
+	}
+	return errnoString(err)
+}
+
+// planeDeputyCells is ADR 0128's 2026-11-21 amendment on the real kernel: under TEGO_SLOT_IMPORTS_DENIED socket_recvmsg
+// passes a control-bearing receive only for the task whose thread-group id, in the pid namespace the header names, and
+// whose thread-group leader's start time in USER_HZ ticks are the header's deputy pair. The helper stands for the deputy:
+// named, its receive passes; a child it starts is refused (another thread-group id); a pair whose start time is one tick
+// off (a reused pid) and one in another pid namespace are refused; a header with no deputy refuses everyone.
+func planeDeputyCells(t *testing.T, coll *ebpf.Collection, runIdx, gen uint32, helper *planeHelper, setSlot func(gen, flags uint32)) {
+	t.Helper()
+	pid := helper.cmd.Process.Pid
+	raw, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := string(raw[strings.LastIndexByte(string(raw), ')')+2:])
+	fields := strings.Fields(after)
+	start, err := strconv.ParseUint(fields[19], 10, 64) // field 22, the 20th after the command
+	if err != nil {
+		t.Fatalf("the helper's start time: %v", err)
+	}
+	var ns unix.Stat_t
+	if err := unix.Stat("/proc/self/ns/pid", &ns); err != nil {
+		t.Skipf("no pid namespace to name: %v", err)
+	}
+	dev := uint64(unix.Major(ns.Dev))<<20 | uint64(unix.Minor(ns.Dev))
+	deputy := func(tgid uint32, start, ino uint64) {
+		t.Helper()
+		// No exec: section here, so the child's exec of this binary is not the cell's question.
+		h := PlaneSlot{Gen: gen, Flags: PlaneSlotImportsDenied, PidnsDev: dev, PidnsIno: ino,
+			DeputyTgid: tgid, DeputyStart: start}
+		if err := coll.Maps[MapPlaneSlots].Put(uint32(runIdx), h); err != nil {
+			t.Fatal(err)
+		}
+	}
+	defer setSlot(gen, PlaneSlotExecDecides)
+	check := func(name, want string, args ...string) {
+		t.Helper()
+		if got := helper.do(t, args...); got != want {
+			t.Errorf("%s: in the run %v answered %s, want %s", name, args, got, want)
+		}
+	}
+	deputy(0, 0, ns.Ino)
+	check("a control receive with no deputy named", eacces, "recvctl")
+	deputy(uint32(pid), start, ns.Ino)
+	check("the deputy's control receive", "0", "recvctl")
+	check("a child the deputy starts (its own thread-group id)", eacces, "recvctl-child")
+	deputy(uint32(pid), start+1, ns.Ino)
+	check("the deputy's pid with another start time (a reused pid)", eacces, "recvctl")
+	deputy(uint32(pid), start, ns.Ino+1)
+	check("the deputy's pid in another pid namespace", eacces, "recvctl")
+	deputy(uint32(os.Getpid()), start, ns.Ino)
+	check("another task named the deputy", eacces, "recvctl")
+	// Outside the run nothing is decided.
+	if got := planeRecvCtl(); got != "0" {
+		t.Errorf("a control receive outside the run: %s, want 0", got)
+	}
 }
 
 // planeHelperCgroup is the run-set key of the helper's cgroup: its cgroup id, read from its /proc entry.
@@ -1630,4 +1801,82 @@ func planeHelperCgroup(t *testing.T, h *planeHelper) uint64 {
 	}
 	t.Fatal("the helper is on no cgroup v2 hierarchy")
 	return 0
+}
+
+// planeListenNetCells is ADR 0024's amendment of 2026-11-23 (D28, GAPS C44): under a net: section with no listener
+// policy (the header's net flag set and its listen flag clear) socket_listen refuses a TCP listen, and passes a unix
+// listen and a UDP one, exactly as the supervisor's listen handler does for the syscall (any other inet protocol, MPTCP
+// or SCTP, is refused as TCP is). The plane sees a ring's
+// IORING_OP_LISTEN (6.11+), which no seccomp filter does; with no ring listen on this kernel the ring cell is not
+// run and the kernel's own answer, EINVAL, is what it checks.
+func planeListenNetCells(t *testing.T, helper *planeHelper, hook func(string) uint16, check func(string, string, ...string),
+	scratch func(string, uint16, uint8, uint8, uint32), setSlot func(gen, flags uint32), gen uint32) {
+	t.Helper()
+	inet, inet6, unixFam := strconv.Itoa(unix.AF_INET), strconv.Itoa(unix.AF_INET6), strconv.Itoa(unix.AF_UNIX)
+	stream, dgram := strconv.Itoa(unix.SOCK_STREAM), strconv.Itoa(unix.SOCK_DGRAM)
+	eopnotsupp := strconv.Itoa(int(unix.EOPNOTSUPP))
+
+	// With no net: section the plane decides no listen at all.
+	setSlot(gen, PlaneSlotExecDecides)
+	check("listen(2) on an unbound TCP socket with no net: section", "0", "listen", inet, stream, "0")
+
+	setSlot(gen, PlaneSlotExecDecides|PlaneSlotNetDecides)
+	check("listen(2) on an unbound TCP socket under a net: section with no net.listen", eacces, "listen", inet, stream, "0")
+	scratch("TCP listen under a net: section with no net.listen", hook("socket_listen"), 1, uint8(ReasonNetNotAllowed), uint32(PlaneRuleNone))
+	check("listen(2) on an unbound TCP6 socket under a net: section with no net.listen", eacces, "listen", inet6, stream, "0")
+	check("listen(2) on a bound unix socket under a net: section with no net.listen", "0", "listen", unixFam, stream, "0")
+	check("listen(2) on a UDP socket under a net: section with no net.listen is the kernel's", eopnotsupp, "listen", inet, dgram, "0")
+
+	// Only UDP of the inet protocols is the kernel's to answer: an MPTCP socket (262) autobinds as a TCP one does, as
+	// the supervisor's handler counts it (protoOf), so it is refused too. The socket cannot be made under the net
+	// flag (socket_create refuses it), so it is made with the flag clear and listened on with it set, as an imported
+	// socket is.
+	const ipprotoMPTCP = "262"
+	mptcp := func() bool {
+		t.Helper()
+		setSlot(gen, PlaneSlotExecDecides)
+		got := helper.do(t, "holdsock", inet, stream, ipprotoMPTCP)
+		if got != "0" {
+			t.Logf("no MPTCP socket here (%s): the MPTCP listen cells are not run", got)
+			return false
+		}
+		setSlot(gen, PlaneSlotExecDecides|PlaneSlotNetDecides)
+		return true
+	}
+	if mptcp() {
+		check("listen(2) on an unbound MPTCP socket made before the net flag", eacces, "listen-held")
+		scratch("MPTCP listen under a net: section with no net.listen", hook("socket_listen"), 1, uint8(ReasonNetNotAllowed), uint32(PlaneRuleNone))
+	}
+	setSlot(gen, PlaneSlotExecDecides|PlaneSlotNetDecides)
+
+	// The probe is outside the run, so no hook decides it: its answer says whether this kernel has the opcode.
+	probe, perr := unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
+	if perr != nil {
+		t.Fatalf("probe socket: %v", perr)
+	}
+	if perr := unix.Bind(probe, &unix.SockaddrUnix{Name: "@tego-d28-probe-" + strconv.Itoa(os.Getpid())}); perr != nil {
+		t.Fatalf("probe bind: %v", perr) // a bound socket, so that EINVAL is the opcode's absence and not the kernel's refusal of an unbound unix listen
+	}
+	defer unix.Close(probe)
+	if res, err := uring.Listen(probe, 4); errors.Is(err, uring.ErrUnavailable) {
+		t.Logf("no io_uring here (%v): the ring listen cells are not run", err)
+	} else if err != nil {
+		t.Fatalf("io_uring probe: %v", err)
+	} else if res == -int32(unix.EINVAL) {
+		einval := strconv.Itoa(int(unix.EINVAL))
+		check("a ring's IORING_OP_LISTEN on a kernel without it", einval, "uring-listen", inet, stream, "0")
+		t.Logf("no IORING_OP_LISTEN on this kernel (before 6.11): a ring cannot listen, so there is no ring listen to refuse")
+	} else {
+		check("a ring's IORING_OP_LISTEN on an unbound TCP socket under a net: section with no net.listen", eacces, "uring-listen", inet, stream, "0")
+		scratch("ring TCP listen under a net: section with no net.listen", hook("socket_listen"), 1, uint8(ReasonNetNotAllowed), uint32(PlaneRuleNone))
+		check("a ring's IORING_OP_LISTEN on an unbound TCP6 socket under a net: section with no net.listen", eacces, "uring-listen", inet6, stream, "0")
+		check("a ring's IORING_OP_LISTEN on a bound unix socket under a net: section with no net.listen", "0", "uring-listen", unixFam, stream, "0")
+		if mptcp() {
+			check("a ring's IORING_OP_LISTEN on an unbound MPTCP socket made before the net flag", eacces, "uring-listen-held")
+			scratch("ring MPTCP listen under a net: section with no net.listen", hook("socket_listen"), 1, uint8(ReasonNetNotAllowed), uint32(PlaneRuleNone))
+		}
+		setSlot(gen, PlaneSlotExecDecides)
+		check("a ring's IORING_OP_LISTEN on an unbound TCP socket with no net: section", "0", "uring-listen", inet, stream, "0")
+	}
+	setSlot(gen, PlaneSlotExecDecides)
 }

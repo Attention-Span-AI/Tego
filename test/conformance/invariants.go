@@ -204,6 +204,14 @@ func Invariant(m Model, c *Cell, t Tier, o Outcome) string {
 		if !m.Keyring {
 			return "a keyring call succeeded in a run whose contract does not say keyring: true"
 		}
+	case OpRecvFD:
+		// ADR 0128 (amended): where a decision plane decides (tier bpflsm, and tier cgroup in a plane mode), a run whose
+		// contract says net.assurance: kernel refuses every control-bearing recvmsg on a unix socket, so no SCM_RIGHTS
+		// descriptor is imported; the open deputy of a held run is the one task the plane passes, never the agent. Tiers
+		// 1 and 2's listener refuse to start such a run, or answer it with the filter's ENOSYS, and are not held to it.
+		if t == TierBPFLSM && m.NetAssuranceKernel {
+			return "a descriptor import succeeded where the plane holds net.assurance: kernel"
+		}
 	case OpBPF:
 		// ADR 0033: the filter's root-tier arm refuses bpf(2) at tiers 2 and 3; tier 1 has no arm.
 		if t != TierLandlock {

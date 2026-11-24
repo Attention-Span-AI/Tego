@@ -260,6 +260,10 @@ type Options struct {
 	// record.DecisionPlaneFmodRet), which a line whose verdict the plane gave names in decision_plane; "" when the
 	// run has no plane. SetDecisionPlane sets it.
 	DecisionPlane string
+	// LiveBlockRule names the live block whose id a plane refusal's rule carries (bpf.PlaneRuleLiveBlock; ADR 0124,
+	// amendment 2026-11-21): its rule, live.block[<kind>:<value>], and false for an id the launcher never gave.
+	// SetLiveBlockRule sets it; nil names every such refusal unmatched.
+	LiveBlockRule func(id uint16) (string, bool)
 	// ExecPins says the run's handle pinned its plane slot (ADR 0048 (3) P2): each exec's line waits for the plane's
 	// held or kill sample of it (exec_pin.go). ExecPinKill is the pidfd backstop for a kill the kernel could not send.
 	// SetExecPins sets both.
@@ -1231,6 +1235,10 @@ func (r *Recorder) NamesPathHooks() bool { return true }
 // recorder.
 func (r *Recorder) SetDecisionPlane(mode string) { r.opts.DecisionPlane = mode }
 
+// SetLiveBlockRule sets the namer of the live blocks the run's plane refuses under (Options.LiveBlockRule). Called
+// before Start, as SetDecisionPlane is.
+func (r *Recorder) SetLiveBlockRule(name func(id uint16) (string, bool)) { r.opts.LiveBlockRule = name }
+
 // record is handle's ledger half.
 func (r *Recorder) record(rec *Record) {
 	if rec.Kind == KindCgroupMkdir && rec.Cgroup.Err != 0 {
@@ -1966,7 +1974,11 @@ func (r *Recorder) handleNet(rec *Record) {
 		dst = fmt.Sprintf("family%d:%d", rec.Net.Family, rec.Net.Port)
 	}
 	ev := r.event(rec, record.KindNet, rule, verdict, reason)
-	r.setPayload(ev, record.NetPayload{Proto: proto, Dst: dst, Host: host})
+	p := record.NetPayload{Proto: proto, Dst: dst, Host: host}
+	if rec.Kind == KindSendmsg && proto == agent.ProtoUDP {
+		p.Op = record.NetOpSend // an unconnected datagram, not a connect(2) (GAPS C172)
+	}
+	r.setPayload(ev, p)
 	r.emit(ev)
 }
 

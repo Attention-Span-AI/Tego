@@ -14,17 +14,17 @@ import (
 	"time"
 )
 
-// The preview-bound acknowledgement (SEC-3). A write that is not a narrowing needs the person's
-// acknowledgement, and the acknowledgement names the one write the preview showed: every plan (ActOn's preview,
-// PlanChange, PlanRaw, and each Undo History and ActOn offer) carries Ack, an HMAC under a key that never leaves
-// this process of what the write would be: the change it belongs to (ref), the sha256 of the text it is made on
-// (base) and the sha256 of the text it writes. The confirm posts Ack back; the write plans again on the file as it
-// is and refuses with ErrNeedsAck, writing nothing, unless the posted Ack is the one that plan computes. So a
-// confirm that carries a valid base and form token but a different change than the one previewed (a wider entry, a
-// changed text) writes nothing. A narrowing needs no acknowledgement and ignores Ack.
+// The preview-bound acknowledgement (SEC-3) uses the process key below. Builder
+// saves (new, structured and Full) use the single reviewed-write vocabulary in
+// review.go: exact bytes, destination, directory identity and compiled dependencies.
+// Narrowings carry that value as a hidden form field; widenings and unclassified
+// changes require explicit confirmation. Event actions and history Undo retain
+// their own ref/base/new-text vocabulary, with explicit acknowledgement for changes
+// that are not narrowing.
 //
-// The Ack is deterministic: the same preview gives the same Ack, with no nonce and no clock, so a live region
-// re-rendered on every revision keeps the same HTML (static/live.js swaps a region only when its hash changes).
+// Every builder Preview gets a fresh random review identity inside its form
+// acknowledgement. Equal Previews are separate reviews. Event, history and live
+// acknowledgements retain their deterministic vocabulary for live regions.
 //
 // What it does not do: a same-user process that holds the session can fetch the preview and read its Ack; the
 // Ack binds what is written to what was previewed, and the peer checks (internal/control/web/peer.go, governed.go)

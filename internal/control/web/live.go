@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
+	"github.com/attention-span-ai/tego/internal/control/rules"
 	"github.com/attention-span-ai/tego/internal/control/rulesview"
 )
 
@@ -35,10 +36,14 @@ const timelinePage = 200
 
 // liveState is the body of /status.json, and what a page records at render time to compare against.
 type liveState struct {
-	Live    int    `json:"live"`
-	Pending int    `json:"pending"`
-	Sig     string `json:"sig"`
-	Rev     string `json:"rev"`
+	Live    int          `json:"live"`
+	Pending int          `json:"pending"`
+	Waiting waitingState `json:"waiting"`
+	Sig     string       `json:"sig"`
+	Rev     string       `json:"rev"`
+	// Crev is the rule-change journal's revision (changeRev): it moves when a rule changes, which no ledger line
+	// need record, so a page that shows change rows asks for its regions again.
+	Crev string `json:"crev"`
 }
 
 // stateOf is the snapshot's live state. Rev is the read model's own revision (ledgerview's Snapshot.Rev, D-CACHE),
@@ -51,6 +56,7 @@ func stateOf(snap *ledgerview.Snapshot) liveState {
 		st.Pending++
 		_, _ = fmt.Fprintf(sig, "%s\x00%s\x00", a.Run, a.AskID)
 	}
+	st.Waiting = waitingOf(st.Pending, snapshotNumbers(snap).Queue)
 	st.Sig = hex.EncodeToString(sig.Sum(nil))[:12]
 	for _, r := range snap.Runs {
 		if r.Live {
@@ -59,6 +65,22 @@ func stateOf(snap *ledgerview.Snapshot) liveState {
 	}
 	st.Rev = strconv.FormatUint(snap.Rev, 36)
 	return st
+}
+
+// stateWithChanges is stateOf with the rule-change journal's revision.
+func (s *Server) stateWithChanges(snap *ledgerview.Snapshot) liveState {
+	st := stateOf(snap)
+	st.Crev = s.changeRev()
+	return st
+}
+
+// changeRev is the revision of the rule-change journal, the file the rule-change rows come from (rules.JournalPath):
+// a short hash of its identity, size and times, so it moves with every change, undo and new rules file, and costs one
+// stat. The run pages' key reads the same file the same way (runPageKey).
+func (s *Server) changeRev() string {
+	h := sha256.New()
+	statKey(h, rules.JournalPath(s.cfg.Ledger))
+	return hex.EncodeToString(h.Sum(nil))[:12]
 }
 
 // liveCache is the live state, read at most once per tick however many pages follow it.
@@ -83,7 +105,7 @@ func (s *Server) liveNow(fresh bool) (liveState, error) {
 	if err != nil {
 		return liveState{}, err
 	}
-	s.live.st, s.live.at = stateOf(snap), time.Now()
+	s.live.st, s.live.at = s.stateWithChanges(snap), time.Now()
 	return s.live.st, nil
 }
 
@@ -254,10 +276,11 @@ func (s *Server) rows(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	rows := tl.Rows(0, min(n, timelinePage))
 	s.labelRun(run, rows)
+	ledgerview.GroupSteps(rows, run)
 	var buf bytes.Buffer
-	t := tlMarkedOf(tlOf(rows, run.Live, run.Contract != "", liveChanges(s.feed(), run, rows, after, r.URL.Query().Get("verdict"))),
-		v, run.Tier == "observe", ledgerview.RunHome(run))
-	if err := s.pages["run"].ExecuteTemplate(&buf, "tlrows", t); err != nil {
+	t := tlMarkedOf(tlOf(rows, run.Live, run.Contract != "", liveChanges(s.feed(r.Context()), run, rows, after, r.URL.Query().Get("verdict"))),
+		v, run.Tier == "observe", ledgerview.RunHome(run), readContextOf(run, s.signals(nil).ownOf(run)))
+	if err := s.pages["run"].ExecuteTemplate(&buf, "tlrows", withNumbers(t, runNumbers(run))); err != nil {
 		http.Error(w, "tego-control serve: render: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

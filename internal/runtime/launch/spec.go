@@ -13,6 +13,7 @@ import (
 	"golang.org/x/net/bpf"
 
 	"github.com/attention-span-ai/tego/internal/runtime/enforce/api"
+	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
 // ChildCommand is the argv[1] the launcher passes to /proc/self/exe to enter the child stage.
@@ -89,10 +90,15 @@ func (s ChildSpec) Validate() error {
 	case s.Dir == "":
 		return fmt.Errorf("%w: empty working directory", ErrSpec)
 	}
-	for _, e := range s.Env {
+	for n, e := range s.Env {
 		for i := 0; i < len(e); i++ {
 			if e[i] == 0 {
-				return fmt.Errorf("%w: env entry contains NUL", ErrSpec)
+				// The message names the variable and never its value; an entry with no name to tell from its
+				// value is called by its position (identity.EnvEntryName, rule (a)).
+				if name, ok := identity.EnvEntryName(e); ok {
+					return fmt.Errorf("%w: environment variable %q entry contains NUL (value hidden)", ErrSpec, name)
+				}
+				return fmt.Errorf("%w: environment entry %d contains NUL (the entry is not shown)", ErrSpec, n+1)
 			}
 		}
 	}

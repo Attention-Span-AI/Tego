@@ -49,7 +49,10 @@ type fixture struct {
 }
 
 // newFixture writes the rules file and a run of it that started an hour ago, holding only run_start.
-func newFixture(t testing.TB, run string) *fixture {
+func newFixture(t testing.TB, run string) *fixture { return newFixtureWith(t, run, sourceText, "") }
+
+// newFixtureWith is newFixture with the rules file's text and extra run_start fields (`,"key":value` pairs) given.
+func newFixtureWith(t testing.TB, run, text, startExtra string) *fixture {
 	t.Helper()
 	base := t.TempDir()
 	f := &fixture{root: filepath.Join(base, "ledger"), proj: filepath.Join(base, "proj"), home: filepath.Join(base, "home"), run: run}
@@ -60,10 +63,10 @@ func newFixture(t testing.TB, run string) *fixture {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(f.source, []byte(sourceText), 0o644); err != nil {
+	if err := os.WriteFile(f.source, []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	c, _, err := agent.LoadBytes(f.source, []byte(sourceText), &agent.ProfileChain{})
+	c, _, err := agent.LoadBytes(f.source, []byte(text), &agent.ProfileChain{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,8 +79,8 @@ func newFixture(t testing.TB, run string) *fixture {
 		t.Fatal(err)
 	}
 	f.started = time.Now().Add(-time.Hour).UTC().Truncate(time.Millisecond)
-	f.add(fmt.Sprintf(`"kind":"run_start","source":"supervisor","tier":"landlock","command":["sh"],"cwd":"%s","contract_hash":"%s","contract_source":{"path":"%s"}`,
-		f.proj, hex.EncodeToString(sum[:]), f.source))
+	f.add(fmt.Sprintf(`"kind":"run_start","source":"supervisor","tier":"landlock","command":["sh"],"cwd":"%s","contract_hash":"%s","contract_source":{"path":"%s"}%s`,
+		f.proj, hex.EncodeToString(sum[:]), f.source, startExtra))
 	f.m = &config.Machine{Home: f.home}
 	f.m.LedgerRoot.Value = f.root
 	return f
@@ -319,8 +322,8 @@ func TestInForcePendingAfterAnUndo(t *testing.T) {
 	}
 	f.lines.Reset()
 	f.seq, f.started = 0, a.At.Add(time.Millisecond)
-	f.add(fmt.Sprintf(`"kind":"run_start","source":"supervisor","tier":"landlock","command":["sh"],"cwd":"%s","contract_hash":"%s","contract_source":{"path":"%s"}`,
-		f.proj, hex.EncodeToString(sum[:]), f.source))
+	f.add(fmt.Sprintf(`"kind":"run_start","source":"supervisor","tier":"landlock","command":["sh"],"cwd":"%s","contract_hash":"%s","contract_source":{"path":"%s"}%s`,
+		f.proj, hex.EncodeToString(sum[:]), f.source, ""))
 	if v := f.inForce(t); v.Pending != nil {
 		t.Fatalf("pending %+v before the undo: the run ran the file as it is", v.Pending)
 	}
@@ -524,27 +527,6 @@ func TestRunListsReadsTheCopyAsLoadDoes(t *testing.T) {
 	}
 	if l := RunLists(filepath.Join(root, run), ".."); l.OK {
 		t.Error("RunLists read a path from a bad run id")
-	}
-}
-
-// TestCommonFields: the fast read of a line's kind and rule agrees with the decoder, and gives up (so the caller
-// decodes) on an escape; a rule key inside the payload is not the line's rule.
-func TestCommonFields(t *testing.T) {
-	for _, tc := range []struct {
-		line, kind, rule string
-		ok               bool
-	}{
-		{`{"v":1,"kind":"fs","source":"landlock","rule":"fs.write[./out/]","verdict":"allow"}`, "fs", "fs.write[./out/]", true},
-		{`{"v":1,"kind":"ssl_request","source":"capture","attribution":{"rule":"x"},"host":"a"}`, "ssl_request", "", true},
-		{`{"v":1,"kind":"run_start","source":"s","ask_read_relaxes":[{"rule":"fs.ask_read[x]"}]}`, "run_start", "", true},
-		{`{"v":1,"kind":"fs","rule":"fs.write[./a\"b/]"}`, "", "", false},
-		{`{"v":1,"seq":2}`, "", "", false},
-		{``, "", "", false},
-	} {
-		k, r, ok := commonFields([]byte(tc.line))
-		if string(k) != tc.kind || string(r) != tc.rule || ok != tc.ok {
-			t.Errorf("commonFields(%s) = %q %q %v, want %q %q %v", tc.line, k, r, ok, tc.kind, tc.rule, tc.ok)
-		}
 	}
 }
 

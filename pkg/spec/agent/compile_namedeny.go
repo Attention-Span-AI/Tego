@@ -3,6 +3,7 @@
 package agent
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -23,9 +24,83 @@ import (
 
 // nameReach reports whether a run of the table can be given a tier name entries apply at (ADR 0043 D7): cgroup, in
 // a plane mode or on the fallback, or bpflsm. A table that can only land at tier landlock compiles none, prints
-// nothing new and makes no syscall for them.
+// nothing new and makes no syscall for them, unless the offline caller requests root-tier predictions.
 func (k *compiler) nameReach() bool {
-	return k.mayLand(backend.TierCgroup) || k.mayLand(backend.TierBPFLSM)
+	return k.o.predictNames || k.mayLand(backend.TierCgroup) || k.mayLand(backend.TierBPFLSM)
+}
+
+// namePredictionUnavailable reports missing privilege only to an offline prediction.
+// A launch retains its existing policy and supplies no prediction callback.
+//
+// It is where a step of the deny_read and name-entry compile says a permission failure cut it short: root
+// finishes that step, so the table this process built is not the table a root tier is given (ADR 0043, amendment
+// 2026-11-18, review finding 2). The steps are the pattern expansion's directory listings and its link resolutions
+// (compile_glob.go), each matched or declared path's walk to where it leads (walkCut), a name entry's scope, the
+// built-in list's own paths and its .env traversal (builtIn, envFiles), an exemption's file, and a covered file's
+// directory flags (compactionFacts).
+//
+// It reports a place whose content can name any path (a pattern's folder, a link, a git config, a .env file, an
+// entry's own walk): CutWide. builtinCut and execCut are the two steps whose reach is narrower.
+func (k *compiler) namePredictionUnavailable(path string, err error) {
+	k.cut(CutWide, path, err)
+}
+
+// builtinCut reports a place of Tego's own built-in lists (a built-in socket's folders, the host IPC folders the FIFO
+// inventory walks, a peer socket's folder) that a permission failure kept from this process: CutHere. What root finds
+// there is a name beneath the place, a socket or a FIFO Tego protects, so only a row about such a path is unknown.
+func (k *compiler) builtinCut(path string, err error) {
+	k.cut(CutHere, path, err)
+}
+
+// execCut reports a loaders' or a tool's helper folder that a permission failure kept from being listed: CutExec.
+func (k *compiler) execCut(path string, err error) {
+	k.cut(CutExec, path, err)
+}
+
+func (k *compiler) cut(reach CutReach, path string, err error) {
+	if k.o.predictNames && errors.Is(err, os.ErrPermission) && k.o.namePredictionUnavailable != nil {
+		k.o.namePredictionUnavailable(NameCut{Path: path, Reach: reach})
+	}
+}
+
+// CutReach is how far what lies behind a place a permission failure kept from a normal user can change a root tier's
+// answer (ADR 0043, amendment 2026-11-19). Its zero value is the widest, so a step that names no reach fails closed.
+type CutReach uint8
+
+const (
+	// CutWide: what root finds can name any path (a link, a git config's hooks path, a .env file, a pattern's
+	// match), so every file-backed row (fs, exec, executable map) is unknown at a root tier.
+	CutWide CutReach = iota
+	// CutExec: what root finds changes how a program is read as run (a loader, a tool's helper), so every exec row
+	// is unknown at a root tier.
+	CutExec
+	// CutHere: what root finds is a name beneath the place (a socket or a FIFO Tego protects by its own built-in
+	// list), so a row whose path is at, beneath or above the place is unknown at a root tier, and no other.
+	CutHere
+)
+
+// NameCut is a place the offline root-tier prediction could not read as a normal user: Path is the place the
+// compile asked for (the folder it listed, the link it resolved, the file it read, the entry it walked).
+type NameCut struct {
+	Path  string
+	Reach CutReach
+}
+
+// walkCut reports to an offline root-tier prediction a path whose walk, every link followed, a permission failure
+// stops for this process. compiler.resolve answers such a path by its spelling, or by the link itself, where root's
+// walk goes on to the file the link reaches: one O_PATH open asks the kernel which it was (EACCES is a directory on
+// the way this process may not search; a name that is not there fails the same for root).
+func (k *compiler) walkCut(p string) {
+	if !k.o.predictNames || k.o.namePredictionUnavailable == nil || p == "" {
+		return
+	}
+	// Through os.File, which owns the descriptor it opens (ADR 0023): the probe adds no bare descriptor to this package.
+	f, err := os.OpenFile(p, unix.O_PATH, 0)
+	if err != nil {
+		k.namePredictionUnavailable(p, err)
+		return
+	}
+	_ = f.Close()
 }
 
 // nameGlob records a whole deny_read glob's name entry candidate (ADR 0043 Terms): its final component classified by
@@ -41,6 +116,7 @@ func (b *fsBuilder) nameGlob(p, raw string, pos Pos) {
 	}
 	base := globBase(p)
 	if fi, err := os.Stat(base); err != nil || !fi.IsDir() {
+		b.k.namePredictionUnavailable(base, err)
 		return
 	}
 	b.declNames = append(b.declNames, NameDenyRule{Literal: lit, Prefix: prefix, Raw: raw, Pos: pos,
@@ -53,6 +129,7 @@ func (b *fsBuilder) envNameScopes(roots []string) []NameScope {
 	var all []NameScope
 	for _, r := range roots {
 		if fi, err := os.Stat(r); err != nil || !fi.IsDir() {
+			b.k.namePredictionUnavailable(r, err)
 			continue
 		}
 		c := b.k.resolve(r)
@@ -201,6 +278,7 @@ func (b *fsBuilder) nameExempts(cands []NameDenyRule) []NameExemptRule {
 			continue
 		}
 		if fi, err := os.Lstat(r.Resolved); err != nil || fi.IsDir() {
+			b.k.namePredictionUnavailable(r.Resolved, err)
 			continue
 		}
 		out = append(out, NameExemptRule{Parent: filepath.Dir(r.Resolved), Name: name, Write: i})
@@ -273,7 +351,9 @@ func (b *fsBuilder) compactionFacts() {
 			if time.Now().After(end) {
 				return
 			}
-			exact = dirCaseExact(dir)
+			var err error
+			exact, err = dirCaseExact(dir)
+			b.k.namePredictionUnavailable(dir, err)
 			flags[dir] = exact
 		}
 		r.DirCaseExact = exact
@@ -281,15 +361,16 @@ func (b *fsBuilder) compactionFacts() {
 }
 
 // dirCaseExact reports whether the directory's inode flags were read and carry no FS_CASEFOLD_FL. An open or ioctl
-// that fails is a no: the row stays.
-func dirCaseExact(dir string) bool {
+// that fails is a no: the row stays. err is that failure, for a prediction to tell a directory this process may not
+// open (root reads its flags and may compact the row) from one that has none.
+func dirCaseExact(dir string) (bool, error) {
 	fd, err := unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
 	if err != nil {
-		return false
+		return false, err
 	}
 	defer func() { _ = unix.Close(fd) }()
 	f, err := unix.IoctlGetUint32(fd, unix.FS_IOC_GETFLAGS)
-	return err == nil && f&fsCasefoldFlag == 0
+	return err == nil && f&fsCasefoldFlag == 0, err
 }
 
 // nameAskWarnings says where an fs.ask entry names a file a name entry covers (ADR 0043 D3): no ask entry exempts

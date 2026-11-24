@@ -150,7 +150,7 @@ type ownership int
 const (
 	// ownsNot: the binding does not name the file.
 	ownsNot ownership = iota
-	// ownsFile: the binding names the file — st_dev is the superblock's, and the superblock and the inode number,
+	// ownsFile: the binding names the file; st_dev is the superblock's, and the superblock and the inode number,
 	// which fits the 32 bits, are one file.
 	ownsFile
 	// ownsIfAlone: st_dev is not the superblock's, and the file was born while the socket was being bound; it is the

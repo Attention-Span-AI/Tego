@@ -1,0 +1,102 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{/* The Agents page (agents.go): one row per recorded run and one row per program a scan saw, over the data layer's
+     answer (internal/control/agents). It states what that answer states and never more: a stage is shown as reached
+     only where the data established it for the named run, and a scan observation never ticks a stage. Three live
+     regions, so live.js can swap a changed part in place: the head (the saved scan and its notices), the list or the
+     one detail, and the rest (the other programs, settings, history and the limits). Without scripts every part is in
+     the page and the links and forms are plain. Any text from the record or a scan goes through agf, aga or agn, the
+     page's only number exclusions: it is a name, a path, an id, a time or a sentence the data layer wrote, never a
+     count this page made up. */}}
+{{/* agf is text the record or a scan wrote, shown as written. */}}
+{{define "agf"}}<span data-number-exclude="agents.fact">{{.}}</span>{{end}}
+{{/* aga is how long ago: its text stays out of the region's hash (data-ck), so a minute passing resends nothing. */}}
+{{define "aga"}}<span data-number-exclude="agents.age" data-ck>{{.}}</span>{{end}}
+{{/* agn is a figure of the rows or the scan the data layer counted, with its qualifying sentence beside it. */}}
+{{define "agn"}}<b data-number-exclude="agents.figure">{{.}}</b>{{end}}
+{{/* agt is a time the record or a scan wrote. */}}
+{{define "agt"}}<time datetime="{{iso .}}" data-number-exclude="agents.time">{{agentTime .}}</time>{{end}}
+{{/* ag-copy is a command in its own box with an exact-copy button (copy.js shows the button only when scripts run). */}}
+{{define "ag-copy"}}<div class="cli cli-wrap"><code id="{{.ID}}" translate="no" data-number-exclude="agents.command">{{.Text}}</code><button class="btn copy-btn" type="button" data-copy="{{.ID}}" aria-label="Copy {{.What}}">{{template "i" "i-copy"}}<span class="copy-lbl">Copy</span></button></div>{{end}}
+
+{{/* Every list the page draws without bullets or numbers says role="list": Safari's VoiceOver stops announcing a list whose
+     list-style is none unless the role is explicit. */}}
+{{/* ag-refused is a recorded run's refusal count, the number its run page shows; at least, when its record was read only in part. */}}
+{{define "ag-refused"}}{{if and .RefusalsPartial (eq .Refusals 0)}}No refusals counted{{else if .RefusalsPartial}}At least {{template "agn" .Refusals}} {{plural .Refusals "refusal" "refusals"}}{{else}}{{template "agn" .Refusals}} {{plural .Refusals "refusal" "refusals"}}{{end}}{{end}}
+
+{{define "content"}}<link rel="stylesheet" href="/static/agents.css"><script src="/static/copy.js" defer></script>
+<div class="agents-page">{{template "lr" (index $.L "r-ag-head")}}{{template "r-ag-head" $}}</div>
+{{template "lr" (index $.L "r-ag-main")}}{{template "r-ag-main" $}}</div>
+{{template "lr" (index $.L "r-ag-more")}}{{template "r-ag-more" $}}</div></div>{{end}}
+
+{{define "r-ag-head"}}{{with .Data}}<div class="head"><div>
+{{with .One}}<p class="ag-back"><a class="link" href="/agents">{{template "i" "i-arrow-left"}}All agents</a></p>
+{{if $.Tour}}<h2>{{else}}<h1>{{end}}{{template "agf" .Name}}{{if $.Tour}}</h2>{{else}}</h1>{{end}}
+<p class="lede"><span class="b {{if eq .Kind "run"}}b-neutral{{else}}b-outside{{end}}">{{template "agf" .Stage}}</span> {{template "aga" .Age}}</p>
+{{else}}{{if $.Tour}}<h2>{{else}}<h1>{{end}}Agents{{if $.Tour}}</h2>{{else}}</h1>{{end}}
+<p class="lede">Each row is a run Tego recorded or a program your last scan found. {{template "agf" .V.Privacy}}.</p>{{end}}
+</div></div>
+{{if .V.Next.Built}}<section class="banner ag-next" aria-label="Next step">{{template "i" "i-chevron-right"}}<div class="grow"><p>{{template "agf" .V.Next.Text}}</p>{{if .V.Next.Placeholder}}<div class="cli cli-wrap"><code translate="no">{{template "agf" .V.Next.Command}}</code></div><p class="soft">Fill in the parts in angle brackets before you run this.</p>{{else}}{{template "ag-copy" (agCopy "ag-next-cmd" .V.Next.Command "the next command")}}{{end}}</div></section>{{end}}
+{{if .V.DiscoveryNotice}}<section class="banner banner-warn" id="ag-store" role="status">{{template "i" "i-triangle-alert"}}<div class="grow"><p>{{template "agf" .V.DiscoveryNotice}}</p></div></section>{{end}}
+{{if not .One}}<section class="panel ag-scan" aria-labelledby="h-ag-scan"><div class="panel-head"><h2 id="h-ag-scan">Saved scan</h2><span class="b {{agentScanClass .V.ScanStatus}}">{{agentScanWord .V.ScanStatus}}</span></div>
+<div class="panel-body stack-sm"><p>{{template "agf" .V.ScanNotice}}</p>
+{{if .V.ScanLabel}}<p class="soft">Scanned at {{template "agt" .V.ScanFinished}} ({{template "aga" .V.ScanAge}}). {{template "agf" .V.ScanLabel}}</p>{{end}}
+<p class="ag-scan-act"><span class="lbl">Scan again, then refresh this page</span></p>{{template "ag-copy" (agCopy "ag-scan-cmd" .V.RefreshCommand "the scan command")}}
+<p class="soft">{{template "agf" .V.RefreshInstruction}}</p><p><a class="btn" href="/agents">{{template "i" "i-rotate-cw"}}Refresh saved result</a></p></div></section>{{end}}
+{{end}}{{end}}
+
+{{define "r-ag-main"}}{{with .Data}}{{with .One}}{{template "ag-detail" (agDetail . $.CSRF)}}{{else}}
+<section class="panel" aria-labelledby="h-ag-list"><div class="panel-head"><h2 id="h-ag-list">Agents</h2><span class="soft">{{template "agn" .Recorded}} recorded {{plural .Recorded "run" "runs"}} · {{template "agn" .Seen}} seen by scan</span></div>
+{{if .Rows}}<ol class="ag-rows" role="list">{{range .Rows}}<li class="ag-row ag-{{.Kind}}" data-k="{{.ID}}"><a class="ag-link" href="{{.URL}}"><span class="ag-nm">{{template "agf" .Name}}</span><span class="b ag-stage {{if eq .Kind "run"}}b-neutral{{else}}b-outside{{end}}">{{template "agf" .Stage}}</span><span class="ag-when soft">{{template "aga" .Age}}</span>
+{{if .RefusalsKnown}}<span class="ag-ref">{{template "ag-refused" .}}</span>{{end}}
+<span class="ag-id">{{if .Agent.Command}}{{template "agf" .Agent.Command}}{{else}}command not known{{end}}{{if .Agent.Folder}} · {{template "agf" .Agent.Folder}}{{end}}</span>
+{{if eq .Kind "run"}}<ol class="ag-strip" role="list" aria-label="Stages reached by this named run">{{range .Ticks}}<li{{if .On}} class="on"{{end}}><span class="ag-pip" aria-hidden="true"></span>{{.Label}}<span class="sr">{{if .On}}: reached{{else}}: not shown{{end}}</span></li>{{end}}</ol>{{end}}
+{{if .NotSeenLatest}}<span class="ag-note">Not in the latest scan</span>{{end}}</a></li>{{end}}</ol>
+{{else}}<div class="panel-body stack-sm"><p>{{template "agf" .V.Empty}}</p></div>{{end}}</section>
+{{end}}{{end}}{{end}}
+
+{{define "ag-detail"}}{{$r := .R}}<article class="panel ag-detail" aria-label="Agent details">
+<div class="panel-head"><h2 id="h-ag-where">Where it was seen</h2></div>
+<div class="panel-body stack-sm">
+<p class="ag-where">{{template "agf" $r.Where}}{{if not $r.WhereAt.IsZero}} at {{template "agt" $r.WhereAt}}{{end}}{{if $r.Agent.Folder}} in {{template "agf" $r.Agent.Folder}}{{end}}.{{if $r.WhereNote}} {{$r.WhereNote}}{{end}}</p>
+{{if $r.NotSeenLatest}}<p class="ag-warn">{{template "i" "i-triangle-alert"}}Not in the latest scan. This is a remembered observation.</p>{{end}}
+<dl class="kv">
+<dt>Command</dt><dd>{{if $r.Agent.Command}}{{template "agf" $r.Agent.Command}}{{else}}Not known{{end}}</dd>
+<dt>Folder</dt><dd>{{if $r.Agent.Folder}}{{template "agf" $r.Agent.Folder}}{{else}}Not known{{end}}</dd>
+{{if $r.Agent.RunID}}<dt>Recorded run</dt><dd><a class="link" href="/runs/{{pathEsc $r.Agent.RunID}}">{{template "agf" $r.Agent.RunID}}</a> <span class="soft">at {{template "agt" $r.Agent.RunStarted}}</span></dd>{{end}}
+{{if $r.Remembered}}<dt>First seen</dt><dd>{{template "agt" $r.FirstSeen}}</dd><dt>Last seen</dt><dd>{{template "agt" $r.LastSeen}}</dd><dt>Scan result</dt><dd>{{template "agf" $r.ScanResult}}</dd>{{end}}
+{{if $r.RefusalsKnown}}<dt>Refusals</dt><dd>{{template "ag-refused" $r}}{{if $r.Refusals}} in this run. <a class="link" href="/runs/{{pathEsc $r.Agent.RunID}}">See them in the run</a>.{{else}} in this run.{{end}}{{if $r.RefusalsPartial}}<span class="soft"> Some of the record could not be read in full, so the real number can be higher.</span>{{end}}</dd>{{end}}
+<dt>Relationship</dt><dd>{{if $r.Agent.Relationship}}{{template "agf" $r.Agent.Relationship}}{{else if $r.Agent.SelectionRule}}{{template "agf" $r.Agent.SelectionRule}}{{else}}Not known.{{end}}</dd>
+<dt>Record check</dt><dd>{{if $r.Agent.VerificationReason}}{{template "agf" $r.Agent.VerificationReason}}{{else}}Only a recorded run has a record check.{{end}}</dd>
+<dt>Next step</dt><dd>{{if $r.Agent.NextStep}}{{template "agf" $r.Agent.NextStep}}{{else}}Not known.{{end}}</dd>
+{{if $r.RunLinks}}<dt>Possibly related runs</dt><dd>{{range $i, $id := $r.RunLinks}}{{if $i}}, {{end}}<a class="link" href="/runs/{{pathEsc $id}}">{{template "agf" $id}}</a>{{end}}<span class="soft"> A matching program path does not show that it was the same run.</span></dd>{{end}}
+</dl>
+<p class="soft">The command is shown as the record or the scan wrote it. The same program can be written in different ways (a PATH search, a relative path, a link or a wrapper script), so Tego cannot tell from two spellings whether they are the same program.</p></div>
+<details class="head-details ag-fold"><summary>Stages</summary><div class="panel-head"><h2 id="h-ag-stages">Stages</h2></div>
+<div class="panel-body"><ol class="ag-stages" role="list" aria-labelledby="h-ag-stages">{{range $r.Ticks}}<li{{if .On}} class="on"{{end}}><div class="ag-stage-h"><span class="ag-pip" aria-hidden="true"></span><strong>{{.Label}}</strong> <span class="b {{if .On}}b-neutral{{else}}b-outside{{end}}">{{if .On}}Reached{{else}}Not shown{{end}}</span></div>
+{{if .Text}}<p>{{template "agf" .Text}}</p>{{if .Source}}<p class="soft">Source: {{template "agf" .Source}}</p>{{end}}{{end}}
+{{if .CannotTell}}<p class="soft">Cannot tell: {{template "agf" .CannotTell}}</p>{{end}}
+{{if and .On .Run}}<p><a class="link" href="/runs/{{pathEsc .Run}}">Open the run</a></p>{{end}}</li>{{end}}</ol></div></details>
+{{if $r.Observations}}<details class="head-details ag-fold"><summary>What the scan saw</summary><div class="panel-head"><h2 id="h-ag-obs">What the scan saw</h2></div>
+<div class="panel-body"><ul class="ag-obs" role="list">{{range $r.Observations}}<li><span class="b b-outside">{{template "agf" .Kind}}</span> {{template "agf" .Path}}{{if .Fact}}<span class="soft"> {{template "agf" .Fact}}</span>{{end}}</li>{{end}}</ul></div></details>{{end}}
+{{if not $r.Agent.RunID}}<div class="panel-head"><h2 id="h-ag-rec">Record it</h2></div>
+<div class="panel-body stack-sm">{{if $r.RecordCommand}}{{template "ag-copy" (agCopy "ag-record-cmd" $r.RecordCommand "the record command")}}{{end}}<p class="soft">{{template "agf" $r.RecordNotice}}</p></div>{{end}}
+{{if $r.Forget}}<div class="panel-head"><h2 id="h-ag-forget">Forget this sighting</h2></div>
+<div class="panel-body"><details class="ag-forget"><summary class="btn">Forget this sighting</summary>
+<form class="stack-sm" method="post" action="/agents/forget"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="agent" value="{{$r.ID}}">
+<p>This removes only the page's memory of this program. Run records, saved scans and contracts stay as they are. If the latest saved scan still lists it, the next page load remembers it again.</p>
+<button class="btn btn-danger" type="submit">{{template "i" "i-x"}}Forget it</button></form></details></div>{{end}}
+</article>{{end}}
+
+{{define "r-ag-more"}}{{with .Data}}{{if not .One}}
+<section class="panel ag-today" aria-labelledby="h-ag-today"><div class="panel-head"><h2 id="h-ag-today">Refused today</h2></div><div class="panel-body stack-sm"><p>{{if and .V.RefusedToday.Partial (eq .V.RefusedToday.Value 0)}}No refusals counted today.{{else if .V.RefusedToday.Partial}}At least {{template "agn" .V.RefusedToday.Value}} {{plural .V.RefusedToday.Value "refusal" "refusals"}} today.{{else}}{{template "agn" .V.RefusedToday.Value}} {{plural .V.RefusedToday.Value "refusal" "refusals"}} today.{{end}}</p><p class="soft">{{template "agf" .V.RefusedToday.Notice}}</p></div></section>
+<details class="head-details ag-fold"><summary>Other programs</summary><section class="panel" aria-labelledby="h-ag-other"><div class="panel-head"><h2 id="h-ag-other">Other programs</h2></div><div class="panel-body stack-sm">
+<p>{{if .V.OtherKnown}}When the scan ran, it saw {{template "agn" .V.OtherCount}} other {{plural .V.OtherCount "program" "programs"}} running.{{else}}The saved scan does not list the other programs.{{end}} Tego cannot tell whether these are agents.</p>
+{{if .V.OtherPrograms}}<ul class="ag-obs" role="list">{{range .V.OtherPrograms}}<li>{{template "agf" .Path}}{{if .Folder}}<span class="soft"> · {{template "agf" .Folder}}</span>{{end}}<span class="soft"> · {{template "agf" .Membership}}</span></li>{{end}}</ul>{{end}}</div></section></details>
+{{if .V.Evidence}}<details class="head-details ag-fold"><summary>Settings found</summary><section class="panel" aria-labelledby="h-ag-ev"><div class="panel-head"><h2 id="h-ag-ev">Settings found</h2></div><div class="panel-body"><ul class="ag-obs" role="list">{{range .V.Evidence}}<li><span class="b b-outside">{{template "agf" .Kind}}</span> {{if .Name}}{{template "agf" .Name}} · {{end}}{{template "agf" .Path}}<span class="soft"> {{template "agf" .Fact}}</span></li>{{end}}</ul></div></section></details>{{end}}
+{{if .V.Historical}}<details class="head-details ag-fold"><summary>Older scan results</summary><section class="panel" aria-labelledby="h-ag-hist"><div class="panel-head"><h2 id="h-ag-hist">Older scan results</h2></div><div class="panel-body"><ul class="ag-obs" role="list">{{range .V.Historical}}<li><span class="b b-outside">{{template "agf" .Kind}}</span> {{if .Name}}{{template "agf" .Name}} · {{end}}{{template "agf" .Path}}{{if .Folder}} · {{template "agf" .Folder}}{{end}}<span class="soft"> {{template "agf" .Fact}}</span></li>{{end}}</ul></div></section></details>{{end}}
+{{end}}
+<section class="panel ag-limits" aria-labelledby="h-ag-limits"><div class="panel-head"><h2 id="h-ag-limits">What this scan covered and what it did not</h2></div><div class="panel-body stack-sm">
+{{with .V.ScanLines}}<ul class="ag-obs ag-scanwords" role="list">{{range .}}<li>{{template "agf" .}}</li>{{end}}</ul>{{end}}
+{{with .V.ScanNotLooked}}<h3 class="lbl" id="h-ag-notlooked">Not looked at</h3><ul class="ag-obs ag-notlooked" role="list" aria-labelledby="h-ag-notlooked">{{range .}}<li>{{template "agf" .}}</li>{{end}}</ul>{{end}}
+{{if .V.Footer}}<p class="ag-foot">{{template "agf" .V.Footer}}</p>{{end}}{{range .V.NotKnown}}<p class="soft">{{template "agf" .}}</p>{{end}}</div></section>
+{{end}}{{end}}

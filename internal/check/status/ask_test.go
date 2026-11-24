@@ -63,7 +63,7 @@ func TestApprovalStatusReadsMatchingAnswersAndLiveState(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if len(pending) != 0 {
+	if pending.len() != 0 {
 		t.Fatal("legacy answer left approval pending")
 	}
 }
@@ -83,7 +83,7 @@ func TestApprovalStatusRejectsMalformedAndBoundsPending(t *testing.T) {
 		{record.KindAnswer, `{"ask_id":"x","by":"human","after_s":1,"approved":null}`},
 	} {
 		var pending pendingApprovals
-		if err := pending.add(&record.Event{Kind: tc.kind, Payload: []byte(tc.payload)}); err == nil || len(pending) != 0 {
+		if err := pending.add(&record.Event{Kind: tc.kind, Payload: []byte(tc.payload)}); err == nil || pending.len() != 0 {
 			t.Fatalf("accepted %s: %v", tc.payload, err)
 		}
 	}
@@ -94,10 +94,10 @@ func TestApprovalStatusRejectsMalformedAndBoundsPending(t *testing.T) {
 		}
 	}
 	err := pending.add(&record.Event{Kind: record.KindAsk, Payload: []byte(`{"ask_id":"overflow","hold":"connect"}`)})
-	if err == nil || !strings.Contains(err.Error(), "64") || len(pending) != 64 {
-		t.Fatalf("unbounded pending state len=%d err=%v", len(pending), err)
+	if err == nil || !strings.Contains(err.Error(), "64") || pending.len() != 64 {
+		t.Fatalf("unbounded pending state len=%d err=%v", pending.len(), err)
 	}
-	if err := pending.add(&record.Event{Kind: record.KindGap, Payload: []byte(`{"ask_id":"fabricated","hold":"connect"}`)}); err != nil || len(pending) != 64 {
+	if err := pending.add(&record.Event{Kind: record.KindGap, Payload: []byte(`{"ask_id":"fabricated","hold":"connect"}`)}); err != nil || pending.len() != 64 {
 		t.Fatal("unrelated record changed approval readiness")
 	}
 }
@@ -106,7 +106,7 @@ func TestApprovalStatusRejectsMalformedAndBoundsPending(t *testing.T) {
 // (ask-4), counts as pending like a network one rather than failing status as an unsupported hold.
 func TestApprovalStatusCountsAPendingFileOpen(t *testing.T) {
 	var pending pendingApprovals
-	if err := pending.add(&record.Event{Kind: record.KindAsk, Payload: []byte(`{"ask_id":"q-1","hold":"open","op":"open","target":"/w/x"}`)}); err != nil || len(pending) != 1 {
-		t.Fatalf("pending %d, err %v: want the open approval pending", len(pending), err)
+	if err := pending.add(&record.Event{Kind: record.KindAsk, Payload: []byte(`{"ask_id":"q-1","hold":"open","op":"open","target":"/w/x"}`)}); err != nil || pending.len() != 1 {
+		t.Fatalf("pending %d, err %v: want the open approval pending", pending.len(), err)
 	}
 }

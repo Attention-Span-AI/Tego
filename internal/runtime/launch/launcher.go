@@ -625,11 +625,15 @@ func (c *Child) TakeStop() (syscall.Signal, error) {
 		sig, err = sys.WaitPidfdStopped(pidfd)
 		return err
 	})
-	if err == nil && sig != 0 && procStatState(c.PID) != 'T' {
+	if err == nil && sig != 0 && !StillStopped(c.PID) {
 		sig = 0
 	}
 	return sig, err
 }
+
+// StillStopped checks whether a saved stop still applies. The caller must keep the child unreaped so its
+// pid cannot be reused. An unreadable state is not a stop; following it could stop an already-continued job.
+func StillStopped(pid int) bool { return procStatState(pid) == 'T' }
 
 // Kill sends SIGKILL and reaps (R13). ESRCH from the signal means the child already exited; it is still
 // reaped. Safe after Wait and after Close: a child that is already reaped, or whose pidfd is closed (abort

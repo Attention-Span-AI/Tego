@@ -14,3 +14,5 @@ summary: tier cgroup; bpflsm needs lsm
 tier: cgroup
 missing for bpflsm: lsm: bpf is not in the active LSM list (lockdown,capability,landlock,yama,apparmor)
 fix: add lsm=lockdown,capability,landlock,yama,apparmor,bpf to the kernel command line (GRUB_CMDLINE_LINUX_DEFAULT in /etc/default/grub, then update-grub) and reboot
+
+business rules: business rules unavailable: the root-owned trusted worker, exclusive route and durable admission owner are not implemented; this build refuses business-bearing runs on every tier

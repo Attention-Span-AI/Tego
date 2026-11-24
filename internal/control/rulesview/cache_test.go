@@ -77,27 +77,28 @@ func appendTo(t *testing.T, path, text string) {
 
 // TestLearnKeptPerRunVersion: the Least privilege tab is computed once while the run and the anchor are the same,
 // and is the uncached proposal again after an append and after the anchor grows.
+// The helper owns these caches; public view process isolation has separate HTTP coverage.
 func TestLearnKeptPerRunVersion(t *testing.T) {
 	root, run, anchor, _, add := cacheRun(t)
 	ctx := context.Background()
 	before := learned.Computes()
-	a := Learn(ctx, root, anchor, run)
+	a := cachedLearn(ctx, root, anchor, run)
 	if a.Err != "" {
 		t.Fatal(a.Err)
 	}
-	if b := Learn(ctx, root, anchor, run); b != a || learned.Computes() != before+1 {
+	if b := cachedLearn(ctx, root, anchor, run); b != a || learned.Computes() != before+1 {
 		t.Fatalf("second view: same %v, computed %d times", b == a, learned.Computes()-before)
 	}
 	add(2, `"kind":"net","source":"seccomp","rule":"net[127.0.0.1:8803]","verdict":"allow","op":"connect","dst":"127.0.0.1:8803"`)
-	c := Learn(ctx, root, anchor, run)
+	c := cachedLearn(ctx, root, anchor, run)
 	if c == a || c.Text == a.Text || !reflect.DeepEqual(c, learnRun(ctx, root, anchor, run)) {
 		t.Fatalf("after an append: stale %v, text moved %v\n%s", c == a, c.Text != a.Text, c.Text)
 	}
 	appendTo(t, anchor, "b\n")
-	if d := Learn(ctx, root, anchor, run); d == c || learned.Computes() != before+3 {
+	if d := cachedLearn(ctx, root, anchor, run); d == c || learned.Computes() != before+3 {
 		t.Fatalf("after the anchor grew: stale %v, computed %d times", d == c, learned.Computes()-before)
 	}
-	if Learn(ctx, root, anchor, "not-a-run").Err == "" {
+	if cachedLearn(ctx, root, anchor, "not-a-run").Err == "" {
 		t.Error("a request that names no run got a proposal")
 	}
 }
@@ -111,16 +112,16 @@ func TestDriftKeptPerRunVersion(t *testing.T) {
 	m.LedgerRoot.Value = root
 	o := Options{Machine: m, Anchor: anchor}
 	before := drifted.Computes()
-	a := Drift(ctx, root, run, o)
+	a := cachedDrift(ctx, root, run, o)
 	if a.Err != "" || a.Unknown || a.Declared != 2 || a.Unused != 1 {
 		t.Fatalf("drift: %+v", a)
 	}
-	if b := Drift(ctx, root, run, o); b != a || drifted.Computes() != before+1 {
+	if b := cachedDrift(ctx, root, run, o); b != a || drifted.Computes() != before+1 {
 		t.Fatalf("second view: same %v, computed %d times", b == a, drifted.Computes()-before)
 	}
 	fresh := func(name string, n int64) *Drifted {
 		t.Helper()
-		d := Drift(ctx, root, run, o)
+		d := cachedDrift(ctx, root, run, o)
 		if want := driftRun(ctx, root, run, o); !reflect.DeepEqual(d, want) {
 			t.Fatalf("%s: cached %+v, uncached %+v", name, d, want)
 		}
@@ -143,4 +144,37 @@ func TestDriftKeptPerRunVersion(t *testing.T) {
 	o.Machine = &config.Machine{Home: home + "/other"}
 	o.Machine.LedgerRoot.Value = root
 	fresh("after the machine config changed", 5)
+}
+
+// TestDriftSeesAProgramInstalledOnPath: The Unused tab compiles the run's contract against the dashboard's
+// PATH, and the key held the PATH string only, so a program installed in (or removed from) one of its folders was not
+// seen until the entry aged out (five minutes). The key now holds each PATH folder's identity and times, which move
+// with a name made or removed in it.
+func TestDriftSeesAProgramInstalledOnPath(t *testing.T) {
+	root, run, anchor, home, _ := cacheRun(t)
+	bin := t.TempDir()
+	caller := config.CallerContext{CheckedAt: time.Now(), UID: os.Getuid(), PATH: bin, Home: home}
+	m := &config.Machine{Home: home}
+	m.LedgerRoot.Value = root
+	o := Options{Machine: m, Anchor: anchor, Caller: &caller, PATH: bin}
+	ctx := context.Background()
+	before := drifted.Computes()
+	a := cachedDrift(ctx, root, run, o)
+	if !a.Unknown {
+		t.Fatalf("with no sh on PATH the contract compiled: %+v; the premise of the test is wrong", a)
+	}
+	time.Sleep(20 * time.Millisecond) // past the filesystem's coarse timestamp tick
+	if err := os.WriteFile(filepath.Join(bin, "sh"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	b := cachedDrift(ctx, root, run, o)
+	if want := driftRun(ctx, root, run, o); !reflect.DeepEqual(b, want) || b.Unknown {
+		t.Fatalf("after installing sh: cached unknown=%v, uncached unknown=%v (cached %d times); %q", b.Unknown, want.Unknown, drifted.Computes()-before, want.Contract)
+	}
+	if drifted.Computes() != before+2 {
+		t.Errorf("computed %d times, want 2 (one per PATH state)", drifted.Computes()-before)
+	}
+	if cachedDrift(ctx, root, run, o) != b || drifted.Computes() != before+2 {
+		t.Errorf("a PATH that did not change was computed again")
+	}
 }

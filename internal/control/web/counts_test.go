@@ -99,7 +99,7 @@ func TestLostRunAskIsNotWaiting(t *testing.T) {
 			t.Errorf("%s offers to answer a lost run's ask", p)
 		}
 	}
-	if b := do(s, "GET", "/runs/"+harmRun, "127.0.0.1:8484", c).Body.String(); !strings.Contains(b, "nobody answered") {
+	if b := do(s, "GET", "/runs/"+harmRun, "127.0.0.1:8484", c).Body.String(); !strings.Contains(b, "Unanswered requests: 1") {
 		t.Error("the lost run's page does not say its ask was never answered")
 	}
 	w := do(s, "GET", "/approvals", "127.0.0.1:8484", c)

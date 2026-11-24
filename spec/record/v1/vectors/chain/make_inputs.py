@@ -384,14 +384,27 @@ for anchor_name, anchor in [("no-anchor", None), ("empty-anchor", b""), ("popula
          E("mismatch", "line-malformed", lines=2, head_line=1, line=2, torn_bytes=0),
          nl([L0, L1]) + b"01", anchor)
 
+# --- Managed local approval selection can precede a refused operation ---
+with open(os.path.join(FIX, "local-roles.jsonl"), "rb") as f:
+    local_events = f.read()
+with open(os.path.join(FIX, "local-roles.chain.log"), "rb") as f:
+    local_anchor = f.read()
+case("local-roles-recorded-approval-refused-effect",
+     "§5, §7 and record minor 37: root selection is recorded; the following action is still refused",
+     E("match", "ok", lines=5, head_line=4, anchored=True),
+     local_events, local_anchor, dir="r-3f9c2a1b-0dllq06ts7400-l0cal1")
+
 CASES = [c for c in CASES if c]
 
 
 def main():
     for f in os.listdir(HERE):
-        if re.match(r"\d{3}-.*\.json$", f):
+        # 130 to 132 are the machine baseline vectors, written by scripts/baseline-fixtures.py, not by this script.
+        if re.match(r"\d{3}-.*\.json$", f) and not re.match(r"13[0-2]-baseline-", f):
             os.remove(os.path.join(HERE, f))
     for i, v in enumerate(CASES, 1):
+        if i >= 130:
+            i += 3  # the numbers 130 to 132 belong to the baseline vectors
         with open(os.path.join(HERE, f"{i:03d}-{v['name']}.json"), "w") as f:
             json.dump(v, f, indent=1, ensure_ascii=False)
             f.write("\n")

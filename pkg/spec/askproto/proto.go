@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"path"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -43,19 +44,27 @@ const (
 
 // Response error codes, one per sentinel error below.
 const (
-	CodeNotPending      = "not-pending"
-	CodeNotRememberable = "not-rememberable"
-	CodeStandingFull    = "standing-full"
-	CodeStandingBusy    = "standing-busy"
-	CodeNoAlternate     = "no-alternate"
-	CodeBadAlternate    = "bad-alternate"
-	CodeUnauthorized    = "unauthorized"
-	CodeProtocol        = "protocol"
-	CodeUnavailable     = "unavailable"
+	CodeApprovalPolicyChanged = "approval-policy-changed"
+	CodeOwnerOnly             = "owner-only"
+	CodeNotPending            = "not-pending"
+	CodeNotRememberable       = "not-rememberable"
+	CodeStandingFull          = "standing-full"
+	CodeStandingBusy          = "standing-busy"
+	CodeNoAlternate           = "no-alternate"
+	CodeBadAlternate          = "bad-alternate"
+	CodeUnauthorized          = "unauthorized"
+	CodeProtocol              = "protocol"
+	CodeUnavailable           = "unavailable"
 )
 
 // The errors an exchange ends in. Their texts are on the wire (Response.Error), so they never change.
 var (
+	// ErrApprovalPolicyChanged names recovery when the pinned source no longer
+	// matches or cannot be read. Before selection the ask remains pending; after
+	// recording it ends with delivery refused.
+	ErrApprovalPolicyChanged = errors.New("ask: the approval policy file changed since this run started; stop the run as root with tego stop <run>, then relaunch with the same ledger configuration")
+	// ErrOwnerOnly leaves the ask pending and names the only answering authority.
+	ErrOwnerOnly    = errors.New("ask: only root may answer once; run the approval as root from a terminal outside any governed run")
 	ErrUnavailable  = errors.New("ask: unavailable")
 	ErrNotPending   = errors.New("ask: request is no longer pending")
 	ErrUnauthorized = errors.New("ask: unauthorized peer")
@@ -92,7 +101,24 @@ type Command struct {
 	// person's command when they named it: an answer with an alternate carries exactly one, and every other
 	// packet none. Only an answer may carry it.
 	Alternate *string `json:"alternate,omitempty"`
+	// Via says where the person answered when the answering program is not their terminal: Via* below. It rides in
+	// the answer line's by after the uid and pid ("uid:26743 pid:912 dashboard"), so the record says the answer
+	// came through the dashboard and not that the dashboard's own process decided. It is the answering program's
+	// claim, which the uid and pid beside it back; only an answer may carry it, and no other value is valid.
+	Via string `json:"via,omitempty"`
 }
+
+// The values of Command.Via.
+const (
+	// ViaDashboard is an answer given in the dashboard by the person signed in to it.
+	ViaDashboard = "dashboard"
+	// ViaDashboardRelay is the same, from a browser on another system that reached the dashboard through its relay
+	// (a Windows browser, ADR 0123).
+	ViaDashboardRelay = "dashboard relay"
+)
+
+// ValidVia reports whether v is a value Command.Via takes; "" (no claim) is valid.
+func ValidVia(v string) bool { return v == "" || v == ViaDashboard || v == ViaDashboardRelay }
 
 // Response is the broker's hello (Ready) or its reply: the pending requests (list), one request (detail), the
 // decision (answer), or an error with its code.
@@ -108,11 +134,12 @@ type Response struct {
 // Request is a held operation as the broker shows it. Target is in the ledger's form (askclient.LedgerTarget, the
 // form the ask line records), never the raw target the supervisor holds.
 type Request struct {
-	Score    *int   `json:"score,omitempty"`
-	GateRule string `json:"gate_rule,omitempty"`
-	AskID    string `json:"ask_id"`
-	Op       string `json:"op"`
-	Target   string `json:"target"`
+	LocalApprovalAuthority string `json:"local_approval_authority,omitempty"`
+	Score                  *int   `json:"score,omitempty"`
+	GateRule               string `json:"gate_rule,omitempty"`
+	AskID                  string `json:"ask_id"`
+	Op                     string `json:"op"`
+	Target                 string `json:"target"`
 	// Target2 is a held mutation's second name (hold "mutation", ADR 0047): a rename's or a link's new name, or a
 	// symlink's stored target. Empty for every other request. A listed request cuts it as it cuts Target, and
 	// TargetTruncated marks either cut.
@@ -134,6 +161,7 @@ type Summary struct {
 
 // Decision is how a held request ended.
 type Decision struct {
+	AnswerAuthority
 	AskID    string  `json:"ask_id"`
 	Approved bool    `json:"approved"`
 	By       string  `json:"by"`
@@ -173,4 +201,25 @@ func ValidAlternate(p string) bool {
 		}
 	}
 	return true
+}
+
+// ByWords is an answer line's by in a sentence's words: the uid and pid as written, then, when the answer was given in
+// the dashboard (a word after them, Via*), where. "uid:26743 pid:912 dashboard always" reads "uid:26743 pid:912 always,
+// answered in the dashboard by the person signed in to it": the uid is the person's, and the pid is the dashboard's
+// own process, which is not who decided. Any other by is returned as written.
+func ByWords(by string) string {
+	for _, c := range []struct{ via, words string }{
+		{ViaDashboardRelay, "answered in the dashboard by the person signed in to it, from a browser on another system through the dashboard's relay"},
+		{ViaDashboard, "answered in the dashboard by the person signed in to it"},
+	} {
+		for _, tail := range []string{" " + c.via, " " + c.via + " always"} {
+			if rest, ok := strings.CutSuffix(by, tail); ok && strings.HasPrefix(rest, "uid:") {
+				if strings.HasSuffix(tail, " always") {
+					rest += " always"
+				}
+				return rest + ", " + c.words
+			}
+		}
+	}
+	return by
 }

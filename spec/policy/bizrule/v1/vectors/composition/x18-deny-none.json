@@ -1,0 +1,84 @@
+{
+  "id": "x18-deny-none",
+  "group": "composition",
+  "pins": [
+    "B003",
+    "B005",
+    "B006"
+  ],
+  "why": "B003: ADR 0151 composition cell C=deny, business=none; no layer alone authorizes delivery.",
+  "bundle": {
+    "version": 1,
+    "adapter": "square.refund.v1",
+    "server": "square",
+    "rules": [
+      {
+        "id": "cap",
+        "kind": "per_call",
+        "currency": "USD",
+        "limit": "10000"
+      },
+      {
+        "id": "currencies",
+        "kind": "currencies",
+        "codes": [
+          "USD"
+        ]
+      }
+    ]
+  },
+  "bundle_wire_hex": null,
+  "request": {
+    "adapter": "square.refund.v1",
+    "call_hex": "7b226964223a312c226a736f6e727063223a22322e30222c226d6574686f64223a22746f6f6c732f63616c6c222c22706172616d73223a7b22617267756d656e7473223a7b7d2c226e616d65223a22726566756e645f7061796d656e74227d7d",
+    "contract_bundle_digest": "762086c3104e609f82fb5c5bbb9dc077417803897248181a048adf6b74c7b6f9",
+    "contract_verdict": "deny",
+    "evaluator_status": "ready",
+    "request_id": "1",
+    "run_id": "run1",
+    "server": "square",
+    "state": {
+      "bundle_digest": "762086c3104e609f82fb5c5bbb9dc077417803897248181a048adf6b74c7b6f9",
+      "epoch": "e1",
+      "revision": "0",
+      "run_id": "run1",
+      "seen_keys": [],
+      "server": "square",
+      "status": "ready",
+      "totals": []
+    },
+    "tool_source": "contract",
+    "topology": "exclusive",
+    "version": 1
+  },
+  "request_wire_hex": null,
+  "expected": {
+    "adapter": "square.refund.v1",
+    "bundle_digest": "762086c3104e609f82fb5c5bbb9dc077417803897248181a048adf6b74c7b6f9",
+    "business": {
+      "verdict": "none",
+      "rule_id": "",
+      "condition": "not_applicable"
+    },
+    "asks": [],
+    "call_digest": "78b45d3b70057c6a21f2624bf9b449d726b47bacd9714eab91f1e4901fd2235d",
+    "facts": null,
+    "final": {
+      "verdict": "deny",
+      "source": "contract",
+      "condition": "contract.deny"
+    },
+    "record": {
+      "coverage": "none",
+      "delivery": "not_attempted",
+      "remote_outcome": "unknown",
+      "required": true,
+      "stage": "evaluated"
+    },
+    "request_id": "1",
+    "reservation": null,
+    "run_id": "run1",
+    "server": "square",
+    "version": 1
+  }
+}

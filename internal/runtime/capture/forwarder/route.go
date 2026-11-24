@@ -30,12 +30,17 @@ import (
 // line is written within this interval when the agent sends nothing.
 const RoutePoll = 500 * time.Millisecond
 
+// HeldByLocked follows the author of a route change the forwarder did not put in force on a Locked run, in its line's by.
+const HeldByLocked = " (not in force: the run is Locked, so the endpoint stays on its own backend)"
+
 // router is a run's model routes (ADR 0127), shared by every listener of its Manager: the routed endpoints as the
 // contract declares them, the overlay as the forwarder last read it, and one upstream leg per route used. Nil on a run
 // whose contract declares no route, which leaves every code path as it was.
 type router struct {
 	endpoints map[string]agent.ModelEndpoint // declared authority -> the models[] entry, routes and all
 	logger    *slog.Logger
+	// adjustable is the run's mode (Options.Adjustable): only an Adjustable run's overlay moves an endpoint.
+	adjustable bool
 	// newTransport builds a route's upstream leg; nil is buildRouteTransport. Tests replace it.
 	newTransport func(*Listener, modelroute.Route) http.RoundTripper
 	// read reads the overlay; nil is modelroutes.Read. Tests replace it.
@@ -188,6 +193,7 @@ func (rt *router) refresh(first bool, by *Listener) {
 			rt.warnedSig = sig
 			rt.logger.Warn("forwarder: the run's model routes cannot be read; the routes read last stay in force",
 				"run", rt.run, "err", err)
+			rt.writeUnreadable(by) // the record says so too (GAPS C220): the log is not where a person reads a run
 		}
 		if errors.Is(err, modelroutes.ErrUntrusted) || errors.Is(err, modelroutes.ErrInvalid) {
 			rt.sig, rt.loaded = sig, true // this file stays unread until it changes
@@ -196,7 +202,8 @@ func (rt *router) refresh(first bool, by *Listener) {
 	}
 	before := rt.inForce(rt.overlay)
 	changes := o.Since(rt.serial)
-	if o.Serial < rt.serial || first {
+	fresh := o.Serial < rt.serial || first
+	if fresh {
 		// A replaced overlay: its numbers are not this run's sequence; or the run's first read, which starts from
 		// direct and replays no history. The comparison below says what is in force.
 		changes = nil
@@ -214,8 +221,37 @@ func (rt *router) refresh(first bool, by *Listener) {
 				"run", rt.run, "model", c.Model, "route", c.RouteAfter())
 			continue
 		}
+		if !rt.adjustable && !r.IsDirect() {
+			// A Locked run keeps every endpoint on its own backend: any other route is looser than its contract. The line
+			// says what is in force (direct), by whom the change was asked and why it did not take effect, so the ledger
+			// never shows a route that no request went by (ADR 0127, Amendment 2026-11-21).
+			rt.logger.Warn("forwarder: a live route other than direct is not in force on a Locked run",
+				"run", rt.run, "model", c.Model, "route", r.Name, "by", c.By)
+			direct, _ := modelroute.Resolve(m, "")
+			c.By += HeldByLocked
+			rt.writeChange(by, c, direct)
+			said[c.Model] = direct.Name
+			continue
+		}
 		rt.writeChange(by, c, r)
 		said[c.Model] = r.Name
+	}
+	if fresh && !rt.adjustable {
+		// A first read or a replaced overlay replays no history; a Locked run still says which routes it holds back, each
+		// with its line.
+		for _, auth := range slices.Sorted(maps.Keys(rt.endpoints)) {
+			e, ok := o.Lookup(auth)
+			if !ok {
+				continue
+			}
+			if r, declared := modelroute.Resolve(rt.endpoints[auth], e.Route); declared && !r.IsDirect() {
+				rt.logger.Warn("forwarder: a live route other than direct is not in force on a Locked run",
+					"run", rt.run, "model", auth, "route", r.Name, "by", e.By)
+				direct, _ := modelroute.Resolve(rt.endpoints[auth], "")
+				rt.writeChange(by, modelroutes.Change{Serial: e.Serial, Op: modelroutes.OpSet, Model: auth, Route: e.Route,
+					By: e.By + HeldByLocked, At: e.At}, direct)
+			}
+		}
 	}
 	after := rt.inForce(o)
 	for _, auth := range slices.Sorted(maps.Keys(after)) {
@@ -250,18 +286,39 @@ func (rt *router) writeChange(by *Listener, c modelroutes.Change, r modelroute.R
 	}
 }
 
+// writeUnreadable writes the gap line of an overlay state the forwarder could not read (record.GapModelRouteUnreadable),
+// once per state: the routes read last stay in force and a change a person made in that state is not applied, which the
+// ledger would otherwise show only as requests that went by the old route. It goes where writeChange's lines go, to the
+// run's first listener, or to by when that one is closing. Called with rt.mu held.
+func (rt *router) writeUnreadable(by *Listener) {
+	if rt.emitter != nil && rt.emitter.emitOpen(rt.emitter.routeUnreadableEvent()) {
+		return
+	}
+	if by != nil {
+		by.emit(by.routeUnreadableEvent())
+	}
+}
+
 // inForce is the route each routed endpoint takes under o, resolved against the contract.
 func (rt *router) inForce(o *modelroutes.Overlay) map[string]string {
 	out := make(map[string]string, len(rt.endpoints))
 	for auth, m := range rt.endpoints {
-		live := ""
-		if e, ok := o.Lookup(auth); ok {
-			live = e.Route
-		}
-		r, _ := modelroute.Resolve(m, live)
+		r, _ := modelroute.Resolve(m, rt.liveRoute(o, auth))
 		out[auth] = r.Name
 	}
 	return out
+}
+
+// liveRoute is the route o holds for auth that is in force, "" for the endpoint's own: a Locked run holds no route but
+// its own, whatever the overlay says (Options.Adjustable).
+func (rt *router) liveRoute(o *modelroutes.Overlay, auth string) string {
+	if !rt.adjustable {
+		return ""
+	}
+	if e, ok := o.Lookup(auth); ok {
+		return e.Route
+	}
+	return ""
 }
 
 // unnumbered is the change that put r in force for auth under o when no change line said so: the overlay's own entry
@@ -293,11 +350,7 @@ func (rt *router) current(l *Listener, m agent.ModelEndpoint) modelroute.Route {
 	rt.refresh(false, l)
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	live := ""
-	if e, ok := rt.overlay.Lookup(m.ModelAuthority()); ok {
-		live = e.Route
-	}
-	r, _ := modelroute.Resolve(m, live)
+	r, _ := modelroute.Resolve(m, rt.liveRoute(rt.overlay, m.ModelAuthority()))
 	return r
 }
 
@@ -470,6 +523,13 @@ func (l *Listener) routeChangeEvent(c modelroutes.Change, r modelroute.Route) *r
 	_ = ev.SetPayload(record.GapPayload{What: record.GapEnforce, Why: record.GapModelRouteChanged, // fixed types: cannot fail
 		ModelRoute: &record.ModelRouteChange{Model: c.Model, Route: r.Name, Authority: r.Authority(), By: c.By,
 			Serial: c.Serial, At: c.At}})
+	return ev
+}
+
+// routeUnreadableEvent is the gap line of an overlay the forwarder could not read: what=enforce, no count, no binary.
+func (l *Listener) routeUnreadableEvent() *record.Event {
+	ev := l.event(record.KindGap, l.opts.Clock.Now(), l.opts.Clock.Mono())
+	_ = ev.SetPayload(record.GapPayload{What: record.GapEnforce, Why: record.GapModelRouteUnreadable}) // fixed types: cannot fail
 	return ev
 }
 

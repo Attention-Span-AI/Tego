@@ -351,9 +351,9 @@ func waitFor(t *testing.T, cond func() bool) {
 func agentsSelf(t *testing.T) string {
 	t.Helper()
 	const self = "/home/u/.local/bin/tego"
-	old := executable
-	executable = func() (string, error) { return self, nil }
-	t.Cleanup(func() { executable = old })
+	old := namedSelf
+	namedSelf = func() (string, string) { return self, "" }
+	t.Cleanup(func() { namedSelf = old })
 	return self
 }
 
@@ -413,12 +413,12 @@ func TestAgentsSaysTheNextStep(t *testing.T) {
 	}
 }
 
-// Without root, the refusal (exit 125) ends with the way that needs none: tego watch records any agent started under it.
+// Without root, keep the legacy watch line and append the basic-scan pointer.
 func TestAgentsWithoutRootNamesWatch(t *testing.T) {
 	sandboxAgents(t, filepath.Join(t.TempDir(), "no-proc-here"), false)
 	code, out, errs := runAgentsCmd(t)
 	if code != identity.ExitLauncher || out != "" ||
-		!strings.HasSuffix(errs, "\nto record any agent without root, start it under tego watch -- <the command you start it with>\n") {
+		!strings.HasSuffix(errs, "\nto record any agent without root, start it under tego watch -- <the command you start it with>\nto look for your own agents without root: tego scan\n") {
 		t.Errorf("exit %d, stdout %q, stderr %q", code, out, errs)
 	}
 }

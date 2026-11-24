@@ -76,7 +76,9 @@ func (p *fakePlane) fill(req planeFillRequest) (planeFillReport, error) {
 func planeFixture(t *testing.T, mode ebpfbindings.PlaneMode, opts ...func(*Options)) (*fixture, *fakePlane) {
 	t.Helper()
 	all := append([]func(*Options){func(o *Options) {
-		o.Plane = PlaneSetup{Mode: mode, Build: ebpfbindings.ObjectPlaneProbe}
+		// This fixture models a kernel that admits its selected mode. Tests of
+		// changing admission replace the callback explicitly.
+		o.Plane = PlaneSetup{Mode: mode, Build: ebpfbindings.ObjectPlaneProbe, RecheckAdmission: func() error { return nil }}
 		o.planeHeld = func(string) (int, bool) { return -1, false }
 		o.newListener = func(*Handle) (*fanotifyListener, error) {
 			t.Error("a plane-mode run made a fanotify group")
@@ -436,6 +438,7 @@ func TestSlotHeaderSaysWhatTheRunDecides(t *testing.T) {
 		{"empty explicit listeners", planeFillRequest{Rows: &decide.PlaneRows{ListenPolicy: true}}, false, ebpfbindings.PlaneSlotListenDecides},
 		{"legacy listeners", planeFillRequest{Rows: &decide.PlaneRows{}}, false, 0},
 		{"keyring opt in", planeFillRequest{KeyringAllowed: true}, false, ebpfbindings.PlaneSlotKeyringAllowed},
+		{"imports denied (ADR 0128)", planeFillRequest{ImportsDenied: true}, false, ebpfbindings.PlaneSlotImportsDenied},
 	} {
 		tc.req.Gen = 7
 		h := slotHeader(tc.req, tc.unix, 3, 4)
@@ -481,7 +484,7 @@ func TestAdoptedPlaneIsReadyForPins(t *testing.T) {
 	inner := &ebpf.MapSpec{Type: ebpf.Hash, KeySize: 8, ValueSize: 8, MaxEntries: 1}
 	full := &ebpf.CollectionSpec{Maps: map[string]*ebpf.MapSpec{}}
 	for _, name := range []string{ebpfbindings.MapPlaneRows, ebpfbindings.MapPlaneExecRows,
-		ebpfbindings.MapPlaneListenRows, ebpfbindings.MapPlaneNameRows, ebpfbindings.MapPlaneExecPins} {
+		ebpfbindings.MapPlaneListenRows, ebpfbindings.MapPlaneNameRows, ebpfbindings.MapPlaneExecPins, ebpfbindings.MapPlaneBlocks} {
 		full.Maps[name] = &ebpf.MapSpec{Name: name, Type: ebpf.HashOfMaps, KeySize: 4, ValueSize: 4, MaxEntries: 1,
 			InnerMap: inner}
 	}
@@ -513,7 +516,7 @@ func TestPlaneObjectWithoutTheNameMapIsRefused(t *testing.T) {
 	spec := func() *ebpf.CollectionSpec {
 		maps := map[string]*ebpf.MapSpec{}
 		for _, name := range []string{ebpfbindings.MapPlaneRows, ebpfbindings.MapPlaneExecRows,
-			ebpfbindings.MapPlaneListenRows, ebpfbindings.MapPlaneNameRows, ebpfbindings.MapPlaneExecPins} {
+			ebpfbindings.MapPlaneListenRows, ebpfbindings.MapPlaneNameRows, ebpfbindings.MapPlaneExecPins, ebpfbindings.MapPlaneBlocks} {
 			maps[name] = &ebpf.MapSpec{Name: name, Type: ebpf.HashOfMaps, KeySize: 4, ValueSize: 4, MaxEntries: 1,
 				InnerMap: &ebpf.MapSpec{Type: ebpf.Hash, KeySize: 8, ValueSize: 8, MaxEntries: 1}}
 		}
@@ -523,9 +526,10 @@ func TestPlaneObjectWithoutTheNameMapIsRefused(t *testing.T) {
 	if err := p.setInnerSpecs(spec(), "planepr"); err != nil || p.nameInner == nil || p.pinsInner == nil {
 		t.Fatalf("a full plane specification: %v (name inner map %v, pin inner map %v)", err, p.nameInner, p.pinsInner)
 	}
-	// The same holds for the exec pin map (ADR 0048 (3) P2), whose inner map a pinned slot is made from.
+	// The same holds for the exec pin map (ADR 0048 (3) P2), whose inner map a pinned slot is made from, and for the
+	// live-block map (ADR 0124, amendment 2026-11-21), whose inner map every slot is made with.
 	cases := map[string]*ebpf.CollectionSpec{}
-	for _, name := range []string{ebpfbindings.MapPlaneNameRows, ebpfbindings.MapPlaneExecPins} {
+	for _, name := range []string{ebpfbindings.MapPlaneNameRows, ebpfbindings.MapPlaneExecPins, ebpfbindings.MapPlaneBlocks} {
 		none := spec()
 		delete(none.Maps, name)
 		noInner := spec()

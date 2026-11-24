@@ -971,6 +971,20 @@ func planeAction(hook, dir string, pre planePre) error {
 		}
 		_, err = unix.Write(fd, []byte{0})
 		return err
+	case "socket_recvmsg":
+		// A non-blocking receive that carries a control buffer, which is what the hook refuses, on the datagram socket
+		// the sendmsg probe uses: inside a run the plane answers EACCES before the receive can run, and outside one the
+		// receive finds nothing queued (EAGAIN), which is the hook having run and let it by.
+		fd, done, err := planeSocket(pre.dgram, unix.SOCK_DGRAM)
+		if err != nil {
+			return err
+		}
+		defer done()
+		_, _, _, _, err = unix.Recvmsg(fd, make([]byte, 1), make([]byte, unix.CmsgSpace(4)), unix.MSG_DONTWAIT|unix.MSG_CMSG_CLOEXEC)
+		if errors.Is(err, unix.EAGAIN) {
+			return nil
+		}
+		return err
 	case "socket_sendmsg":
 		fd, done, err := planeSocket(pre.dgram, unix.SOCK_DGRAM)
 		if err != nil {

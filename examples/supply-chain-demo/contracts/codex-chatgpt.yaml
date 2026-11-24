@@ -17,7 +17,7 @@
 #   so tego's proxy does not carry its model calls: the connections are allowed by host and recorded, the
 #   bodies are not. Every refusal is still recorded under record: summary.
 # - CODEX_HOME is this side's own dir (filled below), writable because Codex refreshes its sign-in there.
-#   Codex's own sandbox is OFF in that home's config.toml: tego is the cage. `codex --no-daemon` keeps
+#   Codex's own sandbox is OFF in that home's config.toml: tego enforces the contract. `codex --no-daemon` keeps
 #   every command Codex runs inside the boundary.
 # - /dev/ptmx and /dev/pts/ are writable because Codex runs each command in a pseudo-terminal.
 version: 0

@@ -7,13 +7,21 @@ The per-tier capability table is [spec/backend/CAPABILITIES.md](../spec/backend/
 | | Tier 1, `landlock` | Tier 2, `cgroup` | Tier 3, `bpflsm` |
 |---|---|---|---|
 | Mechanism | Landlock and a seccomp supervisor | BPF programs attached to the run's cgroup, and fanotify | The kernel decision plane in LSM mode, on top of tier 2 |
-| Root | No | Yes: `sudo tego run`. The launcher is root for the whole run | Yes |
+| Root | No | Yes: `sudo "$(command -v tego)" run`. The launcher is root for the whole run, in the kernel's initial process-id namespace | Yes |
 | Kernel | Landlock ABI 2 or newer (Linux 5.19 or later, or a backport such as RHEL 9's 5.14), with cgroup v2 and a subtree delegated to your user. The oldest kernels tested are 6.1 and RHEL 9's 5.14 | Landlock ABI 2 or newer, BPF, BTF and cgroup v2; no boot change | As tier 2, plus `bpf` in the boot LSM list |
-| Works out of the box on | Any Linux 6.1 or later from a desktop login, Ubuntu 24.04 included, and RHEL 9 (CPU limits there need a one-time setup by an administrator, below). Not Ubuntu 22.04's stock 5.15, which has Landlock ABI 1. Over SSH, see [INSTALL.md](INSTALL.md#check-the-machine) | Any such host, with root | Debian 13, Fedora, RHEL 9 and 10, Amazon Linux 2023. Ubuntu after one boot line (below). Stock WSL2 from kernel 6.18.54.1 (WSL 3.0.3) |
+| Works out of the box on | Any Linux 6.1 or later from a desktop login, Ubuntu 24.04 included, and RHEL 9 (CPU limits there need a one-time setup by an administrator, below). Not Ubuntu 22.04's stock 5.15, which has Landlock ABI 1. Over SSH, see [INSTALL.md](INSTALL.md#check-the-machine) | Any such host, with root | Debian 13, Fedora, RHEL 9 and 10, Amazon Linux 2023. Ubuntu after one boot line (below). WSL remains unqualified (below) |
 | Held file reads (`fs.ask_read`) | Yes | Refused when the contract is compiled | Refused when the contract is compiled |
 | Record of file reads | Not recorded under `record: summary`, the default: a read that `deny_read` refuses is still refused, and leaves no line. `record: full` records reads and slows every open | Recorded by eBPF; preemptible kernels can skip callbacks, with a shared-build gap (below) | As tier 2 |
 | Live Adjustable mode | No | Yes | Yes |
 | On a hosted CI runner | Yes: this is the CI mode | Yes, through `sudo`, on `ubuntu-24.04` | No: a hosted runner cannot change the kernel command line |
+
+WSL is not fully qualified. A Windows 11 / WSL 3.0.5 guest used private cgroup and process-id namespaces. Root tiers
+need root and the kernel's initial process-id namespace; active `bpf` alone does not establish that. Its ordinary
+setup and automatic entry were refused until the run-membership rule was switched on for WSL: the launcher,
+home-folder alias, Windows-drive and GUI/audio containment rows passed in the guest, and doctor no longer withholds
+readiness where WSL shows two of its marks; the ordinary build then passed the six beginner steps in that guest
+([install guide](INSTALL.md#windows) lists what that did not prove). See [the setup guide](user/setup.md#wsl-measurement-limit) for what is
+still unproven.
 
 More rule kinds need a newer kernel at tier 1: TCP port rules need Landlock ABI 4 (Linux 6.7, or Red Hat's RHEL 9
 backport), and further rules arrive at ABIs 6, 7, 9 and 10 ([GAPS.md](GAPS.md) B5). `tego machine check` prints your ABI.
@@ -78,7 +86,7 @@ says exec rules on argv are best effort there and `exec.assurance: kernel` is re
 running kernel's own symbols, not its version. Measured in the test kernels: the symbol it reads is present on RHEL 9's
 5.14.0-687, Amazon Linux 2023's 6.1.188, Debian 12's 6.1.176, Ubuntu 24.04's 6.8, Debian 13's 6.12, Ubuntu 25.10's
 6.17 and Fedora's 7.0 and 7.2, and absent on Ubuntu 22.04's 5.15; doctor ran on Amazon Linux 2023, Debian 12 and
-Fedora 7.0. Other vendor kernels, and older point releases of these, are not measured: run `sudo tego machine check` there.
+Fedora 7.0. Other vendor kernels, and older point releases of these, are not measured: run `sudo "$(command -v tego)" doctor` there.
 Doctor states this listener-cleanup exposure where kernel code can be preempted or its preemption mode is unknown;
 an adoption reports detected skips without ending the agent. See [GAPS C53](GAPS.md).
 
@@ -242,7 +250,7 @@ administrators ([OPERATIONS.md](OPERATIONS.md), "Privileged path"). `tego-contro
 
 ## Tier 3 on Ubuntu
 
-`bpf` is not in the boot LSM list on Ubuntu 24.04, 25.10 or 26.04, or on WSL2 kernels before 6.18.54.1. On Ubuntu this is one change
+`bpf` is not in the boot LSM list on Ubuntu 24.04, 25.10 or 26.04. On Ubuntu this is one change
 to the kernel command line:
 
 1. Run `sudo "$(command -v tego)" doctor`. Its `lsm` line prints the line to use, built from the list your machine runs now,
@@ -320,7 +328,7 @@ check, not whether the machine offers a tier.
 | Ubuntu with five snaps on separate loop devices | No alias refusal, 0 of 8 duplicated | Snap mounts alone do not duplicate this model's secret targets. |
 | Docker, home and its nested project mounted independently | Refused, the project's `.env` also visible beneath home | Avoid mounting the same project twice, or use a plane that holds the contract. |
 | Toolbox or Distrobox, shared home and readable host view at `/run/host` | Refused, all 8 entries duplicated through the host view | Use a plane that holds the contract, or remove the duplicate host view from the launch namespace. |
-| WSL2, Linux root and one Windows-drive view | No alias refusal, 0 of 8 duplicated | No alias change needed in this model. |
+| Minimal Linux root and one Windows-drive view, omitting WSLg's second Linux-root view | No alias refusal, 0 of 8 duplicated | This model does not qualify a real WSL layout. |
 
 All duplicates in these fixtures expose whole entries. Their plane handling is unchanged; the plane must still hold
 the rest of the contract. A part mounted outside its denied folder has the refusal described above.

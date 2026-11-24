@@ -3,6 +3,7 @@
 package setup
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -73,7 +74,7 @@ const ContractFile = "agent.yaml"
 // Draft is the whole composition without a write: Compose, then Check of the bytes against env, with the
 // diagnostics in the result. It is the entry a "set up a new agent" page calls on every change of its form, since it
 // creates nothing: a write folder that does not exist yet (one of MakeDirs) is reported by compile as path-missing
-// only when its parent is missing too, and Draft drops exactly those diagnostics, which Create makes untrue. An
+// only when its parent is missing too, and Draft drops exactly those diagnostics, which CreateContext makes untrue. An
 // options mistake is a UsageError; a contract that does not compile is not an error but a Result with OK false.
 func Draft(o Options, env CheckEnv) (*Result, error) {
 	res, err := Compose(o)
@@ -101,21 +102,32 @@ func (r *Result) created(msg string) bool {
 	return false
 }
 
-// Apply is Create followed by Check of r.Contract in dir (the project directory with its symlinks resolved, as Create
+// Apply is CreateContext followed by Check of r.Contract in dir (the project directory with its symlinks resolved, as CreateContext
 // takes it), now that every folder it names exists: compile stops checking an fs.write entry at its path-missing
 // error, so a check Draft could not make (an entry inside tego's own directory, R10) shows up only here. When that
-// compile finds an error, or Create fails, Apply removes the folders Create made as Remove does, beneath the project
-// folder Create opened, which it holds until then, and returns ok false with the diagnostics: the caller writes
-// nothing. made are the folders Create made, relative to dir, in creation order.
+// compile finds an error, or CreateContext fails, Apply removes the folders CreateContext made as Remove does, beneath the project
+// folder CreateContext opened, which it holds until then, and returns ok false with the diagnostics: the caller writes
+// nothing. made are the folders CreateContext made, relative to dir, in creation order.
 func Apply(r *Result, dir string, env CheckEnv) (made []string, diags []agent.Diagnostic, ok bool, err error) {
+	return ApplyContext(context.Background(), r, dir, env)
+}
+
+// ApplyContext is Apply with cancellation checks before creating folders and after compile.
+// On cancellation it removes the empty folders it made, as it does on a compile refusal.
+func ApplyContext(ctx context.Context, r *Result, dir string, env CheckEnv) (made []string, diags []agent.Diagnostic, ok bool, err error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, false, err
+	}
 	root, err := openDir(dir)
 	if err != nil {
 		return nil, nil, false, rootRefusal(dir, err)
 	}
 	defer func() { _ = root.Close() }() // a path descriptor: nothing to flush
-	made, err = create(root, r, dir)
+	made, err = create(ctx, root, r, dir)
 	if err == nil {
-		if diags, ok = Check(r.Contract, dir, env); ok {
+		diags, ok = Check(r.Contract, dir, env)
+		err = ctx.Err()
+		if err == nil && ok {
 			return made, diags, true, nil
 		}
 	}
@@ -123,11 +135,11 @@ func Apply(r *Result, dir string, env CheckEnv) (made []string, diags []agent.Di
 	return nil, diags, false, err
 }
 
-// Remove removes the folders made, as Create returned them for the project directory dir (relative to dir inside it,
+// Remove removes the folders made, as CreateContext returned them for the project directory dir (relative to dir inside it,
 // absolute outside it, a parent before its child), the deepest first and only while empty; a caller whose write
-// after Create failed (the dashboard's agent.yaml) calls it. Each is removed with unlinkat AT_REMOVEDIR in its
-// parent, reached as Create reached it: from dir opened with no symlink followed, or, outside it, from the nearest
-// folder above it that Create did not make, resolved once, and below that a component at a time with no link
+// after CreateContext failed (the dashboard's agent.yaml) calls it. Each is removed with unlinkat AT_REMOVEDIR in its
+// parent, reached as CreateContext reached it: from dir opened with no symlink followed, or, outside it, from the nearest
+// folder above it that CreateContext did not make, resolved once, and below that a component at a time with no link
 // followed. So a folder that holds anything stays, and so does one swapped since for a file or a link, or with a link
 // swapped in on its way: Remove never unlinks a file and never removes through a link. It is best effort and says
 // nothing: what it cannot remove stays.
@@ -153,7 +165,7 @@ func remove(root *sys.FD, made []string) {
 	}
 }
 
-// rmdirOutside removes the empty folder p, made outside the project beneath the nearest folder above it that Create
+// rmdirOutside removes the empty folder p, made outside the project beneath the nearest folder above it that CreateContext
 // did not make (before are the folders it made ahead of p): that folder is resolved once, as mkdirOutside resolved
 // it, and p's parent reached below it with no link followed.
 func rmdirOutside(p string, before []string) {
@@ -194,12 +206,12 @@ func rmdirIn(root *sys.FD, rel string) {
 	_ = dir.Borrow(func(n int) error { return unix.Unlinkat(n, name, unix.AT_REMOVEDIR) }) // best effort: what stays, stays
 }
 
-// Create makes the folders r.MakeDirs names (mode 0755) and returns every folder it made, a missing parent included,
+// CreateContext checks cancellation before path work and each mkdir, then makes the folders r.MakeDirs names (mode 0755) and returns every folder it made, a missing parent included,
 // in creation order (a parent before its child), each relative to dir when inside it. A folder that already exists
 // is not returned. It stops at the first failure, returning what it made until then.
 //
 // dir is the project directory r was composed for with its symlinks resolved (Options.Dir), as the caller checked
-// it. Create opens it once with no symlink followed and makes every folder inside it beneath that descriptor, a
+// it. CreateContext opens it once with no symlink followed and makes every folder inside it beneath that descriptor, a
 // component at a time: each is opened relative to the one above it with openat2 RESOLVE_BENEATH|RESOLVE_NO_SYMLINKS,
 // and made there with mkdirat first when it is missing. Where openat2 is refused (ENOSYS inside a tego run, whose
 // filter answers it so, or on a kernel before 5.6; EPERM from an older container profile), each component is opened
@@ -207,29 +219,39 @@ func rmdirIn(root *sys.FD, rel string) {
 // way, in dir's own path or under it, there before or swapped in since the caller's check, is refused with an error
 // naming it, and nothing is made through it, so no folder lands outside the project through a link. A folder outside
 // dir (Claude Code's socket folder under the runtime directory) is made the same way beneath its nearest existing
-// parent, whose own path no check came before: it is resolved once, its links followed.
-func Create(r *Result, dir string) ([]string, error) {
+// parent, whose own path no check came before: it is resolved once, its links followed. A mkdir already submitted
+// to the kernel can still finish after cancellation.
+func CreateContext(ctx context.Context, r *Result, dir string) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	root, err := openDir(dir)
 	if err != nil {
 		return nil, rootRefusal(dir, err)
 	}
 	defer func() { _ = root.Close() }() // a path descriptor: nothing to flush
-	return create(root, r, dir)
+	return create(ctx, root, r, dir)
 }
 
-// create is Create beneath root, the project folder dir opened with no symlink followed.
-func create(root *sys.FD, r *Result, dir string) ([]string, error) {
+// create is CreateContext beneath root, the project folder dir opened with no symlink followed.
+func create(ctx context.Context, root *sys.FD, r *Result, dir string) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var made []string
 	for _, d := range r.MakeDirs {
+		if err := ctx.Err(); err != nil {
+			return made, err
+		}
 		d = filepath.Clean(d)
 		rel, rerr := filepath.Rel(dir, d)
 		inside := rerr == nil && filepath.IsLocal(rel)
 		var m []string
 		var err error
 		if inside {
-			m, err = mkdirs(root, dir, rel, d)
+			m, err = mkdirs(ctx, root, dir, rel, d)
 		} else {
-			m, err = mkdirOutside(d)
+			m, err = mkdirOutside(ctx, d)
 		}
 		for _, p := range m {
 			if inside {
@@ -248,7 +270,7 @@ func create(root *sys.FD, r *Result, dir string) ([]string, error) {
 // mkdirOutside makes d, a folder outside the project, beneath its nearest existing parent (found with links followed,
 // as Compose found d missing): no check came before, so that parent's path is resolved once, and below it mkdirs goes
 // on as inside the project, refusing a link. It returns the folders it made as d's path names them, parent first.
-func mkdirOutside(d string) ([]string, error) {
+func mkdirOutside(ctx context.Context, d string) ([]string, error) {
 	top := d
 	for !exists(top) && filepath.Dir(top) != top {
 		top = filepath.Dir(top)
@@ -266,14 +288,14 @@ func mkdirOutside(d string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", d, err)
 	}
-	return mkdirs(root, top, rel, d)
+	return mkdirs(ctx, root, top, rel, d)
 }
 
 // mkdirs makes rel beneath root, the folder at path base, a component at a time: each is opened relative to the one
 // above it (openIn), and made there with mkdirat first when it is missing, so no step follows a symbolic link or
 // leaves root. It returns the folders it made, by their paths under base, parent first, and stops at the first
 // failure, whose error names the component and target, the folder rel leads to.
-func mkdirs(root *sys.FD, base, rel, target string) ([]string, error) {
+func mkdirs(ctx context.Context, root *sys.FD, base, rel, target string) ([]string, error) {
 	var made []string
 	cur, p := root, base
 	defer func() {
@@ -288,6 +310,9 @@ func mkdirs(root *sys.FD, base, rel, target string) ([]string, error) {
 		p = filepath.Join(p, name)
 		next, err := openIn(cur, name)
 		if errors.Is(err, unix.ENOENT) {
+			if err := ctx.Err(); err != nil {
+				return made, err
+			}
 			err = cur.Borrow(func(n int) error { return unix.Mkdirat(n, name, 0o755) })
 			switch {
 			case err == nil:
@@ -308,7 +333,7 @@ func mkdirs(root *sys.FD, base, rel, target string) ([]string, error) {
 	return made, nil
 }
 
-// pathOnly are the open flags of every folder Create goes through: O_PATH, since only the *at calls use it (and so
+// pathOnly are the open flags of every folder CreateContext goes through: O_PATH, since only the *at calls use it (and so
 // it needs no read permission on the folder, as mkdir needs none), O_DIRECTORY, and no O_NOFOLLOW: with O_DIRECTORY
 // that answers ENOTDIR for a link and hides that it was one, where RESOLVE_NO_SYMLINKS refuses a link as the last
 // component too, with ELOOP, a dangling one included. openNoFollow, which has no RESOLVE_NO_SYMLINKS, adds it.
@@ -350,7 +375,7 @@ func refusedOpenat2(err error) bool { return errors.Is(err, unix.ENOSYS) || erro
 
 // openNoFollow is openIn where openat2 is refused. name is one component, so openat with O_NOFOLLOW resolves nothing
 // but name in dir and follows no link there; a name holding a "/", or "..", could reach past dir and is refused
-// EXDEV, as RESOLVE_BENEATH refuses it (Create never passes one). With O_DIRECTORY a link answers ENOTDIR, as a file
+// EXDEV, as RESOLVE_BENEATH refuses it (CreateContext never passes one). With O_DIRECTORY a link answers ENOTDIR, as a file
 // does, so fstatat AT_SYMLINK_NOFOLLOW tells which, and a link, a dangling one included, answers ELOOP, as
 // RESOLVE_NO_SYMLINKS answers it.
 func openNoFollow(dir *sys.FD, name string) (*sys.FD, error) {
@@ -368,7 +393,7 @@ func openNoFollow(dir *sys.FD, name string) (*sys.FD, error) {
 }
 
 // walkDir is openDir where openat2 is refused: from / a component at a time (walk), so no link on the way is
-// followed and a link answers ELOOP, as openat2 answers it. (A relative p, which Create never passes, is walked from
+// followed and a link answers ELOOP, as openat2 answers it. (A relative p, which CreateContext never passes, is walked from
 // the working directory, a ".." in it refused.)
 func walkDir(p string) (*sys.FD, error) {
 	start := "."

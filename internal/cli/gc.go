@@ -131,18 +131,15 @@ type gcJSON struct {
 
 // runGC is the in-process body of gc. A negative keep is "no --keep": the machine's retention applies.
 //
-// gc removes what the machine config's retention and ledger_root select, so it reads the config whole or not at all,
-// as `tego run` does (config.TrustAbort): a layer it cannot read, trust or parse refuses the pass, and nothing is
-// swept or deleted, whatever --keep says, since that layer may name the ledger root too. gc read it warn-and-skip, so
-// such a layer was passed over with a warning and the pass went on with the built-in 30 days and ledger root: one
-// agent's chmod 000 of ~/.tego/config.yaml, which no Landlock rule stops, had the daily gc delete the runs the user's
-// retention kept (GAPS C52). Before it reads the config, gc gives ~/.tego, the layer and tego.log back to their owner,
-// as run does (restoreUserState); a dry run, which changes nothing, leaves them as they are.
+// gc loads in observation mode so changed layer modes cannot disable the command. An UNKNOWN
+// baseline produces a report without deleting anything: a missing layer could keep runs longer
+// or name another ledger (C52). Before reading config, non-dry gc restores missing owner mode bits
+// on the user's Tego state. It never removes group/other write bits; those need an owner repair.
 func runGC(ctx context.Context, keep time.Duration, dryRun, builds, asJSON bool, stdout, stderr io.Writer) int {
 	if !dryRun {
 		restoreUserState("tego gc", stderr)
 	}
-	m, cds, err := loadMachine(config.TrustAbort)
+	m, cds, err := loadMachine(config.TrustWarn)
 	writeConfigDiagnostics(stderr, cds)
 	if err != nil {
 		configRefused(stderr, "tego gc", err)
@@ -154,10 +151,25 @@ func runGC(ctx context.Context, keep time.Duration, dryRun, builds, asJSON bool,
 		message(stderr, "", 0, 0, why, identity.CodeConfigUntrusted)
 		return identity.ExitError
 	}
+	if !m.BaselineKnown() {
+		// A missing layer might retain runs longer or select a different root (C52).
+		message(stderr, "", 0, 0, "tego gc: nothing was swept or deleted: baseline UNKNOWN because the config could not be read completely; tego run or gc without --dry-run restores missing owner mode bits", config.CodeBaselineUnknown)
+		if asJSON {
+			if err := writeJSON(stdout, gcJSON{DryRun: dryRun, Errors: []string{"baseline UNKNOWN: config incomplete; nothing was swept or deleted"}}); err != nil {
+				return identity.ExitError
+			}
+		}
+		return identity.ExitError
+	}
 	root, err := ledgerRootOf(m)
 	if err != nil {
 		message(stderr, "", 0, 0, "tego gc: "+err.Error(), codeIO)
 		return identity.ExitError
+	}
+	if !dryRun {
+		// The run directories an agent took from their owner (A48) would make gc fail on each of them: give the
+		// owner's rights back first, as tego run does at its start. --dry-run changes no mode.
+		restoreState("tego gc", tegoruntime.OwnState{Root: root}, stderr)
 	}
 	explicit := keep >= 0
 	if keep < 0 {
@@ -183,9 +195,9 @@ func runGC(ctx context.Context, keep time.Duration, dryRun, builds, asJSON bool,
 		message(stderr, "", 0, 0, "tego gc: "+e.Error(), codeIO)
 	}
 	// The rule-change journal ages with the runs, after them: a run the pass removed (or, dry, would remove) no
-	// longer keeps the lines it reads. A journal not pruned is reported and the exit stays 0, as a run the pass could
-	// not finish is.
-	pruned, perr := pruneRuleChanges(ctx, root, keep, explicit, dryRun, res.Removed, cds)
+	// longer keeps the lines it reads. A prune failure is reported and the exit stays 0, as a run
+	// the pass could not finish is. E9 silently keeps a missing-home user's journal unless --keep is explicit.
+	pruned, perr := pruneRuleChanges(ctx, m, root, keep, explicit, dryRun, res.Removed, cds)
 	if perr != nil {
 		code := codeIO
 		if errors.Is(perr, errRetentionUnknown) {

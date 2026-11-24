@@ -63,6 +63,12 @@ const (
 	// PlaneFillExec writes a PlaneExecRow into tego_plane_exec_rows' inner map.
 	PlaneFillExec   PlaneFillWhat = 2
 	PlaneFillListen PlaneFillWhat = 3
+	// The live-block rows (ADR 0124, amendment 2026-11-21), each under the wants key's kind 0 (PlaneFillBlockKey): at
+	// the descriptor's inode, at its directory and a name key, and the two deletes.
+	PlaneFillBlock        PlaneFillWhat = 4
+	PlaneFillBlockName    PlaneFillWhat = 5
+	PlaneFillBlockDel     PlaneFillWhat = 6
+	PlaneFillBlockNameDel PlaneFillWhat = 7
 )
 
 // PlaneFillStatus is what the fill did with one wanted descriptor (enum tego_plane_fill_status).
@@ -144,6 +150,14 @@ type PlaneFillRow struct {
 	// ParentIno is an exec file's parent directory's inode number.
 	ParentIno uint64
 	Name      [NameMax]byte
+	// A live block row's template (PlaneFillBlock*): the row's instant, a name row's key, its three ids and flags.
+	BlockFrom    uint64
+	BlockNameKey uint64
+	BlockRead    uint16
+	BlockWrite   uint16
+	BlockGuard   uint16
+	BlockFlags   uint8
+	Pad3         uint8
 }
 
 // PlaneClearCtx is the context of ProgPlaneClear: struct tego_plane_clear_ctx.
@@ -157,6 +171,9 @@ type PlaneClearCtx struct {
 	ExecDeleted   uint32
 	Status        int32
 	ListenDeleted uint32
+	// BlocksDeleted is the live-block rows removed.
+	BlocksDeleted uint32
+	Pad           uint32
 }
 
 // PlaneFillObjects lists the fill builds this binary carries, sorted, or nothing when it carries none.
@@ -174,6 +191,20 @@ func PlaneFillObjects() []Object {
 // an fs row and an exec row and each launcher's templates are its own.
 func PlaneFillKey(tgid uint32, what PlaneFillWhat, fd uint32) uint64 {
 	return uint64(tgid)<<32 | uint64(what)<<30 | uint64(fd&(1<<30-1))
+}
+
+// PlaneFillBlockKey is the MapPlaneFillWants key of a live-block row's template: kind 0, the one the key's two bits
+// leave, so each block row has its own descriptor.
+func PlaneFillBlockKey(tgid, fd uint32) uint64 { return uint64(tgid)<<32 | uint64(fd&(1<<30-1)) }
+
+// PlaneFillBlockKeys is PlaneFillBlockKey of each descriptor number in fds, in order: the keys of one live-block fill
+// pass, whose numbers sys.LendAll lends (tools/fdcheck admits it as an encoder: its result holds the numbers).
+func PlaneFillBlockKeys(tgid uint32, fds []int) []uint64 {
+	out := make([]uint64, len(fds))
+	for i, fd := range fds {
+		out[i] = PlaneFillBlockKey(tgid, uint32(fd))
+	}
+	return out
 }
 
 // PlaneFillKeyTgid is the tgid a MapPlaneFillWants key belongs to.

@@ -19,7 +19,7 @@ func TestApplyNowLater(t *testing.T) {
 	f.live[runA2] = true
 	ctx := context.Background()
 	c := f.ref(t, f.contract)
-	a, err := f.s.ApplyChange(ctx, ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"remove", "exec.allow", "ls"}}})
+	a, err := f.applyReviewed(t, ctx, ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"remove", "exec.allow", "ls"}}})
 	if err != nil || a.ID == "" {
 		t.Fatalf("apply: %+v %v", a, err)
 	}
@@ -54,7 +54,7 @@ func TestApplyNowLater(t *testing.T) {
 
 	// A later change that takes the entry back: the earlier removal no longer narrows the file, so nothing is offered.
 	c = f.ref(t, f.contract)
-	b, err := f.s.ApplyChange(ctx, ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"remove", "exec.allow", "cat"}}})
+	b, err := f.applyReviewed(t, ctx, ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"remove", "exec.allow", "cat"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestApplyNowLater(t *testing.T) {
 	// Apply now offers nothing (deny_read added, then removed again).
 	f.held = true
 	c = f.ref(t, f.contract)
-	d, err := f.s.ApplyChange(ctx, ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"add", "fs.deny_read", "./vault/"}}})
+	d, err := f.applyReviewed(t, ctx, ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"add", "fs.deny_read", "./vault/"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestApplyNowLater(t *testing.T) {
 
 	// An undone change is not pending.
 	c = f.ref(t, f.contract)
-	n, err := f.s.ApplyChange(ctx, ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"remove", "net.allow", "api.example.com:443"}}})
+	n, err := f.applyReviewed(t, ctx, ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"remove", "net.allow", "api.example.com:443"}}})
 	if err != nil {
 		t.Fatal(err)
 	}

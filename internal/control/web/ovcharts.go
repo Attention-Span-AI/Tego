@@ -11,6 +11,8 @@ import (
 // ovCharts is the Overview's charts: a sparkline of refusals and of secrets protected over the newest runs, and
 // the secrets protected against exposed.
 type ovCharts struct {
+	Last []overviewBar
+
 	RefSpark, SecretSpark *svgChart
 	// SparkRuns is how many runs the sparklines cover (the newest, oldest left).
 	SparkRuns int
@@ -23,12 +25,28 @@ type ovCharts struct {
 	Unrecorded int
 }
 
+type overviewBar struct {
+	Run, Name, Width string
+	Count            int
+}
+
 // sparkRuns is how many of the newest runs an Overview sparkline covers.
 const sparkRuns = 12
 
 // overviewCharts builds the Overview's charts from runs (newest first) and their verdicts.
 func overviewCharts(runs []*ledgerview.Run, v map[string]ledgerview.Verdict) ovCharts {
 	var c ovCharts
+	peak := 1
+	for _, r := range runs[:min(len(runs), 3)] {
+		peak = max(peak, r.Refusals)
+	}
+	for _, r := range runs[:min(len(runs), 3)] {
+		name := r.Agent
+		if name == "" {
+			name = r.ID
+		}
+		c.Last = append(c.Last, overviewBar{Run: r.ID, Name: name, Count: r.Refusals, Width: num(100 * float64(r.Refusals) / float64(peak))})
+	}
 	n := min(len(runs), sparkRuns)
 	ref, sec := make([]int, n), make([]int, n)
 	for i, r := range runs {

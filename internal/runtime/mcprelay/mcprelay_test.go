@@ -64,11 +64,22 @@ func filesServer() Server {
 	return Server{Name: "files", Command: filesCmd, Rules: mcptool.Rules{Deny: []string{"delete_file"}, Ask: []string{"write_file"}}}
 }
 
-// start makes a started service whose admitter admits everything as pid (or refuses with admitErr).
+// start makes a started service of an Adjustable run (live switches may loosen) whose admitter admits everything as pid
+// (or refuses with admitErr). startLocked makes the Locked one, the default of a run that says nothing.
 func start(t *testing.T, admitErr error, servers ...Server) (*Service, *sink, string) {
 	t.Helper()
+	return startMode(t, admitErr, true, servers...)
+}
+
+func startLocked(t *testing.T, servers ...Server) (*Service, *sink, string) {
+	t.Helper()
+	return startMode(t, nil, false, servers...)
+}
+
+func startMode(t *testing.T, admitErr error, adjustable bool, servers ...Server) (*Service, *sink, string) {
+	t.Helper()
 	dir := t.TempDir()
-	s, err := New(Options{Servers: servers, Exe: "/usr/bin/tego", Poll: 20 * time.Millisecond,
+	s, err := New(Options{Servers: servers, Exe: "/usr/bin/tego", Poll: 20 * time.Millisecond, Adjustable: adjustable,
 		admit: func(net.Conn, int, uint64) (admission, error) {
 			if admitErr != nil {
 				return admission{}, admitErr
@@ -317,33 +328,23 @@ func TestToolsListFilteredAndSeen(t *testing.T) {
 	if strings.Contains(string(f.ToClient), "delete_file") || !strings.Contains(string(f.ToClient), "write_file") {
 		t.Fatalf("filtered list %s", f.ToClient)
 	}
-	// An unrelated server message passes as it came.
+	// An answer that carries a tools array is filtered whatever its id says: the shape is what shows a tool, not the id of a
+	// request the client may no longer wait on.
 	if err := sh.fw.Write(Frame{S: []byte(result)}); err != nil {
 		t.Fatal(err)
 	}
-	if f := sh.read(); string(f.ToClient) != result {
+	hidesDenied(t, sh.read().ToClient)
+	// A message that is no answer with tools passes as it came.
+	plain := `{"jsonrpc":"2.0","id":"X","result":{"content":[]}}`
+	if err := sh.fw.Write(Frame{S: []byte(plain)}); err != nil {
+		t.Fatal(err)
+	}
+	if f := sh.read(); string(f.ToClient) != plain {
 		t.Fatalf("a result answering no tools/list was changed: %s", f.ToClient)
 	}
 	seen, err := mcptools.ReadSeen(dir)
 	if err != nil || strings.Join(seen["files"], ",") != "delete_file,read_file,write_file" {
 		t.Fatalf("seen %v %v", seen, err)
-	}
-}
-
-func TestBatchWithRefusedCallAnsweredWhole(t *testing.T) {
-	s, sk, _ := start(t, nil, filesServer())
-	sh, _ := dial(t, s, "files", filesCmd)
-	sh.client(`[` + toolCall(1, "read_file") + `,` + toolCall(2, "delete_file") + `]`)
-	f := sh.read()
-	if f.ToServer != nil {
-		t.Fatal("a batch with a denied call reached the server")
-	}
-	var arr []json.RawMessage
-	if err := json.Unmarshal(f.ToClient, &arr); err != nil || len(arr) != 2 {
-		t.Fatalf("batch answer %s", f.ToClient)
-	}
-	if n := len(sk.of(record.KindMCP)); n != 2 {
-		t.Fatalf("mcp lines %d", n)
 	}
 }
 

@@ -1,8 +1,10 @@
 {{/* SPDX-License-Identifier: Apache-2.0 */}}
-{{/* glossary: the dashboard's words, one per idea, each in a line (glossaryTerms). The top bar's "?" opens it. */}}
-{{define "content"}}{{with .Data}}
-<div class="head"><div><h1>Glossary</h1></div></div>
-<section class="panel" aria-label="Terms"><dl class="gl-list">{{range .}}
-<div class="gl-row" id="{{.ID}}"><dt>{{with .Was}}<span id="{{.}}"></span>{{end}}{{.Term}}</dt><dd>{{.Means}}{{with .Where}} <a class="link" href="{{.}}">See it</a>{{end}}</dd></div>{{end}}
+{{define "content"}}<link rel="stylesheet" href="/static/support.css">{{with .Data}}
+<div class="page-interior glossary-page">
+<div class="head"><div>{{if $.Tour}}<h2>{{else}}<h1>{{end}}Glossary{{if $.Tour}}</h2>{{else}}</h1>{{end}}</div></div>
+<form class="glossary-find" action="/glossary" method="get"><label class="field">Find a word<input class="input" type="search" name="q" value="{{.Query}}" placeholder="Contract, record, protection…" autocomplete="off"></label><button class="btn" type="submit">Find</button>{{if .Query}}<a class="btn" href="/glossary">Clear search</a>{{end}}</form>
+<details class="detail-disclosure"><summary>Browse all terms</summary><nav class="glossary-index panel-body" aria-label="Terms">{{range .Terms}}<a class="text-link" href="#{{.ID}}">{{.Term}}</a>{{end}}</nav></details>
+<section class="panel" aria-label="Definitions"><dl class="gl-list">{{range .Terms}}
+<div class="gl-row" id="{{.ID}}"><dt>{{with .Was}}<span id="{{.}}"></span>{{end}}{{.Term}}</dt><dd data-number-exclude="glossary.definition">{{.Means}}{{with .Where}} <a class="link" href="{{.}}">See it</a>{{end}}</dd></div>{{else}}<div class="empty"><p>{{template "quantity" (quantityZero "glossary.matches" "No definition matches this search." exactNumbers)}}</p><a class="btn" href="/glossary">Clear search</a></div>{{end}}
 </dl></section>
-{{end}}{{end}}
+</div>{{end}}{{end}}

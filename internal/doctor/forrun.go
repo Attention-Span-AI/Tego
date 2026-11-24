@@ -9,6 +9,7 @@ import (
 	"reflect"
 
 	bpfobj "github.com/attention-span-ai/tego/internal/bpf"
+	"github.com/attention-span-ai/tego/internal/platform/peer"
 	"github.com/attention-span-ai/tego/internal/platform/startphase"
 	"github.com/attention-span-ai/tego/internal/runtime/enforce"
 	"github.com/attention-span-ai/tego/internal/runtime/supervisor"
@@ -30,7 +31,7 @@ import (
 // all. Tier landlock is always among them, since every refusal that names no tier is explained by tier
 // landlock's line.
 func Reach(m *config.Machine, rt *agent.RuleTable, only backend.Tier) backend.Tier {
-	return reach(m, rt, only, config.InitNSRoot(), enforce.Buildable)
+	return reach(m, rt, only, config.InitNSRoot() && currentPIDNamespaceWhy() == "", enforce.Buildable)
 }
 
 // reach is Reach with root and the build supplied, so every case can be described without the machine.
@@ -73,12 +74,13 @@ func reach(m *config.Machine, rt *agent.RuleTable, only backend.Tier, root bool,
 // AutoTiers is the enforcement tiers tier: auto resolves among for this process on this machine, lowest first:
 // those this binary constructs (enforce.Buildable), tier cgroup and above only as root in the initial user namespace
 // (they need CAP_BPF, CAP_NET_ADMIN and CAP_SYS_ADMIN there, as Reach reads it), and tier bpflsm only with bpf in the
-// active LSM list (D6, read unprivileged; an unreadable list is no bpf). No program is loaded: these are the
+// active LSM list (D6, read unprivileged; an unreadable list is no bpf). Root tiers also require a proven initial
+// process-id namespace. No program is loaded: these are the
 // preconditions no probe can change. A tegobpf build run by a normal user, on a kernel booted without bpf in lsm=,
 // used to compile an auto contract at tier bpflsm and refuse its fs.ask_read for a tier its run could never get.
 // The tiers this binary constructs that the set leaves out come with it, by the precondition they lack (AutoSet).
 func AutoTiers() AutoSet {
-	return autoTiers(config.InitNSRoot(), bpfLSMActive, enforce.Buildable)
+	return autoTiers(config.InitNSRoot(), currentPIDNamespaceWhy(), bpfLSMActive, enforce.Buildable)
 }
 
 // AutoSet is AutoTiers' answer: the tiers an auto run by this process can get here, and the tiers this binary
@@ -93,6 +95,8 @@ type AutoSet struct {
 	// NeedBPFLSM is the tiers a root process is left without because bpf is not in the active LSM list, or the list
 	// cannot be read: tier bpflsm.
 	NeedBPFLSM []backend.Tier
+	// NeedPIDNamespace lists root tiers unavailable outside a proven initial PID namespace.
+	NeedPIDNamespace []backend.Tier
 }
 
 // bpfLSMActive reports bpf in the active LSM list, false when the list cannot be read.
@@ -101,14 +105,16 @@ func bpfLSMActive() bool {
 	return err == nil && st.BPFActive
 }
 
-// autoTiers is AutoTiers with root, the LSM list and the build supplied; bpfLSM is read only when it decides.
-func autoTiers(root bool, bpfLSM func() bool, built func(backend.Tier) error) AutoSet {
+// autoTiers is AutoTiers with privilege, namespace, LSM and build facts supplied; bpfLSM is read only when it decides.
+func autoTiers(root bool, namespaceWhy string, bpfLSM func() bool, built func(backend.Tier) error) AutoSet {
 	var s AutoSet
 	for _, t := range backend.Tiers() {
 		if !t.AtOrBelow(backend.TierBPFLSM) || built(t) != nil {
 			continue
 		}
 		switch {
+		case t != backend.TierLandlock && namespaceWhy != "":
+			s.NeedPIDNamespace = append(s.NeedPIDNamespace, t)
 		case t != backend.TierLandlock && !root:
 			s.NeedRoot = append(s.NeedRoot, t)
 		case t == backend.TierBPFLSM && !bpfLSM():
@@ -164,19 +170,23 @@ func ForRun(ctx context.Context, m *config.Machine, reach backend.Tier) (*Report
 	if ctx.Err() != nil {
 		return nil, fmt.Errorf("doctor: %w", ctx.Err())
 	}
-	return st.report(m, ""), nil
+	r := st.report(m, "")
+	r.noteScope(ctx)
+	return r, nil
 }
 
 // checks are the nine probes of R27, as fields so a test can describe a machine and count which of them a
 // scope runs.
 type checks struct {
-	kernel   func() (Result, string, Version, kernelProbe)
-	btf      func() Result
-	cgroup   func(uid int, ceilings []config.Value) Result
-	landlock func() (Result, int)
-	seccomp  func() (Result, PtraceState, error)
-	lsm      func(root bool) (Result, LSMState)
-	programs func(root bool, uid int, kernel Version, tier, capture []hook) (Result, []HookResult)
+	// pidNamespace reads this process's active PID namespace before root-tier cache or probes.
+	pidNamespace func() (uint64, error)
+	kernel       func() (Result, string, Version, kernelProbe)
+	btf          func() Result
+	cgroup       func(uid int, ceilings []config.Value, throughScope bool) Result
+	landlock     func() (Result, int)
+	seccomp      func() (Result, PtraceState, error)
+	lsm          func(root bool) (Result, LSMState)
+	programs     func(root bool, uid int, kernel Version, tier, capture []hook) (Result, []HookResult)
 	// plane is the decision plane's mode probe (planeprobe.go), run inside D7.
 	plane    func(root bool, uid int, release, pin string, keep bool) (*PlaneState, []HookResult)
 	fanotify func(root bool, kernel Version) (Result, FanotifyState)
@@ -189,22 +199,27 @@ type checks struct {
 	// scope asks it for the unix sockets row's note (machineMatrix); a run's supervisor warns on its own. nil asks
 	// nothing.
 	unixDiag func() bool
+	// wslHeld reports whether WSL readiness is withheld here (peer.WSLGateHolds: WSL, with the rule's gate holding);
+	// nil withholds nothing.
+	wslHeld func() bool
 }
 
 // machineChecks are the real probes.
 var machineChecks = checks{
-	kernel:      probeKernel,
-	btf:         probeBTF,
-	cgroup:      probeCgroup,
-	landlock:    probeLandlockABI,
-	seccomp:     probeSeccomp,
-	lsm:         probeLSM,
-	programs:    probeHooks,
-	plane:       probePlane,
-	fanotify:    probeFanotify,
-	swap:        probeSwap,
-	kernelFuncs: machineKernelFuncs,
-	unixDiag:    supervisor.UnixDiagAvailable,
+	pidNamespace: ownPIDNamespace,
+	kernel:       probeKernel,
+	btf:          probeBTF,
+	cgroup:       probeCgroupPlacement,
+	landlock:     probeLandlockABI,
+	seccomp:      probeSeccomp,
+	lsm:          probeLSM,
+	programs:     probeHooks,
+	plane:        probePlane,
+	fanotify:     probeFanotify,
+	swap:         probeSwap,
+	kernelFuncs:  machineKernelFuncs,
+	unixDiag:     supervisor.UnixDiagAvailable,
+	wslHeld:      peer.WSLGateHolds,
 }
 
 // machineKernelFuncs is bpf.KernelFuncFacts on the kernel's own BTF, through the process's kept parse (D2 has
@@ -250,6 +265,14 @@ func (s scope) run(ctx context.Context) probeState {
 		s.reach = "" // not a tier a run selects: doctor's scope
 	}
 	st := probeState{byID: map[CheckID]Result{}, root: s.root, reach: s.reach}
+	if s.checks.wslHeld != nil {
+		st.wslHeld = s.checks.wslHeld()
+	}
+	if s.checks.pidNamespace == nil {
+		st.rootTierWhy = pidNamespaceWhy(0, errors.New("the namespace probe is unavailable"))
+	} else {
+		st.rootTierWhy = pidNamespaceWhy(s.checks.pidNamespace())
+	}
 	add := func(r Result) {
 		st.results = append(st.results, r)
 		st.byID[r.ID] = r
@@ -258,7 +281,7 @@ func (s scope) run(ctx context.Context) probeState {
 	// The cache is read and written only by root, in a root-owned directory (runcache.go), and only at reach
 	// cgroup and bpflsm: reach landlock runs neither D7 nor D8, and doctor's scope probes afresh.
 	cache := s.cache
-	if !s.root || (s.reach != backend.TierCgroup && s.reach != backend.TierBPFLSM) {
+	if !s.root || st.rootTierWhy != "" || (s.reach != backend.TierCgroup && s.reach != backend.TierBPFLSM) {
 		cache = nil
 	}
 	var (
@@ -329,7 +352,7 @@ func (s scope) run(ctx context.Context) probeState {
 			}
 			add(s.checks.btf())
 		},
-		func() { add(s.checks.cgroup(s.uid, s.ceilings)) },
+		func() { add(s.checks.cgroup(s.uid, s.ceilings, userScopePlacement(ctx))) },
 		func() {
 			r, abi := s.checks.landlock()
 			st.landlockABI = abi
@@ -346,11 +369,15 @@ func (s scope) run(ctx context.Context) probeState {
 				return
 			}
 			// A run's scope reads the list and leaves the counting program to LSM mode's answer (ForRun).
-			r, state := s.checks.lsm(st.root && s.reach == "")
+			r, state := s.checks.lsm(st.root && s.reach == "" && st.rootTierWhy == "")
 			st.lsm = state
 			add(r)
 		},
 		func() {
+			if st.rootTierWhy != "" && (s.reach == "" || s.needs(backend.TierCgroup)) {
+				add(Result{ID: CheckPrograms, Skipped: true, Detail: st.rootTierWhy, Fix: rootTierNamespaceFix})
+				return
+			}
 			switch {
 			case s.reach == "":
 				r, rows := s.checks.programs(st.root, s.uid, st.kernel, hooks, captureHooks)
@@ -455,6 +482,9 @@ func (s scope) run(ctx context.Context) probeState {
 			switch {
 			case !s.needs(backend.TierCgroup):
 				skip(CheckFanotify)
+				return
+			case st.rootTierWhy != "":
+				add(Result{ID: CheckFanotify, Skipped: true, Detail: st.rootTierWhy, Fix: rootTierNamespaceFix})
 				return
 			case hit != nil:
 				st.fanotify = hit.FanotifyState

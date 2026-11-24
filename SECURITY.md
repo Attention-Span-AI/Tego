@@ -42,11 +42,11 @@ extended by `docs/adr/0031-tcb-dependency-rule-checked.md`):
   with; no I/O)
 - `internal/bpf` and `bpf/` (the BPF programs and their loader)
 
-The policy compiler, `pkg/spec/agent`, is outside the list: it makes no mutating syscall (checked by
-`TestCompileMakesNoMutatingSyscall`), though under `sudo tego run` it runs as root before launch.
+The policy compiler, `pkg/spec/agent`, is outside the list: it makes no mutating syscall (`docs/p0/agent-contract.md`
+I6, checked by `TestCompileMakesNoMutatingSyscall`), though under `sudo "$(command -v tego)" run` it runs as root before launch.
 It joins the list when ADR 0031 (proposed) moves its I/O into a new internal/policy/compile package.
 
-**The privileged path** (ADR 0042). Tiers 2 and 3 run from a root launcher: `sudo tego run` runs the whole launcher
+**The privileged path** (ADR 0042). Tiers 2 and 3 run from a root launcher: `sudo "$(command -v tego)" run` runs the whole launcher
 as root for the whole run, so granting sudo for tego is granting root, and a sudoers entry limited to tego is not
 a supported boundary. A file-capability or setuid copy of tego, or a launcher holding a privileged capability
 without being root of the initial user namespace, is refused at start with exit 125

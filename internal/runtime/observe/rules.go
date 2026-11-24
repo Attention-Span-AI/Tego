@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/internal/policy/decide"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
@@ -184,21 +185,21 @@ func (ri *ruleIndex) execUngranted(rule, path string) bool {
 
 // statEntry opens a declared path O_PATH|O_CLOEXEC and fstats it, and gives the id of the mount the path is on,
 // 0 when statx does not report one. O_PATH resolves the name without opening the file for I/O, which is what lets
-// a deny_read entry be indexed at all; the fd is closed immediately because the run's inode identity is pinned by
+// a deny_read entry be indexed at all; the descriptor is an owner closed immediately because the run's inode identity is pinned by
 // the launcher's own held fds (docs/ARCHITECTURE.md §10), not here.
 func statEntry(path string) (devIno, uint64, bool) {
-	fd, err := unix.Open(path, unix.O_PATH|unix.O_CLOEXEC, 0)
+	f, err := sys.Own(unix.Open(path, unix.O_PATH|unix.O_CLOEXEC, 0))
 	if err != nil {
 		return devIno{}, 0, false
 	}
-	defer func() { _ = unix.Close(fd) }()
+	defer func() { _ = f.Close() }()
 	var st unix.Stat_t
-	if err := unix.Fstat(fd, &st); err != nil {
+	if err := f.Fstat(&st); err != nil {
 		return devIno{}, 0, false
 	}
 	var mnt uint64
 	var stx unix.Statx_t
-	if unix.Statx(fd, "", unix.AT_EMPTY_PATH, unix.STATX_MNT_ID, &stx) == nil && stx.Mask&unix.STATX_MNT_ID != 0 {
+	if f.Statx("", unix.AT_EMPTY_PATH, unix.STATX_MNT_ID, &stx) == nil && stx.Mask&unix.STATX_MNT_ID != 0 {
 		mnt = stx.Mnt_id
 	}
 	return devIno{Dev: uint64(st.Dev), Ino: st.Ino}, mnt, true

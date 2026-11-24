@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
+	"github.com/attention-span-ai/tego/internal/control/linewords"
 	"github.com/attention-span-ai/tego/internal/control/rules"
 	"github.com/attention-span-ai/tego/internal/control/runact"
 	"github.com/attention-span-ai/tego/internal/shellword"
@@ -94,7 +95,7 @@ func (s *Server) fillPendingLive(ctx context.Context, d *rulesData) {
 	}
 	p.Live = true
 	facts := ledgerview.LiveFactsOf(run)
-	if !facts.Observe && run.Contract != "" {
+	if !facts.Observe && run.Contract != "" && d.CannotChange == "" {
 		p.Restart = "tego run " + shellword.Quote(run.Contract) + startCommand(run)
 	}
 	ids := make([]string, 0, len(p.Changes))
@@ -113,6 +114,9 @@ func (s *Server) fillPendingLive(ctx context.Context, d *rulesData) {
 		c := &p.Changes[i]
 		pn, ok := pend[c.ID]
 		c.Now = pendingLiveOf(pn, ok, facts, lb, sh, s.cfg.Now())
+		if c.Now.CanApply && d.CannotChange != "" {
+			c.Now.CanApply, c.Now.Note = false, d.CannotChange
+		}
 	}
 }
 
@@ -130,7 +134,7 @@ func pendingLiveOf(pn rules.PendingNow, ok bool, facts ledgerview.LiveFacts, lb 
 		}
 		kind, _, _ := strings.Cut(b, ":")
 		e, _ := lb.Entry(b)
-		st := facts.StatusAt(kind, serial, now, e.From, e.Until)
+		st := facts.StatusAt(kind, blockValueOf(b, e), serial, now, e.From, e.Until)
 		if st.State == ledgerview.LiveDormant || st.State == ledgerview.LiveExpired {
 			resting = st.State // refuses nothing now: never counted as live
 			continue
@@ -144,7 +148,7 @@ func pendingLiveOf(pn rules.PendingNow, ok bool, facts ledgerview.LiveFacts, lb 
 		pl.State, pl.Label, pl.Class = "recorded", "Recorded only (watched run)", "b-observed"
 		pl.Note = "This run is only watched: matching actions are recorded, not stopped."
 	case len(states) > 0 && containsState(states, ledgerview.LiveWaiting):
-		pl.State, pl.Label, pl.Class = "requested", "Requested", "b-waiting"
+		pl.State, pl.Label, pl.Class = "requested", "Requested", "b-neutral"
 		pl.Note = "Putting it in force on this run…"
 	case len(states) > 0:
 		pl.State, pl.Label, pl.Class = "live", "Live now", "b-active"
@@ -153,6 +157,10 @@ func pendingLiveOf(pn rules.PendingNow, ok bool, facts ledgerview.LiveFacts, lb 
 		}
 		if containsState(states, ledgerview.LivePartial) {
 			pl.Note = "Changes are refused; this run's reads are not seen, so a read still goes through."
+		}
+		if containsState(states, ledgerview.LivePartlyKernel) {
+			pl.Label = "Partly live now" + strings.TrimPrefix(pl.Label, "Live now")
+			pl.Note = "Partly in force: file changes the kernel decides in this run (writes, creates, deletes, renames) are not covered."
 		}
 	default:
 		pl.State, pl.Label, pl.Class = "next", "Next run", "b-neutral"
@@ -183,6 +191,7 @@ func pendingLiveOf(pn rules.PendingNow, ok bool, facts ledgerview.LiveFacts, lb 
 					break
 				}
 			}
+			pl.Note += " It is in force the next time the agent starts: stop this run and start it again."
 		}
 	}
 	return pl
@@ -216,7 +225,13 @@ func startCommand(r *ledgerview.Run) string {
 		// it, and an empty word is a pair of quotes.
 		words[i] = shellword.Quote(w)
 	}
-	return " -- " + strings.Join(words, " ")
+	line := strings.Join(words, " ")
+	if linewords.Mask(line) != line {
+		// An argument that looks like a credential is hidden everywhere the dashboard prints a command line (the line
+		// pages, Logs); a restart line must not print it either. The run's own page names the command.
+		return " -- <the command on the run's page: it holds a value that looks like a credential>"
+	}
+	return " -- " + line
 }
 
 // applyNowPost is POST /rules/change with do=applynow (postAllowed has passed it): the rule service places the live

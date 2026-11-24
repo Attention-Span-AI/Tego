@@ -10,6 +10,7 @@ import (
 	"io"
 	"maps"
 	"slices"
+	"strings"
 
 	"github.com/attention-span-ai/tego/pkg/spec/harness"
 )
@@ -101,7 +102,11 @@ func parseUser(user []byte) (userValue, error) {
 		}
 		for k, v := range env {
 			if v == nil {
-				return userValue{}, fmt.Errorf("%w: the user's --settings env is not an object of strings (%s is null)", errSettings, k)
+				// The name alone, and only when it is one (EnvEntryName).
+				if name, ok := EnvEntryName(k); ok {
+					return userValue{}, fmt.Errorf("%w: the user's --settings env is not an object of strings (%s is null)", errSettings, name)
+				}
+				return userValue{}, fmt.Errorf("%w: the user's --settings env is not an object of strings (an entry is null; its name is not shown)", errSettings)
 			}
 			u.env[k] = *v
 		}
@@ -230,4 +235,27 @@ func decodeOne(b []byte, v any) error {
 		return errors.New("trailing data after the JSON value")
 	}
 	return nil
+}
+
+// EnvEntryName is the variable an environment entry names, for a message: the text before its first "=" (the whole
+// entry when it has none), when that text is a variable name. ok is false when it is not: the entry's name cannot
+// be told from its value, so the message echoes nothing of it. It restates pkg/spec/identity's EnvEntryName, which
+// this package may not import (its import list is strict); internal/adapters' TestEnvEntryNameParity holds the two
+// to the same answers.
+func EnvEntryName(entry string) (name string, ok bool) {
+	name, _, _ = strings.Cut(entry, "=")
+	if !settingsEnvName(name) {
+		return "", false
+	}
+	return name, true
+}
+
+// settingsEnvName reports whether s is a variable name: a letter or "_", then letters, digits and "_".
+func settingsEnvName(s string) bool {
+	for i, c := range s {
+		if c != '_' && (c < 'A' || c > 'Z') && (c < 'a' || c > 'z') && (i == 0 || c < '0' || c > '9') {
+			return false
+		}
+	}
+	return s != ""
 }

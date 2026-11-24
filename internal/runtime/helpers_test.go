@@ -85,11 +85,13 @@ func lastKind(t *testing.T, dir string) record.Kind {
 // which `go test ./...` runs in parallel (seen against internal/runtime/enforce/landlock's
 // sibling-enumeration tests). The parent is created once and removed when the package is done.
 func TestMain(m *testing.M) {
-	reapMainHelper()         // the binary started as a run's reaper: runs ReapMain and exits
-	opathExecHelper()        // the binary started as an integration test's agent: never returns
-	watchHelper()            // the binary started as a watching agent (watch_helper_test.go): never returns
-	runtimeDirHolderHelper() // the binary started as a launcher that holds a runtime directory: never returns
-	harnessHookHelper()      // the binary started as a run's granted harness hook: never returns
+	adoptWriteOwnershipHelper() // the record-writer ownership probe, before any test framework owner
+	reapMainHelper()            // the binary started as a run's reaper: runs ReapMain and exits
+	opathExecHelper()           // the binary started as an integration test's agent: never returns
+	execRaceHelper()            // the binary started as the exec-race test's agent or one of its children: never returns
+	watchHelper()               // the binary started as a watching agent (watch_helper_test.go): never returns
+	runtimeDirHolderHelper()    // the binary started as a launcher that holds a runtime directory: never returns
+	harnessHookHelper()         // the binary started as a run's granted harness hook: never returns
 	parent, err := os.MkdirTemp("", "tego-runtime-")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "temp dir: %v\n", err)

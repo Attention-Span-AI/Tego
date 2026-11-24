@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -22,6 +23,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
+	"github.com/attention-span-ai/tego/pkg/spec/runstatus"
 )
 
 // CheckVersion is the check's JSON version (check_v). Keys only grow within it.
@@ -45,6 +47,8 @@ const (
 	CheckMismatch = "mismatch"
 	// CheckCannot: a check that must run could not, and none failed.
 	CheckCannot = "cannot-check"
+	// CheckIncomplete means the bytes and facts match but recorded coverage is incomplete.
+	CheckIncomplete = "incomplete"
 )
 
 // The result of one check.
@@ -60,9 +64,11 @@ var notShown = []string{"complete", "honest-host", "who", "when", "expected-job"
 // CheckInput is what Check compares: a receipt file and the record it names, a run folder under any name or its
 // events.jsonl, and the tego checking (By), whose build must be the receipt's for the numbers to be compared.
 type CheckInput struct {
-	Receipt string
-	Record  string
-	By      MadeBy
+	Receipt      string
+	Record       string
+	By           MadeBy
+	RequireEnded bool
+	StatusFile   string
 }
 
 // CheckStep is one check: its name, pass, fail or not-checked, and why.
@@ -75,20 +81,24 @@ type CheckStep struct {
 // CheckResult is what `tego receipt --check` found. Run, Lines, Head and Ended are the record's, as this check read
 // it.
 type CheckResult struct {
-	V         int         `json:"check_v"`
-	Result    string      `json:"result"`
-	Run       string      `json:"run"`
-	Lines     uint64      `json:"lines"`
-	Head      string      `json:"head"`
-	Ended     bool        `json:"ended"`
-	Checks    []CheckStep `json:"checks"`
-	Limits    []Limit     `json:"limits"`
-	NotShown  []string    `json:"not_shown"`
-	ReceiptBy *MadeBy     `json:"receipt_by,omitempty"`
-	CheckedBy MadeBy      `json:"checked_by"`
+	V                int         `json:"check_v"`
+	BindingVersion   int         `json:"binding_v"`
+	CoverageComplete bool        `json:"coverage_complete"`
+	Complete         bool        `json:"complete"`
+	Result           string      `json:"result"`
+	Run              string      `json:"run"`
+	Lines            uint64      `json:"lines"`
+	Head             string      `json:"head"`
+	Ended            bool        `json:"ended"`
+	Checks           []CheckStep `json:"checks"`
+	Limits           []Limit     `json:"limits"`
+	NotShown         []string    `json:"not_shown"`
+	ReceiptBy        *MadeBy     `json:"receipt_by,omitempty"`
+	CheckedBy        MadeBy      `json:"checked_by"`
 	// NotCompared names the receipt's values facts took as given rather than compared, once each was what this tego
 	// writes for the record: what only the price table or clock of the machine that made the receipt gives. [] when
-	// facts compared every value, null when facts compared nothing.
+	// facts compared every value, null when facts compared nothing. Binding 2 also holds the producer image hash
+	// constant; release verification checks its identity separately.
 	NotCompared []string `json:"not_compared"`
 }
 
@@ -97,7 +107,7 @@ func (c *CheckResult) ExitCode() int {
 	switch c.Result {
 	case CheckMatch, CheckMatchUnended:
 		return identity.ExitOK
-	case CheckMismatch:
+	case CheckMismatch, CheckIncomplete:
 		return identity.ExitFinding
 	}
 	return identity.ExitError
@@ -105,15 +115,10 @@ func (c *CheckResult) ExitCode() int {
 
 // boundReceipt is the part of a receipt the check reads by name.
 type boundReceipt struct {
-	V       *int   `json:"receipt_v"`
-	Run     string `json:"run"`
-	Tier    string `json:"tier"`
-	Binding *struct {
-		V         int         `json:"v"`
-		Chain     *BoundChain `json:"chain"`
-		ReceiptBy MadeBy      `json:"receipt_by"`
-		Error     string      `json:"error"`
-	} `json:"binding"`
+	V       *int     `json:"receipt_v"`
+	Run     string   `json:"run"`
+	Tier    string   `json:"tier"`
+	Binding *Binding `json:"binding"`
 }
 
 // checker holds one check's state.
@@ -154,6 +159,19 @@ func Check(ctx context.Context, in CheckInput) *CheckResult {
 		CheckedBy: in.By}, dir: recordDir(in.Record)}
 	k.run(ctx)
 	k.res.Result = verdict(k.res.Checks, k.res.Ended)
+	if in.RequireEnded {
+		var required []CheckStep
+		for _, s := range k.res.Checks {
+			if s.Name != "coverage" {
+				required = append(required, s)
+			}
+		}
+		k.res.Result = verdict(required, k.res.Ended)
+		if k.res.Result == CheckMatch && !k.res.CoverageComplete {
+			k.res.Result = CheckIncomplete
+		}
+		k.res.Complete = k.res.Result == CheckMatch
+	}
 	return k.res
 }
 
@@ -166,11 +184,29 @@ func (k *checker) run(ctx context.Context) {
 		}
 		return
 	}
-	k.res.Limits = limitsFor(k.rc.Tier)
+	k.res.Limits = limitsForBinding(k.rc.Tier, k.rc.Binding.V)
+	coverage, _ := k.given["coverage"].(map[string]any)
+	k.res.CoverageComplete, _ = coverage["complete"].(bool)
+	if k.rc.Binding.V >= 2 {
+		digest, err := payloadDigest(k.given)
+		if err != nil || digest != k.rc.Binding.ReceiptSHA256 {
+			k.step("binding", StepFail, "binding.receipt_sha256 differs from the receipt payload")
+		} else {
+			k.step("binding", StepPass, "binding.receipt_sha256 matches the receipt's other values; anyone who edits the receipt can recompute it")
+		}
+	}
 	sameBuild := k.madeBy()
 	chained := k.chainChecks(ctx)
 	k.bytesCheck()
 	k.facts(ctx, sameBuild, chained)
+	if k.in.RequireEnded {
+		k.endedChecks(ctx, chained)
+		if k.res.CoverageComplete {
+			k.step("coverage", StepPass, "coverage.complete is true; this does not mean every action was observed")
+		} else {
+			k.step("coverage", StepFail, "incomplete: coverage.complete is false")
+		}
+	}
 }
 
 // recordDir is the run folder path names: its parent for events.jsonl itself, so the run is named by the folder, as
@@ -217,6 +253,9 @@ func (k *checker) receipt() bool {
 		return false
 	}
 	b := k.rc.Binding
+	if b != nil {
+		k.res.BindingVersion = b.V
+	}
 	switch {
 	case k.rc.V == nil || *k.rc.V != Version:
 		k.step("receipt", StepNotChecked, fmt.Sprintf("this tego reads receipt_v %d, and the file has no such receipt_v", Version))
@@ -225,14 +264,20 @@ func (k *checker) receipt() bool {
 		k.step("receipt", StepNotChecked, "the receipt has no binding: a tego from before receipts were bound made it, "+
 			"or it was made without --json; make it again with tego session show --json")
 		return false
-	case b.V != BindingVersion:
-		k.step("receipt", StepNotChecked, fmt.Sprintf("binding v %d: this tego reads binding v %d", b.V, BindingVersion))
+	case b.V != 1 && b.V != BindingVersion && b.V != BaselineBindingVersion:
+		k.step("receipt", StepNotChecked, fmt.Sprintf("binding v %d: this tego reads binding v 1, %d and %d", b.V, BindingVersion, BaselineBindingVersion))
 		return false
 	case b.Error != "":
 		k.step("receipt", StepFail, "the receipt says its own record did not hold together: "+b.Error)
 		return false
 	case b.Chain == nil:
 		k.step("receipt", StepFail, "the binding names no record")
+		return false
+	case b.V == BaselineBindingVersion && (!lowerSHA256(b.EffectiveHash) || !lowerSHA256(b.BaselineSHA256) || !lowerSHA256(b.BaselineEvidenceSHA256)):
+		k.step("receipt", StepFail, "baseline binding hashes must be 64 lowercase hex digits")
+		return false
+	case b.V >= 2 && (!lowerSHA256(b.BinarySHA256) || !lowerSHA256(b.ReceiptSHA256)):
+		k.step("receipt", StepFail, "binding.binary_sha256 and binding.receipt_sha256 must be 64 lowercase hex digits")
 		return false
 	}
 	k.chain = b.Chain
@@ -252,7 +297,7 @@ func (k *checker) boundShape() bool {
 	switch b := k.given["binding"].(type) {
 	case map[string]any:
 		n, ok := b["v"].(json.Number)
-		return ok && n.String() == strconv.Itoa(BindingVersion)
+		return ok && (n.String() == "1" || n.String() == strconv.Itoa(BindingVersion) || n.String() == strconv.Itoa(BaselineBindingVersion))
 	case nil:
 		return false
 	}
@@ -276,7 +321,7 @@ func (k *checker) givenAt(path, what string) string {
 
 // readReceipt reads the receipt file: a regular file of at most MaxReceiptBytes.
 func readReceipt(path string) ([]byte, error) {
-	f, err := os.Open(path)
+	f, err := ledger.OpenRegular(path)
 	if err != nil {
 		return nil, fmt.Errorf("the receipt: %w", err)
 	}
@@ -312,14 +357,14 @@ func (k *checker) madeBy() bool {
 		missing = append(missing, "no commit")
 	}
 	switch {
-	case !mine.Exact():
+	case !Exact(mine):
 		k.madeByWhy = fmt.Sprintf("this tego (%s, commit %s) is no exact build, so it cannot say it computes the "+
 			"receipt as the tego that made it did; check with a released tego", mine.TegoVersion, mine.Commit)
 	case len(missing) > 0:
 		k.madeByWhy = "the receipt names no tego build: binding.receipt_by names " + strings.Join(missing, " and ") +
 			", so no tego can say it computes the receipt as the one that made it did; make the receipt again with " +
 			"tego session show --json"
-	case !by.Exact():
+	case !Exact(by):
 		k.madeByWhy = fmt.Sprintf("the receipt was made by tego %s (commit %s), which is no exact build, so no tego can "+
 			"say it computes the receipt as that one did; make the receipt again with a released tego", by.TegoVersion, by.Commit)
 	case by != mine:
@@ -352,7 +397,14 @@ func (a receiptAnchor) Head(run string) (string, bool, error) {
 // the receipt as its anchor. It reports whether the chain held to the receipt's head.
 func (k *checker) chainChecks(ctx context.Context) bool {
 	c := k.chain
-	rep, err := ledger.VerifyRunDir(ctx, k.dir, receiptAnchor{run: c.Run, head: c.Head})
+	// A receipt is no independent anchor for a missing or substituted file.
+	// VerifyRunDir reserves those findings for an anchored record's prior existence.
+	r, err := ledger.OpenReader(k.dir)
+	var rep ledger.VerifyReport
+	if err == nil {
+		defer func() { _ = r.Close() }() // read-only descriptor
+		rep, err = r.Verify(ctx, receiptAnchor{run: c.Run, head: c.Head})
+	}
 	if err != nil && !errors.Is(err, ledger.ErrUnverified) {
 		k.unread = "the record could not be read: " + err.Error()
 		why := k.unread
@@ -443,7 +495,7 @@ func (k *checker) bytesCheck() {
 func (k *checker) facts(ctx context.Context, sameBuild, chained bool) {
 	rc, cerr := k.recompute(ctx, 0)
 	if rc != nil {
-		k.res.Limits = limitsFor(rc.Tier) // the record's tier, not the one the receipt claims
+		k.res.Limits = limitsForBinding(rc.Tier, k.rc.Binding.V) // the record's tier, not the one the receipt claims
 	}
 	switch {
 	case !sameBuild:
@@ -473,6 +525,13 @@ func (k *checker) facts(ctx context.Context, sameBuild, chained bool) {
 		return
 	}
 	taken = append(append([]string{}, priced...), taken...)
+	if k.rc.Binding.V >= 2 {
+		taken = append(taken, "binding.binary_sha256")
+	}
+	if err := rc.seal(); err != nil {
+		k.step("facts", StepNotChecked, err.Error())
+		return
+	}
 	var buf bytes.Buffer
 	if err := rc.JSON(&buf); err != nil {
 		k.step("facts", StepNotChecked, err.Error())
@@ -486,11 +545,78 @@ func (k *checker) facts(ctx context.Context, sameBuild, chained bool) {
 		return
 	}
 	k.res.NotCompared = taken
-	if why := firstDiff("", k.given, want); why != "" {
+	if err := k.dropLevelsBeforeTheKey(want); err != nil {
+		k.step("facts", StepNotChecked, err.Error())
+		return
+	}
+	gotFacts, wantFacts := k.given, want
+	if k.rc.Binding.V >= 2 {
+		// The digest changes with every edit. Compare the values it covers first so
+		// a mismatch identifies the edited field instead of its derived checksum.
+		gotFacts, wantFacts = maps.Clone(k.given), maps.Clone(want)
+		for _, m := range []map[string]any{gotFacts, wantFacts} {
+			binding := maps.Clone(m["binding"].(map[string]any))
+			delete(binding, "receipt_sha256")
+			m["binding"] = binding
+		}
+	}
+	if why := firstDiff("", gotFacts, wantFacts); why != "" {
 		k.step("facts", StepFail, why)
 		return
 	}
+	if k.rc.Binding.V >= 2 {
+		if why := firstDiff("binding.receipt_sha256", k.rc.Binding.ReceiptSHA256, want["binding"].(map[string]any)["receipt_sha256"]); why != "" {
+			k.step("facts", StepFail, why)
+			return
+		}
+	}
 	k.step("facts", StepPass, takenWords(taken))
+}
+
+// dropLevelsBeforeTheKey takes each coverage gap's level out of want, the receipt as this tego computes it, when the
+// receipt given has gaps and none has a level: it is from before the key (C165, additive within receipt_v 1), and the
+// level is the one its code has, so the comparison holds every other value and the key's absence is no difference. A
+// binding of v 2 or later then has its digest made again over what is left, as the maker's tego before the key made it.
+// A receipt with a level on some gaps and not on others is not from before the key: it is compared whole and differs.
+func (k *checker) dropLevelsBeforeTheKey(want map[string]any) error {
+	gotGaps := gapsOf(k.given)
+	if len(gotGaps) == 0 {
+		return nil
+	}
+	for _, g := range gotGaps {
+		if _, has := g["level"]; has {
+			return nil
+		}
+	}
+	for _, g := range gapsOf(want) {
+		delete(g, "level")
+	}
+	if k.rc.Binding.V < 2 {
+		return nil
+	}
+	b, ok := want["binding"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	digest, err := payloadDigest(want)
+	if err != nil {
+		return err
+	}
+	b["receipt_sha256"] = digest
+	return nil
+}
+
+// gapsOf is a receipt's coverage gaps as decoded JSON objects (those that are objects).
+func gapsOf(m map[string]any) []map[string]any {
+	cov, _ := m["coverage"].(map[string]any)
+	list, _ := cov["gaps"].([]any)
+	var out []map[string]any
+	for _, g := range list {
+		if o, ok := g.(map[string]any); ok {
+			out = append(out, o)
+		}
+	}
+	return out
 }
 
 // takenWords is what a facts pass says beside the pass: which values it took from the receipt without comparing them.
@@ -498,9 +624,8 @@ func takenWords(taken []string) string {
 	if len(taken) == 0 {
 		return "every key and value compared"
 	}
-	return "every key and value compared but " + strings.Join(taken, ", ") + ", which only the price table or clock of " +
-		"the machine that made the receipt gives: each was held to what this tego writes for this record, and what " +
-		"is made from it was compared"
+	return "every key and value compared but " + strings.Join(taken, ", ") +
+		"; producer image identity must be checked against release checksums separately, and price or clock inputs are held to their valid ranges"
 }
 
 // recompute is the record's receipt as this tego computes it, bound, with no price table, read at the clock reading
@@ -513,7 +638,7 @@ func (k *checker) recompute(ctx context.Context, now uint64) (*Receipt, error) {
 	defer func() { _ = r.Close() }()
 	r.SkipNewerVersions()
 	by := k.in.By
-	return Compute(ctx, r, Options{Bind: &by, NowMonoNS: now})
+	return Compute(ctx, r, Options{Bind: &by, NowMonoNS: now, BindVersion: k.rc.Binding.V, BinarySHA256: k.rc.Binding.BinarySHA256})
 }
 
 // clockOf is the clock reading a receipt of a record with no run_end was made at, as its time_taken.seconds counts it
@@ -794,6 +919,14 @@ func short(h string) string {
 // does not show. Every string from the files goes through record.Printable.
 func (c *CheckResult) Text(w io.Writer) error {
 	var b strings.Builder
+	if stepPassed(c.Checks, "receipt") && !c.CoverageComplete {
+		b.WriteString("Incomplete: the record does not support complete coverage.\n")
+	}
+	if c.BindingVersion == 1 {
+		b.WriteString("Binding version: 1; no receipt checksum; totals are compared only by facts.\n")
+	} else if c.BindingVersion > 0 {
+		fmt.Fprintf(&b, "Binding version: %d.\n", c.BindingVersion)
+	}
 	what := fmt.Sprintf("run %s, %d %s", record.Printable(c.Run), c.Lines, plural(int(c.Lines), "line", "lines"))
 	switch c.Result {
 	case CheckMatch:
@@ -804,6 +937,8 @@ func (c *CheckResult) Text(w io.Writer) error {
 	case CheckMismatch:
 		s := firstWith(c.Checks, StepFail)
 		fmt.Fprintf(&b, "The receipt does not match the record: %s: %s.\n", s.Name, record.Printable(s.Why))
+	case CheckIncomplete:
+		b.WriteString("The receipt matches the record, but coverage.complete is false.\n")
 	default:
 		s := firstWith(c.Checks, StepNotChecked)
 		fmt.Fprintf(&b, "Could not check the receipt against the record: %s: %s.\n", s.Name, record.Printable(s.Why))
@@ -832,6 +967,85 @@ func firstWith(steps []CheckStep, result string) CheckStep {
 		}
 	}
 	return CheckStep{}
+}
+
+func stepPassed(steps []CheckStep, name string) bool {
+	for _, s := range steps {
+		if s.Name == name {
+			return s.Result == StepPass
+		}
+	}
+	return false
+}
+
+// endedChecks consumes the launcher's retained teardown assertion. A reader cannot
+// independently inspect a previous runner's cgroup filesystem.
+func (k *checker) endedChecks(ctx context.Context, chained bool) {
+	why := k.unread
+	if why == "" && !chained {
+		why = "the chain and head checks did not both pass, so the record's end is not checked"
+	}
+	if why != "" {
+		for _, name := range []string{"ended", "teardown"} {
+			k.step(name, StepNotChecked, why)
+		}
+		return
+	}
+	if !k.res.Ended {
+		k.step("ended", StepFail, "the record has no run_end")
+		return
+	}
+	k.step("ended", StepPass, "run_start to run_end")
+	path := k.in.StatusFile
+	if path == "" {
+		path = filepath.Join(k.dir, "run-status.json")
+		if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+			path = filepath.Join(filepath.Dir(k.dir), "run-status.json")
+		}
+	}
+	f, err := ledger.OpenRegular(path)
+	if err != nil {
+		k.step("teardown", StepNotChecked, "run-status.json: "+err.Error())
+		return
+	}
+	defer func() { _ = f.Close() }() // read-only descriptor
+	data, err := io.ReadAll(io.LimitReader(f, runstatus.MaxBytes+1))
+	if err != nil {
+		k.step("teardown", StepNotChecked, err.Error())
+		return
+	}
+	s, err := runstatus.Decode(data)
+	if err != nil {
+		k.step("teardown", StepNotChecked, "run-status.json: "+err.Error())
+		return
+	}
+	r, err := ledger.OpenReader(k.dir)
+	if err != nil {
+		k.step("teardown", StepNotChecked, err.Error())
+		return
+	}
+	defer func() { _ = r.Close() }() // read-only descriptor
+	var cgroup uint64
+	for e, err := range r.Iter() {
+		if err != nil {
+			k.step("teardown", StepNotChecked, err.Error())
+			return
+		}
+		cgroup = e.Cgroup
+		break
+	}
+	if err := ctx.Err(); err != nil {
+		k.step("teardown", StepNotChecked, err.Error())
+		return
+	}
+	switch {
+	case s.Run != k.res.Run || cgroup == 0 || s.CgroupID != strconv.FormatUint(cgroup, 10):
+		k.step("teardown", StepFail, "status run/cgroup_id does not identify the recorded scope")
+	case !s.Removed || s.Deferred:
+		k.step("teardown", StepFail, "scope removal is not confirmed, or cleanup was deferred")
+	default:
+		k.step("teardown", StepPass, "the launcher reports removal of the recorded scope; earlier absence is not independently authenticated")
+	}
 }
 
 // JSON writes the check's result as one JSON object.

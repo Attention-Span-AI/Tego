@@ -13,6 +13,12 @@
 #   TEGO_DEMO_UNIT  the always-on unit's name (default tego-demo-agent for the default stage; a stage chosen with
 #               DEMO_STAGE gets tego-demo-agent-<cksum of its path>, so a reset there never stops another demo's unit)
 #   TEGO, TEGO_CONTROL  the binaries (default: tego, tego-control on PATH)
+#   DEMO_DRY    1: a scene prints each command it would run and runs none, but still writes the contracts it generates
+#               (the tests compile those)
+#   DEMO_RESOLVER_ROOT  a folder to look for the name-lookup sockets under instead of / (the tests' fixtures); the
+#               contracts name the sockets found there (lookup_allow), and `./demo.sh lookup` prints them
+#   DEMO_PROC_ROOT  the folder the kit looks for the procfs under instead of /proc (the tests' fixtures): setup and the
+#               acts refuse to run when it holds no process table, since a helper is known by its process (procid.py)
 set -eu
 
 # printf, not echo: dash's echo reads a backslash in a path as an escape.
@@ -91,13 +97,14 @@ prepare_stage() {
 }
 
 say() { printf '\n== %s\n' "$*"; }
-# show prints a command as the presenter would type it, then runs it.
-show() { printf '$ %s\n' "$*"; eval "$*"; }
+# show prints a command as the presenter would type it, then runs it (DEMO_DRY=1: it only prints it).
+show() { printf '$ %s\n' "$*"; [ -z "${DEMO_DRY:-}" ] || return 0; eval "$*"; }
 
 # piped CMD FILTER prints "CMD | FILTER" as show does and runs it, and returns CMD's exit status, not FILTER's: a
 # pipeline's status is its last command's, so a CMD that failed behind tee and grep read as one that ran.
 piped() {
   printf '$ %s | %s\n' "$1" "$2"
+  [ -z "${DEMO_DRY:-}" ] || return 0
   rm -f "$STAGE/piped.status"
   { if eval "$1"; then s=0; else s=$?; fi; echo "$s" >"$STAGE/piped.status"; } | eval "$2" || :
   s=$(cat "$STAGE/piped.status" 2>/dev/null) || s=
@@ -136,18 +143,134 @@ print(next((c for c in (same, exe) if c and not any(ch.isspace() for ch in c)), 
   export PYTHON3
 }
 
+# lookup_allow prints the net.allow entries that let curl's name lookup through, as the text of a YAML list's items:
+# the nscd socket, always (as the kit has named it since it began), and the sockets of the other resolvers a host runs
+# that exist as sockets: systemd-resolved's and systemd's user database. A host whose C library asks one of those
+# first would otherwise show a net refusal for the lookup before the one the scene is about. Only names of plain
+# characters are taken, so an entry can never break the contract it is written into.
+lookup_allow() {
+  r=${DEMO_RESOLVER_ROOT:-}
+  seen=
+  printf '"unix:/var/run/nscd/socket"'
+  socks=
+  for m in $(nss_modules); do
+    socks="$socks $r$(nss_socket "$m")"
+  done
+  # Each socket once, in the order found: systemd-resolved's and the user database's first, then the modules' own that
+  # nsswitch.conf names (sssd's, avahi's, systemd-machined's).
+  for f in "$r"/run/systemd/resolve/io.systemd.Resolve "$r"/run/systemd/userdb/io.systemd.* $socks; do
+    [ -S "$f" ] || continue
+    case ${f#"$r"} in *[!A-Za-z0-9._/-]*) continue ;; esac
+    case "$seen" in *" ${f#"$r"} "*) continue ;; esac
+    seen="$seen ${f#"$r"} "
+    printf ', "unix:%s"' "${f#"$r"}"
+  done
+  echo
+}
+
+# nss_modules prints the service names the hosts, passwd and group lines of nsswitch.conf name, one each (a [STATUS=action]
+# word is not a service). Those are the lookups curl and a program's user lookup go through.
+nss_modules() {
+  f=${DEMO_RESOLVER_ROOT:-}/etc/nsswitch.conf
+  [ -r "$f" ] || return 0
+  sed -n -e 's/#.*//' -e 's/\[[^]]*\]//g' -e 's/^[[:space:]]*\(hosts\|passwd\|group\):[[:space:]]*//p' "$f" | tr -s '[:blank:]' '\n' | grep -v '^$' | sort -u || :
+}
+
+# nss_socket MODULE prints the unix socket the module's client talks to, spelled as the client spells it, when the module
+# has one this kit knows. A module that needs none (files, dns, myhostname, ...) and a module this kit does not know
+# print nothing; nss_known says which of the two.
+nss_socket() {
+  case $1 in
+    sss) echo /var/lib/sss/pipes/nss ;;
+    mdns | mdns4 | mdns6 | mdns_minimal | mdns4_minimal | mdns6_minimal) echo /var/run/avahi-daemon/socket ;;
+    mymachines) echo /run/systemd/machine/io.systemd.Machine ;;
+  esac
+}
+nss_known() {
+  case $1 in
+    files | dns | myhostname | compat | db | extrausers | usrfiles | altfiles | resolve | systemd | sss | mymachines) return 0 ;;
+    mdns | mdns4 | mdns6 | mdns_minimal | mdns4_minimal | mdns6_minimal) return 0 ;;
+  esac
+  return 1
+}
+
+# lookup_note says, in words, which name-service modules of this host the kit does not know (GAPS N92 (a)): a module
+# whose client talks to a socket or a server of its own (ldap, nis, winbind, ...) cannot be named in net.allow by a kit
+# that does not know where it connects, and its lookup shows as a net refusal the scene is not about. Prints nothing when
+# every module is known.
+lookup_note() {
+  unknown=
+  for m in $(nss_modules); do
+    nss_known "$m" || unknown="$unknown $m"
+  done
+  [ -n "$unknown" ] || return 0
+  printf "note: /etc/nsswitch.conf names the name service(s)%s, whose socket or server this demo kit does not know. If a scene shows a net refusal for a name lookup that the scene is not about, add that socket or server to net.allow in the contract; the refusals the scene is about are not affected.\n" "$unknown"
+}
+
 port_open() {
   python3 -c 'import socket,sys
 s=socket.socket(); s.settimeout(0.5)
 sys.exit(s.connect_ex(("127.0.0.1", int(sys.argv[1]))))' "$PORT"
 }
 
+# require_proc refuses a host with no Linux procfs (GAPS N92 (b)). A helper the kit starts is known by its process: the start
+# time in /proc/<pid>/stat, the arguments in /proc/<pid>/cmdline and the listening socket in /proc/<pid>/fd (procid.py),
+# and the agent's python3 by /proc/self/exe. Another system has none of those, and the demo, which also needs Linux for
+# the rules it shows, would die at the first helper with a message about a pid. It says so first.
+require_proc() {
+  [ -r "${DEMO_PROC_ROOT:-/proc}/self/stat" ] && [ -r "${DEMO_PROC_ROOT:-/proc}/self/cmdline" ] ||
+    die "this demo runs on Linux only: it knows the helpers it starts by their process (the start time and arguments in ${DEMO_PROC_ROOT:-/proc}/<pid>), and this system has no readable ${DEMO_PROC_ROOT:-/proc}. Run it on a Linux machine or in a Linux VM."
+}
+
+# A helper this demo starts (the sink, the stand-in sockets, the model stub) is known by its pid file, which holds the
+# pid and the process's start time; procid.py trusts it only for a process that still has that start time, runs the
+# helper's own script and, for the sink, holds the listening socket. A pid is a number the system hands out again:
+# kill -0 on one said "the sink is up" of an unrelated program, and a reset sent it a TERM.
+#   proc_note NAME PID     writes stage/NAME.pid for the process PID, or dies
+#   proc_ours NAME SCRIPT [PORT]  succeeds when stage/NAME.pid names the live helper running SCRIPT (holding PORT)
+#   proc_stop NAME SCRIPT [PORT]  ends that helper, and no other process (reset gives no PORT: a DEMO_PORT changed since still stops its sink)
+proc_note() {
+  python3 -I "$HERE/procid.py" stamp "$2" >"$STAGE/$1.pid" || die "$1 (pid $2) is not running: see $STAGE/$1.log"
+}
+proc_ours() { python3 -I "$HERE/procid.py" ours "$STAGE/$1.pid" "$2" ${3:+"$3"}; }
+# Both stoppers set stop_rc and return 0: 0 when TERM was sent to the helper, 10 when the pid file names no live process
+# (none, no pid in it, a process that has ended), 11 when it names a live process that is not the helper, which is left
+# running (a reset reports that and keeps the file, and never says it stopped what it did not).
+proc_stop() {
+  stop_rc=0
+  python3 -I "$HERE/procid.py" stop "$STAGE/$1.pid" "$2" ${3:+"$3"} 2>/dev/null || stop_rc=$?
+  case $stop_rc in 0 | 10) ;; *) stop_rc=11 ;; esac
+}
+# proc_stop_sh NAME SCRIPT is proc_stop for a host where python3 is not on PATH (GAPS N92 (c)): a reset from another
+# shell, a venv left or an interpreter removed since setup. It makes the same two checks procid.py makes without a port,
+# in sh alone: the process with the pid file's pid still has the pid file's start time (field 22 of /proc/<pid>/stat,
+# read after the last ")" of the line, which a command name may hold), and an argument of it is SCRIPT, exactly. Any
+# doubt is "not ours" and nothing is ended.
+proc_stop_sh() {
+  stop_rc=10
+  [ -f "$STAGE/$1.pid" ] || return 0
+  pr=${DEMO_PROC_ROOT:-/proc}
+  pid=; pstart=; extra=
+  { read -r pid pstart extra || :; } <"$STAGE/$1.pid"
+  case $pid in '' | *[!0-9]*) return 0 ;; esac
+  [ "$pid" -gt 1 ] || return 0
+  [ -d "$pr/$pid" ] || return 0
+  stop_rc=11
+  case $pstart in '' | *[!0-9]*) return 0 ;; esac
+  [ -z "$extra" ] || return 0
+  now=$(sed -e 's/^.*) //' "$pr/$pid/stat" 2>/dev/null | awk '{print $20}') || return 0
+  [ "$now" = "$pstart" ] || return 0
+  tr '\0' '\n' <"$pr/$pid/cmdline" 2>/dev/null | grep -qxF -- "$2" || return 0
+  if kill -TERM "$pid" 2>/dev/null; then stop_rc=0; elif [ ! -d "$pr/$pid" ]; then stop_rc=10; fi
+  return 0
+}
+
 sink_up() {
-  if [ -f "$STAGE/sink.pid" ] && kill -0 "$(cat "$STAGE/sink.pid")" 2>/dev/null; then return 0; fi
-  if port_open; then die "port $PORT is busy and it is not this demo's sink; set DEMO_PORT to a free port"; fi
   command -v python3 >/dev/null 2>&1 || die "python3 is needed for the loopback sink"
+  if proc_ours sink "$HERE/sink.py" "$PORT"; then return 0; fi
+  if port_open; then die "port $PORT is busy and it is not this demo's sink; set DEMO_PORT to a free port"; fi
   python3 "$HERE/sink.py" "$PORT" >>"$STAGE/sink.log" 2>&1 &
-  echo $! >"$STAGE/sink.pid"
+  proc_note sink $!
   i=0
   while ! port_open; do
     i=$((i + 1)); [ "$i" -lt 30 ] || die "the sink did not start; see $STAGE/sink.log"
@@ -157,7 +280,8 @@ sink_up() {
 
 # plant lays out the fake world afresh: fake secrets, a fake shell profile, a project with a git hooks
 # dir and a file worth keeping. It is called before each act so each act starts from the same state.
-# The project's agent.yaml is contracts/guarded.yaml with the file python3 runs as (agent_python) in exec.allow.
+# The project's agent.yaml is contracts/guarded.yaml with the file python3 runs as (agent_python) in exec.allow and the
+# host's name-lookup sockets (lookup_allow) in net.allow, which the file names as the nscd socket alone.
 plant() {
   agent_python
   rm -rf "$SECRETS" "$HOMEISH" "$PROJECT"
@@ -170,7 +294,8 @@ plant() {
   printf 'important notes\n' >"$PROJECT/notes.txt"
   printf 'keep\n' >"$PROJECT/src/keep.txt"
   cp "$HERE/agents/rogue.sh" "$PROJECT/rogue.sh"
-  sed "/^  allow:/s|\"python3\"|\"$PYTHON3\"|" "$HERE/contracts/guarded.yaml" >"$PROJECT/agent.yaml"
+  LOOKUP=$(lookup_allow)
+  sed -e "/^  allow:/s|\"python3\"|\"$PYTHON3\"|" -e "s|\"unix:/var/run/nscd/socket\"|$LOOKUP|" "$HERE/contracts/guarded.yaml" >"$PROJECT/agent.yaml"
 }
 
 # damage prints what is left on the fake machine after an act.
@@ -214,6 +339,7 @@ cmd_setup() {
   echo "project: $PROJECT"
   echo "sink:    $SINK  (log: $STAGE/sink.log)"
   echo "tego:    $("$TEGO" version 2>/dev/null | head -n 1)"
+  lookup_note
 }
 
 cmd_without() {
@@ -231,6 +357,7 @@ cmd_with() {
   plant; sink_up; : >"$STAGE/sink.log"
   say "Act 2: the SAME agent under Tego. The contract it runs under:"
   show "grep -v '^#' '$PROJECT/agent.yaml'"
+  lookup_note
   say "Run it"
   # Whether the run was made is tego's own exit status (piped), not grep's: a tego that refused to start the run was
   # followed by an untouched machine and the refusals of an earlier run, as if this one had made them. Act 3 reads
@@ -287,7 +414,8 @@ agent_contract() {
   if command -v codex >/dev/null 2>&1; then
     codexhost=$(dirname "$(readlink -f "$(command -v codex)")")
   fi
-  sed -e "s|@@STAGE@@|$STAGE|g" -e "s|@@XDG@@|$xdg|g" -e "s|@@CODEXHOST@@|$codexhost|g" -e "s|# @@DENY_READ@@|$deny|" \
+  LOOKUP=$(lookup_allow)
+  sed -e "s|\"unix:/var/run/nscd/socket\"|$LOOKUP|" -e "s|@@STAGE@@|$STAGE|g" -e "s|@@XDG@@|$xdg|g" -e "s|@@CODEXHOST@@|$codexhost|g" -e "s|# @@DENY_READ@@|$deny|" \
     "$HERE/contracts/$name.yaml" >"$STAGE/$name.yaml"
 }
 
@@ -319,7 +447,7 @@ cmd_codex() {
   done
   agent_contract codex "${deny:+deny_read: [${deny%, }]}"
   mkdir -p "$STAGE/codex/work/tmp" "$STAGE/codex-home"
-  # Codex's own sandbox is off because Tego is the cage (docs/OPERATIONS.md, interactive Codex).
+  # Codex's own sandbox is off because Tego enforces the contract (docs/OPERATIONS.md, interactive Codex).
   cat >"$STAGE/codex-home/config.toml" <<'TOML'
 model = "gpt-5"
 sandbox_mode = "danger-full-access"
@@ -400,24 +528,42 @@ cmd_always_on() {
 
 cmd_reset() {
   require_stage
-  for pid in sink sockd stub; do
-    [ -f "$STAGE/$pid.pid" ] && kill "$(cat "$STAGE/$pid.pid")" 2>/dev/null || true
+  stubpy=$(cd "$HERE/../.." && pwd)/test/workloads/model-stub/server.py
+  stopper=proc_stop
+  if ! command -v python3 >/dev/null 2>&1; then
+    stopper=proc_stop_sh
+    echo "demo.sh: python3 is not on PATH, so procid.py cannot run; stopping the helpers by the pid files' start time and script with sh alone."
+  fi
+  sent=; kept=
+  for h in "sink $HERE/sink.py" "sockd $HERE/sockd.py" "stub $stubpy"; do
+    $stopper "${h%% *}" "${h#* }"
+    case $stop_rc in
+      0) sent="$sent ${h%% *}" ;;
+      11) kept="$kept ${h%% *}" ;;
+    esac
   done
   XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user stop "$UNIT" 2>/dev/null || true
-  # Keep the container, marker and any unrelated children. Never rm the caller's path.
+  # Keep the container, marker and any unrelated children. Never rm the caller's path. The pid file of a process left
+  # running stays: it is the only record the kit has of it.
   for child in secrets home project always-on tampered claude-code codex codex-home c cc s \
       claude-code.yaml codex.yaml codex-chatgpt.yaml last-run piped.status run.out \
       sink.pid sink.log sockd.pid sockd.log stub.pid always-on.log; do
+    case $child in
+      *.pid) case "$kept " in *" ${child%.pid} "*) continue ;; esac ;;
+    esac
     rm -rf -- "${STAGE:?}/${child:?}"
   done
-  echo "demo reset: generated children removed and the sink stopped; stage and unrelated files kept."
+  msg="demo reset: generated children removed"
+  [ -z "$sent" ] || msg="$msg; helpers stopped (TERM sent):${sent}"
+  [ -z "$kept" ] || msg="$msg; left running, not recognised as this demo's:${kept} (their pid files are kept, nothing was sent to them)"
+  echo "$msg; stage and unrelated files kept."
 }
 
 sub=${1:-}
 [ "$#" -gt 0 ] && shift
 case $sub in
-  reset|'') ;; # Reset never creates or adopts a stage.
-  *) prepare_stage ;;
+  reset|''|lookup) ;; # Reset never creates or adopts a stage, and lookup touches none.
+  *) require_proc; prepare_stage ;;
 esac
 case "$sub" in
   setup) cmd_setup ;;
@@ -430,6 +576,7 @@ case "$sub" in
   always-on) cmd_always_on "$@" ;;
   tiers) . "$HERE/scenes/tiers.sh"; cmd_tiers ;;
   reset) cmd_reset ;;
+  lookup) lookup_allow; lookup_note >&2 ;;
   network) . "$HERE/scenes/network.sh"; cmd_network ;;
   proxy) . "$HERE/scenes/proxy.sh"; cmd_proxy ;;
   rules|rule|always|limits|deny-write|ask|approve|deny|reason-hook|receipt|presets|selftest|identity|doctor|features)
@@ -439,7 +586,7 @@ case "$sub" in
       *) "cmd_$(printf %s "$sub" | tr - _)" "$@" ;;
     esac ;;
   *)
-    echo "usage: demo.sh setup | without | with | why | dashboard [serve args] | claude [args] | codex [args] | always-on [start|status|stop] | tiers | network | proxy | reset" >&2
+    echo "usage: demo.sh setup | without | with | why | dashboard [serve args] | claude [args] | codex [args] | always-on [start|status|stop] | tiers | network | proxy | lookup | reset" >&2
     echo "       demo.sh rules | rule read|write|command|net|process | always | limits | deny-write | ask | approve | deny" >&2
     echo "       demo.sh reason-hook | receipt | presets | selftest | identity | doctor | features" >&2
     exit 2 ;;

@@ -24,11 +24,12 @@ jobs:
     # Each row runs as three jobs (part): `row`, the kernel-matrix row, Landlock alone, the BPF load test, the tier-2
     # backend and the coverage, and one job per tier-3 boot, `lsm-bpf` and `default-lsm`. The tier-3 guests alone are
     # bounded at 305 minutes per boot (VM_SUITE_TIMEOUT below: two builds of enforce/cgroup at 100 minutes, two of
-    # internal/bpf and of test/conformance at 25, and doctor's 5), 610 for both, and a hosted job ends at 360, so one job
-    # could not hold both boots: a slow row was cancelled by the job before root-suites.sh reported the suite with its
-    # log. A boot's job has 330 minutes: its guests' 305 plus the build and the kernel fetch. The row's job stays above the
-    # coverage step's own 180 minutes and the row's other guests.
-    timeout-minutes: ${{ matrix.part == 'row' && 240 || 330 }}
+    # internal/bpf and of test/conformance at 25, and doctor's 5). enforce/cgroup now runs as the 6 parts of ROOT_SPLITS
+    # (test/vm/suites.sh), one guest each, and a VM_SUITE_TIMEOUT for it is each part's: the whole package's 305 minutes
+    # was never the bound a hung part needed, and the job's own timeout below ends a boot that hangs in every part. The three slow tagged rows instead allow 60 minutes
+    # plain and 150 tagged: 315 total guest minutes, leaving 45 for builds/fetch within the 360-minute suite job.
+    # One job cannot hold both boots. The row job stays above coverage's 180-minute step and its other guests.
+    timeout-minutes: ${{ matrix.part == 'row' && 240 || 360 }}
     strategy:
       fail-fast: false
       matrix:
@@ -101,6 +102,21 @@ jobs:
       - name: kernel-matrix row (doctor, kill tests 1, 2, 4, 5, 6, 7; 1, 4, 5, 7 at bpflsm; a doctor-only row, the refusal) on ${{ matrix.kernel }}
         if: matrix.part == 'row'
         run: test/vm/run-in-vm.sh "$KERNEL" -- test/vm/run-matrix-row.sh
+      # Capture's read-back refusal must be measured on every full row, including
+      # RHEL's backported 5.14. A missing call, unreadable instructions or any skip
+      # fails this step. Retain the real translated bytes for scanner fixtures.
+      - name: loaded capture stack invariant on ${{ matrix.kernel }}, as root
+        if: matrix.part == 'row' && steps.body.outputs.body != 'doctor-only'
+        run: test/vm/capture-stack.sh "$KERNEL" "$RUNNER_TEMP/capture-stack"
+      - name: upload loaded capture invariant evidence
+        if: always() && matrix.part == 'row' && steps.body.outputs.body != 'doctor-only'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: capture-stack-${{ matrix.kernel }}
+          path: |
+            ${{ runner.temp }}/capture-stack/guest.status
+            ${{ runner.temp }}/capture-stack/guest.console
+          if-no-files-found: error
       # Tier 3 on the row's kernel, both boots, one per job (part): the plane's own suites and ADR
       # 0017's conformance runner, whose tier bpflsm axis and parity cells run on the lsm=...,bpf boot and whose fmod_ret
       # axis runs on the boot without bpf. Every row that offers a tier, rhel-9 included: RHEL 9's 5.14 carries bpf LSM
@@ -108,13 +124,50 @@ jobs:
       # its kernel. TEGO_TEST_PLANE_PREEMPT=waive keeps the fmod_ret axis on the rows whose kernel preempts kernel code
       # (fedora-7.0 and fedora-7.2: lazy preemption), where a product build rules that mode out (ADR 0024 (16)); it changes
       # nothing on a row whose kernel does not.
-      - name: tier 3 suites on the ${{ matrix.part }} boot of ${{ matrix.kernel }}, as root
-        if: matrix.part != 'row' && steps.body.outputs.body != 'doctor-only'
+      # Keep dispatches literal so check-skiprows.py can prove the row-scoped conformance obligations.
+      # Run 43152191607: 32-launcher rounds OOM-killed tego at 2560M on Debian/RHEL.
+      # 3G passes in historical samples, not a measured requirement; other rows retain 2560M.
+      # Preserve the existing 60-minute plain/150-minute tagged caps on the three slow rows,
+      # and the 100-minute cgroup cap elsewhere. Every full row gets exactly one step per boot.
+      - name: tier 3 suites on the ${{ matrix.part }} boot of ${{ matrix.kernel }}, as root (slow tagged rows)
+        if: matrix.part != 'row' && steps.body.outputs.body != 'doctor-only' && matrix.kernel == 'ubuntu-24.04' || matrix.part != 'row' && steps.body.outputs.body != 'doctor-only' && matrix.kernel == 'fedora-7.2' || matrix.part != 'row' && steps.body.outputs.body != 'doctor-only' && matrix.kernel == 'al2023-6.12'
         shell: bash
         run: |
           TEGO_TEST_PLANE_PREEMPT=waive TEGO_VM_ROW="$KERNEL" TEGO_VM_LOCKDOWN=none TEGO_VM_MEM=1536M \
-            VM_BOOTS="$PART" VM_BPF=yes VM_SUITE_MEM=internal/runtime/enforce/cgroup=2560M VM_SUITE_TIMEOUT="1500 internal/runtime/enforce/cgroup=6000" VM_OUT="$RUNNER_TEMP/tier3" \
+            VM_BOOTS="$PART" VM_BPF=yes VM_SUITE_MEM="internal/runtime/enforce/cgroup=2560M" VM_SUITE_TIMEOUT="1500 internal/runtime/enforce/cgroup=3600 internal_runtime_enforce_cgroup.tegobpf=9000" VM_OUT="$RUNNER_TEMP/tier3" \
             test/vm/root-suites.sh internal/runtime/enforce/cgroup internal/bpf test/conformance
+
+      - name: tier 3 suites on the ${{ matrix.part }} boot of ${{ matrix.kernel }}, as root (larger-memory rows)
+        if: matrix.part != 'row' && steps.body.outputs.body != 'doctor-only' && matrix.kernel == 'debian-13' || matrix.part != 'row' && steps.body.outputs.body != 'doctor-only' && matrix.kernel == 'rhel-9'
+        shell: bash
+        run: |
+          TEGO_TEST_PLANE_PREEMPT=waive TEGO_VM_ROW="$KERNEL" TEGO_VM_LOCKDOWN=none TEGO_VM_MEM=1536M \
+            VM_BOOTS="$PART" VM_BPF=yes VM_SUITE_MEM="internal/runtime/enforce/cgroup=3G" VM_SUITE_TIMEOUT="1500 internal/runtime/enforce/cgroup=6000" VM_OUT="$RUNNER_TEMP/tier3" \
+            test/vm/root-suites.sh internal/runtime/enforce/cgroup internal/bpf test/conformance
+
+      - name: tier 3 suites on the ${{ matrix.part }} boot of ${{ matrix.kernel }}, as root (remaining rows)
+        if: matrix.part != 'row' && steps.body.outputs.body != 'doctor-only' && matrix.kernel != 'ubuntu-24.04' && matrix.kernel != 'fedora-7.2' && matrix.kernel != 'al2023-6.12' && matrix.kernel != 'debian-13' && matrix.kernel != 'rhel-9'
+        shell: bash
+        run: |
+          TEGO_TEST_PLANE_PREEMPT=waive TEGO_VM_ROW="$KERNEL" TEGO_VM_LOCKDOWN=none TEGO_VM_MEM=1536M \
+            VM_BOOTS="$PART" VM_BPF=yes VM_SUITE_MEM="internal/runtime/enforce/cgroup=2560M" VM_SUITE_TIMEOUT="1500 internal/runtime/enforce/cgroup=6000" VM_OUT="$RUNNER_TEMP/tier3" \
+            test/vm/root-suites.sh internal/runtime/enforce/cgroup internal/bpf test/conformance
+
+      # Evidence of every full row, kept when a step above failed (if: always()): each suite's status, console, test
+      # JSON and skipgate output (logs/), results.tsv and summary.json. Not the copied source tree, the initramfs or the
+      # test binaries (src/, prebuilt/, bin/), which are large and rebuilt from the commit.
+      - name: upload the tier 3 evidence of the ${{ matrix.part }} boot of ${{ matrix.kernel }}
+        if: always() && matrix.part != 'row' && steps.body.outputs.body != 'doctor-only'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tier3-${{ matrix.kernel }}-${{ matrix.part }}
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/tier3/results.tsv
+            ${{ runner.temp }}/tier3/summary.json
+            ${{ runner.temp }}/tier3/host-packages.txt
+            ${{ runner.temp }}/tier3/logs/
+          if-no-files-found: warn
       # Landlock alone on a kernel that has ABI 9 and 10: the one row whose kernel does is
       # fedora-7.2, so the unix connect and UDP port tests run there, with the row's name in their guest (TEGO_VM_ROW),
       # which holds the row to its ABI. Every other row's kernel is below ABI 9, and the same tests run on the host kernel
@@ -181,6 +234,20 @@ jobs:
         run: |
           TEGO_VM_ROW="$KERNEL" TEGO_VM_LOCKDOWN=none TEGO_VM_MEM=3G VM_BOOTS=lsm-bpf VM_BPF=yes VM_OUT="$RUNNER_TEMP/adoptskip" \
             test/vm/root-suites.sh '=internal/cli'
+      - name: upload the peer check and adoption evidence on ${{ matrix.kernel }}
+        if: always() && matrix.part == 'row' && steps.body.outputs.body != 'doctor-only'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: peer-${{ matrix.kernel }}
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/peer/results.tsv
+            ${{ runner.temp }}/peer/summary.json
+            ${{ runner.temp }}/peer/logs/
+            ${{ runner.temp }}/adoptskip/results.tsv
+            ${{ runner.temp }}/adoptskip/summary.json
+            ${{ runner.temp }}/adoptskip/logs/
+          if-no-files-found: warn
       # Coverage with the privileged suites' share, which only a root run can measure: scripts/coverage.sh
       # --vm runs the unit and integration suites here, then each suite of test/vm/root-suites.sh as root in its
       # own guest, and --kill-tests adds this row's kill tests run with a -cover tego (test/vm/matrix.sh with
@@ -222,6 +289,24 @@ jobs:
             ${{ runner.temp }}/coverage/coverage.out
             ${{ runner.temp }}/coverage/vm/logs/
             ${{ runner.temp }}/coverage/killtests/vm/matrix/debian-13/results.tsv
+          if-no-files-found: warn
+      # The runner's own memory and kernel state at the end of the job, bounded (a few hundred lines), because a
+      # cancelled or OOM-killed guest step leaves nothing else that says whether the host ran short of memory.
+      - name: collect bounded runner diagnostics
+        if: always() && steps.body.outputs.body != 'doctor-only'
+        shell: bash
+        run: |
+          d="$RUNNER_TEMP/diag"; mkdir -p "$d"
+          { date -u; uptime; free -m; df -h "$RUNNER_TEMP"; ps -eo pid,rss,etime,args --sort=-rss | head -n 25 | cut -c1-200; } >"$d/host.txt" 2>&1 || true
+          { dmesg 2>/dev/null || sudo -n dmesg 2>/dev/null; } | tail -n 300 >"$d/dmesg-tail.txt" || true
+          find "$RUNNER_TEMP/tier3/logs" "$RUNNER_TEMP/peer/logs" -maxdepth 1 -printf "%s %p\n" 2>/dev/null | head -n 200 >"$d/log-listing.txt" || true
+      - name: upload the runner diagnostics
+        if: always() && steps.body.outputs.body != 'doctor-only'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: diag-${{ matrix.kernel }}-${{ matrix.part }}
+          retention-days: 14
+          path: ${{ runner.temp }}/diag/
           if-no-files-found: warn
 
   held-labels:

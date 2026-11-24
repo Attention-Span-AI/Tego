@@ -70,7 +70,7 @@ func TestEnvScanSaysWhatItCouldNotRead(t *testing.T) {
 		f.file(filepath.Join(sub, ".a"), "", 0o644) // sorts first, so the listing stops before .env
 		f.file(filepath.Join(sub, ".env"), "SECRET=1\n", 0o600)
 		failListing(t, sub)
-		envs, _, _, unread := envFiles([]string{f.project}, time.Now().Add(time.Hour))
+		envs, _, _, unread := envFiles([]string{f.project}, time.Now().Add(time.Hour), nil)
 		if slices.Contains(envs, filepath.Join(sub, ".env")) || len(unread) != 1 {
 			t.Fatalf("envFiles = %v, unread %v; want sub/.env unseen and sub named unread", envs, unread)
 		}
@@ -98,7 +98,7 @@ func TestEnvScanSaysWhatItCouldNotRead(t *testing.T) {
 	})
 	t.Run("clean", func(t *testing.T) {
 		f := newFixture(t)
-		if _, _, _, unread := envFiles([]string{f.project}, time.Now().Add(time.Hour)); len(unread) != 0 {
+		if _, _, _, unread := envFiles([]string{f.project}, time.Now().Add(time.Hour), nil); len(unread) != 0 {
 			t.Errorf("a scan that read everything names %v unread", unread)
 		}
 	})

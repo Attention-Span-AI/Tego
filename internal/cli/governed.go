@@ -7,19 +7,45 @@ import (
 	"io"
 	"os"
 
+	"github.com/attention-span-ai/tego/internal/platform/peer"
 	"github.com/attention-span-ai/tego/internal/runscope"
 )
 
 // codeGoverned is the diagnostic of a change refused because the caller sits inside a run.
 const codeGoverned = "governed"
 
-// selfInRun is runscope.InRun: whether this process sits inside a run's cgroup, or looks it, or cannot tell (it
-// fails closed). Tests replace it.
-var selfInRun = runscope.InRun
+// selfAnswer is peer.Self: whether this process is outside every tego run made inside its cgroup namespace, with
+// three answers of which only Outside permits (inside a run's cgroup or a look-alike, and anything that cannot be
+// shown, both refuse). Tests replace it.
+var selfAnswer = peer.Self
+
+// notOutside is the sentence of a refusal for an answer that is not outside. "A governed agent" is said only when
+// this process's own cgroup path shows a run (agentCannot is what such an agent may not do). Any other answer says
+// that this process cannot be shown to be outside every run, and why; where the reason is one the person can act
+// on (no systemd at the top, a session that is not up, root), that line comes first. refused is what did not
+// happen, and after, when not "", what else is true ("nothing was written").
+func notOutside(name string, a runscope.Answer, agentCannot, refused, after string) string {
+	if after != "" {
+		after = "; " + after
+	}
+	advice := runscope.Advice(a)
+	if advice != "" {
+		advice = "; " + advice
+	}
+	switch {
+	case runscope.SaysGoverned(a):
+		return "tego " + name + ": a governed agent " + agentCannot + ": " + runscope.Why(a) + after + advice
+	case runscope.PlainFirst(a):
+		return "tego " + name + ": " + runscope.Why(a) + "; until then tego cannot show that this process is outside " +
+			"every tego run, so " + refused + after
+	}
+	return "tego " + name + ": " + refused + ": this process cannot be shown to be outside every tego run: " +
+		runscope.Why(a) + after + advice
+}
 
 // selfRun is the run this process is inside, read strictly: runscope.GovernedBy of the one cgroup v2 path
 // /proc/self/cgroup names (runscope.Unified). "" with no error when the path names no run (it may still look like
-// one, which selfInRun reports). Tests replace it.
+// one, which selfAnswer reports). Tests replace it.
 var selfRun = func() (string, error) {
 	b, err := os.ReadFile("/proc/self/cgroup")
 	if err != nil {
@@ -40,17 +66,13 @@ var selfRun = func() (string, error) {
 // What it does not stop: a same-user process outside every run, which can write the files itself
 // (docs/adr/0123-dashboard-threat-model.md).
 func refuseGoverned(name string, stderr io.Writer) bool {
-	in, err := selfInRun()
-	if !in {
+	a := selfAnswer()
+	if a.Outside() {
 		return false
 	}
-	why := "this process is inside a tego run's cgroup"
-	if err != nil {
-		why = "this process cannot be shown to be outside every tego run (" + err.Error() + ")"
-	}
 	// The target may be the caller's own run or another (pause and unblock name any run), so the words cover both.
-	message(stderr, "", 0, 0, fmt.Sprintf("tego %s: a governed agent cannot change its own governance, nor another run's: %s; "+
-		"run it from a terminal outside any tego run", name, why), codeGoverned)
+	message(stderr, "", 0, 0, notOutside(name, a, "cannot change its own governance, nor another run's",
+		"the change was refused", ""), codeGoverned)
 	return true
 }
 
@@ -58,22 +80,25 @@ func refuseGoverned(name string, stderr io.Writer) bool {
 // run. A block only takes away, so an agent may still narrow its own run; on another run it could starve that run's
 // agent (block sh, or the agent's own program) while the record showed the block as placed from a terminal. It writes
 // the refusal and reports true unless the caller is outside every run or target is the caller's own run. It fails
-// closed: a caller whose own run cannot be named (selfInRun's error, an unreadable cgroup file, a path that only
-// looks like a run's) is refused whatever the target.
+// closed: a caller that cannot be shown to be outside every run (selfAnswer), and one whose own run cannot be named
+// (an unreadable cgroup file, a path that only looks like a run's), is refused whatever the target.
 func refuseCrossRun(name, target string, stderr io.Writer) bool {
-	in, err := selfInRun()
-	if !in {
+	a := selfAnswer()
+	if a.Outside() {
 		return false
 	}
-	own := ""
-	if err == nil {
+	own, err := "", error(nil)
+	if runscope.SaysGoverned(a) {
 		own, err = selfRun()
-	}
-	if err == nil && own != "" && own == target {
-		return false
+		if err == nil && own != "" && own == target {
+			return false
+		}
 	}
 	var why string
 	switch {
+	case !runscope.SaysGoverned(a):
+		message(stderr, "", 0, 0, notOutside(name, a, "", "the change was refused", ""), codeGoverned)
+		return true
 	case err != nil:
 		why = "this process's own run cannot be named: " + err.Error()
 	case own == "":

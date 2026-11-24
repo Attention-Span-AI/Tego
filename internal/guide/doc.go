@@ -13,7 +13,9 @@
 //   - check: a stored check of this boot and this build (check.json under ~/.tego/state, written by `tego setup`
 //     alone from doctor's own probes; StoreCheck) says a tier runs from the place it was made. A check of another
 //     boot or another build is never used.
-//   - find: a run is recorded. Nothing here looks for agents yet (the scan is a later slice).
+//   - find: a run is recorded, or a fresh ok or partial scan of this boot has own-uid running or installed evidence.
+//     Unreadable scan sources stay in NotKnown lines even with positive evidence. Failed, stale or invalid scans
+//     leave find Todo. A scan never makes a step NotKnown or changes setup's exit code.
 //   - record: a run that enforced nothing (tier observe: `tego watch`, `--observe`) has ended, and its record checks
 //     out now against its chain anchor (ledger.VerifyRunDir).
 //   - contract: a contract in the project or the user registry (internal/registry) compiles now (internal/nextrun),
@@ -34,10 +36,21 @@
 // can still choose that folder (GAPS C9, C62). Any other text read from a file or the record is a fact, never part
 // of a command.
 //
-// Imports: the standard library, golang.org/x/sys/unix and internal/platform/sys (check.json is opened beneath ~/.tego
+// Agent rows use internal/agentid. Each recorded run has its own row. Ticks
+// require one immutable checked snapshot for that named run; scan observations
+// are separate and have no ticks. Checks share a 32-run, 32-MiB budget (8 MiB per
+// run) and a 256-entry, 15-second cache keyed by file identity, content and anchor
+// head. One immutable anchor snapshot, bounded to 4 MiB with descriptor and path
+// identity checks, supplies all selected heads per load. Missing, oversized or
+// changing anchors, timeouts and runs past the record budget stay recorded, not
+// checked, with reasons. The Agents caller also supplies a 20-second deadline.
+// These are best effort bounds between filesystem reads, not kernel IO deadlines.
+//
+// Imports: internal/agentid, the standard library, golang.org/x/sys/unix and internal/platform/sys (check.json is opened beneath ~/.tego
 // without following a link, through owned descriptors), internal/check/learn (whether the learn step names
 // --allow-host, SuggestHosts), internal/ledger, internal/nextrun, internal/registry, internal/runscope,
-// internal/shellword, pkg/spec/{backend,config,record}.
+// internal/selfbin (checked own-binary paths and safe command text), internal/shellword, internal/scan/result,
+// pkg/spec/{backend,config,record,record/chaincheck}.
 // Must not import: internal/cli, internal/control, internal/doctor, internal/runtime, internal/policy, internal/bpf,
 // github.com/cilium/ebpf, github.com/landlock-lsm/go-landlock. tego-control links this package and may not link the
 // engine (ADR 0100 (1a)); the probes run in internal/cli, which hands their answer in as Inputs.Fresh, and the

@@ -31,7 +31,8 @@ const (
 )
 
 // exec compiles the exec rules (R8, SEMANTICS §4): Command[0] and every
-// mcp[].command[0] are implicit entries; each entry resolves as a path or a
+// ordinary mcp[].command[0] are implicit entries; a business worker gets no agent grant
+// (ADR 0152). Each entry resolves as a path or a
 // basename on the run's effective PATH; every resolved binary is opened for
 // its PT_INTERP loader; a script's #! interpreter is granted implicitly for
 // the command and MCP servers and checked against the list for exec.allow.
@@ -39,7 +40,7 @@ func (k *compiler) exec() {
 	b := &execBuilder{k: k, byPath: map[string]int{}}
 	b.add(k.c.Command[0], ExecSourceCommand, k.pos("command.0"), true)
 	for i, s := range k.c.MCP {
-		if len(s.Command) == 0 {
+		if len(s.Command) == 0 || s.BusinessRules != nil {
 			continue
 		}
 		b.add(s.Command[0], ExecSourceMCP+":"+s.Name, k.pos("mcp."+strconv.Itoa(i)+".command.0"), true)
@@ -232,14 +233,14 @@ func (rt *RuleTable) WithHarnessHook(argv []string) (*RuleTable, error) {
 		// A table with no command rule compiled none (execCommands): its exec.allow entries are names and paths
 		// only, and a bare name among them lifts its tool as it would in an index (execmatch.NewIndex), as do the
 		// implicit grants.
-		ec.Loaders = execLoaders(loaderDirs())
-		if rt.Contract != nil {
-			ec.Unconstrained = implicitGrants(rt, rt.Contract)
-			if rt.Contract.Exec != nil {
-				allow := rt.Contract.Exec.Allow
+		ec.Loaders = execLoaders(loaderDirs(), nil)
+		if c := rt.DecisionContract(); c != nil {
+			ec.Unconstrained = implicitGrants(rt, c)
+			if c.Exec != nil {
+				allow := c.Exec.Allow
 				// An Adjustable table's exec fence entries joined exec.allow under an allow-list (compileLive), as
 				// the table's index did; the contract as written does not list them.
-				if rt.Adjustable() && !rt.Contract.Exec.DenyList() {
+				if rt.Adjustable() && !c.Exec.DenyList() {
 					allow = slices.Clone(allow)
 					for _, e := range rt.Live.Entries {
 						if e.Kind == LiveKindExec {
@@ -336,11 +337,14 @@ func (b *execBuilder) add(raw, source string, pos Pos, implicit bool) {
 		return
 	}
 	r := ExecRule{Raw: raw, Path: p, Basename: filepath.Base(p), ByName: byName, Verdict: VerdictAllow, Source: source, Pos: pos}
-	if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+	fi, statErr := os.Stat(p)
+	if statErr == nil && fi.IsDir() {
 		r.IsDir = true
 		b.append(r)
 		return
 	}
+	// A final component this user may not stat can be a folder to root, which would grant the whole tree.
+	k.namePredictionUnavailable(p, statErr)
 	interp, err := ReadInterp(p)
 	switch {
 	case err == nil:
@@ -504,6 +508,7 @@ func (b *execBuilder) resolve(raw, source string, pos Pos) (string, bool) {
 			return "", false
 		}
 		if _, err := os.Stat(p); err != nil {
+			k.namePredictionUnavailable(p, err) // a folder on the way this user may not search: root's walk finds it
 			k.ds.errorf(pos, CodePathMissing, "%s %q: %s does not exist", source, raw, p).
 				fix("fix the path or name the binary by basename to search PATH")
 			return "", false
@@ -537,6 +542,10 @@ func (b *execBuilder) resolve(raw, source string, pos Pos) (string, bool) {
 		// resolve, not a hardcoded python/python3 special case.
 		if _, ok := b.searchPath(raw+"3", dirs); ok {
 			d.fix("did you mean %q?", raw+"3")
+		} else if _, set := k.rt.Set["PATH"]; set {
+			// The contract's own env.set PATH is an entry of the agent's environment: named, never printed. An
+			// inherited PATH's directories are places and are (pkg/spec/identity envtext.go, rules (a) and (c)).
+			d.fix("searched the %d entries of env.set PATH (an env.set value is not shown)", len(dirs))
 		} else {
 			d.fix("searched: %s", strings.Join(dirs, ", "))
 		}
@@ -587,7 +596,13 @@ func (b *execBuilder) searchPath(name string, dirs []string) (string, bool) {
 		}
 		cand := filepath.Join(d, name)
 		fi, err := os.Stat(cand)
-		if err != nil || !fi.Mode().IsRegular() || fi.Mode()&0o111 == 0 {
+		if err != nil {
+			// A folder on PATH this user may not search may hold the file root's walk finds first: the name then
+			// grants a file this compile cannot tell (the one flag a root-tier prediction reads).
+			b.k.namePredictionUnavailable(cand, err)
+			continue
+		}
+		if !fi.Mode().IsRegular() || fi.Mode()&0o111 == 0 {
 			continue
 		}
 		return cand, true

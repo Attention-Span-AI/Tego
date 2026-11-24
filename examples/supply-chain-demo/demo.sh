@@ -287,7 +287,7 @@ lay_side() {
   printf 'ghp_demo_FAKE_TOKEN_not_real_0000\n' >"$d/home/.config/telemetry/token"
   cp -r "$HERE/repo" "$d/proj"
   mkdir -p "$d/proj/tmp"
-  # The agent's own approvals are off: tego is the cage.
+  # The agent's own approvals are off: tego enforces the contract.
   if [ "$DEMO_AGENT" = claude ]; then
     # Onboarding done and the project trusted, so the take opens on the prompt.
     printf '{"hasCompletedOnboarding": true, "theme": "dark", "projects": {"%s": {"hasTrustDialogAccepted": true}}}\n' "$d/proj" >"$d/$AGENT_HOME/.claude.json"
@@ -618,35 +618,30 @@ EOF
 }
 
 # dashboard_is_ours PORT: is the program listening on 127.0.0.1:PORT this demo's dashboard, a tego-control serve
-# that reads the demo's ledger (TEGO_CONFIG=$DEMO_CONFIG in its environment, or --ledger $DEMO_LEDGER)? It is the same
-# user's process, so ss names its pid and /proc shows its command line and environment. A running dashboard follows
-# the ledger reset moves aside and starts again, so it can stay up across a retake. The body is a subshell, so its
-# variables do not leak into the script; a relative --ledger or TEGO_CONFIG is the dashboard's, read against its cwd.
+# on that port that reads the demo's ledger? A running dashboard follows the ledger reset moves aside and starts again, so
+# it can stay up across a retake. The dashboard is undumpable (ADR 0100 (7)): no other process of the user reads its
+# environment, working directory or descriptors (so neither `ss -p` nor /proc/<pid>/{environ,cwd} names or describes it),
+# but its command line stays readable. It is known by that alone: a process of this user whose command line is
+# `tego-control serve --addr <host>:PORT --ledger <the demo's ledger, as an absolute path>`, which is what
+# `./demo.sh dashboard` runs. A dashboard whose command line does not name the ledger outright (a config only, a relative
+# path, another ledger) cannot be shown to be the demo's and is not taken for it. The command line is the process's own
+# word (a program of the same user could write any), as the old environment was; it is no proof of who listens. The body
+# is a subshell, so its variables do not leak into the script.
 dashboard_is_ours() (
-  command -v ss >/dev/null 2>&1 || return 1
-  dpid=$(ss -ltnpH "sport = :$1" 2>/dev/null | grep -Eo 'pid=[0-9]+' | head -n 1 | cut -d= -f2)
-  [ -n "$dpid" ] && [ -r "/proc/$dpid/cmdline" ] || return 1
-  dargs=$(tr '\0' '\n' <"/proc/$dpid/cmdline" 2>/dev/null) || return 1
-  case $(basename "$(printf '%s\n' "$dargs" | head -n 1)") in tego-control) ;; *) return 1 ;; esac
-  printf '%s\n' "$dargs" | grep -qx serve || return 1
-  dcwd=$(readlink "/proc/$dpid/cwd" 2>/dev/null) || dcwd=
-  # --ledger names the ledger outright; any other ledger is not the demo's, whatever its config says
-  dled=$(printf '%s\n' "$dargs" | awk 'p == "--ledger" {print; exit} /^--ledger=/ {sub(/^--ledger=/, ""); print; exit} {p = $0}')
-  if [ -n "$dled" ]; then
-    [ "$(readlink -m "$(in_dir "$dcwd" "$dled")")" = "$(readlink -m "$DEMO_LEDGER")" ]
-    return
-  fi
-  dcfg=$(tr '\0' '\n' <"/proc/$dpid/environ" 2>/dev/null | sed -n 's/^TEGO_CONFIG=//p' | head -n 1)
-  [ -n "$dcfg" ] && [ "$(readlink -m "$(in_dir "$dcwd" "$dcfg")")" = "$(readlink -m "$DEMO_CONFIG")" ]
+  want=$(readlink -m "$DEMO_LEDGER")
+  for cmdline in /proc/[0-9]*/cmdline; do
+    [ -r "$cmdline" ] || continue
+    dargs=$(tr '\0' '\n' <"$cmdline" 2>/dev/null) || continue
+    case $(basename "$(printf '%s\n' "$dargs" | head -n 1)") in tego-control) ;; *) continue ;; esac
+    printf '%s\n' "$dargs" | grep -qx serve || continue
+    daddr=$(printf '%s\n' "$dargs" | awk 'p == "--addr" {print; exit} /^--addr=/ {sub(/^--addr=/, ""); print; exit} {p = $0}')
+    [ "${daddr##*:}" = "$1" ] || continue
+    dled=$(printf '%s\n' "$dargs" | awk 'p == "--ledger" {print; exit} /^--ledger=/ {sub(/^--ledger=/, ""); print; exit} {p = $0}')
+    case $dled in /*) ;; *) continue ;; esac
+    [ "$(readlink -m "$dled")" = "$want" ] && return 0
+  done
+  return 1
 )
-
-# in_dir DIR PATH: PATH as an absolute path, a relative one read against DIR (when DIR is known).
-in_dir() {
-  case $2 in
-    /*) printf '%s\n' "$2" ;;
-    *) if [ -n "$1" ]; then printf '%s/%s\n' "$1" "$2"; else printf '%s\n' "$2"; fi ;;
-  esac
-}
 
 # ---- the terminals ----
 
@@ -743,6 +738,10 @@ cmd_dashboard() {
   [ -n "$CONTROL_BIN" ] && [ -x "$CONTROL_BIN" ] || die "tego-control is not built. Run: make build (in $ROOT)"
   need_stage
   say "The dashboard: it opens in your browser signed in (no browser opener: open the printed link). Ctrl-C stops it"
+  # The ledger is named outright, as an absolute path: check knows this dashboard by its command line (dashboard_is_ours).
+  named=
+  for a in "$@"; do case $a in --ledger | --ledger=*) named=1 ;; esac; done
+  [ -n "$named" ] || set -- --ledger "$DEMO_LEDGER" "$@"
   printcmd env "TEGO_CONFIG=$DEMO_CONFIG" "$CONTROL_BIN" serve --open --addr "$DEMO_DASH_ADDR" "$@"
   exec env "TEGO_CONFIG=$DEMO_CONFIG" "$CONTROL_BIN" serve --open --addr "$DEMO_DASH_ADDR" "$@"
 }
@@ -871,156 +870,27 @@ cmd_backup() {
 
 # ---- proof ----
 
-# PROOF_ROWS formats the lines of `tego events --json` read on stdin: argv is the stage, the mode (refused: the
-# enforced run's refusals; watched: the watched run's events), the attacker's port and the agent's name. It keeps
-# only the attack's rows: a refusal by a deny_read or ask_read entry or a live block, the key or token path, a send to
-# the attacker's port. It prints seq, verdict, rule and detail, each cell as the table of `tego events` writes it,
-# with the stage folder shortened to <stage>, never cut, then how many rows there were in all. It reads the stored
-# lines, not that table: the table's cells are split by two spaces, so a rule or a path holding two spaces in a row
-# printed split, and a time cell that names its zone moved every column after it. The cells are the table's own
-# (internal/check/events: verdictCell, ruleCell, Summary, each through record.Printable, which escapes every control
-# and invisible character the agent may have put in a path); TestProofRowsReadLikeTheEventsTable holds them to it.
+# PROOF_ROWS formats the cells `tego events --cells` writes, read on stdin: one line per event, its seq, verdict, rule and
+# detail separated by tabs, each as the table of `tego events` writes it (the product's own cells, escaped by
+# record.Printable, so a tab or a line break in one is never raw). argv is the stage, the mode (refused: the enforced
+# run's refusals; watched: the watched run's events), the attacker's port and the agent's name. It keeps only the
+# attack's rows: a refusal by a deny_read or ask_read entry or a live block, the key or token path, a send to the
+# attacker's port. It prints seq, verdict, rule and detail aligned, with the stage folder shortened to <stage>, never
+# cut, then how many rows there were in all. It holds no copy of how a cell is made: that is the product's, in one
+# place, and TestProofRowsReadLikeTheEventsTable holds the cells to the table's.
 # shellcheck disable=SC2016 # Python source, not shell
 PROOF_ROWS='
-import decimal, json, math, re, sys, unicodedata
+import re, sys
 stage, mode, port, agent = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 to_port = re.compile(":" + re.escape(port) + "([^0-9]|$)")
 
-class Num(str):
-    pass  # a JSON number as the line spells it
-
-def text(e, k):
-    v = e.get(k)
-    return v if isinstance(v, str) and not isinstance(v, Num) else ""
-
-def first(e, *keys):
-    return next((text(e, k) for k in keys if text(e, k)), "")
-
-def num(v):  # events.numberText
-    if not isinstance(v, Num):
-        return ""
-    try:
-        return str(int(v))  # an integer as written, past int64 too
-    except ValueError:
-        pass
-    f = float(v)
-    if math.isinf(f):  # past float64, or an integer too long for int(): as written
-        return str(v)
-    if f != math.trunc(f) or f >= 2**63 or f < -2**63:
-        return format(decimal.Decimal(repr(f)), "f")
-    return str(int(f))
-
-SPACE = "\t\n\v\f\r \x85\xa0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000"
-
-def trim(s):  # strings.TrimSpace
-    return s.strip(SPACE)
-
-def usage(e):
-    u = e.get("usage")
-    if not isinstance(u, dict):
-        return ""
-    i, o = num(u.get("input")) or "0", num(u.get("output")) or "0"
-    return "" if i == "0" and o == "0" else "in=" + i + " out=" + o
-
-def summary(e):  # events.Summary
-    k, t = e.get("kind"), lambda key: text(e, key)
-    if k == "run_start":
-        d = "tier=" + t("tier") + " capture=" + t("capture") + " " + t("kernel")
-        if t("run_command_grant"):
-            d += " run_command_grant=" + t("run_command_grant")
-        cells = e.get("best_effort")
-        if isinstance(cells, list) and cells:
-            d += " best_effort=" + ",".join(c for c in cells if isinstance(c, str) and not isinstance(c, Num))
-        return d
-    if k == "run_end":
-        return "reason=" + t("reason") + (" exit=" + num(e.get("exit_code")) if num(e.get("exit_code")) else "")
-    if k == "exec":
-        d, argv = t("path"), e.get("argv")
-        if isinstance(argv, list) and argv:
-            d = " ".join(a if isinstance(a, str) and not isinstance(a, Num) else "" for a in argv)
-        if t("command_rule"):
-            d += " command=" + t("command_list") + ":" + t("command_rule")
-            if t("command_match") == "ambiguous":
-                d += " (ambiguous)"
-            if t("command_via") not in ("", "name"):
-                d += " via=" + t("command_via")
-        return d
-    if k == "fs":
-        d = t("op") + " " if t("op") else ""
-        d += t("path")
-        if num(e.get("count")) not in ("", "0"):
-            d += " x" + num(e.get("count"))
-        return d + (" (alternate for " + t("alternate_for") + ")" if t("alternate_for") else "")
-    if k == "net":
-        return t("proto") + " " + t("dst") + (" (" + t("host") + ")" if t("host") else "")
-    if k == "ssl_request":
-        return t("method") + " " + t("host") + t("path")
-    if k == "ssl_response":
-        st = num(e.get("status"))
-        return trim((st + " " if st else "") + t("model") + " " + usage(e))
-    if k == "decision":
-        return "tool " + t("tool") if t("tool") else t("why")
-    if k == "gap":
-        return t("what") + ": " + t("why")
-    if k == "limit":
-        return t("which") + "=" + num(e.get("value")) + " ceiling=" + num(e.get("ceiling"))
-    if k == "refused":
-        return trim(t("op") + " " + first(e, "target", "path", "dst"))
-    if k == "mcp":
-        return trim(first(e, "server", "name") + " " + t("transport")) + (" call " + t("tool") if t("tool") else "")
-    if k == "ask":
-        return trim(t("hold") + (" read" if t("op") == "read" else "") + " " + first(e, "target", "path", "dst"))
-    if k == "answer":
-        a = e.get("approved")
-        if t("alternate"):
-            d = "alternate " + t("alternate") + " (not the file asked for)"
-        elif a is True:
-            d = "approved"
-        elif t("answer_reason"):
-            d = "refused " + t("answer_reason")
-        else:
-            d = "not approved" if a is False else ""
-        d += " by " + t("by") if t("by") else ""
-        return trim(d + (" after " + num(e.get("after_s")) + "s" if num(e.get("after_s")) else ""))
-    if k == "boundary":
-        return trim(t("dst") + " " + t("propagated"))
-    return ""
-
-ESC = {7: "a", 8: "b", 9: "t", 10: "n", 11: "v", 12: "f", 13: "r"}
-
-def hidden(c):  # record.Printable escapes it: a control, or record.Invisible
-    if c < 0x80:
-        return c < 0x20 or c == 0x7f
-    if c <= 0x9f or 0x202a <= c <= 0x202e or 0x2066 <= c <= 0x2069 or c in (0x061c, 0x200e, 0x200f):
-        return True  # C1, and the bidi controls by code point, whatever Unicode tables this python3 has
-    return 0xe0000 <= c <= 0xe007f or unicodedata.category(chr(c)) in ("Cf", "Zl", "Zp")
-
-def printable(s):  # record.Printable; a lone surrogate is the U+FFFD Go decodes it to
-    out = []
-    for ch in s:
-        c = ord(ch)
-        if 0xd800 <= c <= 0xdfff:
-            out.append("\ufffd")
-        elif not hidden(c):
-            out.append(ch)
-        elif c in ESC:
-            out.append("\\" + ESC[c])
-        else:
-            out.append("\\x%02x" % c if c < 0x80 else "\\u%04x" % c if c < 0x10000 else "\\U%08x" % c)
-    return "".join(out)
-
 kept, total = [], 0
 for raw in sys.stdin.buffer:
-    try:
-        e = json.loads(raw.decode("utf-8", "replace"), parse_int=Num, parse_float=Num)
-    except Exception:
-        continue
-    if not isinstance(e, dict):
+    cells = raw.decode("utf-8", "replace").rstrip("\n").split("\t")
+    if len(cells) != 4:
         continue
     total += 1
-    seq, v, why = num(e.get("seq")), text(e, "verdict"), text(e, "reason")
-    verdict = printable(v + ":" + why if v and why else v or why or "-")  # events.verdictCell
-    rule, detail = printable(text(e, "rule") or "-"), printable(summary(e))  # ruleCell, Summary
+    seq, verdict, rule, detail = cells
     secret = "/home/.ssh/id_rsa" in detail or "/home/.config/telemetry/token" in detail
     if mode == "refused":
         keep = rule.startswith(("fs.deny_read[", "fs.ask_read[", "live.block[")) or secret or bool(to_port.search(detail))
@@ -1107,14 +977,14 @@ cmd_proof() {
     say "RIGHT ($right_head): what Tego refused of the attack"
     other_runs "enforced" "$right_runs" "$right_run"
     printf '$ %s events %s --kind refused   (the attack rows: the key, the token, port %s; <stage> is %s)\n' "$(shq "$TEGO_BIN")" "$right_run" "$DEMO_PORT_RIGHT" "$stage_show"
-    env "TEGO_CONFIG=$DEMO_CONFIG" "$TEGO_BIN" events "$right_run" --kind refused --json 2>/dev/null | python3 -I -c "$PROOF_ROWS" "$STAGE" refused "$DEMO_PORT_RIGHT" "$AGENT_NAME" || true
+    env "TEGO_CONFIG=$DEMO_CONFIG" "$TEGO_BIN" events "$right_run" --kind refused --cells 2>/dev/null | python3 -I -c "$PROOF_ROWS" "$STAGE" refused "$DEMO_PORT_RIGHT" "$AGENT_NAME" || true
     runtego events "$right_run" --verify
   fi
   if [ -n "$left_run" ]; then
     say "LEFT ($left_head): $left_what"
     other_runs "watched" "$left_runs" "$left_run"
     printf '$ %s events %s   (the attack rows: the key, the token, port %s; <stage> is %s)\n' "$(shq "$TEGO_BIN")" "$left_run" "$DEMO_PORT_LEFT" "$stage_show"
-    env "TEGO_CONFIG=$DEMO_CONFIG" "$TEGO_BIN" events "$left_run" --json 2>/dev/null | python3 -I -c "$PROOF_ROWS" "$STAGE" watched "$DEMO_PORT_LEFT" "$AGENT_NAME" || true
+    env "TEGO_CONFIG=$DEMO_CONFIG" "$TEGO_BIN" events "$left_run" --cells 2>/dev/null | python3 -I -c "$PROOF_ROWS" "$STAGE" watched "$DEMO_PORT_LEFT" "$AGENT_NAME" || true
     runtego events "$left_run" --verify
   fi
   [ -n "$right_run" ] || [ -n "$left_run" ] || note "no run yet: run ./demo.sh backup, or a take"

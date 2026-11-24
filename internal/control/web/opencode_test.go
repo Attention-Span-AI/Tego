@@ -5,6 +5,7 @@ package web
 import (
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -115,5 +116,60 @@ func TestOpenCodeGoverned(t *testing.T) {
 	s.governed = func(*http.Request) error { return nil }
 	if w := do(s, "GET", target, "127.0.0.1:8484", nil); w.Code != http.StatusSeeOther {
 		t.Errorf("the same code from outside a run: %d, want 303", w.Code)
+	}
+}
+
+// mintRequest is a POST to openCodePath as the Windows relay's Linux end sends it.
+func mintRequest(s *Server, auth, origin string) *httptest.ResponseRecorder {
+	r := httptest.NewRequest("POST", openCodePath, nil)
+	r.Host = "127.0.0.1:8484"
+	if auth != "" {
+		r.Header.Set("Authorization", auth)
+	}
+	if origin != "" {
+		r.Header.Set("Origin", origin)
+	}
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	return w
+}
+
+// TestOpenCodeChannel: the relay's local channel (ADR 0123, "A browser on Windows") mints a code only for the
+// sign-in token, and only after the peer and governed checks, which it leaves as they are; the code it gives signs
+// in once, like the opener's.
+func TestOpenCodeChannel(t *testing.T) {
+	s := newServer(t, fixture(t))
+	w := mintRequest(s, "Bearer tok123", "")
+	code := strings.TrimSpace(w.Body.String())
+	if w.Code != http.StatusOK || !openCodeShape(code) || w.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("mint: %d %q %q, want 200 and a code, not stored", w.Code, code, w.Header().Get("Cache-Control"))
+	}
+	if strings.Contains(w.Body.String(), "tok123") {
+		t.Fatal("the channel's answer carries the token")
+	}
+	if w := do(s, "GET", "/?o="+code, "127.0.0.1:8484", nil); w.Code != http.StatusSeeOther {
+		t.Fatalf("the minted code: %d, want 303", w.Code)
+	}
+	if w := do(s, "GET", "/?o="+code, "[::1]:8484", nil); w.Code != http.StatusUnauthorized {
+		t.Fatalf("the minted code again: %d, want 401", w.Code)
+	}
+	for name, c := range map[string][2]string{
+		"no token":       {"", ""},
+		"wrong token":    {"Bearer tok124", ""},
+		"not a bearer":   {"tok123", ""},
+		"from a browser": {"Bearer tok123", "http://127.0.0.1:8484"},
+	} {
+		if w := mintRequest(s, c[0], c[1]); w.Code != http.StatusUnauthorized || openCodeShape(strings.TrimSpace(w.Body.String())) {
+			t.Errorf("%s: %d %q, want 401 and no code", name, w.Code, w.Body.String())
+		}
+	}
+	s.governed = func(*http.Request) error { return errors.New("run r-x") }
+	if w := mintRequest(s, "Bearer tok123", ""); w.Code != http.StatusForbidden {
+		t.Errorf("from inside a run: %d, want 403", w.Code)
+	}
+	s.governed = func(*http.Request) error { return nil }
+	s.peer = func(*http.Request) error { return errPeer }
+	if w := mintRequest(s, "Bearer tok123", ""); w.Code != http.StatusForbidden {
+		t.Errorf("another uid's socket: %d, want 403", w.Code)
 	}
 }

@@ -3,7 +3,7 @@
    the light and dark values, so this file needs no theme of its own. */
 .mcp-pick { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-4); }
 .mcp-pick select { min-height: var(--control-h); max-width: 100%; min-width: 0; flex: 1 1 16rem;
-  background: var(--c-surface); color: var(--c-text); border: 1px solid var(--c-border); border-radius: var(--radius-sm);
+  background: var(--c-surface); color: var(--c-text); border: 1px solid var(--c-control); border-radius: var(--radius-sm);
   padding: 0 var(--space-2); font: inherit; }
 .mcp-note { margin: var(--space-2) 0 var(--space-4); }
 .mcp-server { margin-bottom: var(--space-5); padding: var(--space-4); }
@@ -12,7 +12,7 @@
 .mcp-server-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); }
 .mcp-server-head h2 { margin: 0; font-size: var(--text-lg); }
 .mcp-table { display: grid; gap: 0; }
-.mcp-row { display: grid; grid-template-columns: minmax(8rem, 1.4fr) 7rem minmax(15rem, 2fr) 4rem 4.5rem 4rem;
+.mcp-row { display: grid; grid-template-columns: minmax(0, 1.4fr) 6rem minmax(0, 2fr) 3rem 4rem 3rem;
   align-items: center; gap: var(--space-3); padding: var(--space-2) 0; border-top: 1px solid var(--c-border); }
 .mcp-row-head { border-top: 0; color: var(--c-text3); font-size: var(--text-sm); font-weight: var(--weight-medium); }
 .mcp-row .num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -24,8 +24,8 @@
 .mcp-d-ask { background: var(--c-warn-soft); color: var(--c-warn); border-color: var(--c-warn-edge); }
 .mcp-d-deny { background: var(--c-danger-soft); color: var(--c-danger); border-color: var(--c-danger-edge); }
 .mcp-now { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-.mcp-switch { display: inline-flex; border: 1px solid var(--c-border); border-radius: var(--radius-sm); overflow: hidden; }
-.mcp-switch .seg { min-height: var(--target); min-width: 3.5rem; padding: 0 var(--space-3); border: 0;
+.mcp-switch { display: inline-flex; border: 1px solid var(--c-control); border-radius: var(--radius-sm); }
+.mcp-switch .seg { min-height: var(--target); min-width: 44px; justify-content: center; align-items: center; border-radius: 0; padding: 0 var(--space-3); border: 0;
   border-left: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text2); font: inherit; cursor: pointer; }
 .mcp-switch .seg:first-of-type { border-left: 0; }
 .mcp-switch .seg:focus-visible { outline: 2px solid var(--c-focus); outline-offset: -2px; }
@@ -36,14 +36,42 @@
 .mcp-switch .seg[aria-pressed="true"] { box-shadow: inset 0 -3px 0 currentColor; }
 .mcp-reset { display: inline; }
 .mcp-reset .link { background: none; border: 0; padding: 0; color: var(--c-link); text-decoration: underline; cursor: pointer; font: inherit; font-size: var(--text-sm); }
-.mcp-change { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-2) var(--space-4); margin: 0 0 var(--space-4); }
+.mcp-change { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-2) var(--space-4); margin: 0 0 var(--space-4); }
 .mcp-change dt { color: var(--c-text3); }
 .mcp-change dd { margin: 0; overflow-wrap: anywhere; }
 .mcp-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
-@media (max-width: 760px) {
+@media (max-width: 1100px) {
   .mcp-row-head { display: none; }
-  .mcp-row { grid-template-columns: 1fr 1fr 1fr; gap: var(--space-2); }
+  .mcp-row { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
   .mcp-tool, .mcp-now, .mcp-contract { grid-column: 1 / -1; }
   .mcp-row .num { text-align: left; }
   .mcp-lbl { display: inline; color: var(--c-text3); }
 }
+
+.mcp-row > *, .mcp-server-head > *, .mcp-change > * { min-width: 0; overflow-wrap: anywhere; }
+.mcp-server-head h2 { flex: 1 1 240px; }
+.mcp-change { align-items: start; }
+@media screen and (max-width: 600px) {
+ .mcp-change { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+ .mcp-change dd { margin-bottom: 8px; }
+ .mcp-server, .mcp-preview { padding: 16px; margin: 0; }
+ .mcp-pick { margin: 0; }
+ .mcp-switch { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
+ .mcp-switch .seg { padding: 4px 8px; }
+ .mcp-now { display: grid; grid-template-columns: minmax(0, 1fr); }
+ .mcp-tool { font-size: 16px; }
+ .mcp-row-head { display: none; }
+ .mcp-row { gap: 12px; padding: 16px 0; }
+ .mcp-row .num, .mcp-contract, .mcp-note { font-size: 13px; }
+}
+@media screen and (max-width: 600px) {
+ .mcp-tool-details > summary { list-style: none; cursor: pointer; padding-left: 0; padding-right: 0; }
+ .mcp-tool-details > summary::-webkit-details-marker { display: none; }
+ .layer-who { grid-column: 1 / -1; font-weight: var(--weight-semibold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+ .mcp-tool-details[open] > summary { background: var(--c-raised); }
+ .mcp-tool-details > summary .layer-who::after { content: "+"; margin-left: 8px; }
+ .mcp-tool-details[open] > summary .layer-who::after { content: "−"; }
+}
+.mcp-tool-details > summary::before { content: none; }
+
+.mcp-rule { display: block; font-size: var(--text-sm); color: var(--c-text3); overflow-wrap: anywhere; }

@@ -78,7 +78,7 @@ TEGO_PLANE_HOOK(path_mknod, path_mknod, security_path_mknod, (const struct path 
         return -EACCES;
     }
     __u8 floor = tego_modify_hook(dentry, dir->mnt, run, hdr, 1, TEGO_HOOK_PATH_MKNOD, (__u64)dentry,
-                                   TEGO_R_WRITE_OUTSIDE_CONTRACT);
+                                   TEGO_R_WRITE_OUTSIDE_CONTRACT, TEGO_BLOCK_WRITE | TEGO_BLOCK_CREATE);
     if ((node_mode & 0170000) == 0140000)
         return tego_mknod_bind(run, dentry);
     return floor ? -EACCES : 0;
@@ -103,7 +103,7 @@ TEGO_PLANE_HOOK(path_mkdir, path_mkdir, security_path_mkdir, (const struct path 
     }
     /* A directory's creation: no name entry decides it (ADR 0043 D1; `python -m venv .env` stays allowed). */
     if (tego_modify_hook(dentry, dir->mnt, run, hdr, 0, TEGO_HOOK_PATH_MKDIR, (__u64)dentry,
-                          TEGO_R_MKDIR_OUTSIDE_CONTRACT))
+                          TEGO_R_MKDIR_OUTSIDE_CONTRACT, TEGO_BLOCK_WRITE | TEGO_BLOCK_CREATE))
         return -EACCES;
     return 0;
 }
@@ -127,7 +127,7 @@ TEGO_PLANE_HOOK(path_symlink, path_symlink, security_path_symlink, (const struct
         return -EACCES;
     }
     if (tego_modify_hook(dentry, dir->mnt, run, hdr, 1, TEGO_HOOK_PATH_SYMLINK, (__u64)dentry,
-                          TEGO_R_WRITE_OUTSIDE_CONTRACT))
+                          TEGO_R_WRITE_OUTSIDE_CONTRACT, TEGO_BLOCK_WRITE | TEGO_BLOCK_CREATE))
         return -EACCES;
     return 0;
 }
@@ -152,7 +152,7 @@ TEGO_PLANE_HOOK(path_truncate, path_truncate, security_path_truncate, (const str
         return -EACCES;
     }
     if (tego_modify_hook(path->dentry, path->mnt, run, hdr, 1, TEGO_HOOK_PATH_TRUNCATE, (__u64)path->dentry,
-                          TEGO_R_WRITE_OUTSIDE_CONTRACT))
+                          TEGO_R_WRITE_OUTSIDE_CONTRACT, TEGO_BLOCK_WRITE))
         return -EACCES;
     return 0;
 }
@@ -179,7 +179,7 @@ TEGO_PLANE_HOOK(file_truncate, file_truncate, security_file_truncate, (struct fi
         return -EACCES;
     }
     if (tego_modify_hook(file->f_path.dentry, file->f_path.mnt, run, hdr, 1, TEGO_HOOK_FILE_TRUNCATE, (__u64)file,
-                          TEGO_R_WRITE_OUTSIDE_CONTRACT))
+                          TEGO_R_WRITE_OUTSIDE_CONTRACT, TEGO_BLOCK_WRITE))
         return -EACCES;
     return 0;
 }
@@ -203,7 +203,7 @@ static __always_inline int tego_no_path_sb(struct dentry *dentry)
 }
 
 /* An attribute hook's refusal sample (R23) on dentry: its directory's dev and ino and its final component. */
-static __always_inline void tego_attr_sample(struct dentry *dentry, struct tego_run *run, __u16 hook, __u16 rule,
+static __always_inline void tego_attr_sample(struct dentry *dentry, struct tego_run *run, __u16 hook, __u32 rule,
                                               __u8 reason)
 {
     struct tego_plane_sample_args a = {};
@@ -223,11 +223,12 @@ static __always_inline void tego_attr_sample(struct dentry *dentry, struct tego_
  * carries TEGO_ROW_PROTECTED (a deny_write target at or above it) or the walk failed closed; any other row, and no
  * row at all, passes: Landlock governs no chmod, chown, xattr or ACL, so these hooks exist only to protect deny
  * targets. A refusal writes the plane's own sample. Returns the reason, 0 for a pass. */
-static __always_inline __u8 tego_protect_hook(struct dentry *dentry, struct tego_run *run, __u16 hook)
+static __always_inline __u8 tego_protect_hook(struct dentry *dentry, struct vfsmount *mnt, struct tego_run *run,
+                                               __u16 hook)
 {
     struct tego_plane_decision *sc = tego_plane_scratch_get();
     struct tego_plane_hit h = {};
-    __u16 rule = TEGO_PLANE_RULE_NONE;
+    __u32 rule = TEGO_PLANE_RULE_NONE;
     __u8 reason;
 
     if (!sc) {
@@ -241,6 +242,12 @@ static __always_inline __u8 tego_protect_hook(struct dentry *dentry, struct tego
             rule = h.rule_idx;
             reason = TEGO_R_WRITE_OUTSIDE_CONTRACT;
         }
+        /* A live block on changes refuses an attribute change at or beneath it (ADR 0124, amendment 2026-11-21): on the
+         * path's mount where the hook has one (chmod, chown), else inside the superblock, which a mounted root's
+         * MOUNT_ONLY row reaches. */
+        if (!reason)
+            reason = tego_block_check(sc, run, dentry, mnt, TEGO_BLOCK_WRITE, TEGO_R_WRITE_OUTSIDE_CONTRACT,
+                                      TEGO_R_WRITE_OUTSIDE_CONTRACT, &rule);
         tego_plane_record(sc, hook, (__u64)dentry, rule, reason);
     }
     if (!reason)
@@ -273,7 +280,7 @@ TEGO_PLANE_HOOK(path_chmod, path_chmod, security_path_chmod, (const struct path 
         tego_protect_unslotted(path->dentry, run, TEGO_HOOK_PATH_CHMOD);
         return -EACCES;
     }
-    if (tego_protect_hook(path->dentry, run, TEGO_HOOK_PATH_CHMOD))
+    if (tego_protect_hook(path->dentry, path->mnt, run, TEGO_HOOK_PATH_CHMOD))
         return -EACCES;
     return 0;
 }
@@ -295,7 +302,7 @@ TEGO_PLANE_HOOK(path_chown, path_chown, security_path_chown, (const struct path 
         tego_protect_unslotted(path->dentry, run, TEGO_HOOK_PATH_CHOWN);
         return -EACCES;
     }
-    if (tego_protect_hook(path->dentry, run, TEGO_HOOK_PATH_CHOWN))
+    if (tego_protect_hook(path->dentry, path->mnt, run, TEGO_HOOK_PATH_CHOWN))
         return -EACCES;
     return 0;
 }
@@ -321,7 +328,7 @@ TEGO_PLANE_HOOK(inode_setxattr, inode_setxattr, security_inode_setxattr, (void *
         tego_protect_unslotted(dentry, run, TEGO_HOOK_INODE_SETXATTR);
         return -EACCES;
     }
-    if (tego_protect_hook(dentry, run, TEGO_HOOK_INODE_SETXATTR))
+    if (tego_protect_hook(dentry, 0, run, TEGO_HOOK_INODE_SETXATTR))
         return -EACCES;
     return 0;
 }
@@ -343,7 +350,7 @@ TEGO_PLANE_HOOK(inode_removexattr, inode_removexattr, security_inode_removexattr
         tego_protect_unslotted(dentry, run, TEGO_HOOK_INODE_REMOVEXATTR);
         return -EACCES;
     }
-    if (tego_protect_hook(dentry, run, TEGO_HOOK_INODE_REMOVEXATTR))
+    if (tego_protect_hook(dentry, 0, run, TEGO_HOOK_INODE_REMOVEXATTR))
         return -EACCES;
     return 0;
 }
@@ -367,7 +374,7 @@ TEGO_PLANE_HOOK(inode_set_acl, inode_set_acl, security_inode_set_acl, (void *idm
         tego_protect_unslotted(dentry, run, TEGO_HOOK_INODE_SET_ACL);
         return -EACCES;
     }
-    if (tego_protect_hook(dentry, run, TEGO_HOOK_INODE_SET_ACL))
+    if (tego_protect_hook(dentry, 0, run, TEGO_HOOK_INODE_SET_ACL))
         return -EACCES;
     return 0;
 }
@@ -389,7 +396,7 @@ TEGO_PLANE_HOOK(inode_remove_acl, inode_remove_acl, security_inode_remove_acl, (
         tego_protect_unslotted(dentry, run, TEGO_HOOK_INODE_REMOVE_ACL);
         return -EACCES;
     }
-    if (tego_protect_hook(dentry, run, TEGO_HOOK_INODE_REMOVE_ACL))
+    if (tego_protect_hook(dentry, 0, run, TEGO_HOOK_INODE_REMOVE_ACL))
         return -EACCES;
     return 0;
 }

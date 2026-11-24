@@ -268,13 +268,15 @@ func planeFixture(t *testing.T) (string, *agent.RuleTable, *decide.PlaneRows, ma
 
 // fillSlot writes the rows into the slot's inner maps through the fill build that goes with plane (bpf/
 // decide_fill.bpf.c, T4), unscoped, and checks every row was written. The fill declares three row outers, the fs rows,
-// the exec rows and the Unix listener rows, each pinned by name, so a loader names all three as replacements (as
-// newPlaneFiller does) and the slot gets an inner map in each, as Prepare gives it, though this fill writes no
-// listener row: without the third the load fails with "pin by name: missing MapOptions.PinPath".
+// the exec rows, the Unix listener rows and the live-block rows, each pinned by name, so a loader names all four as
+// replacements (as newPlaneFiller does) and the slot gets an inner map in each, as Prepare gives it, though this fill
+// writes no listener row and no block row: without the third or the fourth the load fails with "pin by name: missing
+// MapOptions.PinPath". A new row outer of the fill is added here with newPlaneFiller's fillMaps, or this test's load
+// is the first to say so.
 func fillSlot(t *testing.T, plane bpf.Object, coll *ebpf.Collection, slot, gen uint32, rows *decide.PlaneRows, held map[string]int) {
 	t.Helper()
 	replacements := map[string]*ebpf.Map{}
-	for _, name := range []string{bpf.MapPlaneRows, bpf.MapPlaneExecRows, bpf.MapPlaneListenRows} {
+	for _, name := range []string{bpf.MapPlaneRows, bpf.MapPlaneExecRows, bpf.MapPlaneListenRows, bpf.MapPlaneBlocks} {
 		spec, err := bpf.Load(plane)
 		if err != nil {
 			t.Fatal(err)

@@ -22,16 +22,18 @@ const linkedWindow = 10 * time.Second
 // investigateData is the Investigate page: one detection in four parts, always in the same order (what, how it got
 // there, what else, what now), and the next detection at the same severity.
 type investigateData struct {
-	D      detection
-	Kind   string // what the object is, in words (fileKind), "" when unknown
-	Policy string // the policy file the run ran under
-	LV     *ledgerview.LineView
-	Chain  []ledgerview.ProcRef // the launcher first, the acting process last
-	Argv   string               // the acting process's command line, credentials masked
-	Linked []detection
-	Next   *detection
-	Pos    int // 1-based place among the detections of its severity
-	OfSev  int
+	Numbers     countScopes
+	ListNumbers countScopes
+	D           detection
+	Kind        string // what the object is, in words (fileKind), "" when unknown
+	Policy      string // the policy file the run ran under
+	LV          *ledgerview.LineView
+	Chain       []ledgerview.ProcRef // the launcher first, the acting process last
+	Argv        string               // the acting process's command line, credentials masked
+	Linked      []detection
+	Next        *detection
+	Pos         int // 1-based place among the detections of its severity
+	OfSev       int
 }
 
 // investigate answers /runs/<id>/investigate/<seq>: the detection whose first line is seq, which stays its address as
@@ -61,7 +63,7 @@ func (s *Server) investigate(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, http.StatusNotFound, "Not found", "No detection at this address.")
 		return
 	}
-	d := investigateData{D: all[i], Kind: fileKind(all[i].Subject)}
+	d := investigateData{Numbers: runNumbers(run), ListNumbers: snapshotNumbers(snap), D: all[i], Kind: fileKind(all[i].Subject)}
 	if run.Contract != "" { // path.Base of "" is ".", which the page would show as the policy
 		d.Policy = path.Base(run.Contract)
 	}
@@ -94,6 +96,7 @@ func (s *Server) investigate(w http.ResponseWriter, r *http.Request) {
 		d.Kind = urlHost(d.Argv) // a connect to a bare address: the host its command line names
 	}
 	c := s.chromeOf(snap, d.D.Verb+" "+mask(tilde(d.D.Subject)), "detections")
+	c.PhoneName = "Investigate"
 	s.render(w, http.StatusOK, "investigate", c, d)
 }
 

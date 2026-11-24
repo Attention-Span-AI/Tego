@@ -277,13 +277,13 @@ const OPathSuffix = " (O_PATH: reads nothing)"
 // closed, the same reading internal/runtime/enforce/landlock's builder takes. Every enforcer asks this method, never
 // the Contract's fields (TestExecModeOneSpelling): one spelling, so no two of them read a deny-only section two ways.
 func (rt *RuleTable) ExecUnrestricted() bool {
-	return rt.Contract.ExecUnrestricted()
+	return rt.DecisionContract().ExecUnrestricted()
 }
 
 // ExecAnonymous reports whether the contract opted into anonymous-image exec (exec.anonymous: true); a table
 // without its Contract does not.
 func (rt *RuleTable) ExecAnonymous() bool {
-	return rt.Contract.ExecAnonymous()
+	return rt.DecisionContract().ExecAnonymous()
 }
 
 // NetUnrestricted reports whether the contract left net: out entirely, the state SEMANTICS §1 spells
@@ -440,6 +440,9 @@ func (r FSRule) RuleName() string {
 	kind := string(r.Kind)
 	if r.AskRead && r.Kind == FSDenyRead {
 		kind = fsAskReadKey
+	}
+	if r.Raw == "" && r.AliasOf != "" {
+		return "fs." + kind + "[" + r.AliasOf + "]"
 	}
 	return "fs." + kind + "[" + rawOr(r.Raw, r.Path) + "]"
 }

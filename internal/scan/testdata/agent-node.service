@@ -1,0 +1,4 @@
+[Service]
+Type=oneshot
+ExecStart=-@:/usr/bin/node alias /opt/@openai/codex/bin/codex.js --token MCP_CANARY_18 %h
+ExecStart=node --token /opt/@anthropic-ai/claude-code/cli.js

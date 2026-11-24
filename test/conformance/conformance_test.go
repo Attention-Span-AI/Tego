@@ -160,8 +160,9 @@ func TestInvariantsCatchAFailOpen(t *testing.T) {
 	m := Model{Write: []string{"out"}, DenyRead: []string{"secrets", "out/keys"}, ExecAllow: []string{"bin/tool"}, NetDeclared: true,
 		NetAllow: []string{"127.0.0.1:1"}}
 	ok := Outcome{OK: true}
-	anon, noExec, keyring, direct := m, m, m, m // the opt-outs: exec: {anonymous: true}, no exec.allow, keyring: true, fs.reads: direct
+	anon, noExec, keyring, direct, netKernel := m, m, m, m, m // the opt-outs: exec: {anonymous: true}, no exec.allow, keyring: true, fs.reads: direct; and net.assurance: kernel
 	anon.ExecAnonymous, noExec.ExecAllow, keyring.Keyring, direct.Reads = true, nil, true, ReadsDirect
+	netKernel.NetAssuranceKernel = true
 	rules := m
 	rules.ExecDeny, rules.ExecAllow = []string{"git push"}, nil // the command rule alone
 	cases := []struct {
@@ -252,6 +253,9 @@ func TestInvariantsCatchAFailOpen(t *testing.T) {
 		{"bpf at cgroup", Cell{Op: OpBPF}, TierCgroup, true, nil},
 		{"bpf at bpflsm", Cell{Op: OpBPF}, TierBPFLSM, true, nil},
 		{"bpf at landlock (tier 1 has no arm)", Cell{Op: OpBPF}, TierLandlock, false, nil},
+		{"a descriptor import under net.assurance: kernel at bpflsm", Cell{Op: OpRecvFD}, TierBPFLSM, true, &netKernel},
+		{"a descriptor import under net.assurance: kernel at landlock (no plane)", Cell{Op: OpRecvFD}, TierLandlock, false, &netKernel},
+		{"a descriptor import without net.assurance: kernel", Cell{Op: OpRecvFD}, TierBPFLSM, false, nil},
 	}
 	m.DenyWrite = []string{"out/.git/config"}
 	m.ExecAllow = append(m.ExecAllow, "secrets/bin")
@@ -377,10 +381,8 @@ func TestInvariantNearestEntryDecidesEveryAction(t *testing.T) {
 	}
 }
 
-// TestConformanceCompile is the unprivileged compile runner: every cell against compile --test per tier. Its tego
-// is the tegobpf build (the committed objects; no privilege, no kernel call), whose reach holds tiers cgroup and
-// bpflsm, so the build that runs those columns answers them: a landlock-only build compiles no name entry (ADR 0043
-// Consequence 11) and would answer the root columns of a name cell as if none existed.
+// TestConformanceCompile judges every cell's requested tiers, including root-tier name
+// columns predicted without root (ADR 0043, amendment 2026-11-18).
 func TestConformanceCompile(t *testing.T) {
 	bin, err := buildTego(t.TempDir(), "tegobpf")
 	if err != nil {
@@ -390,16 +392,10 @@ func TestConformanceCompile(t *testing.T) {
 	failures := map[string]string{}
 	ran := map[string]bool{}
 	fixtures, _ := selectedFixtures(t)
-	for _, fx := range fixtures {
-		fx := fx
-		if !hasCompileRow(&fx) {
-			continue // every cell is no_compile (a memfd names no path): compile --test has nothing to answer
-		}
-		dir := t.TempDir()
-		e := materialize(t, dir, &fx, actor)
+	forCompileFixtures(t, fixtures, actor, func(t *testing.T, fx *Fixture, e *env) {
 		environ := machineConfig(t, e)
 		table := compileJSON(t, bin, e, environ)
-		fails, overGrants := compileFailures(t, bin, e, environ, &fx, compileReach(t, table))
+		fails, overGrants := compileFailures(t, bin, e, environ, fx)
 		for k, v := range fails {
 			failures[k] = v
 		}
@@ -424,7 +420,7 @@ func TestConformanceCompile(t *testing.T) {
 				ran[RunnerCompile+"|"+string(tier)] = true
 			}
 		}
-	}
+	})
 	settleBaseline(t, "compile --test and a cell", ran, failures)
 	t.Logf("%d compile disagreements", len(failures))
 }

@@ -1,0 +1,115 @@
+# SPDX-License-Identifier: Apache-2.0
+# ADR 0143: opt-in signing authority lives in a separate reusable workflow.
+name: Sign CI receipt
+on:
+  workflow_call:
+    inputs:
+      handoff:
+        description: Exact handoff output from the receipt workflow in this run.
+        type: string
+        required: true
+      sign:
+        description: auto or true; eligibility is independently checked again.
+        type: string
+        default: auto
+      sign-consent:
+        description: 'Signing publishes your organisation, repository and workflow names to a public, permanent Sigstore log. Set exactly: I consent to publish repository and workflow names in the permanent public Sigstore log'
+        type: string
+        required: true
+      matrix-key:
+        description: Same matrix key supplied to the receipt workflow.
+        type: string
+        default: single
+      use-sudo:
+        description: Same tier selection supplied to the receipt workflow.
+        type: boolean
+        default: false
+      on-refusal:
+        description: warn or fail after upload and reporting.
+        type: string
+        default: warn
+permissions: {}
+env:
+  # Set these repository variables to reviewed literal pins. An unset or malformed
+  # pin refuses before caller code runs. No published ci-preset release is assumed.
+  TEGO_CODE_SHA: ${{ vars.TEGO_CI_ACTION_SHA }}
+  IN_VERSION: ${{ vars.TEGO_CI_VERSION }}
+  IN_RELEASE_COMMIT: ${{ vars.TEGO_CI_RELEASE_SHA }}
+  BASH_ENV: /dev/null
+  ENV: /dev/null
+  GH_HOST: github.com
+jobs:
+  sign:
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - name: validate consent before installing anything
+        shell: /bin/bash --noprofile --norc -peuo pipefail {0}
+        env:
+          CONSENT: ${{ inputs.sign-consent }}
+        run: |
+          [ "$CONSENT" = 'I consent to publish repository and workflow names in the permanent public Sigstore log' ] || exit 125
+          [[ "$TEGO_CODE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 125
+          [ "$TEGO_CODE_SHA" = "$IN_RELEASE_COMMIT" ] || exit 125
+      - name: check out pinned Tego code only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Attention-Span-AI/Tego
+          ref: ${{ vars.TEGO_CI_ACTION_SHA }}
+          persist-credentials: false
+          path: tego-code
+      - id: sign
+        name: recheck ended evidence and sign receipt and manifest
+        shell: /bin/bash --noprofile --norc -peuo pipefail {0}
+        env:
+          CORE_RECEIPT_SHA256: ${{ fromJSON(inputs.handoff).receipt-sha256 }}
+          CORE_RECEIPT_BYTES: ${{ fromJSON(inputs.handoff).receipt-bytes }}
+          CORE_RECORD_SHA256: ${{ fromJSON(inputs.handoff).record-sha256 }}
+          CORE_RECORD_BYTES: ${{ fromJSON(inputs.handoff).record-bytes }}
+          CORE_ANCHOR_SHA256: ${{ fromJSON(inputs.handoff).anchor-sha256 }}
+          CORE_ANCHOR_BYTES: ${{ fromJSON(inputs.handoff).anchor-bytes }}
+          CORE_CONTRACT_SHA256: ${{ fromJSON(inputs.handoff).contract-sha256 }}
+          CORE_CONTRACT_BYTES: ${{ fromJSON(inputs.handoff).contract-bytes }}
+          CORE_STATUS_SHA256: ${{ fromJSON(inputs.handoff).status-sha256 }}
+          CORE_STATUS_BYTES: ${{ fromJSON(inputs.handoff).status-bytes }}
+          CORE_INVENTORY_SHA256: ${{ fromJSON(inputs.handoff).core-inventory-sha256 }}
+          GH_TOKEN: ${{ github.token }}
+          IN_SHA256: ${{ vars.TEGO_CI_SHA256_AMD64 }}
+          ARTIFACT_ID: ${{ fromJSON(inputs.handoff).artifact-id }}
+          ARTIFACT_NAME: ${{ fromJSON(inputs.handoff).artifact-name }}
+          ARTIFACT_ATTEMPT: ${{ fromJSON(inputs.handoff).artifact-attempt }}
+          ARTIFACT_DIGEST: ${{ fromJSON(inputs.handoff).artifact-digest }}
+          MATRIX_SHA256: ${{ fromJSON(inputs.handoff).matrix-key }}
+          INVENTORY_SHA256: ${{ fromJSON(inputs.handoff).inventory-sha256 }}
+          DO_COMMENT: 'false'
+          IN_MATRIX_KEY: ${{ inputs.matrix-key }}
+          IN_ON_REFUSAL: ${{ inputs.on-refusal }}
+          IN_SIGN: ${{ inputs.sign }}
+          IN_SIGN_CONSENT: ${{ inputs.sign-consent }}
+          TIER_WANTED: ${{ inputs.use-sudo && 'cgroup' || 'landlock' }}
+        run: '"$GITHUB_WORKSPACE/tego-code/action/scripts/sign.sh"'
+      - id: signed-upload
+        name: retain exact signed bytes and both detached bundles
+        if: steps.sign.outputs.signed-dir != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tego-signed-${{ github.run_id }}-${{ github.run_attempt }}-${{ fromJSON(inputs.handoff).matrix-key }}
+          path: ${{ steps.sign.outputs.signed-dir }}
+          if-no-files-found: error
+          retention-days: 7
+      - name: preserve checked agent outcome after signed upload
+        shell: /bin/bash --noprofile --norc -peuo pipefail {0}
+        env:
+          AGENT_EXIT: ${{ steps.sign.outputs.agent-exit-code }}
+          PREPARE_EXIT: ${{ steps.sign.outputs.prepare-exit }}
+          EVIDENCE_EXIT: ${{ steps.sign.outputs.evidence-exit }}
+          RUN_ID: ${{ steps.sign.outputs.run-id }}
+          REFUSALS: ${{ steps.sign.outputs.refusals }}
+          VERIFIED: ${{ steps.sign.outputs.verified }}
+          IN_ON_REFUSAL: ${{ inputs.on-refusal }}
+        run: '"$GITHUB_WORKSPACE/tego-code/action/scripts/gate.sh"'

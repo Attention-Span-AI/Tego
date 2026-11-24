@@ -31,6 +31,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/control/rules"
 	"github.com/attention-span-ai/tego/internal/liveblock"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
 // actMeasure is where the step-3 heading and the Confirm button sit, against the window and the aside.
@@ -66,7 +67,7 @@ func TestNeverAllowInChrome(t *testing.T) {
 	}
 	root, _, _ := askFixture(t)
 	holdLock(t, filepath.Join(root, actRun)) // a live run, as on stage: Also apply now and Block now fill the aside
-	s, addr, _ := liveServer(t, root, 10*time.Second, 30*time.Second)
+	s, addr, _ := liveServerConfig(t, Config{Ledger: root, Machine: config.Builtin()}, 10*time.Second, 30*time.Second)
 	s.cfg.Rules = &rules.Service{Ledger: root, Now: s.cfg.Now, Check: func(string, string, []byte) error { return nil }}
 
 	cmdR, cmdW, err := os.Pipe()
@@ -82,7 +83,7 @@ func TestNeverAllowInChrome(t *testing.T) {
 		"--no-default-browser-check", "--disable-gpu", "--disable-extensions", "--disable-sync",
 		"--disable-background-networking", "--disable-component-update", "about:blank")
 	cmd.ExtraFiles = []*os.File{cmdR, outW}
-	var stderr bytes.Buffer
+	var stderr chromeOutput
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)

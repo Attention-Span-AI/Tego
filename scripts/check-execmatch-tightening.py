@@ -14,6 +14,8 @@ That bar stays fixed when --base changes: a baseline that already accepts the
 formerly invalid allow inputs fails it because the eight expected release changes are absent.
 The observer seam and fixture adaptations deliberately target this audit corpus;
 review them before using this driver for a later release.
+The old overlay omits new standalone unit-test files, whose APIs need not exist
+in the baseline. The two shared comparison corpus files still run on both legs.
 """
 import argparse
 import collections
@@ -29,6 +31,7 @@ import tempfile
 BASE = "70a9e8c560de62d52924bc54a5169b8dae400806"
 ROOT = Path(__file__).resolve().parent.parent
 PACKAGE = ROOT / "pkg/policy/execmatch"
+SHARED_COMPARISON_TESTS = frozenset({"round2_corpus_test.go", "tightening_test.go"})
 
 # Exactly these formerly invalid allow inputs are accepted. Keep the entry and
 # input beside every digest so the exception remains reviewable.
@@ -73,7 +76,25 @@ def observe_index(value, side):
         value += "\n" + full
     if "func (ix *Index) decide(" not in value:
         raise RuntimeError("unguarded decision observer seam needs review")
-    return value.replace(declaration, "func (ix *Index) decideObserved(", 1)
+    constructor = "func NewIndex(rows *Rows, patterns []*Pattern, opts IndexOptions) *Index {"
+    if value.count(constructor) != 1:
+        raise RuntimeError("raw index constructor observer seam needs review")
+    return value.replace(declaration, "func (ix *Index) decideObserved(", 1).replace(
+        constructor, "func tighteningNewIndex(rows *Rows, patterns []*Pattern, opts IndexOptions) *Index {", 1)
+
+
+def observe_raw_inputs(name, value):
+    if name == Path("pkg/policy/execmatch/autocorrect.go"):
+        declaration = "func NewCandidates(names, common []string) *Candidates {"
+        if value.count(declaration) != 1:
+            raise RuntimeError("raw candidate constructor observer seam needs review")
+        return value.replace(declaration, "func tighteningNewCandidates(names, common []string) *Candidates {", 1)
+    if name == Path("pkg/policy/execmatch/rows/rows.go"):
+        declaration = "func Builtin() *execmatch.Rows { return builtin() }"
+        if value.count(declaration) != 1:
+            raise RuntimeError("builtin row input observer seam needs review")
+        return value.replace(declaration, "func Builtin() *execmatch.Rows { return execmatch.TighteningBuiltinRows(builtin()) }", 1)
+    return value
 
 
 def overlay(side, dest):
@@ -92,15 +113,27 @@ def overlay(side, dest):
                  if side == "old" else source.read_bytes())
         if name == Path("pkg/policy/execmatch/index.go"):
             value = observe_index(value.decode(), side).encode()
+        else:
+            value = observe_raw_inputs(name, value.decode()).encode()
         target = dest / name.relative_to("pkg/policy/execmatch")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(value)
         replace[str(source)] = str(target)
     if side == "old":
-        # This regression exercises private retained-reader state absent from the
-        # released package. Its source-overlay red proof is separate; the selected
-        # comparison corpora still run unchanged on both sides.
-        replace[str(PACKAGE / "security_floor_test.go")] = ""
+        # Go compiles all package tests before applying -run/-skip. New unit
+        # regressions can mention APIs absent from the released production
+        # sources, even when those tests are not selected. Keep every baseline
+        # test plus the exact shared corpora; new unit regressions run on the
+        # current package separately and are not before/after input corpora.
+        prefix = "pkg/policy/execmatch/"
+        listed = subprocess.check_output(["/usr/bin/git", "ls-tree", "-r", "--name-only", BASE, "--", prefix], cwd=ROOT).decode().splitlines()
+        baseline_tests = {name for name in listed if name.endswith("_test.go")}
+        for source in PACKAGE.rglob("*_test.go"):
+            relative = source.relative_to(PACKAGE)
+            if "testdata" in relative.parts:
+                continue
+            if source.relative_to(ROOT).as_posix() not in baseline_tests and relative.as_posix() not in SHARED_COMPARISON_TESTS:
+                replace[str(source)] = ""
         # The input is identical on both sides; only its expected diagnostic is
         # old-specific. The observer still compares argv0 versus multicall.
         source = PACKAGE / "rows/coreutils_test.go"

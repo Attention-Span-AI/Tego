@@ -11,6 +11,7 @@ filesystem-relative root, device, options, mount IDs and parent IDs stay intact.
 | `bwrap-user-wholeroot` | The user on the same host, bubblewrap `--ro-bind / /`, followed by private proc, dev and tmp. The covered original mounts remain in the capture. |
 | `guest-host` | The Ubuntu 24.04 capture guest's own table, kernel 6.8.0-147-generic. It includes the remaining sys and dev binds under `/srv/b`. |
 | `unshare` | `unshare -m` in that guest, without changing the process root. |
+| `desktop-live` | This development machine's own `/proc/self/mountinfo` (Ubuntu desktop, kernel 6.17, 73 rows, snaps, no unlinked root), copied unchanged on 2026-11-19 for the live-style replay of every table (`TestHiddenMountsNeverDoubtAFilesystem`); it holds no account name. |
 | `nspawn-selfbind` | `systemd-nspawn -D /srv/d` with `/srv/d` already a mount point, systemd 255.4. The unlinked temporary-file roots remain verbatim, including `//deleted`. |
 
 Capture filenames were `hostbwrap-tmpfsroot-6.17.mountinfo`, `hostbwrap-wholeroot-6.17.mountinfo`,

@@ -26,10 +26,10 @@ func mvpDeployment() *record.Deployment {
 func TestWriterRefusesMVPFieldsItsRevisionDoesNotAdmit(t *testing.T) {
 	w, dir, _ := openTestWriter(t)
 	low := startPayload()
-	low.RecordMinor = record.Minor
+	low.RecordMinor = record.MinorLearn
 	low.Deployment = mvpDeployment()
 	if err := w.WriteRunStart(low); record.FieldCode(err) != "below-minor" {
-		t.Fatalf("run_start at %d with a deployment: %v, want [below-minor]", record.Minor, err)
+		t.Fatalf("run_start at %d with a deployment: %v, want [below-minor]", record.MinorLearn, err)
 	}
 	bad := startPayload()
 	bad.RecordMinor = record.MinorShares
@@ -47,7 +47,7 @@ func TestWriterRefusesMVPFieldsItsRevisionDoesNotAdmit(t *testing.T) {
 		t.Fatalf("events.jsonl after the refusals: %q, %v; want it empty", data, err)
 	}
 	start := startPayload()
-	start.RecordMinor = record.Minor
+	start.RecordMinor = record.MinorLearn
 	if err := w.WriteRunStart(start); err != nil {
 		t.Fatal(err)
 	}
@@ -57,11 +57,11 @@ func TestWriterRefusesMVPFieldsItsRevisionDoesNotAdmit(t *testing.T) {
 	}{record.FSPayload{Op: record.FSOpen, Path: "/home/u/proj/a", Flags: 0x241},
 		record.LineRedactions{Redactions: []record.Redaction{{Secret: "github", Version: 2, Count: 1}}}})
 	if err := w.Append(e); record.FieldCode(err) != "below-minor" {
-		t.Fatalf("a line with redactions at %d: %v, want [below-minor]", record.Minor, err)
+		t.Fatalf("a line with redactions at %d: %v, want [below-minor]", record.MinorLearn, err)
 	}
 	err := w.Close(record.RunEndPayload{Reason: record.RunEndExit, StoppedBy: "not-a-principal"})
 	if record.FieldCode(err) != "below-minor" {
-		t.Fatalf("Close with stopped_by at %d: %v, want [below-minor]", record.Minor, err)
+		t.Fatalf("Close with stopped_by at %d: %v, want [below-minor]", record.MinorLearn, err)
 	}
 	if got := readAll(t, dir); len(got) != 1 || got[0].Kind != record.KindRunStart {
 		t.Fatalf("the ledger holds %d lines, want run_start alone", len(got))
@@ -97,7 +97,7 @@ func rewriteLine(t *testing.T, dir string, anchor *memAnchor, i int, edit func(*
 }
 
 // TestVerifyRefusesMVPFieldsItsRevisionDoesNotAdmit: Verify (tego events --verify) holds every line to its schema at
-// the run's revision, the run_start's record_minor: a stopped_by in a ledger at record.Minor, or a malformed share at
+// the run's revision, the run_start's record_minor: a stopped_by in a ledger at record.MinorLearn, or a malformed share at
 // MinorShares, fails the run, whose chain and anchor are otherwise whole, by the field's code.
 func TestVerifyRefusesMVPFieldsItsRevisionDoesNotAdmit(t *testing.T) {
 	for _, c := range []struct {
@@ -106,7 +106,7 @@ func TestVerifyRefusesMVPFieldsItsRevisionDoesNotAdmit(t *testing.T) {
 		line       int
 		edit       func(*record.Event)
 	}{
-		{"stopped_by below 35", "below-minor", record.Minor, 1, func(e *record.Event) {
+		{"stopped_by below 35", "below-minor", record.MinorLearn, 1, func(e *record.Event) {
 			e.Payload = mustSet(t, e, record.RunEndPayload{Reason: record.RunEndStopped, StoppedBy: "person:p-0123456789abcdef"})
 		}},
 		{"a share of /", "share-path", record.MinorShares, 0, func(e *record.Event) {
@@ -148,7 +148,7 @@ func TestVerifyRefusesMVPFieldsItsRevisionDoesNotAdmit(t *testing.T) {
 func TestResumeRefusesMVPFieldsItsRevisionDoesNotAdmit(t *testing.T) {
 	w, dir, _ := openTestWriter(t)
 	start := startPayload()
-	start.RecordMinor = record.Minor
+	start.RecordMinor = record.MinorLearn
 	if err := w.WriteRunStart(start); err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +215,7 @@ func TestCloseRefusesARunEndItCannotWriteAndStaysOpen(t *testing.T) {
 func TestWriterAndVerifyReadOneRevision(t *testing.T) {
 	twice := func(t *testing.T, e *record.Event) json.RawMessage {
 		start := startPayload()
-		start.RecordMinor = record.Minor
+		start.RecordMinor = record.MinorLearn
 		start.Deployment = mvpDeployment()
 		p := mustSet(t, e, start)
 		return append(json.RawMessage(strings.TrimSuffix(string(p), "}")), `,"RECORD_MINOR":34}`...)
@@ -230,7 +230,7 @@ func TestWriterAndVerifyReadOneRevision(t *testing.T) {
 		t.Fatalf("events.jsonl after the refusal: %d bytes, %v; want it empty", len(data), err)
 	}
 	start := startPayload()
-	start.RecordMinor = record.Minor
+	start.RecordMinor = record.MinorLearn
 	if err := w.WriteRunStart(start); err != nil {
 		t.Fatal(err)
 	}

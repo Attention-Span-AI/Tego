@@ -12,10 +12,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
 	"unicode/utf8"
+
+	"github.com/attention-span-ai/tego/internal/ledger"
 )
 
 // The ledger writer moves any payload field over its blob threshold (4 KiB) into <run>/blobs/<sha256> and leaves
@@ -203,29 +206,21 @@ func (b *Blob) check() error {
 	return nil
 }
 
-func validSHA(s string) bool {
-	if len(s) != sha256.Size*2 {
-		return false
-	}
-	for i := 0; i < len(s); i++ {
-		if c := s[i]; !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
-			return false
-		}
-	}
-	return true
-}
+// validSHA is the one shape a blob name may have, ledger.IsSHA's: the writer's own check, so the reader cannot take a
+// name the writer would not have made.
+func validSHA(s string) bool { return ledger.IsSHA(s) }
 
-// blobArgv reads the blob sha of runDir as a JSON array of strings (an argv or a command) and joins it with spaces.
-func blobArgv(runDir, sha string) (string, error) {
+// blobArgv reads the blob sha of runDir as a JSON array of strings (an argv or a command), one element per argument.
+func blobArgv(runDir, sha string) ([]string, error) {
 	b, err := ReadBlob(runDir, sha, MaxBlobBytes)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	var argv []string
 	if err := json.Unmarshal(b, &argv); err != nil {
-		return "", fmt.Errorf("%w: blob %s is not a list of strings: %v", ErrBlob, sha[:12], err)
+		return nil, fmt.Errorf("%w: blob %s is not a list of strings: %v", ErrBlob, sha[:12], err)
 	}
-	return strings.Join(argv, " "), nil
+	return argv, nil
 }
 
 // capTarget is s cut to MaxTargetBytes on a character boundary, ending "… (N bytes more, on the line page)".
@@ -249,12 +244,19 @@ func resolveBlob(runDir string, ev *Event) {
 	if sha == "" || runDir == "" {
 		return
 	}
-	s, err := blobArgv(runDir, sha)
+	argv, err := blobArgv(runDir, sha)
 	if err != nil {
 		ev.argvMissing = true
 		return
 	}
-	ev.Target = capTarget(s)
+	ev.Target = capTarget(strings.Join(argv, " "))
+	// The arguments stay one element each for the consumers that name the program (recordedCommand): the first
+	// whole ones that fit the bound the Target keeps, in a slice of their own so the rest of the blob is released.
+	n := 0
+	for left := MaxTargetBytes; n < len(argv) && len(argv[n]) <= left; n++ {
+		left -= len(argv[n])
+	}
+	ev.argv = slices.Clone(argv[:n])
 }
 
 // BlobCommand is the whole command a line's payload (Event.Raw) moved to a blob (argv_blob on an exec line,
@@ -283,6 +285,6 @@ func BlobCommand(root, run, raw string) (string, bool) {
 	if sha == "" {
 		return "", false
 	}
-	s, err := blobArgv(filepath.Join(root, run), sha)
-	return s, err == nil
+	argv, err := blobArgv(filepath.Join(root, run), sha)
+	return strings.Join(argv, " "), err == nil
 }

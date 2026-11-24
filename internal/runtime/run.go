@@ -40,6 +40,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/harness"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
+	"github.com/attention-span-ai/tego/pkg/spec/runstatus"
 )
 
 // ErrDeps is an incomplete or inconsistent Deps: a caller bug, always before run_start (R2).
@@ -58,6 +59,11 @@ type Clock interface {
 
 // Deps are the injected components of one run. Nil optional members disable that source.
 type Deps struct {
+	// BaselineOwnerUnknown preserves an adoption with no governed passwd home.
+	BaselineOwnerUnknown bool
+	// Home is the home directory an adoption resolved for the agent's owner (the passwd entry); a launch leaves it
+	// empty and records its machine config's. See runHome.
+	Home    string
 	Config  *config.Machine
 	Cgroups cgroup.Manager
 	Enforce enforce.Backend
@@ -131,6 +137,10 @@ type Deps struct {
 	// agent execs: run_end reason error with a detail naming the hook, exit 125. A panic is not recovered (R14). nil
 	// calls nothing.
 	Started func(StartedRun) error
+	// RunStatus receives initial scope identity before exec and final teardown facts before return (ADR 0143).
+	// A failed initial write refuses the start; a failed final write is Result.StatusErr. No callback is made
+	// before a scope is acquired or by deferred cleanup. The callback must protect the output from the agent.
+	RunStatus func(runstatus.Status) error
 	// AskPending, when set, is told of each request the run holds for a person, once `tego ask` lists it, and never of
 	// one a standing answer decides (ADR 0122). It runs on the goroutine that holds the agent's operation, so it must
 	// return at once: the CLI's desktop notice queues the request and drops it when one is already queued.
@@ -231,6 +241,8 @@ type Result struct {
 	// It is not the agent's outcome, and the caller reports it apart: a run whose record is incomplete, or
 	// is complete but unanchored (ledger.ErrAnchorWrite), is never reported as a plain exit.
 	RecordErr error
+	// StatusErr is a failed final teardown-status write, which the caller reports as exit 125.
+	StatusErr error
 }
 
 // QueueCapacity is the events channel's depth: producers never block the agent, a
@@ -277,6 +289,9 @@ type runner struct {
 	askBroker        *ask.Broker
 	askRelays        *ask.RelayPool
 	askCtx           context.Context
+	localAuthority   config.LocalAuthority
+	localAgentUID    uint32
+	localDropKnown   bool
 	askOwner         uint32 // the uid ask.sock serves beside root: the invoking user's (askPeerAuthorize)
 	rt               *agent.RuleTable
 	cmd              []string
@@ -322,9 +337,11 @@ type runner struct {
 	stuckStops []<-chan struct{}
 	cgm        cgroup.Manager
 	cg         cgroup.Cgroup
-	handle     api.Handle
-	launcher   *launch.Launcher
-	child      *launch.Child
+	// statusScopeAcquired distinguishes unknown scope identity after Create from a refusal before any scope.
+	statusScopeAcquired bool
+	handle              api.Handle
+	launcher            *launch.Launcher
+	child               *launch.Child
 	// deputy is the run's open deputy (ADR 0041 D2), when the contract chose gate.completion: held and the stage
 	// started it; nil otherwise, and then its held-open cells stay best effort (run_start best_effort).
 	deputy *deputy.Client
@@ -384,6 +401,9 @@ type runner struct {
 	// swapUncapped are the active swap areas createCgroup found the run's memory cap cannot keep the agent out
 	// of (cgroup.UncappedSwap); emitLimitsGap records them.
 	swapUncapped []string
+	// applied is the limits the scope holds as the kernel reported them back after SetLimits (GAPS C221): run_start's
+	// applied_limits. Nil when the run wrote no limit or none could be read.
+	applied *record.AppliedLimits
 	// limitBase is memory.events oom_kill and pids.events max as createCgroup read them, before any
 	// process existed in the cgroup; ok is false when they could not be read then.
 	limitBase struct {
@@ -429,6 +449,10 @@ type runner struct {
 	quiesced atomic.Bool
 	// pause is the run's pause as the launcher applied it (livepause.go, record.MinorLiveControl).
 	pause pauseState
+	// liveRules are the live blocks' ids the plane's refusals carry, which the kernel recorder names them by, and
+	// planeBlocks the run's live blocks in its plane (liveblock_plane.go; ADR 0124, amendment 2026-11-21).
+	liveRules   liveRules
+	planeBlocks *planeBlocks
 }
 
 // fail records reason with detail as the run's end unless one was already decided, and reports whether
@@ -505,22 +529,27 @@ func (r *runner) captureLost(n int64) {
 // whether this call is the one that decided it.
 func (r *runner) setTerminal(reason identity.EndReason) bool { return r.fail(reason, "") }
 
-// newRunner validates the caller's arguments; every failure here is a caller bug before any
-// resource exists.
+// newRunner validates launch configuration before any resource exists.
 func newRunner(rt *agent.RuleTable, cmd []string, deps Deps) (*runner, error) {
-	switch {
-	case rt == nil:
-		return nil, fmt.Errorf("%w: no rule table", ErrDeps)
-	case len(cmd) == 0 || cmd[0] == "":
-		return nil, fmt.Errorf("%w: no command", ErrDeps)
-	case deps.Config == nil:
-		return nil, fmt.Errorf("%w: no machine config", ErrDeps)
-	case deps.Enforce == nil:
-		return nil, fmt.Errorf("%w: no enforcement backend", ErrDeps)
-	case rt.Contract == nil:
-		return nil, fmt.Errorf("%w: the rule table carries no contract", ErrDeps)
+	if err := Preflight(rt, cmd, deps); err != nil {
+		return nil, err
 	}
-	if err := validIdentity(deps); err != nil {
+	if deps.Enforce == nil {
+		return nil, fmt.Errorf("%w: no enforcement backend", ErrDeps)
+	}
+	authority, err := validateLocalRoles(rt, deps)
+	if err != nil {
+		return nil, err
+	}
+	// Preflight checked the baseline facts that need no backend; whether the compiled table was applied for
+	// the tier actually selected is only the backend's to say. Order as before the preflight existed.
+	if err := validateBaselineLaunch(rt, deps.Config, deps.Enforce.Tier() == backend.TierObserve); err != nil {
+		return nil, err
+	}
+	if err := rt.ValidateBaselineCommand(cmd); err != nil {
+		return nil, err
+	}
+	if err := baselineLaunchRecord(rt); err != nil {
 		return nil, err
 	}
 	if err := refuseAdjustable(rt, false); err != nil {
@@ -538,9 +567,6 @@ func newRunner(rt *agent.RuleTable, cmd []string, deps Deps) (*runner, error) {
 	if rt.Contract.Net != nil && rt.Contract.Net.Proxy != nil &&
 		(rt.Proxy == nil || rt.Capture != agent.CaptureForwarder || deps.Enforce.Tier() == backend.TierObserve) {
 		return nil, fmt.Errorf("%w: net.proxy requires compiled forwarder policy and an enforcing tier", ErrDeps)
-	}
-	if err := rt.Proxy.ValidateLimits(rt.Limits); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrDeps, err)
 	}
 	log := deps.Logger
 	if err := validateNetworkRequest(rt, deps); err != nil {
@@ -572,8 +598,9 @@ func newRunner(rt *agent.RuleTable, cmd []string, deps Deps) (*runner, error) {
 	}
 	return &runner{
 		rt: admitLoopback(rt.AtTier(deps.Enforce.Tier()), allSources(deps)), cmd: cmd, deps: deps, log: log, agentID: agentID,
-		stopGrace: grace,
-		started:   make(chan struct{}),
+		localAuthority: authority,
+		stopGrace:      grace,
+		started:        make(chan struct{}),
 	}, nil
 }
 
@@ -693,8 +720,8 @@ func (r *runner) notifyStarted() error {
 // any resource exists.
 func validIdentity(deps Deps) error {
 	if deps.ParentRun != "" && !identity.RunID(deps.ParentRun).Valid() {
-		return fmt.Errorf("%w: the parent run %q (the launcher environment's %s, else %s) is not a run id", ErrDeps,
-			deps.ParentRun, identity.EnvRunID, identity.EnvParentRun)
+		return fmt.Errorf("%w: the launcher environment's %s or %s value is not a run id; print them with: echo $%s; echo $%s", ErrDeps,
+			identity.EnvRunID, identity.EnvParentRun, identity.EnvRunID, identity.EnvParentRun)
 	}
 	if err := identity.ValidLabels(deps.Labels); err != nil {
 		return fmt.Errorf("%w: %w", ErrDeps, err)

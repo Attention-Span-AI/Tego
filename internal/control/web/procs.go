@@ -22,8 +22,10 @@ var pageParts = map[string][]string{"run": {"templates/procs.tmpl"}}
 
 // procsView is the Processes tab.
 type procsView struct {
-	Tree *ledgerview.ProcTree
-	Root *procItem
+	Numbers countScopes
+	Tree    *ledgerview.ProcTree
+	Phone   []*ledgerview.ProcNode
+	Root    *procItem
 	// Shown is the processes the page shows; Cut the ones it leaves out past procsShown (Logs has their lines).
 	Shown, Cut int
 	// Actions is the run's lines but the refusal notes (the tree's lines and the lines on no process); Notes is the
@@ -60,11 +62,13 @@ func procsFor(ledger string, run *ledgerview.Run, now time.Time) *procsView {
 		procsHeld.Lock()
 		h, ok := procsHeld.m[key]
 		procsHeld.Unlock()
-		if ok && !now.Before(h.at) && now.Sub(h.at) < procsHold {
+		// A held layout serves only while the run's completeness is the one its counts were qualified by.
+		if ok && !now.Before(h.at) && now.Sub(h.at) < procsHold && h.v.Numbers.equal(runNumbers(run)) {
 			return h.v
 		}
 	}
 	v := procsOf(ledgerview.ProcessTree(run))
+	v.Numbers = runNumbers(run)
 	evs := run.AllEvents()
 	for i := range evs {
 		if evs[i].Mirror {
@@ -95,7 +99,8 @@ type procItem struct {
 	// Execs is every exec of it, shown when there is more than one or one was refused.
 	Execs []procExec
 	// Hosts names the hosts it reached, most first.
-	Hosts string
+	Hosts     string
+	HostsMore int
 	// Kids are its children, like ones folded into groups; More is how many are not shown (procsShown).
 	Kids []procKid
 	More int
@@ -148,7 +153,7 @@ const (
 // procsOf lays out run tree t for the page, breadth first, so the top of the tree is always shown and the cut
 // falls on the deepest, latest processes.
 func procsOf(t *ledgerview.ProcTree) *procsView {
-	v := &procsView{Tree: t, Root: newProcItem(t.Root)}
+	v := &procsView{Tree: t, Root: newProcItem(t.Root), Phone: []*ledgerview.ProcNode{t.Root}}
 	v.Shown = 1
 	queue := []*procItem{v.Root}
 	for len(queue) > 0 {
@@ -164,6 +169,7 @@ func procsOf(t *ledgerview.ProcTree) *procsView {
 		v.Shown += len(kids)
 		items := make([]*procItem, len(kids))
 		for i, c := range kids {
+			v.Phone = append(v.Phone, c)
 			items[i] = newProcItem(c)
 			queue = append(queue, items[i])
 		}
@@ -209,7 +215,7 @@ func newProcItem(n *ledgerview.ProcNode) *procItem {
 		}
 		it.Hosts = strings.Join(hs, ", ")
 		if more := n.Counts.Hosts - len(n.Hosts); more > 0 {
-			it.Hosts += " and " + strconv.Itoa(more) + " more"
+			it.HostsMore = more
 		}
 	}
 	return it

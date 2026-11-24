@@ -235,7 +235,7 @@ func (k *compiler) otherNames(mt *mountTable, targets []writeTarget) ownNames {
 	if len(layers) > 0 {
 		var why string
 		var unplaced []backingLimit
-		names.layers, names.absent, why, unplaced = layerClosure(mt, layers)
+		names.layers, names.absent, why, unplaced = layerClosure(mt, layers, k.namePredictionUnavailable)
 		for _, reason := range unplaced {
 			if !slices.Contains(names.unplaced, reason) {
 				names.unplaced = append(names.unplaced, reason)
@@ -286,13 +286,13 @@ func (k *compiler) backingFiles(mt *mountTable, own *ownNames, targets []writeTa
 			if !slices.Contains(own.unplaced, b) {
 				own.unplaced = append(own.unplaced, b)
 			}
-			if source := backingSource(fm); source != "" && !slices.Contains(sources, source) {
+			if source := backingSource(fm, k.namePredictionUnavailable); source != "" && !slices.Contains(sources, source) {
 				sources = append(sources, source)
 			}
 		}
 	}
 	if len(sources) > 0 {
-		layers, absent, unseen, unplaced := layerClosure(mt, sources)
+		layers, absent, unseen, unplaced := layerClosure(mt, sources, k.namePredictionUnavailable)
 		for _, l := range layers {
 			l.name = "a protected backing folder or another place showing it,"
 			if !slices.ContainsFunc(own.layers, func(p struct{ name, path string }) bool { return p.path == l.path }) {
@@ -333,13 +333,17 @@ func (k *compiler) backingFiles(mt *mountTable, own *ownNames, targets []writeTa
 
 // backingSource never trusts source text to remove uncertainty. Resolve its
 // actual walk before closure cleaning, so a symlink followed by '..' cannot
-// substitute a different existing folder.
-func backingSource(fm FileMount) string {
+// substitute a different existing folder. cut hears a source a permission failure
+// kept from being resolved (compiler.namePredictionUnavailable): root resolves it.
+func backingSource(fm FileMount, cut func(string, error)) string {
 	if !(isFuseType(fm.Unmapped) || fm.Unmapped == "ecryptfs") || !filepath.IsAbs(fm.Source) {
 		return ""
 	}
 	p, err := filepath.EvalSymlinks(fm.Source)
 	if err != nil {
+		if cut != nil {
+			cut(fm.Source, err)
+		}
 		return ""
 	}
 	if fi, err := os.Stat(p); err == nil && fi.IsDir() {
@@ -365,7 +369,7 @@ const (
 // Any other place that cannot be examined, a place the table
 // shows no mount holding, malformed layer options, or a closure past
 // its bounds is why compile cannot see every name, and refuses every write grant.
-func layerClosure(mt *mountTable, layers []string) (places []struct{ name, path string }, absent []string, unseen string, unplaced []backingLimit) {
+func layerClosure(mt *mountTable, layers []string, cut func(string, error)) (places []struct{ name, path string }, absent []string, unseen string, unplaced []backingLimit) {
 	type item struct {
 		path, of string
 		depth    int
@@ -425,7 +429,7 @@ func layerClosure(mt *mountTable, layers []string) (places []struct{ name, path 
 		for _, l := range fm.Layers {
 			queue = append(queue, item{filepath.Clean(l), filepath.Clean(l), it.depth + 1})
 		}
-		if source := backingSource(fm); source != "" {
+		if source := backingSource(fm, cut); source != "" {
 			queue = append(queue, item{source, source, it.depth + 1})
 		}
 	}
@@ -654,7 +658,14 @@ func (k *compiler) warnOverlayBacking(mt *mountTable, own ownNames, pos Pos, raw
 		// C65's memory-directory limit remains for absent and unnamed stacking
 		// backing. Unlinked protected files keep the warning on memory too;
 		// regular-file binds may also warn there, including an empty file.
-		return (!kernelOrMemoryType(m.fstype) || (regular || unlinked) && slices.Contains(memoryFilesystemTypes, m.fstype)) && (len(own.absent) > 0 && !slices.Contains(own.overlayDevices, m.dev) ||
+		memoryFile := regular
+		if !regular && m.root != "/" && slices.Contains(memoryFilesystemTypes, m.fstype) {
+			// A failed snapshot identity check cannot make a file bind silent.
+			// Only an established directory retains C65's memory-directory limit.
+			st, err := os.Lstat(m.point)
+			memoryFile = err != nil || !st.IsDir()
+		}
+		return (!kernelOrMemoryType(m.fstype) || (memoryFile || unlinked) && slices.Contains(memoryFilesystemTypes, m.fstype)) && (len(own.absent) > 0 && !slices.Contains(own.overlayDevices, m.dev) ||
 			slices.ContainsFunc(own.unplaced, func(b backingLimit) bool {
 				return b.device != m.dev || b.reason == unplacedBacking(unlinkedRootBacking)
 			}))

@@ -52,13 +52,13 @@ func discover(flagValue string, flagSet bool, getenv func(string) string, uid ui
 		}
 	}
 	if p == "" || !filepath.IsAbs(p) || filepath.Clean(p) != p || filepath.Base(p) != reason.FileName {
-		return target{}, true, fmt.Errorf("%w: %q is not an absolute, clean path to %s", errReasonPath, p, reason.FileName)
+		return target{}, true, fmt.Errorf("%w: TEGO_REASON or --reason value is not an absolute, clean path to %s; print the variable with: echo $TEGO_REASON", errReasonPath, reason.FileName)
 	}
 	dir := filepath.Dir(p)
 	run := filepath.Base(dir)
 	want, err := reason.DirFor(uid, run)
 	if err != nil {
-		return target{}, true, fmt.Errorf("%w: %q: %w", errReasonPath, p, err)
+		return target{}, true, fmt.Errorf("%w: TEGO_REASON or --reason value names an invalid run; print the variable with: echo $TEGO_REASON", errReasonPath)
 	}
 	if dir+"/" == want {
 		return target{reasonFile: p, run: run, dir: dir}, true, nil
@@ -69,5 +69,6 @@ func discover(flagValue string, flagSet bool, getenv func(string) string, uid ui
 	if parent := filepath.Dir(dir); (!flagSet || p == getenv(envReason)) && filepath.Base(parent) == runtimeDirName && filepath.Dir(parent) != "/" {
 		return target{reasonFile: p, run: run, dir: dir}, true, nil // the launcher's own <base>/tego/<run>/
 	}
+	// p passed the shape check above (an absolute clean path to the reason file), so it is a place and is printed.
 	return target{}, true, fmt.Errorf("%w: %q is not in %s nor in $%s/%s/%s", errReasonPath, p, want, envRuntimeDir, runtimeDirName, run)
 }

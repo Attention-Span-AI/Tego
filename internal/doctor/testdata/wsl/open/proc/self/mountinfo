@@ -1,0 +1,2 @@
+31 20 0:26 / / rw - ext4 /dev/sdc rw
+33 31 0:40 / /mnt/c rw - 9p C:\ rw,aname=drvfs;path=C:\

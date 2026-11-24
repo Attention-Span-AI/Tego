@@ -107,6 +107,11 @@ func (r *runner) rowsTable() *agent.RuleTable {
 		entries[i].IPs = kept
 		entries[i].Denied = append(slices.Clone(e.Denied), refused...)
 	}
+	// The words say which routing tables the snapshot did not read as this host's (hostaddr.LocalTable.Unread), once per
+	// run: the log is where an administrator looks when a net rule for this host does not cover what a route delivers here.
+	if w := r.hostSnapshot().UnreadWords(); w != "" {
+		r.log.Warn("net: " + w)
+	}
 	if entries == nil {
 		return r.rt
 	}

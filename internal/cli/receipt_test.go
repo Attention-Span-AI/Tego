@@ -116,3 +116,22 @@ func TestReceiptNewestRunAndVerify(t *testing.T) {
 		t.Fatalf("a dropped line: exit %d, want 1 (stderr %s)", code, errs)
 	}
 }
+
+// TestReceiptTextIgnoresTheReadersHome: the run's HOME is not in its record, so `tego receipt` must not fold the
+// reader's home into "~": the fixture run read /home/u/.ssh/id_ed25519, and a reader whose $HOME is /home/u (another
+// user on another machine, later) saw "~/.ssh/id_ed25519" for a folder that was never the run's. The text prints the
+// path whole and says the record names no home.
+func TestReceiptTextIgnoresTheReadersHome(t *testing.T) {
+	t.Setenv("HOME", "/home/u")
+	dir := fixtureRun(t)
+	code, text, errs := run(t, "receipt", dir)
+	if code != identity.ExitOK {
+		t.Fatalf("exit %d (stderr %q)", code, errs)
+	}
+	if !strings.Contains(text, "/home/u/.ssh/id_ed25519") || strings.Contains(text, " ~/.ssh/id_ed25519") {
+		t.Errorf("the reader's home was folded into ~:\n%s", text)
+	}
+	if !strings.Contains(text, "Home folder: this run's record does not name one") {
+		t.Errorf("the receipt does not say the record names no home:\n%s", text)
+	}
+}

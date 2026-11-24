@@ -86,7 +86,8 @@ var mountLayouts = []mountLayout{
 		"preset__no-prod", "preset__no-secrets", "preset__repo-only-writes",
 		"variant__bpflsm-open", "variant__cgroup-all", "variant__deny-list-exec", "variant__landlock-unix", "variant__reads-direct",
 		"variant__grant-devshm", "variant__grant-home", "variant__grant-project", "variant__grant-tmp",
-	}, nil, 2},
+		"testdata__good__bom-crlf.yaml", "testdata__good__minimal.yaml",
+	}, nil, 0},
 }
 
 func containerOverlayMounts(home string) []string {
@@ -154,6 +155,26 @@ func TestCompileMountLayoutsCompatibility(t *testing.T) {
 
 func checkMountLayoutsCompatibility(t *testing.T, layouts []mountLayout, binaryInHome bool) {
 	dir := fixtureTempDir(t)
+	privateTmp := filepath.Join(dir, "private-tmp")
+	if err := os.MkdirAll(filepath.Join(privateTmp, "ordinary"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	remapTemp := func(p string) string {
+		for _, shared := range []string{"/tmp", "/dev/shm"} {
+			if p == shared || strings.HasPrefix(p, shared+"/") {
+				leaf := "private-tmp"
+				if shared == "/dev/shm" {
+					leaf = "private-shm"
+				}
+				return filepath.Join(dir, leaf) + strings.TrimPrefix(p, shared)
+			}
+		}
+		return p
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "private-shm", "ordinary"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
 	home := filepath.Join(dir, "home")
 	bin := filepath.Join(dir, "bin")
 	if binaryInHome {
@@ -207,6 +228,25 @@ func checkMountLayoutsCompatibility(t *testing.T, layouts []mountLayout, binaryI
 		}
 		stage := "load"
 		if err == nil {
+			if ct.FS != nil {
+				for _, paths := range [][]string{ct.FS.Write, ct.FS.Ask, ct.FS.AskRead, ct.FS.DenyRead, ct.FS.DenyWrite, ct.FS.Watch} {
+					for i, p := range paths {
+						paths[i] = remapTemp(p)
+					}
+					for _, p := range paths {
+						if p == "/tmp" || strings.HasPrefix(p, "/tmp/") || p == "/dev/shm" || strings.HasPrefix(p, "/dev/shm/") {
+							t.Errorf("%s: compile input still grants a shared temporary tree: %s", c.name, p)
+						}
+					}
+				}
+			}
+			if ct.FS != nil {
+				for _, paths := range [][]string{ct.FS.Write, ct.FS.Ask, ct.FS.AskRead, ct.FS.DenyRead, ct.FS.DenyWrite, ct.FS.Watch} {
+					for _, p := range paths {
+						assertPrivateMountInput(t, c.name, p)
+					}
+				}
+			}
 			stage = "compile"
 			_, ds, err = Compile(ct, machine, WithCwd(filepath.Dir(c.path)), WithHome(home), WithPATH(bin), WithMountInfo(mi),
 				WithResolver(goldenResolver{}), WithTiers(backend.Tiers()...), WithChainAnchor(filepath.Join(home, ".tego", "chain.log")),
@@ -269,6 +309,40 @@ func checkMountLayoutsCompatibility(t *testing.T, layouts []mountLayout, binaryI
 		for _, c := range baseline {
 			mi := filepath.Join(dir, "mountinfo")
 			lines := l.lines(home, filepath.Dir(c.path))
+			for i, row := range lines {
+				fields := strings.Fields(row)
+				for _, j := range []int{3, 4} {
+					fields[j] = remapTemp(fields[j])
+					if fields[j] == "/tmp" || strings.HasPrefix(fields[j], "/tmp/") || fields[j] == "/dev/shm" || strings.HasPrefix(fields[j], "/dev/shm/") {
+						t.Errorf("%s: captured mount input still lies on a shared temporary tree: %s", c.name, fields[j])
+					}
+				}
+				lines[i] = strings.Join(fields, " ")
+			}
+
+			// Moving /dev/shm out of /dev also moves its mount out of that parent.
+			// Retain the closest captured ancestor that still contains the private point.
+			rows := map[string][]string{}
+			for _, row := range lines {
+				fields := strings.Fields(row)
+				rows[fields[0]] = fields
+			}
+			for i, row := range lines {
+				fields := strings.Fields(row)
+				for parent := rows[fields[1]]; parent != nil && !Covers(parent[4], fields[4]); parent = rows[fields[1]] {
+					if fields[1] == parent[1] {
+						t.Fatal("cycle in captured mount parents")
+					}
+					fields[1] = parent[1]
+				}
+				lines[i] = strings.Join(fields, " ")
+			}
+
+			for _, row := range lines {
+				fields := strings.Fields(row)
+				assertPrivateMountInput(t, l.name, fields[3])
+				assertPrivateMountInput(t, l.name, fields[4])
+			}
 			checkNoMountSiblings(t, l.name, lines)
 			if err := os.WriteFile(mi, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
 				t.Fatal(err)
@@ -325,8 +399,10 @@ func checkMountLayoutsCompatibility(t *testing.T, layouts []mountLayout, binaryI
 					warned = append(warned, c.name)
 				}
 			} else {
-				if got.stage != "compile" || got.code != CodeContradiction {
-					t.Errorf("%s: %s failed for %s [%s] %s; want a compile contradiction", l.name, c.name, got.stage, got.code, got.why)
+				// A table that cannot be read whole refuses every contract (round 5, fail closed), before or beside R10.
+				unread := got.code == CodeMountWarning && strings.Contains(got.why, "the mount table cannot be read whole")
+				if got.stage != "compile" || got.code != CodeContradiction && !unread {
+					t.Errorf("%s: %s failed for %s [%s] %s; want a compile contradiction or the unread table", l.name, c.name, got.stage, got.code, got.why)
 				}
 				refused = append(refused, c.name)
 				reasons = append(reasons, c.name+" ("+shortWhy(got.why)+")")
@@ -419,4 +495,14 @@ func TestCompileRuntimeMountLayoutsCompatibility(t *testing.T) {
 		}
 	}
 	checkMountLayoutsCompatibility(t, layouts, true)
+}
+
+// Every captured-layout caller must use fixed private inputs.
+func assertPrivateMountInput(t *testing.T, name, p string) {
+	t.Helper()
+	for _, shared := range []string{"/tmp", "/dev/shm"} {
+		if p == shared || strings.HasPrefix(p, shared+"/") {
+			t.Errorf("%s: shared filesystem input: %s", name, p)
+		}
+	}
 }

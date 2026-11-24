@@ -3,11 +3,15 @@
 package ledgerview
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 // repeatedConnects and repeatedTTY are how many refused connects to one host and refused /dev/tty opens enforcedRun has.
@@ -291,6 +295,20 @@ func TestAlsoReachedHidesNoLiveBlockedHost(t *testing.T) {
 	block := func(value string) string {
 		return `gap:"what":"enforce","why":"live-block-added","live_block":{"op":"add","kind":"net","value":"` + value + `","rule":"live.block[net:` + value + `]","by":"uid:1000","serial":1,"at":"2026-10-27T09:00:00Z"}`
 	}
+	// named is a block by name as a launcher at record minor 41 writes it: the addresses it was enforced on, and how many
+	// more there were than the line names (more).
+	named := func(value string, more int, addrs ...string) string {
+		list, _ := json.Marshal(addrs)
+		tail := `,"addrs":` + string(list)
+		if more > 0 {
+			tail += `,"addrs_more":` + strconv.Itoa(more)
+		}
+		return `gap:"what":"enforce","why":"live-block-added","live_block":{"op":"add","kind":"net","value":"` + value + `","rule":"live.block[net:` + value + `]","by":"uid:1000","serial":1,"at":"2026-10-27T09:00:00Z"` + tail + `}`
+	}
+	fence := func(why, op, kind, value string) string {
+		return `gap:"what":"enforce","why":"` + why + `","live_block":{"op":"` + op + `","kind":"` + kind + `","value":"` + value + `","rule":"live.fence[` + kind + `:` + value + `]","by":"uid:1000","serial":2,"at":"2026-10-27T09:00:00Z"}`
+	}
+
 	refusedUnder := func(rule, target string) string {
 		return `refused:"rule":"` + rule + `","reason":"net-not-allowed","op":"net","target":"` + target + `"`
 	}
@@ -304,7 +322,38 @@ func TestAlsoReachedHidesNoLiveBlockedHost(t *testing.T) {
 		allow  string // the allow line's rule and host, when not the chatgpt.com entry's
 		extra  []string
 		hidden bool
+		// unknown says the group carries NameUnknown: the address was reached with no name and a block names a host (A34).
+		unknown bool
+		// blockName is the name the group's BlockName must read: the address is one a block by name recorded.
+		blockName string
 	}{
+		{name: "a block by name, the address reached under a CIDR entry", dst: "[2001:db8::7]:443", allow: cidr,
+			extra: []string{block("chatgpt.com")}, unknown: true},
+		// From record minor 41 a block by name's line names its addresses (ADR 0157): an address among them reached under a
+		// CIDR entry is that host, said so, and never unknown.
+		{name: "41: a block by name that recorded this address, reached under a CIDR entry", dst: "[2001:db8::7]:443", allow: cidr,
+			extra: []string{named("chatgpt.com", 0, "2001:db8::7")}, blockName: "chatgpt.com"},
+		{name: "41: the recorded address kept its zone, the connect's names another", dst: "[2001:db8::7%3]:443", allow: cidr,
+			extra: []string{named("chatgpt.com:443", 0, "2001:db8::7%1")}, blockName: "chatgpt.com"},
+		{name: "41: a block by name that recorded other addresses: nothing covers this one", dst: "[2001:db8::7]:443", allow: cidr,
+			extra: []string{named("chatgpt.com", 0, "2001:db8::99")}, hidden: true},
+		{name: "41: a list past its cap cannot clear an address it does not name", dst: "[2001:db8::7]:443", allow: cidr,
+			extra: []string{named("chatgpt.com", 5, "2001:db8::99")}, unknown: true},
+		{name: "41: a block by name whose lookup answered none", dst: "[2001:db8::7]:443", allow: cidr,
+			extra: []string{named("chatgpt.com", 0)}, unknown: true},
+		{name: "41: one name recorded, another did not", dst: "[2001:db8::7]:443", allow: cidr,
+			extra: []string{named("evil.example", 0, "2001:db8::99"), named("chatgpt.com", 0)}, unknown: true},
+		{name: "41: a block by address names no one", dst: "[2001:db8::7]:443", allow: cidr,
+			extra: []string{block("[2001:db8::7]:443")}},
+		{name: "a block by name, the address reached by another name", dst: "[2001:db8::7]:443", extra: []string{block("evil.example")}, hidden: true},
+		{name: "a lifted and restored fence by name", dst: addr + ":443", extra: []string{
+			fence("live-rule-lifted", "lift", "net", "chatgpt.com:443"),
+			fence("live-rule-restored", "restore", "net", "chatgpt.com:443")}},
+		{name: "a lifted and restored fence by address", dst: addr + ":443", extra: []string{
+			fence("live-rule-lifted", "lift", "net", addr+":443"),
+			fence("live-rule-restored", "restore", "net", addr+":443")}},
+		{name: "only lifted fence stays routine", dst: addr + ":443", extra: []string{fence("live-rule-lifted", "lift", "net", "chatgpt.com:443")}, hidden: true},
+		{name: "restored read fence stays unrelated", dst: addr + ":443", extra: []string{fence("live-rule-restored", "restore", "read", "/srv/private")}, hidden: true},
 		{name: "no block: the host the run talks to", dst: addr + ":443", hidden: true},
 		{name: "no block: a scope id on the connects", dst: zoned, allow: cidr, hidden: true},
 		{name: "a block on another address: a scope id on the connects", dst: zoned, allow: cidr,
@@ -341,8 +390,17 @@ func TestAlsoReachedHidesNoLiveBlockedHost(t *testing.T) {
 			if allow == "" {
 				allow = `"rule":"net[tcp://chatgpt.com:443]","verdict":"allow","host":"chatgpt.com"`
 			}
+			for _, l := range c.extra {
+				if strings.Contains(l, "live-rule-lifted") {
+					kind, rest, _ := strings.Cut(l, ":")
+					add(kind, rest)
+				}
+			}
 			add("net", allow+`,"proto":"tcp","dst":"`+c.dst+`"`)
 			for _, l := range c.extra {
+				if strings.Contains(l, "live-rule-lifted") {
+					continue
+				}
 				kind, rest, _ := strings.Cut(l, ":")
 				add(kind, rest)
 			}
@@ -354,6 +412,7 @@ func TestAlsoReachedHidesNoLiveBlockedHost(t *testing.T) {
 				t.Fatal(err)
 			}
 			s := Signal(r, Sensitive{Cwd: r.Cwd})
+			sameSignal(t, "restored-fence reference", s, refSignal(r, Sensitive{Cwd: r.Cwd}))
 			var g *Group
 			for i := range s.Groups {
 				if s.Groups[i].Rule == "unmatched" {
@@ -362,6 +421,12 @@ func TestAlsoReachedHidesNoLiveBlockedHost(t *testing.T) {
 			}
 			if g == nil {
 				t.Fatalf("no refusal group: %+v", s.Groups)
+			}
+			if (g.NameUnknown != "") != c.unknown || c.unknown && !strings.Contains(g.NameUnknown, "chatgpt.com") {
+				t.Fatalf("NameUnknown %q, want one: %v", g.NameUnknown, c.unknown)
+			}
+			if g.BlockName != c.blockName {
+				t.Fatalf("BlockName %q, want %q", g.BlockName, c.blockName)
 			}
 			if g.Background != c.hidden {
 				t.Fatalf("background %v (%q), want %v: %+v", g.Background, g.Why, c.hidden, g)
@@ -501,5 +566,43 @@ func TestRouteProbeIsAUDPConnect(t *testing.T) {
 	rows := s.Refusals(0)
 	if len(rows) != 1 || rows[0].Target != "198.51.100.9:65535" {
 		t.Fatalf("recent refusals %+v: want only the TCP connect, the route probe left out", rows)
+	}
+}
+
+func TestGroupedExecRefusalNamesProgram(t *testing.T) {
+	for _, tc := range []struct{ path, target, want string }{
+		{"/opt/my tools/curl", "curl https://example.com/last", "curl"},
+		{"", "/usr/bin/curl https://example.com/last", "curl"},
+		{"", "/usr/bin/curl", "curl"},
+	} {
+		e := Event{Op: "exec", Target: tc.target, path: tc.path}
+		class, subject, _ := groupSubject(&e)
+		if class != "exec" || subject != tc.want {
+			t.Errorf("group of %+v = %s %q, want %q", e, class, subject, tc.want)
+		}
+	}
+}
+
+func TestRecordedExecRefusalGroupsPathWithSpaces(t *testing.T) {
+	raw := line("r-aaaa-0001-spaces", "a", 1, time.Now(), "refused", `"reason":"exec-not-allowed","op":"exec","target":"/opt/my tools/curl"`)
+	recorded, err := record.Decode([]byte(strings.TrimSpace(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := fromRecord(recorded)
+	class, subject, _ := groupSubject(&e)
+	if class != "exec" || subject != "curl" {
+		t.Fatalf("decoded refusal group: %s %q", class, subject)
+	}
+}
+
+// TestRouteProbeIsOnlyAConnect (GAPS C172): musl's route probe connects a UDP socket and sends nothing, so a datagram
+// the run sent (op send) to port 65535 is a real send, not a probe; the same line from before the op has no op and is
+// still read by its port.
+func TestRouteProbeIsOnlyAConnect(t *testing.T) {
+	for op, probe := range map[string]bool{"": true, "connect": true, "send": false} {
+		if got := RouteProbe(&Event{Kind: "net", Proto: "udp", Op: op, Target: "203.0.113.9:65535"}); got != probe {
+			t.Errorf("RouteProbe(op %q) = %v, want %v", op, got, probe)
+		}
 	}
 }

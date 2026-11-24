@@ -351,7 +351,7 @@ func TestAlsoApplyNowAndBlockNowScope(t *testing.T) {
 	mustContain(t, "the host scope", page, `name="kind" value="net"`, `name="value" value="api.example.com"`)
 	// git is blocked live now: its line says so, with the way to remove it, instead of offering Block now again.
 	page = do(s, "GET", line+"?cmd=1", "127.0.0.1:8484", c).Body.String()
-	mustContain(t, "the command scope after the save", page, "Blocked live on this run", `title="exec:git"`)
+	mustContain(t, "the command scope after the save", page, "Blocked live on this run", `title="Program git"`)
 }
 
 // TestHeldLiveBlockOnAScopedLine: a connect's line keeps its scope id and a live block holds none, so the line of a connect
@@ -368,7 +368,7 @@ func TestHeldLiveBlockOnAScopedLine(t *testing.T) {
 	addOverlay(t, root, actRun, [2]string{"net", block})
 	appendLine(t, root, actRun, liveGapLine(actRun, n+1, at, "net", block, 1))
 	page := do(s, "GET", "/runs/"+actRun+"/lines/"+strconv.Itoa(n), "127.0.0.1:8484", c).Body.String()
-	mustContain(t, "the line under the block", page, "ev-held", "Blocked live on this run", `title="net:`+block+`"`)
+	mustContain(t, "the line under the block", page, "ev-held", "Blocked live on this run", `title="Destination `+block+`"`)
 	if strings.Contains(page, `id="act-block"`) {
 		t.Error("the panel offers Block now for a block already in place")
 	}

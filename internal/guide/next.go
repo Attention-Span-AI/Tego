@@ -27,7 +27,7 @@ const (
 	// RuleCheckTodo: no check of this boot and this build.
 	RuleCheckTodo = "check-todo"
 	// RuleCheckOutside: no place checked can enforce, and the check that decided it was made from a shell that starts
-	// no run only because it is outside the user manager's cgroup (Check.Cause): open a shell inside it.
+	// no run only because it is outside the user manager's cgroup, and scope entry is known to be unavailable.
 	RuleCheckOutside = "check-outside"
 	// RuleCheckNoManager: no place checked can enforce, and the check that decided it found no user manager running for
 	// the user (Check.Cause CauseNoUserManager): an administrator starts one that runs without a login (Inputs.Linger).
@@ -60,8 +60,7 @@ const (
 	// RuleRecordTodo: nothing is recorded yet.
 	RuleRecordTodo = "record-todo"
 	// RuleHereOutside: the next step starts a run (StartsRun), the invoker's own place starts none, and a shell in the
-	// user manager's cgroup would (its check is ready, or the invoker's place fails only for being outside it): open
-	// that shell first, never the command that exits 125 from here. It stands in for record-todo and contract-done.
+	// user manager's cgroup would, but automatic entry is known to be unavailable: show the manual fallback. It stands in for record-todo and contract-done.
 	RuleHereOutside = "here-outside"
 	// RuleHereRootOnly: the next step starts a run, the invoker's own place starts none for another cause, and only
 	// root's check is ready, which holds a run started with sudo and none started as the person: see why here cannot.
@@ -71,9 +70,8 @@ const (
 	RuleHereElsewhere = "here-elsewhere"
 )
 
-// RunCommands are the tego commands that start a run, which tier 1 places in the user manager's cgroup: each refuses
-// from a shell outside it with exit 125 (cgroup.ErrBesideSubtree from FS.CanPlace, or tier landlock missing doctor's
-// D3, which asks the same; tego test through the runs it starts). StartsRun reads a next step's command with them.
+// RunCommands start runs under the user's delegated cgroup. Each can open its own scope from an outside shell;
+// failure retains the placement refusal. StartsRun recognizes next steps that name these commands.
 var RunCommands = []string{"run", "watch", "test"}
 
 // StartsRun reports whether command, a next step's command line, starts a run: tego and one of RunCommands, after an
@@ -85,8 +83,15 @@ func StartsRun(command string) bool {
 		}
 	}
 	f := strings.Fields(command)
-	return len(f) >= 2 && f[0] == "tego" && slices.Contains(RunCommands, f[1])
+	if len(f) < 2 || f[0] != "tego" {
+		return false
+	}
+	return slices.Contains(RunCommands, f[1]) || (len(f) >= 3 && f[1] == "machine" && f[2] == "test")
 }
+
+// UnsafeCommandText is the sentence of a step whose command holds a value that cannot be shown as it is. It fits 80
+// columns after "next: ".
+const UnsafeCommandText = "a name in the command that comes next cannot be shown safely."
 
 // NoManagerText is the sentence of the step that starts the user's manager without a login (RuleCheckNoManager), and
 // of tego doctor's next: line in the same case. It fits 80 columns after "next: ".
@@ -105,14 +110,37 @@ const scopeText = "open a shell in your user manager's cgroup, then run tego set
 // fact names the user). It fits 80 columns after "next: ".
 const ScopeAsText = "from your own shell, open a shell as this user; run tego setup in it:"
 
+// ScopeAsMissingText is the sentence of the step that opens a shell in the user manager's cgroup when no command does,
+// for a person who started tego setup as another user through sudo or su (As.ScopeAs): the fact in step 2 says why.
+// It fits 80 columns after "next: ".
+const ScopeAsMissingText = "no command opens a shell in this user's user manager from here."
+
 // The parts of a command only the person knows (written in angle brackets, as the next: lines write them; ADR 0142 (3)).
 const (
 	startPlaceholder = "<the command you start it with>"
 	namePlaceholder  = "<name>"
 )
 
-// next is the first rule that applies.
+// next is the first rule that applies, with its command as the reader types it (ForReader).
 func (f *facts) next() Next {
+	n := f.pick()
+	if n.Command != "" && !plain(n.Command) {
+		// Every value in a command comes from a verified record or a registry and is checked where it is read; this is the
+		// last check, so a command that would print as another one is never offered (the confirm pass).
+		n.Command, n.Text, n.Placeholder = "", UnsafeCommandText, false
+	}
+	if f.in.As != nil {
+		line, why := ForReader(f.in.As.ScopeAs, n.Command)
+		n.Command = line
+		if why != "" {
+			n.Text, n.Placeholder = why, false
+		}
+	}
+	return n
+}
+
+// pick is the first rule that applies.
+func (f *facts) pick() Next {
 	st := func(id string) string { return f.steps[id].State }
 	switch {
 	case st(StepCheck) == NotKnown:
@@ -120,7 +148,7 @@ func (f *facts) next() Next {
 			Command: "tego setup"}
 	case st(StepCheck) == Todo:
 		return Next{Step: StepCheck, Rule: RuleCheckTodo, Text: "check this machine:", Command: "tego setup"}
-	case st(StepCheck) == Blocked && f.blocked != nil && f.blocked.Cause == CauseOutsideUserManager:
+	case st(StepCheck) == Blocked && f.blocked != nil && f.blocked.Cause == CauseOutsideUserManager && !f.scopeOpens(f.blocked):
 		return f.openScope(StepCheck, RuleCheckOutside)
 	case st(StepCheck) == Blocked && f.blocked != nil && f.blocked.Cause == CauseNoUserManager:
 		if f.in.ManagerRefused != "" {
@@ -131,7 +159,7 @@ func (f *facts) next() Next {
 		}
 		return Next{Step: StepCheck, Rule: RuleCheckNoManager,
 			Text: "no user manager runs for you; tego machine check names how to start one:", Command: "tego machine check"}
-	case st(StepCheck) == Blocked:
+	case st(StepCheck) == Blocked && !(f.blocked != nil && f.blocked.Cause == CauseOutsideUserManager && f.scopeOpens(f.blocked)):
 		return Next{Step: StepCheck, Rule: RuleCheckBlocked,
 			Text: "no place checked can enforce; tego machine check names the one fix:", Command: "tego machine check"}
 	case st(StepFind) == NotKnown || st(StepRecord) == NotKnown || st(StepContract) == NotKnown:
@@ -141,7 +169,11 @@ func (f *facts) next() Next {
 		return Next{Step: StepEnforce, Rule: RuleEnforceUnverified, Text: "a run's record does not check out; see where it breaks:",
 			Command: "tego events " + f.runs.short(run) + " --verify"}
 	case st(StepEnforce) == Done:
-		return Next{Rule: RuleEnforceDone, Text: "every step is done; see what the last enforced run did:",
+		text := "every step is done; see what the last enforced run did:"
+		if st(StepCheck) != Done {
+			text = "an enforced run ended; see what it did:"
+		}
+		return Next{Rule: RuleEnforceDone, Text: text,
 			Command: "tego session show " + f.runs.short(f.steps[StepEnforce].Run)}
 	case st(StepEnforce) == Waiting:
 		return Next{Step: StepEnforce, Rule: RuleEnforceWaiting, Text: "a run under a contract is still going; follow it:",
@@ -167,6 +199,15 @@ func (f *facts) next() Next {
 		Placeholder: true})
 }
 
+// autoScope reports whether the guide has no known reason scope entry is unavailable. The run command still
+// probes and performs the handshake itself; a stored check grants no permission and never promises a run starts.
+func (f *facts) autoScope() bool { return f.in.As == nil || f.in.As.ScopeMissing == "" }
+
+// scopeOpens reports whether the commands that start a run can be left to open a user scope from the place of check
+// c: no known reason says entry is unavailable (autoScope), and c records no failed rehearsal of it (Check.ScopeError).
+// When either does, the next step is the one fix: open a shell in the user manager's cgroup by hand (openScope).
+func (f *facts) scopeOpens(c *Check) bool { return f.autoScope() && (c == nil || c.ScopeError == "") }
+
 // openScope is the step that opens a shell in the user manager's cgroup (OpenScope's command, as the invoker's As
 // carries it, else DefaultScope), with tego setup to run in it; where no command opens one from the invoker's shell
 // (As.ScopeMissing), the sentence alone, and the check step's fact says why. Its command never starts a run.
@@ -179,21 +220,24 @@ func (f *facts) openScope(step, rule string) Next {
 		}
 	} else if as != nil && as.ScopeMissing != "" && as.Where == WhereShell {
 		n.Text, n.Command = "systemd-run cannot open a shell in your user manager's cgroup here.", ""
+		if as.ScopeAs != "" {
+			// Read by another user (sudo -u svc tego setup): the manager is svc's, and the fix: line names no command either.
+			n.Text = ScopeAsMissingText
+		}
 	}
 	return n
 }
 
-// fromHere is n, the step after a ready check, as the invoker's place can take it: when n starts a run (StartsRun) and
-// the invoker's own check says no tier runs from it, the run would only exit 125 there. Then
-// the step opens a shell in the user manager's cgroup when that place's check is ready or the invoker's place fails
-// only for being outside it; else, when only root's check is ready, it says that check holds a run started with sudo,
-// never one started as the person (F9), and names tego doctor, which says why this shell cannot; and when the ready
-// check is another place's, it says so, naming no place step 2 does not, and names tego doctor too.
+// fromHere keeps a run step when it can open its own user scope. A known missing scope opener keeps the manual
+// fallback. A check ready only as root never tells the person to run as root: doctor explains what is missing.
 func (f *facts) fromHere(n Next) Next {
 	if !f.hereCannot || f.ready == nil || !StartsRun(n.Command) {
 		return n
 	}
 	if f.ready.Where == WhereUserManager || (f.here != nil && f.here.Cause == CauseOutsideUserManager) {
+		if f.scopeOpens(f.here) {
+			return n
+		}
 		return f.openScope(n.Step, RuleHereOutside)
 	}
 	if f.ready.Where == WhereRoot {

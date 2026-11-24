@@ -38,6 +38,7 @@ char _license[] SEC("license") = "Dual BSD/GPL";
 const struct tego_plane_fill_cfg *tego_btf_plane_fill_cfg;
 const struct tego_plane_fill_row *tego_btf_plane_fill;
 const struct tego_plane_clear_ctx *tego_btf_plane_clear_ctx;
+const struct tego_plane_block_row *tego_btf_plane_block_row;
 
 #if TEGO_PLANE_RDONLY
 #define TEGO_MNT_ID(vm)                                                                                           \
@@ -249,6 +250,81 @@ static __always_inline void tego_fill_one(struct tego_plane_fill_cfg *cfg, struc
     w->status = TEGO_FILL_WHAT;
 }
 
+/* A live block's row (ADR 0124, amendment 2026-11-21): written at, or deleted from, the descriptor's inode, or its
+ * directory and the template's name key (TEGO_FILL_BLOCK_NAME*), in the slot's block map, with the run's gen. A write
+ * replaces a row of this gen at the key (the launcher writes the union of every block's ids at an object as one row),
+ * unless that row names another object (a name key that collided): DUP, which the launcher takes for an overflow. A
+ * delete removes only a row of this gen. */
+static __always_inline void tego_fill_block(struct tego_plane_fill_cfg *cfg, struct tego_plane_fill_row *w,
+                                             struct file *file)
+{
+    struct dentry *dentry = file->f_path.dentry;
+    struct inode *inode = dentry->d_inode;
+    struct tego_plane_block_row row = {};
+    struct tego_plane_block_row *old;
+    int name = w->what == TEGO_FILL_BLOCK_NAME || w->what == TEGO_FILL_BLOCK_NAME_DEL;
+    int del = w->what == TEGO_FILL_BLOCK_DEL || w->what == TEGO_FILL_BLOCK_NAME_DEL;
+    __u64 key, nk = name ? w->block_name_key : 0;
+    void *rows;
+    long err;
+
+    cfg->launder = (__u64)file->f_path.mnt;
+    w->mnt_id = TEGO_MNT_ID(*(volatile __u64 *)&cfg->launder);
+    if (!inode) {
+        w->status = TEGO_FILL_NOINODE;
+        return;
+    }
+    w->ino = inode->i_ino;
+    if (name && (inode->i_mode & 0170000) != 0040000) {
+        w->status = TEGO_FILL_NAME; /* a name row's descriptor is its directory */
+        return;
+    }
+    rows = tego_slot_rows(&tego_plane_blocks, cfg->run_idx);
+    if (!rows) {
+        w->status = TEGO_FILL_NOMAP;
+        return;
+    }
+    cfg->launder = (__u64)inode;
+    key = *(volatile __u64 *)&cfg->launder;
+    if (name)
+        key = tego_block_name_key(key, nk);
+    old = bpf_map_lookup_elem(rows, &key);
+    if (old && old->gen == cfg->gen &&
+        (old->i_ino != inode->i_ino || old->i_generation != inode->i_generation || old->name_key != nk)) {
+        w->status = TEGO_FILL_DUP;
+        return;
+    }
+    if (del) {
+        if (old && old->gen == cfg->gen)
+            bpf_map_delete_elem(rows, &key);
+        w->status = TEGO_FILL_OK;
+        return;
+    }
+    row.i_ino = inode->i_ino;
+    row.i_generation = inode->i_generation;
+    row.s_dev = inode->i_sb->s_dev;
+    row.from_ns = w->block_from;
+    row.name_key = nk;
+    row.gen = cfg->gen;
+    row.id_read = w->block_read;
+    row.id_write = w->block_write;
+    row.id_guard = w->block_guard;
+    row.flags = w->block_flags | (name ? TEGO_BLOCK_NAME : 0);
+    {
+        __u8 cls = (w->block_read ? TEGO_BLOCK_READ : 0) | (w->block_write ? TEGO_BLOCK_WRITE : 0);
+
+        row.self_q = (w->block_guard ? TEGO_BLOCK_GUARD : 0) | ((row.flags & TEGO_BLOCK_SELF) ? cls : 0);
+        row.beneath_q = (row.flags & TEGO_BLOCK_BENEATH) ? cls : 0;
+    }
+    err = bpf_map_update_elem(rows, &key, &row, BPF_ANY);
+    if (err) {
+        w->status = TEGO_FILL_UPDATE;
+        w->err = err;
+        return;
+    }
+    w->status = TEGO_FILL_OK;
+}
+
 /* The fill: shown each descriptor of each task the link's scope admits, it keeps the wanted ones of the launcher
  * reading the iterator, the task the program runs in: each launcher filling at once has its own config and
  * templates (enforce-plane §2.6), and a template of another gen (a dead launcher's, whose tgid this one has now) is
@@ -280,6 +356,11 @@ int tego_plane_fill(struct bpf_iter__task_file *ctx)
     w = tego_fill_want(me, TEGO_FILL_LISTEN, ctx->fd);
     if (w && w->status == TEGO_FILL_UNSEEN && w->gen == cfg->gen)
         tego_fill_one(cfg, w, file);
+    /* A live block's row, under the key's kind 0 (TEGO_FILL_BLOCK*). */
+    w = tego_fill_want(me, 0, ctx->fd);
+    if (w && w->status == TEGO_FILL_UNSEEN && w->gen == cfg->gen && w->what >= TEGO_FILL_BLOCK &&
+        w->what <= TEGO_FILL_BLOCK_NAME_DEL)
+        tego_fill_block(cfg, w, file);
     return 0;
 }
 
@@ -303,6 +384,14 @@ static long tego_clear_exec_row(struct bpf_map *map, __u64 *key, struct tego_pla
     return 0;
 }
 
+static long tego_clear_block_row(struct bpf_map *map, __u64 *key, struct tego_plane_block_row *row,
+                                  struct tego_clear_state *c)
+{
+    if (row->gen != c->keep_gen && bpf_map_delete_elem(map, key) == 0)
+        c->deleted++;
+    return 0;
+}
+
 static long tego_clear_listen_row(struct bpf_map *map, struct tego_plane_listen_key *key,
                                    struct tego_plane_listen_row *row, struct tego_clear_state *c)
 {
@@ -311,8 +400,8 @@ static long tego_clear_listen_row(struct bpf_map *map, struct tego_plane_listen_
     return 0;
 }
 
-/* The clear: deletes every row of the slot whose gen is not keep_gen, fs and exec, without a key leaving the
- * kernel. A slot with no exec-rows map yet is no error: its fs map is the one every slot has from its first use. */
+/* The clear: deletes every row of the slot whose gen is not keep_gen, fs, exec, listener and live-block, without a key
+ * leaving the kernel. A slot with no exec-rows map yet is no error: its fs map is the one every slot has from its first use. */
 SEC("syscall")
 int tego_plane_clear(struct tego_plane_clear_ctx *ctx)
 {
@@ -333,6 +422,12 @@ int tego_plane_clear(struct tego_plane_clear_ctx *ctx)
     void *listen = tego_slot_rows(&tego_plane_listen_rows, ctx->run_idx);
     if (listen)
         bpf_for_each_map_elem(listen, tego_clear_listen_row, &ls, 0);
+    /* The live-block rows (ADR 0124, amendment 2026-11-21): a slot made before them has no map, which is no error. */
+    struct tego_clear_state bl = {.keep_gen = ctx->keep_gen};
+    void *blocks = tego_slot_rows(&tego_plane_blocks, ctx->run_idx);
+    if (blocks)
+        bpf_for_each_map_elem(blocks, tego_clear_block_row, &bl, 0);
+    ctx->blocks_deleted = bl.deleted;
     ctx->deleted = fs.deleted;
     ctx->exec_deleted = ex.deleted;
     ctx->listen_deleted = ls.deleted;

@@ -11,9 +11,26 @@ Developer tooling only, never imported by the binary, and exempt from checkexits
   -base REV [-plan]`): the changed files since the merge base, classified (global input → the full gate, Markdown
   alone → the docs gate, else the packages the change reaches per build), plus the source scanners found by scanning
   test code and the suites whose tests build a binary whose closure changed; it prints what it selected and why.
-  For in-between checks only; merges keep the full gate (docs/OPERATIONS.md, "Precommit modes").
+  The scan of test code reads code and string literals, comments blanked out: a comment that names `repoRoot`, a walk or
+  `README` selected a test, and the docs gate, on that word alone. For in-between checks only; merges keep the full gate (docs/OPERATIONS.md, "Precommit modes").
 - `checkexits/`: `os.Exit` only in `cmd/`, no bare exit code in `internal/cli` 
   read from the syntax tree; run by `scripts/check-exits.sh`.
+- `rootskips/`: the tests that skip, or may skip, for want of root, read from the syntax tree (`go run ./tools/rootskips
+  [-tags integration] [-cgo]`), in the files the named build compiles (release tags such as `go1.21` included). Kind
+  `test`: one of the test's own statements skips for a process that is not root (an `os.Geteuid()` or `Getuid()` test in an
+  if, with or without an else, or in a switch case), directly or through a helper (a function of its package, a method
+  matched by name, a function of another package of the module, or a `var f = func`), or with a message that says it
+  needs root. Kind `sub`: a skip that may be for want of root is somewhere less direct (a closure, a loop, a nested
+  condition, a condition that mixes the id with another term, a local or package variable or a function result read
+  from an id): the list must name the test or one of its subtests. Where it cannot tell it names the test, so it
+  over-reports; a skip that is not for want of root is cleared in the test file by a `// rootskips:ignore <reason>`
+  comment on its line or the line before (a comment with no reason is an error). `scripts/check-skiplists.sh` holds the
+  candidates to `test/unit-skips.txt` and `test/integration-skips.txt` with `scripts/skipgate.sh`'s own rule, so a new
+  needs-root test that no list names fails the post-merge check and not, half an hour later, the whole gate. It is
+  static and name-based: a pass is not "no unlisted needs-root skip exists". It cannot see a skip decided by a probe (a
+  failed mkdir, a capability probe, `/proc/self/status`), a root flag held in a struct field or map, a helper outside
+  the module, or a test that go test does not run by that name; the run's own skip gate still holds those. The doc
+  comment of `tools/rootskips/main.go` lists the shapes read and not read exactly.
 - `isocheck/`: no test harness can write the invoking user's own `~/.tego` or `~/.bash_history`:
   an `os.Environ()` taken before `writeMachineConfig` sets the isolation variables, a `TEGO_CONFIG` entry with
   no `TEGO_TEST_CHAIN_ANCHOR`, a build of `cmd/tego` without `tegotesthooks`, a command that runs the tego

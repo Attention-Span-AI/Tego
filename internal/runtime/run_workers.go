@@ -25,6 +25,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/runtime/cgroup"
 	"github.com/attention-span-ai/tego/internal/runtime/source"
 
+	"github.com/attention-span-ai/tego/internal/liveblock"
 	"github.com/attention-span-ai/tego/internal/runtime/enforce"
 	"github.com/attention-span-ai/tego/internal/runtime/launch"
 	"github.com/attention-span-ai/tego/internal/runtime/limits"
@@ -133,6 +134,23 @@ type denyReadSnapshotter interface {
 	DenyReadSnapshot() func(path string) bool
 }
 
+// frozenWithoutSnapshot refuses the run whose ruleset froze a deny_read enumeration (run_start names directories in
+// deny_read_frozen) but whose handle gives the supervisor no snapshot of it: a root tier installs the tier-1 ruleset it
+// composed, and a handle that does not hand its snapshot on would continue every read of a name made after launch and
+// record it allow or observed, a line that is false the way tier landlock's was before ADR 0069. Fail closed: the run
+// does not start without the answer the tier above it gives. A records-only run enforces nothing and needs none.
+func frozenWithoutSnapshot(h any, recordsOnly bool, snapshot func(string) bool) error {
+	if recordsOnly || snapshot != nil {
+		return nil
+	}
+	f, ok := h.(interface{ DenyReadFrozen() []string })
+	if !ok || len(f.DenyReadFrozen()) == 0 {
+		return nil
+	}
+	return errors.New("runtime: the run's ruleset froze a deny_read enumeration but its handle gives no snapshot of it, " +
+		"so a read of a name made after launch could not be answered as the ruleset answers it (refused, deny-read-snapshot)")
+}
+
 // connectGranter is a tier-2 or tier-3 handle that can grant the run's kernel one connect of an approved TCP or UDP
 // destination (cgroup's Handle.GrantConnect). A handle without it leaves supervisor.Options.GrantConnect
 // nil, and the supervisor then refuses such a connect ask-unavailable at a root tier.
@@ -212,6 +230,7 @@ func (r *runner) startNotifyLoop(ctx context.Context) error {
 		r.markPauseReader() // only now does a pause written to the overlay reach a launcher that applies it
 		r.markRealReader()  // only now may a writer store a block's real path (VersionReal) for this run
 		r.markLinkReader()  // only now may a writer place a block that matches by link (VersionLink) on this run
+		r.markNoteReader()  // only now may a writer sign a lift's note for this run
 	}
 	supOpts.Ask = r.askRequest
 	supOpts.AskResolver = r.startAskDNS(ctx, opts, tick)
@@ -287,6 +306,13 @@ func (r *runner) startNotifyLoop(ctx context.Context) error {
 	// such, never recorded allow. Only the tier-1 handle keeps the snapshot; a records-only run enforces nothing.
 	if s, ok := r.handle.(denyReadSnapshotter); ok && !policy.Observe {
 		supOpts.DenyReadSnapshot = s.DenyReadSnapshot()
+	}
+	// This check sits after the early return for a run with no notify descriptor (a tier with no seccomp filter): such
+	// a run notifies nothing to the supervisor, so no read or exec of a late name could reach the snapshot whether or
+	// not it was handed on, and what the record says of one is the kernel recorder's (observed, by other, with the
+	// errno), the same words as at a root tier under record: summary with direct reads. Skipping it there loosens nothing.
+	if err := frozenWithoutSnapshot(r.handle, policy.Observe, supOpts.DenyReadSnapshot); err != nil {
+		return err
 	}
 	if h, ok := r.handle.(interface{ BuiltinSocketDirectories() map[[2]uint64]string }); ok && !policy.Observe {
 		supOpts.BuiltinDirectories = h.BuiltinSocketDirectories()
@@ -385,19 +411,59 @@ func (r *runner) startNotifyLoop(ctx context.Context) error {
 // fence and no key, and starts exactly as before. An Adjustable run whose first Set does not hold every fence refusal
 // does not start (fenceInForce).
 func (r *runner) startLiveBlocks(ctx context.Context) (*liveBlocks, error) {
-	blocks := &liveBlocks{}
+	blocks := &liveBlocks{plane: r.startPlaneBlocks()}
 	if r.rt.Adjustable() {
 		fence, err := r.seedFence()
 		if err != nil {
 			return nil, err
 		}
 		blocks.fence = fence
+		// A restored net fence entry's line names the addresses its refusal comes back on (record minor 41).
+		fence.emit = func(why string, count int, c *record.LiveBlockChange) {
+			if why == record.GapLiveRuleRestored && c != nil {
+				blocks.fillAddrs(c)
+			}
+			r.emitLiveGap(why, count, c)
+		}
 	}
 	r.pollLiveBlocks(ctx, blocks)
 	if err := fenceInForce(blocks); err != nil {
 		return nil, err
 	}
 	return blocks, nil
+}
+
+// startPlaneBlocks is the run's live blocks in its kernel decision plane (ADR 0124, amendment 2026-11-21), nil on a run
+// whose handle has no plane that decides its file changes. It marks the run directory (liveblock.MarkPlane), so the
+// writers say such a block is in force, not partly; a mark that cannot be made leaves them saying partly, which is less
+// than true, never more. A state that cannot be written later ends the run.
+func (r *runner) startPlaneBlocks() *planeBlocks {
+	pb, ok := r.handle.(enforce.PlaneBlocker)
+	if !ok {
+		return nil
+	}
+	w, ok := pb.PlaneBlocks()
+	if !ok {
+		return nil
+	}
+	var mounts []string
+	if mr, ok := r.handle.(enforce.MountTableReporter); ok {
+		if mt, err := mr.MountTable(); err == nil && mt != nil {
+			mounts = mt.Points()
+		}
+	}
+	p := newPlaneBlocks(w, &r.liveRules, mounts, enforce.BootOffsetZero() == nil, func(err error) {
+		r.endRun(identity.ReasonError, "live blocks: the kernel decision plane could not be told about a block: "+err.Error(),
+			"run: a live block could not be put in force in the kernel; ending the run", "run: kill after a live-block failure",
+			"err", err)
+	})
+	r.planeBlocks = p
+	if r.dir != "" {
+		if err := liveblock.MarkPlane(r.dir); err != nil {
+			r.log.Warn("live blocks: the run's plane mark could not be made, so writers say a file block is partly in force", "err", err)
+		}
+	}
+	return p
 }
 
 // fenceInForce is nil when b has no fence, or when its Set holds every refusal the fence gives. It is the start's own

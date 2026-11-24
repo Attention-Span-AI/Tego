@@ -21,6 +21,7 @@ type cmpBar struct {
 	Side, Agent string
 	N           int
 	Bar         *svgChart
+	Numbers     countScopes
 }
 
 // cmpCharts is Compare's three bar pairs, from the counts the read model's Comparison already holds (no new
@@ -43,7 +44,8 @@ func cmpCharts(c *ledgerview.Comparison) []cmpMetric {
 			if s.run != nil && s.run.Agent != "" {
 				agent = s.run.Agent
 			}
-			m.Rows[i] = cmpBar{Side: s.side, Agent: agent, N: s.n, Bar: meter(s.n, hi, cls, fmt.Sprintf("%s, run %s (%s)", label, s.side, agent))}
+			m.Rows[i] = cmpBar{Side: s.side, Agent: agent, N: s.n, Bar: meter(s.n, hi, cls, fmt.Sprintf("%s, run %s (%s)", label, s.side, agent)), Numbers: runNumbers(s.run)}
+			qualifyChart(m.Rows[i].Bar, "compare.chart", m.Rows[i].Numbers.Window)
 		}
 		return m
 	}

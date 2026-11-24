@@ -302,17 +302,14 @@ func TestRunStartCapturedHostFileBinds(t *testing.T) {
 						t.Fatalf("ordinary file-bind grant refused: exit %d\n%s", code, out)
 					}
 					// Captured tables cannot establish live mount IDs for these fixture files.
-					// Docker's ext4 binds keep one warning until statx proves identity; Podman's
-					// tmpfs binds stay quiet under C65's memory rule. Agent tests replay statx IDs;
+					// Both Docker's ext4 and Podman's tmpfs file binds retain one warning
+					// until identity and backing can be established. Agent tests replay statx IDs;
 					// verification of the real file binds is owed in a guest.
 					mount := filepath.Join(etc, "resolv.conf")
 					if grant == filepath.Join(etc, "hosts") {
 						mount = grant
 					}
-					var want []string
-					if !strings.HasPrefix(name, "podman-") {
-						want = []string{runMountWarning(field, grant, mount, reason)}
-					}
+					want := []string{runMountWarning(field, grant, mount, reason)}
 					f.wantWarnings(t, out, want)
 				}
 				layers := f.machine.Layers

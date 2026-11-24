@@ -9,10 +9,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/attention-span-ai/tego/internal/platform/proc"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
@@ -49,7 +52,7 @@ func cmdRulesEdit() Command {
 			}
 			var text []byte
 			if err == nil {
-				text, err = os.ReadFile(path)
+				text, err = readRulesPath(path)
 			}
 			if err != nil {
 				message(stderr, path, 0, 0, "tego rules edit: "+err.Error(), codeIO)
@@ -95,11 +98,14 @@ func editCopy(path string, text []byte, stderr io.Writer) ([]byte, int) {
 		message(stderr, "", 0, 0, "tego rules edit: "+err.Error(), codeIO)
 		return nil, identity.ExitError
 	}
+	editorVar := "VISUAL"
 	editor := strings.Fields(os.Getenv("VISUAL"))
 	if len(editor) == 0 {
+		editorVar = "EDITOR"
 		editor = strings.Fields(os.Getenv("EDITOR"))
 	}
 	if len(editor) == 0 {
+		editorVar = "" // neither is set: vi is tried, and no variable is to blame for it
 		editor = []string{"vi"}
 	}
 	cmd := proc.Command(editor[0], append(editor[1:], tmp)...)
@@ -109,10 +115,17 @@ func editCopy(path string, text []byte, stderr io.Writer) ([]byte, int) {
 		err = cmd.Wait()
 	}
 	if err != nil {
-		message(stderr, "", 0, 0, fmt.Sprintf("tego rules edit: the editor %s: %v; nothing was saved", editor[0], err), codeIO)
+		// The editor's command line comes from the person's environment and may hold anything, so it is never
+		// printed: the message names the variable, or says that vi was tried when neither is set, and gives the
+		// cause (pkg/spec/identity envtext.go, rule (b)).
+		asked, inspect := "vi, the editor tried when neither VISUAL nor EDITOR is set,", ""
+		if editorVar != "" {
+			asked, inspect = "the editor $"+editorVar+" names", "; "+identity.EnvInspect(editorVar)
+		}
+		message(stderr, "", 0, 0, fmt.Sprintf("tego rules edit: %s %s%s; nothing was saved", asked, editorFailure(err), inspect), codeIO)
 		return nil, identity.ExitError
 	}
-	edited, err := os.ReadFile(tmp)
+	edited, err := readRulesPath(tmp)
 	if err != nil {
 		message(stderr, "", 0, 0, "tego rules edit: "+err.Error(), codeIO)
 		return nil, identity.ExitError
@@ -127,7 +140,7 @@ func writeOverUnchanged(path string, text []byte, original os.FileInfo, before [
 		if err != nil {
 			return err
 		}
-		data, err := os.ReadFile(path)
+		data, err := readRulesPath(path)
 		if err != nil {
 			return err
 		}
@@ -212,4 +225,30 @@ func checkRules(ctx context.Context, m *config.Machine, path string, text []byte
 		}
 	}
 	return err
+}
+
+// editorFailure says why an editor did not finish, without its command line: it was not found, it could not be
+// started (with the system's reason, permission denied among them), it exited with a status, or a signal ended it.
+func editorFailure(err error) string {
+	// A finished process's state, as the error of a wait carries it (the standard library's exit error).
+	var exit interface {
+		ExitCode() int
+		Sys() any
+	}
+	if errors.As(err, &exit) {
+		if ws, ok := exit.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+			return "was ended by signal " + strconv.Itoa(int(ws.Signal())) + " (" + ws.Signal().String() + ")"
+		}
+		return "exited with status " + strconv.Itoa(exit.ExitCode())
+	}
+	var errno syscall.Errno
+	switch {
+	case proc.NotFound(err):
+		return "was not found"
+	case errors.Is(err, fs.ErrPermission):
+		return "could not be started: permission denied"
+	case errors.As(err, &errno):
+		return "could not be started: " + errno.Error()
+	}
+	return "could not be started"
 }

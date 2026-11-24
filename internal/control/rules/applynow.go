@@ -18,7 +18,7 @@ import (
 // changes are read from the journal (the text before and after the change, rawChanges), mapped to live blocks as
 // "Also apply now" maps them (nowOptions), against the file as it stands now, so a change a later one took back offers
 // nothing; and only blocks not yet placed on the run are offered. Placing them only tightens the run, as every live
-// block does, and is journaled after the change (rulefile.AppendLive).
+// block does, and is journaled first as begun and again as done (placeJournaled), as an Undo's lift is.
 
 // ErrNotPending is an Apply now of a change that is not one of the run's pending changes: not in the journal, undone
 // since, of another rules file than the run's, or the run is no running run of it.
@@ -43,6 +43,16 @@ func (p PendingNow) CanApply() bool {
 // PendingOn is, for each journal change of ids (the run's pending changes, rulesview.Pending), what it is on run now
 // (PendingNow). A change that cannot be read, or is not run's (ErrNotPending), is left out.
 func (s *Service) PendingOn(ctx context.Context, run string, ids []string) map[string]PendingNow {
+	if s.remote() {
+		out, err := remoteService[map[string]PendingNow](s, ctx, "PendingOn", struct {
+			Run string
+			IDs []string
+		}{run, ids})
+		if err != nil {
+			return map[string]PendingNow{}
+		}
+		return out
+	}
 	out := map[string]PendingNow{}
 	for _, id := range ids {
 		if p, err := s.pendingOn(ctx, run, id); err == nil {
@@ -61,6 +71,10 @@ type ApplyNowReq struct {
 // did after the change. A change with none to place is ErrRefused; one that is not the run's pending change,
 // ErrNotPending.
 func (s *Service) ApplyNow(ctx context.Context, r ApplyNowReq) ([]LiveResult, error) {
+	if s.remote() {
+		return remoteService[[]LiveResult](s, ctx, "ApplyNow", struct{ R ApplyNowReq }{r})
+	}
+
 	p, err := s.pendingOn(ctx, r.Run, r.ID)
 	if err != nil {
 		return nil, err
@@ -75,9 +89,9 @@ func (s *Service) ApplyNow(ctx context.Context, r ApplyNowReq) ([]LiveResult, er
 		}
 		return nil, fmt.Errorf("%w: %s", ErrRefused, why)
 	}
-	res := s.applyNow(ctx, p.Options, []string{r.Run})
-	if err := s.writer().AppendLive(ctx, r.ID, journalLive(res)); err != nil {
-		return res, fmt.Errorf("the live blocks were placed but not journaled: %w", err)
+	res, warn := s.placeJournaled(ctx, r.ID, p.Options, []string{r.Run})
+	if warn != "" {
+		return res, errors.New(warn)
 	}
 	return res, nil
 }

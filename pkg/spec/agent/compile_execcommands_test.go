@@ -18,7 +18,11 @@ import (
 // exec-path beside it holding git's own git and a dashed helper.
 func commandFixture(t *testing.T) *fixture {
 	t.Helper()
-	f := newFixture(t)
+	return fillCommandFixture(t, newFixture(t))
+}
+
+func fillCommandFixture(t *testing.T, f *fixture) *fixture {
+	t.Helper()
 	for _, n := range []string{"git", "gnurm", "npm"} {
 		f.file(filepath.Join(f.bin, n), string(elf64("", 2)), 0o755)
 	}
@@ -233,7 +237,7 @@ func TestCompileExecLoaders(t *testing.T) {
 		}
 		return execmatch.ID{Dev: uint64(st.Dev), Ino: st.Ino}
 	}
-	got := execLoaders([]string{dir, filepath.Join(dir, "missing")})
+	got := execLoaders([]string{dir, filepath.Join(dir, "missing")}, nil)
 	want := map[execmatch.ID]bool{idOf(ld): true, idOf(filepath.Join(dir, "libc.so.6")): true}
 	if len(got) != len(want) || !got[idOf(ld)] || !got[idOf(filepath.Join(dir, "libc.so.6"))] {
 		t.Errorf("loaders %v, want %v", got, want)

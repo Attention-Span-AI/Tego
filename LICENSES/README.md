@@ -5,7 +5,8 @@ The repository is Apache-2.0, and the kernel programs under `bpf/` are
 The root [LICENSE](../LICENSE) contains the Apache text. The corresponding
 GPL and BSD texts are here. The vendored libbpf headers retain their separate
 `LGPL-2.1 OR BSD-2-Clause` declaration; their alternative LGPL text is included too.
-`Lucide.txt` is the licence of the dashboard's icons.
+`Lucide.txt` is the licence of the dashboard's icons, and `Anton.txt` (SIL Open Font License 1.1) the licence of
+its headline font.
 
 Sources: [Apache](https://www.apache.org/licenses/LICENSE-2.0.txt),
 [SPDX GPL-2.0-only](https://github.com/spdx/license-list-data/blob/main/text/GPL-2.0-only.txt),

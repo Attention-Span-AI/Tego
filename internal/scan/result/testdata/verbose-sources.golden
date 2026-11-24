@@ -1,0 +1,4 @@
+Source read D "/fixtures/read.json": read; read 1, not read 0; reason none
+Source missing D "/fixtures/missing.json": missing; read 0, not read 0; reason none
+Source failed D "/fixtures/bad.json": not-read; read 0, not read 1; reason syntax; could not be read; Tego cannot tell whether these are agents
+Source partial E "/fixtures/units": partial; read 1, not read 1; reason limit; could not be read; Tego cannot tell whether these are agents

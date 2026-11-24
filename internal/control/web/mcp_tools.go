@@ -91,9 +91,21 @@ func (s *Server) mcpPost(w http.ResponseWriter, r *http.Request) bool {
 
 func (s *Server) renderMCP(w http.ResponseWriter, r *http.Request, snap *ledgerview.Snapshot, name, title string, data any) {
 	c := s.chromeOf(snap, title, "mcp")
+	if len(snap.Runs) > maxMCPRuns {
+		c.Numbers.Runs = worse(c.Numbers.Runs, countScope{Lower: true, Reason: "Only the newest run contracts were checked for MCP servers."})
+		c.Numbers.Aggregate = worse(c.Numbers.Aggregate, c.Numbers.Runs)
+		c.Numbers.addLink(countLink{Label: "All runs", URL: "/runs"})
+	}
+	if d, ok := data.(mcpData); ok && d.State != nil && d.State.CountError != "" {
+		c.Numbers.MCP = countScope{Error: d.State.CountError}
+		c.Numbers.addLink(countLink{Label: "Complete record", URL: "/logs.jsonl?run=" + url.QueryEscape(d.State.Run)})
+	}
 	c.Host, c.Ledger, c.CSRF, c.Preview = s.host, s.cfg.Ledger, s.csrf, s.cfg.Preview
-	// No live regions yet: live.js leaves a page without a signature alone (a reload shows new counts).
-	c.Sig, c.Rev = "", ""
+	// The tools page follows the ledger (its "content" region, regions.go); the preview has no live regions, and live.js
+	// leaves a page without a signature alone.
+	if name != "mcp-tools" {
+		c.Sig, c.Rev = "", ""
+	}
 	if fw, ok := w.(*flashWriter); ok {
 		c.Flash = fw.flash
 	}

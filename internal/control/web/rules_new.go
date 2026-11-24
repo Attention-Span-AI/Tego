@@ -19,17 +19,17 @@ import (
 
 // "Set up a new agent" (GET and POST /rules/new): a form for a project folder, an agent
 // name, the presets, and optional folders it may write, hosts it may reach and its command, or a finished run to start
-// from. Preview (a GET, which writes nothing) shows the contract's rules in sentences, what compile says and the YAML;
+// from. A read-only GET preview shows the contract's rules in sentences, what compile says and the YAML;
 // Create (a POST through postAllowed) writes <dir>/agent.yaml through the rule service, never over a file, and is
 // answered as every action is (flash.go): 303 to the page of the agent set up (?created=<id>, what the write kept,
 // Server.keep) with one line, or that line as JSON for live.js, which shows that address in place (the whole page is
 // its live region); a refusal goes back to the preview with the line saying why. The created page shows the line
 // that starts the agent. From a run, the draft is saved by default as the user registry's entry <name> through
-// registry.Save, the writer tego learn --save writes through, so tego run <name> and the tego-agent@<name> unit find
+// registry.Save, the writer tego rules learn --save writes through, so tego run <name> and the tego-agent@<name> unit find
 // it; "The project folder" writes agent.yaml as before. "Show refused reads (slower)" adds reason: {reads: on}: from a
-// run it is on by default, as --save's default is, and takes learn's own rendering; from presets it starts off, as
-// tego init writes no reason: block, and the composed draft gets the block (setup.Options.Reads). The run page's
-// Tighten tab links here with the run named, which previews at once. The page makes no decision of its own: every check and the write are the service's, which runs in this process as the user who started the dashboard.
+// run it is on by default, as --save's default is, and takes learn's own rendering. From presets the switch starts
+// off; selecting ci supplies its own default. Turning the switch on adds a block through setup.Options.Reads. The run page's
+// Tighten tab links here with the run named, which previews at once. The page makes no decision of its own: every check and the write are the service's, which runs path-dependent work in its bounded own-image helper as the user who started the dashboard.
 
 // SetupService is what "Set up a new agent" asks of the rule service (internal/control/rules new.go).
 type SetupService interface {
@@ -42,13 +42,17 @@ type SetupService interface {
 // maxFromRuns bounds the "Start from a run" list.
 const maxFromRuns = 30
 
-// maxNewForm bounds the body of POST /rules/new. Create posts the whole form back (the folders, hosts, variables, reads
-// and fence entries, one per comma or line, and the command), which a hundred hosts take past maxForm. The preview is
-// a GET, so the server's header limit (Serve) bounds the form first, well under this.
-const maxNewForm = 64 << 10
-
 // newData is the page's data.
 type newData struct {
+	Draft string
+
+	View      string
+	Editor    string
+	Fields    []builderField
+	Errors    []builderError
+	YAML      []builderLine
+	Decisions []rules.Decision
+
 	// Form is what was typed, echoed into the inputs; Writes and Hosts as typed, one item per comma or line.
 	Form   rules.NewReq
 	Writes string
@@ -56,13 +60,13 @@ type newData struct {
 	// Pass and AskRead are the "Variables it needs" and "Ask before reading" fields, as typed.
 	Pass, AskRead string
 	Mode          string // presets | run
-	// To is where a draft from a run is saved: "registry" (the user registry's entry, for tego run <name>, as tego learn
+	// To is where a draft from a run is saved: "registry" (the user registry's entry, for tego run <name>, as tego rules learn
 	// --save saves it; the default) or "project" (agent.yaml in the project folder). Reads is the "Show refused reads
-	// (slower)" switch: from a run on by default, as tego learn --save records them unless --reads off; from presets
-	// off by default, as tego init writes none.
+	// (slower)" switch: from a run on by default, as tego rules learn --save records them unless --reads off; from presets
+	// off by default; an explicitly selected ci preset supplies its own read default.
 	To    string
 	Reads bool
-	// ReadsCost is what recording refused reads costs, as compile and tego learn --save state it.
+	// ReadsCost is what recording refused reads costs, as compile and tego rules learn --save state it.
 	ReadsCost string
 	Presets   []presetOpt
 	Runs      []fromRunOpt
@@ -115,7 +119,10 @@ type presetOpt struct {
 // rulesNew serves GET /rules/new: the form and, once a folder is typed, its preview.
 func (s *Server) rulesNew(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	snap, _ := ledgerview.Load(s.cfg.Ledger) // a ledger that cannot be read leaves the run list and the banner empty
+	snap, err := ledgerview.Load(s.cfg.Ledger)
+	if err != nil {
+		snap = &ledgerview.Snapshot{ReadError: err.Error()}
+	}
 	if d, ok := s.kept(q.Get("created")).(newData); ok {
 		s.renderNew(w, snap, http.StatusOK, d)
 		return
@@ -136,9 +143,29 @@ func (s *Server) rulesNew(w http.ResponseWriter, r *http.Request) {
 	s.renderNew(w, snap, http.StatusOK, d)
 }
 
-// rulesNewPost serves POST /rules/new, which postAllowed has passed: Create.
+// rulesNewPost serves POST /rules/new after the shared write guards: prepare and preview, or Create.
 func (s *Server) rulesNewPost(w http.ResponseWriter, r *http.Request) {
 	f := r.PostForm
+	if f.Get("guide") == "review" {
+		r = r.Clone(r.Context())
+		q := r.URL.Query()
+		q.Set("guide", "review")
+		q.Set("preview", "1")
+		r.URL.RawQuery = q.Encode()
+		w = s.tourRequest(w, r)
+	}
+	if s.cfg.Setup != nil && f.Get("builder") == "1" && f.Get("step") != "save" {
+		snap, _ := ledgerview.Load(s.cfg.Ledger)
+		d := s.newForm(r, snap, f.Get("dir"), f.Get("name"), f["preset"], f.Get("writes"), f.Get("hosts"), f.Get("cmd"), f.Get("from"), f.Get("mode"))
+		liveForm(&d, f)
+		p, err := s.cfg.Setup.PlanNew(r.Context(), d.Form)
+		if err != nil {
+			d.Err = err.Error()
+		}
+		s.fillPlan(&d, p)
+		s.renderNew(w, snap, http.StatusOK, d)
+		return
+	}
 	// The preview the form came from, to go back to when nothing is written: the same fields as a GET.
 	back := url.Values{"preview": {"1"}}
 	for _, k := range []string{"mode", "dir", "name", "writes", "hosts", "pass", "askread", "cmd", "from", "to", "reads", "live", "fence_read", "fence_net", "fence_exec"} {
@@ -147,6 +174,9 @@ func (s *Server) rulesNewPost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	back["preset"] = f["preset"]
+	if f.Get("guide") == "review" {
+		back.Set("guide", "review")
+	}
 	if s.cfg.Setup == nil {
 		s.redirectBack(w, r, "/rules/new", flash{Text: "Not created · contract editing is off here · use tego rules create --preset"})
 		return
@@ -155,41 +185,70 @@ func (s *Server) rulesNewPost(w http.ResponseWriter, r *http.Request) {
 	d := s.newForm(r, snap, f.Get("dir"), f.Get("name"), f["preset"], f.Get("writes"), f.Get("hosts"), f.Get("cmd"), f.Get("from"), f.Get("mode"))
 	liveForm(&d, f)
 	c, err := s.cfg.Setup.CreateNew(r.Context(), d.Form, f.Get("base"))
+	if c == nil && s.checkUnavailable(w, err) {
+		return
+	}
+	if errors.Is(err, rules.ErrReviewGone) {
+		d.Err = err.Error()
+		text := rulesview.RedactEnvText(string(d.Form.Text))
+		s.fillPlan(&d, &rules.NewPlan{Text: []byte(text), Source: []byte(text), Draft: d.Form.Draft})
+		s.renderNew(w, snap, http.StatusConflict, d)
+		return
+	}
 	if c == nil {
+		if f.Get("builder") == "1" {
+			// A refused Save preserves input but offers no newly built proposal.
+			text := rulesview.RedactEnvText(string(d.Form.Text))
+			s.fillPlan(&d, &rules.NewPlan{Text: []byte(text), Source: []byte(text), Draft: d.Form.Draft})
+			d.Err = "Not saved: " + plainErr(err)
+			status := http.StatusUnprocessableEntity
+			if errors.Is(err, rules.ErrStale) {
+				status = http.StatusConflict
+			}
+			s.renderNew(w, snap, status, d)
+			return
+		}
 		// The registry's button says Save, and the service's sentence says why and what to do: once, after one lead.
 		lead, verb, why := "Not created: ", "create", err.Error()
 		if d.Form.Registry && d.Form.FromRun != "" {
 			lead, verb, why = "Not saved: ", "save", plainErr(err)
 		}
 		if errors.Is(err, rules.ErrStale) {
-			why = "the folder or the presets changed what the rules file would hold since the preview. The preview below is the file as it would be now: check it and " + verb + " again."
+			why = "the reviewed destination or inherited rules changed. Review the contract again, then " + verb + " again."
 		}
 		s.redirectBack(w, r, "/rules/new?"+back.Encode(), flash{Text: lead + why})
 		return
 	}
+	// This server knows the registry changed; do not retain the pre-save guide facts.
+	s.guide.mu.Lock()
+	s.guide.last = nil
+	s.guide.mu.Unlock()
 	d.Created, d.Ref = c, c.Ref
-	d.Start = startLine(c.Dir)
-	line := "Set up " + c.Name + ": " + c.Path + " is written. Start it with: " + d.Start
+	d.Start = cmdText(startLine(c.Dir))
+	line := "Set up " + c.Name + ": contract written. Start it with the command below."
 	if c.Registry {
-		d.Start = runLine(c.Dir, c.Name)
-		line = "Saved " + c.Name + ": " + c.Path + ". Start it with: " + d.Start
+		d.Start = cmdText(runLine(c.Dir, c.Name))
+		line = "Saved " + c.Name + ". Start it with the command below."
 	}
 	if err != nil { // written, not journaled (rulefile.ErrJournal)
 		d.Err = err.Error()
 		line += " (" + d.Err + ")"
 	}
 	dest := "/rules/new?created=" + s.keep(d)
+	if f.Get("guide") == "review" {
+		dest += "&guide=review"
+	}
 	s.redirectBack(w, r, dest, flash{OK: true, Text: line, Here: dest})
 }
 
 // newForm reads the form's fields into newData, with the preset and run choices.
 func (s *Server) newForm(r *http.Request, snap *ledgerview.Snapshot, dir, name string, presets []string, writes, hosts, cmd, from, mode string) newData {
-	d := newData{Writes: writes, Hosts: hosts, Mode: mode, Off: s.cfg.Setup == nil, ReadsCost: agent.ReasonReadCost + ", " + agent.ReasonReadWorkload}
-	if d.Mode != "run" {
+	d := newData{View: builderView(r), Fields: builderFields, Writes: writes, Hosts: hosts, Mode: mode, Off: s.cfg.Setup == nil, ReadsCost: agent.ReasonReadCost + ", " + agent.ReasonReadWorkload}
+	if d.Mode != "run" && d.Mode != "blank" {
 		d.Mode = "presets"
 	}
 	d.Pass, d.AskRead = r.FormValue("pass"), r.FormValue("askread")
-	d.Form = rules.NewReq{Dir: dir, Name: name, Writes: splitList(writes), Hosts: splitList(hosts), Command: cmd,
+	d.Form = rules.NewReq{PreviewOnly: r.Method != http.MethodPost && s.governed(r) != nil, PrepareDirectories: r.Method == http.MethodPost, Draft: r.FormValue("draft"), Session: s.session, Dir: dir, Name: name, Writes: splitList(writes), Hosts: splitList(hosts), Command: cmd,
 		Pass: splitList(d.Pass), AskRead: splitList(d.AskRead)}
 	if d.Mode == "run" {
 		d.Form.FromRun = strings.TrimSpace(from)
@@ -198,12 +257,12 @@ func (s *Server) newForm(r *http.Request, snap *ledgerview.Snapshot, dir, name s
 	}
 	fresh := dir == "" && len(presets) == 0 && r.URL.Query().Get("preview") == "" && r.Method != http.MethodPost
 	for _, p := range rules.Presets() {
-		on := slices.Contains(presets, p.Name) || fresh && p.Name != "repo-only-writes"
+		on := slices.Contains(presets, p.Name) || fresh && (p.Name == "no-secrets" || p.Name == "no-prod")
 		d.Presets = append(d.Presets, presetOpt{Name: p.Name, Promise: p.Promise, On: on})
 	}
 	if snap != nil {
 		for _, rr := range snap.Runs {
-			if rr.Live || len(d.Runs) >= maxFromRuns {
+			if rr.Live || rr.State() == "unknown" || len(d.Runs) >= maxFromRuns {
 				continue
 			}
 			d.Runs = append(d.Runs, fromRunOpt{ID: rr.ID, Agent: rr.Agent, Start: rr.Start})
@@ -226,10 +285,44 @@ func (s *Server) newForm(r *http.Request, snap *ledgerview.Snapshot, dir, name s
 		d.Reads = r.FormValue("reads") == "on" || fresh
 		d.Form.Registry = d.To == "registry"
 	} else {
-		// From presets the switch starts off, as tego init writes no reason: block.
+		// The switch starts off; an explicitly selected ci preset supplies its own read default.
 		d.Reads = r.FormValue("reads") == "on"
 	}
+	if d.Mode != "run" {
+		d.To = r.FormValue("to")
+		if d.To == "" && s.cfg.Machine != nil && s.cfg.Machine.Registry.Value != "" {
+			d.To = "registry"
+		}
+		d.Form.Registry = d.To == "registry"
+	}
 	d.Form.Reads = d.Reads
+	d.Form.Blank = d.Mode == "blank"
+	if r.Method == http.MethodPost && r.FormValue("builder") == "1" && r.FormValue("step") != "source" {
+		d.Form.Text = []byte(strings.ReplaceAll(r.FormValue("text"), "\r\n", "\n"))
+		d.Form.Drop = r.PostForm["drop"]
+		for k, v := range r.PostForm {
+			if strings.HasPrefix(k, "choice-") && len(v) > 0 && v[0] == "drop" {
+				d.Form.Drop = append(d.Form.Drop, strings.TrimPrefix(k, "choice-"))
+			}
+		}
+		d.Form.NameHosts = map[string]string{}
+		for k, v := range r.PostForm {
+			if strings.HasPrefix(k, "host-") && len(v) > 0 {
+				d.Form.NameHosts[strings.TrimPrefix(k, "host-")] = v[0]
+			}
+		}
+		d.Form.Switches = r.FormValue("current-view") == "simple"
+		d.Form.Wall = r.FormValue("wall")
+		if r.FormValue("limit-wall") == "on" && d.Form.Wall == "" {
+			d.Form.Wall = "2h"
+		}
+		d.Form.RemoveWall = r.FormValue("wall-choice") == "1" && r.FormValue("limit-wall") != "on" && d.Form.Wall == ""
+		d.Form.WantAsk = r.FormValue("ask-connections") == "on"
+		d.Form.DropAsk = r.FormValue("ask-choice") == "1" && !d.Form.WantAsk
+		if d.Form.WantAsk {
+			d.Form.AskHosts = splitList(r.FormValue("ask-hosts"))
+		}
+	}
 	if d.Form.FromRun != "" {
 		// A contract made from a run that leaked never allows where its secrets went (QA PW-1). Preview and Create
 		// both come through here, so the draft, and the base hash Create checks, agree.
@@ -257,7 +350,25 @@ func (s *Server) fillPlan(d *newData, p *rules.NewPlan) {
 	if p == nil {
 		return
 	}
+	if len(p.Text) == 0 && len(d.Form.Text) > 0 {
+		// A busy or cancelled preflight has no compiled projection. Preserve the
+		// submitted editor and authenticated draft handle while refusing Save.
+		text := rulesview.RedactEnvText(string(d.Form.Text))
+		p.Text, p.Source = []byte(text), []byte(text)
+		p.Draft, p.OK = d.Form.Draft, false
+	}
 	d.Plan, d.Groups = p, newGroups(p.Groups)
+	d.Draft = p.Draft
+	d.Decisions = p.Decisions
+	d.Reads = p.Reads
+	d.Form.Wall = p.Wall
+	d.Form.AskHosts = p.AskHosts
+	d.Editor = rulesview.RedactEnvText(string(p.Source))
+	if d.View == "full" {
+		d.Editor = rulesview.RedactEnvText(string(p.Text))
+	}
+	d.Errors = newBuilderErrors(p, d.View, d.Mode)
+	d.YAML = builderLines(rulesview.RedactEnvText(string(p.Text)), rulesview.RedactEnvText(string(p.Source)), p.Decisions)
 	for i := range d.Presets {
 		d.Presets[i].Also = strings.Join(p.Grants[d.Presets[i].Name], ", ")
 	}
@@ -283,7 +394,7 @@ func startLine(dir string) string {
 }
 
 // runLine is the terminal line that starts the agent saved as the user registry's entry name: tego run <name>, typed in
-// the folder it runs in, as tego learn --save's next: line says it.
+// the folder it runs in, as tego rules learn --save's next: line says it.
 func runLine(dir, name string) string {
 	return "cd " + shellWord(dir) + " && tego run " + name
 }
@@ -300,10 +411,17 @@ func splitList(s string) []string {
 }
 
 func (s *Server) renderNew(w http.ResponseWriter, snap *ledgerview.Snapshot, status int, d newData) {
-	c := chrome{Title: "New contract", Nav: "rules"}
-	if snap != nil {
-		c = s.chromeOf(snap, c.Title, c.Nav)
+	if d.View == "" {
+		d.View = "simple"
 	}
+	rememberBuilderView(w, d.View)
+	var c chrome
+	if snap == nil {
+		c = s.chromeFromLedger("New contract", "rules")
+	} else {
+		c = s.chromeOf(snap, "New contract", "rules")
+	}
+	c.PhoneName = "Contracts" // the compact header names the section, as the contract builder pages always have
 	if d.Created != nil {
 		c.Title = "Agent set up · " + d.Created.Name
 	}
@@ -318,34 +436,48 @@ type notRunData struct {
 	Start  string
 }
 
-// notRunContracts are the contracts of the rule service's set that no run ran yet, for the Rules chooser.
-func (s *Server) notRunContracts() []contractOpt {
-	if s.cfg.Setup == nil {
+// catalogueContracts keeps every guarded-read refusal for the Rules chooser,
+// including files that already ran and entries created before their first run.
+func (s *Server) catalogueContracts(ctx context.Context) []contractOpt {
+	var svc interface {
+		Contracts() ([]rules.ContractRef, error)
+	}
+	if s.cfg.Setup != nil {
+		svc = s.cfg.Setup
+	} else if changes, ok := s.cfg.Rules.(ChangeService); ok {
+		svc = changes
+	}
+	if svc == nil {
 		return nil
 	}
-	cs, err := s.cfg.Setup.Contracts()
+	if local, ok := svc.(*rules.Service); ok {
+		svc = local.ForRequest(ctx)
+	}
+	cs, err := svc.Contracts()
 	if err != nil {
 		return nil
 	}
 	var out []contractOpt
 	for _, c := range cs {
-		if c.Runs == 0 {
-			out = append(out, contractOpt{Ref: c.Ref, Path: c.Path, Agent: c.Agent})
+		why := c.Why
+		if !c.Writable && why == "" {
+			why = "this contract cannot be changed here"
 		}
+		out = append(out, contractOpt{Ref: c.Ref, Path: c.Path, Aliases: c.Aliases, Agent: c.Agent, Runs: c.Runs, Live: len(c.Live), Why: why})
 	}
 	return out
 }
 
 // notRun is the view of the not-run contract ref, nil when the service has none such.
-func (s *Server) notRun(r *http.Request, ref string) *notRunData {
+func (s *Server) notRun(r *http.Request, ref string) (*notRunData, error) {
 	if s.cfg.Setup == nil || len(ref) != 16 {
-		return nil
+		return nil, nil
 	}
 	p, err := s.cfg.Setup.DescribeNew(r.Context(), ref)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	return &notRunData{Plan: p, Groups: newGroups(p.Groups), Text: rulesview.RedactEnvText(string(p.Text)), Start: startLine(p.Dir)}
+	return &notRunData{Plan: p, Groups: newGroups(p.Groups), Text: rulesview.RedactEnvText(string(p.Text)), Start: startLine(p.Dir)}, nil
 }
 
 // maxGroupRows is how many rules a group of a draft lists before the rest fold under "and N more": a preset's

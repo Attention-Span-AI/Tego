@@ -3,6 +3,7 @@
 package agent
 
 import (
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -17,7 +18,7 @@ func TestDNSCompiledPolicyOwnsMutableInputAndInitialDeadline(t *testing.T) {
 		t.Fatalf("load: %v %v", err, ds)
 	}
 	now := time.Unix(1700000000, 0)
-	rt, ds, err := Compile(c, &config.Machine{}, Offline(), WithClock(func() time.Time { return now }), WithMountInfo(""))
+	rt, ds, err := Compile(c, &config.Machine{}, Offline(), WithResolver(&fakeResolver{table: map[string][]netip.Addr{"api.example.com": {netip.MustParseAddr("203.0.113.24")}}}), WithClock(func() time.Time { return now }), WithMountInfo(""))
 	if err != nil {
 		t.Fatalf("compile: %v %v", err, ds)
 	}

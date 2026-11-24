@@ -11,7 +11,9 @@
 // One Store per ledger root (Open; Load and LoadRun use it) lives as long as the process. Per run it keeps the
 // events file's identity (device, inode), size and mtime, the offset of the last complete line read, the decoded
 // lines and the summary built from them. A request stats each events file: an unchanged one costs nothing, a grown
-// one costs its appended lines, and one that got shorter or changed identity is read again from the start. Each
+// one costs its appended lines, and one that got shorter or changed identity is read again from the start. A file looked at within
+// racySlack of its last change is racy, as in git: a rewrite at the same size within one tick of a coarse clock keeps its stamps, so
+// the next look at an unchanged stamp compares the digest of its last bytes and reads it from the start when they changed. Each
 // change publishes a new immutable Run that concurrent requests share; the views derived from it (the timeline, the
 // refusal groups, the Logs fold and text haystacks, the per-subject counts, the hits per rule key of the Rules page)
 // are built once per published version, on first use. Logs (Snapshot.Query) folds each run where it lies and merges
@@ -21,7 +23,21 @@
 // comes from the run's exec lines in one pass, continued as a live run grows (program.go), and Group gathers the
 // matched lines by process, target or rule, kept per run version like the facets (group.go). Decoding itself keeps
 // recent event windows bounded by count and an estimate that reserves room for these derived views (cache.go).
-// Full-run counters and start/end metadata continue incrementally. MaxResidentBytes budgets resident windows;
+// Full-run counters and start/end metadata continue incrementally. Run.ReadError preserves the last file-reader
+// failure separately from malformed-record Bad. A cached prefix remains available but is incomplete until a real
+// read succeeds; unchanged-file shortcuts cannot clear that error. Snapshot.ReadError names a root or record
+// failure; ReadErrorListed distinguishes a retained failed Run from an unlisted source failure.
+// Snapshot.LiveError separately qualifies running and waiting status without suppressing readable records.
+// Unfinished runs carry that scope in LiveError; their state can be unknown. Scoped immutable views are reused
+// until their record or reason changes, and released on publication so they cannot pin an evicted window.
+// Its own Run.ReadError qualifies a retained prefix without hiding known run-list presence. A run
+// directory with no events file is skipped only without evidence of a recorded line. Prior reads,
+// last-refusal.json and the configured chain anchor establish missing-record failures. A known run whose whole
+// directory disappears remains a failure. An observed empty record file could have gained lines before it vanished,
+// so it is also a known source. Evidence keeps one ID per observed record source for the store’s
+// lifetime, outside the decoded-window byte budget. These failures and their
+// recovery move the revision, so unreadable absence cannot silently become a smaller count.
+// MaxResidentBytes budgets resident windows;
 // eviction includes active runs and discards their signal/program caches. Root snapshots label evicted summaries
 // partial and do not rehydrate every window; an individual run reloads its retained byte interval. WindowBefore
 // scans earlier disk history with bounded retention, and a complete ledger download streams its exact bytes.
@@ -40,7 +56,8 @@
 // ten minutes the kept verdict is still shown while the same run is checked again in the background, its events file
 // read from disk and chain.log through the view; a check that finds another verdict than the one kept moves the
 // revision, so open pages redraw, and one check per key runs at a time (chain.go). A run's Signal is
-// kept per run version, and while the run is live so is the pass that built it, so the next version folds only the
+// kept per run and events-file version. A live pass is reused only while the same file grows, so another
+// ledger with the same run id and local revision cannot supply its result or fold. The next version folds only the
 // lines it gained (signalcache.go, signalfold.go); a line's paths are classified as secret or not once, as the Store
 // takes the line (secretpath.go).
 // The run page's heavy tabs keep their results per run in bounded caches (results.go: Results, StampRun): the Receipt
@@ -101,9 +118,9 @@
 // so a restarted dashboard never repeats a number an open page still holds:
 //
 //   - Snapshot.Rev is the revision the snapshot reflects. Two snapshots with the same Rev hold the same runs with
-//     the same lines, live states and pending asks; a page whose Rev matches has nothing to redraw.
+//     the same lines, live states, pending asks and reader errors; a page whose Rev matches has nothing to redraw.
 //   - Run.Rev is the revision at which that run last changed: lines appended, its file replaced or truncated, its
-//     live state changed (listed in <root>/.live with its lock held; each lock's probe is kept two seconds,
+//     reader error changed, or live state changed (listed in <root>/.live with its lock held; each lock's probe is kept two seconds,
 //     livelock.go). Snapshot.Changed(since) lists the runs with Rev > since. A run that left the root (gc) is
 //     not listed, but Snapshot.Rev moved, so compare the run ids when Rev moved and Changed is empty.
 //   - Run.LastSeq is the seq of the run's newest line read, the cursor for "rows after seq"; TimelineOf(run,
@@ -123,6 +140,7 @@
 //
 // Imports: the standard library, pkg/spec/record, pkg/spec/backend (the capability ids run_start names),
 // internal/control/linewords (the glossary and the credential mask),
+// internal/ledger/runstart (the shared run-start metadata projection),
 // internal/ledger (VerifyRunDir, VerdictOf and AnchorHeads; OpenReader for the receipt; LockHeld for a run's live state and, with OpenRegular, a result's stamp), and the read-side cores internal/check/receipt, measure, livestatus,
 // secretpath and syslookup.
 // Must not import: the engine (internal/runtime, internal/policy, internal/bpf, internal/cli).

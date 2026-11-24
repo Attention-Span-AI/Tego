@@ -175,3 +175,58 @@ func TestCredentialsRefusedWithoutALayer(t *testing.T) {
 		t.Errorf("the fix sends the reader to another build: %s", render(ds))
 	}
 }
+
+// Invalid name fields sometimes contain shell-style entries; diagnostics must not turn those into value printers.
+func TestEnvironmentNameDiagnosticHidesValue(t *testing.T) {
+	for _, value := range []string{"QZ", "private-environment-value-that-is-long"} {
+		entry := "PRIVATE_TOKEN=" + value
+		for _, body := range []string{
+			"env: {pass: [" + entry + "]}", "env: {deny: [" + entry + "]}", "env: {mask: [" + entry + "]}",
+			"env: {set: {" + entry + ": x, " + entry + ": y}}",
+			"credentials: [{name: example, env: " + entry + ", allow: [api.example.com]}]",
+			"credentials: [{name: example, env: TOKEN, base_url_env: " + entry + ", allow: [api.example.com]}]",
+		} {
+			_, ds := loadDiags(t, "version: 0\nname: t\ncommand: [\"true\"]\n"+body+"\n")
+			text := render(ds)
+			if !strings.Contains(text, "PRIVATE_TOKEN") || strings.Contains(text, value) {
+				t.Errorf("environment name diagnostic: %s", text)
+			}
+		}
+		c := &Contract{Env: EnvSection{Set: map[string]string{entry: "x"}}}
+		for _, baseURL := range []bool{false, true} {
+			var ds diags
+			cr := Credential{Name: "example", Env: entry, BaseURLEnv: entry}
+			if baseURL {
+				validateCredentialBaseURLEnv(&ds, c, cr, Pos{})
+			} else {
+				validateCredentialEnv(&ds, c, cr, Pos{}, map[string]int{}, 0)
+			}
+			text := render(ds.list)
+			if !strings.Contains(text, "PRIVATE_TOKEN") || strings.Contains(text, value) {
+				t.Errorf("credential name diagnostic: %s", text)
+			}
+		}
+	}
+}
+
+// TestEnvEntryMessages: an entry of a field that takes a variable's name is never echoed when it has no name to tell
+// from a value (a secret pasted where a name belongs); the diagnostic's path and position say which entry it is
+// (rule (a) of pkg/spec/identity envtext.go).
+func TestEnvEntryMessages(t *testing.T) {
+	for _, entry := range []string{"sk-live-qz", "\"=sk-live-qz\"", "1BAD=sk-live-qz", "\"A B=sk-live-qz\""} {
+		for body, where := range map[string]string{
+			"env: {pass: [PATH, " + entry + "]}":                                           "env.pass.1: this entry is not an environment variable name",
+			"env: {deny: [" + entry + "]}":                                                 "env.deny.0: this entry is not an environment variable name",
+			"env: {mask: [" + entry + "]}":                                                 "env.mask.0: this entry is not an environment variable name",
+			"env: {set: {" + entry + ": x}}":                                               "env.set: this entry is not an environment variable name",
+			"credentials: [{name: example, env: " + entry + ", allow: [api.example.com]}]": "this entry is not an environment variable name",
+			"credentials: [{name: example, env: TOKEN, base_url_env: " + entry + ", allow: [api.example.com]}]": "this entry is not an environment variable name",
+		} {
+			_, ds := loadDiags(t, "version: 0\nname: t\ncommand: [\"true\"]\n"+body+"\n")
+			text := render(ds)
+			if !strings.Contains(text, where) || strings.Contains(text, "qz") || strings.Contains(text, "BAD") {
+				t.Errorf("%s: %s", body, text)
+			}
+		}
+	}
+}

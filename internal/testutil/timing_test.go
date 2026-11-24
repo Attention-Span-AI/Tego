@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -434,6 +435,40 @@ func TestTheUnitGateSeesTheWaitsCPUTimeLeavesOut(t *testing.T) {
 // had over a sample stays in its own time (TestAHandOffShowsInTheOwnTime).
 func TestOwnTimeLeavesOutRunQueueWaits(t *testing.T) {
 	requireRunQueue(t)
+	// A run in which no try could be compared has verified nothing about the own time's agreement with the CPU time:
+	// it is said and skipped with the reason, never counted as a pass.
+	if why := ownTimeBesideASpinner(t, cpuSampleState); why != "" {
+		t.Skip(why)
+	}
+}
+
+// TestNoUsableObservationIsNotAPass: where the kernel's per-CPU accounting cannot be read while schedstat can (a
+// /proc that hides /proc/stat), or its irq, softirq or steal counters move in every try, no try reaches the
+// comparison of own time and CPU time. The run then reports that it observed nothing, with each try's reason, which
+// TestOwnTimeLeavesOutRunQueueWaits turns into a skip; it used to log one line and pass.
+func TestNoUsableObservationIsNotAPass(t *testing.T) {
+	requireRunQueue(t)
+	// Every try is unusable for the injected reason, or because it blocked (a busy machine): none is compared.
+	held := func(why, reason string) {
+		t.Helper()
+		if !strings.Contains(why, "no usable observation") || !strings.Contains(why, "TestOwnTimeFormula") ||
+			strings.Count(why, reason)+strings.Count(why, " blocked") != 10 {
+			t.Errorf("a run with no comparable sample reported %q, want no usable observation and, for each of its 10 "+
+				"tries, %q or that it blocked", why, reason)
+		}
+	}
+	held(ownTimeBesideASpinner(t, func(int) sampleState { return sampleState{} }), "kernel accounting unavailable")
+	tick := uint64(0)
+	held(ownTimeBesideASpinner(t, func(cpu int) sampleState {
+		tick++ // the softirq counter moves between every two reads
+		return parseSampleState([]byte(fmt.Sprintf("cpu%d 1 0 1 1 0 0 %d 0 0 0\n", cpu, tick)), []byte("1 1 1\n"), cpu)
+	}), "counters changed")
+}
+
+// ownTimeBesideASpinner is TestOwnTimeLeavesOutRunQueueWaits' body with the reader of the per-CPU counters named
+// (cpuSampleState in the test itself). It returns "" when at least one try's sample was compared, and otherwise why
+// none was: the run observed nothing it could hold the own time to.
+func ownTimeBesideASpinner(t *testing.T, readState func(cpu int) sampleState) (noObservation string) {
 	onOneCPU(t, func(cpu int) {
 		stop := startSpinner(t)
 		defer stop()
@@ -450,12 +485,17 @@ func TestOwnTimeLeavesOutRunQueueWaits(t *testing.T) {
 		// that none does is logged, the formula itself being held by TestOwnTimeTakesOutTheRunQueueDelay. A Gosched
 		// first starts the 10 ms afresh.
 		const work = 4 * time.Millisecond
+		const tries = 10
 		waited := false
-		for try := range 10 {
+		compared := 0
+		var unusable []string
+		for try := range tries {
 			runtime.Gosched()
+			before := readState(cpu)
 			q0 := rq.delay()
 			s := threadSample(rq, func() { spinCPU(work) })
 			delay := rq.delay() - q0
+			after := readState(cpu)
 			t.Logf("try %d: %v of work on CPU %d beside a spinning process: %+v, %v of run-queue delay around it", try,
 				work, cpu, s, delay)
 			// The CPU clock brackets the sample's other reads too, so a sample's own time can be a few microseconds
@@ -468,9 +508,19 @@ func TestOwnTimeLeavesOutRunQueueWaits(t *testing.T) {
 				if s.own != s.wall {
 					t.Errorf("try %d blocked and measured %+v: want its own time the wall clock", try, s)
 				}
+				unusable = append(unusable, fmt.Sprintf("try %d blocked", try))
 				continue
 			}
-			if s.own < s.wall-delay || s.own-s.cpu-s.others > time.Millisecond || s.cpu-s.own > time.Millisecond {
+			// These readings bracket the sample more widely than its inner schedstat
+			// reads. Counters are CPU-wide USER_HZ ticks, not an attributable duration:
+			// never subtract them from a thread, or double count IRQ/steal during queue waits.
+			if reason := sampleDisturbance(before, after, delay-s.delay); reason != "" {
+				t.Logf("try %d disturbed (%s); scheduler [run ns, queue ns, slices] %v -> %v; cpu [irq, softirq, steal] %v -> %v; skip CPU agreement", try, reason, before.sched, after.sched, before.cpu, after.cpu)
+				unusable = append(unusable, fmt.Sprintf("try %d: %s", try, reason))
+				continue
+			}
+			compared++
+			if s.own-s.cpu-s.others > time.Millisecond || s.cpu-s.own > time.Millisecond {
 				t.Errorf("try %d did not block and measured %+v with %v of delay around it: want the run-queue waits "+
 					"on the wall clock alone, and its own time within 1ms of its CPU time plus the other threads' (%v)",
 					try, s, delay, s.others)
@@ -480,11 +530,81 @@ func TestOwnTimeLeavesOutRunQueueWaits(t *testing.T) {
 				break
 			}
 		}
+		if compared == 0 {
+			noObservation = fmt.Sprintf("no usable observation: none of the %d tries gave a sample to compare (%s), so "+
+				"the own time's agreement with the CPU time was not checked on this machine; the formula itself is held "+
+				"by TestOwnTimeFormula and TestUnchargedTimeIsNotWork", tries, strings.Join(unusable, "; "))
+			return
+		}
 		if !waited {
-			t.Logf("no try waited a quarter of the work without blocking: this machine is too busy, or too idle, to " +
-				"show it")
+			t.Logf("%d of %d tries were compared and none waited a quarter of the work without blocking: this machine "+
+				"is too busy, or too idle, to show the waits come out", compared, tries)
 		}
 	})
+	return noObservation
+}
+
+// sampleState retains kernel counters around the diagnostic workload. CPU counters
+// include other tasks and are quantized; schedstat's running time updates at scheduler
+// accounting boundaries. Neither is a nanosecond partition of our wall interval.
+type sampleState struct {
+	cpu, sched [3]uint64
+	ok         bool
+}
+
+func cpuSampleState(cpu int) sampleState {
+	stat, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return sampleState{}
+	}
+	sched, err := os.ReadFile("/proc/thread-self/schedstat")
+	if err != nil {
+		return sampleState{}
+	}
+	return parseSampleState(stat, sched, cpu)
+}
+
+func parseSampleState(stat, sched []byte, cpu int) sampleState {
+	s := sampleState{ok: true}
+	parse := func(fields []string, indices []int, out *[3]uint64) {
+		for i, index := range indices {
+			if index >= len(fields) {
+				s.ok = false
+				return
+			}
+			n, err := strconv.ParseUint(fields[index], 10, 64)
+			if err != nil {
+				s.ok = false
+				return
+			}
+			out[i] = n
+		}
+	}
+	found := false
+	for line := range strings.SplitSeq(string(stat), "\n") {
+		f := strings.Fields(line)
+		if len(f) > 0 && f[0] == fmt.Sprintf("cpu%d", cpu) {
+			found = true
+			parse(f, []int{6, 7, 8}, &s.cpu)
+			break
+		}
+	}
+	parse(strings.Fields(string(sched)), []int{0, 1, 2}, &s.sched)
+	s.ok = s.ok && found
+	return s
+}
+
+func sampleDisturbance(before, after sampleState, edge time.Duration) string {
+	switch {
+	case !before.ok || !after.ok:
+		return "kernel accounting unavailable"
+	case before.cpu != after.cpu:
+		return "per-CPU irq, softirq or steal counters changed"
+	case edge > 0:
+		return fmt.Sprintf("%v of run-queue delay outside the inner scheduler reads", edge)
+	default:
+		return ""
+	}
 }
 
 // TestOwnTimeTakesOutTheRunQueueDelay: a sample that does not block reads its own time as its wall clock less the
@@ -695,3 +815,77 @@ func spinCPU(d time.Duration) {
 }
 
 var spinSink uint64
+
+// TestUnchargedTimeIsNotWork holds the accounting rule for clock-read boundary preemption,
+// hypervisor steal, and separately charged interrupts, without pretending to distinguish
+// those sources from a single thread snapshot. A blocked sample still keeps its entire wait.
+func TestUnchargedTimeIsNotWork(t *testing.T) {
+	before := parseSampleState([]byte("cpu0 1 0 1 1 0 0 0 0 0 0\n"), []byte("4000000 3000000 4\n"), 0)
+	for _, stat := range []string{
+		"cpu0 1 0 1 1 0 1 0 0 0 0\n", // irq
+		"cpu0 1 0 1 1 0 0 1 0 0 0\n", // softirq
+		"cpu0 1 0 1 1 0 0 0 1 0 0\n", // steal
+	} {
+		after := parseSampleState([]byte(stat), []byte("8000000 6000000 5\n"), 0)
+		if reason := sampleDisturbance(before, after, 0); !strings.Contains(reason, "counters changed") {
+			t.Fatalf("disturbed sample not recognised: %q", reason)
+		}
+	}
+
+	const ms = time.Millisecond
+	for _, tc := range []struct {
+		name        string
+		s           sample
+		delay, want time.Duration
+	}{
+		{"queue between reads", sample{wall: 10 * ms, cpu: 4 * ms, others: 10 * time.Microsecond}, 3600 * time.Microsecond, 4010 * time.Microsecond},
+		{"steal or irq", sample{wall: 10 * ms, cpu: 4 * ms}, 0, 4 * ms},
+		{"helper work stays", sample{wall: 10 * ms, cpu: 4 * ms, others: 2 * ms}, 6 * ms, 6 * ms},
+		{"blocked wait stays", sample{wall: 10 * ms, cpu: 4 * ms, blocked: true}, 3 * ms, 10 * ms},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := accountedOwn(tc.s, tc.delay); got != tc.want {
+				t.Fatalf("own time %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestOwnTimeIsHeldFromBothSides holds the own-time figure against an error in either direction, with injected
+// readings. Too little taken out of the wall clock (a wait the scheduler reads missed, time nobody was charged for)
+// would leave a figure over the CPU time charged to the process, and budgets would fail for no fault of the code: the
+// figure is capped there. Too much taken out (a run-queue delay read wider than the sample, or wider than the wait it
+// had) would leave a figure under the work the thread did, and a budget would pass code that is over it: the figure is
+// floored at the thread's CPU time. A sample that blocked keeps its whole wall clock whatever the delay read.
+func TestOwnTimeIsHeldFromBothSides(t *testing.T) {
+	const ms = time.Millisecond
+	for _, tc := range []struct {
+		name        string
+		s           sample
+		delay, want time.Duration
+	}{
+		// too little subtracted
+		{"no delay read at all", sample{wall: 10 * ms, cpu: 4 * ms}, 0, 4 * ms},
+		{"a delay read short of the wait", sample{wall: 10 * ms, cpu: 4 * ms}, 2 * ms, 4 * ms},
+		{"short, with a helper thread's work kept", sample{wall: 10 * ms, cpu: 4 * ms, others: 1 * ms}, 2 * ms, 5 * ms},
+		// too much subtracted
+		{"a delay read wider than the wait", sample{wall: 10 * ms, cpu: 4 * ms}, 9 * ms, 4 * ms},
+		{"a delay read wider than the sample", sample{wall: 10 * ms, cpu: 4 * ms}, 30 * ms, 4 * ms},
+		{"wider, beside a helper thread", sample{wall: 10 * ms, cpu: 4 * ms, others: 1 * ms}, 9 * ms, 4 * ms},
+		// neither
+		{"the delay is the wait", sample{wall: 10 * ms, cpu: 4 * ms}, 6 * ms, 4 * ms},
+		{"a blocked sample, delay read wide", sample{wall: 10 * ms, cpu: 4 * ms, blocked: true}, 30 * ms, 10 * ms},
+		{"a blocked sample, no delay read", sample{wall: 10 * ms, cpu: 4 * ms, blocked: true}, 0, 10 * ms},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ownFigure(accountedOwn(tc.s, tc.delay), tc.s.cpu)
+			if got != tc.want {
+				t.Fatalf("own time %v, want %v", got, tc.want)
+			}
+			if got < tc.s.cpu || got > tc.s.wall || !tc.s.blocked && got > tc.s.cpu+tc.s.others {
+				t.Fatalf("own time %v leaves [the thread's CPU time %v, the process's %v] or passes the wall clock %v",
+					got, tc.s.cpu, tc.s.cpu+tc.s.others, tc.s.wall)
+			}
+		})
+	}
+}

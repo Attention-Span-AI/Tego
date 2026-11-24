@@ -12,6 +12,27 @@ const ResolverRule = "net.resolver"
 // association, which names no destination (its line's dst is "unspec").
 const UnspecRule = "net.unspec"
 
+// UnspecSendRule is the rule the supervisor writes in an observe run on a send (sendto, sendmsg, sendmmsg) whose address
+// is AF_UNSPEC (GAPS C61). The call was continued: an attempted send whose destination and result were not established
+// (IPv4 UDP or raw sockets can use the sockaddr_in behind the family word; IPv6 UDP can use its existing peer), so
+// the line's dst "unspec" names no address the record holds. It is no disconnect (UnspecRule is
+// connect(2)'s alone), so NoPlace is false for it, and every reader names it UnreadSendPlace.
+const UnspecSendRule = "net.unspec-send"
+
+// UnreadSendPlace is how the receipt and the dashboard label an UnspecSendRule attempt whose destination and result
+// were not established. It has no ':' or parenthesis, so it reads as one name wherever a destination is split into
+// host and port.
+const UnreadSendPlace = "unread address, AF_UNSPEC send"
+
+// PlaceOf is the place a net line to dst under rule names: UnreadSendPlace for a send whose address was AF_UNSPEC and was
+// continued, else dst.
+func PlaceOf(dst, rule string) string {
+	if rule == UnspecSendRule {
+		return UnreadSendPlace
+	}
+	return dst
+}
+
 // Sockets are the unix sockets the C library and system services open on their own for name, user and host lookups
 // (nscd, systemd's userdb and resolved, the D-Bus system bus). An entry ending in "/" is a directory.
 var Sockets = []string{
@@ -84,9 +105,12 @@ func Routine(dst, rule string) bool { return IsSocket(dst) || Resolver(dst, rule
 // socket, the kernel's own (dst "family(16)", AF_NETLINK, which the dashboard names "netlink"), where the C library
 // reads the machine's addresses and routes. Any other family is a place: a vsock (family 40) can carry the run's data
 // off the machine as well as an address can. It is no system lookup (Routine): the receipt counts the two apart, and
-// the dashboard folds both away. It reads no verdict, and a refused line is no routine call: the supervisor writes dst
+// the dashboard folds both away. A send an observe run continued (UnspecSendRule) is no such call. It reads no verdict, and a refused line is no routine call: the supervisor writes dst
 // "unspec" for a send whose address is AF_UNSPEC too, which it refuses (R4), and a refused family(16) line for a
 // netlink send that is no route query. Every reader keeps such a line as a refusal and names it as no place.
 func NoPlace(dst, rule string) bool {
+	if rule == UnspecSendRule {
+		return false // an attempted send whose destination and result were not established stays visible
+	}
 	return rule == UnspecRule || dst == "unspec" || dst == "family(16)" || dst == "netlink"
 }

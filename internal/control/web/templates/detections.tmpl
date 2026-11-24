@@ -2,37 +2,41 @@
 {{/* Detections: the runs whose secrets left, in the run page's banner, whatever the filters say; then every blocked
      action of every run that is not routine, High first (detections.go). The filters are links, so a filtered view is
      a URL; Low is folded under the list unless asked for. */}}
-{{define "content"}}{{with .Data}}{{$d := .}}
+{{define "content"}}<link rel="stylesheet" href="/static/evidence.css">{{with .Data}}{{$d := .}}
 <script src="/static/review.js" defer></script>
-<div class="head"><div><h1>Detections</h1><p class="lede" id="dt-progress" hidden></p></div><div class="head-actions"><a class="link" href="/severity">Severity rules</a>{{if .Routine}} · <a class="link" href="/logs?verdict=refused" title="System lookups and probes, left out here">Routine {{.Routine}}</a>{{end}}</div></div>
-{{range .Leaks}}<section class="banner verdict verdict-leak" role="status" aria-label="Secrets left in a run" data-k="leak-{{.Run}}">{{template "i" "i-triangle-alert"}}<div class="grow"><p class="vt"><a class="dt-what" href="/runs/{{pathEsc .Run}}">{{.Title}}</a></p><p class="vs">{{.Sub}} · {{.Agent}} · {{.Project}} · <time datetime="{{iso .When}}" title="{{stamp .When}}">{{when .When $d.Now}}</time></p></div></section>{{end}}
-<nav class="chips dt-filter" aria-label="Severity">
+<div class="head"><div>{{if $.Tour}}<h2>{{else}}<h1>{{end}}What was noticed?{{if $.Tour}}</h2>{{else}}</h1>{{end}}<p class="lede" id="dt-progress" hidden></p></div><details class="head-more"><summary>Actions</summary><div class="head-actions"><a class="link" href="/severity">Severity rules</a> · <a class="link" href="/refusals">Refusals by hour</a>{{range layerLinks "detections"}} · <a class="link" href="{{.Href}}">{{.Label}}</a>{{end}}{{if .Routine}} · <a class="link" href="/logs?verdict=refused" title="System lookups and probes, left out here">Routine {{template "quantity" (quantity "detections.routine" .Routine $.Numbers)}}</a>{{end}}</div></details></div>
+{{range .Leaks}}<section class="banner verdict verdict-leak" role="status" aria-label="Secrets left in a run" data-k="leak-{{.Run}}">{{template "i" "i-triangle-alert"}}<div class="grow"><p class="vt"><a class="dt-what" href="/runs/{{pathEsc .Run}}" data-number="run.attention">{{.Title}}</a></p><p class="vs" data-number="run.attention">{{.Sub}} · {{.Agent}} · {{.Project}} · <time datetime="{{iso .When}}" title="{{stamp .When}}" data-number-exclude="detections.clock-1">{{when .When $d.Now}}</time></p></div></section>{{end}}
+<div class="summary-controls"><span class="soft" data-say>{{template "quantity" (quantity "detections.noticed" (len .Rows) $.Numbers)}} noticed · all time</span><a class="btn" data-filter-open href="{{.FilterURL}}">Filter</a></div>
+{{if .FilterPage}}<section class="filter-fallback panel panel-body" aria-labelledby="detections-filter-title"><h2 id="detections-filter-title">Filter detections</h2>{{template "detection-filters" (withNumbers . $.Numbers)}}</section>{{else}}<dialog class="filter-sheet" aria-labelledby="detections-filter-title"><div class="filter-title"><h2 id="detections-filter-title">Filter detections</h2><button class="btn" type="button" data-filter-close>Close</button></div>{{template "detection-filters" (withNumbers . $.Numbers)}}</dialog>{{end}}
+<nav class="chips dt-filter dt-desktop" aria-label="Severity">
 <a class="chip" href="/detections{{with $d.Ch}}?ch={{.}}{{end}}"{{if eq $d.Sev ""}} aria-current="true"{{end}}>All</a>
-{{range .Severities}}<a class="chip" href="/detections?sev={{lower .}}{{with $d.Ch}}&ch={{.}}{{end}}"{{if eq $d.Sev (lower .)}} aria-current="true"{{end}}><span class="sev sev-{{.}}">{{.}}</span> {{index $d.SevCount .}}</a>{{end}}
+{{range .Severities}}<a class="chip" href="/detections?sev={{lower .}}{{with $d.Ch}}&ch={{.}}{{end}}"{{if eq $d.Sev (lower .)}} aria-current="true"{{end}}><span class="sev sev-{{.}}">{{.}}</span> {{template "quantity" (quantity "detections.severity" (index $d.SevCount .) $.Numbers)}}</a>{{end}}
 </nav>
 <section class="panel" aria-labelledby="h-dt">
-<div class="panel-head"><h2 id="h-dt" class="sr" data-say>Refused actions · {{len .Rows}} shown</h2><nav class="tabs dt-ch" aria-label="Channel">
-<a href="/detections{{with $d.Sev}}?sev={{.}}{{end}}"{{if eq $d.Ch ""}} aria-current="page"{{end}}>All channels <span class="n">{{$d.Total}}</span></a>
-{{range .Channels}}<a href="/detections?ch={{lower .}}{{with $d.Sev}}&sev={{.}}{{end}}"{{if eq $d.Ch (lower .)}} aria-current="page"{{end}}>{{.}} <span class="n">{{index $d.ChCount .}}</span></a>{{end}}
+<div class="panel-head"><h2 id="h-dt" class="sr">Refused actions · {{template "quantity" (quantity "detections.noticed" (len .Rows) $.Numbers)}} shown</h2><nav class="tabs dt-ch dt-desktop" aria-label="Channel">
+<a href="/detections{{with $d.Sev}}?sev={{.}}{{end}}"{{if eq $d.Ch ""}} aria-current="page"{{end}}>All channels <span class="n">{{template "quantity" (quantity "detections.channels" $d.Total $.Numbers)}}</span></a>
+{{range .Channels}}<a href="/detections?ch={{lower .}}{{with $d.Sev}}&sev={{.}}{{end}}"{{if eq $d.Ch (lower .)}} aria-current="page"{{end}}>{{.}} <span class="n">{{template "quantity" (quantity "detections.channel" (index $d.ChCount .) $.Numbers)}}</span></a>{{end}}
 </nav></div>
-{{if .Rows}}{{template "dtable" (dtab .Rows .Now)}}{{end}}
-{{if .Low}}<details class="dt-low"><summary title="The agent's own files and system information">Low · {{len .Low}}</summary>{{template "dtable" (dtab .Low .Now)}}</details>{{end}}
-{{if not (or .Rows .Low)}}{{if and .Leaks (not .Total)}}<p class="panel-body soft">{{if .Routine}}Only routine actions refused{{else}}No refused actions{{end}}</p>
+{{if .Rows}}{{template "dtable" (withNumbers (dtab .Rows .Now) $.Numbers)}}{{end}}
+{{if .Low}}<details class="dt-low"><summary title="The agent's own files and system information">Low · {{template "quantity" (quantity "detections.low" (len .Low) $.Numbers)}}</summary>{{template "dtable" (withNumbers (dtab .Low .Now) $.Numbers)}}</details>{{end}}
+{{if not (or .Rows .Low)}}{{if and .Leaks (not .Total)}}<p class="panel-body soft" data-number="detections.noticed">{{if .Routine}}{{template "quantity" (quantityZero "detections.noticed" "Only routine actions refused" $.Numbers)}}{{else}}{{template "quantity" (quantityZero "detections.noticed" "No refused actions" $.Numbers)}}{{end}}</p>
 {{else}}<div class="empty">{{if not (or .Leaks .Watched)}}<div class="glyph">{{template "i" "i-check"}}</div>{{end}}
-{{if .Total}}<h3>No match</h3><a class="btn" href="/detections">Clear filters</a>
-{{else}}<h3>{{if .Routine}}Only routine actions refused{{else}}Nothing refused{{end}}</h3><p>What Tego refuses a run under a contract (<span class="mono">tego run</span>) shows here.</p><a class="btn" href="/runs">Runs</a>{{end}}</div>{{end}}{{end}}
+{{if .Total}}<h3>{{template "quantity" (quantityZero "detections.noticed" "No match" $.Numbers)}}</h3><a class="btn" href="/detections">Clear filters</a>
+{{else}}<h3 data-number="detections.noticed">{{if $unknown := unknownCount $.Numbers.Window "Refused actions"}}{{$unknown}}{{else if .Routine}}{{template "quantity" (quantityZero "detections.noticed" "Only routine actions refused" $.Numbers)}}{{else}}{{template "quantity" (quantityZero "detections.noticed" "Nothing refused" $.Numbers)}}{{end}}</h3><p>What Tego refuses a run under a contract (<span class="mono">tego run</span>) shows here.</p><a class="btn" href="/runs">Runs</a>{{end}}</div>{{end}}{{end}}
 </section>
 {{end}}{{end}}
 {{/* dtable is a table of detections: severity, what was done to what, by which agent in which project, how often, when. */}}
-{{define "dtable"}}<div class="tw"><table class="t dt-table"><caption class="sr">Refused actions, High first</caption>
-<thead><tr><th scope="col">Severity</th><th scope="col">Action</th><th scope="col">Agent · Project</th><th scope="col" class="num">Times</th><th scope="col">Last</th><th scope="col"><span class="sr">Investigate</span></th></tr></thead>
+{{define "dtable"}}{{$numbers := numbersOf .}}{{$ := numberValue .}}{{with $}}<div class="tw phone-list"><table class="t dt-table summary-table"><caption class="sr">Refused actions, High first</caption>
+<thead><tr><th scope="col">Severity</th><th scope="col">Action</th><th scope="col">Agent · Project</th><th scope="col" class="num">Times</th><th scope="col">Last</th><th scope="col" aria-label="Investigate"></th></tr></thead>
 <tbody>{{$now := .Now}}{{range .Rows}}<tr class="dt-row" data-k="{{.Run}}-{{.FirstSeq}}" data-review-key="{{.Run}}-{{.Seq}}" data-sev="{{.Severity}}">
 <td><span class="sev sev-{{.Severity}}">{{.Severity}}</span></td>
-<td class="dt-act"><a class="dt-what" href="/runs/{{pathEsc .Run}}/investigate/{{.FirstSeq}}" aria-label="Investigate: {{.Verb}} {{mask (tilde .Subject)}}"><span class="dt-verb">{{.Verb}}</span> {{template "sptv" (spt (mask (tilde .Subject)) .Home 60)}}</a>
-{{if .Secret}}<span class="dt-tag">Secret</span>{{end}}{{if .NearSecret}}<span class="dt-tag" title="Within 5 seconds of a secret read">After a secret read</span>{{end}}{{if .Hosts}}<span class="dt-tag" title="{{mask (someOf .Targets 24)}}">{{.Hosts}} addresses</span>{{end}}{{template "porttag" .}}
-<div class="meta">{{.Channel}} · {{.Rule}}</div></td>
-<td data-label="Agent · Project">{{.Agent}} · <span title="{{.Project}}">{{.Project}}</span></td>
-<td class="num" data-label="Times">{{.Count}}</td>
-<td data-label="Last"><time datetime="{{iso .Last}}" title="{{stamp .Last}}">{{when .Last $now}}</time></td>
-<td class="dt-go"><a href="/runs/{{pathEsc .Run}}/investigate/{{.FirstSeq}}" tabindex="-1" aria-hidden="true">›</a></td>
-</tr>{{end}}</tbody></table></div>{{end}}
+<td class="dt-act"><a class="dt-what" href="/runs/{{pathEsc .Run}}/investigate/{{.FirstSeq}}" aria-label="Investigate: {{.Verb}} {{mask (tilde .Subject)}}" data-number-exclude-aria-label="detections.fact-1"><span class="dt-verb" data-number-exclude="detections.action-name">{{.Verb}}</span> {{template "sptv" (spt (mask (tilde .Subject)) .Home 60)}}</a>
+{{if .Secret}}<span class="dt-tag">Secret</span>{{end}}{{if .NearSecret}}<span data-number-title="shared.policy" class="dt-tag" title="Within 5 seconds of a secret read">After a secret read</span>{{end}}{{if .Hosts}}<span class="dt-tag" title="{{mask (someOf .Targets 24)}}">{{template "quantity" (quantity "detections.addresses" .Hosts $numbers)}} addresses</span>{{end}}{{template "porttag" (withNumbers . $numbers)}}
+<div class="meta" data-number-exclude="detections.fact-2">{{.Channel}} · {{.Rule}}</div></td>
+<td data-label="Agent · Project" data-number-exclude-text="detections.agent-project">{{.Agent}} · <span title="{{.Project}}">{{.Project}}</span></td>
+<td class="num" data-label="Times">{{template "quantity" (quantity "detections.times" .Count $numbers)}}</td>
+<td data-label="Last"><time datetime="{{iso .Last}}" title="{{stamp .Last}}" data-number-exclude="detections.clock-2">{{when .Last $now}}</time></td>
+<td class="dt-go"><a href="/runs/{{pathEsc .Run}}/investigate/{{.FirstSeq}}" tabindex="-1" aria-hidden="true">›</a></td><td class="phone-cell"><a class="phone-row" href="/runs/{{pathEsc .Run}}/investigate/{{.FirstSeq}}"><span class="phone-who" data-number-exclude="detections.agent-field-1">{{if .Agent}}{{.Agent}}{{else}}An agent{{end}}</span><span class="b sev-{{.Severity}}">{{.Severity}}</span><time class="phone-when" datetime="{{iso .Last}}" data-started="{{iso .Last}}" data-number-exclude="detections.clock-3" data-ck>{{rowAgo .Last $now}}</time></a></td>
+</tr>{{end}}</tbody></table></div>{{end}}{{end}}
+
+{{define "detection-filters"}}{{$numbers := numbersOf .}}{{$ := numberValue .}}{{with $}}<form method="get" action="/detections"><label class="field">Severity<select class="select" name="sev"><option value="">All severities</option>{{range .Severities}}<option value="{{lower .}}"{{if eq $.Sev (lower .)}} selected{{end}}>{{.}}</option>{{end}}</select></label><label class="field">Channel<select class="select" name="ch"><option value="">All channels</option>{{range .Channels}}<option value="{{lower .}}"{{if eq $.Ch (lower .)}} selected{{end}}>{{.}}</option>{{end}}</select></label><button class="btn btn-primary" type="submit">Show detections</button><a class="btn" href="/detections">Clear filters</a><a class="btn" href="/severity">Severity rules</a>{{if .Routine}}<a class="btn" href="/logs?verdict=refused">{{template "quantity" (quantity "detections.routine" .Routine $numbers)}} routine refusals in Logs</a>{{end}}</form>{{end}}{{end}}

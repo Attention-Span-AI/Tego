@@ -393,7 +393,10 @@ func CompilePlane(rt *agent.RuleTable) (*PlaneRows, error) {
 	}
 	paths := make(map[string]bool, len(rt.FS)+len(rt.Exec))
 	for i := range rt.FS {
-		if rt.FS[i].Path != "" {
+		// Another name the mount table gives an entry's file (FSRule.AliasOf) is that file's inode, which the entry's
+		// own row keys: the plane decides by inode, so every name is decided there, and a second row of one inode is a
+		// table no plane holds (planefill's one row per inode).
+		if rt.FS[i].Path != "" && rt.FS[i].AliasOf == "" {
 			paths[rt.FS[i].Canonical()] = true
 		}
 	}
@@ -428,8 +431,11 @@ func CompilePlane(rt *agent.RuleTable) (*PlaneRows, error) {
 	// entry covers the path, so every modification there is refused already.
 	px := newPlaneIndex(rt)
 	for j := range rt.DenyWrite {
+		if rt.DenyWrite[j].AliasOf != "" {
+			continue // another name of a target: the target's own row keys its inode (above)
+		}
 		t := denyWritePath(rt.DenyWrite[j])
-		if rt.DenyWrite[j].BuiltinRule != "" {
+		if rt.DenyWrite[j].BuiltinRule != "" || rt.HasBaselineDenyWriteAt(t) {
 			paths[t] = true
 		}
 		top, ok := px.outermostWrite(t)
@@ -588,7 +594,7 @@ func CompilePlane(rt *agent.RuleTable) (*PlaneRows, error) {
 func planeKeep(rt *agent.RuleTable, paths, noFollow map[string]bool, s *PlaneRows) map[string]bool {
 	entry := make(map[string]bool, len(rt.FS))
 	for i := range rt.FS {
-		if rt.FS[i].Path != "" {
+		if rt.FS[i].Path != "" && rt.FS[i].AliasOf == "" {
 			entry[rt.FS[i].Canonical()] = true
 		}
 	}
@@ -666,7 +672,7 @@ func linkRows(rt *agent.RuleTable, px *planeIndex, paths map[string]bool, exec [
 	var out map[string]bool
 	for j := range rt.DenyWrite {
 		r := &rt.DenyWrite[j]
-		if r.Path == "" {
+		if r.Path == "" || r.AliasOf != "" {
 			continue
 		}
 		t := filepath.Clean(r.Path)

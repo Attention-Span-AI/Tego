@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
+	"github.com/attention-span-ai/tego/internal/control/rules"
 	"github.com/attention-span-ai/tego/internal/liveblock"
 )
 
@@ -44,12 +45,7 @@ func addOverlay(t *testing.T, root, run string, blocks ...[2]string) {
 // blockPanel is the r-run-live region of a run page.
 func blockPanel(t *testing.T, body string) string {
 	t.Helper()
-	i := strings.Index(body, `data-live="r-run-live"`)
-	j := strings.Index(body, `data-live="r-run-hl"`)
-	if i < 0 || j < i {
-		t.Fatalf("no r-run-live region before r-run-hl")
-	}
-	return body[i:j]
+	return pageElement(t, body, "data-live", "r-run-live")
 }
 
 // TestRunLiveWatched: on a tego watch run the panel offers a mark, says why, and every block reads "Recorded, not
@@ -81,7 +77,7 @@ func TestRunLiveWatched(t *testing.T) {
 	rules := get(t, s, c, "/rules?run="+markRun)
 	mustContain(t, "the watched run's Rules page", rules, "Recorded, not enforced: this run is only watched", "Marked now (recorded, not refused)",
 		"Marked live now", "Marks you added while the agent is watched. They record what matches and refuse nothing.", "A mark refuses nothing",
-		`class="panel rules-live is-calm"`)
+		`class="panel rules-live phone-table is-calm"`)
 	for _, bad := range []string{"Refused by tego until the run ends", "Blocked now:", "Blocked live now", "A live block refuses more"} {
 		if strings.Contains(rules, bad) {
 			t.Errorf("the watched run's Rules page claims a refusal: %q", bad)
@@ -143,7 +139,7 @@ func TestRunLiveEnforcing(t *testing.T) {
 	rules := get(t, s, c, "/rules?run="+harmRun)
 	mustContain(t, "the enforcing run's Rules page", rules, "Blocked now: cannot run curl", "In force: tego refuses it until the run ends",
 		"Blocking: cannot open or change /p/secret", "Waiting for the run to put it in force",
-		"Blocked live now", "A live block refuses more than the rules file, never less", `class="panel rules-live"`)
+		"Blocked live now", "A live block refuses more than the rules file, never less", `class="panel rules-live phone-table"`)
 
 	// The launcher confirms serial 2: the region answer carries the new state. The run's reads are not seen (no
 	// fs_reads held), so the path block refuses changes only.
@@ -223,5 +219,45 @@ func TestRunLiveBlockHome(t *testing.T) {
 		`data-k="read:`+home+`/.config/telemetry"`, `name="value" value="`+home+`/.config/telemetry"`, "In force since line #2")
 	if strings.Contains(live, "Reads of "+home) || strings.Contains(live, ">"+home+"/.config/telemetry<") {
 		t.Errorf("the panel writes the run's home in full: %s", live)
+	}
+}
+
+const planeRun = "r-aaaaaaaa-0000000000020-planex"
+
+// TestRunLivePlaneRun: on a run whose kernel decision plane decides file changes, a confirmed write block reads "Partly in
+// force", naming what it does not cover, on the run page and the Rules page, and nothing there says "In force" of it;
+// a confirmed exec block on the same run still does. Its outcome on the Saved panel is worded the same way.
+func TestRunLivePlaneRun(t *testing.T) {
+	root := fixture(t)
+	t0 := time.Date(2026, 10, 25, 12, 1, 0, 0, time.UTC)
+	if err := os.MkdirAll(filepath.Join(root, planeRun), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, planeRun, "events.jsonl"), []byte(
+		line(planeRun, "probe", 0, t0, "run_start", `"tier":"bpf-lsm","command":["codex"],"record_minor":24,"decision_plane":"lsm","fs_reads":{"reads":"held","why":"contract"}`)+
+			liveGapLine(planeRun, 1, t0.Add(time.Second), "write", "/p/out", 1)+
+			liveGapLine(planeRun, 2, t0.Add(2*time.Second), "exec", "curl", 2)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	markLive(t, root, planeRun)
+	addOverlay(t, root, planeRun, [2]string{"write", "/p/out"}, [2]string{"exec", "curl"})
+	s := newServer(t, root)
+	c := login(t, s)
+	live := blockPanel(t, get(t, s, c, "/runs/"+planeRun))
+	mustContain(t, "the plane run's panel", live, "Partly in force since line #1", "file changes the kernel decides in this run", "In force since line #2")
+	rulesPage := get(t, s, c, "/rules?run="+planeRun)
+	mustContain(t, "the plane run's Rules page", rulesPage, "Partly blocked now: cannot change /p/out", "changes the kernel decides in this run are not covered",
+		"Partly in force: file changes the kernel decides in this run", "Blocked now: cannot run curl", "In force: tego refuses it until the run ends")
+	if strings.Contains(rulesPage, "Blocked now: cannot change /p/out") {
+		t.Errorf("the plane run's Rules page claims the write block in force")
+	}
+
+	st := ledgerview.LiveStatus{State: ledgerview.LivePartlyKernel, Sentence: "x", Since: 4}
+	state, before, after, _ := liveOutWords(st)
+	if state != ledgerview.LivePartlyKernel || before != "Live now on " || !strings.Contains(after, "partly in force since line #4") || strings.Contains(after, "changes are refused") {
+		t.Errorf("liveOutWords = %q %q %q", state, before, after)
+	}
+	if headline := savedHeadline([]savedOut{{LiveResult: rules.LiveResult{OK: true, Run: planeRun}, State: ledgerview.LivePartlyKernel}}); !strings.Contains(headline, "partly live now") {
+		t.Errorf("savedHeadline = %q", headline)
 	}
 }

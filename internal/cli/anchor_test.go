@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/contracts"
 	"github.com/attention-span-ai/tego/internal/doctor"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/runtime/mcprelay"
@@ -32,6 +33,21 @@ var testHome string
 // would land in their ~/.tego/tego.log, and the built-in ledger root would be their ~/.tego/runs. The
 // binary fails when anything in the real ~/.tego changed while the tests ran (testutil.GuardedLeakCheckMain).
 func TestMain(m *testing.M) {
+	if len(os.Args) > 1 && os.Args[1] == contracts.HelperCommand {
+		os.Exit(contracts.HelperMain(os.Args[2:]))
+	}
+	if os.Getenv(scopeNestedAgentEnv) == "1" {
+		scopeNestedAgent()
+	}
+	if os.Getenv(scopeFDHelperEnv) == "1" {
+		scopeFDHelper()
+	}
+	if mode := os.Getenv("TEGO_SCOPE_TEST_HELPER"); mode != "" {
+		scopeProcessHelper(mode)
+	}
+	if handled, code := savedDraftCompilerChild(os.Args, os.Stdin, os.Stdout); handled {
+		os.Exit(code)
+	}
 	if len(os.Args) > 1 && os.Args[1] == mcprelay.ServerCommand {
 		os.Exit(mcprelay.ServerMain(os.Args[2:]))
 	}
@@ -46,6 +62,13 @@ func TestMain(m *testing.M) {
 	if mode := os.Getenv(brokenPipeHelperEnv); mode != "" {
 		brokenPipeHelper(mode)
 	}
+	// No test asks this machine whether its user manager has a bus: the default is a machine without systemd as its
+	// init, which the check says nothing about; a test that wants the state names its own (userbus_test.go).
+	userBusProbe = func() userBusFacts { return userBusFacts{} }
+	// This binary is one process that runs every command in turn: a command that made it undumpable would leave it so
+	// for every test after. undumpable_test.go's tests give makeUndumpable their own recorder, and the integration
+	// test re-executes this binary as the process that really does it (undumpableHelper, below).
+	makeUndumpable = func() error { return nil }
 	dir, err := os.MkdirTemp("", "tego-cli-home-")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "temp dir: %v\n", err)
@@ -66,10 +89,15 @@ func TestMain(m *testing.M) {
 	// The governed-agent refusal reads this process's own cgroup: from a governed agent's session, or a container with
 	// a private cgroup namespace, every tego unblock and widening tego rule here would be refused. governed_test.go
 	// sets it to refuse and holds the refusal.
-	selfInRun = func() (bool, error) { return false, nil }
+	selfAnswer = answerOutside
 	// A run hint asks whether this process sits beside its user manager's cgroup, as a CI runner's or an SSH session's
 	// test binary does: the tests describe that place themselves (onPlace), never the developer's.
 	besideUserManager = func() bool { return false }
+	// Scope entry tests describe placement and process execution explicitly, never move this test binary.
+	scopePlacement = func() error { return nil }
+	// A hint writes a tego command with sudo -u in front when another user reads it (readerAccount): the tests describe
+	// that reader themselves, never the one that started the test binary.
+	readerAccount = func() string { return "" }
 	testHome = home
 	ownLogHomeOf = func(int) string { return home }
 	// The process's appender is built once, by the first command that logs (processOwnLog), from ownLogHomeOf as it is
@@ -77,6 +105,9 @@ func TestMain(m *testing.M) {
 	// home of its own (userStateFor) and runs first would otherwise bind it to that test's temporary directory for the
 	// rest of the binary, and every later line, the ones the own-log and retention tests read, was lost with it.
 	processOwnLog()
+	if os.Getenv(undumpableHelperEnv) != "" && undumpableHelperMain != nil {
+		undumpableHelperMain() // in this home, with the real hold; it does not return
+	}
 	code := testutil.GuardedLeakCheckMain(m)
 	_ = os.RemoveAll(dir)
 	os.Exit(code)

@@ -81,7 +81,7 @@ interactive agent worked under tego at all was untested, and approvals were all-
 
 ## What it does not do
 
-It does not make a recording a cage: an unbounded run has no rule that refuses anything (tier 1's fixed syscall guards
+It does not make a recording enforce rules: an unbounded run has no rule that refuses anything (tier 1's fixed syscall guards
 still apply), and a process can still ask another service on the
 machine (systemd --user, D-Bus, an SSH or GPG agent) to act for it outside the run. It does not read model traffic unless
 the agent was launched with the forwarder's environment. It does not run or authenticate a model call without a user-supplied

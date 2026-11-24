@@ -8,6 +8,7 @@ import (
 	cgroupenforce "github.com/attention-span-ai/tego/internal/runtime/enforce/cgroup"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 // AdoptionRecorder is the tier-2 backend of a record-only adoption (ADR 0055): the build's programs,
@@ -20,5 +21,11 @@ func AdoptionRecorder(m *config.Machine) (Backend, error) {
 		return nil, fmt.Errorf("%w: %w", backend.ErrTierUnavailable, err)
 	}
 	opts := cgroupenforce.Options{Machine: m}
-	return cgroupBackend{b: cgroupenforce.New(opts), opts: opts}, nil
+	return cgroupBackend{b: cgroupenforce.New(opts), opts: opts, recordOnly: true}, nil
 }
+
+// Preserve every concrete tier-2 lifecycle and reporting method while exposing
+// the same observed predicate as other record-only handles.
+type adoptionObservedHandle struct{ *cgroupenforce.Handle }
+
+func (adoptionObservedHandle) Verdict() record.Verdict { return record.VerdictObserved }

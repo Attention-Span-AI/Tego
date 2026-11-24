@@ -34,6 +34,15 @@ static __always_inline __u64 tego_exec_link_key(__u64 inode, __u64 parent, __u64
     return tego_mix64(tego_mix64(tego_mix64(inode) ^ parent) ^ name_key) | (1ULL << 63);
 }
 
+/* The key of a live block's name row (ADR 0124, amendment 2026-11-21): a name that did not exist when the block was
+ * placed, in its directory, whose struct inode * is parent. The top bit is clear, so it is never a row's struct
+ * inode * key (a kernel address, top bit set on every architecture the plane runs on); the row keeps name_key and the
+ * directory's identity, which a hit compares. The fill and the creating hooks build it with this one function. */
+static __always_inline __u64 tego_block_name_key(__u64 parent, __u64 name_key)
+{
+    return tego_mix64(tego_mix64(parent) ^ name_key) & ~(1ULL << 63);
+}
+
 #ifdef TEGO_RD_WORD
 /* ---- The final name, read and compared without a string helper ----
  *

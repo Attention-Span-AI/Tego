@@ -70,6 +70,15 @@ type liveBlocks struct {
 	res liveblock.Resolved
 	// fenceFiles is each fence exec entry's program identity once found, kept for the run as fenceHosts are.
 	fenceFiles map[string]liveblock.FileID
+	// others are the other names the mount table gave each path, read or write block's value (and Real) when the
+	// launcher first saw it (learnOthers), kept for the run: a block refuses its file under each (ADR 0011, amended
+	// 2026-11-19, round 5). Mounts made after that are not seen (GAPS C68).
+	others map[string][]string
+	// partial is why the mount table could not list every other name of a value of others ("" or absent: it could):
+	// the block still refuses every name found, and its line says so (record.GapLiveBlockPartial).
+	partial map[string]string
+	// partialSaid is each block (Entry.Key) whose partial line was written.
+	partialSaid map[string]bool
 	// fenceHosts are the fence refusals' hosts, kept for the run. Unlike res they are never pruned to the entries a Set
 	// holds, so a lift does not drop an entry's addresses and its restore refuses by them at once, with no lookup. A
 	// host whose lookup failed is held with no addresses until a retry finds some.
@@ -81,15 +90,24 @@ type liveBlocks struct {
 	// blocked are the hosts the overlay's blocks named at the last store, in either book: each is looked up again every
 	// liveBlockRefreshAge (refreshAge).
 	blocked map[string]bool
-	// pins are the BOOTTIME pins of every until and from seen, by DeadlineKey: each is made the first time its
-	// instant is seen and never derived again, so a later wall-clock step does not move it (ADR 0125 decision 4).
+	// pins are the BOOTTIME pins of every until and from the overlay last read carries, by DeadlineKey: each is made the
+	// first time its instant is seen and never derived again while a block carries it, so a later wall-clock step does
+	// not move it (ADR 0125 decision 4). A pin is dropped when no block of the overlay last read carries its limit any
+	// more (pruneDeadlines), so over a long run the map holds what the overlay holds, at most two per block.
 	pins map[string]time.Duration
-	// done are the expiry lines already written, by DeadlineKey: each limit's end is recorded once.
+	// done are the expiry lines already written, by DeadlineKey: each limit's end is recorded once, for as long as a block
+	// of the overlay last read still carries the limit (an ended block stays in the file a day), and no longer.
 	done map[string]bool
 	// fence is an Adjustable run's fence; nil on a Locked run.
 	fence fenceHook
 	// polled is set by the first poll, which compiles whatever the overlay's state.
 	polled bool
+	// plane puts the path, read and write blocks in force in the run's kernel decision plane too (ADR 0124, amendment
+	// 2026-11-21); nil on a run whose plane decides no file change, or that has none.
+	plane *planeBlocks
+	// entries are the entries the last store compiled, which each poll's tick syncs the plane with again (a name that
+	// came to exist is keyed by its object then).
+	entries []liveblock.Entry
 }
 
 // Load is the set now; nil blocks nothing.
@@ -144,6 +162,20 @@ func (r *runner) markLinkReader() {
 	}
 }
 
+// markNoteReader tells writers that this launcher reads a lift's note (liveblock.Change.Note, signed inside the lift's
+// MAC): it makes the run directory's liveblock.NoteName once the live-block poll runs. `tego lift` and the dashboard
+// sign and write a note only for a run that has the mark (liveblock.TakesNote) and refuse the note in words otherwise,
+// since a launcher without it would refuse the signed lift. A mark that cannot be made is logged: a lift with a note
+// is then refused in words, and a lift with none is as before.
+func (r *runner) markNoteReader() {
+	if r.dir == "" {
+		return
+	}
+	if err := liveblock.MarkNote(r.dir); err != nil {
+		r.log.Warn("live blocks: the run's note mark could not be made, so a lift with a note is refused in words", "err", err)
+	}
+}
+
 // pollLiveBlocks reads the overlay when it changed: its blocks are compiled and put in force, and its changes since
 // the last poll get their lines, a pause or a resume once applied to the run's cgroup (livepause.go), a lift or a
 // restore once the fence applied it. An unchanged overlay only has a pause or resume that failed tried again. Every
@@ -160,6 +192,8 @@ func (r *runner) pollLiveBlocks(ctx context.Context, b *liveBlocks) {
 		if b.refreshHosts(ctx, now) {
 			b.store(ctx, true, now)
 		}
+		// Each tick walks the blocks' paths again, so a name that came to exist is keyed by its object.
+		b.syncPlane(now)
 	}()
 	sig := liveblock.Stat(r.dir)
 	if sig == b.sig && b.polled {
@@ -176,6 +210,7 @@ func (r *runner) pollLiveBlocks(ctx context.Context, b *liveBlocks) {
 		b.sig = sig
 		r.overlayGone(ctx, b, now)
 		b.last = nil
+		b.pruneDeadlines()
 		b.store(ctx, false, now)
 		return
 	case err != nil:
@@ -195,6 +230,7 @@ func (r *runner) pollLiveBlocks(ctx context.Context, b *liveBlocks) {
 	}
 	b.last = o
 	b.pin(now)
+	b.pruneDeadlines()
 	b.store(ctx, false, now)
 	b.sig = sig
 	changes, lost := o.Since(b.serial)
@@ -221,9 +257,17 @@ func (r *runner) pollLiveBlocks(ctx context.Context, b *liveBlocks) {
 		if c.Op == liveblock.OpRemove {
 			why = record.GapLiveBlockRemoved
 		}
-		r.emitLiveGap(why, 0, &record.LiveBlockChange{Op: c.Op, Kind: string(c.Kind), Value: c.Value, Rule: c.Rule(),
-			By: c.By, Serial: c.Serial, At: c.At, Until: c.Until})
+		line := &record.LiveBlockChange{Op: c.Op, Kind: string(c.Kind), Value: c.Value, Rule: c.Rule(),
+			By: c.By, Serial: c.Serial, At: c.At, Until: c.Until}
+		if c.Op == liveblock.OpAdd {
+			b.fillAddrs(line) // after the store above: the addresses the Set now refuses the name by
+		}
+		r.emitLiveGap(why, 0, line)
+		if c.Op == liveblock.OpRemove {
+			delete(b.partialSaid, liveblock.Key(c.Kind, c.Value))
+		}
 	}
+	r.partialLines(b)
 	// The fence's lines are queued before a loosened set is stored (ADR 0125 decision 5): Apply writes them, and only
 	// then is the set compiled with its new refusals.
 	switch {
@@ -323,7 +367,7 @@ func (b *liveBlocks) pin(now liveblock.Clock) {
 		return
 	}
 	for _, e := range b.last.Blocks {
-		for _, t := range [...]time.Time{e.Until, e.From} {
+		for i, t := range [...]time.Time{e.Until, e.From} {
 			if t.IsZero() {
 				continue
 			}
@@ -331,11 +375,44 @@ func (b *liveBlocks) pin(now liveblock.Clock) {
 				b.pins = map[string]time.Duration{}
 			}
 			k := liveblock.DeadlineKey(e.Key(), t)
-			if _, ok := b.pins[k]; !ok {
-				b.pins[k] = now.Pin(t)
+			if _, ok := b.pins[k]; ok {
+				continue
+			}
+			b.pins[k] = now.Pin(t)
+			// An until its writer pinned in this boot is held by that pin (ADR 0125 decision 4, amendment
+			// 2026-11-18): the writer drops the entry by the same instant, so it never drops one still in force,
+			// and a wall clock stepped between the write and this first sight does not move the limit.
+			if p, ok := e.UntilPin(now); ok && i == 0 {
+				b.pins[k] = p
 			}
 		}
 	}
+}
+
+// pruneDeadlines drops the pins and expiry marks of limits that no block of the overlay last read carries: the block
+// was removed, replaced by one with another limit, dropped from the file after its end, or the overlay is gone. Both
+// maps then hold only what the overlay holds, at most one key for each until and each from of its blocks (at most
+// liveblock.MaxBlocks of each), however many limits a run saw. A limit a block still carries keeps its pin, so a wall
+// clock stepped later cannot move it, and keeps its mark, so an ended block still listed does not write its expiry line
+// again. A limit that comes back after its block left the file is a new block's: it is pinned from its own first sight
+// (or its writer's pin) and its end is recorded once more. The overlay unreadable leaves b.last, and so both maps, as
+// they were (fail closed: nothing is forgotten on a read failure).
+func (b *liveBlocks) pruneDeadlines() {
+	if len(b.pins) == 0 && len(b.done) == 0 {
+		return
+	}
+	carried := map[string]bool{}
+	if b.last != nil {
+		for _, e := range b.last.Blocks {
+			for _, t := range [...]time.Time{e.Until, e.From} {
+				if !t.IsZero() {
+					carried[liveblock.DeadlineKey(e.Key(), t)] = true
+				}
+			}
+		}
+	}
+	maps.DeleteFunc(b.pins, func(k string, _ time.Duration) bool { return !carried[k] })
+	maps.DeleteFunc(b.done, func(k string, _ bool) bool { return !carried[k] })
 }
 
 // store compiles the last overlay's blocks and the fence's refusals and puts them in force by one atomic store. With
@@ -387,6 +464,7 @@ func (b *liveBlocks) store(ctx context.Context, reuse bool, now liveblock.Clock)
 		}
 	}
 	b.holdBlocked(entries)
+	b.learnOthers(entries)
 	put := func(res liveblock.Resolved) {
 		res = b.refusing(res)
 		res.Boot = boot
@@ -394,7 +472,7 @@ func (b *liveBlocks) store(ctx context.Context, reuse bool, now liveblock.Clock)
 	}
 	// keep is what is not resolved again: the fence's resolutions, and with reuse the last compile's too. It is a copy,
 	// so keepFound can tell a host this store looked up from one it carried.
-	fenced := liveblock.Resolved{Addrs: maps.Clone(b.fenceHosts.addrs), Files: maps.Clone(b.fenceFiles)}
+	fenced := liveblock.Resolved{Addrs: maps.Clone(b.fenceHosts.addrs), Files: maps.Clone(b.fenceFiles), Others: b.others}
 	keep := fenced
 	if reuse {
 		keep = mergeResolved(b.res, fenced)
@@ -411,6 +489,50 @@ func (b *liveBlocks) store(ctx context.Context, reuse bool, now liveblock.Clock)
 	b.res = res
 	if pending {
 		put(res)
+	}
+	// The plane follows the same entries, after the Set, before any line of this change is written (pollLiveBlocks
+	// writes them after store): a block is never said to be in force before the kernel holds it.
+	b.entries = entries
+	b.syncPlane(now)
+}
+
+// syncPlane puts the last store's path, read and write blocks in force in the run's plane (planeBlocks.sync), with the
+// other names and the time limits' pins the Set was compiled with.
+func (b *liveBlocks) syncPlane(now liveblock.Clock) {
+	if b.plane == nil {
+		return
+	}
+	b.plane.sync(b.entries, b.others, b.partial, b.pins, now)
+}
+
+// enforcedAddrs is every address the Set refuses host by now: what the last store's lookup answered, every address
+// held for the host while a block names it, and a fence refusal's, unmapped, sorted and once each, an IPv6 zone kept as
+// the lookup gave it. Nil when no lookup has answered one (the Set then refuses the host by its declared name alone).
+func (b *liveBlocks) enforcedAddrs(host string) []netip.Addr {
+	return unionAddrs(b.res.Addrs[host], unionAddrs(b.blockHosts.addrs[host], b.fenceHosts.addrs[host]))
+}
+
+// fillAddrs puts on the gap line of a net block, or a restored net fence entry, put in force by name the addresses it
+// was enforced on (record minor 41, ADR 0157): at most record.MaxLiveBlockAddrs of them, the rest counted in
+// AddrsMore. A block by address, another kind, and a name no lookup has answered an address for get none: the line then
+// says nothing a reader could take for an address. A later lookup may add addresses the line does not name; the
+// refusals themselves carry the address they refused.
+func (b *liveBlocks) fillAddrs(c *record.LiveBlockChange) {
+	host, ok := liveHostOf(liveblock.Kind(c.Kind), c.Value)
+	if !ok {
+		return
+	}
+	addrs := b.enforcedAddrs(host)
+	if len(addrs) == 0 {
+		return
+	}
+	if len(addrs) > record.MaxLiveBlockAddrs {
+		c.AddrsMore = len(addrs) - record.MaxLiveBlockAddrs
+		addrs = addrs[:record.MaxLiveBlockAddrs]
+	}
+	c.Addrs = make([]string, len(addrs))
+	for i, a := range addrs {
+		c.Addrs[i] = a.String()
 	}
 }
 
@@ -705,15 +827,101 @@ func (b *liveBlocks) keepFound(entries []liveblock.Entry, keep, res liveblock.Re
 	}
 }
 
+// learnOthers asks the mount table, once per value, for the other names of the file each path, read or write block of
+// entries names (and of its Real), before the set is compiled, so the first set that holds the block refuses them too.
+func (b *liveBlocks) learnOthers(entries []liveblock.Entry) {
+	for _, e := range entries {
+		if e.Kind != liveblock.KindPath && e.Kind != liveblock.KindRead && e.Kind != liveblock.KindWrite {
+			continue
+		}
+		for _, v := range []string{e.Value, e.Real} {
+			if !strings.HasPrefix(v, "/") {
+				continue
+			}
+			if _, ok := b.others[v]; ok {
+				continue
+			}
+			if b.others == nil {
+				b.others = map[string][]string{}
+			}
+			names, why := liveOtherNames(v)
+			b.others[v] = names
+			if why != "" {
+				if b.partial == nil {
+					b.partial = map[string]string{}
+				}
+				b.partial[v] = why
+			}
+		}
+	}
+}
+
 // mergeResolved is a's resolutions and b's, b's where both hold one.
 func mergeResolved(a, b liveblock.Resolved) liveblock.Resolved {
-	out := liveblock.Resolved{Addrs: map[string][]netip.Addr{}, Files: map[string]liveblock.FileID{}}
+	out := liveblock.Resolved{Addrs: map[string][]netip.Addr{}, Files: map[string]liveblock.FileID{}, Others: b.Others}
 	maps.Copy(out.Addrs, a.Addrs)
 	maps.Copy(out.Addrs, b.Addrs)
 	maps.Copy(out.Files, a.Files)
 	maps.Copy(out.Files, b.Files)
+	if out.Others == nil {
+		out.Others = a.Others
+	}
 	return out
 }
+
+// liveOtherNames is the other names the mount table gives a blocked path's file (agent.OtherNames), and why it could
+// not list them all ("" when it did); replaced in tests. The block refuses the names it has and its line says the
+// list is short (partialLine); mounts made after the block was added stay a stated limit (GAPS C68).
+var liveOtherNames = func(p string) ([]string, string) {
+	names, err := agent.OtherNames(p)
+	if err != nil {
+		return names, err.Error()
+	}
+	return names, ""
+}
+
+// partialLines writes, for each path, read or write block the last overlay holds, one gap saying the mount table could
+// not list every name of its file (the block's value, or the path its value led to), once per block: the block applies to
+// the names that were listed, and the line says so rather than leaving it unsaid. A block removed and added again is
+// said again.
+func (r *runner) partialLines(b *liveBlocks) {
+	if b.last == nil || len(b.partial) == 0 {
+		return
+	}
+	for _, e := range b.last.Blocks {
+		if e.Kind != liveblock.KindPath && e.Kind != liveblock.KindRead && e.Kind != liveblock.KindWrite {
+			continue
+		}
+		why := b.partial[e.Value]
+		if rw := b.partial[e.Real]; e.Real != "" && rw != "" && rw != why {
+			if why != "" {
+				why += "; "
+			}
+			why += rw
+		}
+		if why == "" || b.partialSaid[e.Key()] {
+			continue
+		}
+		if b.partialSaid == nil {
+			b.partialSaid = map[string]bool{}
+		}
+		b.partialSaid[e.Key()] = true
+		text := record.Printable(e.Value + ": the mount table could not list every name of this file: " + why)
+		if len(text) > partialMax {
+			text = strings.ToValidUTF8(text[:partialMax], "?")
+		}
+		ev := &record.Event{Kind: record.KindGap, Source: record.SourceSupervisor}
+		if err := ev.SetPayload(record.GapPayload{What: record.GapEnforce, Why: record.GapLiveBlockPartial, Binary: text}); err != nil {
+			continue
+		}
+		if r.queue != nil {
+			r.queue.Emit(ev)
+		}
+	}
+}
+
+// partialMax bounds the text of a live-block-partial line.
+const partialMax = 1024
 
 // expireLive writes the line of every time limit of the last overlay's blocks that ended by now, once each: a gap
 // live-block-expired for a block whose until has Ended (both clocks passed it), and live-unblock-expired for a
@@ -793,7 +1001,7 @@ var liveLookup = func(ctx context.Context, host string) ([]netip.Addr, error) {
 // false nothing is looked up: the result holds only what prev held, and pending reports whether some entry would be
 // looked up. failed are the hosts whose lookup failed.
 func resolveLiveBlocks(ctx context.Context, entries []liveblock.Entry, prev liveblock.Resolved, lookup bool) (res liveblock.Resolved, pending bool, failed []string) {
-	res = liveblock.Resolved{Addrs: map[string][]netip.Addr{}, Files: map[string]liveblock.FileID{}}
+	res = liveblock.Resolved{Addrs: map[string][]netip.Addr{}, Files: map[string]liveblock.FileID{}, Others: prev.Others}
 	for _, e := range entries {
 		switch e.Kind {
 		case liveblock.KindExec:
@@ -841,11 +1049,14 @@ func resolveLiveBlocks(ctx context.Context, entries []liveblock.Entry, prev live
 }
 
 // liveHost is the host name a net entry names, if it names one: not an address, a unix socket or an abstract name.
-func liveHost(e liveblock.Entry) (string, bool) {
-	if e.Kind != liveblock.KindNet {
+func liveHost(e liveblock.Entry) (string, bool) { return liveHostOf(e.Kind, e.Value) }
+
+// liveHostOf is liveHost of an entry of kind and value.
+func liveHostOf(kind liveblock.Kind, value string) (string, bool) {
+	if kind != liveblock.KindNet {
 		return "", false
 	}
-	host := e.Value
+	host := value
 	if i := strings.LastIndexByte(host, ':'); i >= 0 && !strings.Contains(host, "]") {
 		host = host[:i]
 	}

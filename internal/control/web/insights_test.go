@@ -45,7 +45,7 @@ func learnText(t *testing.T, root, run string) string {
 	return p.Contract()
 }
 
-var preRe = regexp.MustCompile(`(?s)<pre class="mono lp-contract">(.*?)</pre>`)
+var preRe = regexp.MustCompile(`(?s)<pre class="mono lp-contract"[^>]*>(.*?)</pre>`)
 
 // TestLeastPrivilegeTab: the tab shows learn's proposal escaped, the download is the same text as an attachment,
 // and a live run says it is the run so far.
@@ -162,7 +162,7 @@ func TestMachinePage(t *testing.T) {
 		t.Fatalf("machine: %d %s", w.Code, w.Body)
 	}
 	body := w.Body.String()
-	for _, want := range []string{"This machine", "<strong>Basic</strong>", "Available", "Run with sudo", "add bpf to the kernel&#39;s lsm= list", "tego machine check", rid(harmRun)} {
+	for _, want := range []string{"This machine", "Basic worked in a recorded run", "Used before", "Run with sudo", "add bpf to the kernel&#39;s lsm= list", "tego machine check", harmRun} {
 		if !strings.Contains(body, want) {
 			t.Errorf("machine page lacks %q", want)
 		}
@@ -172,5 +172,3 @@ func TestMachinePage(t *testing.T) {
 		t.Errorf("empty machine page: %d %s", w.Code, w.Body)
 	}
 }
-
-func rid(id string) string { return shortRun(id) }

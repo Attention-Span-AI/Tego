@@ -16,6 +16,11 @@
 // The decision layer also keeps the algorithm from before the separator correction over these rows: deny and
 // ask use the union of the two readers, and constrained allow uses their intersection. Pattern.Match and Normalizer
 // describe the corrected parser alone.
+// Intersect checks a machine-baseline deny against an explicit command grant in
+// its compiled image context. It proves disjoint normalized constraints or
+// returns a common invocation checked by this matcher. Unknown interpretations
+// and exhausted bounds remain unknown so compile can refuse the contradiction
+// check without weakening a baseline entry (ADR 0144).
 //
 // The rows themselves are data in the rows subpackage, documented in docs/spec/exec-command-rows.md.
 package execmatch

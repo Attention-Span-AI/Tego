@@ -1,0 +1,85 @@
+{
+  "id": "p40-params-missing",
+  "group": "parser",
+  "pins": [
+    "A019",
+    "A020",
+    "B053",
+    "B054"
+  ],
+  "why": "A019/A020 and B053: params missing belongs only to this closed stage; complete expected result pins adapter.envelope.",
+  "bundle": {
+    "version": 1,
+    "adapter": "square.refund.v1",
+    "server": "square",
+    "rules": [
+      {
+        "id": "cap",
+        "kind": "per_call",
+        "currency": "USD",
+        "limit": "10000"
+      },
+      {
+        "id": "currencies",
+        "kind": "currencies",
+        "codes": [
+          "USD"
+        ]
+      }
+    ]
+  },
+  "bundle_wire_hex": null,
+  "request": {
+    "adapter": "square.refund.v1",
+    "call_hex": "7b226964223a312c226a736f6e727063223a22322e30222c226d6574686f64223a22746f6f6c732f63616c6c222c22706172616d73223a7b226e616d65223a226d616b655f6170695f72657175657374227d7d",
+    "contract_bundle_digest": "762086c3104e609f82fb5c5bbb9dc077417803897248181a048adf6b74c7b6f9",
+    "contract_verdict": "allow",
+    "evaluator_status": "ready",
+    "request_id": "1",
+    "run_id": "run1",
+    "server": "square",
+    "state": {
+      "bundle_digest": "762086c3104e609f82fb5c5bbb9dc077417803897248181a048adf6b74c7b6f9",
+      "epoch": "e1",
+      "revision": "0",
+      "run_id": "run1",
+      "seen_keys": [],
+      "server": "square",
+      "status": "ready",
+      "totals": []
+    },
+    "tool_source": "contract",
+    "topology": "exclusive",
+    "version": 1
+  },
+  "request_wire_hex": null,
+  "expected": {
+    "adapter": "square.refund.v1",
+    "bundle_digest": "762086c3104e609f82fb5c5bbb9dc077417803897248181a048adf6b74c7b6f9",
+    "business": {
+      "verdict": "deny",
+      "rule_id": "$adapter",
+      "condition": "adapter.envelope"
+    },
+    "asks": [],
+    "call_digest": "1fa6867c32eea6b1ad4eeb01d90c01ee37aff90e927a546d98ed4914789748d5",
+    "facts": null,
+    "final": {
+      "verdict": "deny",
+      "source": "business",
+      "condition": "adapter.envelope"
+    },
+    "record": {
+      "coverage": "unknown",
+      "delivery": "not_attempted",
+      "remote_outcome": "unknown",
+      "required": true,
+      "stage": "evaluated"
+    },
+    "request_id": "1",
+    "reservation": null,
+    "run_id": "run1",
+    "server": "square",
+    "version": 1
+  }
+}

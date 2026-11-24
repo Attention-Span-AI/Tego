@@ -3,6 +3,9 @@
 package ledgerview
 
 import (
+	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -47,13 +50,32 @@ type lockProbe struct {
 }
 
 // liveRuns is the runs of the root that are running: listed in its live index and their lock held.
-func (s *Store) liveRuns() map[string]bool {
-	listed := liveSet(s.root)
+func (s *Store) liveRuns() (map[string]bool, error) {
+	indexErr := s.checkRootIdentity()
+	var listed map[string]bool
+	if indexErr == nil {
+		listed, indexErr = liveSet(s.root)
+	}
 	out := make(map[string]bool, len(listed))
 	s.liveMu.Lock()
 	defer s.liveMu.Unlock()
+	// Snapshot decides whether an absent startup index can hide a waiting request,
+	// using the decoded runs. A cold reader alone cannot treat it as a fresh ledger.
+	if indexErr != nil {
+		for id, p := range s.probes {
+			if p.held {
+				out[id] = true
+			}
+		}
+		return out, fmt.Errorf("could not read the live index: %w", indexErr)
+	}
 	now := time.Now()
 	for id := range listed {
+		if validRunID(id) {
+			if _, err := os.Lstat(filepath.Join(s.root, id)); errors.Is(err, fs.ErrNotExist) {
+				indexErr = errors.New("an indexed run: its record file is missing")
+			}
+		}
 		p, ok := s.probes[id]
 		if !ok || now.Sub(p.at) >= lockProbeAge {
 			p = lockProbe{held: s.probeLock(id), at: now}
@@ -68,19 +90,30 @@ func (s *Store) liveRuns() map[string]bool {
 			delete(s.probes, id)
 		}
 	}
-	return out
+	return out, indexErr
 }
 
 // probeLock reports whether a process holds run id's lock. Only a run directory in the root is probed, never one
 // reached through a link nor a name that is no run id (as the ledger's sweep of the index takes them,
 // ledger.SweepLive): such an entry lists nothing that runs. A probe that cannot answer (an unreadable lock file, no
-// descriptor to spare) keeps the index's word; a missing lock file is a free one (ledger.LockHeld).
+// descriptor to spare) keeps the index's word. A missing lock file in an existing directory is free
+// (ledger.LockHeld); a vanished directory preserves a previously live indexed run as a record failure.
 func (s *Store) probeLock(id string) bool {
 	if !validRunID(id) {
 		return false
 	}
 	dir := filepath.Join(s.root, id)
 	if fi, err := os.Lstat(dir); err != nil || !fi.IsDir() {
+		if errors.Is(err, fs.ErrNotExist) {
+			// Removing a live run's directory also unlinks its held lock. That
+			// does not release the descriptor or answer its known requests.
+			// Keep the index's word, as for an unreadable lock, with the record failure.
+			s.mu.Lock()
+			st := s.runs[id]
+			knownLive := st != nil && st.pub != nil && st.pub.Live
+			s.mu.Unlock()
+			return knownLive
+		}
 		return false
 	}
 	held, err := lockHeld(dir)

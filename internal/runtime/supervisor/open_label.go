@@ -44,6 +44,9 @@ func readOpenLabelFile(path string) ([]byte, error) {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
+	if err := tomoyo.CheckFact(path, f); err != nil {
+		return nil, err
+	}
 	const limit = 64 * 1024
 	b, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err == nil && len(b) > limit {

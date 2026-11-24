@@ -4,6 +4,7 @@ package cli
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"strings"
@@ -35,6 +36,8 @@ func trees() []noun {
 			{"edit", "Edit a rules file, then check it", "", cmdRulesEdit, "<agent | file>"},
 			{"check", "Check a rules file and show what it enforces", "compile", nil, "<agent | file> [--json]"},
 			{"learn", "Create a rules file from what a session did", "learn", nil, "<session> [--save <name> | --out <file>]"},
+			{"history", "Show the changes made to a rules file", "", cmdRulesHistory, "<agent | file> [--json]"},
+			{"undo", "Undo the newest change to a rules file", "", cmdRulesUndo, "<agent | file> [<id>] [--yes]"},
 		}},
 		{"session", []verb{
 			{"list", "List sessions", "", cmdSessionList, "[--json]"},
@@ -57,6 +60,35 @@ func init() {
 
 func cmdSession() Command {
 	return Command{Name: "session", Summary: "manage sessions", Raw: nounRunner("session")}
+}
+
+// cmdRulesHistory and cmdRulesUndo are `tego rules history` and `tego rules undo`: the dashboard's change history and its
+// Undo for a rules file, run by tego-control (internal/control/cli rules_history.go) through the verified handoff, which
+// replaces this process in place, so the terminal, the standard input and the environment pass through as they are.
+// tego links none of their code (TestEngineLinksNoControl). The engine parses only the two flags, for its own -h and
+// help, and hands on the verb, its flag and the words after "--", so a word that starts with a dash is never read as a flag.
+func cmdRulesHistory() Command {
+	return rulesHistoryHandoff("history", "show the changes made to a rules file", "<agent | file> [--json]", "json", "print the history as versioned JSON")
+}
+
+func cmdRulesUndo() Command {
+	return rulesHistoryHandoff("undo", "undo the newest change to a rules file", "<agent | file> [<id>] [--yes]", "yes",
+		"confirm an undo that lets the next run do more, instead of typing undo at a terminal (required without one)")
+}
+
+func rulesHistoryHandoff(verb, summary, usage, flagName, flagHelp string) Command {
+	var on bool
+	return Command{
+		Name: "rules " + verb, Summary: summary, Usage: usage,
+		Flags: func(fs *flag.FlagSet) { fs.BoolVar(&on, flagName, false, flagHelp) },
+		Run: func(_ context.Context, fs *flag.FlagSet, _, stderr io.Writer) int {
+			args := []string{verb}
+			if on {
+				args = append(args, "--"+flagName)
+			}
+			return handOff("rules", append(append(args, "--"), fs.Args()...), stderr)
+		},
+	}
 }
 
 func cmdMachine() Command {

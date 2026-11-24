@@ -321,6 +321,31 @@ func (f *FD) Borrow(fn func(n int) error) error {
 	return fn(int(f.num))
 }
 
+// LendAll runs fn with the numbers of owners, in order, each under its own lease, and returns fn's error, or
+// ErrClosed (fn not called) when one of them lends nothing. It is Borrow for a call that needs several numbers at
+// once: a kernel pass that reads this process's descriptor table and must find each of them there (the plane's
+// live-block fill, ADR 0023 amendment 2026-11-22). Every lease is returned when fn returns or panics, and a Close
+// meanwhile is deferred until then, so each number names its owner's file for all of fn. fn must not keep, return
+// or hand on nums or any number in it, and fdcheck holds its body to a Borrow callback's uses
+// (tools/fdcheck rootFuncLenders). An owner may appear more than once; nums then repeats its number.
+func LendAll(owners []*FD, fn func(nums []int) error) error {
+	nums := make([]int, len(owners))
+	held := 0
+	defer func() {
+		for i := 0; i < held; i++ {
+			owners[i].unlease()
+		}
+	}()
+	for i, f := range owners {
+		if f == nil || !f.acquire() {
+			return ErrClosed
+		}
+		held = i + 1
+		nums[i] = int(f.num)
+	}
+	return fn(nums)
+}
+
 // Close closes the number once. With no lease out it calls close(2) at once and returns its error, never
 // retried. With leases out it marks the FD closing and returns nil, and the last Return calls close(2), whose
 // error goes to the OnClosed hook if one is registered. A strict FD acts as CloseNow instead. Every later
@@ -663,6 +688,15 @@ func (f *FD) ProcPath(fn func(path string) error) error {
 	}
 	defer f.unlease()
 	return fn("/proc/self/fd/" + strconv.Itoa(int(f.num)))
+}
+
+// ProcInfo reads /proc/self/fdinfo/N while a lease keeps N bound to this file.
+func (f *FD) ProcInfo() ([]byte, error) {
+	if f == nil || !f.acquire() {
+		return nil, ErrClosed
+	}
+	defer f.unlease()
+	return os.ReadFile("/proc/self/fdinfo/" + strconv.Itoa(int(f.num)))
 }
 
 // AddLandlockPath adds a beneath rule while leasing both the ruleset and path.

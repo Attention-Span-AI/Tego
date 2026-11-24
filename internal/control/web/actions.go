@@ -18,18 +18,24 @@ import (
 	"github.com/attention-span-ai/tego/internal/control/rules"
 	"github.com/attention-span-ai/tego/internal/control/runact"
 	"github.com/attention-span-ai/tego/internal/liveblock"
+	"github.com/attention-span-ai/tego/internal/selfbin"
 	"github.com/attention-span-ai/tego/internal/shellword"
 	"github.com/attention-span-ai/tego/pkg/spec/askproto"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
 // answerTimeout bounds one answer's exchange with the run's broker (askproto.Timeout bounds each packet).
-const answerTimeout = 10 * time.Second
+const answerTimeout = 10 * time.Second * raceScale
 
 // routePost routes the state-changing requests, which postAllowed has passed. An answer, a stop and a block answer
 // 303 back to the page the form was on, with one line saying what was done (flash.go).
 func (s *Server) routePost(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
 	switch {
+	case p == "/guide/preference":
+		s.guidePreference(w, r)
+	case p == "/agents/forget":
+		s.agentsForget(w, r)
 	case p == "/approvals/answer":
 		s.answer(w, r)
 	case p == "/rule":
@@ -155,6 +161,10 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), answerTimeout)
 	defer cancel()
+	// The run records who answered by the uid and pid of this process, which is the dashboard's own; the word after
+	// them says the person answered in the dashboard (and through its relay from another system's browser), so a
+	// receipt reads as the signed-in person's answer and not a machine's.
+	ctx = askclient.WithVia(ctx, s.answerVia(r))
 	var a runact.Answered
 	var err error
 	if verb == "alternate" {
@@ -162,6 +172,7 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request) {
 	} else {
 		a, err = answerAsk(ctx, s.cfg.Ledger, run, id, verb == "approve", always)
 	}
+	err = askclient.OwnerOnlyError(err, s.cfg.Machine != nil && s.cfg.Machine.LocalRoles.Value == config.LocalRolesOwnerOnly)
 	if err != nil {
 		s.redirectBack(w, r, back, flash{Text: "Not done: " + answerErr(err)})
 		return
@@ -216,12 +227,16 @@ func askLine(rr *ledgerview.Run, ask ledgerview.Ask, id string) uint64 {
 // answerErr is why an answer was not given, in plain words, without the package names the errors carry.
 func answerErr(err error) string {
 	switch {
+	case errors.Is(err, askproto.ErrApprovalPolicyChanged):
+		return "the approval policy file changed since this run started. Stop the run as root with tego stop <run>, then relaunch with the same ledger configuration. Any unanswered request remains pending until timeout or the run stops."
+	case errors.Is(err, askproto.ErrOwnerOnly):
+		return "only root may answer once. Run the approval as root from a terminal outside any governed run. Any unanswered request remains pending."
 	case errors.Is(err, runact.ErrBadRun):
 		return "there is no such run in this ledger."
 	case errors.Is(err, runact.ErrBadAsk):
 		return "that is not a request id. The request is still waiting."
 	case errors.Is(err, runact.ErrBadAlternate), errors.Is(err, askproto.ErrBadAlternate):
-		return "the stand-in file must be an absolute path to a readable file. The request is still waiting: name another file, or allow or deny it."
+		return standInWhy(err) + " The request is still waiting: name another file, or allow or deny it."
 	case errors.Is(err, askproto.ErrNoAlternate):
 		return "only a held file open takes a stand-in file. The request is still waiting: allow or deny it."
 	case errors.Is(err, askproto.ErrNotRememberable), errors.Is(err, askproto.ErrStandingFull):
@@ -236,6 +251,23 @@ func answerErr(err error) string {
 		return "the run's broker did not understand the answer. The request is still waiting."
 	}
 	return plainErr(err) + "."
+}
+
+// standInWhy is why a stand-in file was refused, in the words the refusal came with (the dashboard's own check, or the
+// broker's): "the stand-in file cannot be used: "/home/a/dir": not a regular file." It ends in a full stop. A refusal
+// that came with no reason says what a stand-in file must be.
+func standInWhy(err error) string {
+	why := err.Error()
+	for _, lead := range []string{runact.ErrBadAlternate.Error(), askproto.ErrBadAlternate.Error()} {
+		if i := strings.Index(why, lead); i >= 0 {
+			why = why[:i] + why[i+len(lead):]
+		}
+	}
+	why = strings.Trim(why, " :.")
+	if why == "" {
+		return "the stand-in file must be an absolute path to a readable file."
+	}
+	return "the stand-in file cannot be used: " + why + "."
 }
 
 // plainErr is err's text without the "package: " prefixes Go errors collect, first letter as written.
@@ -376,9 +408,9 @@ func (s *Server) block(w http.ResponseWriter, r *http.Request, run string, add b
 	switch {
 	case b.Until.IsZero() || b.Word == "was not blocked":
 	case add:
-		f.Text += " It lasts " + whenWords(b.Until, now) + "."
+		f.Text += " It lasts " + whenWordsIn(b.Until, now, zoneOf(r.PostForm.Get("tz"))) + "."
 	default:
-		f.Text += " The block refuses again at " + b.Until.Local().Format("Mon 2 Jan 15:04") + " (" + inWords(b.Until.Sub(now)) + ")."
+		f.Text += " The block refuses again at " + b.Until.In(zoneOf(r.PostForm.Get("tz"))).Format("Mon 2 Jan 15:04 MST") + " (" + inWords(b.Until.Sub(now)) + ")."
 	}
 	f.Text += realFlash(b)
 	if b.Word == "blocked" && !b.Observe { // a watched run refuses nothing, under any name
@@ -386,7 +418,7 @@ func (s *Server) block(w http.ResponseWriter, r *http.Request, run string, add b
 	}
 	if perm && add && (b.Word == "blocked" || b.Word == "already blocked") {
 		if rr, err := ledgerview.LoadRun(s.cfg.Ledger, run); err == nil {
-			if ref := rules.Ref(rr.Contract); ref != "" {
+			if ref := rules.RefContext(r.Context(), rr.Contract); ref != "" {
 				text := "Blocked now · to keep it next run, add the block below and save"
 				if b.Observe { // a watched run records a mark and refuses nothing
 					text = "Marked now (watched run, recorded only) · to block it next run, add the block below and save"
@@ -448,6 +480,30 @@ func capFirst(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
+// unsafeLine is what a terminal twin shows in place of a line that holds a value that cannot be shown as it is. It is a
+// shell comment, so a Copy of it, or a paste, runs nothing.
+const unsafeLine = "# no command is shown: a folder, path or name in it cannot be shown safely"
+
+// cmdText is a terminal twin as the page shows and the Copy button copies it: the line itself when every character of it
+// prints as it is (selfbin.Safe, the rule every pasteable line of Tego is held to: valid UTF-8, no control character such
+// as a newline or an escape, no invisible or bidirectional format character), else unsafeLine. Quoting a value keeps a
+// line's shell syntax, not what the terminal shows of it: a newline in a recorded folder's name would show a second apparent
+// command. The check is on the raw line, before the template escapes it; a line is never altered to make it printable.
+// Registered as the template function cmd; every place a page puts a line in a command block or a Copy button goes through it.
+func cmdText(s string) string {
+	if selfbin.Safe(s) {
+		return s
+	}
+	return unsafeLine
+}
+
+// answerTwin is the terminal twin of an answer to an ask: tego <verb> <run> <ask id><tail>. The ask id is a value in the record
+// (ask_id, which nothing validates), so it is quoted as one word, as the other twins' values are; cmdText then declines a
+// line that cannot be shown as it is. tail is Tego's own words (a flag, a placeholder).
+func answerTwin(verb, run, askID, tail string) string {
+	return "tego " + verb + " " + shellword.Quote(run) + " " + shellword.Quote(askID) + tail
+}
+
 // shellWord is s, trimmed, as one word of a shell line (shellword.Quote, the rule tego doctor's fix line quotes by
 // too), so a terminal twin a page shows can be pasted as it stands.
 func shellWord(s string) string { return shellword.Quote(strings.TrimSpace(s)) }
@@ -461,4 +517,16 @@ func changeWords(kind, value, flags string) string {
 		return shellWord(kind) + flags + " -- " + shellWord(v)
 	}
 	return shellWord(kind) + " " + shellWord(value) + flags
+}
+
+// answerVia is the word an answer carries for where it was given: the dashboard, and the dashboard's relay when the
+// browser reached it at [::1] while the dashboard itself listens elsewhere (the Windows tego command opens
+// http://[::1]:<port>/ and carries the connection to the dashboard's own address, ADR 0123). The request already passed
+// the Host check, the sign-in cookie and the same-origin check, so it is the signed-in person's.
+func (s *Server) answerVia(r *http.Request) string {
+	own := "[::1]:" + strconv.Itoa(s.cfg.Port)
+	if r.Host == own && s.origin != "http://"+own {
+		return askproto.ViaDashboardRelay
+	}
+	return askproto.ViaDashboard
 }

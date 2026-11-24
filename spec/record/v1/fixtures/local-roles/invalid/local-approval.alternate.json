@@ -1,0 +1,19 @@
+{
+  "kind": "answer",
+  "minor": 37,
+  "payload": {
+    "ask_id": "q-0123456789abcdef0123456789abcdef",
+    "by": "uid:0 pid:42",
+    "after_s": 1,
+    "approved": false,
+    "actor": {
+      "uid": 0,
+      "pid": 42,
+      "start_boot_ns": 10000000,
+      "user_namespace": 4026531837,
+      "source": "kernel-local-uid",
+      "role": "owner"
+    },
+    "alternate": "/other"
+  }
+}

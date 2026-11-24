@@ -23,8 +23,9 @@ import (
 // '...' grouping a word), evaluated as a compile --test exec row is, through the image floor, the command rules and
 // the gate, in every tier a run can get (or --tier's). It prints each interpretation the facts yield with its
 // readings, the argv elements the decision read, and the deciding rule per tier column. No YAML table is needed to try
-// one command; exit 0 whatever the verdict, since nothing is asserted.
-func runCompileExec(rt *agent.RuleTable, m *config.Machine, line string, tiers []backend.Tier, stdout, stderr io.Writer) int {
+// one command; exit 0 whatever the verdict, since nothing is asserted, save a root-tier column this user cannot be
+// given (rootPrediction.unknown, the decision compile --test prints too): it is printed as that and the exit is 125.
+func runCompileExec(rt *agent.RuleTable, m *config.Machine, line string, tiers []backend.Tier, pred *rootPrediction, stdout, stderr io.Writer) int {
 	argv, _, err := execmatch.SplitWords(line)
 	if err != nil || len(argv) == 0 {
 		message(stderr, "", 0, 0, "tego compile: --exec: write a command line", codeUsage)
@@ -39,9 +40,11 @@ func runCompileExec(rt *agent.RuleTable, m *config.Machine, line string, tiers [
 		// A script's #! line is a fact of the exec, as the supervisor reads it (ADR 0048 (3)): its interpreter, and
 		// the line's argument before the script, are the interpretation the kernel runs. Its first stage only.
 		interp, arg, ok, err := agent.ReadShebangLine(a.Path)
+		unread := false
 		switch {
 		case err != nil && !errors.Is(err, fs.ErrNotExist):
 			w.printf("  #! line not read: %v", err)
+			unread = errors.Is(err, fs.ErrPermission) // root reads the line and decides on its interpreter
 		case ok:
 			a.Script, a.ScriptArg = absPath(cwd, interp), arg
 			line := "#!" + interp
@@ -50,7 +53,10 @@ func runCompileExec(rt *agent.RuleTable, m *config.Machine, line string, tiers [
 			}
 			w.printf("  script: %s", record.Printable(line))
 		}
-		a, _ = agent.ResolveAction(a, landers(stderr, ""))
+		a, _ = agent.ResolveAction(a, pred.landers(landers(stderr, "")))
+		if unread {
+			pred.cutWalk(a.Path) // under the path the action now carries, which the walk may have landed elsewhere
+		}
 	} else {
 		w.printf("  a bare name is not looked up, so a script's #! line is not read: give its path to read it")
 	}
@@ -82,11 +88,15 @@ func runCompileExec(rt *agent.RuleTable, m *config.Machine, line string, tiers [
 		plane = decide.NewPlaneEvaluator(rt)
 	}
 	model := decide.NewEvaluator(rt)
+	unknown := false
 	for _, tier := range tiers {
 		var floor agent.EvalResult
-		if tier == backend.TierBPFLSM && plane != nil {
+		switch {
+		case pred.unknown(a, tier):
+			unknown, floor = true, unknownResult()
+		case tier == backend.TierBPFLSM && plane != nil:
 			floor = plane.Evaluate(a, env)
-		} else {
+		default:
 			floor = model.EvaluateIn(a, tier, env)
 		}
 		got := agent.EvaluateGateRow(rt, a, floor)
@@ -109,6 +119,10 @@ func runCompileExec(rt *agent.RuleTable, m *config.Machine, line string, tiers [
 	if w.err != nil {
 		message(stderr, "", 0, 0, "tego compile: "+w.err.Error(), codeIO)
 		return identity.ExitError // R25: Tego's own error
+	}
+	if unknown {
+		pred.explain(stderr)
+		return identity.ExitError // R25: an incomplete prediction is unknown, not an allow or a finding
 	}
 	return identity.ExitOK
 }

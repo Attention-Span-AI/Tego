@@ -22,6 +22,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
 // edgeProbe runs before each page's own scripts: it records window.scrollY at each of the first 60 animation frames
@@ -180,8 +182,10 @@ func TestKeepPlaceEdgesInChrome(t *testing.T) {
 		t.Errorf("the stalled view loaded its page after %s, before STALL", d)
 	}
 
+	c.closeTarget(t, rn.target)
+
 	// 4. A run's Older rows: the new range is said, not just the page's heading.
-	rp := edgeTab(t, c, "run", "http://"+addr+"/runs/"+harmRun, 1280, 800)
+	rp := edgeTab(t, c, "run", "http://"+addr+"/runs/"+harmRun+"?t=tok123", 1280, 800)
 	rp.eval(t, `(function () { var a = document.getElementById("tl-older"); a.scrollIntoView({block: "end"}); a.focus(); a.click(); })()`)
 	rp.until(t, "the older rows", `/before=/.test(location.search) && !document.querySelector("main").hasAttribute("aria-busy")`)
 	rp.until(t, "the rows' range said", `/older rows/.test((document.getElementById("nav-say") || {}).textContent || "")`)
@@ -189,11 +193,13 @@ func TestKeepPlaceEdgesInChrome(t *testing.T) {
 		t.Error("Older rows loaded the page anew")
 	}
 
+	c.closeTarget(t, rp.target)
+
 	// 5. Logs: the × of the last query chip and Clear filters, with Filters open.
 	lroot, _ := progFixture(t)
 	_, laddr, _ := liveServer(t, lroot, 10*time.Second, 120*time.Second)
 	lg := edgeTab(t, c, "logs", "http://"+laddr+"/logs?t=tok123&where=prog%3Acurl", 1280, 800)
-	lg.eval(t, `document.querySelector("details.fsheet").open = true; document.querySelector("details.lq-adv").open = true`)
+	lg.eval(t, `document.querySelector("details.lq-adv").open = true`)
 	lg.eval(t, `(function () { var x = document.querySelector(".lq-chips a.x"); x.focus(); x.click(); })()`)
 	lg.until(t, "the unfiltered view", `!/where=/.test(location.search) && !document.querySelector(".lq-chips") && !document.querySelector("main").hasAttribute("aria-busy")`)
 	if lg.eval(t, `window.__tegoMark`) != `"kept"` {
@@ -228,12 +234,14 @@ func TestKeepPlaceEdgesInChrome(t *testing.T) {
 	}
 	lg.eval(t, `window.__delay = 0`)
 
-	// 7. MCP tools: no live regions, and still the picker in place and a switch's post back where it was pressed.
+	c.closeTarget(t, lg.target)
+
+	// 7. MCP tools: a live page (C77), and still the picker in place and a switch's post back where it was pressed.
 	mroot := mcpLiveFixture(t)
-	_, maddr, _ := liveServer(t, mroot, 10*time.Second, 120*time.Second)
+	_, maddr, _ := liveServerConfig(t, Config{Ledger: mroot, Machine: config.Builtin()}, 10*time.Second, 120*time.Second)
 	mp := edgeTab(t, c, "mcp", "http://"+maddr+"/mcp?t=tok123&run="+mcpRun, 1280, 420)
-	if mp.eval(t, `!!document.body.dataset.sig`) != "false" {
-		t.Fatal("MCP tools now has a signature: this part tests a page without one")
+	if mp.eval(t, `!!document.body.dataset.sig`) != "true" {
+		t.Fatal("MCP tools has no live signature: this part tests a live page")
 	}
 	mp.eval(t, `(function () { var f = document.querySelector("main form.mcp-pick"); f.querySelector("select").value = "`+mcpRun+`"; f.requestSubmit(); })()`)
 	mp.until(t, "the picked run", `location.search === "?run=`+mcpRun+`" && !document.querySelector("main").hasAttribute("aria-busy")`)
@@ -251,6 +259,8 @@ func TestKeepPlaceEdgesInChrome(t *testing.T) {
 	mp.until(t, "the switch's answer", `window.__tegoMark === undefined && document.readyState === "complete" && !!document.getElementById("flash")`)
 	mp.until(t, "the switch where it was pressed", `Math.abs(`+deny+`.getBoundingClientRect().top - `+strconv.Itoa(btop)+`) <= 4`)
 
+	c.closeTarget(t, mp.target)
+
 	// 8. Model routes: the picker in place.
 	rroot := routesLiveFixture(t)
 	_, raddr, _ := liveServer(t, rroot, 10*time.Second, 120*time.Second)
@@ -260,5 +270,7 @@ func TestKeepPlaceEdgesInChrome(t *testing.T) {
 	if ro.eval(t, `window.__tegoMark`) != `"kept"` {
 		t.Error("Model routes' picker loaded the page anew")
 	}
+	c.closeTarget(t, ro.target)
+
 	fmt.Println("keep place edges in chrome: reload and Back at their scroll, pager focus, stall, Logs' Filters, typed text, MCP tools and Model routes in place")
 }

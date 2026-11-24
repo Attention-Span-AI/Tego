@@ -35,7 +35,17 @@ func buildTego(t *testing.T) string {
 // after C40's inode decision, so connection credentials identify the relay.
 // C40's integration tests instead require the immutable control-socket refusal
 // before such a relayed connection reaches any control service.
-func TestPeerInsideRealRunIsGoverned(t *testing.T) {
+func TestPeerInsideRealRunIsGoverned(t *testing.T) { agentInRealRunIsGoverned(t, "stay", false) }
+
+// TestUndumpablePeerInsideRealRunIsGoverned is the same run whose agent first makes itself undumpable, as a process that
+// holds a secret does (an agent can do the same): /proc then hides its namespace files, Identify
+// proves why from files that stay readable, and the agent is refused [run-member] by the cgroup path every peer is
+// judged by, which no flag changes. Being undumpable buys an agent nothing here (ADR 0100 (7), amended 2026-11-22).
+func TestUndumpablePeerInsideRealRunIsGoverned(t *testing.T) {
+	agentInRealRunIsGoverned(t, undumpableMode, true)
+}
+
+func agentInRealRunIsGoverned(t *testing.T, mode string, undumpable bool) {
 	if os.Geteuid() == 0 {
 		t.Skip("as root, tego run launches a privileged run, whose agent runs as the invoking user; this is the unprivileged shape")
 	}
@@ -72,14 +82,14 @@ func TestPeerInsideRealRunIsGoverned(t *testing.T) {
 	// refuses one (ADR 0070), and this socket stands for the person's own service the agent connects to.
 	contract := fmt.Sprintf(`version: 0
 name: peerprobe
-command: [%q, %q, "stay", %q]
+command: [%q, %q, %q, %q]
 tier: landlock
 host_sockets: true
 exec:
   allow: [%q]
 limits:
   pids: 64
-`, self, clientArg, sock, self)
+`, self, clientArg, mode, sock, self)
 	if err := os.WriteFile(filepath.Join(proj, "agent.yaml"), []byte(contract), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -106,6 +116,9 @@ limits:
 		t.Fatalf("Identify of the run's agent: %v", idErr)
 	}
 	t.Logf("run %s: the agent, pid %d, is in %s; Refuse: %v", id, p.PID, p.Cgroup, refused)
+	if p.Undumpable != undumpable || (p.CgroupNS == 0) != undumpable {
+		t.Errorf("Identify = %+v; want Undumpable %v, and a namespace exactly when it is not", p, undumpable)
+	}
 	if p.UID != os.Geteuid() || p.PidfdFallback != !hasPeerPidfdOnThisKernel(t) {
 		t.Errorf("Identify = %+v; want this uid %d", p, os.Geteuid())
 	}

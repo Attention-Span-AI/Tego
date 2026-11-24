@@ -137,40 +137,52 @@ func pauseChange(ctx context.Context, name string, on bool, fs *flag.FlagSet, st
 		fmt.Fprintf(stdout, "%s: %s\n", run, word)
 		return identity.ExitOK
 	}
-	why, seq := awaitControl(ctx, dir, o.Serial, from, pauseConfirmWait)
+	why, seq, readErr := awaitControl(ctx, dir, o.Serial, from, pauseConfirmWait)
+	code = identity.ExitOK
+	if readErr != nil {
+		message(stderr, "", 0, 0, "tego "+name+": cannot read the launcher's answer: "+readErr.Error(), codeIO)
+		code = identity.ExitError
+		if why == "" {
+			return code
+		}
+	}
 	switch why {
 	case record.GapRunPaused:
 		fmt.Fprintf(stdout, "%s: paused (line #%d). Its processes are frozen where they stood; tego session resume %s lets it carry on.\n", run, seq, run)
 	case record.GapRunResumed:
 		fmt.Fprintf(stdout, "%s: resumed (line #%d). It carries on from where it stood.\n", run, seq)
 	case record.GapPauseFailed:
-		fmt.Fprintf(stdout, "%s: pause asked, but the launcher could not freeze the run yet (line #%d), so it keeps running. "+
-			"If the agent waits on a request, it freezes once that is answered; otherwise the launcher tries again "+
-			"in a few seconds. tego session resume %s withdraws the pause.\n", run, seq, run)
+		fmt.Fprint(stdout, pauseDidNotTake(run, seq))
+		if readErr != nil {
+			return identity.ExitError
+		}
 		return identity.ExitFinding
 	case record.GapResumeFailed:
 		fmt.Fprintf(stdout, "%s: resume asked, but the launcher could not thaw the run (line #%d), so it stays frozen; "+
 			"the launcher tries again every half second, and tego session stop %s still ends it.\n", run, seq, run)
+		if readErr != nil {
+			return identity.ExitError
+		}
 		return identity.ExitFinding
 	default:
 		fmt.Fprintf(stdout, "%s: %s asked; the run's launcher has not confirmed it yet (it reads the request about every half second)\n",
 			run, name)
 	}
-	return identity.ExitOK
+	return code
 }
 
 // awaitControl waits at most wait for the run's ledger in dir to hold the launcher's line for the pause or resume of
 // overlay serial (or a later one), and returns that line's why and seq; "" when none came in time. It reads only the
 // lines appended after from, the ledger's size before the change was written, and each poll only what the last one
 // had not read, so a long-lived run's ledger is never scanned whole.
-func awaitControl(ctx context.Context, dir string, serial uint64, from int64, wait time.Duration) (string, uint64) {
+func awaitControl(ctx context.Context, dir string, serial uint64, from int64, wait time.Duration) (string, uint64, error) {
 	sc := controlScan{path: filepath.Join(dir, ledger.EventsFile), off: from, serial: serial}
 	for deadline := time.Now().Add(wait); ; {
 		if why, seq := sc.next(); why != "" {
-			return why, seq
+			return why, seq, sc.err
 		}
 		if time.Now().After(deadline) || ctx.Err() != nil {
-			return "", 0
+			return "", 0, sc.err
 		}
 		select {
 		case <-ctx.Done():
@@ -192,18 +204,23 @@ func eventsSize(dir string) int64 {
 // resume of serial or later. Each next reads only the complete lines appended since the last; a line still being
 // written is left for the next call.
 type controlScan struct {
-	path     string
-	off      int64
-	serial   uint64
-	why      string
-	seq      uint64
-	resynced bool
+	path      string
+	off       int64
+	serial    uint64
+	why       string
+	seq       uint64
+	resynced  bool
+	err       error
+	confirmed uint64
+	// paused is whether the lines matched so far leave the run paused (record.PausedAfter).
+	paused bool
 }
 
 // next reads what was appended since the last call and returns the last matching line's why and seq so far.
 func (sc *controlScan) next() (string, uint64) {
 	f, err := os.Open(sc.path)
 	if err != nil {
+		sc.recordFailure(sc.off, err)
 		return sc.why, sc.seq
 	}
 	defer func() { _ = f.Close() }() // read-only
@@ -212,59 +229,86 @@ func (sc *controlScan) next() (string, uint64) {
 		start-- // from the byte before: the line it ends (normally just its newline) is skipped below
 	}
 	if _, err := f.Seek(start, io.SeekStart); err != nil {
+		sc.recordFailure(start, err)
 		return sc.why, sc.seq
 	}
 	rd := bufio.NewReaderSize(f, 64<<10)
 	for {
-		line, err := rd.ReadSlice('\n')
-		if errors.Is(err, bufio.ErrBufferFull) {
-			// A line longer than the buffer: a blob-split field keeps live_control lines short, so it is not one.
-			n, skipErr := skipLine(rd)
-			start += int64(len(line)) + n
-			if skipErr != nil {
-				break
-			}
-			sc.off, sc.resynced = start, true
-			continue
-		}
+		line, size, err := controlRecord(rd)
 		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				sc.recordFailure(start, err)
+			}
 			break // no complete line left: what remains is read next time
 		}
-		start += int64(len(line))
+		at := start
+		start += size
 		if !sc.resynced && sc.off > 0 {
 			sc.off, sc.resynced = start, true
 			continue // the end of the line before off
 		}
 		sc.off, sc.resynced = start, true
-		sc.match(line)
+		if line == nil {
+			sc.recordFailure(at, fmt.Errorf("line longer than %d bytes", ledger.MaxLineBytes))
+			continue
+		}
+		sc.match(line, at)
 	}
 	return sc.why, sc.seq
 }
 
 // match keeps line's why and seq when it is the launcher's line for serial or later.
-func (sc *controlScan) match(line []byte) {
-	if !bytes.Contains(line, []byte(`"live_control"`)) {
+func (sc *controlScan) match(line []byte, off int64) {
+	e, err := record.Decode(bytes.TrimSuffix(line, []byte("\n")))
+	if err != nil {
+		sc.recordFailure(off, err)
 		return
 	}
-	e, err := record.Decode(bytes.TrimSuffix(line, []byte("\n")))
-	if err != nil || e.Kind != record.KindGap {
+	if e.Kind != record.KindGap {
 		return
 	}
 	var p record.GapPayload
-	if e.DecodePayload(&p) != nil || p.What != record.GapEnforce || p.LiveControl == nil || p.LiveControl.Serial < sc.serial {
+	if err := e.DecodePayload(&p); err != nil {
+		sc.recordFailure(off, err)
 		return
 	}
-	sc.why, sc.seq = p.Why, e.Seq
+	if p.What != record.GapEnforce || p.LiveControl == nil || p.LiveControl.Serial < sc.serial {
+		return
+	}
+	switch p.Why {
+	case record.GapRunPaused, record.GapRunResumed, record.GapPauseFailed, record.GapResumeFailed:
+		sc.why, sc.seq, sc.confirmed = p.Why, e.Seq, p.LiveControl.Serial
+		sc.paused = record.PausedAfter(sc.paused, p.Why)
+	}
 }
 
-// skipLine reads past the rest of a line longer than rd's buffer and returns how many bytes it read.
-func skipLine(rd *bufio.Reader) (int64, error) {
-	var n int64
+func (sc *controlScan) recordFailure(off int64, err error) {
+	sc.err = errors.Join(sc.err, fmt.Errorf("ledger line at byte offset %d: %w", off, err))
+}
+
+// controlRecord bounds allocation while consuming every complete line before filtering.
+func controlRecord(rd *bufio.Reader) ([]byte, int64, error) {
+	var line []byte
+	var size int64
 	for {
-		b, err := rd.ReadSlice('\n')
-		n += int64(len(b))
-		if !errors.Is(err, bufio.ErrBufferFull) {
-			return n, err
+		part, err := rd.ReadSlice('\n')
+		size += int64(len(part))
+		if size <= ledger.MaxLineBytes {
+			line = append(line, part...)
+		} else {
+			line = nil
 		}
+		if errors.Is(err, bufio.ErrBufferFull) {
+			continue
+		}
+		return line, size, err
 	}
+}
+
+// pauseDidNotTake is the line for a pause the launcher could not put in force yet: the agent is still running, what
+// happens next, and the one command that drops the pause (which leaves a request the agent waits on waiting).
+func pauseDidNotTake(run string, seq uint64) string {
+	return fmt.Sprintf("%s: pause asked, but the launcher could not freeze the run yet (line #%d), so the agent is still running. "+
+		"If the agent waits on a request, it freezes once that is answered; otherwise the launcher tries again "+
+		"in a few seconds. tego session resume %s cancels your pause; a request the agent waits on stays waiting for your answer.\n", run, seq, run)
 }

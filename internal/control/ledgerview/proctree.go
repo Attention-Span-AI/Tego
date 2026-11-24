@@ -29,11 +29,16 @@ import (
 // working folders are not recorded.
 //
 // A line belongs to the process its envelope's pid names at that line: the newest process of that pid whose first
-// exec is at or before the line, else the pid's first process (a forked child's lines before its own exec, which ran
-// its parent's program), else the launcher for the launcher's pid, else the pid's unrecorded node. An exec line
+// exec is at or before the line, or a later one of the pid that had already started when the line was written (a pid
+// the kernel reused: its exec_id carries its start time, and the exec lines before the line give the offset between
+// that boot clock and the lines' monotonic clock, lineIndex.startedBy; it says no when it cannot tell), else the pid's
+// first process (a forked child's lines before its own exec, which ran its parent's program), else the launcher for
+// the launcher's pid, else the pid's unrecorded node. An exec line
 // belongs to the process its exec_id names. A refused action's mirror (pair.go) is not counted, so the lines of all
 // processes add up to the run's lines in Logs, and each process's lines are those Logs shows for `run:<id> pid:<pid>`
-// (a pid the kernel reused inside one run is two processes here and one pid there).
+// (a pid the kernel reused inside one run is two processes here and one pid there). A suspend of the machine
+// inside a run moves the offset up after the lines before it, which only ever makes a later process of a reused pid
+// look as if it started after a line, so such a line stays with the earlier process as it did.
 
 // ProcTree is one run's process tree, built once per published version of the run (ProcessTree).
 type ProcTree struct {
@@ -299,7 +304,7 @@ func (b *treeBuilder) execsOf(n *ProcNode, pi *procInfo, execs []ProcExec, seqs 
 			lastRefused = k
 			continue
 		}
-		n.Execs = append(n.Execs, ProcExec{Seq: e.Seq, Name: programName(f.path, e.Target), cmd: e.Target,
+		n.Execs = append(n.Execs, ProcExec{Seq: e.Seq, Name: programName(e), cmd: e.Target,
 			Paths: append(paths[j:j:len(paths)], f.path), Refused: f.refused, Count: 1, Seqs: append(seqs[j:j:len(seqs)], e.Seq)})
 		if f.refused {
 			lastRefused = len(n.Execs) - 1
@@ -390,14 +395,18 @@ func (b *treeBuilder) ownerOf(i int32, e *Event) *ProcNode {
 	case 1:
 		return o.nodes[0]
 	}
-	k := max(sort.Search(len(o.first), func(j int) bool { return o.first[j] > i })-1, 0)
-	return o.nodes[k]
+	k := sort.Search(len(o.first), func(j int) bool { return o.first[j] > i }) - 1
+	for k >= 0 && k+1 < len(o.nodes) && b.x.startedBy(o.ps[k+1], i, e.mono) {
+		k++ // a later process of the pid that had started by this line, before its first exec (a reused pid)
+	}
+	return o.nodes[max(k, 0)]
 }
 
 // pidOwners is the processes a pid's lines can belong to: its recorded processes (nodes, by the index of their first
 // exec line, first), else other, the launcher or the pid's unrecorded node.
 type pidOwners struct {
 	first []int32
+	ps    []*procInfo
 	nodes []*ProcNode
 	other *ProcNode
 }
@@ -406,6 +415,7 @@ func (b *treeBuilder) ownersOf(pid int) *pidOwners {
 	o := &pidOwners{}
 	for _, pi := range b.x.byPid[pid] {
 		o.first = append(o.first, pi.execs[0])
+		o.ps = append(o.ps, pi)
 		o.nodes = append(o.nodes, b.byID[pi.id])
 	}
 	switch {

@@ -13,24 +13,30 @@
 # root suite; the driver read "Connection to 127.0.0.1 closed by remote host" as the suite's end, and the lost guest was
 # taken for hours for a product failure in the test that happened to be running.
 #
-# How: the start writes the run's files into a state directory, DIR/NAME (mode 0700), each read back and compared
-# (cksum) before anything runs, and starts a supervisor (setsid, nohup) that records who it is (the guest's boot id, its
-# pid and the pid's start time), runs COMMAND in a process group of its own from another directory, DIR/NAME.work,
-# with its output in the state's log, ends that group past --timeout (SIGTERM, then SIGKILL --grace seconds later, until
-# no process of it is left), and last writes its result, with the run's nonce, through a rename. A poll is a fresh SSH
-# call (each one ended by bounded-run.sh at --call-timeout: SIGTERM, then SIGKILL) that fetches the log's new bytes and
-# asks whether the supervisor, by boot id, pid and start time, still runs. The run is over only when the supervisor is
-# gone and its result is there with the nonce; neither a file COMMAND writes in its own directory nor a result without
-# the nonce ends it. When a poll fails, qemu is asked (--qemu-pid, and --qemu-status, the line its starter writes when
-# it ends). A start whose answer was lost is found again by its nonce and polled, never started twice.
+# How: root writes the run's files into DIR/NAME (0700), with read-back checks before launch, and starts a
+# transient system service, tego-ssh-suite-NONCE.service. PID 1 runs the supervisor independently of SSH sessions.
+# The supervisor records its boot id, pid and start time, runs COMMAND in its own group from DIR/NAME.work, logs
+# to DIR/NAME/log, and ends the group past --timeout (TERM, then KILL after --grace). It writes the nonce-bearing
+# result last, then exits with COMMAND's wait status (124 for the watchdog). PID 1 retains its own wait status.
+# Every bounded poll checks boot/process identity AND systemctl's InvocationID, ExecMainCode, ExecMainStatus,
+# ActiveState and SubState. Completion needs the original service invocation to have exited normally with the
+# same code as the result file. A readable nonce and a forged file plus supervisor death cannot authorize success.
+# A lost startup reply is reconciled by nonce without launching twice. Failed calls ask the host's qemu status.
+#
+# Requires the guest's system systemd manager and root (SSH as root or --sudo). No extra account is needed.
+# COMMAND also runs as root: it CAN forge evidence by modifying the supervisor, service manager, utilities or SSH.
+# The driver cross-checks the file against PID 1's wait and the pinned invocation; it trusts the guest OS and root
+# tests not to compromise those authorities. A live host qemu does not attest a root command's result. The nonce
+# identifies the run; it is not a secret from root. Stand-in tests exercise the protocol; the new manager path is
+# owed in a guest. Successful/failed units are retained for diagnosis until stopped/reset or the guest is discarded.
 #
 # Usage: test/vm/ssh-suite.sh --ssh SSH --qemu-pid PID [options] -- COMMAND [ARG...]
 #   --ssh SSH           an executable that runs its one argument as a shell command line on the guest, as `ssh HOST CMD`
 #                       does (a wrapper with the port, key and user); each call is a new connection
 #   --qemu-pid PID      the pid of the guest's qemu on this host
 #   --qemu-status FILE  where the guest's starter writes qemu's end once qemu has ended: "signal <n>" or "exit <n>"
-#   --sudo              run the supervisor (and so COMMAND) as root through `sudo -n`, so that it can end every
-#                       process of the command's group; the state is then root's
+#   --sudo              access the system manager and run the supervisor and COMMAND as root through `sudo -n`
+#                       (otherwise the SSH account must already be root)
 #   --name NAME         the run's name in the guest (default suite; letters, digits, '.', '_', '-'; not . or ..)
 #   --dir DIR           the guest directory the runs live in (default /var/tmp/tego-ssh-suite: on the guest's disk)
 #   --log FILE          keep everything the command printed in FILE (it is also copied to stdout as it comes)
@@ -44,8 +50,8 @@
 #   --call-timeout SECS end one SSH call that has not returned in SECS (default 120, at least 1): a frozen guest can hold
 #                       a connection open without a word, and a call that never returned would never ask qemu
 #
-# Exit code: COMMAND's own when the supervisor recorded its end; 98 when the guest was lost first (a GUEST-LOST line
-# says how: nothing it printed is a test result); 124 when the command ran past --timeout; 97 when it could not be
+# Exit code: COMMAND's own when the supervisor and manager agree on its end; 98 when the guest was lost first
+# (a GUEST-LOST line says how: nothing it printed is a test result); 124 when the command ran past --timeout; 97 when it could not be
 # started (DIR/NAME is another run's, or a setup file did not read back whole) or its log did not come back whole; 2 on a
 # usage error. A command can exit 98, 124 or 97 itself: the --status word (guest 98 against lost ...) tells which.
 set -u
@@ -70,6 +76,12 @@ usage() {
 sq() {
 	_sq=$(printf '%sx' "$1" | sed "s/'/'\\\\''/g")
 	printf "'%s'" "${_sq%x}"
+}
+# ExecStart expands dollars after the shell removes quotes. systemd.service(5)
+# uses $$ for a literal dollar, including on the AlmaLinux 9 system manager.
+manager_path() {
+	_mp=$(printf '%sx' "$1" | sed 's/[$]/$$/g')
+	sq "${_mp%x}"
 }
 num() { case "$1" in "" | *[!0-9]*) return 1 ;; esac; }
 
@@ -114,6 +126,7 @@ trap 'rm -rf "$tmp"' EXIT
 trap 'exit 143' INT TERM HUP
 nonce=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
 [ -n "$nonce" ] || { say "no nonce"; status env; exit "$EXIT_ENV"; }
+unit="tego-ssh-suite-$nonce.service"
 
 cmdline=""
 for a in "$@"; do cmdline="$cmdline $(sq "$a")"; done
@@ -124,7 +137,8 @@ cmdtext="exec$cmdline
 # shellcheck disable=SC2016 # the guest's sh expands it
 remote_st='st() { _s=$(cat "/proc/$1/stat" 2>/dev/null) || return 1; _s=${_s##*) }; set -- $_s; shift 19; echo "$1"; }'
 
-# The supervisor, as the guest runs it: setsid nohup sh STATE/sup.sh STATE WORK LIMIT GRACE NONCE.
+# PID 1 runs the supervisor as a transient system service and retains its own wait status.
+# Result files describe the end; they never authorize it without the manager's matching status.
 suptext="#!/bin/sh
 # ssh-suite.sh's supervisor: runs STATE/cmd in a process group of its own from WORK, ends the group past LIMIT seconds,
 # and writes \"NONCE exit|timeout|setup CODE ended|left\" to STATE/result last.
@@ -164,6 +178,8 @@ if [ \"\$kind\" = timeout ]; then
 fi
 ! kill -s 0 -- \"-\$c\" 2>/dev/null || grp=left
 result \"\$kind\" \"\$rc\" \"\$grp\"
+[ \"\$kind\" != timeout ] || exit 124
+exit \"\$rc\"
 "
 
 sumof() { printf '%s' "$1" | cksum; }
@@ -178,15 +194,22 @@ call() {
 # TEGO-SSH-SUITE-STARTED once the supervisor has recorded itself, or TEGO-SSH-SUITE-NOSTART with the reason (as data:
 # the reason never holds a path).
 start="set -u
-d=$(sq "$dir") s=$(sq "$state") w=$(sq "$work") n=$(sq "$nonce")
+d=$(sq "$dir") s=$(sq "$state") w=$(sq "$work") n=$(sq "$nonce") u=$(sq "$unit")
 no() { echo \"TEGO-SSH-SUITE-NOSTART \$1\"; exit 0; }
+[ \"\$(id -u)\" = 0 ] || no 'the system service manager requires root (use --sudo)'
+started() {
+	v=\$(systemctl show \"\$u\" --property=InvocationID --value) || no 'the service identity cannot be read'
+	case \"\$v\" in \"\" | *[!0-9a-f]*) no 'the service identity is invalid' ;; esac
+	[ \"\${#v}\" = 32 ] || no 'the service identity is invalid'
+	echo \"TEGO-SSH-SUITE-STARTED \$v\"
+}
 mkdir -p \"\$d\" || no 'the runs directory cannot be made'
 if ! mkdir \"\$s\" 2>/dev/null; then
 	[ \"\$(cat \"\$s/nonce\" 2>/dev/null)\" = \"\$n\" ] || no 'the run directory exists and is not this run'
 	i=0
 	while [ ! -s \"\$s/sup\" ] && [ ! -e \"\$s/setup-failed\" ] && [ \$i -lt 15 ]; do sleep 1; i=\$((i + 1)); done
 	[ -s \"\$s/sup\" ] || no 'an earlier start of this run did not finish setting up'
-	echo 'TEGO-SSH-SUITE-STARTED again'
+	started
 	exit 0
 fi
 fail() { : >\"\$s/setup-failed\"; no \"\$1\"; }
@@ -197,11 +220,12 @@ put cmd $(sq "$cmdtext") $(sq "$(sumof "$cmdtext")")
 put sup.sh $(sq "$suptext") $(sq "$(sumof "$suptext")")
 : >\"\$s/log\" || fail 'the log cannot be made'
 mkdir -p \"\$w\" || fail 'the working directory cannot be made'
-setsid nohup sh \"\$s/sup.sh\" \"\$s\" \"\$w\" $limit $grace \"\$n\" </dev/null >/dev/null 2>&1 &
+systemd-run --quiet --unit=\"\$u\" --property=RemainAfterExit=yes --property=KillMode=control-group -- \
+	sh $(manager_path "$state/sup.sh") $(manager_path "$state") $(manager_path "$work") $limit $grace \"\$n\" || fail 'the supervisor service did not start'
 i=0
 while [ ! -s \"\$s/sup\" ] && [ \$i -lt 15 ]; do sleep 1; i=\$((i + 1)); done
 [ -s \"\$s/sup\" ] || fail 'the supervisor did not record itself in 15 s'
-echo 'TEGO-SSH-SUITE-STARTED'"
+started"
 
 # qemu_end prints how qemu ended ("signal <n>", "exit <n>"), "gone" when it has ended and nobody wrote how, or nothing
 # while it runs. A starter notices qemu's end a moment after it, so a qemu found gone gets 10 s for its status line.
@@ -240,6 +264,9 @@ unanswered() {
 
 while :; do
 	if call "$start" && grep -q '^TEGO-SSH-SUITE-STARTED' "$tmp/out"; then
+		invocation=$(sed -n 's/^TEGO-SSH-SUITE-STARTED //p' "$tmp/out" | head -n 1)
+		case "$invocation" in "" | *[!0-9a-f]*) status env; exit "$EXIT_ENV" ;; esac
+		[ "${#invocation}" = 32 ] || { status env; exit "$EXIT_ENV"; }
 		break
 	fi
 	if grep -q '^TEGO-SSH-SUITE-NOSTART' "$tmp/out"; then
@@ -275,14 +302,25 @@ if read -r sb sp sst <sup; then
 	if [ \"\$sb\" != \"\$b\" ]; then reboot=yes; elif [ \"\$(st \"\$sp\")\" = \"\$sst\" ]; then alive=yes; fi
 fi
 if [ \"\$alive\" = no ] && [ \"\$res\" = - ] && [ -f result ]; then res=\$(cat result); fi
+m=\$(systemctl show $(sq "$unit") --property=InvocationID --property=ExecMainCode --property=ExecMainStatus --property=ActiveState --property=SubState) || exit 3
+mi=- mc=- ms=- ma=- mt=-
+while IFS='=' read -r k v; do
+	case \"\$k\" in
+	InvocationID) mi=\$v ;; ExecMainCode) mc=\$v ;; ExecMainStatus) ms=\$v ;; ActiveState) ma=\$v ;; SubState) mt=\$v ;;
+	esac
+done <<EOF
+\$m
+EOF
 s=\$(wc -c <log) || exit 3
-echo \"TEGO-SSH-SUITE \$s \$alive \$reboot \$res\"
+echo \"TEGO-SSH-SUITE \$s \$alive \$reboot \$mi \$mc \$ms \$ma \$mt \$res\"
 exec tail -c +$((off + 1)) log"
 	if call "$pollcmd" && hdr=$(head -n 1 "$tmp/out") && [ "${hdr%% *}" = TEGO-SSH-SUITE ]; then
 		last_ok=$(date +%s)
 		# shellcheck disable=SC2086 # the header's words
 		set -- $hdr
-		size=$2 alive=$3 reboot=$4 rnonce=${5:--} kind=${6:-} rc=${7:-} grp=${8:-}
+		size=$2 alive=$3 reboot=$4 mi=${5:--} mc=${6:--} ms=${7:--} ma=${8:--} mt=${9:--}
+		shift 9
+		rnonce=${1:--} kind=${2:-} rc=${3:-} grp=${4:-}
 		tail -n +2 "$tmp/out" >"$tmp/chunk"
 		got=$(wc -c <"$tmp/chunk")
 		if [ "$got" -gt 0 ]; then
@@ -290,7 +328,18 @@ exec tail -c +$((off + 1)) log"
 			cat "$tmp/chunk"
 			off=$((off + got))
 		fi
-		if [ "$alive" = no ] && [ "$rnonce" = "$nonce" ]; then
+		# PID 1's wait, scoped to the original invocation, is the authority. A forged file plus a killed
+		# supervisor cannot turn CLD_KILLED (2) into CLD_EXITED (1), or change its exit status.
+		[ "$reboot" = no ] || lost rebooted "the guest booted again (another boot id)"
+		[ "$mi" = "$invocation" ] || lost suite-gone "the supervisor service identity changed or disappeared"
+		manager_done=no
+		case "$ma/$mt" in active/exited | failed/failed) manager_done=yes ;; esac
+		if [ "$manager_done" = yes ] && [ "$alive" = no ] && [ "$rnonce" = "$nonce" ]; then
+			expected=$rc
+			[ "$kind" != timeout ] || expected=$EXIT_TIMEOUT
+			if [ "$mc" != 1 ] || [ "$ms" != "$expected" ]; then
+				lost suite-gone "the supervisor result disagrees with the service manager's wait ($mc/$ms)"
+			fi
 			if [ "$off" -lt "$size" ]; then
 				stalled=$((stalled + 1))
 				say "the log came back short ($off of $size bytes)"
@@ -322,8 +371,7 @@ exec tail -c +$((off + 1)) log"
 				;;
 			esac
 		fi
-		if [ "$alive" = no ]; then
-			[ "$reboot" = no ] || lost rebooted "the guest booted again (another boot id)"
+		if [ "$alive" = no ] && [ "$manager_done" = yes ]; then
 			lost suite-gone "the suite's supervisor in the guest is gone without its result (something killed it)"
 		fi
 	else

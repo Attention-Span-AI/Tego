@@ -1,0 +1,1274 @@
+{
+  "$defs": {
+    "Ask": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LocalApprovalActor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after_s": {
+          "type": "number"
+        },
+        "answer": {
+          "enum": [
+            "approved",
+            "denied",
+            "timed-out",
+            "alternate",
+            "unavailable",
+            ""
+          ]
+        },
+        "ask_id": {
+          "type": "string"
+        },
+        "by": {
+          "type": "string"
+        },
+        "delivery_note": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string"
+        },
+        "rule": {
+          "type": "string"
+        },
+        "system_cause": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "ts": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ask_id",
+        "ts",
+        "op",
+        "target",
+        "rule",
+        "answer"
+      ],
+      "type": "object"
+    },
+    "Asks": {
+      "additionalProperties": false,
+      "properties": {
+        "alternates": {
+          "type": "integer"
+        },
+        "approved": {
+          "type": "integer"
+        },
+        "asked": {
+          "type": "integer"
+        },
+        "denied": {
+          "type": "integer"
+        },
+        "list": {
+          "items": {
+            "$ref": "#/$defs/Ask"
+          },
+          "type": "array"
+        },
+        "timed_out": {
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "unanswered": {
+          "type": "integer"
+        },
+        "wait_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "asked",
+        "approved",
+        "denied",
+        "timed_out",
+        "alternates",
+        "unanswered",
+        "wait_s",
+        "list"
+      ],
+      "type": "object"
+    },
+    "Baseline": {
+      "additionalProperties": false,
+      "properties": {
+        "effective_contract": {
+          "type": "string"
+        },
+        "evidence_sha256": {
+          "type": "string"
+        },
+        "fact_sha256": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "home": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "owner_known": {
+          "type": "boolean"
+        },
+        "owner_uid": {
+          "type": "integer"
+        },
+        "protected_owner_layer": {
+          "type": "string"
+        },
+        "replay": {
+          "type": "string"
+        },
+        "rules": {
+          "items": {
+            "$ref": "#/$defs/BaselineRule"
+          },
+          "type": "array"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "source_contract": {
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/BaselineSource"
+          },
+          "type": "array"
+        },
+        "v": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "mode",
+        "sha256",
+        "owner_uid",
+        "home",
+        "owner_known",
+        "sources",
+        "protected_owner_layer",
+        "rules",
+        "source_contract",
+        "effective_contract",
+        "replay",
+        "fact_sha256",
+        "evidence_sha256"
+      ],
+      "type": "object"
+    },
+    "BaselineOrigin": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "layer": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "layer",
+        "file",
+        "line"
+      ],
+      "type": "object"
+    },
+    "BaselineRefusals": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "count"
+      ],
+      "type": "object"
+    },
+    "BaselineRule": {
+      "additionalProperties": false,
+      "properties": {
+        "conditions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "empty_reason": {
+          "type": "string"
+        },
+        "expanded": {
+          "type": "string"
+        },
+        "held": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "image_mode": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "limits": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "operations": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "plane": {
+          "type": "string"
+        },
+        "rule": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/BaselineOrigin"
+          },
+          "type": "array"
+        },
+        "state": {
+          "type": "string"
+        },
+        "tier": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "value",
+        "expanded",
+        "state",
+        "rule",
+        "empty_reason",
+        "sources",
+        "tier",
+        "plane",
+        "held",
+        "image_mode",
+        "operations",
+        "conditions",
+        "limits"
+      ],
+      "type": "object"
+    },
+    "BaselineSource": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "layer": {
+          "type": "string"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "layer",
+        "file",
+        "state",
+        "sha256",
+        "bytes"
+      ],
+      "type": "object"
+    },
+    "BaselineSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_hash": {
+          "type": "string"
+        },
+        "effective_hash": {
+          "type": "string"
+        },
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Baseline"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "refusals": {
+          "items": {
+            "$ref": "#/$defs/BaselineRefusals"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "evidence",
+        "contract_hash",
+        "effective_hash",
+        "refusals"
+      ],
+      "type": "object"
+    },
+    "Binding": {
+      "additionalProperties": false,
+      "properties": {
+        "baseline_evidence_sha256": {
+          "type": "string"
+        },
+        "baseline_sha256": {
+          "type": "string"
+        },
+        "binary_sha256": {
+          "type": "string"
+        },
+        "capabilities": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "type": "object"
+        },
+        "chain": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BoundChain"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contract_hash": {
+          "type": "string"
+        },
+        "effective_hash": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "limits": {
+          "items": {
+            "$ref": "#/$defs/Limit"
+          },
+          "type": "array"
+        },
+        "receipt_by": {
+          "$ref": "#/$defs/MadeBy"
+        },
+        "receipt_sha256": {
+          "type": "string"
+        },
+        "v": {
+          "enum": [
+            1,
+            2,
+            3
+          ]
+        }
+      },
+      "required": [
+        "v",
+        "receipt_by",
+        "limits"
+      ],
+      "type": "object"
+    },
+    "BoundChain": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "type": "integer"
+        },
+        "ended": {
+          "type": "boolean"
+        },
+        "head": {
+          "type": "string"
+        },
+        "lines": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "newer_lines": {
+          "type": "integer"
+        },
+        "run": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "torn_bytes": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "run",
+        "lines",
+        "head",
+        "ended",
+        "bytes",
+        "sha256",
+        "torn_bytes",
+        "newer_lines"
+      ],
+      "type": "object"
+    },
+    "Connection": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": "integer"
+        },
+        "destination": {
+          "type": "string"
+        },
+        "sends": {
+          "type": "integer"
+        },
+        "verdicts": {
+          "$ref": "#/$defs/Verdicts"
+        }
+      },
+      "required": [
+        "destination",
+        "count",
+        "verdicts"
+      ],
+      "type": "object"
+    },
+    "Coverage": {
+      "additionalProperties": false,
+      "properties": {
+        "complete": {
+          "type": "boolean"
+        },
+        "deny_read_frozen": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DenyReadFrozen"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "gaps": {
+          "items": {
+            "$ref": "#/$defs/CoverageGap"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "complete",
+        "gaps"
+      ],
+      "type": "object"
+    },
+    "CoverageGap": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "no-capabilities-line",
+            "record-off",
+            "capture-off",
+            "capture-gap",
+            "unmetered-responses",
+            "model-time-unseen",
+            "truncated",
+            "unpriced-responses",
+            "no-price-table",
+            "missed-actions",
+            "messages-dropped",
+            "ask-repeated",
+            "answer-unpaired",
+            "model-routes-kept",
+            "recording-uncertain",
+            "rules-uncertain",
+            "no-run-end"
+          ]
+        },
+        "field": {
+          "type": "string"
+        },
+        "level": {
+          "enum": [
+            "partial",
+            "none"
+          ]
+        },
+        "why": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "code",
+        "why"
+      ],
+      "type": "object"
+    },
+    "DenyReadFrozen": {
+      "additionalProperties": false,
+      "properties": {
+        "dirs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "omitted": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "dirs"
+      ],
+      "type": "object"
+    },
+    "Files": {
+      "additionalProperties": false,
+      "properties": {
+        "created": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "deleted": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "note": {
+          "type": "string"
+        },
+        "recorded": {
+          "type": "boolean"
+        },
+        "renamed": {
+          "items": {
+            "$ref": "#/$defs/Rename"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "written": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "recorded",
+        "written",
+        "created",
+        "deleted",
+        "renamed"
+      ],
+      "type": "object"
+    },
+    "Limit": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "launching-user-can-rewrite",
+            "record-only",
+            "tail-not-synced",
+            "no-signature"
+          ]
+        },
+        "why": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "why"
+      ],
+      "type": "object"
+    },
+    "LocalApprovalActor": {
+      "additionalProperties": false,
+      "properties": {
+        "pid": {
+          "type": "integer"
+        },
+        "role": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "start_boot_ns": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "uid": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "user_namespace": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "uid",
+        "pid",
+        "start_boot_ns",
+        "user_namespace",
+        "source",
+        "role"
+      ],
+      "type": "object"
+    },
+    "LocalApprovalAuthority": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_uid": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "sha256",
+        "agent_uid"
+      ],
+      "type": "object"
+    },
+    "MadeBy": {
+      "additionalProperties": false,
+      "properties": {
+        "commit": {
+          "type": "string"
+        },
+        "tego_version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tego_version",
+        "commit"
+      ],
+      "type": "object"
+    },
+    "OverTime": {
+      "additionalProperties": false,
+      "properties": {
+        "bucket_s": {
+          "type": "integer"
+        },
+        "counts": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "bucket_s",
+        "counts"
+      ],
+      "type": "object"
+    },
+    "Program": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": "integer"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "count"
+      ],
+      "type": "object"
+    },
+    "ReadsNotified": {
+      "additionalProperties": false,
+      "properties": {
+        "notified": {
+          "type": "boolean"
+        },
+        "why": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "notified",
+        "why"
+      ],
+      "type": "object"
+    },
+    "Refusal": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "learn_withheld_run": {
+          "type": "string"
+        },
+        "minute": {
+          "type": "integer"
+        },
+        "op": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "rule": {
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "target": {
+          "type": "string"
+        },
+        "ts": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "seq",
+        "ts",
+        "kind",
+        "op",
+        "target",
+        "rule",
+        "reason",
+        "minute"
+      ],
+      "type": "object"
+    },
+    "Refusals": {
+      "additionalProperties": false,
+      "properties": {
+        "by_rule": {
+          "items": {
+            "$ref": "#/$defs/RuleCount"
+          },
+          "type": "array"
+        },
+        "list": {
+          "items": {
+            "$ref": "#/$defs/Refusal"
+          },
+          "type": "array"
+        },
+        "list_truncated": {
+          "type": "boolean"
+        },
+        "total": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total",
+        "by_rule",
+        "list"
+      ],
+      "type": "object"
+    },
+    "Rename": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "type": "object"
+    },
+    "RuleCount": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "rule": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule",
+        "reason",
+        "count"
+      ],
+      "type": "object"
+    },
+    "SensitiveRead": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "verdicts": {
+          "$ref": "#/$defs/Verdicts"
+        }
+      },
+      "required": [
+        "path",
+        "verdicts"
+      ],
+      "type": "object"
+    },
+    "Stall": {
+      "additionalProperties": false,
+      "properties": {
+        "ended_by_stall": {
+          "type": "boolean"
+        },
+        "minutes": {
+          "type": "number"
+        },
+        "note": {
+          "type": "string"
+        },
+        "recorded": {
+          "type": "boolean"
+        },
+        "threshold_s": {
+          "type": "number"
+        },
+        "windows": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "recorded",
+        "threshold_s",
+        "minutes",
+        "windows"
+      ],
+      "type": "object"
+    },
+    "Tests": {
+      "additionalProperties": false,
+      "properties": {
+        "note": {
+          "type": "string"
+        },
+        "recorded": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "recorded"
+      ],
+      "type": "object"
+    },
+    "TimeTaken": {
+      "additionalProperties": false,
+      "properties": {
+        "note": {
+          "type": "string"
+        },
+        "seconds": {
+          "type": "number"
+        },
+        "so_far": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "seconds"
+      ],
+      "type": "object"
+    },
+    "Tokens": {
+      "additionalProperties": false,
+      "properties": {
+        "cache_read": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cache_write": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "est_cost": {
+          "type": "string"
+        },
+        "est_cost_usd": {
+          "type": "number"
+        },
+        "in": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "metered": {
+          "type": "integer"
+        },
+        "model_calls": {
+          "type": "integer"
+        },
+        "note": {
+          "type": "string"
+        },
+        "out": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "recorded": {
+          "type": "boolean"
+        },
+        "unpriced_responses": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "recorded",
+        "model_calls",
+        "metered",
+        "in",
+        "out",
+        "cache_read",
+        "cache_write",
+        "est_cost_usd",
+        "unpriced_responses"
+      ],
+      "type": "object"
+    },
+    "Verdicts": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed": {
+          "type": "integer"
+        },
+        "observed": {
+          "type": "integer"
+        },
+        "refused": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "observed",
+        "allowed",
+        "refused"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://tego.dev/spec/receipt/receipt-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "What `tego receipt --json` prints and the dashboard's Receipt tab shows: one run's receipt (receipt_v 1). Keys only grow within the version, so a reader ignores a key it does not know; this schema, which is for the writer, refuses one, and a test holds it to pkg/spec/receipt, which holds the same keys and is read by the receipt's builder. A field the ledger cannot support says so (recorded false and a note) and carries no number; coverage lists each field the ledger could not support in full, with a code, a level (partial or none: a field with no gap is complete) and words.",
+  "properties": {
+    "agent": {
+      "type": "string"
+    },
+    "asks": {
+      "$ref": "#/$defs/Asks"
+    },
+    "baseline": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BaselineSummary"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "binding": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Binding"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "capture": {
+      "type": "string"
+    },
+    "command": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "connection_tries": {
+      "type": "integer"
+    },
+    "connections": {
+      "items": {
+        "$ref": "#/$defs/Connection"
+      },
+      "type": "array"
+    },
+    "connections_more": {
+      "type": "integer"
+    },
+    "connections_note": {
+      "type": "string"
+    },
+    "connections_overflow_attempts": {
+      "type": "integer"
+    },
+    "coverage": {
+      "$ref": "#/$defs/Coverage"
+    },
+    "cwd": {
+      "type": "string"
+    },
+    "datagram_sends": {
+      "type": "integer"
+    },
+    "end_reason": {
+      "type": "string"
+    },
+    "ended": {
+      "type": "boolean"
+    },
+    "escalated": {
+      "type": "boolean"
+    },
+    "exit_code": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "files": {
+      "$ref": "#/$defs/Files"
+    },
+    "finished": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lines": {
+      "type": "integer"
+    },
+    "local_approval_authority": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LocalApprovalAuthority"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "notes": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "programs": {
+      "items": {
+        "$ref": "#/$defs/Program"
+      },
+      "type": "array"
+    },
+    "programs_more": {
+      "type": "integer"
+    },
+    "programs_overflow_attempts": {
+      "type": "integer"
+    },
+    "reads_notified": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ReadsNotified"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "receipt_v": {
+      "const": 1
+    },
+    "refusals": {
+      "$ref": "#/$defs/Refusals"
+    },
+    "refusals_over_time": {
+      "$ref": "#/$defs/OverTime"
+    },
+    "routine_sockets": {
+      "type": "integer"
+    },
+    "run": {
+      "type": "string"
+    },
+    "sensitive_reads": {
+      "items": {
+        "$ref": "#/$defs/SensitiveRead"
+      },
+      "type": "array"
+    },
+    "sensitive_reads_note": {
+      "type": "string"
+    },
+    "sensitive_reads_truncated": {
+      "type": "boolean"
+    },
+    "sensitive_reads_unknown": {
+      "type": "boolean"
+    },
+    "signal": {
+      "type": "integer"
+    },
+    "stall": {
+      "$ref": "#/$defs/Stall"
+    },
+    "started": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "system_lookups": {
+      "type": "integer"
+    },
+    "tests": {
+      "$ref": "#/$defs/Tests"
+    },
+    "tier": {
+      "type": "string"
+    },
+    "time_taken": {
+      "$ref": "#/$defs/TimeTaken"
+    },
+    "tokens": {
+      "$ref": "#/$defs/Tokens"
+    }
+  },
+  "required": [
+    "receipt_v",
+    "run",
+    "agent",
+    "ended",
+    "time_taken",
+    "files",
+    "refusals",
+    "refusals_over_time",
+    "stall",
+    "tests",
+    "asks",
+    "tokens",
+    "connections",
+    "connection_tries",
+    "programs",
+    "sensitive_reads",
+    "coverage",
+    "lines"
+  ],
+  "title": "Run receipt v1",
+  "type": "object"
+}

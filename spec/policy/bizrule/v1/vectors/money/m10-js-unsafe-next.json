@@ -1,0 +1,75 @@
+{
+  "id": "m10-js-unsafe-next",
+  "group": "money",
+  "pins": [
+    "A006"
+  ],
+  "why": "A006: The first unsafe JavaScript integer refuses before the cap.",
+  "bundle": {
+    "version": 1,
+    "adapter": "square.refund.v1",
+    "server": "square",
+    "rules": [
+      {
+        "id": "cap",
+        "kind": "per_call",
+        "currency": "USD",
+        "limit": "9223372036854775807"
+      }
+    ]
+  },
+  "bundle_wire_hex": null,
+  "request": {
+    "adapter": "square.refund.v1",
+    "call_hex": "7b226964223a312c226a736f6e727063223a22322e30222c226d6574686f64223a22746f6f6c732f63616c6c222c22706172616d73223a7b22617267756d656e7473223a7b226d6574686f64223a227061796d656e74222c2272657175657374223a7b22616d6f756e745f6d6f6e6579223a7b22616d6f756e74223a393030373139393235343734303939322c2263757272656e6379223a22555344227d2c226964656d706f74656e63795f6b6579223a226b31222c227061796d656e745f6964223a227031227d2c2273657276696365223a22726566756e6473227d2c226e616d65223a226d616b655f6170695f72657175657374227d7d",
+    "contract_bundle_digest": "9645969c20db56e49d28f183ee469639e076d647011b0ceedd538a8b1038a613",
+    "contract_verdict": "allow",
+    "evaluator_status": "ready",
+    "request_id": "1",
+    "run_id": "run1",
+    "server": "square",
+    "state": {
+      "bundle_digest": "9645969c20db56e49d28f183ee469639e076d647011b0ceedd538a8b1038a613",
+      "epoch": "e1",
+      "revision": "0",
+      "run_id": "run1",
+      "seen_keys": [],
+      "server": "square",
+      "status": "ready",
+      "totals": []
+    },
+    "tool_source": "contract",
+    "topology": "exclusive",
+    "version": 1
+  },
+  "request_wire_hex": null,
+  "expected": {
+    "adapter": "square.refund.v1",
+    "bundle_digest": "9645969c20db56e49d28f183ee469639e076d647011b0ceedd538a8b1038a613",
+    "business": {
+      "verdict": "deny",
+      "rule_id": "$adapter",
+      "condition": "adapter.range"
+    },
+    "asks": [],
+    "call_digest": "70938c9d677594ccd9731a905751c226bb237f492a4fefa75df97a8ad7c7e2dd",
+    "facts": null,
+    "final": {
+      "verdict": "deny",
+      "source": "business",
+      "condition": "adapter.range"
+    },
+    "record": {
+      "coverage": "unknown",
+      "delivery": "not_attempted",
+      "remote_outcome": "unknown",
+      "required": true,
+      "stage": "evaluated"
+    },
+    "request_id": "1",
+    "reservation": null,
+    "run_id": "run1",
+    "server": "square",
+    "version": 1
+  }
+}

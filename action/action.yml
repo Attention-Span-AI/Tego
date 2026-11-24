@@ -1,0 +1,133 @@
+# SPDX-License-Identifier: Apache-2.0
+# Unsigned implementation used by the two-job reusable workflow.
+name: Tego receipt
+description: Run any AI agent under a Tego contract and collect an unsigned report.
+inputs:
+  workspace:
+    description: Caller checkout directory relative to the job workspace.
+    default: ""
+  run:
+    description: Command run by bash in the caller checkout.
+    required: true
+  contract:
+    description: Repository contract extending tego/ci@1. Write grants must avoid protected paths.
+    required: true
+  tego-version:
+    description: Pinned release tag containing tego/ci and receipt --check.
+    required: true
+  tego-sha256:
+    description: Independent SHA-256 pin of this architecture's release binary.
+    required: true
+  use-sudo:
+    description: Request cgroup instead of landlock; the agent remains unprivileged.
+    default: 'false'
+  matrix-key:
+    description: Caller matrix as JSON; canonicalized and hashed for paths and comments.
+    default: single
+  on-refusal:
+    description: warn or fail after evidence upload.
+    default: warn
+  sign:
+    description: auto, true or false. Signing belongs to the separate reusable workflow job and requires its explicit sign-consent.
+    default: auto
+  comment:
+    description: Reserved auto, true or false; the reusable job publishes summaries without comment authority.
+    default: 'false'
+  env-pass:
+    description: Extra variable names; values remain in the environment. CI and startup authority names are refused.
+    default: ''
+  github-token:
+    description: Read-only token for authenticated repository metadata.
+    default: ${{ github.token }}
+outputs:
+  receipt-sha256:
+    description: Checked core file digest or exact byte count.
+    value: ${{ steps.collect.outputs.receipt-sha256 }}
+  receipt-bytes:
+    description: Checked core file digest or exact byte count.
+    value: ${{ steps.collect.outputs.receipt-bytes }}
+  record-sha256:
+    description: Checked core file digest or exact byte count.
+    value: ${{ steps.collect.outputs.record-sha256 }}
+  record-bytes:
+    description: Checked core file digest or exact byte count.
+    value: ${{ steps.collect.outputs.record-bytes }}
+  anchor-sha256:
+    description: Checked core file digest or exact byte count.
+    value: ${{ steps.collect.outputs.anchor-sha256 }}
+  anchor-bytes:
+    description: Checked core file digest or exact byte count.
+    value: ${{ steps.collect.outputs.anchor-bytes }}
+  contract-sha256:
+    description: Checked core file digest or exact byte count.
+    value: ${{ steps.collect.outputs.contract-sha256 }}
+  contract-bytes:
+    description: Checked core file digest or exact byte count.
+    value: ${{ steps.collect.outputs.contract-bytes }}
+  status-sha256:
+    description: Checked core file digest or exact byte count.
+    value: ${{ steps.collect.outputs.status-sha256 }}
+  status-bytes:
+    description: Checked core file digest or exact byte count.
+    value: ${{ steps.collect.outputs.status-bytes }}
+  core-inventory-sha256:
+    description: Checked core file digest or exact byte count.
+    value: ${{ steps.collect.outputs.core-inventory-sha256 }}
+  artifact-attempt:
+    description: Attempt that produced the uploaded artifact, retained for verifier-only reruns.
+    value: ${{ steps.collect.outputs.artifact-attempt }}
+  pr:
+    description: Pull request number, absent on other events.
+    value: ${{ steps.collect.outputs.pr }}
+  dir:
+    description: Private evidence directory.
+    value: ${{ steps.collect.outputs.dir }}
+  artifact-name:
+    description: Run, attempt and matrix-specific artifact name.
+    value: ${{ steps.collect.outputs.artifact-name }}
+  inventory-sha256:
+    description: SHA-256 of the sorted evidence inventory, passed outside the artifact.
+    value: ${{ steps.collect.outputs.inventory-sha256 }}
+  matrix-key:
+    description: Canonical matrix key's SHA-256.
+    value: ${{ steps.collect.outputs.matrix-key }}
+  run-id:
+    description: Tego run id, absent on pre-launch refusal.
+    value: ${{ steps.collect.outputs.run-id }}
+  agent-exit-code:
+    description: Original run exit, absent when the agent did not start.
+    value: ${{ steps.collect.outputs.agent-exit-code }}
+  prepare-exit:
+    description: Preparation exit, including doctor refusal 211.
+    value: ${{ steps.collect.outputs.prepare-exit }}
+  evidence-exit:
+    description: Collection status; failure takes precedence over agent failure.
+    value: ${{ steps.collect.outputs.evidence-exit }}
+  refusals:
+    description: Recorded refusals.
+    value: ${{ steps.collect.outputs.refusals }}
+  verified:
+    description: Ended record checked on the runner.
+    value: ${{ steps.collect.outputs.verified }}
+runs:
+  using: composite
+  steps:
+    - id: collect
+      name: run and collect an unsigned report
+      shell: /bin/bash --noprofile --norc -peuo pipefail {0}
+      env:
+        BASH_ENV: /dev/null
+        ENV: /dev/null
+        IN_WORKSPACE: ${{ inputs.workspace }}
+        IN_RUN: ${{ inputs.run }}
+        IN_CONTRACT: ${{ inputs.contract }}
+        IN_VERSION: ${{ inputs.tego-version }}
+        IN_SHA256: ${{ inputs.tego-sha256 }}
+        IN_USE_SUDO: ${{ inputs.use-sudo }}
+        IN_MATRIX_KEY: ${{ inputs.matrix-key }}
+        IN_ON_REFUSAL: ${{ inputs.on-refusal }}
+        IN_SIGN: ${{ inputs.sign }}
+        IN_COMMENT: ${{ inputs.comment }}
+        IN_ENV_PASS: ${{ inputs.env-pass }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: '"$GITHUB_ACTION_PATH/scripts/agent.sh"'

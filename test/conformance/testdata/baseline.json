@@ -116,32 +116,8 @@
   {
     "cell": "mounts-bind/read-bind-alias-sibling",
     "runner": "ledger",
-    "tier": "bpflsm",
-    "reason": "A line names the bind alias the agent spelled, not the identity it reaches (ADR 0025). Not a fail-open: the kernel's answer is the cell's, or a refusal (the listener's write). Landlock refuses the read through the sibling alias before the plane is asked (the node's inode, E32 (b)), and the kernel recorder explains a Landlock refusal by the name, which is no entry's, so the line says observed unmatched where it is refused fs.deny_read[./secret/]."
-  },
-  {
-    "cell": "mounts-bind/read-bind-alias-sibling",
-    "runner": "ledger",
     "tier": "cgroup",
     "reason": "A line names the bind alias the agent spelled, not the identity it reaches (ADR 0025). Not a fail-open: the kernel's answer is the cell's, or a refusal (the listener's write). Landlock refuses the read through the sibling alias before the plane is asked (the node's inode, E32 (b)), and the kernel recorder explains a Landlock refusal by the name, which is no entry's, so the line says observed unmatched where it is refused fs.deny_read[./secret/]."
-  },
-  {
-    "cell": "mounts-bind/read-bind-alias-sibling",
-    "runner": "ledger",
-    "tier": "cgroup@lsm",
-    "reason": "A line names the bind alias the agent spelled, not the identity it reaches (ADR 0025). Not a fail-open: the kernel's answer is the cell's, or a refusal (the listener's write). Landlock refuses the read through the sibling alias before the plane is asked (the node's inode, E32 (b)), and the kernel recorder explains a Landlock refusal by the name, which is no entry's, so the line says observed unmatched where it is refused fs.deny_read[./secret/]."
-  },
-  {
-    "cell": "mounts-bind/read-bind-alias-sibling",
-    "runner": "ledger",
-    "tier": "landlock",
-    "reason": "A line names the bind alias the agent spelled, not the identity it reaches (ADR 0025). Not a fail-open: the kernel's answer is the cell's, or a refusal (the listener's write). Landlock refuses the read through the sibling alias (the deny_read node's inode, enforce-landlock E32 (b)) while the supervisor's advisory line says allow unmatched."
-  },
-  {
-    "cell": "mounts-bind/write-bind-alias-of-write-entry",
-    "runner": "ledger",
-    "tier": "bpflsm",
-    "reason": "A line names the bind alias the agent spelled, not the identity it reaches (ADR 0025). Not a fail-open: the kernel's answer is the cell's, or a refusal (the listener's write). The plane allows the write by inode and its kernel line names no entry (allow unmatched) where the entry is fs.write[./w/]."
   },
   {
     "cell": "mounts-bind/write-bind-alias-of-write-entry",
@@ -150,39 +126,30 @@
     "reason": "A line names the bind alias the agent spelled, not the identity it reaches (ADR 0025). Not a fail-open: the kernel's answer is the cell's, or a refusal (the listener's write). On tier cgroup's listener the supervisor refuses the write by the alias's name (fallbackMutation, fail closed) and its line says refused unmatched; the cell wants the inode's allow."
   },
   {
-    "cell": "mounts-bind/write-bind-alias-of-write-entry",
-    "runner": "ledger",
-    "tier": "cgroup@fmod_ret",
-    "reason": "A line names the bind alias the agent spelled, not the identity it reaches (ADR 0025). Not a fail-open: the kernel's answer is the cell's, or a refusal (the listener's write). The plane allows the write by inode and its kernel line names no entry (allow unmatched) where the entry is fs.write[./w/]."
-  },
-  {
-    "cell": "mounts-bind/write-bind-alias-of-write-entry",
-    "runner": "ledger",
-    "tier": "cgroup@lsm",
-    "reason": "A line names the bind alias the agent spelled, not the identity it reaches (ADR 0025). Not a fail-open: the kernel's answer is the cell's, or a refusal (the listener's write). The plane allows the write by inode and its kernel line names no entry (allow unmatched) where the entry is fs.write[./w/]."
-  },
-  {
-    "cell": "mounts-bind/write-bind-alias-of-write-entry",
-    "runner": "ledger",
-    "tier": "landlock",
-    "reason": "A line names the bind alias the agent spelled, not the identity it reaches (ADR 0025). Not a fail-open: the kernel's answer is the cell's, or a refusal (the listener's write). At tier landlock Landlock allows the write through the alias of a write entry (rights keyed by inode) while the supervisor's advisory line says refused unmatched, a line that says other than what happened (ADR 0016)."
-  },
-  {
     "cell": "mounts/mprotect-exec-overlay-library",
     "runner": "ledger",
     "tier": "bpflsm",
-    "reason": "The plane refuses an mprotect to PROT_EXEC of a library on an overlay in a write entry (the kernel's answer is the cell's), and its refused line names the target anonymous: overlayfs maps the backing file, whose path the plane does not resolve. Not a fail-open; the runner logs the run's refused map lines (MAPLINE). Found 2026-10-19 on 6.17."
+    "reason": "The plane refuses an mprotect to PROT_EXEC of a library on an overlay in a write entry (the kernel's answer is the cell's), and its refused line names the target anonymous: overlayfs maps the backing file, whose path the plane does not resolve. Not a fail-open; the runner logs the run's refused map lines (MAPLINE). Found 2026-10-19 on 6.17. Limited to 6.8+ where overlayfs uses struct backing_file; on AL2023 6.1 the refusal names the file and this ledger check passes (2026-11-12, run 43152191607).",
+    "where": {
+      "kernel_min": "6.8"
+    }
   },
   {
     "cell": "mounts/mprotect-exec-overlay-library",
     "runner": "ledger",
     "tier": "cgroup@fmod_ret",
-    "reason": "The plane refuses an mprotect to PROT_EXEC of a library on an overlay in a write entry (the kernel's answer is the cell's), and its refused line names the target anonymous: overlayfs maps the backing file, whose path the plane does not resolve. Not a fail-open; the runner logs the run's refused map lines (MAPLINE). Found 2026-10-19 on 6.17."
+    "reason": "The plane refuses an mprotect to PROT_EXEC of a library on an overlay in a write entry (the kernel's answer is the cell's), and its refused line names the target anonymous: overlayfs maps the backing file, whose path the plane does not resolve. Not a fail-open; the runner logs the run's refused map lines (MAPLINE). Found 2026-10-19 on 6.17. Limited to 6.8+ where overlayfs uses struct backing_file; on AL2023 6.1 the refusal names the file and this ledger check passes (2026-11-12, run 43152191607).",
+    "where": {
+      "kernel_min": "6.8"
+    }
   },
   {
     "cell": "mounts/mprotect-exec-overlay-library",
     "runner": "ledger",
     "tier": "cgroup@lsm",
-    "reason": "The plane refuses an mprotect to PROT_EXEC of a library on an overlay in a write entry (the kernel's answer is the cell's), and its refused line names the target anonymous: overlayfs maps the backing file, whose path the plane does not resolve. Not a fail-open; the runner logs the run's refused map lines (MAPLINE). Found 2026-10-19 on 6.17."
+    "reason": "The plane refuses an mprotect to PROT_EXEC of a library on an overlay in a write entry (the kernel's answer is the cell's), and its refused line names the target anonymous: overlayfs maps the backing file, whose path the plane does not resolve. Not a fail-open; the runner logs the run's refused map lines (MAPLINE). Found 2026-10-19 on 6.17. Limited to 6.8+ where overlayfs uses struct backing_file; on AL2023 6.1 the refusal names the file and this ledger check passes (2026-11-12, run 43152191607).",
+    "where": {
+      "kernel_min": "6.8"
+    }
   }
 ]

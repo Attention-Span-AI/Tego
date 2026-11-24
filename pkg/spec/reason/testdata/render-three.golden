@@ -1,4 +1,5 @@
 Tego, this run's access control, refused 3 actions:
+Scope: whole run, including startup and background work; tool call and session attribution unavailable.
 - Tego refused open "/home/u/.ssh/id_ed25519": files under that path are not readable in this run (rule fs.deny_read[~/.ssh]).
 - Tego refused connect "93.184.216.34:443": that destination is not allowed in this run (rule unmatched).
 - Tego refused execve "/usr/bin/curl": that program is not allowed to run in this run (rule exec.deny[curl]).

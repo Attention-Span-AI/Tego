@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/runtime/enforce/api"
@@ -82,6 +83,11 @@ func (r *runner) endWithMain(ctx context.Context) bool {
 	deputyPID := ""
 	if r.deputy != nil {
 		deputyPID = strconv.Itoa(r.deputy.PID())
+	}
+	// What the main process left running, read before the wait: the run_end detail names it if the cgroup is empty
+	// when the kill is written (see vanishedDetail).
+	atExit, _ := treeProcesses(r.cg.Path, deputyPID)
+	if r.deputy != nil {
 		r.awaitOnlyDeputy(gctx)
 		if onlyProcess(r.cg.Path, deputyPID) {
 			return false
@@ -92,15 +98,47 @@ func (r *runner) endWithMain(ctx context.Context) bool {
 	if ctx.Err() != nil {
 		return false
 	}
-	left := treeProcesses(r.cg.Path, deputyPID)
+	left, found := treeProcesses(r.cg.Path, deputyPID)
 	r.quiesced.Store(true)
+	// Read before this kill is recorded: vanishedDetail says whether the stop's own kill had been written.
+	stopKilled := r.signals != nil && r.signals.Outcome().Escalated
 	if err := r.cgm.Kill(r.cg); err != nil {
 		r.log.Warn("run: kill what the main process left running", "err", err)
 		r.noteDetail("the main process exited; the kill of what it left running failed: " + err.Error())
 		return false
 	}
-	r.noteDetail(fmt.Sprintf("the main process exited; after stop_grace %s the kill ended %s", grace, left))
+	// This kill came after stop_grace too. If the run was asked to stop, it ended the stop, and run_end says
+	// escalated whichever of the two grace timers (this one, from the main process's exit, or the signal
+	// handler's, from the first stop signal) wrote the kill. A run nobody asked to stop is not a stop.
+	if r.signals != nil {
+		r.signals.NoteStopKill()
+	}
+	if found {
+		r.noteDetail(fmt.Sprintf("the main process exited; after stop_grace %s the kill ended %s", grace, left))
+		return true
+	}
+	// Nothing is in the cgroup to name now, which is not that nothing ended: this grace is timed from the main
+	// process's exit, a little after the stop's own (the signal handler's, from the first stop signal), whose
+	// cgroup.kill may have emptied the tree just before this read, and a process can exit by itself in the same
+	// moment. So the detail names what the cgroup held when the main process exited, and says what it cannot tell.
+	r.noteDetail(vanishedDetail(grace, atExit, stopKilled))
 	return true
+}
+
+// vanishedDetail is run_end's detail when endWithMain finds the cgroup empty where it came to write the kill: atExit is
+// what treeProcesses named at the main process's exit ("" when it held none), stopKilled whether the stop's own
+// cgroup.kill had been written. It never says that no process ended: it names what was there and what Tego cannot tell.
+func vanishedDetail(grace time.Duration, atExit string, stopKilled bool) string {
+	d := fmt.Sprintf("the main process exited; after stop_grace %s no process was left in the run's cgroup to name when the kill was written", grace)
+	switch {
+	case atExit != "" && stopKilled:
+		return d + "; at the main process's exit it held " + atExit + ", and the stop's own kill had been written by then, so Tego cannot tell which of them that kill ended and which exited by themselves"
+	case atExit != "":
+		return d + "; at the main process's exit it held " + atExit + ", and Tego cannot tell whether they exited by themselves or were ended by another kill"
+	case stopKilled:
+		return d + "; the stop's own kill had been written by then"
+	}
+	return d
 }
 
 // maxNamedProcesses bounds how many processes endWithMain's detail names; the rest are counted.
@@ -108,8 +146,9 @@ const maxNamedProcesses = 8
 
 // treeProcesses describes the processes of the cgroup at dir and of the cgroups beneath it, but the one whose pid is
 // skip (the open deputy): "2 processes: 1234 sleep, 1240 sleep", the first maxNamedProcesses by pid and name, then
-// how many more. A name that cannot be read (the process has exited) is "?". The walk reads at most 256 cgroups.
-func treeProcesses(dir, skip string) string {
+// how many more. A name that cannot be read (the process has exited) is "?". The walk reads at most 256 cgroups. It
+// answers false when it finds none: what was there when it read, not that none ever ran.
+func treeProcesses(dir, skip string) (string, bool) {
 	var pids []string
 	dirs := []string{dir}
 	for seen := 0; len(dirs) > 0 && seen < 256; seen++ {
@@ -130,7 +169,7 @@ func treeProcesses(dir, skip string) string {
 		}
 	}
 	if len(pids) == 0 {
-		return "no process it could name"
+		return "", false
 	}
 	named := make([]string, 0, min(len(pids), maxNamedProcesses))
 	for _, p := range pids[:min(len(pids), maxNamedProcesses)] {
@@ -147,7 +186,7 @@ func treeProcesses(dir, skip string) string {
 	if extra := len(pids) - len(named); extra > 0 {
 		out += fmt.Sprintf(" and %d more", extra)
 	}
-	return out
+	return out, true
 }
 
 // deputyPoll is how often awaitOnlyDeputy reads the run cgroup's processes.
@@ -318,6 +357,9 @@ func (r *runner) shutdown(ctx context.Context) Result {
 	r.finalLimitCheck()
 	r.finalTrackingCheck()
 	r.finalSkipCheck()
+	if r.pipe != nil {
+		r.emitLedgerOvershootGap()
+	}
 	reason, code, sig, escalated := r.ending()
 	var recordErr error
 	if r.writer != nil {
@@ -343,12 +385,13 @@ func (r *runner) shutdown(ctx context.Context) Result {
 	// scope and its root launch record with nothing listing the run, which no sweep met again. A scope that
 	// could not be removed keeps the entry too. Listed, the next sweep's ended hook removes what the launcher
 	// left.
-	r.releaseKernelState(ctx, func(released bool) {
+	released, deferred := r.releaseKernelState(ctx, func(released bool) {
 		if released {
 			r.clearLive()
 		}
 	})
-	return Result{RunID: string(r.id), ExitCode: code, Reason: string(reason), RecordErr: recordErr}
+	statusErr := r.writeRunStatus(released && !deferred && r.scopeConfirmedAbsent(), deferred)
+	return Result{RunID: string(r.id), ExitCode: code, Reason: string(reason), RecordErr: recordErr, StatusErr: statusErr}
 }
 
 // stopPipeline ends the pipeline goroutine, whose context no worker's failure cancels (runPipeline).
@@ -405,13 +448,24 @@ func (r *runner) ending() (identity.EndReason, int, int, bool) {
 		reason = decided
 		code = identity.ExitCode(reason, r.wait.Status, outcome.Escalated, identity.ExecFailureNone)
 	}
-	sig := 0
-	if r.wait.Status.Signaled() {
-		sig = int(r.wait.Status.Signal())
-	} else if outcome.Signal != 0 {
-		sig = int(outcome.Signal)
+	return reason, code, endSignal(r.wait.Status, outcome, reason), outcome.Escalated
+}
+
+// endSignal is run_end.signal. For a run that ended because it was asked to stop (reason signal or stopped) and
+// was escalated (cgroup.kill, after stop_grace ran out or a second SIGINT within two seconds) it is the signal that
+// started the stop (spec/identity/RUN-IDENTITY.md "Signals": `run_end reason=signal signal=<n> escalated=<bool>`):
+// cgroup.kill ends the agent with 9, which the wait status reports, and `escalated` already says the kill happened.
+// Otherwise it is the signal the kernel reported for the agent, even when another signal than the one that started
+// the stop ended it, else the one that started the stop when the agent left by its own exit. A run another decision
+// ended (limit, oom, pids) keeps the kernel's: the kill that ended it.
+func endSignal(status syscall.WaitStatus, outcome launch.Outcome, reason identity.EndReason) int {
+	if outcome.Escalated && outcome.Signal != 0 && (reason == identity.ReasonSignal || reason == identity.ReasonStopped) {
+		return int(outcome.Signal)
 	}
-	return reason, code, sig, outcome.Escalated
+	if status.Signaled() {
+		return int(status.Signal())
+	}
+	return int(outcome.Signal)
 }
 
 // supervisorCounters is the run_end counter block: what the notification loop did over the run, including
@@ -496,11 +550,12 @@ func (r *runner) stopSource(s source.Source) {
 // after runs once the handle and the cgroup are released, on that goroutine when they wait, told whether the
 // scope is gone: what the caller must not do before — take the run out of the live index, whose entry is what
 // brings a sweep back to a scope the launcher left.
-func (r *runner) releaseKernelState(ctx context.Context, after func(released bool)) {
+func (r *runner) releaseKernelState(ctx context.Context, after func(released bool)) (released, deferred bool) {
 	if after == nil {
 		after = func(bool) {}
 	}
 	if stuck := r.stuckStops; len(stuck) > 0 {
+		deferred = true
 		r.stuckStops = nil
 		r.log.Warn("run: a source's Stop is still running; its kernel state is released once it returns",
 			"sources", len(stuck))
@@ -514,7 +569,8 @@ func (r *runner) releaseKernelState(ctx context.Context, after func(released boo
 	} else {
 		// A caller-cancelled ctx must not cut the scope's EBUSY retry short (R18): a teardown context of its own.
 		tctx, cancel := teardownCtx(ctx)
-		after(r.releaseHandleAndCgroup(tctx))
+		released = r.releaseHandleAndCgroup(tctx)
+		after(released)
 		cancel()
 	}
 	// Only the paths that never reached supervisor.New hold the listener here: startNotifyLoop moves it into
@@ -539,6 +595,7 @@ func (r *runner) releaseKernelState(ctx context.Context, after func(released boo
 			r.log.Warn("run: close child", "err", err)
 		}
 	}
+	return released, deferred
 }
 
 // releaseHandleAndCgroup is releaseKernelState's ordered pair: the backend's fds and map entries, then the run
@@ -548,6 +605,8 @@ func (r *runner) releaseHandleAndCgroup(ctx context.Context) (released bool) {
 		if err := r.handle.Detach(); err != nil {
 			r.log.Warn("run: detach", "err", err)
 		}
+		// Detach cleared the slot's live-block rows: only now may the objects they were keyed by be let go.
+		r.planeBlocks.close()
 		if err := r.handle.Close(); err != nil {
 			r.log.Warn("run: close handle", "err", err)
 		}
@@ -605,7 +664,10 @@ func (r *runner) unwind(ctx context.Context) {
 	// sweep removes (the ledger's empty-run hook), not a scope nothing names. A scope that could not be removed
 	// keeps both, as shutdown keeps its entry: removed, the scope and its root launch record were left with
 	// nothing listing the run.
-	r.releaseKernelState(ctx, r.abandonRun)
+	released, deferred := r.releaseKernelState(ctx, r.abandonRun)
+	if err := r.writeRunStatus(released && !deferred && r.scopeConfirmedAbsent(), deferred); err != nil {
+		r.log.Error("run: final run status during unwind", "err", err)
+	}
 }
 
 // abandonRun is unwind's end of a run that never started: the ledger released with nothing written, and, once

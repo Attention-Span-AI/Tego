@@ -1659,3 +1659,174 @@ protection root. Use absolute entries or rebase relative entries for the new cwd
 at both ends. Explicit writes alone are not a remedy. KT4 separately checks a real coverage-losing directory
 rename containing `.env` at the root tiers. Landlock's future-name alias residual is GAPS A11; this release
 does not fix it. OPERATIONS gives the concrete contract and launch example.
+
+## Amendment 2026-11-18: offline predictions include root-tier name entries
+
+Consequence 11 is reversed for `compile` alone. A requested root-tier prediction, or a build
+that constructs a root tier, compiles the name entries even when the caller's launch reach
+is landlock alone. `WithNamePrediction` requests these entries without granting a launch
+tier or changing `RuleTable.Reach`; launch compilation remains unchanged. For inspectable scopes, the same name
+model answers a normal user's root columns and root's columns. Inaccessible scopes
+follow the separate unknown-result rule below.
+
+The conformance compile runner judges the root columns it previously skipped for name
+rules. Its expectations are the recorded kernel-runner expectations; new kernel execution
+on this revision remains a guest proof, not a result of offline prediction.
+
+For an offline prediction, a permission failure while inspecting a name scope
+marks the root name table incomplete. File-backed root columns then have the
+separate verdict `cannot tell without root` (JSON uses that same verdict and
+`root-required` rule), do not pass an allow/refused expectation, and exit 125.
+They must not certify an allow from the incomplete table. Landlock and network
+columns remain concrete; launch does not request this prediction callback.
+
+## Amendment 2026-11-18: every step root finishes and this user cannot (review finding 2)
+
+The unknown-result rule above looked at one step, the `stat` of a name scope. A
+folder a normal user can stat and may not list hides what is in it: root's
+expansion of `./locked/secret*` finds a link there and denies the file it leads
+to, while this user's table has no such row and answered allow. The rule is now
+stated once: **a root-tier prediction is unknown whenever a step that root
+finishes was cut short for this user by a permission failure.** One flag carries
+it (`WithNamePrediction`'s callback, `compiler.namePredictionUnavailable`); a
+launch passes no callback and is unchanged.
+
+Steps of the deny_read and name-entry compile that report to it:
+
+| Step | Where | What a permission failure hides |
+|---|---|---|
+| pattern or literal check of a deny_read entry | `fsBuilder.declared` | a file whose own name holds a pattern character |
+| a pattern's literal prefix | `globBudget.glob` | the names under it |
+| a pattern's directory: stat, then listing | `globBudget.dirMatches` | every name the pattern matches there |
+| each declared or matched path's walk, links followed | `fsBuilder.addDeclared`, `compiler.walkCut` | the file a link reaches (the row is keyed on it) |
+| a row's metadata | `fsBuilder.metaDeclared`, `addBuiltInResolved` | device, link count and mount of the governed file |
+| a name entry's scope | `fsBuilder.nameGlob`, `envNameScopes` | the scope, so the entry is not made |
+| a built-in home path, and the place of one not there yet | `fsBuilder.builtIn`, `absentBuiltIn` | the path or the place its link leads to |
+| the built-in `.env` traversal's listings | `envFiles` | `.env` files and links in a folder of another account |
+| each `.env` file's walk, links followed | `fsBuilder.builtIn`, `compiler.walkCut` | the file a `.env` link reaches |
+| an exemption's file | `fsBuilder.nameExempts` | the exemption (root would allow) |
+| a covered file's directory flags | `fsBuilder.compactionFacts` | whether the plane compacts the row |
+
+A flagged table certifies no file-backed root column (every `fs` row, an exec, an
+executable map). Two steps are a row's own and mark that row alone:
+
+| Step | Where | Unknown when |
+|---|---|---|
+| the row's walk, each end | `rootPrediction.landers` over the run's own walk | the walk answers `EACCES`; a unix name is asked with one more `O_PATH` open |
+| whether the object is a directory | `rootPrediction.unknown` | the name cannot be looked up in its directory |
+
+A link's resolution in `dirMatches` follows a `stat` that already walked it, the
+warnings of `nameAskWarnings` and `nameScopeWarnings` decide no row, and the
+deny_read patterns (`DenyReadPatterns`) serve a person's alternates and held
+reads, not a root column: these report nothing. A gate scores no unknown floor
+(`EvaluateGateRow`), so a gate's verdict never stands in for the missing answer.
+
+Not covered, and an open limit of this prediction (closed by the 2026-11-19
+amendment below): the other
+stages of a compile (write entries, exec lists and maps, the deny-write search,
+Tego's own state) are compiled as this user too, and a permission failure there
+does not mark a root column unknown. Where the calling user can read everything
+the contract names, which is the ordinary case of a person compiling their own
+project, the root columns are the ones root computes.
+
+## Amendment 2026-11-18: `compile --exec` carries the same answer (review finding 3)
+
+`compile --exec` answers from the same table and walks its command as a row is
+walked, and it printed allow from a table the flag had marked incomplete. One
+function now decides the unknown answer for both prints
+(`rootPrediction.unknown`, internal/cli): a root column of `--exec` prints
+`cannot tell without root root-required` and the command exits 125 where
+`--test` would, whether the table's compile or the command's own walk was cut
+short (a script's `#!` line this user may not read counts as that walk). A
+landlock column keeps its answer, and a command with every column known exits
+0 as before. `--exec` has no `--json` form (that pair is a usage error, as it
+was); a script reads the unknown verdict from `--test --json`.
+
+## Amendment 2026-11-19: every stage of the compile reports to the flag (first confirm review, finding 1)
+
+The amendment above stated the rule for the deny_read and name-entry compile and
+left the other stages open. The confirm review's case: a folder beneath a write
+entry that a normal user may search and not list (another account's 0711
+folder) holds a repository. Root's deny-write search lists the folder, finds the
+repository and refuses a write to its git config; this user's search could not
+list it and dropped the error, and a write row by the config's exact name, which
+this user can walk, answered allow at a root tier, exit 0. Every stage that
+decides a row now reports a permission failure to the same flag
+(`compiler.namePredictionUnavailable`), and that row answers `cannot tell
+without root`, exit 125:
+
+| Step | Where | What a permission failure hides |
+|---|---|---|
+| any entry's walk to where it leads (write, exec, built-in, Tego's own state) | `compiler.resolve`, through `walkCut` | the place root's walk reaches |
+| the deny-write search's listings, whoever owns the folder | `denySearch.unlisted` | a repository or a protected file beneath it |
+| its reads of a git config, a `.git` file, a `commondir` | `denySearch.unreadable` | the hooks and settings the file names |
+| its probe of a candidate, link followed | the search's probe, through `walkCut` | the candidate, or where its link leads |
+| the hard-linked-file search's listings | `linkSearch.walk` | the other names root keys at their inodes |
+| the host IPC FIFO inventory's listing, `stat` and link resolution | `builtinFIFOs` | this user refuses the whole folder; root refuses its FIFOs |
+| a built-in path's canonical prefix | `builtinResolvedPath` | where a built-in name resolves |
+| a declared container socket's alias, a peer socket's folder | `builtinContainerAliases`, `builtinPeerNames` | the alias, or the pinned name |
+| the loaders' folders, a tool's helper folder | `execLoaders`, `listDashed` | the loader identities and helper names an exec row reads |
+| a FUSE or ecryptfs backing source of Tego's own files | `backingSource` | the layer Tego protects |
+
+Not routed, because it decides no row: the native-code scan under a write entry
+(`nativeTrees`) only warns, so root's table is the same table; a folder it may
+not list is named in its own warning instead of being skipped in silence. The
+warnings and patterns the amendment above lists stay as it says. This closes
+that amendment's open limit: no stage of the compile drops a permission failure
+that changes a row.
+
+What it costs: where a folder a built-in path lies in is root's alone (rootful
+podman's `/run/podman`, mode 0700), root resolves the path and this user cannot,
+so a normal user's root-tier answer for every file-backed row is `cannot tell
+without root`; `sudo "$(command -v tego)" compile --test` gives root's. A person compiling a
+project of their own on a machine whose service folders they may search keeps
+concrete answers.
+
+## Amendment 2026-11-19: a folder only root can read leaves unknown the rows that depend on it, and the compile says which
+
+The release line's integration tests, run as a normal user in a stock Ubuntu 25.10 cloud image, failed 22 `internal/cli`
+compile tests: `compile --test` answered `cannot tell without root` (rule `root-required`) for every row of the cgroup
+column, the rows about the test's own temporary folder included, and printed nothing saying which folder it could not
+read. The cause is the one the first amendment above warned of for rootful podman: one place the compile could not read
+marked the whole table, and the table marked every file-backed root column. The guest's log does not name the place (the
+very gap this amendment closes), so it is inferred from the code and a measurement on the development host, not seen in
+the guest: `/run/user/1001/systemd/inaccessible/dir`: the user manager (`systemd --user`, running under `loginctl enable-linger`)
+makes `<runtime dir>/systemd/inaccessible` with a folder `dir` at mode 0000, owned by the user, and the FIFO inventory of
+the host IPC folders (`builtinFIFOs`) walks the whole runtime folder, opens `dir` and gets `EACCES`. On the development
+host the same walk never reaches that folder: its own `/run/user/<uid>` holds a `gnupg` folder of 4,000 entries that
+spends the inventory's 4,096-entry budget first (the folders after it are protected whole without being opened), so the
+tests passed there and failed in the guest. The other root-only places a cloud image has (`/root`, `/run/sudo`,
+`/run/credentials`, a `/run/cryptsetup` or `/run/lvm` of mode 0700) are named by no compile step: the built-in socket
+paths (`/run/dbus`, `/run/docker.sock`, `/run/podman`, `/run/containerd`), the host IPC folders and the runtime folder
+are the places that meet root-only folders, and `/run/podman` of a server is met the same way. If the guest has another
+cut, `compile --test` now prints it.
+
+The flag now says how far what lies behind the place reaches (`agent.NameCut`, `agent.CutReach`; `WithNamePrediction`'s
+callback takes it). A step that names none keeps the widest, so a new step fails closed.
+
+| Reach | Steps | Rows unknown at a root tier |
+|---|---|---|
+| `CutHere` | the built-in lists' own places: the FIFO inventory (`builtinFIFOs`), a built-in path's canonical prefix (`builtinRefusals`), a peer socket's folder (`builtinPeerNames`) | the rows whose path is at, beneath or above the place (an fs row, an exec or its script, a connect to a unix name) |
+| `CutExec` | the loaders' folders, a tool's helper folder (`execLoaders`, `listDashed`) | every exec and executable-map row |
+| `CutWide` | every other step the amendments above list: a pattern's listing, a link, a git config, a `.env` file, an entry's walk, the deny-write search | every file-backed row, as before |
+
+What root finds in a built-in place is a name beneath it (a socket or a FIFO Tego protects), so the row about that name is
+the one unknown and the others keep the answer the compile shows. What root finds behind a pattern's folder, a link or a
+git config can name any path, so those keep the protection B2-1 gave: a row whose answer could differ for root never says
+allow or refused for root without having seen what root sees (`TestRootPredictionUnknownWhereTheCompileIsCutShort`, the
+review's 0711 folder in `TestRootPredictionUnknownWhereTheDenyWriteSearchIsCutShort`). The built-in reach rests on one
+assumption: a root-only folder of the built-in lists holds no link leading to a place that list protects elsewhere. A
+link made by the folder's owner there is the open limit.
+
+A column that is unknown is now explained, once per folder, on stderr (`rootPrediction.explain`, for `--test` and
+`--exec`, in text and JSON): the folder named by the folder the kernel refused (the deepest one this user can reach whose
+next component it refuses, or the place itself where a listing or read failed), why (permission denied), which rows that
+leaves unknown, and the one command that gives root's answer, `sudo <this tego's path> compile <the same arguments>`
+(`sudoSelf`, the form every product hint uses; a binary that cannot be named safely gives the reason instead, never a
+lookup in the reader's PATH. The documented form is `sudo "$(command -v tego)" compile --test`.) Nothing is printed when
+no column is unknown: a place nothing depends on changes no answer.
+
+Proof: `TestRootPredictionBuiltinFolderCutKeepsOtherRows` places a mode-0000 folder in a host IPC folder (red on
+5207ce487: every root row unknown, the folder unnamed), `TestRootPredictionReach` the reach of each kind,
+`TestRootCutReaches` and `TestRootCutFIFOInventory` the reach each step reports. Not proven: the guest itself (no guest
+was run for this change).

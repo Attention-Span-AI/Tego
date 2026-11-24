@@ -73,7 +73,7 @@ func TestPauseButtonAndBadge(t *testing.T) {
 	}
 	appendLines(t, root, harmRun, line(harmRun, "demo-harm", 7, time.Date(2026, 10, 25, 12, 1, 7, 0, time.UTC), "gap",
 		`"what":"enforce","why":"pause-failed","live_control":{"op":"pause","by":"uid:1000 pid:9 cli","serial":1,"at":"2026-10-25T12:00:00Z"}`))
-	if body = page(); !strings.Contains(body, "The agent waits on a request, and a request that waits cannot be frozen") {
+	if body = page(); !strings.Contains(body, "It waits on a request, and a request that waits cannot be frozen") {
 		t.Error("a pause that failed on a waiting request does not say so")
 	}
 	appendLines(t, root, harmRun, pauseLine(8, time.Date(2026, 10, 25, 12, 1, 8, 0, time.UTC), "run-resumed", "resume"))
@@ -93,7 +93,11 @@ func TestPauseButtonAndBadge(t *testing.T) {
 	appendLines(t, root, harmRun, pauseLine(10, t0, "run-paused", "pause"))
 	body = page()
 	for _, want := range []string{`action="/runs/` + harmRun + `/resume"`, "Paused by you, from the dashboard at", "frozen where it stood", "(line #10)"} {
-		if !strings.Contains(body, want) {
+		haystack := body
+		if !strings.HasPrefix(want, "action=") {
+			haystack = f3Text(body)
+		}
+		if !strings.Contains(haystack, want) {
 			t.Errorf("a paused run's page lacks %q", want)
 		}
 	}
@@ -116,13 +120,13 @@ func TestPauseButtonAndBadge(t *testing.T) {
 		!strings.Contains(body, `/resume"`) || strings.Contains(body, "Paused by") {
 		t.Error("a failed pause is not said plainly, or offers no way to withdraw it")
 	}
-	if !strings.Contains(body, ">Withdraw pause<") || !strings.Contains(body, "The agent is still running; this withdraws the pause") ||
+	if !strings.Contains(body, ">Cancel pause<") || !strings.Contains(body, "The agent is still running; this drops your pause") ||
 		strings.Contains(body, "carry on from where it stood") {
 		t.Error("a failed pause's button reads as if the agent had stopped")
 	}
 	// The pause withdrawn: the launcher records run-resumed, and the run reads as running, not paused.
 	appendLines(t, root, harmRun, pauseLine(13, t0.Add(3*time.Second), "run-resumed", "resume"))
-	if body = page(); strings.Contains(body, "Paused by") || strings.Contains(body, "did not take") || !strings.Contains(body, `/pause"`) {
+	if body = page(); strings.Contains(body, "Paused by") || strings.Contains(body, "The pause did not take") || !strings.Contains(body, `/pause"`) {
 		t.Error("a withdrawn failed pause still reads as paused or failed")
 	}
 	if b := do(s, "GET", "/runs", "127.0.0.1:8484", c).Body.String(); strings.Contains(b, "b-paused") {
@@ -181,7 +185,7 @@ func TestPausePosts(t *testing.T) {
 	}
 	answerAsk7(t, root, 7)
 	b = follow(t, s, c, post(s, "/runs/"+harmRun+"/pause", url.Values{"csrf": {tok}}, own, "", c))
-	if !strings.Contains(b, "Pause asked of demo-harm") {
+	if !strings.Contains(b, "Pause asked of demo-harm") || !strings.Contains(b, "It keeps running until the run confirms the pause") {
 		t.Error("a pause does not say what it asked")
 	}
 	b = follow(t, s, c, post(s, "/runs/"+harmRun+"/resume", url.Values{"csrf": {tok}}, own, "", c))

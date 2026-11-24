@@ -86,7 +86,7 @@ with tempfile.TemporaryDirectory(prefix='tego-pair-cleanup.', dir=os.environ.get
             raise SystemExit(result.returncode)
         if mode == 'missing-diagnostic':
             raise SystemExit(1)
-        if mode in ('persistent', 'deadline'):
+        if mode in ('persistent', 'persistent-real', 'deadline'):
             try:
                 os.rmdir(target)
             except OSError as e:
@@ -336,14 +336,24 @@ with tempfile.TemporaryDirectory(prefix='tego-pair-cleanup.', dir=os.environ.get
           and 'PAIRS-DONE 1/1' in r.stdout and not (root / 'runs' / 'r-zz-1-a').exists(),
           'exact ENOTEMPTY is visible and a later real rm proves completed cleanup')
 
-    for mode in ('persistent', 'deadline', 'permission', 'false-zero', 'warning', 'missing-diagnostic'):
+    for mode in ('persistent', 'persistent-real', 'deadline', 'permission', 'false-zero', 'warning', 'missing-diagnostic'):
         root, r = invoke(mode, mode)
         count = int((root / 'calls').read_text())
         check(r.returncode == 1 and 'PAIRS-CLEANUP-FAIL pair=1' in r.stderr
               and 'PAIRS-DONE' not in r.stdout and '1-waited' not in (root / 'hb').read_text(),
               mode + ': actual loop cannot count failed cleanup as progress or success')
-        check(count == (50 if mode == 'persistent' else 1),
-              mode + ': retry only exact ENOTEMPTY and bounded attempts; calls=' + str(count))
+        # What the script guarantees is a bound, not a count: it stops at 50 attempts or when five integer SECONDS have
+        # passed, whichever comes first. With the clock removed from the fixture ('persistent') only the attempts
+        # can stop it, so it is exactly 50; on the real clock ('persistent-real') a starved host may reach the five
+        # seconds first, so it is more than one attempt (the retry happened) and at most 50 (the bound held).
+        # 'deadline' steps the clock by hand past the first attempt.
+        if mode == 'persistent':
+            ok, want = count == 50, 'exactly 50'
+        elif mode == 'persistent-real':
+            ok, want = 2 <= count <= 50, 'from 2 to 50'
+        else:
+            ok, want = count == 1, 'exactly 1'
+        check(ok, mode + ': retry only exact ENOTEMPTY and bounded attempts; calls=' + str(count) + ', want ' + want)
 
     # The pair's verdict comes from judge's table alone (ADR 0021's 2026-10-19 note): both launchers exited 0,
     # but in kill mode the one the SIGKILL targeted, which may exit 137 (or 0, when the kill came after it exited).

@@ -5,13 +5,11 @@
 .live-list .lchip { white-space: nowrap; }
 .live-list .live-note { font-size: var(--text-sm); min-width: 0; overflow-wrap: anywhere; }
 .live-list li > .grow > span[title] { overflow-wrap: anywhere; }
-/* Waiting: a calm pulse on the badge while the run has not confirmed the block (about a second). */
+/* Waiting keeps a still mark; the words state whether the run confirmed the block. */
 .live-list .lchip[data-state="waiting"]::before {
   content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; vertical-align: 1px;
-  border-radius: var(--radius-full); background: currentColor; animation: live-pulse 1.2s ease-in-out infinite;
+  border-radius: var(--radius-full); background: currentColor;
 }
-@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-@media (prefers-reduced-motion: reduce) { .live-list .lchip[data-state="waiting"]::before { animation: none; } }
 /* The run's pause (pause.go): the Pause and Resume buttons sit in the head's actions as forms, and a paused run says
    who paused it and when in a calm banner under the head. */
 .head-actions > .head-form { display: inline-flex; margin: 0; }

@@ -12,17 +12,24 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/liveblock"
+	"github.com/attention-span-ai/tego/internal/runscope"
 	"github.com/attention-span-ai/tego/internal/testutil/ledgertest"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// governedCaller makes the commands see their caller inside a run (or, with err, unable to tell) for the test.
+// governedCaller makes the commands see their caller inside a run (or, with err, unable to tell, as in a cgroup
+// namespace whose namespace file could not be read) for the test.
 func governedCaller(t *testing.T, err error) {
 	t.Helper()
-	old := selfInRun
-	selfInRun = func() (bool, error) { return true, err }
-	t.Cleanup(func() { selfInRun = old })
+	old := selfAnswer
+	selfAnswer = answerGoverned
+	if err != nil {
+		selfAnswer = func() runscope.Answer {
+			return runscope.Unproven(runscope.CauseNSUnreadable, err)
+		}
+	}
+	t.Cleanup(func() { selfAnswer = old })
 }
 
 // TestUnblockRefusedInsideARun: a caller inside a run cannot lift a live block (an agent lifting what

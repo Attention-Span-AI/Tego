@@ -86,6 +86,12 @@ type Check struct {
 	// because no user manager runs for the user (doctor.Report.NoUserManager); "" otherwise. It is left out
 	// of the file when "", so a check stored by an older build reads the same, and a file without it decodes.
 	Cause string `json:"cause,omitempty"`
+	// ThroughUserScope means entry was rehearsed from WhereShell; the caller itself remained there.
+	ThroughUserScope bool `json:"through_user_scope,omitempty"`
+	// ScopeError is why the rehearsal of entry into a user scope from WhereShell failed (doctor.Report.UserScopeFailure):
+	// tego could not open a user scope there, so run, watch and test cannot either, and the check names the one fix.
+	// Only beside CauseOutsideUserManager; "" when no rehearsal was tried or it worked, and then left out of the file.
+	ScopeError string `json:"scope_error,omitempty"`
 	// Time is when the probes ran.
 	Time time.Time `json:"time"`
 }
@@ -111,7 +117,9 @@ type rawCheck struct {
 	FirstFix *string `json:"first_fix"`
 	Time     *string `json:"time"`
 	// Cause may be left out (an older build's file); every other key is required. Raw, so a null is told from absent.
-	Cause json.RawMessage `json:"cause"`
+	Cause            json.RawMessage `json:"cause"`
+	ThroughUserScope json.RawMessage `json:"through_user_scope"`
+	ScopeError       json.RawMessage `json:"scope_error"`
 }
 
 // ErrBadCheck is a check.json that is not one this package wrote: it gives "not known", never a default.
@@ -169,6 +177,22 @@ func (rc rawCheck) check() (Check, error) {
 			return Check{}, errors.New("cause is not a string")
 		}
 	}
+	if rc.ThroughUserScope != nil {
+		if err := json.Unmarshal(rc.ThroughUserScope, &c.ThroughUserScope); err != nil || string(rc.ThroughUserScope) == "null" {
+			return Check{}, errors.New("through_user_scope is not a boolean")
+		}
+	}
+	if c.ThroughUserScope && (c.Where != WhereShell || c.Tier == "") {
+		return Check{}, errors.New("through_user_scope needs a shell check with an enforcing tier")
+	}
+	if rc.ScopeError != nil {
+		if err := json.Unmarshal(rc.ScopeError, &c.ScopeError); err != nil || string(rc.ScopeError) == "null" || c.ScopeError == "" {
+			return Check{}, errors.New("scope_error is not a string, or is empty")
+		}
+		if c.Cause != CauseOutsideUserManager {
+			return Check{}, errors.New("scope_error needs a shell check outside the user manager")
+		}
+	}
 	switch {
 	case c.Cause != "" && c.Cause != CauseOutsideUserManager && c.Cause != CauseNoUserManager:
 		return Check{}, fmt.Errorf("cause %q is not one tego setup writes", c.Cause)
@@ -188,7 +212,7 @@ func (rc rawCheck) check() (Check, error) {
 	for _, f := range []struct {
 		name, v string
 		max     int
-	}{{"build", c.Build, maxBuildBytes}, {"boot_id", c.BootID, maxBuildBytes}, {"first_fix", c.FirstFix, maxFixBytes}} {
+	}{{"build", c.Build, maxBuildBytes}, {"boot_id", c.BootID, maxBuildBytes}, {"first_fix", c.FirstFix, maxFixBytes}, {"scope_error", c.ScopeError, maxFixBytes}} {
 		if len(f.v) > f.max || !plain(f.v) {
 			return Check{}, fmt.Errorf("%s is longer than %d bytes or holds a character that does not print", f.name, f.max)
 		}

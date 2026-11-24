@@ -165,6 +165,14 @@ func (b *Backend) Prepare(ctx context.Context, rt *agent.RuleTable, run Run) (*H
 	if rt == nil {
 		return nil, fmt.Errorf("%w: nil rule table", ErrRulesetBuild)
 	}
+	if err := rt.RecheckBaseline(); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrRulesetBuild, err)
+	}
+	if rt.Tier == backend.TierLandlock {
+		if err := rt.BaselineAt(backend.TierLandlock, ""); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrRulesetBuild, err)
+		}
+	}
 	if rt.DenyWriteNeedsPlane() && run.Plane == nil {
 		return nil, fmt.Errorf("%w: %s, and the contract sets fs.assurance: kernel; use cgroup/bpflsm with an available decision "+
 			"plane, narrow fs.write so it does not cover protected targets, or drop fs.assurance: kernel", ErrNegativeWriteNeedsPlane,
@@ -489,11 +497,16 @@ func (bd *builder) hold(path string, kind entryKind, access accessFS) (int, erro
 			if err := unix.Fstat(e.FD, &st); err != nil {
 				return -1, err
 			}
+			if err := bd.rt.CheckBaselineIdentity(path, uint64(st.Dev), st.Ino); err != nil {
+				return -1, err
+			}
 			e.Access |= bd.fitAccess(access, &st)
 		}
 		return idx, nil
 	}
-	fd, st, name, err := openNamed(path, bd.fds, nil)
+	fd, st, name, err := openNamed(path, bd.fds, func(_ string, dev, ino uint64) (bool, error) {
+		return true, bd.rt.CheckBaselineIdentity(path, dev, ino)
+	})
 	if err != nil {
 		return -1, err
 	}
@@ -505,10 +518,10 @@ func (bd *builder) hold(path string, kind entryKind, access accessFS) (int, erro
 // is captured before identity dedupe closes a second alias's descriptor: the surviving fd may have been opened
 // through a different hardlink or mount.
 //
-// want, when not nil, is asked with that name whether the plan keeps the descriptor. One it does not keep, like one
-// whose name cannot be read or whose want fails, is closed here, the one close of an open the plan never took
+// want, when not nil, is asked with that name and the opened descriptor's identity whether the plan keeps it.
+// One it does not keep, like one whose name cannot be read or whose want fails, is closed here before ownership passes to the plan
 // (ADR 0023 A9), and answered as -1 with the name and want's error.
-func openNamed(path string, s *fdSet, want func(name string) (bool, error)) (int, unix.Stat_t, string, error) {
+func openNamed(path string, s *fdSet, want func(name string, dev, ino uint64) (bool, error)) (int, unix.Stat_t, string, error) {
 	fd, st, err := openAt(unix.AT_FDCWD, path, true, s)
 	if err != nil {
 		return -1, st, "", err
@@ -519,7 +532,7 @@ func openNamed(path string, s *fdSet, want func(name string) (bool, error)) (int
 	case err != nil || !filepath.IsAbs(name) || strings.HasSuffix(name, " (deleted)"):
 		err = fmt.Errorf("%w: cannot establish held path %q (%q): %v", ErrRulesetBuild, path, name, err)
 	case want != nil:
-		keep, err = want(name)
+		keep, err = want(name, uint64(st.Dev), st.Ino)
 	}
 	if err != nil || !keep {
 		_ = unix.Close(fd)

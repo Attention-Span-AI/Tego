@@ -180,6 +180,18 @@ type BPFConfig struct {
 	Plane Setting[string]
 }
 
+// TOMOYOConfig holds the TOMOYO settings (ADR 0041, the 2026-11-22 amendment).
+type TOMOYOConfig struct {
+	// FactsDir names the directory a held open reads TOMOYO's three securityfs files (self_domain, stat, profile)
+	// from, in place of /sys/kernel/security/tomoyo, for a container that cannot see that path (Docker's default
+	// AppArmor profile denies it). It must be a clean absolute path to a read-only bind of the host's
+	// /sys/kernel/security/tomoyo; the files are accepted only on securityfs, as that directory's own, and every
+	// other thing there is refused. "" (the default) reads the kernel's path. Honoured only from
+	// /etc/tego/config.yaml (LayerEtc): which files stand for TOMOYO's policy is the administrator's to say. There
+	// is no setting that assumes TOMOYO enforces nothing.
+	FactsDir Setting[string]
+}
+
 // The bpf.plane values.
 const (
 	PlaneAuto    = "auto"
@@ -222,19 +234,37 @@ type UserPolicy struct {
 }
 
 // Machine is the effective machine config after all layers, with the provenance of every value.
-// A *Machine is immutable for its process's lifetime (I3): a disk edit never affects an in-flight run.
+// A *Machine keeps immutable merged settings for its process lifetime (I3).
+// The pinned approval source is checked live and refuses drift (ADR 0154).
 type Machine struct {
+	// Sources records the layer locations used by LoadSources, for a fresh draft check.
+	Sources *Sources
+	// SourceDigests binds the exact bytes read by the loader, including absent layers.
+	SourceDigests map[string]string
+
 	Version int
+	// LocalRoles is a fixed-system-only approval floor (ADR 0154).
+	LocalRoles            Setting[string] `json:"-"`
+	localAuthority        LocalAuthority
+	localAuthorityUnknown bool
+	// baseline is the immutable union loaded once; only BaselineSnapshot exposes it.
+	baseline   Baseline
+	sources    []LayerSource
+	layerBytes map[Layer][]byte
+	// layerIdentities bind sources to the walks observed around their trusted reads.
+	layerIdentities [3]layerIdentity
 	// Layers are the layer files the Load of this Machine consulted, in order and as written: absolute paths whose walk
 	// does not reach procfs, never cleaned, so a ".." after a link still names the file the open read, as the kernel
 	// walks it. A relative layer or one through procfs names another file in every working directory, so the Load
 	// refuses it unread and does not list it (layerPathProblem, RS9-1, RS10-1). A listed layer is there whether a file
-	// was there or not and whether it was applied or skipped (TrustWarn): each is a place a later Load reads.
-	// R10 keeps every write entry off each one, by every name its walk reads (ADR 0059): a run
+	// was there or not: each is a place a later Load reads. A strict failure returns no Machine;
+	// an observation load retains unknown sources, which must never decide agent permissions.
+	// R10 keeps every write entry off each one, by every name its walk reads: a run
 	// that wrote one would choose the registry, the profiles, the prices and the ledger root of the runs after it.
 	Layers []string
 	// Home is the invoking user's home directory from the passwd database, "" when unknown (E9);
-	// a leading "~/" in a path setting was expanded against it at Load.
+	// a leading "~/" in an ordinary path setting was expanded against it at Load.
+	// Baseline paths remain raw until the agent-owner compile context is known.
 	ServePort        Setting[int] // serve.port: local TCP port protected by builtin.tego_surface
 	Home             string
 	Tier             Ceiling[TierSetting]
@@ -250,6 +280,7 @@ type Machine struct {
 	Ask              AskConfig
 	Record           RecordConfig
 	BPF              BPFConfig
+	TOMOYO           TOMOYOConfig
 	Resolver         Setting[ResolverMode]
 	DeniedResolved   Setting[[]netip.Prefix] // ranges no net.allow host name admits, on top of the built-in classes (union across layers, merge.go)
 	Forwarder        ForwarderConfig
@@ -277,13 +308,17 @@ type Diagnostic struct {
 const (
 	// CodeUntrusted is a layer file that failed the trust check (exit 125 in tego run).
 	CodeUntrusted = "config-untrusted"
+	// CodeBaselineUnknown marks a degraded load whose baseline could not be established.
+	CodeBaselineUnknown = "config-baseline-unknown"
+	// CodeBaselineNotApplied is the old config-only notice code; no loader emits it after slice 3.
+	CodeBaselineNotApplied = "config-baseline-not-applied"
 	// CodeInvalid is a layer that did not parse or holds an invalid value.
 	CodeInvalid = "config-invalid"
 	// CodeCeilingKept is a layer that tried to raise a ceiling (R15) or to lower landlock.audit's floor
 	// (R16); the inherited value stands.
 	CodeCeilingKept = "ceiling-kept"
-	// CodeIgnored is a key or layer that was skipped: privileged_binary outside /etc, or a
-	// per-user layer with no passwd entry (E9).
+	// CodeIgnored is an ordinary setting ignored for its layer or missing home.
+	// Failed baseline layers use CodeBaselineUnknown instead.
 	CodeIgnored = "config-ignored"
 	// CodeAdvisory is a valid but notable value, such as stop_grace: 0s (E17).
 	CodeAdvisory = "config-advisory"

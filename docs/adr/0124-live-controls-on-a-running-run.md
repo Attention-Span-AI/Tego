@@ -68,7 +68,8 @@ effect, what is recorded, and what they cannot promise.
   force at each line.
 - An Undo of a rule change that placed live blocks can lift them through the same channel
   (`runact.Block` with add false, which leaves a pause ask as it is), acknowledged like a widening and journaled on
-  the undo; it never lifts a block on an ended run or one another standing change placed.
+  the undo; it never lifts a block on an ended run or one another standing change placed. (Amended 2026-11-20 below:
+  it lifts only a block it can show its change made, and a Redo puts back what the Undo lifted.)
 
 ## Amendment 2026-11-11: a block from a rules change refuses what the removed entry granted
 
@@ -358,3 +359,215 @@ An unreadable scope says `cannot tell whether its scope is empty` with that same
 the existing CLI error status (`identity.ExitError`, R25), not a new code, and preserves the reported scope and record
 facts. `TestStopLostPausedReadsScopeAfterSweep` pins empty, frozen, running and unreadable results; its three failure
 cases return 0 without this change. Real scope transitions after the sweep remain owed in a guest.
+
+## Amendment 2026-11-20: whose block an Undo lifts, a Redo that puts it back, and a lift the journal always shows
+
+*Status: accepted 2026-11-20; built.*
+
+**Whose block.** The overlay keeps one entry per key and no word of who wants it, so an Undo could not tell the block
+its change placed from one a person placed later (or before) with the same key, and lifted both. A rules change's
+placement now records, in the journal's live outcome, the identity of the add that made the block (`liveblock.Own`: the
+overlay file's `epoch`, the add's serial and the instant it was recorded; `runact.Blocked.Own`,
+`liveblock.Overlay.AddIdentity`) and who made it (`by: change`); a placement that finds the block held (`Blocked.Fresh`
+false) is journaled as `held`, with `ok` false, and owns nothing. An Undo lifts a block only while the overlay's newest
+change for that key is the add the journal names, all three parts alike (serials start again at 1 in a file that was
+removed and written again, and the tool itself tells people to remove an unreadable one), and the removal repeats the check under the overlay's lock
+(`runact.UnblockOwned`), so a person lifting and placing the block again between the offer and the lift is a refusal
+(`runact.ErrOverlayMoved`) and the block stays. Whatever cannot be shown to be the change's own stays in force, said so in
+the answer: this includes every block placed before the journal kept serials. The overlay's format gains one optional
+top-level field, `epoch`, a random id a rules change's placement asks for when it adds (`Overlay.EnsureEpoch`); an
+overlay no such placement wrote has none and is byte for byte what it was, the version stays 5, and a launcher or writer
+from before reads the file as before. A writer from before drops the field when it rewrites the file; no block is then
+shown to be anyone's until a newer placement makes a new epoch, so ownership fails closed. A placement over a block that
+is held but not in force (ended, or dormant under an unblock for a while) re-arms it, and the block is the change's.
+
+**Redo.** Undoing an Undo (a revert of a revert) narrows the file again; it now also places again the blocks that Undo
+lifted: the revert's own journal lines, `by: undo`, finished, on runs of the same file that still run and do not hold the
+block now. A block a person placed again since is theirs and is left alone; a block a person lifted by hand, or one an Undo
+without the lift box left, is not the Undo's lift and is not put back. What it places is its own: recorded `by: redo` with
+its serial, and the Redo's Undo lifts it by the same rules.
+
+**A lift the journal shows.** A lift loosens, so no lift is in force that the journal does not show. An Undo whose own
+journal line failed (`rulefile.ErrJournal`) lifts nothing and puts nothing back (the blocks stay, and the answer says so);
+a lift or a placement is made only after a line saying it was begun (`pending`) is in the journal, and the line that says
+how it ended follows. When the second line cannot be written, the first stays, and History shows the lift as begun with its
+end not recorded, which is the truth, and the answer says the outcome is missing. A begun line is replaced in History by the
+line that finishes it (`rulefile.Fold`).
+
+**Older readers.** The journal stays at version 1, the record at minor 41, and every new outcome field (`by`, `serial`,
+`held`, `pending`) is optional (`internal/rulefile/doc.go`, "Live outcomes and older readers"). A tego that knows only
+`run`, `block`, `ok`, `err` and `lift` reads a new line as follows: a placement (by a change or a Redo) as placed, which
+it is; a held block, a failed lift, a begun lift or a begun placement as not placed (and a lift as not lifted), with the
+line's own words; a finished lift as lifted. One that predates `lift` (a build before 2026-10-27, never released) reads a
+finished lift as a block placed: "blocked" of a block that is gone. No older reading says "allowed" of a block that holds.
+The older reader's own Undo, which knows nothing of owners, may still lift a same-key block a person placed (the old
+behaviour); the new rules are the new tego's.
+
+**Review fixes (2026-11-20).** The latest placement of a block on a run counts for an Undo, not the first
+(placed, lifted by hand, placed again by Apply now). A change that found the block already held (`held`) still counts as
+asking for it, so another change's Undo leaves it. A Redo says which blocks it did not put back and why (run ended, run
+not readable, already held, journal unreadable, journal does not hold the undo) in `Reverted.Restored`.
+
+**Not covered.** A block the change's own add made that a later add of the same key changed (a person extending its limit)
+no longer shows the change's serial and is left in force. The rule-change journal does not show a block a rules change placed
+when the journal could not be written after the placement (Also apply now): the run's ledger records every block change
+by serial (the launcher's gap lines), and the save's own answer carries the journal error.
+
+## Amendment 2026-11-21: path, read and write blocks in the kernel decision plane (A35)
+
+*Status: accepted 2026-11-21; built. Supersedes the "Write blocks on a tier-3 plane" line of "What
+this does not cover" for launchers that make the `live-plane` mark.*
+
+**Defect.** At tiers cgroup and bpflsm with a decision plane (`decision_plane` lsm or fmod_ret) the seccomp filter
+no longer notifies write opens and fs mutations (`planeSkips`): the plane decides them in the kernel from rows fixed at
+launch. A live block was applied by the supervisor alone, so on such a run it refused only what still reached the
+supervisor, and the 2026-11-20 wording fix ("Partly in force") said so. A person's block on a running agent must also
+stop the changes, and the reads, the kernel decides alone.
+
+**Decision.** On such a run a path, read or write block is also put in force in the plane, by the run's own launcher,
+in the kernel, on the objects the block's path names when it lands.
+
+1. **Rows.** Each slot gets a second inode-keyed map, `tego_plane_blocks` (an inner `HASH` per slot in a
+   `HASH_OF_MAPS`, created once per slot and build and kept with the slot as `tego_plane_rows` is, ADR 0025 (1)), with
+   at most `TEGO_PLANE_BLOCK_ROWS_MAX` (1024) rows. A row is keyed by a `struct inode *` that only the kernel sees
+   (ADR 0025), or, for a name that does not exist yet, by a mix of its directory's `struct inode *` and the name's key,
+   top bit clear, so the two forms never meet. It carries the key inode's identity (`i_ino`, `i_generation`, `s_dev`;
+   the directory's for a name row), the run's gen, the CLOCK_BOOTTIME instant before which it refuses nothing (a dormant
+   block, ADR 0125 decision 4; 0 for now), and up to three live-block ids: the block that refuses reads there, the one
+   that refuses changes there, and the one whose path runs through the object (a guard). Flags say whether the row
+   refuses at the object itself (`SELF`), beneath it (`BENEATH`), only for the walk inside one superblock
+   (`MOUNT_ONLY`), and whether it is a name row.
+2. **What a block keys.** For each spelling of the block (its value, its `Real`, and every other name the mount table
+   gave the file, `Resolved.Others`, which includes a bind of a part of the tree elsewhere), the launcher walks the path
+   element by element, as the kernel's lookup does (each link followed, at most `liveblock` RealPath's budget), and
+   opens an `O_PATH|O_NOFOLLOW` descriptor of every element that exists:
+   - the object the path leads to is the **target**: `SELF|BENEATH`, with the block's read or write id (a path block
+     both), and the block's id as its guard too;
+   - every directory and every link the walk passed through is a **guard**: its own rename, unlink and rmdir are
+     refused while the block stands, so the path keeps landing where it landed when the block was placed (the
+     supervisor refuses the rename of a folder above a block for the same reason, `MatchWithin`);
+   - where an element does not exist, the deepest existing directory and the missing element's name are a **name
+     row**: creating that name (mknod, an `O_CREAT` open, mkdir, symlink, the new end of a link or a rename) is refused,
+     whichever block kind it is, so nothing the plane has not seen comes to exist at or above the block. When that
+     element is not the last one this refuses a little more than the supervisor does (making the block's missing folder);
+     the person's block names the rule, and the launcher keys the real objects at the next poll once they exist;
+   - every mount whose mount point lies at or beneath a target is keyed at its root as `MOUNT_ONLY|SELF|BENEATH`, for the
+     attribute hooks that walk inside one superblock (setxattr, removexattr, the ACL hooks), as the contract's own rows
+     are (`PlaneRows.Mounts`).
+   Rows of one object from several blocks are one row, the union of their ids and flags, the earliest instant.
+3. **Fill.** The launcher holds every descriptor while its rows exist and fills the rows through the plane's own fill
+   (`tego_plane_fill`, iter/task_file over its own descriptor table, templates keyed by its tgid and carrying the run's
+   gen; ADR 0025 (2)), so no key reaches userspace. It deletes rows the same way (a `DEL` template on the descriptor
+   still held), then closes the descriptor: a pointer is never reused under a live row of its run.
+4. **Check.** Every plane fs hook asks the blocks after the contract's own decision allowed and was settled (before it
+   is recorded, so the verifier walks the check on one path), when the slot's block
+   state (`tego_plane_block_state`, one per slot, userspace-written, of the run's gen) says blocks are on. A global
+   function walks from the object to the namespace root, crossing mounts as the contract walk does, up to
+   `TEGO_PLANE_WALK_MAX` levels, and looks each level's inode up: at the object itself a `SELF` row of the asked class,
+   or a guard for a move or removal; above it a `BENEATH` row. It does not stop at the contract's nearest row: a nearer
+   `fs.write` entry does not reopen a blocked folder. The classes per hook: `file_open` read and/or write by its
+   `f_mode` (an exec's image open reads); mknod, mkdir and symlink write, plus the name row at the new name; unlink
+   and rmdir write plus guard; rename both ends read, write and guard, plus the name row at a negative destination;
+   link the source read and write, the new name read, write and the name row; the truncates, chmod, chown, the xattr
+   and ACL hooks write. A hit refuses with the hook's own reason and rule `live.block[<kind>:<value>]`
+   (`TEGO_PLANE_RULE_LIVE_BLOCK | id`, 0x4000 and an id below it, which fits the 16 bits a recorder fexit's header
+   carries; the launcher's id table names it, `observe.Recorder.SetLiveBlockRule`); a row whose key inode no longer carries its
+   identity refuses `identity-mismatch`; a walk that cannot reach the root (disconnected, past the bound) refuses
+   `path-unresolved` while a block of the asked class is on. Each row carries the classes it refuses at its object and
+   beneath it as two masks the fill derives, so a level costs one test; a name row's name key is its length and first
+   32 bytes mixed, read in four words with no loop, so two names in one directory that share both share a row, which
+   only refuses more. The walk is a second form-d walk (ADR 0024 (1)) in each fs program: measured, it adds about 3,100
+   verified instructions on 6.17 and 4,400 on Fedora's 7.0.14, where every bpf_loop callback is verified as a loop;
+   the plane's root-test budget grows by 8,000 for it (ADR 0024, verifier budget amendment 2026-11-21).
+5. **Bound and overflow.** A block the plane cannot hold whole (the map full, a path the walk budget cannot resolve, a
+   descriptor that cannot be opened, a mount point beneath a target that cannot be opened (one gone since Prepare holds
+   nothing), other names of the file the mount table could not list in full, more than `TEGO_PLANE_BLOCK_ID_MAX`, 16383,
+   ids in a run) sets the slot state's overflow bit for its class
+   (read, write): every plane-decided action of that class is then refused under the block's rule, so the block is
+   in force, broader than asked, never narrower. The bit is cleared only after every row it stood for is in.
+6. **Order and the ledger.** The plane follows the same entries the supervisor's Set is compiled from (`store`): the
+   overlay as last read (an unreadable overlay keeps the last blocks; a removed or recreated one, b2's `epoch` and
+   serials included, drops what it no longer lists), less blocks whose `until` has ended (removed at that poll, at
+   most half a second late, which only refuses longer), with a dormant block's `from` as its rows' instant (its pin on
+   CLOCK_BOOTTIME). Tightening goes state first, then rows; loosening rows first, then state. The `live-block-added`
+   line is written after the rows are in, so "in force" is never claimed before the kernel holds it. A launcher that
+   cannot write its block state at all ends the run (reason error) rather than claim a block it cannot hold. The launcher
+   resolves every block again on each poll (a few lstat calls), so a name that came to exist is keyed by its object.
+   A walk only adds: every object a block has keyed stays keyed, by the descriptor that pins it, until that block is
+   removed, wherever the object has moved since (a rename racing the first fill, a host-side rename of an ancestor, an
+   editor's save by rename), so a block follows the object it landed on; a row the map had no room for is held with its
+   descriptor and tried again on each pass, its class refused whole meanwhile. A later walk that meets a held object in
+   a weaker role (a moved target met as a guard) adds its row to the held one and never replaces it. The launcher walks
+   again after every pass that put a row, before the `live-block-added` line, until a pass puts none: such a pass met
+   only objects already keyed, which the run can neither move nor replace, so the path's object is keyed (amended
+   2026-11-22: two passes were not enough against an agent that renames a fresh file over the path during every fill). A sync that is still putting rows after `blockSyncPasses` (8) passes refuses every block's classes whole
+   before it returns, and in each pass after, until a sync settles. The rows grow with what the blocks touched, within
+   item 5's bound.
+7. **Writers.** Such a launcher makes the run directory's `live-plane` mark once its poll runs; `livestatus` reads a
+   path or write block on a run with the mark as In force (a path block's reads included, since the plane decides
+   reads), and Also apply now offers a write block there. A run without the mark (an older launcher) keeps "Partly in
+   force".
+
+**Where the guarantee sits.** In the kernel, on the object the kernel resolved, for every task in the run's cgroup:
+children, threads, an exec'd image and a process adopted into the run later (ADR 0055) are decided by the same
+run-set row. The supervisor keeps applying the block to what still reaches it.
+
+**What changes for users.** On a plane run a block follows the file, not the spelling: a hard link made before a block
+on that file, and the file under a moved ancestor, stay blocked (a hard link made before the block to a file *inside* a
+blocked folder is another name in another folder, which no row above it keys: it is not refused, as the supervisor's
+path match does not refuse it either; a link made after the block is refused at the link); a rename or removal of a folder (or link) the block's path runs
+through is refused; a read block also refuses deleting or replacing the blocked file (the kernel cannot follow a file it
+has not seen, so it does not let the name be freed); and any block refuses creating its own missing name, and the first
+missing folder above it.
+
+**Threat model and how this could be wrong.**
+- *A plane-decided mutation that misses the check.* Candidates: an `O_CREAT` refused only at `path_mknod` on the parent
+  (the walk starts at the negative dentry, so the parent is depth 1 and the name row depth 0); rename's second end; a
+  `RENAME_EXCHANGE` destination; `linkat(AT_EMPTY_PATH)` (an `O_TMPFILE` linked by descriptor goes through
+  `security_path_link`); `ftruncate` on a descriptor opened before the block (`file_truncate`, or `path_truncate` below
+  6.2); `fchmod`/`fchown` (`path_chmod`/`path_chown` on the file's path); `fsetxattr` (the inode hook); an io_uring op (the
+  same hooks); a mount crossing. The source test holds every fs hook to the call, and the root test drives each class.
+- *An object reached outside the blocked tree.* A bind of a part of the tree elsewhere is a spelling of `Others`; a mount
+  made after the block is not seen (GAPS C68, as for the supervisor), and neither is a host-side rename of an ancestor,
+  until the next poll re-keys the path's new objects; the old ones stay blocked (item 6: a walk only adds), which
+  `TestPlaneBlocksKeepTheFileUnderAMovedAncestor` and the root test's host-side move hold.
+- *Key reuse.* Rows are keyed by an inode the launcher pins with a descriptor. Between a launcher's death and the reaper's
+  `cgroup.kill` nothing pins it: an evicted inode's address reused by another inode meets the row and refuses
+  (identity-mismatch), and the blocked file read back in under a new address is not met. That window is the residual
+  below; contract rows are unaffected (the domain pins them).
+- *A torn read of the block state.* Userspace writes it whole while hooks read it; each field a hook reads is a word, and
+  every transition is ordered so that a stale or partial read can only refuse more: on before rows, overflow before a
+  failed row is given up, off and clear only after the rows are gone or in.
+- *A stale row.* Rows carry the run's gen; a slot's next run ignores them, and its Prepare's clear deletes them.
+- *A removal that fails.* The rows stay (refusing) and the descriptors stay open; the next poll tries again. The
+  supervisor's Set has already dropped the block, so the run refuses more than its overlay says until then, never less.
+
+**Residuals.**
+- A descriptor opened for writing before the block keeps writing, and a shared writable mapping keeps changing the file:
+  no hook sees `write(2)`, as at tier landlock.
+- A name made by a process outside the run inside a blocked folder is blocked (beneath the folder); a name made outside
+  the run at a block's own missing name is met by the name row only for creations by the run, and its contents are keyed
+  at the next poll (at most half a second).
+- A block is on a path, as the person names it, not on the object they saw: when the file is somewhere else at the
+  instant the launcher walks (an agent renaming it to and fro), the block lands as a name row at the path and the moved
+  file was never the blocked object. Pinning the object the person saw would need its file handle passed with the block
+  (`name_to_handle_at`, opened by the root launcher with `open_by_handle_at`); not done.
+- A block keeps every object it keyed until it is removed, an orphan too: each host-side atomic replace of a blocked
+  file (an editor's save, a git index write, logrotate) adds one unlinked inode, pinned with its descriptor and its disk
+  space, to the block's rows. Not released even when it has no name left, since a descriptor of it held by the agent (an
+  O_PATH one reopened through `/proc/self/fd`) would then write it unrefused. About 1024 such replaces in one run fill
+  the slot's map, and the block's class is then refused whole for the rest of the run (item 5): fail closed, broader
+  than asked.
+- While any block is on, every plane-decided file action of the run deeper than `TEGO_PLANE_WALK_MAX` (64) levels
+  below the namespace root is refused `path-unresolved`, anywhere in the run: the block walk goes to the root and cannot
+  say no block lies above a level it cannot reach. Fail closed; deep trees (nested `node_modules`) can reach it.
+- Timestamps and inode flags: `utimensat` (`touch`, which needs only write permission) and the `FS_IOC_SETFLAGS` /
+  `FS_IOC_FSSETXATTR` flags that need no capability still change a write-blocked file's metadata, since no plane hook
+  covers `inode_setattr` for times or `file_ioctl` (ADR 0024's note of 2026-10-05 for `deny_write`); a write block's
+  "In force" covers the file's contents, names, mode, owner and extended attributes, not these.
+- Between a launcher's death and the reaper's kill, a row's inode is pinned by nothing (above).
+- A dormant block whose `from` the wall clock reaches before CLOCK_BOOTTIME does (a wall clock stepped forward) comes
+  back in the plane at the next poll, at most half a second after the supervisor's.
+- A launcher in a time namespace with a boot-time offset cannot give the kernel a dormant block's instant: its dormant
+  blocks keep refusing in the plane until they begin (fail closed).
+- Plane runs whose launcher predates this keep the 2026-11-20 words.

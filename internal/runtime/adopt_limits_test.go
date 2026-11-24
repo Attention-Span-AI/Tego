@@ -375,3 +375,55 @@ func TestAdoptionSaysALiftThatFailed(t *testing.T) {
 			"be lifted (pids.max)", end.Reason, end.Detail)
 	}
 }
+
+// adoptedRunStart runs an adoption to its end and returns the run_start it wrote.
+func adoptedRunStart(t *testing.T, f *adoptFixture, spec AdoptSpec) record.RunStartPayload {
+	t.Helper()
+	s, done := f.adoptRunning(t, context.Background(), spec)
+	f.host.end(f.host.rel(s.Scope))
+	waitResult(t, done)
+	var start record.RunStartPayload
+	for _, ev := range events(t, s.Dir) {
+		if ev.Kind == record.KindRunStart {
+			if err := ev.DecodePayload(&start); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	return start
+}
+
+// TestAdoptionRecordsTheLimitsItWrote (A52): the contract and the machine config say which limits were requested, and
+// run_start's limits block carries budgets only, so a reader of an adopted run's record could not learn which cpu.max,
+// cpu.weight and pids.max the agent was actually held to. A boundary adoption now records, as applied_limits, the values it
+// wrote into its scope (record_minor 41 now, which includes 40); a record-only adoption, which writes none, carries no block.
+func TestAdoptionRecordsTheLimitsItWrote(t *testing.T) {
+	f := newAdoptFixture(t)
+	f.cgroups.controls = adoptControls
+	start := adoptedRunStart(t, f, limitedBoundary(t, f, cpuPidsCeilings(64)))
+	l := start.AppliedLimits
+	if l == nil || l.CPUMax != "50000 100000" || l.CPUWeight == nil || *l.CPUWeight != 20 || l.PidsMax == nil || *l.PidsMax != 64 {
+		t.Fatalf("applied_limits = %+v, want cpu_max 50000 100000, cpu_weight 20, pids_max 64", l)
+	}
+	// Revision 41 includes 40's meaning (ADR 0157): every adoption writes it, and the block needs at least 40.
+	if start.RecordMinor != record.MinorEveryLaunch || start.RecordMinor < record.MinorAppliedLimits {
+		t.Errorf("record_minor %d, want %d", start.RecordMinor, record.MinorEveryLaunch)
+	}
+
+	// Only the keys the table held: a pids ceiling alone is a block with one member.
+	g := newAdoptFixture(t)
+	g.cgroups.controls = adoptControls
+	only := adoptedRunStart(t, g, limitedBoundary(t, g, agent.ResolvedLimits{Pids: 32, Set: agent.BudgetPids}))
+	if o := only.AppliedLimits; o == nil || o.CPUMax != "" || o.CPUWeight != nil || o.PidsMax == nil || *o.PidsMax != 32 {
+		t.Errorf("applied_limits = %+v, want pids_max 32 alone", o)
+	}
+
+	// Record-only: the same ceilings, nothing written, nothing recorded, and the revision a launch keeps.
+	r := newAdoptFixture(t)
+	r.cgroups.controls = adoptControls
+	r.rt.Limits = cpuPidsCeilings(64)
+	none := adoptedRunStart(t, r, r.spec(t))
+	if none.AppliedLimits != nil || none.RecordMinor != launchMinor {
+		t.Errorf("a record-only adoption: applied_limits %+v at record_minor %d, want none at %d", none.AppliedLimits, none.RecordMinor, launchMinor)
+	}
+}

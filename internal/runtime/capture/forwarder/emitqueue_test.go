@@ -3,8 +3,11 @@
 package forwarder
 
 import (
+	"bytes"
 	"io"
+	"net"
 	"net/http"
+	"net/http/httptrace"
 	"strings"
 	"sync"
 	"testing"
@@ -35,6 +38,60 @@ func (s *stalledSink) Emit(ev *record.Event) {
 	s.meteredSink.Emit(ev)
 }
 
+// admittedQueueClient keeps R19a's real connection admission in setup. The
+// queue's one-second bound measures forwarding while Emit is stalled, rather
+// than the unrelated process/socket search on a new connection. HEAD is local
+// and emits nothing; the first measured request still exercises upstream TLS.
+func admittedQueueClient(t *testing.T, h *harness) func(string, []byte) *http.Response {
+	t.Helper()
+	request := func(method, path string, body []byte, admitted net.Conn) (*http.Response, net.Conn) {
+		t.Helper()
+		r, err := http.NewRequest(method, h.listener.BaseURL()+path, bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var mu sync.Mutex
+		var connections []httptrace.GotConnInfo
+		trace := &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) {
+			mu.Lock()
+			connections = append(connections, info)
+			mu.Unlock()
+		}}
+		resp := h.do(r.WithContext(httptrace.WithClientTrace(r.Context(), trace)))
+		mu.Lock()
+		defer mu.Unlock()
+		if len(connections) != 1 || connections[0].Conn == nil {
+			resp.Body.Close()
+			t.Fatalf("queue fixture used %d connections, want exactly one", len(connections))
+		}
+		if admitted != nil && (!connections[0].Reused || connections[0].Conn != admitted) {
+			resp.Body.Close()
+			t.Fatal("queue fixture did not reuse its admitted connection")
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			t.Fatalf("queue fixture status = %d, want 200", resp.StatusCode)
+		}
+		return resp, connections[0].Conn
+	}
+	resp, admitted := request(http.MethodHead, HelloPath, nil, nil)
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		t.Fatal(err)
+	}
+	if err := resp.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if len(h.sink.all()) != 0 || len(h.listener.Gaps()) != 0 {
+		t.Fatal("queue setup health check produced capture events or gaps")
+	}
+	h.client.Timeout = time.Second
+	return func(path string, body []byte) *http.Response {
+		t.Helper()
+		resp, _ := request(http.MethodPost, path, body, admitted)
+		return resp
+	}
+}
+
 // I1: the client's request path never waits on the ledger. With the sink stalled, every
 // request is still forwarded and answered at once; the events reach the sink, in order, once it reads again.
 func TestStalledSinkDoesNotDelayTheClient(t *testing.T) {
@@ -42,15 +99,20 @@ func TestStalledSinkDoesNotDelayTheClient(t *testing.T) {
 		_, _ = io.Copy(io.Discard, r.Body)
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	}, Options{})
+	post := admittedQueueClient(t, h)
 	s := newStalledSink(h)
 	t.Cleanup(s.release)
 	h.listener.Bind(h.listener.runRef(), s)
 	const n = 4
 	for i := range n {
 		start := time.Now()
-		resp := h.post("/v1/messages", []byte(`{"i":`+itoa(i)+`}`), nil)
-		_, _ = io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
+		resp := post("/v1/messages", []byte(`{"i":`+itoa(i)+`}`))
+		if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+			t.Fatal(err)
+		}
+		if err := resp.Body.Close(); err != nil {
+			t.Fatal(err)
+		}
 		if d := time.Since(start); d > time.Second {
 			t.Fatalf("request %d took %v with the sink stalled: the client waited on the ledger", i, d)
 		}
@@ -88,15 +150,20 @@ func TestEmitQueueOverflowIsAGapAndUnmetered(t *testing.T) {
 		_, _ = w.Write([]byte(`{"id":"msg_1","type":"message","model":"claude-opus-5",` +
 			`"usage":{"input_tokens":10,"output_tokens":5}}`))
 	}, Options{Deriver: derive.NewDispatcher([]derive.Parser{anthropic.New()})})
+	post := admittedQueueClient(t, h)
 	s := newStalledSink(h)
 	t.Cleanup(s.release)
 	h.listener.Bind(h.listener.runRef(), s)
 	const n = 6
 	for i := range n {
 		start := time.Now()
-		resp := h.post("/v1/messages", []byte(`{"model":"claude-opus-5","messages":[]}`), nil)
-		_, _ = io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
+		resp := post("/v1/messages", []byte(`{"model":"claude-opus-5","messages":[]}`))
+		if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+			t.Fatal(err)
+		}
+		if err := resp.Body.Close(); err != nil {
+			t.Fatal(err)
+		}
 		if d := time.Since(start); d > time.Second {
 			t.Fatalf("request %d took %v with the queue full", i, d)
 		}

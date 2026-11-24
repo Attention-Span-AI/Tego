@@ -45,8 +45,13 @@ func fillBuilds(t *testing.T) []ebpfbindings.Object {
 // planeSlot is a slot's plane maps for a test: fresh, unpinned outers declared as the plane declares them, with
 // the slot's inner maps inserted (T6 creates them on a slot's first use and keeps them).
 type planeSlot struct {
-	rows, exec, listen *ebpf.Map
-	runIdx             uint32
+	rows, exec, listen, blocks *ebpf.Map
+	runIdx                     uint32
+}
+
+// maps is the slot's outers as a fill build is loaded over them.
+func (s *planeSlot) maps() fillMaps {
+	return fillMaps{Rows: s.rows, ExecRows: s.exec, ListenRows: s.listen, Blocks: s.blocks}
 }
 
 func newPlaneSlot(t *testing.T, fill ebpfbindings.Object, runIdx uint32, rowsMax uint32) *planeSlot {
@@ -60,7 +65,8 @@ func newPlaneSlot(t *testing.T, fill ebpfbindings.Object, runIdx uint32, rowsMax
 	for _, m := range []struct {
 		name string
 		dst  **ebpf.Map
-	}{{ebpfbindings.MapPlaneRows, &s.rows}, {ebpfbindings.MapPlaneExecRows, &s.exec}, {ebpfbindings.MapPlaneListenRows, &s.listen}} {
+	}{{ebpfbindings.MapPlaneRows, &s.rows}, {ebpfbindings.MapPlaneExecRows, &s.exec}, {ebpfbindings.MapPlaneListenRows, &s.listen},
+		{ebpfbindings.MapPlaneBlocks, &s.blocks}} {
 		ms := spec.Maps[m.name].Copy()
 		ms.Pinning = ebpf.PinNone
 		outer, err := ebpf.NewMap(ms)
@@ -221,7 +227,7 @@ func TestPlaneFillWritesTheContractsRows(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			rep, err := fillPlane(fill, slot.rows, slot.exec, plan, table, planeFillOptions{}, slot.listen)
+			rep, err := fillPlane(fill, slot.maps(), plan, table, planeFillOptions{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -282,7 +288,7 @@ func TestPlaneFillFailsOnAReusedDescriptor(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = unix.Close(ofd)
-	_, err = fillPlane(fill, slot.rows, slot.exec, plan, table, planeFillOptions{}, slot.listen)
+	_, err = fillPlane(fill, slot.maps(), plan, table, planeFillOptions{})
 	var pf *ErrPlaneFill
 	if !errors.As(err, &pf) || len(pf.Problems) != 1 || !strings.Contains(err.Error(), files[1]) ||
 		!strings.Contains(err.Error(), "the number was reused") {
@@ -323,7 +329,7 @@ func TestPlaneFillKeysEachHardLinkOfOneInode(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			rep, err := fillPlane(fill, slot.rows, slot.exec, plan, table, planeFillOptions{}, slot.listen)
+			rep, err := fillPlane(fill, slot.maps(), plan, table, planeFillOptions{})
 			if err != nil {
 				t.Fatalf("three exec entries on three links of one inode: %v", err)
 			}
@@ -371,7 +377,7 @@ func TestPlaneFillRefusesOneLinkTwice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = fillPlane(fill, slot.rows, slot.exec, plan, table, planeFillOptions{}, slot.listen)
+	_, err = fillPlane(fill, slot.maps(), plan, table, planeFillOptions{})
 	if err == nil || !strings.Contains(err.Error(), "another entry of this run already keys") {
 		t.Fatalf("two exec entries on one link: %v", err)
 	}
@@ -386,7 +392,7 @@ func TestPlaneFillSlotReuseLeavesStaleRowsAbsent(t *testing.T) {
 	fill := fillBuilds(t)[0]
 	t.Run("walked past", func(t *testing.T) {
 		slot := newPlaneSlot(t, fill, 6, 0)
-		f, err := newPlaneFiller(fill, slot.rows, slot.exec, slot.listen)
+		f, err := newPlaneFiller(fill, slot.maps())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -445,7 +451,7 @@ func TestPlaneFillSlotReuseLeavesStaleRowsAbsent(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := fillPlane(fill, slot.rows, slot.exec, p1, t1, planeFillOptions{}, slot.listen); err != nil {
+		if _, err := fillPlane(fill, slot.maps(), p1, t1, planeFillOptions{}); err != nil {
 			t.Fatal(err)
 		}
 		t2 := fsTable(files[3:])
@@ -453,7 +459,7 @@ func TestPlaneFillSlotReuseLeavesStaleRowsAbsent(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		rep, err := fillPlane(fill, slot.rows, slot.exec, p2, t2, planeFillOptions{}, slot.listen)
+		rep, err := fillPlane(fill, slot.maps(), p2, t2, planeFillOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -485,7 +491,7 @@ func TestPlaneFillTiming(t *testing.T) {
 			t.Fatal(err)
 		}
 		parse := time.Since(start)
-		f, err := newPlaneFiller(fill, slot.rows, slot.exec, slot.listen)
+		f, err := newPlaneFiller(fill, slot.maps())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -559,7 +565,7 @@ func TestPlaneFillUnscopedOnABusyHost(t *testing.T) {
 	h := holdPaths(t, files...)
 	fill := fillBuilds(t)[0]
 	slot := newPlaneSlot(t, fill, 10, 0)
-	f, err := newPlaneFiller(fill, slot.rows, slot.exec, slot.listen)
+	f, err := newPlaneFiller(fill, slot.maps())
 	if err != nil {
 		t.Fatal(err)
 	}

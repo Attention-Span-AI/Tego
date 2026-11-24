@@ -16,6 +16,19 @@ import (
 // UX-FINISH's tests: the 401 page after a restart, the favicon, the terminal devices fold and the open defaults on
 // the Rules page, This machine per tier when the newest run only watched, and the Receipt tab's activity sections.
 
+func TestRunsStylesBeforeFirstPaint(t *testing.T) {
+	s := newServer(t, fixture(t))
+	body := get(t, s, login(t, s), "/runs")
+	const link = `<link rel="stylesheet" href="/static/compare.css">`
+	style, head := strings.Index(body, link), strings.Index(body, "</head>")
+	if style < 0 || head < 0 || style > head || strings.Count(body, link) != 1 {
+		t.Fatal("Runs must load its comparison styles once in the head, before the shell can paint")
+	}
+	if !strings.Contains(body[:head], `<script src="/static/live.js" defer blocking="render"></script>`) {
+		t.Fatal("Runs must finish parsing before its first paint can restore the saved scroll")
+	}
+}
+
 // TestUnauthorizedPage: a browser asking for a page without the session gets 401 with a page that says the
 // dashboard restarted or the link expired and how to get back in, under its own CSP (no script, one hashed style);
 // any other client, curl and live.js's fetches, gets the plain line, still 401.
@@ -36,7 +49,7 @@ func TestUnauthorizedPage(t *testing.T) {
 	if res.StatusCode != http.StatusUnauthorized || !strings.HasPrefix(res.Header.Get("Content-Type"), "text/html") {
 		t.Fatalf("browser 401: %d %q", res.StatusCode, res.Header.Get("Content-Type"))
 	}
-	for _, want := range []string{"<title>Sign in · Tego</title>", "Open the dashboard from your terminal",
+	for _, want := range []string{"<title>Sign in · Tego</title>", "Open your dashboard safely",
 		"tego dashboard", `rel="icon"`, `name="viewport"`, `name="color-scheme" content="light dark"`} {
 		if !strings.Contains(strings.ToLower(page), strings.ToLower(want)) {
 			t.Errorf("401 page lacks %q", want)
@@ -106,7 +119,7 @@ exec:
 
 // TestRulesFoldAndOpen: on the Rules page the terminal devices fold into one row whose expander keeps each device's
 // rule, line and hits; an open default (any address, every variable) is marked Open with a Narrow this link; an
-// allowed rule's chip is neutral, not green; and a rule the kernel enforces in full leaves its Enforced by cell empty.
+// allowed rule's chip is neutral, not green; and each rule names its actual enforcement.
 func TestRulesFoldAndOpen(t *testing.T) {
 	f := newRulesFix(t)
 	src := filepath.Join(f.proj, "dev.yaml")
@@ -123,9 +136,9 @@ func TestRulesFoldAndOpen(t *testing.T) {
 	}
 	for _, want := range []string{"Can change terminal devices (4)", "Can change /dev/null", "Can change /dev/tty", "Can change /dev/ptmx",
 		"Can change files in /dev/pts/", "dev.yaml:5", "Can change files in ./out/",
-		`<span class="b b-asked" title="Wide open: a contract usually narrows this">`, "Can connect to any address",
+		`<span class="b b-neutral" title="Wide open: a contract usually narrows this">`, "Can connect to any address",
 		"Gets every variable in your shell, secrets included.", "Narrow this", "#rc-net.allow",
-		"kernel unless noted", `<span class="b b-neutral b-allow">`} {
+		"exceptions named below", `<span class="b b-neutral b-allow">`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("rules page lacks %q", want)
 		}
@@ -139,8 +152,8 @@ func TestRulesFoldAndOpen(t *testing.T) {
 	if strings.Contains(body, `<span class="b b-allowed">`) {
 		t.Error("an allowed rule still has a green chip")
 	}
-	if strings.Contains(body, ">Enforced by the operating system<") || strings.Contains(body, ">Enforced by the operating system</td>") {
-		t.Error("a kernel-enforced rule still says so in its cell")
+	if !strings.Contains(body, ">Enforced by the operating system<") || strings.Contains(body, "kernel unless noted") {
+		t.Error("the contract does not name exact enforcement, or implies all rules use the kernel")
 	}
 	// The programs default is narrowed here: not marked open.
 	if strings.Contains(body, "Can run any") {
@@ -186,7 +199,7 @@ func TestRulesDefaultHits(t *testing.T) {
 }
 
 // TestMachineNewestWatched: when the newest run only watched, This machine still names the newest run at each tier
-// it used, says the newest was watch-only, and keeps the capability ids under Technical detail.
+// it used, says the newest was watch-only, and keeps capability ids in native disclosures.
 func TestMachineNewestWatched(t *testing.T) {
 	root := fixture(t)
 	watch := "r-aaaaaaaa-0000000000009-watchx"
@@ -200,9 +213,9 @@ func TestMachineNewestWatched(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("machine: %d %s", w.Code, body)
 	}
-	for _, want := range []string{"Last: ", "demo-harm", "Watched only", "Available", "Up to <strong>Basic</strong>",
-		"tier 1 · Landlock", "tier 2 · cgroup BPF", "tier 3 · BPF LSM",
-		`<details class="mc-tech">`, "fs.deny_read", "Not used yet", "Run with sudo"} {
+	for _, want := range []string{"Last recorded use: demo-harm", "Watched only in the newest run", "Used before", "Not checked", "tego machine check",
+		`id="check-landlock"`, `id="check-cgroup"`, `id="check-bpflsm"`,
+		`id="machine-record"`, "fs.deny_read", "administrator rights"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("machine page lacks %q", want)
 		}
@@ -210,8 +223,11 @@ func TestMachineNewestWatched(t *testing.T) {
 	if strings.Contains(body, "Not seen in the newest run") || strings.Contains(body, "did not run at tier 1") {
 		t.Error("a watched newest run still reads as tier 1 not seen")
 	}
-	if i, j := strings.Index(body, "fs.deny_read"), strings.Index(body, `<details class="mc-tech">`); i < j {
-		t.Error("a capability id shows outside Technical detail")
+	if i := strings.Index(body, "fs.deny_read"); i >= 0 {
+		before := body[:i]
+		if strings.LastIndex(before, "<details") < strings.LastIndex(before, "</details>") {
+			t.Error("a capability id shows outside a native disclosure")
+		}
 	}
 }
 

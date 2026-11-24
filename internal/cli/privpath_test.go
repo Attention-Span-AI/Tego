@@ -117,6 +117,8 @@ func TestPrivilegeActionTable(t *testing.T) {
 // TestGuardPrivilegeRefusesWithTheCode: the refusal is one line with the code and the way to the root tiers, and
 // exit 125; a clear under run prints one note naming the cleared set.
 func TestGuardPrivilegeRefusesWithTheCode(t *testing.T) {
+	// This test checks rendering; the test build's scratch ancestors may be writable by another account.
+	agentsSelf(t)
 	refused := privFacts{userNS: config.UserNamespaceInitial, ruid: 1000, euid: 1000, rgid: 1000, egid: 1000, secure: true}
 	var stderr bytes.Buffer
 	code, ok := guardPrivilege([]string{"tego", "doctor"}, &stderr, refused, func() error {
@@ -127,7 +129,7 @@ func TestGuardPrivilegeRefusesWithTheCode(t *testing.T) {
 		t.Fatalf("guardPrivilege = %d, %v; want 125 and stop", code, ok)
 	}
 	line := stderr.String()
-	for _, want := range []string{"[" + identity.CodePrivilegedPathUnsupported + "]", "sudo tego run", "ADR 0042", "AT_SECURE"} {
+	for _, want := range []string{"[" + identity.CodePrivilegedPathUnsupported + "]", selfSudo(t, "run"), "ADR 0042", "AT_SECURE"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("refusal %q lacks %q", line, want)
 		}

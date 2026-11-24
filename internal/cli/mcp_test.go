@@ -248,9 +248,9 @@ func TestMCPSwitchRecheckedUnderTheLock(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, ask.SocketName), nil, 0o600); err != nil {
 				t.Fatal(err)
 			}
-			old := selfInRun
-			selfInRun = func() (bool, error) { return false, nil }
-			t.Cleanup(func() { selfInRun = old })
+			old := selfAnswer
+			selfAnswer = answerOutside
+			t.Cleanup(func() { selfAnswer = old })
 			mcpBeforeLock = func() {
 				if _, err := mcptools.Update(context.Background(), dir, id, func(o *mcptools.Overlay) (bool, error) {
 					return o.Set("files", "read_file", mcptools.Deny, "uid:1 pid:3 cli", time.Now())
@@ -458,9 +458,9 @@ func mcpRun(t *testing.T, adjustable bool) (dir, id string) {
 	if adjustable {
 		adjustableStart(t, dir)
 	}
-	old := selfInRun
-	selfInRun = func() (bool, error) { return false, nil }
-	t.Cleanup(func() { selfInRun = old })
+	old := selfAnswer
+	selfAnswer = answerOutside
+	t.Cleanup(func() { selfAnswer = old })
 	return dir, id
 }
 

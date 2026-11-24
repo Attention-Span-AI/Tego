@@ -254,6 +254,7 @@ func TestArmWithoutAGroupArmsNothing(t *testing.T) {
 	f := newFixture(t)
 	unmarked := *f.table
 	unmarked.Contract, unmarked.FS, unmarked.NameDeny = &agent.Contract{}, nil, nil
+	unmarked.EffectiveContract = unmarked.Contract
 	h, err := f.backend.Prepare(context.Background(), &unmarked, f.run)
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)

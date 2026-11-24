@@ -8,9 +8,11 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/attention-span-ai/tego/internal/check/measure"
 	"github.com/attention-span-ai/tego/internal/ledger"
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 // TestReceiptAgreesWithDashboardAndMeasure is the receipt's cross-view agreement: on every
@@ -78,5 +80,52 @@ func TestReceiptAgreesWithDashboardAndMeasure(t *testing.T) {
 					m.TokensIn, m.TokensOut, m.CacheRead, m.CacheWrite, m.Responses, m.Unpriced)
 			}
 		})
+	}
+}
+
+func TestReceiptSensitiveContextHasItsOwnCacheKey(t *testing.T) {
+	root := t.TempDir()
+	const run = "r-aaaaaaaa-0000000000092-rcsens"
+	t0 := time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC)
+	writeRun(t, root, run,
+		line(run, "demo", 0, t0, "run_start", `"tier":"landlock","command":["sh"],"cwd":"/p"`),
+		line(run, "demo", 1, t0.Add(time.Second), "fs", `"rule":"unmatched","verdict":"allow","op":"open","flags":0,"path":"/p/workpapers/plan.data"`),
+		line(run, "demo", 2, t0.Add(2*time.Second), "run_end", `"reason":"exit","exit_code":0`))
+	plain, err := LoadReceipt(t.Context(), root, run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	with, err := LoadReceiptWithSensitive(t.Context(), root, run, Sensitive{Entries: []string{"./workpapers/"}, Cwd: "/p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := LoadReceiptWithSensitive(t.Context(), root, run, Sensitive{Entries: []string{"./workpapers/"}, Cwd: "/p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := LoadReceiptWithSensitive(t.Context(), root, run, Sensitive{Entries: []string{"./workpapers/"}, Cwd: "/elsewhere"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	different, err := LoadReceiptWithSensitive(t.Context(), root, run, Sensitive{Entries: []string{"./other/"}, Cwd: "/p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plain.SensitiveReads) != 0 || len(other.SensitiveReads) != 0 || len(different.SensitiveReads) != 0 || len(with.SensitiveReads) != 1 || with != again || with == plain {
+		t.Fatalf("plain=%+v with=%+v other=%+v cached=%v", plain.SensitiveReads, with.SensitiveReads, other.SensitiveReads, with == again)
+	}
+}
+
+// Supervisor-held opens can carry syscall_ret without errno (held_open.go).
+func TestFailedOpenReturnIsNotASensitiveRead(t *testing.T) {
+	e := record.Event{Kind: record.KindFS, Verdict: record.VerdictAllow, Payload: json.RawMessage(`{"op":"open","path":"/p/workpapers/plan.data","syscall_ret":-13}`)}
+	ev := fromRecord(&e)
+	if !ev.readNothing {
+		t.Fatal("negative kernel return treated as a read")
+	}
+	r := &Run{Events: []Event{ev}, Cwd: "/p"}
+	sig := Signal(r, Sensitive{Entries: []string{"./workpapers/"}, Cwd: "/p"})
+	if len(sig.Secrets) != 1 || sig.Secrets[0].Unread != 1 {
+		t.Fatalf("failed-open signal %+v", sig.Secrets)
 	}
 }

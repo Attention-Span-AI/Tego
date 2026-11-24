@@ -18,8 +18,12 @@
 #   when the guest itself failed: vm-lost, vm-timeout, vm-no-report, vm-env, vm-usage),
 #   test2json path (or -), and a log path or a note.
 import json
+import os
 import re
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import consoleframe  # noqa: E402
 
 LOC = re.compile(r"^\s+\S+\.go:\d+: ")
 RESULT = re.compile(r"^(\s*)--- (PASS|FAIL|SKIP): (\S+) \(")
@@ -31,9 +35,12 @@ def console_results(path):
 
     test2json only reports a result it has seen the end of; a binary that panics or is killed never
     prints that end, so the raw lines are read too."""
-    final, last, panic = {}, None, []
-    lines = [l.rstrip("\n") for l in tail(path, 10 ** 7)]
+    final, last, panic, unknown = {}, None, [], []
+    lines = consoleframe.frame([l.rstrip("\n") for l in tail(path, 10 ** 7)])
     for i, l in enumerate(lines):
+        if l.startswith(consoleframe.UNKNOWN):
+            unknown.append(l[len(consoleframe.UNKNOWN):])
+            continue
         m = RESULT.match(l)
         if m:
             final[m.group(3)] = m.group(2).lower()
@@ -44,7 +51,7 @@ def console_results(path):
             continue
         if l.startswith("panic: ") and not panic:
             panic = [x for x in lines[i:i + 40] if x.strip()][:14]
-    return final, last, panic
+    return final, last, panic, unknown
 
 
 def tail(path, n):
@@ -124,11 +131,16 @@ def summarize_suite(suite, pkg, tags, status, jpath, extra):
             output.setdefault(t, []).append(ev.get("Output", ""))
         elif a in ("pass", "fail", "skip"):
             final[t] = a
-    raw, last, panic = console_results(extra)
+    raw, last, panic, unknown = console_results(extra)
     for t, a in raw.items():
         final.setdefault(t, a)
     # A test that started and never reported (a panic, a kill, a timeout) did not pass.
     crashed = [t for t in started if t not in final]
+    if unknown and not panic:
+        # A console line the framing could not repair (a kernel message cut a result line): the test's own
+        # result is unknown, not a failure and not a pass. The raw bytes are kept.
+        rec["unknown"] = unknown
+        crashed = []
     for t in crashed:
         final[t] = "fail"
         output.setdefault(t, []).append("    (no result: the test binary died while this test ran)\n")
@@ -166,6 +178,10 @@ def summarize_suite(suite, pkg, tags, status, jpath, extra):
         rec["failures"].append("exit %d with no failing test: %s" % (code, " | ".join((why or lines)[-8:])))
     if code != 0 or failed_tests:
         rec["result"] = "fail"
+    elif rec.get("unknown"):
+        rec["result"] = "unknown"
+        rec["failures"].append("UNKNOWN, not a pass or a failure: a console line could not be framed: "
+                               + " | ".join(repr(x) for x in rec["unknown"][:5]))
     elif rec["ran"] == 0:
         rec["result"] = "not-run"
         rec["failures"].append("every test skipped: a suite that ran nothing is not a pass")

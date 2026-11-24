@@ -104,11 +104,15 @@ func cmdMCP() Command {
 // a contract without tools: runs exactly as before (ADR 0126 Consequences). A relay that cannot start is said on a
 // line naming cmd.
 func mcpRelayFor(rt *agent.RuleTable, log *slog.Logger, cmd string, stderr io.Writer) ([]source.Source, int) {
+	if rt.BusinessRulesConfigured() {
+		message(stderr, "", 0, 0, cmd+": "+agent.BusinessRulesUnavailable, codeRun)
+		return nil, identity.ExitLauncher
+	}
 	servers := relayedServers(rt.Contract)
 	if len(servers) == 0 {
 		return nil, identity.ExitOK
 	}
-	s, err := mcprelay.New(mcprelay.Options{Servers: servers, Logger: log})
+	s, err := mcprelay.New(mcprelay.Options{Servers: servers, Logger: log, Adjustable: rt.Adjustable()})
 	if err != nil {
 		message(stderr, "", 0, 0, cmd+": MCP relay: "+err.Error(), codeRun)
 		return nil, identity.ExitLauncher
@@ -126,8 +130,12 @@ func relayedServers(c *agent.Contract) []mcprelay.Server {
 		if !s.Relayed() {
 			continue
 		}
+		var rules mcptool.Rules
+		if s.Tools != nil {
+			rules = mcptool.Rules{Allow: s.Tools.Allow, Deny: s.Tools.Deny, Ask: s.Tools.Ask}
+		}
 		out = append(out, mcprelay.Server{Name: s.Name, Command: append([]string(nil), s.Command...), URL: s.URL,
-			Rules: mcptool.Rules{Allow: s.Tools.Allow, Deny: s.Tools.Deny, Ask: s.Tools.Ask}})
+			Rules: rules, BusinessRules: s.BusinessRules != nil})
 	}
 	return out
 }
@@ -324,8 +332,8 @@ func mcpSwitch(ctx context.Context, sub, ref, server, tool string, yes bool, std
 	}
 	c, err := mcpRunContract(dir)
 	if err != nil {
-		message(stderr, "", 0, 0, "tego "+name+": the run's contract: "+err.Error(), codeIO)
-		return identity.ExitError
+		// A run launched with sudo has a folder that is root's alone: the contract is the first file the person cannot open.
+		return liveRunFailed(name, dir, fmt.Errorf("the run's contract: %w", err), stderr)
 	}
 	var decl *agent.MCPServer
 	for i := range c.MCP {
@@ -344,8 +352,7 @@ func mcpSwitch(ctx context.Context, sub, ref, server, tool string, yes bool, std
 	}
 	held, _, err := runlock.ProbeLock(dir)
 	if err != nil {
-		message(stderr, "", 0, 0, "tego "+name+": "+err.Error(), codeIO)
-		return identity.ExitError
+		return liveRunFailed(name, dir, err, stderr)
 	}
 	if !held {
 		message(stderr, "", 0, 0, fmt.Sprintf("tego %s: %s is not running, so a live switch would apply to nothing; "+

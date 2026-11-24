@@ -22,7 +22,7 @@ Tego on this machine, step by step:
         run: r-f16d05ec-0dmsa61z34x6o-b88krx
         why this one: the newest ended run under a contract, checked against ~/.tego/chain.log
 Not known:
-  - agents Tego never recorded: nothing here looks for them yet
+  - agents outside a scan's rules and sources, or activity between scans
   - a contract in no registry (a file given by its path) that no run used
 Next step chosen by rule enforce-done.
 --- stderr

@@ -102,7 +102,11 @@ func (r *Recorder) handleBindResult(rec *Record) {
 				rule = rt.Listen[i].RuleName()
 			}
 		} else if b.RuleIdx&bpf.PlaneRuleFSRow != 0 {
-			if rows := r.planeRows(); rows != nil {
+			if id, ok := bpf.PlaneLiveBlockID(uint16(b.RuleIdx)); ok {
+				// The bind's new name refused by a live block (ADR 0124, amendment 2026-11-21): tego_mknod_bind's floor
+				// carries the block's id under the fs-row tag, which no contract row's index reaches.
+				rule = r.liveBlockRule(id)
+			} else if rows := r.planeRows(); rows != nil {
 				rule = rows.RowName(r.rules.rt, int(b.RuleIdx&0xffff), decide.PlaneModify, 1)
 			}
 		}

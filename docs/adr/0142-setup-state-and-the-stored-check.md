@@ -39,9 +39,9 @@ Slice 1
    group made, as root too: under strace in a 6.17 KVM guest, `tego setup` as the user and as root made no `bpf()` or
    `fanotify_init` call and no `execve` but its own), in its own process: the shell's cgroup and privilege, never more. It stores one entry per
    place (`shell`, `user-manager`, `root`): the build, the boot id, the tier ("" when none runs), doctor's first fix
-   and the time. **`tego doctor` stays read-only**: scripts and monitors run it, and a read-only check that gained a
-   side effect would surprise them (the expert judge; spec §7 moves this off doctor, against the earlier dashboard
-   decision D5). The build is the version, the commit and the running executable's device, inode, size and
+   and the time. **`tego doctor` writes no stored check**. The 2026-11-18 amendment permits a short-lived placement
+   rehearsal; monitors use `--no-scope` to start no helper. The original decision to start no program is superseded
+   only for that rehearsal. The build is the version, the commit and the running executable's device, inode, size and
    modification time, so a rebuilt or reinstalled tego is another build (the run-probe cache's rule). A check of
    another boot or another build is never used. The file is written as the repo's other state files are: a new 0600
    file, synced, renamed over the old one, the folder synced; `~/.tego/state` is made 0700. The decoder is strict and
@@ -122,7 +122,8 @@ and the kernel lets this process move none there (runtime-launch case 41). What 
    first two name the command that opens a shell in the user manager's cgroup: `guide.OpenScope`, `systemd-run --user
    --scope <shell>` with `$SHELL`'s name when it is one of a fixed list (bash, zsh, fish, sh, dash, ksh, mksh, tcsh,
    csh) and on `PATH`, else `bash`, so the environment chooses among fixed words and never supplies one (rule (4));
-   none, with the reason in step 2's fact, when `systemd-run` is not on `PATH` or `$XDG_RUNTIME_DIR` holds no socket
+   none, with the reason in step 2's fact, when neither `/usr/bin/systemd-run` nor `/bin/systemd-run` is executable
+   (the shared fixed-path check, amended B3-1 fix round 1), or `$XDG_RUNTIME_DIR` holds no socket
    of the user's manager (as after `su` or `sudo -u`). The dashboard, which describes no shell, names `systemd-run
    --user --scope bash`. The words say to run `tego setup` there. `here-root-only`, where only root's check can
    enforce, says that check holds a run started with sudo and names `tego doctor`; the run step's old words ("not
@@ -138,8 +139,9 @@ and the kernel lets this process move none there (runtime-launch case 41). What 
    (or the sentence alone for a root report), never `tego doctor`.
 3. **Exit 125 may end with that one `next:` line.** `tego run` refused a tier only for this cause (its tier pin
    allowing tier landlock), `tego watch` refused with `ErrBesideSubtree`, and `tego test` whose runs all failed with
-   the probe saying this cause end with it (`TestEveryRunCommandRefusesBesideTheUserManager`). The error line names
-   the cgroup; it did not name the command that opens a shell in it, which a newcomer cannot guess. Hints stay off
+   the probe saying this cause end with it, when automatic scope entry cannot complete
+   (`TestEveryRunCommandKeepsThePlacementFallback`). The error line names the cgroup; it did not name the command that
+   opens a shell in it, which a newcomer cannot guess. Hints stay off
    off a terminal, with `TEGO_HINTS=off` and inside a governed run.
 4. **What step 2 says.** "Only records" is gone: a shell beside the cgroup starts no run, not even `tego watch`, and
    says so; other blocked checks say "no tier enforces from ...". `tego setup` computes the object before it stores
@@ -163,7 +165,7 @@ found two side paths where the `next:` lines still pointed back, plus three wron
    process in the login's cgroup. On Fedora 44 sudo's PAM stack (`pam_systemd` through `system-auth`) opens a logind
    session for root when the caller has none and moves sudo into it: measured from a `systemd-run --user` scope
    (`0::/user.slice/user-0.slice/session-c3.scope`), expected but not measured from a desktop terminal. So
-   `sudo tego agents` sent the person to open the scope they were in, again and again. Ubuntu and AlmaLinux keep the
+   `tego agents` run through sudo sent the person to open the scope they were in, again and again. Ubuntu and AlmaLinux keep the
    scope; every guest keeps an SSH or console session. The root check (`rootBeside`) now reads the cgroup of the
    shell sudo was typed in: the process's own, unless it lies in root's own slice (`/user.slice/user-0.slice/`), then
    the nearest ancestor's outside it (`/proc/<pid>/stat`, read only, at most 16 steps). A chain it cannot read is not
@@ -185,7 +187,7 @@ found two side paths where the `next:` lines still pointed back, plus three wron
    logind folder (`config.LogindRuntimeRoot`/`<uid>`, a directory, not a link, owned by the uid, holding
    `systemd/private` or `bus` owned by the uid) and names `XDG_RUNTIME_DIR=/run/user/<uid> systemd-run --user
    --scope <shell>`: a constant folder and a number, never the environment. Otherwise it says why, as before.
-4. **Tested, not claimed.** `TestTheNextLinesNeverLoopFromAnyPlace` gains these places: `sudo tego agents` from SSH
+4. **Tested, not claimed.** `TestTheNextLinesNeverLoopFromAnyPlace` gains these places: agents run through sudo from SSH
    and from the scope, built from the cgroups the guests logged (on Fedora 44 only the command's own cgroup was
    logged, so the chain of sudo, its monitor and the shell is reconstructed); the no-manager user on a fresh, a
    half-done and a finished machine; and the same user after linger. It checks that no `next:` command is the one
@@ -207,7 +209,7 @@ stood in the way. What changed:
 
 1. **Whose shell the scope command opens.** After linger, point 3's command,
    `XDG_RUNTIME_DIR=/run/user/<uid> systemd-run --user --scope bash`, is read by the administrator who typed
-   `sudo -u svc tego setup`, in their own shell. Typed there it opened the administrator's own scope on Ubuntu and
+   setup run as svc through sudo, in their own shell. Typed there it opened the administrator's own scope on Ubuntu and
    Alma (`run-u0.scope` under `user@1000.service`; `tego setup` there said ready, for the wrong user) and failed on
    Fedora (`Failed to connect to user scope bus via local transport: Operation not permitted`). With `sudo -u svc` in
    front it opened `svc`'s shell, where `tego setup` was ready at tier 1, on all three. `guide.OpenScope` now returns
@@ -235,7 +237,7 @@ stood in the way. What changed:
    effective uids differ gets no command. Doctor's fix for a user with no manager (`cgroup.NoManagerFix`) names the
    same command (`cgroup.ScopeAsCommand`), since an administrator reads it. So does the placement refusal's remedy
    (`cgroup.PlacementFix`, from `FS.CanPlace`) when the reader is another user (`config.ReadByAnother`): after linger
-   it is the `fix:` line of `sudo -u svc tego doctor` on stdout and the end of the error line of `tego run`, `watch`
+   it is the `fix:` line of doctor run as svc through sudo on stdout and the end of the error line of `tego run`, `watch`
    and `test`, and it said the bare `systemd-run --user --scope bash` beside a `next:` line that named `sudo -u` (the
    review's M1). `TestIntegrationThePlacementFixReadByAnotherUserNamesSudo` runs that path with no stub, as root in a
    KVM guest (integration pass 5, 2026-11-11): a process of uid 4242 started by one of uid 4243 got the `sudo -u
@@ -267,6 +269,80 @@ stood in the way. What changed:
    the `fix:` line to the same command. Only the digits-only refusal and the `sudo -u` command (with `tego setup` in
    place of the interactive `bash`) were run in guests, both before this change; the printed words were not.
 
+## Amendment, 2026-11-11 (acceptance 4): every command the administrator reads, and the last words
+
+A fourth guest walk (an administrator setting a service account up by Tego's lines only) found four more lines that
+were right for the account and wrong for the person reading them.
+
+1. **A Tego command in a `next:` line carries `sudo -u <account>` when another user reads it.** After the account was
+   set up, setup run as svc through sudo ended with `next: tego receipt <id>`. The administrator types that in their own
+   shell, where it reads their record (`no such run under /home/<admin>/.tego/runs`, exit 2). `As.ScopeAs` (the
+   account's word, as `sudo -u` reads it) is now set whenever another user reads the line from outside the user's
+   user manager's cgroup, whether or not a command opens a shell there (it was set only with `As.Scope`), and
+   `guide.ForReader` writes any command that begins `tego ` with sudo's target-account option and
+   the running binary's absolute path (`guide.SelfPath`: `os.Executable`, links followed, quoted, read once, never `PATH`),
+   since sudo replaces `PATH` with its `secure_path`, which has no `~/.local/bin` and, on AlmaLinux 9.8, no
+   `/usr/local/bin` (measured). A command after a folder change uses a shell as the target account to change folder
+   and execute that checked binary, so the folder change is made as the account too (typed in the reader's shell the `cd` fails when the
+   account's home is mode 0700); `sudo -D` would need sudo 1.9.3 and the `runcwd` option. When the path cannot be vouched
+   for, the step names no command and says why. `selfbin.Named` decides, for the guide's lines, the CLI's root hints
+   (`sudoSelf`, `sudoTego`) and doctor's fix lines (`sudoDoctor`): the path is absolute, links followed, valid UTF-8 and
+   unchanged by `record.Printable` (no control, no bidirectional or other format character; `selfbin.Safe`), a regular
+   file with the device and inode of `/proc/self/exe` (a binary unlinked and replaced by a directory or another file at
+   the same path is refused), and executable by this process. No root line falls back to `sudo "$(command -v tego)"`,
+   which selects whatever the reader's `PATH` finds first. The `sh -c` form needs a sudoers grant that lets the reader run
+   a shell as the account; Tego cannot read the policy, so the guidance line says the line may be refused.
+
+   A pasteable line is never altered to make it printable: `record.Printable` wrote a newline in a recorded folder's name
+   as backslash and n, so `tego learn --save` named another folder. `writeHint` and `runHint` decline a command that
+   `selfbin.Safe` refuses ("a name in the command that comes next cannot be shown safely"), learn says "this run's folder
+   name cannot be shown safely" and gives no `cd` line, and the guide declines the same. The guide's next step passes through it (`facts.next`), and so does the CLI's `next:` block (`writeHint`, and
+   doctor's check-again block) with `guide.ReaderAccount`: false for root, for a process inside the user manager's
+   cgroup (the shell the person opened there, where bare is right), and wherever neither fact of
+   `config.StartedByAnother` can be read. A `sudo` or `systemd-run` command is left alone. `tego setup --json` carries
+   the account in `as.scope_as`, which may now stand beside a `scope_missing`. The first line the administrator types
+   runs setup in the service account's login shell (docs/INSTALL.md, "A service account"): the account needs its own copy,
+   since a copy in the administrator's home is closed to it when that home is mode 0700.
+2. **The words for a shell `sudo` or `su` opened say how to leave it.** Step 2's fact, the guidance line of run, watch,
+   test and doctor, and the `fix:` lines (`cgroup.PlacementFix`, `cgroup.NoManagerFix`) add "if you are in one, type
+   exit first". In a `sudo su -s /bin/bash svc` shell, `sudo -u` fails with "svc is not in the sudoers file".
+3. **`tego run`, `watch` and `test` name the linger command when no user manager runs.** They exit 125 with the `fix:`
+   text at the end of the error line, and ended with no `next:` block, though `tego setup` and `tego doctor` print one.
+   All four now print the same block (`noManagerHint`): `sudo loginctl enable-linger <user>`, or for a name systemd
+   refuses a block with no command. A run pinned above tier landlock gets none.
+4. **No socket in the logind folder.** When the user manager runs (Detect found `user@<uid>.service`) but
+   `/run/user/<uid>` holds no socket of it that the user owns, `systemd-run --user` cannot reach it from another
+   user's shell with `XDG_RUNTIME_DIR=/run/user/<uid>`. The `next:` line named no command there and the `fix:` line
+   still named the `sudo -u` command, which fails. The placement remedy (`placementRemedy`) now says the manager keeps
+   no socket and that no command opens a shell in it from the reader's, and the step and the CLI's guidance name
+   whose manager it is (`ScopeAsMissingText`) instead of "your user manager".
+
+**Measured** (AlmaLinux 9.8, kernel 5.14.0-687, systemd 252, one KVM guest, a build of this branch; its sudo has the
+strict `secure_path`, so the binaries were installed in `/usr/bin`): run, watch and test launched as svc through sudo
+before linger each ended with the `sudo loginctl enable-linger svc` block (point 3). After linger the step's words
+carried "if you are in one, type exit first" (point 2). In the account's own scope shell setup, watch, learn and run
+ended with bare `next:` commands, as before. Back in the administrator's shell, setup run as svc through sudo ended
+with a receipt command naming svc and run `4mr2qb`, and step 2 said "it runs as svc (sudo -u), not as you" (point 1).
+Typed as printed it printed the receipt, exit 0. After deleting `/run/user/1001/systemd/private` and
+`/run/user/1001/bus` by hand while `user@1001.service` stayed active, setup, doctor and run as svc named no command
+in the `fix:` and `next:` lines and said whose manager it is (point 4).
+
+A second walk on the same guest after the review of 2026-11-11 used build `d1ee2972e`, both homes mode 0700 and
+sudo's `secure_path` `/sbin:/bin:/usr/sbin:/usr/bin`. A bare Tego program name after sudo's svc option failed with
+"command not found". The administrator's default installed copy under `/home/tego/.local/bin` failed with
+"Permission denied". With the built binaries copied into `/home/svc/.local/bin` (the installer itself was not run),
+every printed line was typed as printed. Setup named that copy's absolute path after sudo's svc option,
+then the scope shell whose PATH held that folder. Back in the administrator's shell, the receipt command
+named svc, the same checked binary and run `xc8d8c`, and printed the receipt. With the user manager stopped,
+learn run as svc ended with a shell command that changed to `/home/svc/myagent` as svc and executed that
+checked copy with `run myagent2`. Typed as printed it ran in the folder as svc and printed Tego's refusal
+and the linger line. The old folder change in the administrator's shell failed with "Permission denied".
+
+Not run in a guest, and so not proven: the `su -c` and interactive `sudo su`
+shells, zsh, the two other distributions, a name systemd refuses. Unit tests check the wording and the formatting of those
+lines with injected answers; they can pass while a real shell or sudoers file behaves otherwise (the strict `secure_path`
+did exactly that until the review of 2026-11-11 found it).
+
 ## Left for later slices
 
 The per-agent form (`tego setup --agent <name>`, `tego watch --name`, `--require <step>` with exit 211; spec slice
@@ -296,10 +372,17 @@ with runs it sits under the headline, folded to one line once every step is done
   not-known line is text through html/template.
 - **Cost.** The page reuses the object while the number of runs, of ended and live runs, the newest run,
   `check.json`'s size and time and the build it names are unchanged, for at most 15 s, so a live run's lines do not
-  compute it again each second; a contract just saved can take that long to show. Since the object is shared by every
-  viewer, it is computed apart from the request that asked for it (its own 20 s bound): a request that ended would make
-  a contract "not compile" and a record "not known" for the next viewer. An object whose bound ran out is shown to
-  that request only and not kept.
+  compute it again each second; a contract just saved can take that long to show. Computation belongs to the page request and its helper session,
+  with at most 20 s. A departing viewer cancels that work. Cancelled or failed results are never memoized,
+  so the next viewer computes again. Fix round 4 removes the earlier detached computation.
+  Scan freshness and cache-key checks use the caller's captured evaluation time, including through the helper.
+  An explicit evaluation time is preserved; helper requests without one are refused.
+  Amended 2026-11-13: an object with any not-known step is also shown only to that
+  request. The previous memo is discarded before recomputing, so returning to an earlier key cannot resurrect its
+  older result. In particular, a run's end can be read before its first chain anchor is published; a subsequent
+  refresh must verify the newly available anchor rather than reuse that temporary uncertainty. A missing anchor
+  stays not known and a corrupt record stays blocked. Known objects keep the existing 15 s reuse and 20 s compute
+  bound; this does not make the reuse key detect every change to a known object's sources.
 - **Parity.** `TestOverviewGuideParityWithSetup` renders the Overview for each of the eight `guidetest` fixtures and
   holds every step, the next step and the not-known lines to the object in `internal/guide/testdata`, which `tego setup
   --json` prints for that tree (`TestSetupParityWithTheFiles`).
@@ -343,3 +426,464 @@ question (`TestGuideQuestionKeyWalks`). Not proven: a real agent's sign-in, whic
 - `tego setup` writes one new file in `~/.tego/state`; nothing else in Tego reads it yet.
 - The contract step compiles each registry entry (the first 20 in name order) on every `tego setup`, offline, as
   `tego rule` does; the record and enforce steps each verify one run's record, as `tego receipt --verify` does.
+
+## Amendment, 2026-11-11 (B3-1): run commands open their own user scope
+
+The earlier decision to leave scope entry to the person is superseded for `tego run`, `tego watch` and `tego test`.
+`tego setup` and `tego doctor` still check the shell that invoked them. They neither move it nor start a program.
+
+1. **When and where.** Before command startup, ask `cgroup.Detect(os.Getuid()).CanPlace()`, the same D3 question
+   doctor asks and the guide's placement cause comes from. Only `ErrBesideSubtree` permits automatic entry. There
+   is no SSH, cgroup-name or environment heuristic. A root launcher and an already usable cgroup need no move.
+   `tego run --service` keeps its existing unit and lifetime. All three run commands try once, before a contract
+   generated by watch, test decoys, configuration restoration, a run id, ledger append or run cgroup exists.
+2. **The invocation.** Start `/usr/bin/systemd-run` or `/bin/systemd-run`, whichever exists and is executable,
+   with `--user --scope --quiet --no-ask-password -- <checked-tego-path> __user_scope`. Obtain that absolute
+   path through the shared `selfbin.Path` check: a regular executable with the running binary's device/inode and
+   a path that can be shown safely. An unreadable, unsafe or replaced path refuses the handoff. Neither executable
+   is looked up on PATH. Two `sys.Pipe2(O_CLOEXEC | O_NONBLOCK)` owners supply the inherited pipes, with nonblocking
+   descriptors retained for cancelable `os.File` I/O. They carry the original argv and environment with gob (including empty arguments, dollar signs and non-UTF-8 bytes), then readiness and one
+   byte of permission to proceed. Passing the invocation out of band avoids systemd 254+'s argument expansion.
+   The runner gets this uid's canonical `XDG_RUNTIME_DIR` and no inherited session-bus address; the re-entry restores
+   the caller's original environment, removing systemd's added variables, before ordinary command startup.
+3. **Terminal and lifetime.** Stdin, stdout and stderr are the original descriptors. The working directory is
+   inherited. No new session, process group, pty or stream copier is introduced. A scope retains the caller's
+   execution environment ([systemd-run documentation](https://www.freedesktop.org/software/systemd/man/latest/systemd-run.html));
+   systemd 252's [scope implementation](https://github.com/systemd/systemd/blob/v252/src/run/run.c) execs the
+   command without closing these descriptors. These source properties do not prove a complete login: actual
+   terminal, foreground, interrupt and job-stop behavior is **owed in a guest** on all three distributions.
+   The waiting parent observes `Wait4(WUNTRACED)` and extends R9b's existing job-control mechanism through
+   `runtime.NewJobControl` / `JobControl.Follow`, sharing `answerJobStop` with the direct run. When the launcher
+   stops itself after a raw-mode agent stop, the parent also stops so the login shell sees its job stop. On continuation it restores
+   the appropriate foreground group and continues the launcher, using the same terminal-mode rules as a direct run.
+   Before stopping with an agent in a separate foreground group, the launcher gives the foreground to its own group
+   so its waiting parent can observe and follow it; after `fg`, it restores the original child foreground group.
+   Each follower restores modes only if it changed them before stopping, so an outer parent cannot overwrite
+   raw modes the inner launcher has already restored.
+   Fix round 2 shares TakeStop's existing `procStatState` check through `launch.StillStopped`: the parent
+   follows a saved stop only while the unreaped launcher is still in state T. A whole-job Ctrl-Z followed
+   by `fg` can otherwise deliver an old stop after both processes continued and stop the parent again.
+   INT/QUIT are not forwarded when this process group is foreground on its controlling terminal; that check uses
+   the controlling terminal independently of stdin, so piped stdin cannot turn one terminal interrupt into two.
+   `os/signal` provides no siginfo, so the outer process cannot tell the source of an INT or QUIT, and it no
+   longer forwards them by `kill(2)` when a launcher of this build listens (interrupt provenance, amended
+   2026-11-20, A51). The two processes share one stream socket (descriptor 5 of the launcher, announced by an
+   `H` frame and acknowledged `A`) and both count their INT and QUIT arrivals. The outer process notes each
+   arrival (`N`); after each arrival of its own or a note, the launcher drains its pending signals behind a
+   real-time marker (signal 40) it sends itself, asks (`Q`) for the outer process's counts, which that process
+   gives after the same drain (`R`), and takes for each signal the larger of the two counts since the last
+   question. A group-directed INT, seen by both, is one interrupt; one only a process saw is one; two sends
+   are two, so a deliberate repeat still escalates, and no time window decides anything. Where no launcher
+   listens (an older build, a failed socket) the outer process forwards by signal as before. Two deliberate
+   sends to two different processes within one round trip read as one, and a group send whose second copy lags
+   the first by more than that round trip reads as two (the kernel queues a group send to all members in one
+   call, so this needs the sender preempted in it); an unanswered question times out after one second and the
+   launcher counts its own arrivals. The exact real-launcher result is owed in a guest. Exit status passes through.
+   Before re-raising a child signal the parent resets the disposition, including signals Go handles specially;
+   if still alive after the raise it returns 128 plus the signal number, never an unbounded wait.
+   The starting OS thread stays locked until the child is joined. `Pdeathsig=SIGTERM` requests the launcher's normal
+   `stop_grace` and `run_end` path if the parent dies, including at landlock where there is no root-tier reaper.
+   If the launcher is unresponsive, parent death adds no forced-kill deadline; existing tier-specific orphan cleanup
+   and a later sweep remain the fallback. `launcher_pid` and `launcher_start_ns` belong to the re-entered process,
+   whose runtime creates them. No record schema changes.
+4. **Guard and security.** Re-entry is a hidden command with an in-memory, single-use context mark, never an
+   environment variable. Before any scope request, `runscope.InRun` must show this process outside every run;
+   membership, look-alikes, an unreadable file or a private cgroup namespace all suppress automatic entry. The
+   existing nested run path then keeps the enclosing run's restrictions. Re-entry itself again requires known
+   outside membership and successful `CanPlace`, then waits for the parent's go-ahead before dispatch. The two
+   inherited descriptor sites are listed with their entry-path and lifetime justification in `tools/fdcheck/inherited.txt`. An agent
+   that preloads environment values or directly invokes the hidden command gains no move and no placement bypass.
+   ADRs 0070 and 0113 continue to refuse agents the user manager's sockets; no exception is added.
+5. **Visible behavior and the guide.** On a committed handoff stderr says `tego: opened a user scope for this run`
+   once, even when hints are off. Successful entry prints no instruction to open one by hand. Setup and doctor
+   describe their original shell; run steps can open their own scope. The manual shell remains useful to check
+   that shell with setup or doctor, and as the fallback if automatic entry fails. Public docs and the installer
+   retain the manual line and mark complete-login validation as owed in a guest.
+6. **Failure and ADR checks.** Missing systemd-run, a refused manager, a child still outside, pipe failure or a
+   ten-second startup timeout refuses the run with exit 125 and the existing placement `next:` block. The child
+   cannot create run state without the go-ahead; timeout closes its pipes, kills it and joins it. Context cancellation
+   during startup exits 130 without placement advice, after killing and joining the child. A manager that
+   does not exist takes the old path and keeps its existing linger advice. Tego never enables lingering. Once
+   committed, the timeout ends and the actual launcher's exit, even 125, is final; no second run is attempted.
+   ADR 0020: the real launcher's pid and tier-specific reaper remain authoritative; parent death requests a clean
+   stop through SIGTERM, with the unresponsive-launcher limit above. A manager stop or logout can end the scope
+   as with a manual shell, and lingering is not enabled here. ADR 0021: the one new process start
+   passes through `proc.Start` before any marks or run state, with its lint exclusion and reviewed start-site row.
+   ADRs 0070 and 0113: the pre-move membership guard prevents this convenience from becoming a bus escape inside a
+   governed run. The three distributions' actual manager, terminal, signal and cleanup behavior is owed in guests;
+   unit stand-ins establish only the invocation, guard, handshake, timeout and exit plumbing.
+
+
+## Amendment 2026-11-12 (B3-3): finish the sudo command audit
+
+Product root command builders use `selfbin.Sudo`, which uses `Named`; the guide keeps `Named` directly.
+The initial B3-3 inventory missed the adopt privilege refusal. Fix round 1 adds that hint through `sudoSelf`,
+beside the privileged-copy refusal, root launch with no target account and lost-adoption recovery lines.
+An unsafe or unavailable path gives a reason and no command. `guide.ForReader` keeps the same `Named` check for another account,
+including its quoted `sh -c` form when a folder change is needed. The source inventory test
+walks production Go files under `internal/`, including other build tags, and requires reviewed helper calls.
+Source and documentation regression checks guard the printed root commands.
+
+Install both binaries in the service account's own `~/.local/bin`, as the templates expect,
+or adjust their absolute ExecStart paths for a root-owned shared installation. The agent user
+unit now sets `PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin`. A manual or automatic user
+scope inherits its caller's PATH; the automatic handoff restores the original environment.
+Neither scope reads a login profile or adds a binary directory. A scope opened through sudo
+therefore inherits its secure_path unless the caller explicitly changes it. Contract env.pass
+still limits which variables reach the agent. This does not change kernel rules or records.
+
+Host source and rendering tests check command construction and refusal. Each printed line
+is still owed in a guest on AlmaLinux 9.8, Fedora 44 and Ubuntu 24.04, for both installation
+locations, quoted paths and a path with a newline or control character. The template's PATH
+must also be observed in a real user service. No guest result is claimed here.
+
+
+### Fix round 1: checked paths must resist replacement by another account
+
+`Named` checks the resolved executable and each ancestor through `/`, using non-following stat calls.
+Each owner must be root or the process effective uid. A file with group/world write bits, a world-writable
+non-sticky directory, missing metadata or an unexpected node type yields no command. Fix round 2's
+private primary/empty group exception below replaces the initial blanket directory group-write refusal.
+The reason says that safe write authority cannot be verified and asks for an installation only root or you
+can write. Failed stat is uncertainty, not proof that another account can replace the path.
+A sticky directory permits creation, but only its owner, root or a child's owner can rename that child;
+checking both owners makes a root-owned sticky `/tmp` with this user's child safe against unrelated users.
+Sticky never protects file contents. Root and the effective user remain trusted. This is a point-in-time
+check, not immutable custody after printing. In a root process, an invoking-user-owned installation may
+conservatively give no hint; it is not trusted via an unchecked environment variable.
+
+`Path`, used for immediate same-process re-entry, retains the identity, display and execute checks. The
+extra permission rule applies to `Named` for commands a person may run later. No launch refusal is loosened.
+Temp-tree tests cover safe, writable, sticky, foreign-owner and unreadable chains; ownership is injected,
+so they need no root and do not claim a second-user kernel permission measurement. Positive rendering
+tests inject an already-checked word rather than assume the shared Go build folders are safe.
+Static docs use the single reader-shell lookup form explained in INSTALL; they cannot certify a running copy.
+The documentation rule walks pages and templates and reports bad file/line pairs without per-file counts.
+The real sudo and login checks, including replacement scenarios, are owed in a guest.
+
+
+### Fix round 2: default install groups (2026-11-12)
+
+The blanket group-write refusal withheld every printed root command for the default 0775 private-group
+`~/.local/bin` layout. It also withheld Debian's root:staff 2775 `/usr/local/bin` with an empty staff group.
+Directory group write is allowed for the effective user's private primary group, or a group with no
+members and no passwd primary users, such as an empty Debian staff group. Bounded local passwd/group reads
+and the standard-library account lookup determine membership; only files-only NSS sources establish an empty
+group. When membership is unknown (directory services, unreadable or oversized files), only the effective
+user's primary gid by id is allowed, and the folder must still be owned by that user or root. Known foreign
+local members always refuse. This fallback cannot rule out an unseen account sharing that gid. Non-sticky
+group-writable folders with an access ACL or unavailable ACL metadata also refuse: a named ACL writer need
+not belong to that group. The executable itself must never be group/world writable.
+
+This intentionally loosens the printed-command refusal, including the explicit primary-gid fallback on
+uncertainty. It changes no launch decision or immediate re-entry check. Sticky and ownership checks remain.
+`TestTrustedChainDefaultInstallLayouts` covers eight accepted default-layout fixtures and five attack
+fixtures. Local database, directory-service and read-failure cases have separate table coverage. The real
+host's `~/.local/bin` chain was accepted by a read-only metadata test; its NSS configuration exercises the
+primary-gid fallback. These are host unit checks. The Ubuntu 24.04, Fedora 44 and AlmaLinux 9.8 walks remain
+**owed in a guest**; Debian, Arch and Nix fixtures are not distribution runs.
+
+## 2026-11-12: optional dashboard tour (A2; amended after fix round 1)
+
+The guide wraps the existing product pages. `/guide` chooses the first teaching
+stage whose fact is neither Done nor Skipped, ignoring any old remembered stage.
+When every stage is done or skipped it opens Enforce. An explicit `step=` or
+`guide=` changes only what the person reads. The six teaching stops are Check,
+Pick, Watch, Recorded, Review and Enforce. These names stay the same in the rail
+and source evidence; the unchanged fact and its source explain what each uses.
+Install stays in the source evidence. Pick completes when the first run is
+recorded, because the current machine-wide inputs have no separate choice fact.
+With a saved contract and no run, Pick points directly to Enforce; a skipped Watch
+also points there. An unknown or blocked recording opens Watch's diagnostic
+instruction. Watch and Recorded share the ended, verified recording fact; the
+rail says so. The original six machine facts, sources and next sentence remain
+`State.Words` and `Next`, identical to setup.
+
+The frame has one page-level heading. Its navigation landmark holds step links;
+evidence, preferences and the decision group sit outside it. On phones, All steps
+and the underlying real product page are native disclosures; the current question,
+instruction, command when runnable and one primary action come first. No page is
+cloned. The original forms, live regions and record links remain inside the real
+page. Check tells the person to run `tego setup` in a terminal; its reload action
+reads the stored result and never probes the dashboard's own cgroup. The stored
+machine fix stays escaped text. Only runnable `Next.Built` commands get Copy;
+commands containing any marked placeholder are labelled forms to fill in,
+without Copy. The terminal instruction starts as a sentence and includes the
+shared fix text without changing its source.
+
+The frame polls its own named region with bounded, cancellable requests. A verified
+ended recording says Step 4 is ready in the polite status region. When scripts
+schedule the move, the message changes to Moving to step 4, then waits about two
+seconds before advancing Watch to Recorded. It does not advance while focus is
+inside the frame. Both its own follower and the shared live updater defer guide
+region replacements while focus is inside. Enforce changes to its ended record
+and refusals. Scripts off uses a labelled reload link and never promises an
+automatic move. Leaving opens the real product page without the frame and never
+changes completion. A waiting request takes priority: the frame shows its count
+and opens Approvals as its one main action, including after a successful contract
+save. The full request identity and decisions stay in the existing product pages.
+This keeps the request reachable when the phone product disclosure is closed;
+it does not place the Run page's original request controls above that disclosure.
+
+Hide for good posts through the dashboard's normal peer, governed, Origin and CSRF
+checks and stores only an HttpOnly, SameSite Strict browser preference. It hides
+the automatic Overview offer and the Overview checklist only when no step is
+Blocked or Not known and the machine check is Done. A finished machine receives
+no Start the guide offer. Show the guide again clears the preference through the
+same POST boundary and is available in the frame, More and This machine. Guide
+remains reachable from More and the desktop header and always returns to the
+fact-based stage. No mutable completion flag or agent-selected command is trusted.
+
+Recorded and Review lead with three fact rows about recorded programs (or the
+starting command), files and connections, with explicit empty words. These phone
+rows shorten long values and point to What the run recorded for full values and
+coverage limits. The starting-command summary bounds the whole joined command to
+80 characters; single-path file rows use 64 characters and rename paths use 40
+characters each. The disclosure includes the full recorded values and opens by default when its combined lists have at most
+twelve entries. Review points to What the run recorded. Amended 2026-11-12
+(fix round 2): its instruction follows the contract state and next rule. Create contract and the
+learn command create a contract from the run. A compile command checks an
+existing contract that needs fixing; Create contract can make another. A saved,
+compiling contract offers Enforce its rules with no terminal command. Its builder
+link carries `guide=review`, opens the real form on phones, and preserves that
+fixed context through both mode links (including the selected mode), preview,
+rejected saves and successful saves. The save form accepts only the fixed
+review context. Saving clears the guide memo so source facts refresh immediately.
+A successful save names the saved contract and offers Enforce its rules unless a
+request needs an answer first. The real builder's name pattern also escapes its
+hyphen for the browser's current regular-expression mode, retaining the existing
+name rules. Review remains interim until A3 supplies the sentence editor. Pick
+uses the watch form until A4 supplies scanned agent identity. The guide remains
+machine-wide; it does not infer that every saved contract or run belongs to one
+chosen agent. The service disclosure describes the shipped unit, registry, working
+folder and environment; this change does not run or install a unit. No kernel,
+launch, contract authorization or record format changes.
+
+The retained unit checks cover rail parity over every shared guide fixture and
+assert the status attributes, current step, Leave destination and scripts-off link
+separately. The `chrome` tour checks cover the visual matrix, one visible H1 at
+1280 px, Leave and return, Watch's announcement interval and focus hold, and the
+current step's system colour in forced colours. These browser checks need explicit
+invocation and remain outside CI and the private gate (DASH-G16). Browser checks
+do not prove a screen reader spoke the status. Screen-reader, real-phone,
+Firefox and Safari checks remain open. Service and remote-shell acceptance is
+owed in a guest; package and browser fixtures are not kernel proof.
+
+## Amendment 2026-11-18: incomplete printed-command group membership (A31 / C244)
+
+The primary-gid fallback in fix round 2 is withdrawn for commands crossing authority.
+The rule has two classes. What root or another account will run is PRIVILEGED:
+the program's path is named through `Named`, the checked path, and a path that
+fails the check gives a reason and no command. What the person's own shell or
+service manager runs as that person is SAME USER: a group member able to replace
+that user's programs already has that authority, so naming the program adds
+none, and nothing is checked. This list is the whole inventory of what carries
+the installed program's path, or runs later, with its class (text revised in the
+review round of the same day, finding 7: the list is carried here and no other
+document is needed to read it):
+
+| Producer | What it makes | Class |
+|---|---|---|
+| CLI root hints: adopt refusal, agents (privilege message and the adopt it suggests next), doctor (root test, required root tier), setup refusal, privileged-copy refusal | a command to paste after `sudo` | PRIVILEGED, `Named` |
+| doctor repairs: the derived fix, fanotify, plane and hook lines | `sudo <program> machine check` | PRIVILEGED, `Named` |
+| the guide's two other-account forms (direct, and `sh -c` with a folder change) | a command to paste after `sudo -u <account>` | PRIVILEGED, `Named` |
+| root-launch guidance of a run | `sudo <program> run` | PRIVILEGED, `Named` |
+| lost-adoption guidance | `sudo <program> gc`, `sudo <program> adopt --release --pid <pid>` | PRIVILEGED, `Named` |
+| system-tool lines (`loginctl enable-linger`, `systemd-run --user --scope` for another account, `modprobe tcp_diag`) | a command that names no Tego program | no path to check |
+| the guide's same-user commands | a command the person runs as themselves | SAME USER (returns before `Named`) |
+| automatic scope entry | an immediate re-entry of the running program | SAME USER (`Path`, the identity checks only) |
+| the setup guide's dashboard start | the transient user unit `tego-dashboard` in the person's own service manager, started with the running program's path | SAME USER (unchecked by decision; the site says why) |
+| the retention timer (`retain_timer.go`: `systemd-run --user --unit=tego-gc`, `systemctl --user is-active`) | the transient user timer `tego-gc`, which runs `<program> gc` daily in the person's own service manager | SAME USER (unchecked, as the dashboard's unit; the site says why) |
+| `tego uninstall` (`uninstall.go`, `uninstall_scan.go`) | nothing: it names Tego's user units, shell start-up lines and `/etc/systemd/system/tego*` files to find and remove them; `systemctl --user` stops units in the person's own manager | makes nothing (reads and removes) |
+| the sudo lines `tego uninstall` prints for a system-wide install (`sudo rm`, `sudo rm -r`, `sudo systemctl disable --now <unit>`, `sudo systemctl daemon-reload`) | text the person types; it runs none, and a unit name outside systemd's alphabet is quoted | no path to check: system tools, and `rm` only deletes the program's file |
+| saved sign-ins | one line in the person's own `~/.bashrc` that loads their `agent.env` | SAME USER (names no program) |
+| the installer | one `PATH` line in the person's own shell profile | SAME USER |
+| a run's hook settings and its MCP relay entry | per-run settings naming the running program, read inside the run by the run's own user | SAME USER |
+| the shipped unit templates (`examples/systemd`) | user units a person copies into their own `~/.config/systemd/user` | SAME USER (a fixed `%h/.local/bin/tego`) |
+
+The product makes no system unit, no cron line and no desktop or autostart
+entry; one that root or another account would run is privileged and takes the
+checked path. A source walk (`TestRunLaterProducers`) fails on a function that
+holds a producer's words and is not classed, as `TestSudoSites` does for a
+printed sudo command.
+
+A group-writable component is accepted only with complete bounded files-only
+passwd/group evidence establishing a private primary group or an unused group,
+with the existing owner, sticky and access-ACL checks. Directory services,
+failed, truncated, oversized or malformed evidence refuse even the primary gid.
+The refusal names the folder, group and missing evidence and asks for
+`chmod g-w <folder>`, then rerunning the step. Complete default-layout acceptance
+is retained, including a 0775 private-primary-group home and empty Debian staff.
+
+Injected account facts include a second principal with the same primary gid
+visible only through the directory source. Host tests establish policy and
+rendering; an actual directory-service second principal and the real sudo/service
+walks remain owed in a guest. Measured on the fixtures: the thirteen layout
+fixtures keep eight acceptances and five refusals, and the six cases of a hidden
+principal or incomplete evidence went from six acceptances to six refusals. The
+membership lookup, as it stands after the amendments below (four reads behind
+one deadline), measured about 2 µs over in-memory files and about 44 µs over
+three real files of fixture size on the development machine; those figures say
+what the check costs and certify nothing about a directory service, which the
+check no longer asks.
+
+## Amendment 2026-11-18: group passwords (A31 / C244, review finding 1)
+
+A group that can be joined with a password is not a group whose membership is
+completely known: `newgrp` admits an account that no file lists when it gives the
+group's password. The first amendment read the member lists and ignored the
+password field, so an otherwise unused group with an active password kept the
+writable-group exception.
+
+The exception is now refused when the group's password field in `/etc/group`
+holds anything other than an empty field, `x`, or a locked form (a field that
+starts with `!` or `*`, which equals no `crypt(3)` result). `newgrp` prefers the
+shadow group file, `/etc/gshadow`, which only root can read. When the caller can
+read it, a usable password in the group's entry refuses whatever the group file
+says, an administrator or member listed there counts as a member of the group,
+and a failed, cut or malformed read refuses as incomplete evidence. The refusal
+is the named one: the folder, the group, `the group can be joined with a
+password (set in <file>)`, `chmod g-w <folder>`, and to run the step again.
+
+Residual, accepted and stated: when the shadow group file is not readable (every
+caller that is not root), the exception stays for a group whose group-file field
+is `x`, empty or locked. The default layouts of Debian, Ubuntu and Fedora mark
+every group `x`, so refusing there would refuse every default installation. A
+group password that an administrator set in the shadow group file cannot be seen
+by a normal user, and Tego then prints the command. The eight default-layout
+fixtures keep their acceptance; fixtures cover a hash in the group file, `x` with
+a readable hash, `x` with a locked or empty entry, and `x` unreadable.
+
+## Amendment 2026-11-18: no unbounded wait for account evidence (A31 / C244, review finding 5)
+
+The check asked the standard library for the caller's account before it read
+any file, and that lookup goes through the machine's name services: on an
+account served by a directory that does not answer, a refusal or a root hint
+waited without bound, even for a path with no group-writable folder.
+
+No name service is asked now. Complete files-only evidence is the only evidence
+that keeps the writable-group exception, and it names the caller's primary group
+itself (the caller's `passwd` record); when the files do not establish that, the
+exception is refused whatever a lookup would have said. The evidence is read
+only when a folder of the path is writable by its group, so any other path reads
+no account file. The local files that are read (`/etc/passwd`, `/etc/group`,
+`/etc/nsswitch.conf`, and `/etc/gshadow` where readable) share one deadline of
+two seconds. They are local files of at most 1 MiB each that read in tens of
+microseconds (44 µs for three fixture files, measured), so two seconds is ample
+for a healthy machine and short for a person waiting; a file that gives no answer in that time (an `/etc` on a mount
+that hangs) refuses, and the refusal names it: `/etc/passwd could not be read:
+it gave no answer within 2s`. A test injects a source that never answers and
+holds both properties. Reads of the installation path itself (`lstat` of each
+folder, the access-ACL query) are file-system calls with no deadline of their
+own.
+
+## Amendment, 2026-11-18: rehearse entry and retain the reporting shell
+
+Doctor, `machine check`, setup and start may rehearse entry when the existing placement check returns
+`ErrBesideSubtree` and the existing membership guard proves outside. They stay in their original cgroup and keep
+its identity. `--no-scope` on doctor and setup disables the rehearsal. A failed rehearsal prints its reason and keeps
+the in-place finding and exit. Run (except `--service`), watch, test and the exact `machine test` pair retain relocation.
+No environment variable, WSL name or SSH indicator grants entry. If `/proc/1/cgroup` is not `0::/init.scope`, entry
+is not attempted: the system manager has not been shown at the top of the visible tree.
+
+The same single process-start site and two pipes are used, with `--collect` added to the fixed runner arguments.
+The request has `Rehearse`. The child validates every environment entry and restores the first occurrence of each
+name before checking membership and placement or acknowledging readiness. Invalid names, missing `=` and NUL bytes
+refuse before commit. Reply bytes distinguish ready, invalid command, unproved outside membership, refused placement
+and invalid environment. A rehearsing child exits after its reply and never dispatches, even if sent a go-ahead.
+The waiting parent prints the scope line and sends permission only for relocation. Terminal and signal ownership
+remain the existing mechanism; its guest acceptance is separate from a protocol unit result.
+
+A successful rehearsal replaces only D3's placement failure. The caller still checks writable delegation,
+controllers, a throwaway cgroup and writable `cgroup.kill`. The D3 detail says the original shell is outside and
+entry was just shown to work. A successful stored check remains `where: shell`, with its enforcing tier and optional
+`through_user_scope: true`; `as.in_user_cgroup` continues to describe the original shell. Older check files omit the
+new key and read as false. Null or non-boolean values, or true on a root/user-manager check or a check with no tier,
+are invalid. The guide says "through a user scope" in its check fact. No root-tier or peer authority comes from this
+stored presentation field.
+
+The proposed private-cgroup-namespace outside proof is **stopped** on measured WSL 3.0.5 / Ubuntu 24.04.5:
+normal uid 1000 gets EACCES reading the namespace links of its own live service manager, whose permitted
+capabilities include CAP_WAKE_ALARM. Same uid, exact manager cgroup and a live peer pidfd do not supply the missing
+namespace identity. The existing fail-closed membership guard and peer refusals remain unchanged. Rehearsal does
+not enable ordinary WSL-shell entry under this layout. Protocol, D3 and stored-check unit tables establish their
+modeled cases; real SSH and WSL terminal acceptance remains required.
+
+*Amended 2026-11-18.* The rule that replaces the stopped proof is built (ADR 0100, amendment of the same day): the
+guard reads a three-valued answer through `Outside()` alone, in the caller and again, afresh, in the re-entered
+process; nothing of the answer travels in the request. A caller whose path shows a run is not moved and nothing is
+reported, as before. A caller beside its user's subtree that cannot be shown to be outside every run (the rule's
+unknown) is not moved either and is told why: `run`, `watch`, `test` and `machine test` exit 125 `[governed]` with
+the cause's words, and `doctor`, `machine check` and `start` print the same words once and go on to their in-place
+report. On a WSL machine an ordinary build's answer is unknown, cause `wsl-launcher-unproven`, so the entry is not
+taken there yet; that it would be taken with the gate lifted has no guest proof. *Amended 2026-11-19:* the same holds
+on WSL in the kernel's first cgroup namespace (`isolateDistroCgroup=false`), and outside WSL beyond the first
+namespace the answer is unknown, cause `system-unproven`, so the entry is not taken there either (ADR 0100).
+
+The wire command validator accepts `machine check` only for rehearsal and `machine test` only for relocation.
+Other second words under `machine` confer neither permission. The process-handshake table exercises both accepted pairs.
+
+WSL readiness is separate from a measured kernel tier. While the four containment rows in GAPS remain open,
+doctor prints one warning for each and returns finding status 1 (an unavailable `--require` remains 211). Its
+JSON includes `pending_wsl`; setup stores no ready tier or successful scope-placement claim for that report.
+The kernel release selects those diagnostic words only; it never proves outside-run membership.
+
+## Amendment, 2026-11-19 (round 4, X1): a shell outside the user manager is no blocker when entry works
+
+Measured: in a Windows 11 guest, an ordinary WSL shell (cgroup `0::/non-systemd`), the test build with the rule's
+switch on, `tego setup --json` exited 1 although doctor in the same shell said tier landlock with entry rehearsed and
+working, and `tego run` and `tego watch` exited 0 through a user scope (row `W-N3-REACH`, run 2,
+`guest-proofs/runs/windows/evidence/W-N3-REACH.log`). Two things held the check step blocked: the WSL readiness hold
+(`pending_wsl`), which made setup store no tier, and the fact for a shell outside the manager, which said only that
+"run, watch and test can try a user scope".
+
+Decision. Where the commands a person runs next (run, watch, test, start's steps) open a user scope themselves, a
+shell outside the user manager's cgroup is not a blocker:
+
+- When the rehearsal from the original shell worked, the stored check is a tier with `through_user_scope: true` (as
+  before), and the check step is done with the fact "this shell is outside your user manager's cgroup; tego run, watch
+  and test open a user scope for each run (checked)". `tego setup` exits 0, the guide goes on to the next step,
+  `tego doctor`'s last line ends with the same sentence, and `tego start` goes on to its four steps and says it.
+- When the rehearsal failed, its reason travels from the CLI to the report (`doctor.WithUserScopeFailure`,
+  `Report.UserScopeFailure`) and is stored (`scope_error`, only beside `cause: outside-user-manager`; validated like
+  `first_fix`). The step stays blocked with "this shell is outside your user manager's cgroup and tego could not open a
+  user scope from it (<reason>)", and the next step is the one fix, a shell opened in the manager's cgroup
+  (`RuleCheckOutside`), never run, watch or test, which would fail the same way. Doctor's last line and tier line say
+  the reason; its fix line is D3's.
+- With no rehearsal (`--no-scope`, or a check stored by an older build) nothing changes.
+- The WSL readiness hold above is now one switch with the rule's gate (ADR 0100, amendment of 2026-11-19, round 4):
+  doctor lists `pending_wsl` while the machine is WSL (two marks) and the gate holds there; a test build with the
+  switch on, and the commit that turns the rule on for WSL, lift both. That commit is made only when the four rows are
+  proven. *Amended 2026-11-19 (round 6):* the four rows passed and the commit is made (ADR 0100, round 6): in an
+  ordinary build on WSL with two marks setup proceeds and the stored check is a tier with `through_user_scope: true`
+  where the rehearsal worked; on one mark nothing a person sees changes, and setup still refuses at the gate.
+
+The installer's line over SSH, for a tego that opens a user scope itself, now says that run, watch and test open one
+for each run, that tego setup checks this from the shell, and keeps `systemd-run --user --scope bash` as the one fix.
+The dashboard's machine page reads runs, not the check, and its guide tour takes the guide's state, so it agrees.
+Shells inside the user manager see no change. Tests: `TestSetupOutsideTheManager`, `TestStartOutsideTheManager`,
+`TestThroughScopeWordsAgree`, `TestRehearsalFailureReachesTheCheck` (internal/cli), `TestFailedRehearsalSaysWhy`,
+`TestRehearsedReportKeepsTheShell`, `TestWSLQualificationDoesNotPromiseReadiness` (internal/doctor),
+`TestCheckScopeErrorRoundTrips` (internal/guide), and the installer test; each failed first against the earlier code
+under an overlay. Guest row: `W-N3-REACH` (setup exit 0, a supervised run).
+
+## Amendment, 2026-11-19 (round 5, Y10): the rules file is checked before a user scope is opened
+
+Measured: in the Windows guest (row `W-N3-DRIVE`, run 3) a rules file on the Windows drive was refused correctly
+(exit 125, the line naming the drive and the Linux home), but `tego: opened a user scope for this run` was printed
+first: `tego run` opened the scope, and only the re-entered process loaded the rules file. A person reads that line as
+a run that started.
+
+Decision. Every check of the rules file a command names that needs no run state is made before the command opens a
+user scope (`rulesBeforeScope`, `internal/cli/run.go`), for `tego run` and `tego watch --boundary`: the name resolved
+in the registries, the file read through `config.ReadRulesFile` (ADR 0059's file-system check), parsed and loaded with
+what it extends, exactly as the run loads it (`loadRunContract`). A refused rules file (on such a file system, missing,
+or one that does not load) is said with the run's own words and exit code, and no scope is opened. It reads the
+machine config read-only (`config.Load`) and writes nothing; it prints nothing when the file loads (the run prints its
+notices once, after the scope); a machine config that cannot be read is left to the run, which says why after
+restoring tego's own state. Checks that need the machine as it is (the compile's mount table, the tier) stay after the
+scope, where the run is. `tego test` names no rules file. Test: `TestARefusedRulesFileOpensNoScope` (a rules file on a
+drvfs stand-in by path, by name and as a watch's boundary, and a missing one: no scope opened, exit 125, the refusal's
+words; a rules file that loads goes on to the scope), red at `c012a53a0` (the scope opened in all four). The scope's
+own tests now name a rules file that loads, and `TestScopeBeforeAnyRunState` allows the read-only config load of
+`tego run` before the scope while still refusing any run state there.

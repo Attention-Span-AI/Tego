@@ -15,8 +15,8 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// ErrCaptureUnavailable is a run with a tokens, cost_usd or repeats budget whose capture mechanism could not
-// start, refused before run_start: nothing would meter its model spend, and a budget that is silently not
+// ErrCaptureUnavailable is a run whose explicitly requested uprobe capture or
+// budget capture mechanism could not start, refused before run_start: nothing would meter its model spend, and a budget that is silently not
 // enforced is the failure it exists to prevent. The CLI exits 125
 // [capture-unavailable] with the cause and the fix.
 var ErrCaptureUnavailable = errors.New("runtime: capture unavailable")
@@ -166,6 +166,16 @@ func (r *runner) uprobeCapture() bool {
 // could not start (every record: off run was passed over, and a failed forwarder was refused [budget-unmetered],
 // told to declare the models: it declared).
 func (r *runner) refuseUnmeteredBudget() error {
+	// Explicit uprobe capture cannot silently become no capture when its kernel
+	// programs cannot be checked or attached. Auto retains the existing source
+	// selection and budget checks below.
+	if r.rt.PinsUprobe() && r.rt.Capture == agent.CaptureUprobe && r.rt.Record != agent.RecordOff && r.enforcesWithProbes() && r.captureMode() != string(agent.CaptureUprobe) {
+		causes := r.unavailableCaptureCauses(false)
+		if len(causes) == 0 {
+			causes = []string{"the uprobe capture is not running for this run"}
+		}
+		return fmt.Errorf("%w: explicit capture: uprobe cannot start: %s. Fix: %s", ErrCaptureUnavailable, strings.Join(causes, "; "), captureUnavailableFix(causes))
+	}
 	budgets := meteredBudgets(r.rt)
 	if len(budgets) == 0 {
 		return nil

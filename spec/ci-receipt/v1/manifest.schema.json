@@ -1,0 +1,458 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tego.dev/spec/ci-receipt/v1/manifest.schema.json",
+  "title": "Retained CI evidence manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "receipt",
+    "record",
+    "anchor",
+    "contract",
+    "teardown",
+    "signer_check",
+    "tego",
+    "artifact",
+    "github"
+  ],
+  "properties": {
+    "schema": {
+      "const": "tego.ci-receipt/1"
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "bytes",
+        "sha256"
+      ],
+      "properties": {
+        "file": {
+          "const": "receipt.json"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "run",
+        "bytes",
+        "sha256",
+        "lines",
+        "head",
+        "ended"
+      ],
+      "properties": {
+        "file": {
+          "const": "run/events.jsonl"
+        },
+        "run": {
+          "type": "string",
+          "pattern": "^r-[0-9a-f]{8}-[0-9a-z]{13}-[0-9a-z]{6}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "lines": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "head": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "ended": {
+          "type": "boolean"
+        }
+      }
+    },
+    "anchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "sha256"
+      ],
+      "properties": {
+        "file": {
+          "const": "anchor-line.txt"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "file_sha256",
+        "compiled_hash"
+      ],
+      "properties": {
+        "file": {
+          "const": "contract.yaml"
+        },
+        "file_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "compiled_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "teardown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "sha256"
+      ],
+      "properties": {
+        "file": {
+          "const": "run-status.json"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "signer_check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "sha256"
+      ],
+      "properties": {
+        "file": {
+          "const": "signer-check.json"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "tego": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "commit",
+        "checksums_sha256",
+        "producer",
+        "signer"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "checksums_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "producer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "asset",
+            "binary_sha256"
+          ],
+          "properties": {
+            "asset": {
+              "type": "string",
+              "pattern": "^tego_[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?_linux_(amd64|arm64)$"
+            },
+            "binary_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "signer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "asset",
+            "binary_sha256"
+          ],
+          "properties": {
+            "asset": {
+              "type": "string",
+              "pattern": "^tego_[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?_linux_(amd64|arm64)$"
+            },
+            "binary_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agent_id",
+        "inventory_sha256"
+      ],
+      "properties": {
+        "agent_id": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "inventory_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "github": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "server_url",
+        "repository",
+        "repository_id",
+        "repository_owner_id",
+        "visibility",
+        "source_sha",
+        "source_ref",
+        "workflow_ref",
+        "workflow_sha",
+        "job_workflow_ref",
+        "job_workflow_sha",
+        "event",
+        "run_id",
+        "run_attempt",
+        "agent_job",
+        "signing_job",
+        "step",
+        "matrix_key",
+        "action_sha",
+        "checkout_sha",
+        "pull_request_head_sha",
+        "agent_runner",
+        "signer_runner"
+      ],
+      "properties": {
+        "server_url": {
+          "const": "https://github.com"
+        },
+        "repository": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        },
+        "repository_id": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "repository_owner_id": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "visibility": {
+          "enum": [
+            "public",
+            "private",
+            "internal"
+          ]
+        },
+        "source_sha": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "source_ref": {
+          "type": "string",
+          "pattern": "^refs/.+$"
+        },
+        "workflow_ref": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/\\.github/workflows/[^/@]+\\.ya?ml@[^@]+$"
+        },
+        "workflow_sha": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "job_workflow_ref": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/\\.github/workflows/[^/@]+\\.ya?ml@[^@]+$"
+        },
+        "job_workflow_sha": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "event": {
+          "enum": [
+            "push",
+            "schedule",
+            "workflow_dispatch",
+            "pull_request"
+          ]
+        },
+        "run_id": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "run_attempt": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "agent_job": {
+          "const": "agent"
+        },
+        "signing_job": {
+          "const": "sign"
+        },
+        "step": {
+          "const": "collect"
+        },
+        "matrix_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+        },
+        "action_sha": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "checkout_sha": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "pull_request_head_sha": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agent_runner": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "environment",
+            "image",
+            "version",
+            "arch"
+          ],
+          "properties": {
+            "environment": {
+              "const": "github-hosted"
+            },
+            "image": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+            },
+            "arch": {
+              "enum": [
+                "X64",
+                "ARM64"
+              ]
+            }
+          }
+        },
+        "signer_runner": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "environment",
+            "image",
+            "version",
+            "arch"
+          ],
+          "properties": {
+            "environment": {
+              "const": "github-hosted"
+            },
+            "image": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+            },
+            "arch": {
+              "const": "X64"
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "event": {
+                "const": "pull_request"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "pull_request_head_sha": {
+                "type": "string",
+                "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "pull_request_head_sha": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

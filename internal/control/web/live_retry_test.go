@@ -3,11 +3,8 @@
 package web
 
 import (
-	"context"
 	"os/exec"
-	"strings"
 	"testing"
-	"time"
 )
 
 // Run the served functions in node, as twin_test does, with deterministic fetches and timers.
@@ -20,21 +17,16 @@ func TestLiveRegionsRetryQuietRevision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, node, "-e", liveRetryHarness)
-	cmd.Stdin = strings.NewReader(string(src))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("node: %v\n%s", err, out)
-	}
+	runNodeHarness(t, node, liveRetryHarness, src)
 }
 
 const liveRetryHarness = `
 const assert = require('node:assert/strict'), fs = require('node:fs');
 const src = fs.readFileSync(0,'utf8');
 const init = src.slice(src.indexOf('  var sig ='),src.indexOf('  function title('));
+const askCode = src.slice(src.indexOf('  var askHeld ='),src.indexOf('  function leaveAsk('));
 const state = src.slice(src.indexOf('  function onState('),src.indexOf('  function poll()'));
-const refreshCode = src.slice(src.indexOf('  // refresh fetches'),src.indexOf('  // more puts'));
+const refreshCode = src.slice(src.indexOf('  function refresh()'),src.indexOf('  function more()'));
 const d={sig:'old',rev:1};var out=false,feed=null,deferred=false,release=null;
 var timers=[],fetches=0,fail=true,merges=0;
 function title(){} function more(){} function ago(){} function gone(r){if(r.status===401)out=true;throw Error(r.status);}
@@ -44,7 +36,7 @@ function clearTimeout(){} const location={pathname:'/approvals',search:''};
 const window={tegoLive:{}}; const body={};
 const document={activeElement:body,dispatchEvent(){},querySelector(){return {dataset:{}};},createElement(){return {set innerHTML(v){},content:{querySelectorAll(){return [{dataset:{live:'asks',h:'new'},content:{}}];}}};}};
 function CustomEvent(){} function fetch(){fetches++;const response={ok:true,text:()=>Promise.resolve('<template>')};if(deferred)return new Promise(r=>{release=()=>r(response);});return fail?Promise.reject(Error('once')):Promise.resolve(response);}
-eval(init+'\n'+state+'\n'+refreshCode);
+eval(init+'\n'+askCode+'\n'+state+'\n'+refreshCode);
 const flush=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};
 (async()=>{
  onState({sig:'pending',rev:2,pending:1});await flush();

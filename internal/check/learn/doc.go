@@ -26,21 +26,21 @@
 //     run did not reach, or answers with an address the leak rule withheld refuses the proposal (HostError). An address
 //     no name may stand for (the built-in classes and the machine config's ranges, Options.DeniedResolved) stays an
 //     address. Dangerous endpoints are never allowed, only reported: the D-Bus buses, systemd's private socket,
-//     gpg-agent and the SSH agents, the X server, the container daemons, and every socket ADR 0113's built-in refusals
-//     refuse in an enforcing run, whether or not the run made it: any unix socket under the user's runtime directory, a
-//     terminal multiplexer's or editor server's, and tego's own (compile refuses a net.allow entry for one as a
-//     contradiction).
+//     gpg-agent and the SSH agents, the X server, the container daemons, and suspicious runtime, multiplexer, editor and state paths that may overlap ADR 0113's built-ins.
+//     The recording lacks the enforcing context, so learn advises checking on the agent's machine without
+//     claiming that a built-in certainly refuses those paths.
 //   - limits are suggested in comments from the run's resource peaks, never written as a limit.
 //
 // A place successfully contacted next to a successful open of a secret for reading is not allowed (leak.go): the dashboard's "secret read,
 // then send" verdict, read from the same lines below the control layer, leaves such an address out and says so; the
-// rule goes by names and closeness and has limits, which leak.go and the proposal state. The dashboard, which holds a
+// rule goes by names and closeness and has limits, which leak.go and the proposal state. The optional learn key
+// preserves the exact withheld TCP/UDP endpoints through compile, as editable history, never a permission. The dashboard, which holds a
 // verdict of its own, turns it off with Options.LeaveLeaksToCaller. The proposal also says what it leaves open: env (it
 // writes no env section) and reads.
 //
 // The record is the agent's own behaviour, so every string taken from it is checked before it is written into the
 // proposal: one that is not a plain path or endpoint is reported, never copied into a list.
 //
-// Imports: internal/check/internal/mirror, internal/check/secretpath, internal/check/syslookup, pkg/spec
+// Imports: internal/check/mirror, internal/check/secretpath, internal/check/syslookup, pkg/spec
 // Must not import: internal/runtime
 package learn

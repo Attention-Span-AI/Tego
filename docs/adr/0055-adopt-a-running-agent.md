@@ -388,7 +388,7 @@ release the same write outside the workspace succeeded again.
    is its reaper's (`tego __adopt-reap`, a helper started before the move, as ADR 0020's): it releases the tree, writes
    `orphaned`, removes the scope and purges the run's kernel state. If adopter and reaper both die, nothing records the
    agent (a boundary's plane rows go on refusing, unrecorded) until it is released: by `tego adopt --release`, or by a
-   root sweep (`sudo tego gc`), which releases it from the record as the reaper would and only then lets run_end
+   root sweep (`sudo "$(command -v tego)" gc`), which releases it from the record as the reaper would and only then lets run_end
    `orphaned` be written. Until then the run reads lost, never ended; no sweep ever kills it. *Amended 2026-10-16:* the
    sweep used to end such a run `orphaned` while the agent stayed in the scope (it looked for a launched run's
    `run-<id>.scope` only), so the ledger said the run had ended while the plane still refused. Rejected: ending it
@@ -413,6 +413,21 @@ release the same write outside the workspace succeeded again.
    crash must not end the operator's session); keeping the plane's rows until a person releases it (the plane would go
    on refusing with nobody recording the refusals, so the ledger would no longer say what happened, and nothing would
    say the run had ended). The release is never silent: run_end `orphaned` says the agent was released unconfined.
+   *Amended 2026-11-23 (N73):* the origin is gone when the agent was the only process of a transient scope
+   (`systemd-run --scope`, a desktop launcher's app scope): the service manager removes a scope the moment it is empty,
+   and each ancestor (`app.slice`, `user@<uid>.service`, `user-<uid>.slice`, `user.slice`) has controllers on for its
+   children, so the kernel refuses a process in it (EBUSY, measured on Debian 13, kernel 6.12). The release then found
+   no place and left the agent in the adoption's scope, governed by name for ever (`tego agents`, the guard's
+   `governed`) with its limits lifted. It now makes a leaf, `tego-released-<run id>` (no unit suffix: the service manager
+   owns those names), under the first of the origin's ancestors that lets one be made, and writes the tree into it
+   with the same checks (pidfd, start time, cgroup of a live thread, misplaced-pid put back). The leaf is made only for a
+   process no target took; a process still no cgroup takes stays
+   in the scope, counted, as before. *Where the leaf lives:* under a user manager (origin below `user@<uid>.service`) the
+   leaf is in the user's own subtree, a logout ends it as it would have, and it stays until that user manager stops. Directly
+   under `user-<uid>.slice` or `system.slice` it is root's: the user cannot remove it, a user manager's stop does not remove it,
+   and a session logout does not reach a process in it; the origin unit's properties (`MemoryMax`, device rules) do not
+   follow the tree into it (`TestReleaseOfALoneScopeMakesALeafUnderTheNearestAncestor`,
+   `TestReleaseLeafIsTriedOnlyWhereNothingElseTakesAndFailsClosed`).
 5. **Record-only by default; a boundary holds only what the decision plane decides.** With `--boundary`, every rule
    that cannot be added to a running process is refused, named, before anything happens: a `net:` section (b), `fs.ask`
    and `ask` (the supervisor), `env`, `models` and `capture` (the forwarder), `limits`, `gate`, `mcp`, `docker` and
@@ -508,7 +523,7 @@ release the same write outside the workspace succeeded again.
    runs, as for a missing home. Rejected: refusing the boundary for such an owner (a service account's agent could
    then never be adopted under one), and making the directory root's (the owner's runs could not write it).
    The table used to compile against the adopter's home, so under the guard's root unit every adopted agent's own
-   credentials stayed readable (the list named `/root/.ssh`), and `sudo tego adopt --uid 1001` by uid 1000 denied uid
+   credentials stayed readable (the list named `/root/.ssh`), and adoption with `--uid 1001` through sudo by uid 1000 denied uid
    1000's, while run_start claimed `fs.deny_read`. `tego adopt` compiles for the process it identified; the guard
    compiles one table per listed `--uid` at its start. The recheck before the move refuses a root whose owner changed
    since it was identified, even to another admitted uid (rule `uid`), so no agent is held to another user's lists. A
@@ -525,11 +540,11 @@ release the same write outside the workspace succeeded again.
 6. **Another user's process only when its owner is named.** `tego adopt --pid` adopts a process whose real,
    effective and saved uid are one and the same uid of: the invoking user (the user sudo ran tego for, or root when
    root runs it directly) or a `--uid` given on the line. Root naming a pid is not by itself consent to move another
-   user's agent: `sudo tego adopt --pid <pid>` adopts the operator's own, and anyone else's needs `--uid <owner>`
+   user's agent: `sudo "$(command -v tego)" adopt --pid <pid>` adopts the operator's own, and anyone else's needs `--uid <owner>`
    (refused otherwise under rule `uid`, naming the `--uid` that would admit it). A process whose three uids differ (a
    set-user-id program) is never adopted. `--release` takes no `--uid`: releasing only gives the agent back.
    Rejected: no owner check (the draft's; a root typo or a recycled pid moved another user's process) and `--uid`
-   always (`sudo tego adopt --pid` of one's own agent is the common case and its owner is already known).
+   always (`sudo "$(command -v tego)" adopt --pid` of one's own agent is the common case and its owner is already known).
 7. **The guard is the detector with `--adopt`, foreground.** `tego agents --follow --adopt --uid <uid>...` adopts each
    agent it reports outside every governed run whose real, effective and saved uid are one listed uid (root's only with
    `--uid 0`); `--adopt` without `--uid` is refused, since any local user can name a program `claude`. Each agent is
@@ -989,13 +1004,24 @@ refuses is said in a refused adoption's error, and in run_end's detail of a run 
 review*: the ended run's was only in tego's own log); a later release's is part of that release's error.
 
 **What the record says.** run_start's `limits` block carries budgets only, and has no key for
-`cpu`, `cpu_weight` or `pids`, for a launched run either; this change adds no field, so an adoption's record does not
-say which of them it applied. `run_end.resources` carries what the scope counted (`pids_peak`, `cpu_nr_throttled`,
-`cpu_throttled_usec`), as a launched run's does. Saying the applied values in the record needs a run_start field and
-is left open (GAPS C56).
+`cpu`, `cpu_weight` or `pids`, for a launched run either. *Amended 2026-11-20 (A52):* a boundary adoption that wrote any
+of them records them in a new run_start field, `applied_limits` (`cpu_max`, `cpu_weight`, `pids_max`, each as written
+into the scope; record minor 40, `MinorAppliedLimits`), written after the limits and before the move, so what the agent
+was held to is in the record and not only in the machine config that asked. A record-only adoption and an adoption
+whose table held none of the three write no block and keep their revision; a launched run's record is unchanged
+(its limits stay open). `run_end.resources` carries what the scope counted (`pids_peak`, `cpu_nr_throttled`,
+`cpu_throttled_usec`), as a launched run's does.
 
 Measured: unit tests over the fake cgroup tree and the real writer (`internal/runtime` adopt_limits_test.go,
 `internal/cli` adopt_limits_test.go and adopt_ceiling_test.go, `internal/runtime/cgroup` lift_test.go,
 `internal/watch/adopt` treetasks_test.go). Root behaviour in a guest is written as
 `TestIntegrationAdoptAppliesPidsAndCPUCeilings` and `TestIntegrationAdoptRefusesATreeOverItsPidsCeiling`
 (`internal/cli`), not yet run.
+
+## Amendment 2026-11-20 (ADR 0157): an adoption writes revision 41
+
+An adoption's `run_start` now carries `record_minor` 41, as every launch's does (ADR 0157), which includes everything
+revisions 39 and 40 allow: `applied_limits` is written as before by a boundary adoption that wrote a limit, and a baseline
+block when the table had one. It adds `run_start.home`, the passwd home of the agent's owner the adoption's table was compiled
+against, left out when the owner has none (a record-only adoption of a uid with no home). An adoption still takes no live
+block: it starts no overlay poll, so it has no net block to record addresses for.

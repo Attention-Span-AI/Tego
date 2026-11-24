@@ -473,10 +473,14 @@ type planeSkip struct {
 	names      map[string]bool // Notify entries by sysNR.Name
 	writeOpens bool            // the open family's write arm (writeFlagTest) and creat
 	truncate   bool            // truncate(2)'s notification from ABI 3
+	// recvmsg leaves recvmsg(2) out of the strict client filter's ENOSYS list (ADR 0128, amended): the plane's
+	// socket_recvmsg refuses a receive that carries a control buffer in the kernel. Only for a run with
+	// net.assurance: kernel, and only where the plane reports that hook attached.
+	recvmsg bool
 }
 
 // any reports whether the skip leaves out anything.
-func (p planeSkip) any() bool { return len(p.names) > 0 || p.writeOpens || p.truncate }
+func (p planeSkip) any() bool { return len(p.names) > 0 || p.writeOpens || p.truncate || p.recvmsg }
 
 // Plane hook names, as bpf.PlaneHook.Name spells them (internal/bpf plane.go): this package does not import the
 // objects' bindings, so the names are the contract between the two.
@@ -490,6 +494,9 @@ const (
 	HookPathMkdir    = "path_mkdir"
 	HookPathSymlink  = "path_symlink"
 	HookPathTruncate = "path_truncate"
+	// HookSocketRecvmsg refuses a receive carrying a control buffer (ADR 0128, amended): with it attached a
+	// net.assurance: kernel run's recvmsg is no longer answered ENOSYS by the filter.
+	HookSocketRecvmsg = "socket_recvmsg"
 )
 
 // planeDecided maps each fs mutation of the notify tables to the plane hooks that decide every form of it.
@@ -623,6 +630,9 @@ func buildFilter(arch Arch, o filterOpts) ([]bpf.Instruction, error) {
 		for _, s := range t.ClientDeny {
 			if o.listenersAllowed && (s.Name == "listen" || s.Name == "accept" || s.Name == "accept4") {
 				continue
+			}
+			if o.plane.recvmsg && s.Name == "recvmsg" {
+				continue // decided by the run's plane in the kernel (socket_recvmsg), as ADR 0128 says
 			}
 			prog = append(prog, bpf.JumpIf{Cond: bpf.JumpEqual, Val: s.NR, SkipFalse: 1}, bpf.RetConstant{Val: retENOSYS})
 		}
@@ -836,12 +846,17 @@ func sourceRouteTest(nr uint32) []bpf.Instruction {
 	}
 }
 
-// cloneNamespaceFlags are the namespace flags the namespace arm refuses: a new mount namespace, and a new user
-// namespace, which is what gives an unprivileged process the CAP_SYS_ADMIN a new mount namespace needs.
-const cloneNamespaceFlags = unix.CLONE_NEWNS | unix.CLONE_NEWUSER
+// cloneNamespaceFlags are the namespace flags the namespace arm refuses: a new mount namespace; a new user
+// namespace, which is what gives an unprivileged process the CAP_SYS_ADMIN a new mount namespace needs; and a new
+// cgroup or process-id namespace. The last two need CAP_SYS_ADMIN, so only a process that holds it in the run's user
+// namespace reaches them (a root-level run with setuid: true, after sudo). Such a process made a cgroup namespace
+// rooted at its own run's scope, where every cgroup path reads from that root ("0::/" for the scope itself) and the
+// run's name no longer shows, and a process-id namespace whose own procfs shows another pid 1: the two reads the
+// run-membership rule of a private cgroup namespace rests on (internal/runscope, ADR 0100 (7)).
+const cloneNamespaceFlags = unix.CLONE_NEWNS | unix.CLONE_NEWUSER | unix.CLONE_NEWCGROUP | unix.CLONE_NEWPID
 
-// namespaceTest notifies unshare(2) and clone(2) when their flags ask for a new mount or user namespace, and
-// every setns(2), and the supervisor refuses them. A Landlock domain refuses
+// namespaceTest notifies unshare(2) and clone(2) when their flags ask for a new mount, user, cgroup or process-id
+// namespace (cloneNamespaceFlags), and every setns(2), and the supervisor refuses them. A Landlock domain refuses
 // mount(2) but not the creation of a mount namespace: unshare(CLONE_NEWUSER|CLONE_NEWNS) copies the mount
 // tree into new struct mounts that carry none of tier 2's FAN_MARK_MOUNT marks, and a deny_read that
 // fanotify alone enforces (one nested in a write entry, a planted .env among them) was read there with no
@@ -854,7 +869,7 @@ func namespaceTest(t archTable) []bpf.Instruction {
 	for _, nr := range []uint32{t.Unshare, t.Clone} {
 		out = append(out,
 			bpf.JumpIf{Cond: bpf.JumpEqual, Val: nr, SkipFalse: 4},
-			bpf.LoadAbsolute{Off: offArg(0), Size: 4}, // flags: CLONE_NEWNS and CLONE_NEWUSER are low bits
+			bpf.LoadAbsolute{Off: offArg(0), Size: 4}, // flags: every CLONE_NEW* bit is in the low 32
 			bpf.JumpIf{Cond: bpf.JumpBitsSet, Val: cloneNamespaceFlags, SkipFalse: 1},
 			bpf.RetConstant{Val: retNotify},
 			bpf.LoadAbsolute{Off: offNR, Size: 4},

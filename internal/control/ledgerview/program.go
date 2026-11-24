@@ -24,6 +24,9 @@ import (
 // not known. Its slices only grow; a reader holds them cut to the run version it reads.
 type progIndex struct {
 	names []string
+	// paths is each name's program as the record gave it, the pathname the name was cut from (a name is its last
+	// element): two programs of one name in different folders are two entries, so prog:/opt/py/bin can tell them apart.
+	paths []string
 	of    []int32
 	// The pass's state, to continue it: the processes by exec_id and the process each pid is now, the names'
 	// indexes, and the last line taken (to see that a longer run is the same run grown).
@@ -58,11 +61,17 @@ var progCache = struct {
 // progs is the program index of r's lines: the cached one, extended to r's lines, when r is a run the store
 // publishes; built afresh otherwise. The slices it returns are cut to r's lines.
 func (r *Run) progs() (names []string, of []int32) {
+	names, _, of = r.progsFull()
+	return names, of
+}
+
+// progsFull is progs with each name's pathname (progIndex.paths).
+func (r *Run) progsFull() (names, paths []string, of []int32) {
 	evs := r.AllEvents()
 	if r.st == nil {
 		x := newProgIndex()
 		x.extend(evs)
-		return x.names, x.of
+		return x.names, x.paths, x.of
 	}
 	progCache.Lock()
 	ent := progCache.m[r.st]
@@ -83,7 +92,8 @@ func (r *Run) progs() (names []string, of []int32) {
 		ent.x.extend(evs)
 	}
 	n := len(evs)
-	return ent.x.names[:len(ent.x.names):len(ent.x.names)], ent.x.of[:n:n]
+	k := len(ent.x.names)
+	return ent.x.names[:k:k], ent.x.paths[:k:k], ent.x.of[:n:n]
 }
 
 func newProgIndex() *progIndex {
@@ -148,18 +158,20 @@ func (x *progIndex) exec(e *Event) int32 {
 	if e.Verdict == string(record.VerdictRefused) {
 		return pr.prog
 	}
-	name := programName(e.path, e.Target)
+	name := programName(e)
 	if selfExe(e.path) && pr.prog >= 0 {
 		return pr.prog // it starts again the program it runs
 	}
 	if name == "" {
 		return pr.prog
 	}
-	k, ok := x.ids[name]
+	full := e.Program()
+	k, ok := x.ids[full]
 	if !ok {
 		k = int32(len(x.names)) //nolint:gosec // a run names far fewer than 2^31 programs
 		x.names = append(x.names, name)
-		x.ids[name] = k
+		x.paths = append(x.paths, full)
+		x.ids[full] = k
 	}
 	pr.prog = k
 	return k

@@ -41,7 +41,7 @@ None open. Closed:
   a refused timestamp cannot hide the final record as a torn tail. Vectors 106 through 129 retain a closed final
   value with trailing garbage, an opened second object or JSON whitespace, with no anchor, an empty anchor and a
   populated anchor. They include refused timestamps and stale/recomputed whitespace digests. Vectors 127 through
-  129 retain the closed zero prefix before another digit. The suite has 129 vectors.
+  129 retain the closed zero prefix before another digit. The suite has 133 vectors.
 - Attribution names use the released Go reader's Unicode simple case folding (080, 081, 086). U+0130 and U+0131
   stay unknown member names; U+017F can name the `s` of `step`.
 - The version gate reads signed 64-bit integers (082 to 085); values 2 through 2^63-1 are newer versions, and

@@ -55,7 +55,7 @@ until you reset).
 Set `DEMO_AGENT=claude` for every subcommand. Both sides then run Claude Code under
 `contracts/claude-code.yaml`, which has the same rules for the project, Claude Code's own host
 (`api.anthropic.com`) and its own folder in each side (`claude-home`, with onboarding and permission prompts off:
-tego is the cage). Claude Code's login comes from your shell, never from a file in the demo:
+tego enforces the contract). Claude Code's login comes from your shell, never from a file in the demo:
 
 ```sh
 claude setup-token                          # once: your Pro/Max subscription as a token

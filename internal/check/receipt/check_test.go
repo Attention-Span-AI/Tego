@@ -23,14 +23,14 @@ type pair struct {
 }
 
 // boundPair writes lines as a record and its bound receipt beside it.
-func boundPair(t *testing.T, lines []line) pair {
+func boundPair(t *testing.T, lines []line, bindVersions ...int) pair {
 	t.Helper()
 	r := ledgerOf(t, lines)
-	return pair{dir: r.Dir(), receipt: receiptOf(t, r.Dir(), testBy)}
+	return pair{dir: r.Dir(), receipt: receiptOf(t, r.Dir(), testBy, bindVersions...)}
 }
 
 // fixturePair copies a frozen fixture record into a folder and makes its bound receipt.
-func fixturePair(t *testing.T, name string) pair {
+func fixturePair(t *testing.T, name string, bindVersions ...int) pair {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join("..", "..", "..", "spec", "record", "v1", "fixtures", name))
 	if err != nil {
@@ -43,18 +43,18 @@ func fixturePair(t *testing.T, name string) pair {
 	if err := os.WriteFile(filepath.Join(dir, ledger.EventsFile), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return pair{dir: dir, receipt: receiptOf(t, dir, testBy)}
+	return pair{dir: dir, receipt: receiptOf(t, dir, testBy, bindVersions...)}
 }
 
 // receiptOf makes the record in dir's bound receipt (receiptAt with no clock).
-func receiptOf(t *testing.T, dir string, by MadeBy) string {
+func receiptOf(t *testing.T, dir string, by MadeBy, bindVersions ...int) string {
 	t.Helper()
-	return receiptAt(t, dir, by, 0)
+	return receiptAt(t, dir, by, 0, bindVersions...)
 }
 
 // receiptAt makes the record in dir's bound receipt as `tego receipt --json` makes it (newer lines skipped, a price
 // table and the clock in play), written to a file beside the test's other files.
-func receiptAt(t *testing.T, dir string, by MadeBy, nowMono uint64) string {
+func receiptAt(t *testing.T, dir string, by MadeBy, nowMono uint64, bindVersions ...int) string {
 	t.Helper()
 	r, err := ledger.OpenReader(dir)
 	if err != nil {
@@ -62,7 +62,7 @@ func receiptAt(t *testing.T, dir string, by MadeBy, nowMono uint64) string {
 	}
 	defer func() { _ = r.Close() }()
 	r.SkipNewerVersions()
-	rc, err := Compute(context.Background(), r, Options{Bind: &by, Prices: flatPrices{}, Home: "/home/u", NowMonoNS: nowMono})
+	rc, err := Compute(context.Background(), r, Options{Bind: &by, BindVersion: receiptBindingVersion(bindVersions), Prices: flatPrices{}, Home: "/home/u", NowMonoNS: nowMono})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,9 +139,13 @@ func wantResult(t *testing.T, res *CheckResult, result string, exit int) {
 // TestCheckMatchesARealRecordedFixture is the happy path on a record the real Writer wrote: every check passes, the
 // result is match, exit 0, and the text says what it does not show.
 func TestCheckMatchesARealRecordedFixture(t *testing.T) {
+	forBindingVersions(t, checkMatchesARealRecordedFixture)
+}
+
+func checkMatchesARealRecordedFixture(t *testing.T, bindVersion int) {
 	for _, name := range []string{"run-fixture.jsonl", "reason-reads.jsonl", "held-reads.jsonl", "live-control.jsonl"} {
 		t.Run(name, func(t *testing.T) {
-			p := fixturePair(t, name)
+			p := fixturePair(t, name, bindVersion)
 			res := checked(t, p, testBy)
 			wantResult(t, res, CheckMatch, identity.ExitOK)
 			for _, s := range res.Checks {
@@ -165,6 +169,10 @@ func TestCheckMatchesARealRecordedFixture(t *testing.T) {
 // whose receipt_by now names another tego cannot be checked by this one (exit 125), never a pass; the same edit with
 // receipt_by kept is a mismatch naming the field.
 func TestCheckEditedPathWithReceiptByChangedCannotCheck(t *testing.T) {
+	forBindingVersions(t, checkEditedPathWithReceiptByChangedCannotCheck)
+}
+
+func checkEditedPathWithReceiptByChangedCannotCheck(t *testing.T, bindVersion int) {
 	edits := map[string]func(m map[string]any){
 		"a refused path": func(m map[string]any) {
 			obj(m, "refusals")["list"].([]any)[0].(map[string]any)["target"] = "/home/u/notes.txt"
@@ -175,8 +183,8 @@ func TestCheckEditedPathWithReceiptByChangedCannotCheck(t *testing.T) {
 	}
 	for name, edit := range edits {
 		t.Run(name, func(t *testing.T) {
-			p := boundPair(t, boundRun())
-			editReceipt(t, p.receipt, func(m map[string]any) {
+			p := boundPair(t, boundRun(), bindVersion)
+			editFactsReceipt(t, p.receipt, func(m map[string]any) {
 				edit(m)
 				obj(obj(m, "binding"), "receipt_by")["tego_version"] = "v0.0.9"
 			})
@@ -186,8 +194,8 @@ func TestCheckEditedPathWithReceiptByChangedCannotCheck(t *testing.T) {
 				t.Errorf("facts: %+v", s)
 			}
 
-			p = boundPair(t, boundRun())
-			editReceipt(t, p.receipt, edit)
+			p = boundPair(t, boundRun(), bindVersion)
+			editFactsReceipt(t, p.receipt, edit)
 			res = checked(t, p, testBy)
 			wantResult(t, res, CheckMismatch, identity.ExitFinding)
 			if s := step(res, "facts"); s.Result != StepFail {
@@ -200,12 +208,16 @@ func TestCheckEditedPathWithReceiptByChangedCannotCheck(t *testing.T) {
 // TestCheckUnknownBuildCannotCheck (S6): a development build with no commit cannot say it computes as the receipt's
 // tego did, even when the two name the same unknown build.
 func TestCheckUnknownBuildCannotCheck(t *testing.T) {
+	forBindingVersions(t, checkUnknownBuildCannotCheck)
+}
+
+func checkUnknownBuildCannotCheck(t *testing.T, bindVersion int) {
 	dev := MadeBy{TegoVersion: "dev", Commit: "none"}
 	r := ledgerOf(t, boundRun())
-	p := pair{dir: r.Dir(), receipt: receiptOf(t, r.Dir(), dev)}
+	p := pair{dir: r.Dir(), receipt: receiptOf(t, r.Dir(), dev, bindVersion)}
 	wantResult(t, checked(t, p, dev), CheckCannot, identity.ExitError)
 	dirty := MadeBy{TegoVersion: "v0.1.2+dirty", Commit: testBy.Commit}
-	p = pair{dir: r.Dir(), receipt: receiptOf(t, r.Dir(), dirty)}
+	p = pair{dir: r.Dir(), receipt: receiptOf(t, r.Dir(), dirty, bindVersion)}
 	wantResult(t, checked(t, p, dirty), CheckCannot, identity.ExitError)
 }
 
@@ -215,6 +227,10 @@ func TestCheckUnknownBuildCannotCheck(t *testing.T) {
 // what the receipt lacks; a receipt made by a build that is no exact one (+dirty, commit none) says so, not "rerun the
 // check with tego v0.1.2+dirty".
 func TestCheckReceiptNamingNoBuildSaysSo(t *testing.T) {
+	forBindingVersions(t, checkReceiptNamingNoBuildSaysSo)
+}
+
+func checkReceiptNamingNoBuildSaysSo(t *testing.T, bindVersion int) {
 	const (
 		neither   = "binding.receipt_by names no tego_version and no commit"
 		noVersion = "binding.receipt_by names no tego_version"
@@ -238,8 +254,8 @@ func TestCheckReceiptNamingNoBuildSaysSo(t *testing.T) {
 		"commit none":          {func(m map[string]any) { by(m)["commit"] = "none" }, "tego v0.1.2 (commit none), which is no exact build"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			p := boundPair(t, boundRun())
-			editReceipt(t, p.receipt, c.edit)
+			p := boundPair(t, boundRun(), bindVersion)
+			editFactsReceipt(t, p.receipt, c.edit)
 			res := checked(t, p, testBy)
 			wantResult(t, res, CheckCannot, identity.ExitError)
 			mb, facts := step(res, "made_by"), step(res, "facts")
@@ -254,8 +270,8 @@ func TestCheckReceiptNamingNoBuildSaysSo(t *testing.T) {
 		})
 	}
 	// A receipt of another exact build still names it, to rerun the check with.
-	p := boundPair(t, boundRun())
-	editReceipt(t, p.receipt, func(m map[string]any) { obj(obj(m, "binding"), "receipt_by")["tego_version"] = "v0.1.9" })
+	p := boundPair(t, boundRun(), bindVersion)
+	editFactsReceipt(t, p.receipt, func(m map[string]any) { obj(obj(m, "binding"), "receipt_by")["tego_version"] = "v0.1.9" })
 	res := checked(t, p, testBy)
 	wantResult(t, res, CheckCannot, identity.ExitError)
 	if mb := step(res, "made_by"); !strings.Contains(mb.Why, "rerun the check with tego v0.1.9") {
@@ -265,12 +281,16 @@ func TestCheckReceiptNamingNoBuildSaysSo(t *testing.T) {
 
 // TestCheckFindsAnAddedKey (M2): a key the record's own receipt does not have is a mismatch.
 func TestCheckFindsAnAddedKey(t *testing.T) {
+	forBindingVersions(t, checkFindsAnAddedKey)
+}
+
+func checkFindsAnAddedKey(t *testing.T, bindVersion int) {
 	for _, edit := range []func(m map[string]any){
 		func(m map[string]any) { m["verified"] = true },
 		func(m map[string]any) { obj(m, "binding")["note"] = "checked by the CI job" },
 	} {
-		p := boundPair(t, boundRun())
-		editReceipt(t, p.receipt, edit)
+		p := boundPair(t, boundRun(), bindVersion)
+		editFactsReceipt(t, p.receipt, edit)
 		res := checked(t, p, testBy)
 		wantResult(t, res, CheckMismatch, identity.ExitFinding)
 		if s := step(res, "facts"); s.Result != StepFail || !strings.Contains(s.Why, "not in the record's receipt") {
@@ -282,7 +302,11 @@ func TestCheckFindsAnAddedKey(t *testing.T) {
 // TestCheckRefusesADuplicateKey (M2): a second refusals object, which one JSON reader keeps and another drops, is a
 // mismatch however the rest reads.
 func TestCheckRefusesADuplicateKey(t *testing.T) {
-	p := boundPair(t, boundRun())
+	forBindingVersions(t, checkRefusesADuplicateKey)
+}
+
+func checkRefusesADuplicateKey(t *testing.T, bindVersion int) {
+	p := boundPair(t, boundRun(), bindVersion)
 	data, err := os.ReadFile(p.receipt)
 	if err != nil {
 		t.Fatal(err)
@@ -300,8 +324,12 @@ func TestCheckRefusesADuplicateKey(t *testing.T) {
 
 // TestCheckFindsAnEditedReceiptNumber: a number edited with the binding kept is a mismatch naming the field.
 func TestCheckFindsAnEditedReceiptNumber(t *testing.T) {
-	p := boundPair(t, boundRun())
-	editReceipt(t, p.receipt, func(m map[string]any) { obj(m, "refusals")["total"] = 0 })
+	forBindingVersions(t, checkFindsAnEditedReceiptNumber)
+}
+
+func checkFindsAnEditedReceiptNumber(t *testing.T, bindVersion int) {
+	p := boundPair(t, boundRun(), bindVersion)
+	editFactsReceipt(t, p.receipt, func(m map[string]any) { obj(m, "refusals")["total"] = 0 })
 	res := checked(t, p, testBy)
 	wantResult(t, res, CheckMismatch, identity.ExitFinding)
 	if s := step(res, "facts"); !strings.Contains(s.Why, "refusals.total: receipt 0, record 1") {
@@ -311,7 +339,11 @@ func TestCheckFindsAnEditedReceiptNumber(t *testing.T) {
 
 // TestCheckFindsAnEditedLine: a record edited after its receipt was made breaks the chain at that line.
 func TestCheckFindsAnEditedLine(t *testing.T) {
-	p := boundPair(t, boundRun())
+	forBindingVersions(t, checkFindsAnEditedLine)
+}
+
+func checkFindsAnEditedLine(t *testing.T, bindVersion int) {
+	p := boundPair(t, boundRun(), bindVersion)
 	path := filepath.Join(p.dir, ledger.EventsFile)
 	data, _ := os.ReadFile(path)
 	if err := os.WriteFile(path, bytes.Replace(data, []byte("/home/u/.bashrc"), []byte("/home/u/.zshrc_"), 1), 0o600); err != nil {
@@ -328,19 +360,23 @@ func TestCheckFindsAnEditedLine(t *testing.T) {
 // new receipt from it. The pair matches itself, so it gets its own result, match-unended, and a first line saying
 // there is no run_end; the original receipt against the cut record is a mismatch.
 func TestCheckTruncatedRecordWithARecomputedReceipt(t *testing.T) {
-	p := boundPair(t, boundRun())
+	forBindingVersions(t, checkTruncatedRecordWithARecomputedReceipt)
+}
+
+func checkTruncatedRecordWithARecomputedReceipt(t *testing.T, bindVersion int) {
+	p := boundPair(t, boundRun(), bindVersion)
 	original := p.receipt
 	dropLast(t, filepath.Join(p.dir, ledger.EventsFile))
 
 	res := checked(t, pair{dir: p.dir, receipt: original}, testBy)
 	wantResult(t, res, CheckMismatch, identity.ExitFinding)
 
-	p.receipt = receiptOf(t, p.dir, testBy)
+	p.receipt = receiptOf(t, p.dir, testBy, bindVersion)
 	res = checked(t, p, testBy)
 	wantResult(t, res, CheckMatchUnended, identity.ExitOK)
 	var b bytes.Buffer
 	_ = res.Text(&b)
-	if first, _, _ := strings.Cut(b.String(), "\n"); !strings.HasPrefix(first, "The record has no run_end") {
+	if first, _, _ := strings.Cut(b.String(), "\n"); !strings.HasPrefix(first, "Incomplete:") {
 		t.Errorf("first line %q", first)
 	}
 	if res.Ended {
@@ -351,9 +387,13 @@ func TestCheckTruncatedRecordWithARecomputedReceipt(t *testing.T) {
 // TestCheckLiveReceiptAgainstALongerRecord: a receipt made while the run was live does not match the record the run
 // went on to write.
 func TestCheckLiveReceiptAgainstALongerRecord(t *testing.T) {
+	forBindingVersions(t, checkLiveReceiptAgainstALongerRecord)
+}
+
+func checkLiveReceiptAgainstALongerRecord(t *testing.T, bindVersion int) {
 	lines := boundRun()
 	short := ledgerOf(t, lines[:len(lines)-1])
-	receipt := receiptOf(t, short.Dir(), testBy)
+	receipt := receiptOf(t, short.Dir(), testBy, bindVersion)
 	long := ledgerOf(t, lines)
 	res := checked(t, pair{dir: long.Dir(), receipt: receipt}, testBy)
 	wantResult(t, res, CheckMismatch, identity.ExitFinding)
@@ -363,19 +403,27 @@ func TestCheckLiveReceiptAgainstALongerRecord(t *testing.T) {
 // and its per-minute refusals to the clock of that moment; the check computes the receipt again at the reading its
 // time taken stands for, so the pair matches itself rather than failing on the clock.
 func TestCheckLiveReceiptMatchesItsRecord(t *testing.T) {
+	forBindingVersions(t, checkLiveReceiptMatchesItsRecord)
+}
+
+func checkLiveReceiptMatchesItsRecord(t *testing.T, bindVersion int) {
 	lines := boundRun()
 	r := ledgerOf(t, lines[:len(lines)-1])
-	p := pair{dir: r.Dir(), receipt: receiptAt(t, r.Dir(), testBy, t0+uint64(17*time.Minute))}
+	p := pair{dir: r.Dir(), receipt: receiptAt(t, r.Dir(), testBy, t0+uint64(17*time.Minute), bindVersion)}
 	wantResult(t, checked(t, p, testBy), CheckMatchUnended, identity.ExitOK)
 }
 
 // TestCheckLimitsAreTheRecords: the limits a check prints come from the record's tier, not the receipt's word, even
 // when it cannot compare the numbers.
 func TestCheckLimitsAreTheRecords(t *testing.T) {
+	forBindingVersions(t, checkLimitsAreTheRecords)
+}
+
+func checkLimitsAreTheRecords(t *testing.T, bindVersion int) {
 	lines := boundRun()
 	lines[0] = watchedStart()
-	p := boundPair(t, lines)
-	editReceipt(t, p.receipt, func(m map[string]any) {
+	p := boundPair(t, lines, bindVersion)
+	editFactsReceipt(t, p.receipt, func(m map[string]any) {
 		m["tier"] = "landlock"
 		obj(obj(m, "binding"), "receipt_by")["tego_version"] = "v0.0.9"
 	})
@@ -392,8 +440,12 @@ func TestCheckLimitsAreTheRecords(t *testing.T) {
 
 // TestCheckFindsARecordOfAnotherRun: a receipt checked against another run's record fails the run check.
 func TestCheckFindsARecordOfAnotherRun(t *testing.T) {
-	a := fixturePair(t, "run-fixture.jsonl")
-	b := fixturePair(t, "reason-reads.jsonl")
+	forBindingVersions(t, checkFindsARecordOfAnotherRun)
+}
+
+func checkFindsARecordOfAnotherRun(t *testing.T, bindVersion int) {
+	a := fixturePair(t, "run-fixture.jsonl", bindVersion)
+	b := fixturePair(t, "reason-reads.jsonl", bindVersion)
 	res := checked(t, pair{dir: b.dir, receipt: a.receipt}, testBy)
 	wantResult(t, res, CheckMismatch, identity.ExitFinding)
 	if s := step(res, "run"); s.Result != StepFail {
@@ -404,6 +456,10 @@ func TestCheckFindsARecordOfAnotherRun(t *testing.T) {
 // TestCheckFindsAChangedTornTail: bytes the chain does not cover (a torn last line) are still bound by the sha256, so
 // changing them is a mismatch of the bytes check alone.
 func TestCheckFindsAChangedTornTail(t *testing.T) {
+	forBindingVersions(t, checkFindsAChangedTornTail)
+}
+
+func checkFindsAChangedTornTail(t *testing.T, bindVersion int) {
 	r := ledgerOf(t, boundRun()[:4])
 	path := filepath.Join(r.Dir(), ledger.EventsFile)
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
@@ -412,7 +468,7 @@ func TestCheckFindsAChangedTornTail(t *testing.T) {
 	}
 	_, _ = f.WriteString(`{"v":1,"seq":4,"id":"ab`)
 	_ = f.Close()
-	p := pair{dir: r.Dir(), receipt: receiptOf(t, r.Dir(), testBy)}
+	p := pair{dir: r.Dir(), receipt: receiptOf(t, r.Dir(), testBy, bindVersion)}
 	wantResult(t, checked(t, p, testBy), CheckMatchUnended, identity.ExitOK)
 
 	data, _ := os.ReadFile(path)
@@ -433,20 +489,24 @@ func TestCheckFindsAChangedTornTail(t *testing.T) {
 // a binding version this tego does not read cannot be checked; a receipt whose binding says its record did not bind is
 // a finding.
 func TestCheckOlderReceiptCannotCheck(t *testing.T) {
-	p := boundPair(t, boundRun())
-	editReceipt(t, p.receipt, func(m map[string]any) { delete(m, "binding") })
+	forBindingVersions(t, checkOlderReceiptCannotCheck)
+}
+
+func checkOlderReceiptCannotCheck(t *testing.T, bindVersion int) {
+	p := boundPair(t, boundRun(), bindVersion)
+	editFactsReceipt(t, p.receipt, func(m map[string]any) { delete(m, "binding") })
 	res := checked(t, p, testBy)
 	wantResult(t, res, CheckCannot, identity.ExitError)
 	if s := step(res, "receipt"); s.Result != StepNotChecked || !strings.Contains(s.Why, "no binding") {
 		t.Errorf("receipt: %+v", s)
 	}
 
-	p = boundPair(t, boundRun())
-	editReceipt(t, p.receipt, func(m map[string]any) { obj(m, "binding")["v"] = 2 })
+	p = boundPair(t, boundRun(), bindVersion)
+	editFactsReceipt(t, p.receipt, func(m map[string]any) { obj(m, "binding")["v"] = 999 })
 	wantResult(t, checked(t, p, testBy), CheckCannot, identity.ExitError)
 
-	p = boundPair(t, boundRun())
-	editReceipt(t, p.receipt, func(m map[string]any) {
+	p = boundPair(t, boundRun(), bindVersion)
+	editFactsReceipt(t, p.receipt, func(m map[string]any) {
 		b := obj(m, "binding")
 		delete(b, "chain")
 		b["error"] = "line 2: id does not match"
@@ -456,13 +516,17 @@ func TestCheckOlderReceiptCannotCheck(t *testing.T) {
 
 // TestCheckUnreadableInputCannotCheck: a receipt that is not JSON, or no record at the path, is exit 125.
 func TestCheckUnreadableInputCannotCheck(t *testing.T) {
-	p := boundPair(t, boundRun())
+	forBindingVersions(t, checkUnreadableInputCannotCheck)
+}
+
+func checkUnreadableInputCannotCheck(t *testing.T, bindVersion int) {
+	p := boundPair(t, boundRun(), bindVersion)
 	if err := os.WriteFile(p.receipt, []byte("not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	wantResult(t, checked(t, p, testBy), CheckCannot, identity.ExitError)
 
-	p = boundPair(t, boundRun())
+	p = boundPair(t, boundRun(), bindVersion)
 	p.dir = filepath.Join(t.TempDir(), "nothing-here")
 	wantResult(t, checked(t, p, testBy), CheckCannot, identity.ExitError)
 }
@@ -470,7 +534,11 @@ func TestCheckUnreadableInputCannotCheck(t *testing.T) {
 // TestCheckJSONShape: the --json form is one object with check_v 1, the result, each check, the limits and what the
 // check does not show.
 func TestCheckJSONShape(t *testing.T) {
-	res := checked(t, boundPair(t, boundRun()), testBy)
+	forBindingVersions(t, checkJSONShape)
+}
+
+func checkJSONShape(t *testing.T, bindVersion int) {
+	res := checked(t, boundPair(t, boundRun(), bindVersion), testBy)
 	var b bytes.Buffer
 	if err := res.JSON(&b); err != nil {
 		t.Fatal(err)
@@ -505,11 +573,15 @@ func dropLast(t *testing.T, path string) {
 // TestCheckFindsAnEditPastALongStringsStart: facts compares every value whole, so a refused path longer than the line
 // its message prints, edited past that point, is a mismatch naming the field, never a match.
 func TestCheckFindsAnEditPastALongStringsStart(t *testing.T) {
+	forBindingVersions(t, checkFindsAnEditPastALongStringsStart)
+}
+
+func checkFindsAnEditPastALongStringsStart(t *testing.T, bindVersion int) {
 	dir := "/home/u/" + strings.Repeat("a", 80)
 	lines := boundRun()
 	lines[2].payload = record.FSPayload{Op: record.FSOpen, Path: dir + "/.aws/credentials", Flags: 0o1101}
-	p := boundPair(t, lines)
-	editReceipt(t, p.receipt, func(m map[string]any) {
+	p := boundPair(t, lines, bindVersion)
+	editFactsReceipt(t, p.receipt, func(m map[string]any) {
 		obj(m, "refusals")["list"].([]any)[0].(map[string]any)["target"] = dir + "/notes.txt"
 	})
 	res := checked(t, p, testBy)
@@ -523,8 +595,12 @@ func TestCheckFindsAnEditPastALongStringsStart(t *testing.T) {
 // TestCheckHoldsCompleteToTheGaps: coverage.complete is compared with the record's like every value, so complete set
 // to true on a receipt that lists a gap is a mismatch on facts naming the key.
 func TestCheckHoldsCompleteToTheGaps(t *testing.T) {
-	p := boundPair(t, boundRun())
-	editReceipt(t, p.receipt, func(m map[string]any) {
+	forBindingVersions(t, checkHoldsCompleteToTheGaps)
+}
+
+func checkHoldsCompleteToTheGaps(t *testing.T, bindVersion int) {
+	p := boundPair(t, boundRun(), bindVersion)
+	editFactsReceipt(t, p.receipt, func(m map[string]any) {
 		c := obj(m, "coverage")
 		if gaps, _ := c["gaps"].([]any); len(gaps) == 0 {
 			t.Fatalf("the run's receipt lists no gap: %v", c)
@@ -541,7 +617,11 @@ func TestCheckHoldsCompleteToTheGaps(t *testing.T) {
 // TestCheckUnreadRecordSaysSo: with no events.jsonl the check never read the record, so facts says the record could
 // not be read, not that its chain does not hold.
 func TestCheckUnreadRecordSaysSo(t *testing.T) {
-	p := boundPair(t, boundRun())
+	forBindingVersions(t, checkUnreadRecordSaysSo)
+}
+
+func checkUnreadRecordSaysSo(t *testing.T, bindVersion int) {
+	p := boundPair(t, boundRun(), bindVersion)
 	if err := os.Remove(filepath.Join(p.dir, ledger.EventsFile)); err != nil {
 		t.Fatal(err)
 	}
@@ -588,8 +668,12 @@ func BenchmarkComputeWithBind(b *testing.B) {
 // TestCheckHeadComparesTheWholeHead: the head check compares the receipt's head whole, not the 12 characters it
 // prints, so a head edited in its last character fails the head check as well as the chain.
 func TestCheckHeadComparesTheWholeHead(t *testing.T) {
-	p := boundPair(t, boundRun())
-	editReceipt(t, p.receipt, func(m map[string]any) {
+	forBindingVersions(t, checkHeadComparesTheWholeHead)
+}
+
+func checkHeadComparesTheWholeHead(t *testing.T, bindVersion int) {
+	p := boundPair(t, boundRun(), bindVersion)
+	editFactsReceipt(t, p.receipt, func(m map[string]any) {
 		c := obj(obj(m, "binding"), "chain")
 		h := c["head"].(string)
 		last := byte('0')

@@ -12,10 +12,13 @@
 internal/platform/sys TestExecveGainHelper # helper process for TestExecveAfterClearCapabilities
 internal/platform/sys TestKernelWithoutPidfdThreadHelper # helper process for TestKernelWithoutPidfdThread
 internal/platform/sys TestPidfdSignalBlockedThreadHelper # helper process for TestPidfdSendSignalTargetsTheThreadGroup
+internal/runtime/mcprelay TestHolderHelper # helper process for TestRealProcsTellAHiddenProcessFromOneThatHoldsNothing
 internal/platform/sys TestInheritedHelper # helper process for TestInheritedKinds, TestInheritedSealed and TestInheritedRefusesStdio (Inherited's seal needs a process that made no owner)
 internal/watch/watcher TestThreadKilledAloneHelper # helper process for TestIntegrationAThreadKilledAloneGivesNoSignal
 internal/platform/sys TestCloseInheritedFromHelper # helper process for TestCloseInheritedFrom
-internal/runscope TestInRunInACgroupNamespaceHelper # helper process for TestInRunInACgroupNamespace (InRun inside a cgroup namespace of its own)
+internal/platform/sys TestMakeUndumpableHelper # helper process for TestMakeUndumpable (a process that made itself undumpable, looked at from outside)
+internal/scan TestUndumpableScanHelper # helper process for TestScanSaysAnUndumpableProcessIsUnreadable (a launcher that made itself undumpable, looked at by the scan)
+internal/platform/peer TestSelfInANamespaceOfItsOwnHelper # helper process for TestSelfInANamespaceOfItsOwn (the run-membership rule inside a cgroup namespace of its own)
 internal/setup TestWithoutOpenat2Helper # helper process for TestWithoutOpenat2 (the setup tests where a seccomp filter refuses openat2)
 internal/testutil TestNoFDLeakChild # TestNoFDLeakFailsOnALeak's child
 internal/testutil TestLeakChild # TestLeakCheckMainFailsOnALeak's child
@@ -23,6 +26,8 @@ internal/testutil TestOneCPUChild # TestOwnTimeLeavesOutRunQueueWaits's and Test
 internal/testutil TestStdioChild # TestGuardedStdioLeakCheckMainFailsOnAClosedStdin's child
 internal/runtime/enforce/cgroup TestBuildLockHelper # helper process for the build-lock tests
 internal/runtime/enforce/cgroup TestSlotHelper # helper process for the slot-table tests
+internal/runtime/enforce/cgroup TestConcurrentSetupWatchdogLifecycle/build_skips/setup # skips by design in every environment: the test makes the compiler step call t.Skip to prove the watchdog is never armed before the build finishes; not an environment limit
+internal/runtime/enforce/cgroup TestConcurrentSetupWatchdogLifecycle/tier_skips/setup # skips by design in every environment: the test makes the tier check call t.Skip to prove the watchdog is released when setup leaves early; not an environment limit
 internal/cli TestStopLockHolderHelper # helper process that holds a run's lock as the stand-in launcher for the stop tests
 internal/runlock TestHoldLockHelper # helper process that holds a run's lock as the stand-in launcher for the launcher-identity tests (TestLauncherGone, TestLauncherOfUnknownAndExited)
 internal/control/web TestHelperLockHolder # helper process that holds a run's lock as the stand-in launcher for the dashboard Stop tests
@@ -32,11 +37,16 @@ internal/runtime TestHeldFileHolderHelper # helper process that holds a file for
 internal/runtime TestOutlivesLauncherHelper # helper process for TestIntegrationEnforcementOutlivesItsLauncher
 internal/watch/adopt TestNoPathChrootHelper # helper process for TestIntegrationNoPathChrootedHolder
 internal/runtime TestOtherCgroupNamespaceRefusedHelper # helper process for TestOtherCgroupNamespaceRefused (an answer from a cgroup namespace of its own)
+internal/runtime TestUndumpableAnswerHelper # helper process for TestUndumpableOperatorIsServedAnAgentIsNot (an answer from a process that made itself undumpable, as the dashboard does)
 
 # Root only; CI's root-suites job runs them as root.
 internal/cli TestOwnLogHandsItsFilesToTheInvokingUser # needs root to chown to another uid
 internal/cli TestOwnLogRefusesADirectorySwappedInAfterItsMkdir # needs root: the swapped-in directory is a third uid's
+internal/cli TestUninstallRealEnvironmentIsRefusedInATestBuild # a product build (no tegotesthooks tag) has no guard to test: the real uninstall would run on the real home, so the test exercises the guarded build and skips otherwise; the tegotesthooks step runs it
+internal/cli TestRootRetentionStampOfAnotherOwnerIsReplaced # needs root: only root can leave a stamp that another uid owns and cannot open
+internal/cli TestScanAdvancedDropEveryThread # needs root in a guest: irreversibly drops a child's every thread and supplementary groups
 internal/doctor TestTestHookWithoutAProbeCgroup # reaching the attach step needs a program the kernel loaded, so root
+internal/platform/hostaddr TestIntegrationPolicyRuleTables # needs root: adding a policy rule and a route is CAP_NET_ADMIN, in a network namespace of the test's own
 internal/runtime/enforce/landlock TestRootMissingWriteDirIsTheDroppedUsers # needs root to create a directory as another uid
 internal/runtime/supervisor TestDeputyWalkRefusesItsOwnProcOnEveryMount # needs root: mounts a procfs instance and two bind mounts
 internal/watch/watcher TestIntegrationWatcherSeesAFakeAgentItsChildAndTheirExit # needs root: the proc connector is a multicast netlink group that needs CAP_NET_ADMIN
@@ -322,6 +332,7 @@ internal/runtime/observe TestIntegrationRecorderStopDuringStartupClosesOwnedMaps
 internal/runtime/enforce/cgroup TestNetworkControlsOnRealKernel # needs root/CAP_BPF: actual network listener/ingress/resource mechanisms
 internal/runtime/enforce/cgroup TestNetworkListenAutobindOnRealKernel # needs root/CAP_BPF: actual ephemeral listener policy
 internal/runtime/enforce/cgroup TestNetworkImportedListenOnRealKernel # needs root/CAP_BPF: actual imported listener policy
+internal/runtime/enforce/cgroup TestNetworkListenWithoutNetListenOnRealKernel # needs root/CAP_BPF: the plane's TCP listen refusal under a net: section with no net.listen (D28)
 internal/runtime/enforce/cgroup TestNetworkExpiryOnRealKernel # needs root/CAP_BPF: actual kernel expiry boundary
 internal/runtime/enforce/cgroup TestConnectApprovalOnRealKernel # needs root/CAP_BPF: actual one-shot connect credits
 internal/runtime/enforce/cgroup TestDatagramApprovalOnRealKernel # needs root/CAP_BPF: actual one-shot UDP datagram and connect credits
@@ -372,6 +383,11 @@ internal/runtime TestRootAskUDP # needs root: a root launcher at tiers cgroup an
 internal/runtime TestRootMCPRelayGate # needs root: a root launcher at tiers cgroup and bpflsm, where a plane decides the run's execs (ADR 0126 §4 "The gate")
 internal/runtime TestRootAskMutation # needs root: a root launcher at tiers cgroup and bpflsm, the agent dropped to the invoking user (ADR 0047)
 internal/runtime TestRootRouteChangesRefused # needs root: a setuid-root program in a root-tier run, the agent dropped to the invoking user (ADR 0128); covered by the root-suites job
+internal/runtime TestRootStrictInterfaceLists # needs root: a root launcher at tiers cgroup and bpflsm under net.assurance: kernel, the agent dropped to the invoking user (ADR 0128's amendment); covered by the root-suites job
+internal/runtime TestRootStrictImportStillClosed # needs root: a root launcher at tiers cgroup and bpflsm under net.assurance: kernel, the agent dropped to the invoking user (ADR 0128's amendment); covered by the root-suites job
+internal/runtime TestRootStrictHeldOpens # needs root: a root launcher at tiers cgroup and bpflsm with held opens under net.assurance: kernel, the agent dropped to the invoking user (ADR 0128's amendment); covered by the root-suites job
+internal/runtime TestRootLiveBlockInPlane # needs root: a root launcher at tiers cgroup and bpflsm with the kernel plane's live-block map (ADR 0124's amendment); the root suites run it
+internal/runtime TestIntegrationDenyReadSnapshotAtRootTiers # needs root: a root launcher at tiers cgroup and bpflsm with the agent dropped to the invoking user (ADR 0069 amendment, C45); the root suites run it
 internal/runtime TestRootAgentInOtherRunCannotAnswer # needs root: two runs at tier cgroup from a root launcher, the agents dropped to the invoking user
 internal/runtime TestAdoptedAgentCannotAnswer # needs root: an adoption moves another process between cgroups and loads tier 2's programs
 internal/runtime TestIntegrationAskUnixScopeSpellings/bind-mount_alias # needs root: a net.ask unix: scope declared through a bind mount of the write entry (mount(2))
@@ -381,10 +397,8 @@ examples/demo TestContractsCompile/claude-code.yaml # claude is not on the runne
 examples/demo TestContractsCompile/codex.yaml # codex is not on the runner's PATH (CI and the gate install no harness), so its contract cannot compile
 
 # Opt-in measurements: a budget check that reads a big ledger copy named in its environment, and skips without one.
-internal/control/ledgerview TestQueryBudget # opt-in: measures only a ledger directory named in TEGO_LOGS_BENCH_LEDGER (a 350,000-line copy no runner holds)
-internal/control/ledgerview TestProcessTreeBudget # opt-in: measures only a ledger directory named in TEGO_LOGS_BENCH_LEDGER (a 350,000-line copy no runner holds)
-internal/control/web TestLogsWarmBudget # opt-in: measures only a demo-shaped ledger directory named in TEGO_LOGS_BENCH_DEMO, which no runner holds
-pkg/policy/execmatch/rows TestStagedReadDifferential # opt-in: decides about 6.5 million staged prefixes only when TEGO_STAGED_DIFF is set (ADR 0048, 2026-11-11 amendment); TestPrefixFinalHoldsEveryRow holds the same property in every run
+internal/control/web TestBuilderGovernedPreviewsCannotEvictPersonsReview/* # skips, naming the times, only when other work on the host leaves even a person's own check slow (over a second) or starves the lowest-priority checks of every CPU; a governed request's priority itself is held in internal/contracts (TestGovernedHelperWorkerRunsAtTheLowestPriority) and, while the load runs, by this test
+pkg/policy/execmatch/rows TestStagedReadDifferential # opt-in: decides about 6.5 million staged prefixes only when TEGO_STAGED_DIFF is set (ADR 0048, 2026-11-11 amendment), and the nightly fuzz workflow's staged-read-differential job sets it (34 s); TestPrefixFinalHoldsEveryRow holds the same property in every run
 # D-ATTRIB: PRD R9's retriever run at the root tiers (capture-derive R42).
 internal/runtime TestRootRetrieverRunTiesActionsToReplies # needs root: a root launcher at tiers cgroup and bpflsm, the agent dropped to the invoking user
 internal/runtime/enforce/cgroup TestPlaneNameRowsFillAndClear # needs root: a decision-plane slot's name map filled by Prepare and cleared by Detach and the reaper (CAP_BPF)
@@ -414,6 +428,7 @@ internal/runtime/enforce/cgroup TestRootBuiltinRefusalsPeer # needs root: actual
 
 internal/runtime/observe TestMissCountersFollowAttachedPrograms # needs root, bpffs and the compiled objects; exercised in the tegobpf KVM root suite
 internal/runtime/observe TestMissingActiveMissInstanceIsUncertain # needs root, bpffs and the compiled objects; exercised in the tegobpf KVM root suite
+internal/doctor TestCaptureStackInvariantOnThisKernel # needs root to load and read back capture programs and attach uprobes; every full kernel row requires this test in a guest
 # These checks read component notes or the tier plan, which are not part of this repository.
 tools/deadcodereport TestNoSpecNamesATestOnlyFunction # required component documents are not part of this repository
 tools/rulecheck TestSpecsDoNotNameSymbolsThatNeverExisted # required component documents are not part of this repository
@@ -431,3 +446,5 @@ internal/cli TestGuideHandoffBoundary/* # requires an available pseudo-terminal
 internal/cli TestGuideChildrenStop/* # requires an available pseudo-terminal
 internal/cli TestGuideDumbInterrupt/* # requires an available pseudo-terminal
 internal/runtime TestIntegrationHeldOpenTOMOYO # needs the dedicated root TOMOYO activation guest; held-label-tests.sh requires this test without skips
+internal/runtime TestIntegrationTOMOYOProfileProofDifferential # needs the dedicated root TOMOYO guest booted for the differential (TEGO_VM_TOMOYO_HALF=differential); held-label-tests.sh requires this test without skips
+internal/doctor TestIntegrationProbeProcessExitDropsProgramsAndLinks # BPF object IDs and privileged probe exits require root in a guest

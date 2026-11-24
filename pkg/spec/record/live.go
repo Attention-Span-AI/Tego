@@ -4,8 +4,13 @@ package record
 
 import (
 	jsonv2 "encoding/json/v2"
+	"errors"
+	"fmt"
+	"net/netip"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // The live changes' fields ValidateAt checks on a gap line (MinorLiveBlock, MinorLiveControl).
@@ -32,6 +37,21 @@ var liveFenceKinds = [...]string{LiveKindRead, LiveKindNet, LiveKindExec}
 
 // liveRefusals are LiveBlockChange.Refused's values.
 var liveRefusals = [...]string{LiveRefusedMAC, LiveRefusedOutsideFence, LiveRefusedLocked, LiveRefusedUntil}
+
+// PausedAfter is whether a run is paused once the launcher's gap line with this why (GapRunPaused, GapRunResumed,
+// GapPauseFailed, GapResumeFailed) is read, given whether it was paused before it: a run is paused from a run-paused
+// or resume-failed line until a run-resumed line, and any other why (a failed pause included, which leaves the run as
+// it was) moves nothing. Every reader of a run's pause (tego status, the dashboard) folds the lines through this one
+// function, so they cannot say two things about one ledger.
+func PausedAfter(paused bool, why string) bool {
+	switch why {
+	case GapRunPaused, GapResumeFailed:
+		return true
+	case GapRunResumed:
+		return false
+	}
+	return paused
+}
 
 // LiveFenceRule is the rule a refusal by a fence entry of kind on value, and an action allowed only because it is
 // lifted, carry: live.fence[<kind>:<value>], the record's own copy of internal/liveblock's FenceRule.
@@ -186,6 +206,12 @@ func validateLiveBlock(minor int, what, why, op string, isBlock bool, raw []byte
 	if err := belowMinor(f+".refused", c.Refused != "", minor, MinorLiveModes); err != nil {
 		return err
 	}
+	if err := belowMinor(f+".addrs", len(c.Addrs) > 0 || c.AddrsMore != 0, minor, MinorEveryLaunch); err != nil {
+		return err
+	}
+	if err := belowMinor(f+".note", c.Note != "", minor, MinorEveryLaunch); err != nil {
+		return err
+	}
 	fence := liveFenceWhys[why]
 	kinds := liveBlockKinds[:]
 	if fence {
@@ -230,6 +256,94 @@ func validateLiveBlock(minor int, what, why, op string, isBlock bool, raw []byte
 		return fieldErr("live-block", f+".refused", "%q is not one of %s", c.Refused, strings.Join(liveRefusals[:], ", "))
 	case why != GapLiveLiftRefused && c.Refused != "":
 		return fieldErr("live-block", f+".refused", "on a why %q line; only %q says why a lift was refused", why, GapLiveLiftRefused)
+	}
+	if err := validateLiveNote(f, why, c.Note); err != nil {
+		return err
+	}
+	return validateLiveAddrs(f, why, &c)
+}
+
+// ValidLiveNote reports why text cannot be a lift's note, or nil: at most MaxLiveNote bytes of valid UTF-8 in which
+// every character is printable (unicode.IsPrint: letters, marks, numbers, punctuation, symbols and the ASCII space, so
+// no control character, no line break, no tab and no invisible format character such as a bidirectional override). It
+// is the one rule of the record's reader; internal/liveblock's writer states the same rule without importing this
+// package, and a test holds the two to one table.
+func ValidLiveNote(text string) error {
+	switch {
+	case len(text) > MaxLiveNote:
+		return fmt.Errorf("%d bytes, more than %d", len(text), MaxLiveNote)
+	case !utf8.ValidString(text):
+		return errors.New("not valid UTF-8")
+	}
+	for _, r := range text {
+		if !unicode.IsPrint(r) {
+			return fmt.Errorf("the character %U is not printable text", r)
+		}
+	}
+	return nil
+}
+
+// LiveNoteShown is a lift's note as the readers that print it as a sentence show it (the terminal's `tego lift`, the
+// dashboard's fence row and the receipt; the event view shows it as any string field): cut to
+// MaxLiveNote bytes at a character boundary (a line a writer other than Tego made may hold more) and written through
+// Printable, so no control character, line break or bidirectional override in it can move a cursor, forge a row or reorder
+// the text around it. A note Tego wrote is shown as written. --json output never passes through it.
+func LiveNoteShown(note string) string {
+	if len(note) > MaxLiveNote {
+		cut := MaxLiveNote
+		for cut > 0 && !utf8.RuneStart(note[cut]) {
+			cut--
+		}
+		note = note[:cut] + "..."
+	}
+	return Printable(note)
+}
+
+// validateLiveNote checks a live_block's note (MinorEveryLaunch): it stands only on the line of a lift put in force
+// (live-rule-lifted), and is ValidLiveNote's text.
+func validateLiveNote(f, why, note string) error {
+	if note == "" {
+		return nil
+	}
+	if why != GapLiveRuleLifted {
+		return fieldErr("live-block", f+".note", "on a gap why %q; only a %q line carries a note", why, GapLiveRuleLifted)
+	}
+	if err := ValidLiveNote(note); err != nil {
+		return fieldErr("live-block", f+".note", "%v", err)
+	}
+	return nil
+}
+
+// validateLiveAddrs checks a live_block's addrs and addrs_more (MinorEveryLaunch): they stand only on the line of a net
+// block or fence entry put in force (live-block-added, live-rule-restored), as the addresses of a name; each is an
+// address as enforced (unmapped, canonical, an IPv6 zone allowed), the list is sorted with no repeat, holds at most
+// MaxLiveBlockAddrs, and addrs_more is not negative and is more than 0 only on a full list.
+func validateLiveAddrs(f, why string, c *LiveBlockChange) error {
+	if len(c.Addrs) == 0 && c.AddrsMore == 0 {
+		return nil
+	}
+	switch {
+	case c.Kind != LiveKindNet || (why != GapLiveBlockAdded && why != GapLiveRuleRestored):
+		return fieldErr("live-block", f+".addrs", "on a %s change of a why %q line; only a net block put in force names addresses", c.Kind, why)
+	case len(c.Addrs) > MaxLiveBlockAddrs:
+		return fieldErr("live-block", f+".addrs", "%d addresses, more than %d", len(c.Addrs), MaxLiveBlockAddrs)
+	case c.AddrsMore < 0:
+		return fieldErr("live-block", f+".addrs_more", "%d is negative", c.AddrsMore)
+	case c.AddrsMore > 0 && len(c.Addrs) != MaxLiveBlockAddrs:
+		return fieldErr("live-block", f+".addrs_more", "%d more with a list of %d, which is not full", c.AddrsMore, len(c.Addrs))
+	}
+	var prev netip.Addr
+	for i, s := range c.Addrs {
+		a, err := netip.ParseAddr(s)
+		switch {
+		case err != nil || a.String() != s:
+			return fieldErr("live-block", f+".addrs", "%q is not a canonical address", s)
+		case a.Is4In6():
+			return fieldErr("live-block", f+".addrs", "%q is a mapped address, which a block holds unmapped", s)
+		case i > 0 && prev.Compare(a) >= 0:
+			return fieldErr("live-block", f+".addrs", "%q is not after %q: the list is sorted, with no repeat", s, c.Addrs[i-1])
+		}
+		prev = a
 	}
 	return nil
 }

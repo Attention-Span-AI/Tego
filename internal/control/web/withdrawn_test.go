@@ -37,7 +37,7 @@ func TestWithdrawnAskWording(t *testing.T) {
 			After: 2 * time.Second, TS: time.Unix(1_800_000_000, 0)}
 		var b strings.Builder
 		row := map[string]any{"Run": r.ID, "R": r, "Home": "", "V": v}
-		if err := s.pages["run"].ExecuteTemplate(&b, "hl-ask", row); err != nil {
+		if err := s.pages["run"].ExecuteTemplate(&b, "hl-ask", withNumbers(row, countScopes{})); err != nil {
 			t.Fatal(err)
 		}
 		out := b.String()

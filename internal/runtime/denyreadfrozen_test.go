@@ -3,9 +3,14 @@
 package runtime
 
 import (
+	"context"
+	"log/slog"
 	"strings"
 	"testing"
 
+	"github.com/attention-span-ai/tego/internal/runtime/enforce/api"
+	"github.com/attention-span-ai/tego/internal/testutil"
+	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -67,5 +72,78 @@ func TestFrozenNoteNamesEveryDirectory(t *testing.T) {
 	}
 	if got := FrozenNote(nil, 2, "a run"); !strings.HasPrefix(got, "deny_read lists 2 directories once") {
 		t.Errorf("FrozenNote with every directory omitted = %q", got)
+	}
+}
+
+// snapshotHandle is a frozenHandle that also hands the supervisor its snapshot, as landlock.Handle and a root tier's
+// composed handle do (DenyReadSnapshot).
+type snapshotHandle struct {
+	frozenHandle
+	refuses func(string) bool
+}
+
+func (h *snapshotHandle) DenyReadSnapshot() func(string) bool { return h.refuses }
+
+// TestFrozenWithoutSnapshotFailsClosed (GAPS A12): a run whose ruleset froze a deny_read enumeration
+// (run_start names the directories) must hand the supervisor the snapshot of it, at every tier that builds one; a handle
+// that lists directories and gives none would have every read of a name made after launch continued and recorded allow
+// or observed, so the run does not start. A records-only run, a run that froze nothing and a handle with a snapshot
+// start as before.
+func TestFrozenWithoutSnapshotFailsClosed(t *testing.T) {
+	refuses := func(string) bool { return true }
+	for name, tc := range map[string]struct {
+		h        any
+		observe  bool
+		snapshot func(string) bool
+		refused  bool
+	}{
+		"listed, no snapshot":      {h: &frozenHandle{dirs: []string{"/"}}, refused: true},
+		"listed, snapshot":         {h: &snapshotHandle{frozenHandle{dirs: []string{"/"}}, refuses}, snapshot: refuses},
+		"listed, records-only run": {h: &frozenHandle{dirs: []string{"/"}}, observe: true},
+		"listed nothing":           {h: &frozenHandle{}},
+		"no list at all":           {h: &fakeHandle{}},
+	} {
+		err := frozenWithoutSnapshot(tc.h, tc.observe, tc.snapshot)
+		if (err != nil) != tc.refused {
+			t.Errorf("%s: error %v, want refused=%t", name, err, tc.refused)
+		}
+	}
+}
+
+// TestStartNotifyLoopRefusesAFrozenRulesetWithoutItsSnapshot is the same condition through startNotifyLoop: the error
+// is the run's start failing before the supervisor is built, and the listener stays with the runner for the unwind to
+// release (a handle that gives its snapshot gets past the check, to the policy error an empty run id raises).
+func TestStartNotifyLoopRefusesAFrozenRulesetWithoutItsSnapshot(t *testing.T) {
+	for name, tc := range map[string]struct {
+		h    any
+		want string
+	}{
+		"no snapshot": {&frozenHandle{dirs: []string{"/"}}, "froze a deny_read enumeration"},
+		"snapshot":    {&snapshotHandle{frozenHandle{dirs: []string{"/"}}, func(string) bool { return false }}, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			testutil.NoFDLeak(t)
+			g, gctx := newGroup(context.Background())
+			notifyFD := listenerPipe(t)
+			r := &runner{
+				log: slog.New(slog.DiscardHandler), rt: &agent.RuleTable{}, queue: NewQueue(4), group: g, notifyFD: notifyFD,
+				handle: tc.h.(api.Handle),
+			}
+			t.Cleanup(func() {
+				if r.notifyFD != nil {
+					_ = r.notifyFD.Close()
+				}
+			})
+			err := r.startNotifyLoop(gctx)
+			if err == nil {
+				t.Fatal("startNotifyLoop succeeded, want a failure")
+			}
+			if got := strings.Contains(err.Error(), tc.want); tc.want != "" && !got || tc.want == "" && strings.Contains(err.Error(), "froze a deny_read") {
+				t.Errorf("error %q, want one naming %q", err, tc.want)
+			}
+			if tc.want != "" && r.notifyFD == nil {
+				t.Error("the runner gave up the listener of a run that never started its supervisor")
+			}
+		})
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/attention-span-ai/tego/internal/check/receipt"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
@@ -149,6 +150,9 @@ func TestTerminalRunKeepsHeldLabelDisclosures(t *testing.T) {
 }
 
 func TestTerminalRunAlwaysNamesRulesFile(t *testing.T) {
+	for _, v := range []string{"TEGO_HOST_KIND", "WSL_DISTRO_NAME", "TEGO_ON_MAC"} {
+		t.Setenv(v, "") // a Windows PC's run line names no link (TestTerminalRunOnWindowsGivesNoDeadLink)
+	}
 	old := stderrIsTerminal
 	stderrIsTerminal = func() bool { return true }
 	t.Cleanup(func() { stderrIsTerminal = old })
@@ -171,6 +175,37 @@ func TestTerminalRunAlwaysNamesRulesFile(t *testing.T) {
 		want := "\n  ✓ Started session helper-w97n · rules ~/edited.yaml (setup name from file comment: \"Base development rules\")\n      Watch it live: http://127.0.0.1:8484/runs/r-519c2703-0dmw7w54wuixg-naw97n\n\n"
 		if err != nil || b.String() != want {
 			t.Fatalf("start: %v\ngot %q\nwant %q", err, b.String(), want)
+		}
+	}
+}
+
+// On a Windows PC the loopback address printed inside Tego's Linux does not reach the dashboard from a Windows browser,
+// so the line says how to open it instead of giving a link that fails.
+func TestTerminalRunOnWindowsGivesNoDeadLink(t *testing.T) {
+	old := stderrIsTerminal
+	stderrIsTerminal = func() bool { return true }
+	t.Cleanup(func() { stderrIsTerminal = old })
+	for _, c := range []struct {
+		env, want string
+	}{
+		{"windows", "      Watch it live: open it with: tego dashboard (from Windows)\n"},
+		{"", "      Watch it live: http://127.0.0.1:8484/runs/r-519c2703-0dmw7w54wuixg-naw97n\n"},
+	} {
+		t.Setenv("TEGO_HOST_KIND", c.env)
+		t.Setenv("WSL_DISTRO_NAME", "")
+		t.Setenv("TEGO_ON_MAC", "")
+		m := config.Builtin()
+		m.Home = t.TempDir()
+		q := quietRun(runOptions{}, m, nil, &outputWriter{dst: os.Stderr})
+		if q == nil {
+			t.Fatal("terminal mode not selected")
+		}
+		var b strings.Builder
+		if err := sessionStarted(&agent.RuleTable{Contract: &agent.Contract{Name: "helper"}}, &b, q, nil)(tegoruntime.StartedRun{ID: identity.RunID("r-519c2703-0dmw7w54wuixg-naw97n")}); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(b.String(), c.want) || (c.env == "windows") == strings.Contains(b.String(), "http://127.0.0.1") {
+			t.Errorf("host %q: %q, want %q", c.env, b.String(), c.want)
 		}
 	}
 }
@@ -216,7 +251,30 @@ func TestRunLegacyOutput(t *testing.T) {
 			defer func() { os.Stdout, os.Stderr, stderrIsTerminal = oldOut, oldErr, oldTTY }()
 			// The rules pin what the check before the run would otherwise say about this build or this
 			// environment; the streams pinned here are the run's own.
-			args := []string{"tego", "run", "testdata/run-legacy.yaml", "--offline"}
+			// The built-in deny_read scan for .env files walks the contract's folder and the working directory under a time
+			// limit of its own (2 s), and says so on stderr when it runs out: this package's folder holds hundreds of
+			// files, so on a host whose disk is busy the walk ran out and the golden stderr differed. The run is made from a
+			// folder that holds the contract and nothing else, so the walk is of one file and its time is nobody's guess.
+			golden, err := filepath.Abs("testdata")
+			if err != nil {
+				t.Fatal(err)
+			}
+			contract, err := os.ReadFile(filepath.Join(golden, "run-legacy.yaml"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			workDir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(workDir, "run-legacy.yaml"), contract, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			t.Chdir(workDir)
+			// The note that explains a start slower than a second ("preparing enforcement ...") is the product's own and
+			// is not in these goldens; a host whose disk is busy took longer than that to reach the stubbed start, and
+			// the note landed in stderr. The test pins a run's output, not how long the host takes to start one.
+			oldWait := startupWaitAfter
+			startupWaitAfter = time.Hour
+			defer func() { startupWaitAfter = oldWait }()
+			args := []string{"tego", "run", "run-legacy.yaml", "--offline"}
 			if verbose {
 				args = append(args, "-v")
 			}
@@ -237,7 +295,7 @@ func TestRunLegacyOutput(t *testing.T) {
 			errs = []byte(strings.ReplaceAll(strings.ReplaceAll(string(errs), id, "<run>"), shortRun(root, id), "<short-run>"))
 			streams := map[string]string{"stdout": string(out), "stderr": strings.ReplaceAll(string(errs), id, "<run>")}
 			for stream, got := range streams {
-				path := filepath.Join("testdata", "run-421d678-"+name+"-"+stream+".golden")
+				path := filepath.Join(golden, "run-421d678-"+name+"-"+stream+".golden")
 				if *updateGolden {
 					if err := os.WriteFile(path, []byte(got), 0644); err != nil {
 						t.Fatal(err)

@@ -187,18 +187,25 @@ func ReadShebang(path string) (interp, arg string, ok bool, err error) {
 // which the kernel opens from the task's cwd, or empty. compile --exec reads a script's #! line with it, as the
 // supervisor reads every image's in a run with command rules (ADR 0048 (3), (4)).
 func ReadShebangLine(path string) (interp, arg string, ok bool, err error) {
+	interp, arg, _, ok, err = ReadShebangDetails(path)
+	return interp, arg, ok, err
+}
+
+// ReadShebangDetails preserves binfmt_script's explicit empty argument, which
+// baseline command analysis must not collapse into an absent argument.
+func ReadShebangDetails(path string) (interp, arg string, emptyArg, ok bool, err error) {
 	fd, _, err := openData(path, true)
 	if err != nil {
-		return "", "", false, err
+		return "", "", false, false, err
 	}
 	defer func() { _ = unix.Close(fd) }()
 	buf := make([]byte, shebangMaxLen)
 	n, err := preadFull(fd, buf, 0)
 	if err != nil {
-		return "", "", false, err
+		return "", "", false, false, err
 	}
-	interp, arg, ok = ShebangLine(buf[:n])
-	return interp, arg, ok, nil
+	interp, arg, emptyArg, ok = ShebangArgv(buf[:n])
+	return interp, arg, emptyArg, ok, nil
 }
 
 // parseShebang reads a #! line as fs/binfmt_script.c load_script does (ShebangLine). A name that is not

@@ -14,6 +14,8 @@ import (
 // run of that file gets the new ones (F10). The page shows it as a banner with the changes' sentences, or, when
 // nothing dates a change (Differs), with a line that says the file differs.
 type Pending struct {
+	// BaselineChanged compares effective bytes without moving source positions.
+	BaselineChanged bool `json:"baseline_changed,omitempty"`
 	// Changes is each change and revert of the rules file the rule-change journal holds with a time after the run's
 	// start that still stands, oldest first: what `tego rule` and the dashboard wrote, each with its summary and
 	// sentences. A change undone since is left out, and so is the revert that undid it; a revert of a change made

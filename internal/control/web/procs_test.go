@@ -79,7 +79,7 @@ func TestProcessesTab(t *testing.T) {
 	for _, want := range []string{
 		`aria-current="page">Processes</a>`, "/static/procs.css",
 		"<b>tego launcher</b>", "<b>codex</b>", "<b>lsb_release</b>", "<b>git</b>", "<b>bash</b>", "<b>awk</b>",
-		"tried</span><span class=\"mono pt-x-c\" title=\"curl", "forked, no exec recorded", "1 process started no program the record shows",
+		"tried</span><span class=\"mono pt-x-c\">curl", "forked, no exec recorded", "1 process started no program the retained record shows",
 		"Not allowed to run", "tried at /usr/bin/lsb_release, /bin/lsb_release (2 times)", "refused</span>",
 		"/logs?run=" + procRun + "&amp;where=pid%3A300", `/runs/` + procRun + `/lines/1"`,
 		"12 processes", "to chatgpt.com",

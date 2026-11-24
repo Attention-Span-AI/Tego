@@ -5,7 +5,6 @@
 package web
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -82,7 +81,7 @@ func TestBidiAndToastInChrome(t *testing.T) {
 		"--no-default-browser-check", "--disable-gpu", "--disable-extensions", "--disable-sync",
 		"--disable-background-networking", "--disable-component-update", "about:blank")
 	cmd.ExtraFiles = []*os.File{cmdR, outW}
-	var stderr bytes.Buffer
+	var stderr chromeOutput
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -118,7 +117,7 @@ func TestBidiAndToastInChrome(t *testing.T) {
 	ap := c.open(t, "approvals", "http://"+addr+"/approvals?t=tok123")
 	size(ap, 1920, 1080, false)
 	ap.until(t, "the card", `document.readyState === "complete" && !!document.querySelector("#`+cardAsk+` .ut-box")`)
-	ap.eval(t, `document.getElementById("`+cardAsk+`").scrollIntoView({block: "center"}), true`)
+	ap.eval(t, `document.querySelector("#`+cardAsk+` .ap-record").open=true; document.getElementById("`+cardAsk+`").scrollIntoView({block: "center"}), true`)
 	time.Sleep(200 * time.Millisecond)
 	save(ap, "bidi-card-1920x1080")
 	var box, bold string
@@ -133,7 +132,7 @@ func TestBidiAndToastInChrome(t *testing.T) {
 		w, h   int
 		mobile bool
 	}{{1440, 900, false}, {390, 844, true}} {
-		tb := c.open(t, "approvals", "http://"+addr+"/approvals?t=tok123")
+		tb := c.open(t, "approvals", "http://"+addr+"/approvals?t=tok123&run="+run+"&ask="+deepAsk)
 		size(tb, sz.w, sz.h, sz.mobile)
 		tb.until(t, "the deep card", `document.readyState === "complete" && !!document.querySelector('#`+deepAsk+` button[value="deny"]')`)
 		tb.eval(t, `document.querySelector('#`+deepAsk+` button[value="deny"]').click(), true`)

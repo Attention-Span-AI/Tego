@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -135,10 +136,57 @@ func TestRunStartRetentionStopsAtItsBudget(t *testing.T) {
 	if _, err := os.Lstat(filepath.Join(root, retentionStamp)); err != nil {
 		t.Fatalf("no stamp: %v", err)
 	}
-	const said = "retention: rule-change journal: not pruned, the pass's 1ns budget ran out"
+	const said = "retention: rule-change journal: pruning incomplete (context deadline exceeded), the pass's 1ns budget ran out; the next pass continues"
 	if b, err := os.ReadFile(logPath(testHome, "")); err != nil || !strings.Contains(string(b), said) {
 		t.Errorf("tego's own log (%v) does not say %q", err, said)
 	}
+}
+
+// A busy journal lock is the cause even when the start's 2 s budget ends before the usual 3 s lock wait.
+func TestRunStartRetentionLogsBusyLockAtItsBudget(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		root := retainRoot(t, "retention: 0s\ngc_interval: 1h\n")
+		journaled(t, root)
+		f, err := os.OpenFile(filepath.Join(root, rulefile.JournalDirName, rulefile.LocksDir, "prune.lock"), os.O_RDWR, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		if err := sys.Flock(f, unix.LOCK_SH|unix.LOCK_NB); err != nil {
+			t.Fatal(err)
+		}
+		log := logPath(testHome, "")
+		before, err := os.ReadFile(log)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			t.Fatal(err)
+		}
+		start := time.Now()
+		if out := retainNow(t); out != "" {
+			t.Errorf("busy retention returned a user-facing error: %q", out)
+		}
+		if took := time.Since(start); took != retentionBudget {
+			t.Errorf("busy pass took %s; want the start budget %s", took, retentionBudget)
+		}
+		after, err := os.ReadFile(log)
+		if err != nil || len(after) < len(before) {
+			t.Fatalf("own log: %v, %d bytes after %d", err, len(after), len(before))
+		}
+		appended := string(after[len(before):])
+		found := false
+		for line := range strings.SplitSeq(appended, "\n") {
+			if strings.Contains(line, "pruning incomplete") &&
+				strings.Contains(line, "lock: a contract change is being written, or another pass is pruning") &&
+				strings.Contains(line, "context deadline exceeded") && strings.Contains(line, "2s budget ran out") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("new start log omits the busy-lock cause and budget: %q", appended)
+		}
+		if n := journalLines(t, root); n != 2 {
+			t.Errorf("busy pass left %d journal lines; want both", n)
+		}
+	})
 }
 
 // TestRetentionStampNotOursIsReplaced: a stamp this process cannot open, the shape a root pass leaves in a user's
@@ -209,21 +257,55 @@ func TestRunStartPrunesTheRuleChangeJournal(t *testing.T) {
 	}
 }
 
-// TestRunStartJournalNotPrunedWithoutTheUserLayer: the one layer a run start's load (TrustAbort) leaves out without
-// refusing the run is the per-user layer of a uid the passwd database does not name (E9). That layer may set the
-// retention, so the pass prunes nothing of the rule-change journal; the runs are swept as before.
-func TestRunStartJournalNotPrunedWithoutTheUserLayer(t *testing.T) {
+// E9 used to supply a warning that also kept this journal. Removing the warning must not
+// make a missing passwd home newly destructive, for automatic retention or gc without --keep.
+func TestMissingPasswdHomeKeepsJournalRetentionBehavior(t *testing.T) {
+	for _, baseline := range []string{"", "baseline: {env: {deny: [SECRET]}}\n"} {
+		t.Run(baseline, func(t *testing.T) {
+			root := retainRoot(t, "retention: 0s\ngc_interval: 1h\n"+baseline)
+			journaled(t, root)
+			old := machineSources
+			machineSources = func(int, bool) (config.Sources, string, []config.Diagnostic) {
+				src, home, ds := config.Resolve(2147483000, false)
+				src.Etc = ""
+				return src, home, ds
+			}
+			t.Cleanup(func() { machineSources = old })
+			m, ds, err := loadMachine(config.TrustAbort)
+			if err != nil || m == nil || !m.BaselineKnown() || m.Home != "" {
+				t.Fatalf("missing-home load: %v %v", ds, err)
+			}
+			var stderr bytes.Buffer
+			retainBeforeRun(context.Background(), m, "tego run", ds, &stderr)
+			if n := journalLines(t, root); n != 2 || strings.Contains(stderr.String(), "rule-change") {
+				t.Fatalf("automatic retention changed base behavior: lines=%d stderr=%q", n, stderr.String())
+			}
+			code, _, errs := gcOut(t)
+			if code != identity.ExitOK || journalLines(t, root) != 2 || strings.Contains(errs, "not pruned") || strings.Contains(errs, "passwd") {
+				t.Fatalf("gc changed base behavior: exit=%d lines=%d stderr=%q", code, journalLines(t, root), errs)
+			}
+			code, _, errs = gcOut(t, "--keep", "0s")
+			if code != identity.ExitOK || journalLines(t, root) != 0 {
+				t.Fatalf("explicit retention not applied: exit=%d lines=%d stderr=%q", code, journalLines(t, root), errs)
+			}
+		})
+	}
+}
+
+// An UNKNOWN diagnostic from a failed selected layer must leave the journal unchanged.
+func TestRunStartJournalNotPrunedWithUnknownLayer(t *testing.T) {
 	root := retainRoot(t, "retention: 0s\ngc_interval: 1h\n")
 	journaled(t, root)
-	uid := 1 << 30
-	for ; ; uid++ {
-		if _, err := config.LookupPasswd(uid); err != nil {
-			break
-		}
+	layer := filepath.Join(root, "bad.yaml")
+	if err := os.WriteFile(layer, []byte("retention: invalid\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	_, _, ds := config.Resolve(uid, false)
+	_, ds, err := config.LoadSources(config.Sources{EnvFile: layer}, "", os.Getuid(), config.TrustWarn)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, ok := skippedLayer(ds); !ok {
-		t.Fatalf("Resolve for uid %d, which has no passwd entry, says no layer was left out: %v", uid, ds)
+		t.Fatalf("degraded load says no layer was unknown: %v", ds)
 	}
 	m, _, err := loadMachine(config.TrustWarn)
 	if err != nil {

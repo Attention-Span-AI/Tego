@@ -35,6 +35,9 @@ type FenceRow struct {
 	// who asked it ("uid:<uid> pid:<pid> <via>", or the launcher's own words for a restore no person asked for).
 	Until, At time.Time
 	By        string
+	// LiftNote is the note given with the lift in force (record.LiveNoteShown: bounded and escaped, the words `tego
+	// lift` prints); "" when the lift had none or the entry is refused.
+	LiftNote string
 	// Note says what the last line about the entry was when the state alone does not: a lift that ended, a lift the
 	// launcher refused, a restore made because the overlay could not be read.
 	Note string
@@ -96,8 +99,9 @@ func FenceRows(run *Run, now time.Time) []FenceRow {
 			switch p.Why {
 			case record.GapLiveRuleLifted:
 				r.State, r.Until, r.At, r.By, r.Note = FenceLifted, c.Until, e.TS, c.By, ""
+				r.LiftNote = record.LiveNoteShown(c.Note)
 			case record.GapLiveRuleRestored:
-				r.State, r.Until, r.At, r.By, r.Note = FenceRefused, time.Time{}, e.TS, c.By, ""
+				r.State, r.Until, r.At, r.By, r.Note, r.LiftNote = FenceRefused, time.Time{}, e.TS, c.By, "", ""
 				switch { // the launcher's own restore: no person asked for it
 				case c.By == FenceByOverlay:
 					r.Note = FenceNoteUnreadable
@@ -106,7 +110,7 @@ func FenceRows(run *Run, now time.Time) []FenceRow {
 				}
 			case record.GapLiveLiftExpired:
 				// At and By stay the lift's: the time limit ended it, no person did ("last changed by" on the page).
-				r.State, r.Until, r.Note = FenceRefused, time.Time{}, FenceNoteExpired
+				r.State, r.Until, r.Note, r.LiftNote = FenceRefused, time.Time{}, FenceNoteExpired, ""
 			case record.GapLiveLiftRefused:
 				r.Note = FenceNoteRefusedPrefix + fenceRefusedWords(c.Refused) + "."
 			}
@@ -114,7 +118,7 @@ func FenceRows(run *Run, now time.Time) []FenceRow {
 	}
 	for i := range rows {
 		if r := &rows[i]; r.State == FenceLifted && !r.Until.IsZero() && !now.Before(r.Until) {
-			r.State, r.Note = FenceRefused, FenceNoteExpired
+			r.State, r.Note, r.LiftNote = FenceRefused, FenceNoteExpired, ""
 		}
 	}
 	return rows

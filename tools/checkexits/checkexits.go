@@ -127,7 +127,19 @@ func inCLI(f string) bool {
 	return !strings.HasSuffix(f, "_test.go") && filepath.ToSlash(filepath.Dir(f)) == "internal/cli"
 }
 
-// Check checks every Go file under root that git lists.
+// unbuilt is whether the go tool leaves a file out of every package: a directory or file whose name begins with "_"
+// or "." (go help packages). The checkout keeps code it no longer builds in such directories (archive/_maze), and
+// the rules here are about the programs that are built.
+func unbuilt(f string) bool {
+	for _, e := range strings.Split(f, "/") {
+		if strings.HasPrefix(e, "_") || strings.HasPrefix(e, ".") {
+			return true
+		}
+	}
+	return false
+}
+
+// Check checks every Go file under root that git lists and the go tool builds.
 func Check(root string) ([]Finding, error) {
 	files, err := listGo(root)
 	if err != nil {
@@ -140,7 +152,7 @@ func Check(root string) ([]Finding, error) {
 	cli := 0
 	for _, f := range files {
 		i6, i9 := !exemptI6(f), inCLI(f)
-		if !i6 && !i9 {
+		if !i6 && !i9 || unbuilt(f) {
 			continue
 		}
 		if i9 {

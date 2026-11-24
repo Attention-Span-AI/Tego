@@ -3,13 +3,13 @@
      sorts and colours: the policy decides what is blocked. */}}
 {{define "content"}}{{with .Data}}{{$csrf := $.CSRF}}
 <nav class="crumbs" aria-label="Breadcrumb"><a href="/rules">Contracts</a></nav>
-<div class="head"><div><h1>Severity</h1><p class="lede" title="Severity sorts and colours; your contract decides what is refused">Sorting only · never changes what is refused</p></div></div>
-{{if .Off}}<section class="panel"><div class="empty"><h3>Not available here</h3></div></section>{{else}}
+<div class="head"><div>{{if $.Tour}}<h2>{{else}}<h1>{{end}}Severity{{if $.Tour}}</h2>{{else}}</h1>{{end}}<p class="lede" title="Severity sorts and colours; your contract decides what is refused"><span data-number="shared.policy">Sorting only · never changes what is refused</span></p></div></div>
+{{if .Off}}<section class="panel"><div class="empty"><h2>Not available here</h2></div></section>{{else}}
 <section class="panel" aria-labelledby="h-own"><div class="panel-head"><h2 id="h-own">Your rules</h2><span class="soft" title="{{.File}}">First match wins</span></div>
 {{if .Rules}}<div class="tw"><table class="t"><caption class="sr">Your severity rules, first match first</caption><thead><tr><th scope="col">Channel</th><th scope="col">Contains</th><th scope="col">Severity</th><th scope="col"><span class="sr">Remove</span></th></tr></thead>
 <tbody>{{range $r := .Rules}}<tr><td>{{if $r.Channel}}{{$r.Channel}}{{else}}Any{{end}}</td><td class="mono">{{$r.Match}}</td><td><span class="sev sev-{{$r.Severity}}">{{$r.Severity}}</span></td>
 <td class="num"><form method="post" action="/severity/remove"><input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="channel" value="{{$r.Channel}}"><input type="hidden" name="match" value="{{$r.Match}}"><input type="hidden" name="severity" value="{{$r.Severity}}"><button class="btn" type="submit" aria-label="Remove the rule for {{$r.Match}}">Remove</button></form></td></tr>{{end}}</tbody></table></div>
-{{else}}<p class="panel-body soft">None yet · the built-in rules apply</p>{{end}}
+{{else}}<p class="panel-body soft">{{template "quantity" (quantityZero "severity.own" "None yet · the built-in rules apply" .Numbers)}}</p>{{end}}
 <form class="panel-body row sv-add" method="post" action="/severity/add"><input type="hidden" name="csrf" value="{{$csrf}}">
 <label class="field">Channel<select class="select" name="channel"><option value="">Any</option>{{range .Channels}}<option{{if eq . $.Data.Channel}} selected{{end}}>{{.}}</option>{{end}}</select></label>
 <label class="field sv-match">Contains<input class="input mono" name="match" value="{{.Match}}" placeholder="/prod-config/" required autocomplete="off" spellcheck="false"></label>

@@ -231,6 +231,11 @@ func reclaimHeld(ctx context.Context, o sweepOptions, dir runDir, ref record.Run
 	if !errors.Is(err, ErrStale) {
 		return false
 	}
+	// A launcher that released the lock and exited while its proof was made is gone with the lock free: that run
+	// ended, and what it holds is nothing to kill. Only a lock still held by now is a holder of a dead launcher's.
+	if held, _, err := probeLock(dir); err == nil && !held {
+		return true // freed while the launcher was proved: read the state again
+	}
 	o.log.Warn("sweep: a run's lock is held with its launcher gone; killing the run's tree", "run", ref.ID,
 		"launcher", info.PID)
 	if err := killOrphan(ctx, o, dir, ref); err != nil {

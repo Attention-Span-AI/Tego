@@ -56,16 +56,18 @@ var mainConfigs = []buildConfig{
 }
 
 // extraConfigs check only the packages that hold a file no main configuration builds: the cgo build (os/user's
-// libc lookup, pkg/spec/config's passwd_libc.go), a big-endian architecture (bpf2go's _bpfeb.go objects) and
+// libc lookup, pkg/spec/config's passwd_libc.go), a big-endian architecture (bpf2go's _bpfeb.go objects),
 // macOS (_darwin.go files: a macOS file is held to the same rules
-// as a Linux one, ADR 0023 F6 note). A file none of these builds either is a problem: fdcheck cannot
-// judge it (uncovered).
+// as a Linux one, ADR 0023 F6 note), Windows (the native command's _windows.go files and the Windows peer check) and the race detector's build (racescale.go: a deadline scaled under -race). A
+// file none of these builds either is a problem: fdcheck cannot judge it (uncovered).
 var extraConfigs = []buildConfig{
+	{"linux/amd64 race", "linux", "amd64", "race", false},
 	{"linux/amd64 cgo", "linux", "amd64", "", true},
 	{"linux/amd64 cgo " + lintTagSet, "linux", "amd64", lintTagSet, true},
 	{"linux/s390x " + lintTagSet, "linux", "s390x", lintTagSet, false},
 	{"linux/s390x", "linux", "s390x", "", false},
 	{"darwin/arm64", "darwin", "arm64", "", false},
+	{"windows/amd64", "windows", "amd64", "", false},
 }
 
 // listedPkg is what fdcheck reads of `go list -json`.

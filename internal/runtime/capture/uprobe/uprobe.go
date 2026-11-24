@@ -480,6 +480,10 @@ func (u *Uprobe) FollowKernel(bpfHash string) {
 	u.bpfHash = bpfHash
 }
 
+// Test seam for a kernel-opening failure after program read-back, without
+// requiring privileged run-set and ring pins in a host unit test.
+var startKernel = (*Uprobe).openKernel
+
 // openKernel is Start's half of Kernel mode: read this run's slot (scope), open the run's own capture ring and
 // lost counter by it, load the capture object under the followed build's pins, and make the attacher that places
 // probes through it (unless the caller supplied one). Everything it opened is closed again on failure, so a
@@ -645,7 +649,7 @@ func (u *Uprobe) Start(ctx context.Context, run source.RunRef, sink source.Sink)
 		u.reader = nil
 		activity = true
 		if u.opts.Attacher == nil {
-			if err := u.openKernel(hash, run.CgroupID, false); err != nil {
+			if err := startKernel(u, hash, run.CgroupID, false); err != nil {
 				u.warn("uprobe: no probes for this record: off run's stall check, so a model response it streams is no activity: %v", err)
 				activity = false
 			}
@@ -664,7 +668,7 @@ func (u *Uprobe) Start(ctx context.Context, run source.RunRef, sink source.Sink)
 	case u.opts.Kernel && u.reader == nil:
 		// Kernel mode. A capture object the kernel will not load, or a run with no capture ring to read, is
 		// this mechanism not running for this run: one gap naming it, never a failed run (§4, R37).
-		unavailable = u.openKernel(hash, run.CgroupID, true)
+		unavailable = startKernel(u, hash, run.CgroupID, true)
 	case u.runSet != nil:
 		// A source New opened from BPFHash, or a caller's Reader with a run set: the run's slot names its ring.
 		if unavailable = u.scope(run.CgroupID); unavailable == nil {
@@ -1508,7 +1512,8 @@ func (u *Uprobe) finalDrain() {
 		}
 		if time.Now().After(handleBy) {
 			if chunk, err := bpf.DecodeSSLChunk(sample.RawSample); err == nil && u.mine(chunk.Hdr) {
-				u.gap(GapRingBufferDrop, "", 1, "")
+				u.gap(GapRingBufferDrop, "", 1, fmt.Sprintf("a chunk still on the ring when the final drain's %v ran out",
+					u.opts.StopDrain))
 			}
 			continue
 		}
@@ -1835,13 +1840,16 @@ func (u *Uprobe) pollLost() {
 		return
 	}
 	u.mu.Lock()
+	base := u.lost
 	delta := int64(total - u.lost)
 	if total >= u.lost {
 		u.lost = total
 	}
 	u.mu.Unlock()
 	if delta > 0 {
-		u.gap(GapRingBufferDrop, "", delta, "")
+		// The detail tells this loss from finalDrain's, which the gap's reason alone does not (hosted run 43152191607).
+		u.gap(GapRingBufferDrop, "", delta, fmt.Sprintf("the kernel's lost-chunk counter for this run's slot went from %d to %d: "+
+			"a probe could not reserve room on the run's capture ring, or a read returned with no entry row", base, total))
 	}
 }
 

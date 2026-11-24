@@ -115,3 +115,27 @@ func TestParseTableRefusesAListKeyBesideAMergeKey(t *testing.T) {
 		t.Fatal("no error")
 	}
 }
+
+func TestContractErrorMetadata(t *testing.T) {
+	negative := strings.Replace(goodTable, "    source:", "    no_compile: intentionally invalid contract\n    source:", 1)
+	valid := "contract_error: {stage: load, code: schema, contains: notify, why: loader negative control}\n"
+	if _, _, _, err := parseTable([]byte(negative + valid)); err != nil {
+		t.Fatal(err)
+	}
+	for name, metadata := range map[string]string{
+		"stage":    strings.Replace(valid, "stage: load", "stage: typo", 1),
+		"code":     strings.Replace(valid, "code: schema", "code: ''", 1),
+		"contains": strings.Replace(valid, "contains: notify", "contains: ''", 1),
+		"why":      strings.Replace(valid, "why: loader negative control", "why: ''", 1),
+		"unknown":  strings.Replace(valid, "stage: load", "stage: load, extra: true", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, _, _, err := parseTable([]byte(negative + metadata)); err == nil {
+				t.Fatal("invalid error metadata accepted")
+			}
+		})
+	}
+	if _, _, _, err := parseTable([]byte(goodTable + valid)); err == nil {
+		t.Fatal("invalid contract still claims compile rows")
+	}
+}

@@ -26,7 +26,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-var pageNames = []string{"overview", "detections", "investigate", "glossary", "severity", "runs", "run", "logs", "approvals", "error", "stop", "rules", "rule", "machine", "compare", "rules-change", "rules-preview", "rules-saved", "rules-new", "livefence"}
+var pageNames = []string{"overview", "agents", "detections", "hours", "investigate", "glossary", "more", "severity", "runs", "run", "logs", "approvals", "error", "stop", "rules", "rule", "machine", "compare", "rules-change", "rules-preview", "rules-saved", "rules-new", "livefence"}
 
 // pageSet is every page's parsed template set, and the layout twin of each (regions.go, layoutTwin) that a full
 // page executes so each live region renders once.
@@ -40,7 +40,7 @@ type pageSet struct {
 var parsedPages = sync.OnceValues(func() (*pageSet, error) {
 	ps := &pageSet{pages: map[string]*template.Template{}, twins: map[*template.Template]*template.Template{}}
 	for _, n := range allPages() {
-		t, err := template.New("layout.tmpl").Funcs(funcs).ParseFS(assets, "templates/layout.tmpl", "templates/rulelink.tmpl", "templates/highlights.tmpl", "templates/cmpform.tmpl", "templates/rules-parts.tmpl", "templates/hostwarn.tmpl", "templates/rcrows.tmpl", "templates/charts.tmpl", "templates/"+n+".tmpl")
+		t, err := template.New("layout.tmpl").Funcs(funcs).ParseFS(assets, "templates/layout.tmpl", "templates/guide-frame.tmpl", "templates/rulelink.tmpl", "templates/highlights.tmpl", "templates/cmpform.tmpl", "templates/rules-parts.tmpl", "templates/builder-parts.tmpl", "templates/hostwarn.tmpl", "templates/rcrows.tmpl", "templates/charts.tmpl", "templates/"+n+".tmpl")
 		if err != nil {
 			return nil, fmt.Errorf("template %s: %w", n, err)
 		}
@@ -78,7 +78,39 @@ func twinOf(t *template.Template) (*template.Template, bool) {
 }
 
 var funcs = template.FuncMap{
+	"cmd":              cmdText,
+	"nextRunWords":     func() string { return nextRunWords },
+	"askline":          answerTwin,
+	"builderHasError":  builderHasError,
+	"builderErrorText": builderErrorText,
+	"requestParts":     requestParts,
+	"requestTarget":    requestTarget,
+	"request":          requestOf,
+	"approvalURL":      approvalURL,
+	"answerSummary": func(a answered, now time.Time) any {
+		return struct {
+			answered
+			Now time.Time
+		}{a, now}
+	},
+	"pageLabel": func(title string) string {
+		label, _, _ := strings.Cut(title, " · ")
+		if strings.HasPrefix(label, "The ledger") {
+			return "Record unavailable"
+		}
+		if strings.HasPrefix(label, "Lift:") || strings.HasPrefix(label, "Grant:") {
+			return "Check access"
+		}
+		return label
+	},
+	"runText":        runText,
+	"agentScanWord":  agentScanWord,
+	"agentScanClass": agentScanClass,
+	"agentTime":      agentTime,
+	"agCopy":         agCopy,
+	"agDetail":       agDetail,
 	"layerNav":       layerNav,
+	"layerLinks":     layerLinks,
 	"layerRouteNote": layerRouteNote,
 	// sevLevels and sevGroups lay a run's refusal groups out by severity, High first (routine ones are folded apart).
 	"sevLevels": func() []ledgerview.Severity {
@@ -93,12 +125,14 @@ var funcs = template.FuncMap{
 		}
 		return out
 	},
-	"ruleName":  ruleName,
-	"stepWord":  stepWord,
-	"stepBadge": stepBadge,
-	"lower":     strings.ToLower,
-	"baseName":  path.Base,
-	"fileKind":  fileKind,
+	"ruleName":      ruleName,
+	"routineWords":  func() string { return ledgerview.RoutineWords },
+	"tourFactTitle": tourFactTitle,
+	"stepWord":      stepWord,
+	"stepBadge":     stepBadge,
+	"lower":         strings.ToLower,
+	"baseName":      path.Base,
+	"fileKind":      fileKind,
 	// dtab is a detections table's rows and the time they are read at (for "Yesterday 20:58").
 	"dtab": func(rows []detection, now time.Time) any {
 		return struct {
@@ -119,6 +153,8 @@ var funcs = template.FuncMap{
 			return "Only hosts I list"
 		case "repo-only-writes":
 			return "Only write in the project"
+		case "ci":
+			return "CI job guard"
 		}
 		return name
 	},
@@ -174,22 +210,26 @@ var funcs = template.FuncMap{
 	},
 	"reasonText": reasonText,
 	// noneRefused is the receipt's sentence for run r when it refused nothing recorded (the Refusals tab's empty state).
-	"noneRefused": func(r *ledgerview.Run) string { return ledgerview.ReceiptRefusedWords(0, r.ReceiptReadsUnrecorded) },
-	"foldKey":     foldKey,
-	"dict2":       func(runs []*ledgerview.Run, now time.Time) runTable { return runTable{Runs: runs, Now: now} },
-	"pathEsc":     url.PathEscape,
-	"queryEsc":    url.QueryEscape,
-	"acts":        rowActsOf,
-	"answerChip":  answerChip,
-	"tl":          tlOf,
+	"noneRefused":       func(r *ledgerview.Run) string { return ledgerview.ReceiptRefusedWords(0, r.ReceiptReadsUnrecorded) },
+	"foldKey":           foldKey,
+	"dict2":             func(runs []*ledgerview.Run, now time.Time) runTable { return runTable{Runs: runs, Now: now} },
+	"pathEsc":           url.PathEscape,
+	"queryEsc":          url.QueryEscape,
+	"contractFilterURL": contractFilterURL,
+	"phoneRuleName":     phoneRuleName,
+	"acts":              rowActsOf,
+	"answerChip":        answerChip,
+	"tl":                tlOf,
+	"approvalIdentity":  ledgerview.ApprovalIdentity,
 	"askForm": func(a ledgerview.Ask, csrf string) map[string]any {
 		// A stand-in file answers only a held file open (op read under fs.ask_read, or open): ADR 0057. A held read's
 		// ask line may follow no verdict line, so its card can carry the hold (open) and no op.
 		file := func(s string) bool { return s == "read" || s == "open" }
-		return map[string]any{"Run": a.Run, "AskID": a.AskID, "CSRF": csrf, "Alternate": file(a.Op) || (a.Op == "" && file(a.Hold)),
+		return map[string]any{"OwnerOnly": a.OwnerOnly, "Run": a.Run, "AskID": a.AskID, "CSRF": csrf, "Alternate": file(a.Op) || (a.Op == "" && file(a.Hold)),
 			"Verb": askVerb(a.Op, a.Rule, a.Hold)}
 	},
-	"askVerb": askVerb,
+	"askVerb":  askVerb,
+	"bandVerb": bandVerb,
 	// card hands the askcard template one waiting request, the form token, whether to name its run, what is known of
 	// the run (an askMeta from chrome.AskMeta, or its bare harness name: the note on how long the request waits and
 	// the home its path is shortened against) and the time the page was read (for "asked 8 s ago").
@@ -199,18 +239,26 @@ var funcs = template.FuncMap{
 			"Wait": waitOf(m, a.TS, now), "Now": now}
 	},
 	// wait is a waiting request's note on how long it is held (askWait), for the banner's rows.
-	"wait":      waitOf,
-	"askObject": askObject,
-	"tilde":     tilde,
-	"who":       who,
-	"shown":     shown,
-	"mask":      mask,
-	"splitAsks": splitAsks,
-	"shownOp":   shownOp,
-	"blockWhat": blockWhat,
-	"logsURL":   logsURL,
-	"secretWhy": secretWhy,
-	"tail":      tailCut,
+	"wait":        waitOf,
+	"askObject":   askObject,
+	"tilde":       tilde,
+	"who":         who,
+	"shown":       shown,
+	"mask":        mask,
+	"splitAsks":   splitAsks,
+	"shownOp":     shownOp,
+	"eventAction": eventAction,
+	"dayStart": func(t time.Time) string {
+		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location()).Format(time.RFC3339)
+	},
+	"secretChips":      secretChips,
+	"pageVerdictClass": func(e ledgerview.Event, ctx ...*readContext) string { c, _, _ := pageVerdict(e, ctx...); return c },
+	"pageVerdictIcon":  func(e ledgerview.Event, ctx ...*readContext) string { _, i, _ := pageVerdict(e, ctx...); return i },
+	"pageVerdictWord":  func(e ledgerview.Event, ctx ...*readContext) string { _, _, w := pageVerdict(e, ctx...); return w },
+	"blockWhat":        blockWhat,
+	"logsURL":          logsURL,
+	"secretWhy":        secretWhy,
+	"tail":             tailCut,
 	// firstPart is a rule label up to its " · " detail (the full label goes in a title).
 	"firstPart": func(s string) string { a, _, _ := strings.Cut(s, " · "); return a },
 	"join":      strings.Join,
@@ -283,12 +331,15 @@ func cutMiddle(s string, n int) string {
 		return s
 	}
 	h := n * 2 / 3
-	return string(r[:h]) + "…" + string(r[len(r)-(n-h-1):])
+	return string(r[:h]) + "…" + trimMarks(string(r[len(r)-(n-h-1):]))
 }
 
 // endWord is the status word of an ended run, from its run_end reason: Stopped is a run ended by tego stop or the
 // dashboard's Stop; an exit keeps its code.
 func endWord(r *ledgerview.Run) string {
+	if r.State() == "unknown" {
+		return "Not known"
+	}
 	switch r.EndReason {
 	case "exit":
 		return "Exit " + strconv.Itoa(r.ExitCode)
@@ -424,7 +475,7 @@ func reasonText(code string) string {
 		return "Key unavailable"
 	case "mcp-tool-denied":
 		return "MCP tool refused"
-	case "model-route-changed":
+	case string(record.ReasonModelRouteChanged):
 		return "Route changed while held"
 	case "":
 		return ""
@@ -434,28 +485,46 @@ func reasonText(code string) string {
 
 // chrome is what every page's layout reads.
 type chrome struct {
-	Title  string
-	Nav    string
-	Host   string
-	Ledger string
-	Live   bool
+	Tour      *tourFrame
+	TourOffer bool
+	// AgentsNav puts Agents in the main navigation, ahead of Overview.
+	AgentsNav bool
+	// Numbers is the page's source completeness, which qualifies every number it shows (numbers.go).
+	Numbers countScopes
+	// GlobalNumbers always describes the run list and queue, including on a local run page.
+	GlobalNumbers    countScopes
+	globalNumbersSet bool
+	HeadStyles       []string // Page styles that must block the first paint, in cascade order.
+	PhoneName        string   // Optional fixed page type in the compact header; Title retains full document context.
+	Title            string
+	Nav              string
+	Host             string
+	Ledger           string
+	Live             bool
 	// Preview is Config.Preview: the nav lists the pages a first run leaves empty.
-	Preview bool
-	Pending int
+	Preview                 bool
+	Pending                 int
+	RunLimit, CandidateRuns int
 	// Asks are the waiting asks the banner at the top of every page offers to answer (the first maxBanner).
 	Asks []ledgerview.Ask
-	// AskMeta is each run with a waiting ask's harness, home and ask timeout (askMeta): the banner, Waiting on you
-	// and the ask cards shorten the path against the run's home and say how long the request is held.
+	// AskKeys includes every pending request, even beyond the compact banner, for one polite arrival announcement.
+	AskKeys []string
+	// AskMeta holds each waiting run's harness, home and ask timeout. The band and cards shorten paths against
+	// the run's home and explain how long the request is held.
 	AskMeta map[string]askMeta
-	// Now is the time the page was read, for the banner's "has likely given up" (askWait).
+	// Now is the time the shared page chrome was read.
 	Now time.Time
-	// Refresh is the meta refresh a page keeps when JavaScript is off; static/live.js replaces it with in-place
-	// updates of the page's live regions (regions.go). Sig and Rev are the live state at render time (live.go); a
-	// page without them is one live.js leaves alone.
-	Refresh  int
-	Sig, Rev string
-	Notes    []string
-	Query    string
+	// ManualRefresh offers a native reload link when scripts are off. Automatic
+	// document reloads would discard keyboard focus and open disclosures. Sig and
+	// Rev identify the live state for in-place script updates (regions.go).
+	ManualRefresh bool
+	Sig, Rev      string
+	Notes         []string
+	// bannered are the count reasons a banner in Notes already states (bannerReasons).
+	bannered map[string]bool
+	// BaselineNotice reports unreadable or unapplied baselines on HTML pages and live regions.
+	BaselineNotice string
+	Query          string
 	// CSRF is the session's token, which every form that changes something carries.
 	CSRF string
 	// Flash is the line the action just taken left for this page (flash.go), nil on every other view.
@@ -471,7 +540,29 @@ type page struct {
 }
 
 func (s *Server) render(w http.ResponseWriter, status int, name string, c chrome, data any) {
+	if tw, ok := w.(*tourWriter); ok {
+		c.Tour, c.TourOffer = tw.frame, tw.offer
+		if d, ok := data.(overviewData); ok && d.Guide != nil && d.Guide.Done {
+			c.TourOffer = false
+		}
+		if d, ok := data.(agentsData); ok && d.V.GuideDone {
+			c.TourOffer = false
+		}
+		w = tw.ResponseWriter
+		if c.Tour != nil {
+			if d, ok := data.(newData); ok && d.Created != nil && c.Tour.Builder && c.Tour.Pending == 0 {
+				c.Tour.Title = "Its contract is saved"
+				c.Tour.Instruction = "Open Enforce to start a run with its saved rules."
+				c.Tour.Action, c.Tour.Href = "Enforce its rules", "/guide?step=enforce"
+			}
+			c.Title = "Guide: " + c.Tour.Title
+			c.ManualRefresh = false
+		}
+	}
 	c.Host, c.Ledger, c.CSRF, c.Preview = s.host, s.cfg.Ledger, s.csrf, s.cfg.Preview
+	// Agents has its own place in the main navigation wherever the dashboard can read the user's state.
+	c.AgentsNav = s.cfg.Agents != nil || s.cfg.Guide != nil
+	c.BaselineNotice = s.baselineNotice()
 	if fw, ok := w.(*flashWriter); ok {
 		c.Flash = fw.flash
 	}
@@ -481,6 +572,16 @@ func (s *Server) render(w http.ResponseWriter, status int, name string, c chrome
 // renderPage writes page name of template set t: the page, or, for a region request (fragWriter), its changed live
 // regions.
 func renderPage(w http.ResponseWriter, status int, t *template.Template, name string, p page) {
+	if !p.globalNumbersSet {
+		http.Error(w, "tego-control serve: render: global numbers scope is required", http.StatusInternalServerError)
+		return
+	}
+
+	if name == "runs" {
+		// A body stylesheet can pause parsing after the shell paints, before
+		// the document is tall enough for native reload scroll restoration.
+		p.HeadStyles = []string{"/static/compare.css"}
+	}
 	if fw, ok := w.(*fragWriter); ok {
 		renderRegions(fw, status, t, name, p)
 		return
@@ -510,11 +611,30 @@ func renderPage(w http.ResponseWriter, status int, t *template.Template, name st
 	_, _ = w.Write(visibleHTML(buf.Bytes()))
 }
 
+// banner records that a banner in Notes states the count reason of kind (bannerReasons).
+func (c *chrome) banner(kind string) {
+	if c.bannered == nil {
+		c.bannered = map[string]bool{}
+	}
+	c.bannered[bannerReasons[kind]] = true
+}
+
+// CountNotes are the page's count reasons that no banner states already.
+func (c chrome) CountNotes() []string {
+	var out []string
+	for _, note := range c.Numbers.Notes() {
+		if !c.bannered[note] && note != c.GlobalNumbers.Queue.Reason && note != "Could not read: "+c.GlobalNumbers.Queue.Error {
+			out = append(out, note)
+		}
+	}
+	return out
+}
+
 // maxBanner is how many waiting asks the banner shows; the rest are a link to Approvals.
 const maxBanner = 3
 
 func (s *Server) chromeOf(snap *ledgerview.Snapshot, title, nav string) chrome {
-	c := chrome{Title: title, Nav: nav, Now: s.cfg.Now()}
+	c := chrome{Title: title, Nav: nav, Now: s.cfg.Now(), BaselineNotice: s.baselineNotice(), Numbers: snapshotNumbers(snap), GlobalNumbers: snapshotNumbers(snap), globalNumbersSet: true}
 	pendingCut := false
 	for _, r := range snap.Runs {
 		pendingCut = pendingCut || r.PendingCut
@@ -524,9 +644,13 @@ func (s *Server) chromeOf(snap *ledgerview.Snapshot, title, nav string) chrome {
 	}
 	if pendingCut {
 		c.Notes = append(c.Notes, "Too many pending requests to list. Inspect the ledger or stop the affected run.")
+		c.banner("queue")
 	}
 	c.Asks = snap.Pending()
 	c.Pending = len(c.Asks)
+	for _, a := range c.Asks {
+		c.AskKeys = append(c.AskKeys, url.QueryEscape(a.Run+"/"+a.AskID))
+	}
 	c.AskMeta = s.askMetas(snap, c.Asks)
 	if len(c.Asks) > maxBanner {
 		c.Asks = c.Asks[:maxBanner]
@@ -534,21 +658,57 @@ func (s *Server) chromeOf(snap *ledgerview.Snapshot, title, nav string) chrome {
 	st := stateOf(snap)
 	c.Sig, c.Rev = st.Sig, st.Rev
 	if snap.RunsCut {
-		c.Notes = append(c.Notes, fmt.Sprintf("Showing the newest %d of %d runs.", ledgerview.MaxRuns, snap.TotalRuns))
+		c.RunLimit, c.CandidateRuns = ledgerview.MaxRuns, snap.TotalRuns
+		c.banner("omitted")
 	}
 	if snap.LinesCut {
 		c.Notes = append(c.Notes, "Showing bounded event windows. Run totals cover all decoded events; searches and highlights cover the displayed windows.")
+		c.banner("window")
 	}
 	return c
 }
 
+// builderGetRoutes registers every read route of the contract builder. The
+// read-only filesystem regression walks this same table, including aliases.
+var builderGetRoutes = []struct {
+	path  string
+	serve func(*Server, http.ResponseWriter, *http.Request)
+}{
+	{"/rules", (*Server).rules},
+	{"/rules/new", (*Server).rulesNew},
+	{"/rules/change", (*Server).rulesChange},
+	{"/rules/change/preview", (*Server).rulesChange},
+	{"/rules/change/saved", (*Server).rulesChange},
+}
+
 func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
+	if p == "/guide" {
+		s.guideEntry(w, r)
+		return
+	}
+	w = s.tourRequest(w, r)
+	for _, route := range builderGetRoutes {
+		if p == route.path {
+			route.serve(s, w, r)
+			return
+		}
+	}
 	switch {
 	case p == "/":
+		s.home(w, r)
+	case p == "/overview":
 		s.overview(w, r)
+	case p == "/agents":
+		s.agentsPage(w, r)
+	case strings.HasPrefix(p, "/agents/"):
+		s.agentPage(w, r)
 	case p == "/detections":
 		s.detections(w, r)
+	case p == "/refusals":
+		s.refusalHours(w, r)
+	case p == "/more":
+		s.more(w, r)
 	case p == "/glossary":
 		s.glossary(w, r)
 	case p == "/severity":
@@ -575,6 +735,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 		s.logs(w, r)
 	case p == "/logs/rows":
 		s.logsRows(w, r)
+	case p == "/logs/changes":
+		s.logsChangeRows(w, r)
 	case p == "/logs/line":
 		s.logsLine(w, r)
 	case p == "/logs.jsonl":
@@ -583,12 +745,6 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 		s.logsCSV(w, r)
 	case p == "/approvals":
 		s.approvals(w, r)
-	case p == "/rules":
-		s.rules(w, r)
-	case p == "/rules/change", p == "/rules/change/preview", p == "/rules/change/saved":
-		s.rulesChange(w, r)
-	case p == "/rules/new":
-		s.rulesNew(w, r)
 	case p == "/contracts" || strings.HasPrefix(p, "/contracts/"):
 		s.contractsAlias(w, r)
 	case p == "/rule":
@@ -612,9 +768,11 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 // under /contracts is the 404 page.
 func (s *Server) contractsAlias(w http.ResponseWriter, r *http.Request) {
 	dst := "/rules" + strings.TrimPrefix(r.URL.Path, "/contracts")
-	switch dst {
-	case "/rules", "/rules/new", "/rules/change", "/rules/change/preview", "/rules/change/saved":
-	default:
+	known := false
+	for _, route := range builderGetRoutes {
+		known = known || dst == route.path
+	}
+	if !known {
 		s.fail(w, http.StatusNotFound, "Not found", "There is no page at this address.")
 		return
 	}
@@ -633,47 +791,78 @@ func (s *Server) load(w http.ResponseWriter) (*ledgerview.Snapshot, bool) {
 	return snap, true
 }
 
-type errorData struct{ Heading, Text string }
+type errorData struct {
+	Heading, Text string
+	Technical     bool
+	// Visible shows Text in the page itself, not under Technical details: the text is what the person is to do, and
+	// for a check that did not finish it names the cause.
+	Visible bool
+}
+
+// chromeFromLedger reads global chrome for a page without another snapshot.
+// An unreadable root is unknown, never an exact empty global source.
+func (s *Server) chromeFromLedger(title, nav string) chrome {
+	snap, err := ledgerview.LoadNow(s.cfg.Ledger)
+	if err != nil {
+		snap = &ledgerview.Snapshot{ReadError: err.Error()}
+	}
+	c := s.chromeOf(snap, title, nav)
+	// Recovery and retired POST receipts have no valid live GET to follow.
+	c.Sig, c.Rev = "", ""
+	return c
+}
 
 // fail answers status with the error page. Its top bar, nav and banner say what every other page says, read from the
 // snapshot the live state reads (ledgerview.LoadNow, which never waits): Live while a run is live, the Approvals
 // count and the waiting-ask banner. They say it as of the answer: the page follows nothing (no signature, so live.js
 // leaves it alone, and a region request of its address would only answer status again), and carries none of chromeOf's
-// notes about runs or lines left out, since it lists none. A ledger that cannot be read leaves the bare chrome.
+// notes about runs or lines left out, since it lists none. An unreadable root keeps global presence and waiting unknown.
 func (s *Server) fail(w http.ResponseWriter, status int, heading, text string) {
-	c := chrome{Title: heading}
-	if snap, err := ledgerview.LoadNow(s.cfg.Ledger); err == nil {
-		c = s.chromeOf(snap, heading, "")
-		c.Sig, c.Rev, c.Notes = "", "", nil
-	}
-	s.render(w, status, "error", c, errorData{heading, text})
+	s.failPage(w, status, heading, text, false)
+}
+
+// failPage is fail with the text shown on the page itself when visible (a refusal that says what to do and why).
+func (s *Server) failPage(w http.ResponseWriter, status int, heading, text string, visible bool) {
+	c := s.chromeFromLedger(heading, "")
+	c.Sig, c.Rev, c.Notes = "", "", nil
+	c.RunLimit, c.CandidateRuns = 0, 0
+	s.render(w, status, "error", c, errorData{Heading: heading, Text: text, Technical: status >= 500 && !visible, Visible: visible})
 }
 
 type overviewData struct {
-	Live     []*ledgerview.Run
-	Recent   []*ledgerview.Run
-	Refusals []ledgerview.Row
+	AttentionSource attentionSource
+	Live            []*ledgerview.Run
+	Recent          []*ledgerview.Run
+	Refusals        []ledgerview.Row
 	// Background are the refusals the run page's Highlights call background (ledgerview.Signal), folded under
 	// Refusals; BgLines counts them all, Background lists the newest few.
-	Background []ledgerview.Row
-	BgLines    int
-	Pending    []ledgerview.Ask
-	Total      int
-	Refused    int
-	Now        time.Time
-	SysRefuse  int
-	Chain      ledgerview.LedgerChain
-	MaxChain   int
-	// V is each run's verdict, Leaked the runs whose verdict is a leak and Watched the runs whose verdict is
-	// VerdictWatched: nothing says those went well, so the headline never reads All quiet over one. Matter and BgTotal
+	Background        []ledgerview.Row
+	BgLines           int
+	Pending           []ledgerview.Ask
+	Total             int
+	Refused           int
+	RefusedToday      int
+	RefusedTodayLower bool
+	RefusalRecords    []*ledgerview.Run
+	RefusalUnreadable bool
+	Now               time.Time
+	SysRefuse         int
+	Chain             ledgerview.LedgerChain
+	MaxChain          int
+	// V is each run's verdict. Leaked counts recorded leaks; Watched counts runs with actual
+	// sensitive reads that are not routine own-login reads. Matter and BgTotal
 	// split the refused lines the way the run pages do (ledgerview.Signal: the ones that matter, the background ones).
 	// Homes is each listed refusal's run home, for the path shortener. CmpURL compares the newest watched run with the
 	// newest enforced one, "" without both.
 	V               map[string]ledgerview.Verdict
 	Leaked, Watched int
-	Matter, BgTotal int
-	Homes           map[string]string
-	CmpURL          string
+	// LeakedRuns and ReadRuns are the runs Leaked and Watched count, by id; Extra are the attention items a layer adds
+	// (layerAttention), none in a build without one.
+	LeakedRuns, ReadRuns []string
+	Extra                []attentionItem
+	Matter, BgTotal      int
+	Homes                map[string]string
+	CmpURL               string
 	// Folds are the listed refusals that stand for one program refused under several paths (progFold), by row key.
 	Folds map[string]progFold
 	// Charts are the tiles' sparklines and the two bars under them (ovcharts.go).
@@ -683,7 +872,8 @@ type overviewData struct {
 	Top  []detection
 	// Guide is the machine's setup steps and the one next step, as tego setup tells them (setupguide.go); nil when the
 	// server has none.
-	Guide *setupGuide
+	Guide     *setupGuide
+	GuideOpen bool
 }
 
 // sevGrid is the Overview's figure: blocked actions that are not routine, by severity (rows) and channel (columns).
@@ -726,7 +916,11 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	d := overviewData{Now: s.cfg.Now(), Total: len(snap.Runs), Pending: snap.Pending()}
+	d := overviewData{AttentionSource: attentionSourceOf(snap), Now: s.cfg.Now(), Total: len(snap.Runs), Pending: snap.Pending()}
+	d.RefusedToday, d.RefusedTodayLower, d.RefusalRecords = dailyRefusals(snap, d.Now)
+	for _, r := range d.RefusalRecords {
+		d.RefusalUnreadable = d.RefusalUnreadable || r.Bad > 0 || r.ReadError != ""
+	}
 	for _, r := range snap.Runs {
 		// Recent runs are the newest runs not running: a running run is under Running now, so its new lines move one
 		// table, not two (each a live region of its own, regions.go).
@@ -754,10 +948,23 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	d.Chain, d.MaxChain = ledgerview.VerifySnapshot(r.Context(), snap, s.cfg.Anchor), ledgerview.MaxChainRuns
+	d.Extra = s.layerAttention(snap, &d)
 	d.Guide = s.setupGuide(r.Context(), snap)
+	if guideHidden(r) && !guideNeedsAttention(d.Guide) {
+		d.Guide = nil
+	}
+	d.GuideOpen = r.URL.Query().Get("guide") == "1"
 	c := s.chromeOf(snap, "Overview", "overview")
+	qualifyOverviewCharts(&d.Charts, c.Numbers)
+	if d.RefusedTodayLower && c.Numbers.Daily.Error == "" {
+		// The daily aggregate knows more than the page-wide scopes: a refusal outside the retained windows may still
+		// be bounded to an earlier day. Its own lower bound is the one the count shows; the note below names why.
+		c.Numbers.Daily = countScope{Lower: true, Reason: "Some records needed for today's count are incomplete."}
+	} else if !d.RefusedTodayLower {
+		c.Numbers.Daily = countScope{}
+	}
 	if c.Live {
-		c.Refresh = 5
+		c.ManualRefresh = true
 	}
 	s.render(w, http.StatusOK, "overview", c, d)
 }
@@ -768,11 +975,14 @@ type runsData struct {
 	// the others (ended and lost), newest first.
 	Live, Runs []*ledgerview.Run
 	// All is every run, for the Compare chooser.
-	All   []*ledgerview.Run
-	State string
-	Count map[string]int
-	Now   time.Time
-	V     map[string]ledgerview.Verdict
+	All                                   []*ledgerview.Run
+	State                                 string
+	Query, Period, PeriodLabel, FilterURL string
+	FilterPage, Filtered                  bool
+	Matches, Today                        int
+	Count                                 map[string]int
+	Now                                   time.Time
+	V                                     map[string]ledgerview.Verdict
 	// Before is this page's cursor ("" on the first page): the others start after the run with that id. Older is the
 	// next page's ("" when this is the last), and From, To and Rest place the page among the Rest others (1-based).
 	Before, Older  string
@@ -783,8 +993,14 @@ type runsData struct {
 const runsPage = 100
 
 // runsQuery is the address of a Runs page: the state filter and the cursor, either one left out when empty.
-func runsQuery(state, before string) string {
+func runsQuery(state, before string, filters ...string) string {
 	q := url.Values{}
+	if len(filters) > 0 && filters[0] != "" {
+		q.Set("q", filters[0])
+	}
+	if len(filters) > 1 && filters[1] != "" {
+		q.Set("period", filters[1])
+	}
 	if state != "" {
 		q.Set("state", state)
 	}
@@ -804,10 +1020,48 @@ func (s *Server) runs(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	d := runsData{State: q.Get("state"), Before: q.Get("before"), Count: map[string]int{}, Now: s.cfg.Now(), All: snap.Runs}
+	d.Query, d.Period, d.FilterPage = q.Get("q"), q.Get("period"), q.Get("filters") == "1"
+	d.Filtered = d.Query != "" || d.State != "" || d.Period != ""
+	d.PeriodLabel = "All time"
+	var since time.Time
+	switch d.Period {
+	case "today":
+		since = time.Date(d.Now.Year(), d.Now.Month(), d.Now.Day(), 0, 0, 0, 0, d.Now.Location())
+		d.PeriodLabel = "Today"
+	case "24h":
+		since = d.Now.Add(-24 * time.Hour)
+		d.PeriodLabel = "Last 24 hours"
+	case "7d":
+		since = d.Now.Add(-7 * 24 * time.Hour)
+		d.PeriodLabel = "Last 7 days"
+	default:
+		d.Period = ""
+	}
+	fq := url.Values{"filters": {"1"}}
+	if d.State != "" {
+		fq.Set("state", d.State)
+	}
+	if d.Query != "" {
+		fq.Set("q", d.Query)
+	}
+	if d.Period != "" {
+		fq.Set("period", d.Period)
+	}
+	d.FilterURL = "/runs?" + fq.Encode()
+	query := strings.ToLower(d.Query)
 	var live, rest []*ledgerview.Run
 	for _, run := range snap.Runs {
 		st := run.State()
 		d.Count[st]++
+		if run.Start.In(d.Now.Location()).Format("2006-01-02") == d.Now.Format("2006-01-02") {
+			d.Today++
+		}
+		if (!since.IsZero() && run.Start.Before(since)) || (d.Query != "" && !strings.Contains(strings.ToLower(run.Agent+" "+run.ID), query)) {
+			continue
+		}
+		if d.State == "" || d.State == st {
+			d.Matches++
+		}
 		switch {
 		case d.State != "" && d.State != st:
 		case st == "running":
@@ -836,21 +1090,29 @@ func (s *Server) runs(w http.ResponseWriter, r *http.Request) {
 	}
 	d.V = s.verdicts(snap.Runs, slices.Concat(d.Live, d.Runs))
 	c := s.chromeOf(snap, "Runs", "runs")
+	if d.State != "" && d.State != "ended" {
+		c.Numbers.Selection = worse(c.Numbers.Selection, c.Numbers.Live)
+	}
+	if d.State == "ended" {
+		c.Numbers.Rest = c.Numbers.Aggregate
+	}
 	if c.Live {
-		c.Refresh = 5
+		c.ManualRefresh = true
 	}
 	s.render(w, http.StatusOK, "runs", c, d)
 }
 
 type runData struct {
-	Run      *ledgerview.Run
-	Tab      string
-	Lines    []ledgerview.Row
-	Refusals []ledgerview.Row
-	Now      time.Time
-	Shown    int
-	Kinds    []kindCount
-	Verdict  string
+	AttentionSource attentionSource
+	Details         bool
+	Run             *ledgerview.Run
+	Tab             string
+	Lines           []ledgerview.Row
+	Refusals        []ledgerview.Row
+	Now             time.Time
+	Shown           int
+	Kinds           []kindCount
+	Verdict         string
 	// Total is the timeline's row count. Before is this page's cursor (0 on the newest page), Older the next page's
 	// (0 when there is none), After the run's last line read, which a live page polls after.
 	Total                int
@@ -876,6 +1138,7 @@ type runData struct {
 	// Signal is the Highlights card and the grouped refusals; View is "lines" for the Refusals tab's every-line
 	// view; BgOpen opens its Background fold.
 	Signal *ledgerview.RunSignal
+	Reads  *readContext
 	View   string
 	BgOpen bool
 	// Changes are the rule-change rows among the timeline's (changefeed.go), on its unfiltered pages.
@@ -895,8 +1158,11 @@ type runData struct {
 	Adjustable bool
 	// CanSetUp is a dashboard with the rule service's New contract (Config.Setup), for a run that has ended: the head's
 	// "Make a contract" and the Tighten tab's "Make a contract from this run" then open it with the run chosen, which
-	// saves the proposal as tego learn --save does.
+	// saves the proposal as tego rules learn --save does.
 	CanSetUp bool
+	// CanAct is a dashboard whose rule service makes a rule from a line (ActService): Highlights then links a secret
+	// the run touched to the line, with the block action picked.
+	CanAct bool
 }
 
 type kindCount struct {
@@ -930,11 +1196,12 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request, id string) {
 	if !ok {
 		return
 	}
-	d := runData{Run: run, Tab: tab, Now: s.cfg.Now(), Refusals: ledgerview.RunRefusals(run), Verdict: r.URL.Query().Get("verdict"),
+	d := runData{AttentionSource: runAttentionSource(run), Details: r.URL.Query().Get("details") == "1", Run: run, Tab: tab, Now: s.cfg.Now(), Refusals: ledgerview.RunRefusals(run), Verdict: r.URL.Query().Get("verdict"),
 		Chain: ledgerview.VerifyRun(r.Context(), s.cfg.Ledger, id, s.cfg.Anchor, run)}
 	// Every tab's head links "Make a contract" straight to New contract from this run where it is served; the
 	// Tighten tab offers it too.
 	d.CanSetUp = s.cfg.Setup != nil && !run.Live
+	_, d.CanAct = s.cfg.Rules.(ActService)
 	d.BlockKinds = liveblock.Kinds
 	if k, err := liveblock.ParseKind(r.URL.Query().Get("block")); err == nil {
 		if v := r.URL.Query().Get("value"); len(v) <= liveblock.MaxValueBytes {
@@ -945,7 +1212,7 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request, id string) {
 	case "processes":
 		d.Procs = procsFor(s.cfg.Ledger, run, d.Now)
 	case "receipt":
-		d.Receipt = loadReceipt(r.Context(), s.cfg.Ledger, id)
+		d.Receipt = loadReceipt(r.Context(), s.cfg.Ledger, id, s.sensitiveOf(rulesview.RunLists(s.cfg.Ledger, id), run), s.receiptPricing())
 		d.Receipt.Gap = readGap(run)
 	case "least-privilege":
 		d.Learn = rulesview.Learn(r.Context(), s.cfg.Ledger, s.cfg.Anchor, id)
@@ -997,6 +1264,7 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	lists := rulesview.RunLists(s.cfg.Ledger, id)
 	d.Signal = s.signalOf(snap.Runs, run)
+	d.Reads = readContextOf(view, s.signalOf(snap.Runs, view))
 	d.Story, d.Home = ledgerview.RunVerdict(run, d.Signal), ledgerview.RunHome(run)
 	if tab == "least-privilege" && d.Learn != nil && d.Learn.Err == "" && d.Story.Kind == ledgerview.VerdictLeak {
 		// A contract made from a run that leaked never allows where its secrets went (QA PW-1). Learned is the
@@ -1022,10 +1290,11 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request, id string) {
 		d.Refusals[i].Label = ruleLabel(d.Refusals[i].Event, lists)
 	}
 	relabelLive(rows, func(string) *ledgerview.Run { return run })
+	ledgerview.GroupSteps(rows, run)
 	relabelLive(d.Refusals, func(string) *ledgerview.Run { return run })
 	d.Lines, d.Shown = rows, len(rows)
 	if d.Verdict == "" {
-		d.Changes = placed(rows, changesOfRun(s.feed(), run), d.Before == 0, d.Older == 0)
+		d.Changes = placed(rows, changesOfRun(s.feed(r.Context()), run), d.Before == 0, d.Older == 0)
 	}
 	for _, k := range []string{"exec", "fs", "net", "refused", "ask", "answer", "gap", "limit", "mcp", "decision"} {
 		if n := run.Kinds[k]; n > 0 {
@@ -1037,31 +1306,40 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request, id string) {
 		title = id
 	}
 	c := s.chromeOf(snap, title+" · run", "runs")
-	// This run's asks are on this page in full (the ask cards above Highlights): the banner keeps only other runs'.
-	// While this run has a card, no banner at all: the banner floats over the top of the page (mvp.css) and must never
-	// cover the card's Allow once or Deny; the nav's Approvals count still says how many wait elsewhere.
-	c.Asks = slices.DeleteFunc(slices.Clone(snap.Pending()), func(a ledgerview.Ask) bool { return a.Run == id })
-	c.Asks = c.Asks[:min(len(c.Asks), maxBanner)]
-	if slices.ContainsFunc(snap.Pending(), func(a ledgerview.Ask) bool { return a.Run == id }) {
-		c.Asks = nil
+	// The run's own numbers follow its own record; the waiting count in the navigation and title stays the queue's.
+	numbers := runNumbers(run)
+	numbers.Queue = c.Numbers.Queue
+	if numbers.Queue.incomplete() {
+		for _, l := range c.Numbers.Links {
+			numbers.addLink(l)
+		}
 	}
+	c.Numbers = numbers
+	// One outer request band retains the shared pointer and keyboard hold.
 	if run.Live && d.Before == 0 {
 		// The timeline adds its own rows and the rest of the page updates its live regions in place (live.js); the
-		// meta refresh is for a browser without JavaScript.
-		c.Refresh = 3
+		// native refresh is explicit in a browser without JavaScript.
+		c.ManualRefresh = true
 	}
 	if run.PendingCut {
 		c.Notes = append(c.Notes, "Too many simultaneous unanswered requests to list; inspect the full ledger or stop the run.")
+		c.banner("queue")
 	}
 	if run.Cut {
 		c.Notes = append(c.Notes, "Showing a bounded window of this run. Counts cover the full run; highlights, searches and process details cover this window. Older opens earlier timeline windows; download the full ledger for all events.")
+		c.banner("window")
 	}
 	s.render(w, http.StatusOK, "run", c, d)
 }
 
 type approvalsData struct {
-	Pending []ledgerview.Ask
-	Now     time.Time
+	AttentionSource attentionSource
+	Selected        *ledgerview.Ask
+	Answered        *answered
+	Missing         bool
+	Detail          bool
+	Pending         []ledgerview.Ask
+	Now             time.Time
 	// Recent is the newest answers, from every run; Lost is the asks of runs that crashed before anyone answered.
 	Recent []answered
 	Lost   []ledgerview.Ask
@@ -1076,6 +1354,7 @@ type approvalsData struct {
 
 // answerSession is one run's answers on the History tab.
 type answerSession struct {
+	Managed             bool
 	Run, Agent, Project string
 	Start               time.Time
 	Allowed, Denied     int
@@ -1095,9 +1374,9 @@ func (s *Server) approvals(w http.ResponseWriter, r *http.Request) {
 	}
 	c := s.chromeOf(snap, "Approvals", "approvals")
 	if c.Live {
-		c.Refresh = 5
+		c.ManualRefresh = true
 	}
-	d := approvalsData{Pending: snap.Pending(), Now: s.cfg.Now(), Recent: answersOf(snap, recentAnswers), Lost: snap.Lost(),
+	d := approvalsData{AttentionSource: attentionSourceOf(snap), Pending: snap.Pending(), Now: s.cfg.Now(), Recent: answersOf(snap, recentAnswers), Lost: snap.Lost(),
 		Homes: map[string]string{}, Cwds: map[string]string{}}
 	roots := func(run string) {
 		r := snap.Find(run)
@@ -1112,7 +1391,40 @@ func (s *Server) approvals(w http.ResponseWriter, r *http.Request) {
 	for _, a := range d.Lost {
 		roots(a.Run)
 	}
-	all := answersOf(snap, historyAnswers)
+	// History reads one answer past its limit, so a cut history says so instead of passing for every answer.
+	all := answersOf(snap, historyAnswers+1)
+	if len(all) > historyAnswers {
+		c.Numbers.History = worse(c.Numbers.History, countScope{Lower: true, Reason: "Answer history shows only the newest " + strconv.Itoa(historyAnswers) + " answers."})
+		c.Numbers.addLink(countLink{Label: "Complete record of the oldest answer left out", URL: "/logs.jsonl?run=" + url.QueryEscape(all[historyAnswers].Run)})
+		c.Numbers.addLink(countLink{Label: "All runs", URL: "/runs"})
+		all = all[:historyAnswers]
+	}
+	if query := r.URL.Query(); query.Has("ask") || query.Has("run") {
+		d.Detail = true
+		ask, run := query.Get("ask"), query.Get("run")
+		for i := range d.Pending {
+			if d.Pending[i].AskID == ask && d.Pending[i].Run == run {
+				d.Selected = &d.Pending[i]
+				break
+			}
+		}
+		if d.Selected == nil {
+			// A saved request link is independent of the recent History page limit.
+			if rr := snap.Find(run); rr != nil {
+				answers := answersOf(&ledgerview.Snapshot{Runs: []*ledgerview.Run{rr}}, rr.Kinds["answer"])
+				for i := range answers {
+					if answers[i].AskID == ask {
+						d.Answered = &answers[i]
+						break
+					}
+				}
+			}
+		}
+		d.Missing = d.Selected == nil && d.Answered == nil
+	} else if len(d.Pending) > 0 {
+		d.Selected = &d.Pending[0]
+	}
+
 	d.Answers = len(all)
 	if r.URL.Query().Get("tab") == "history" {
 		d.Tab = "history"
@@ -1125,6 +1437,7 @@ func (s *Server) approvals(w http.ResponseWriter, r *http.Request) {
 				ses := answerSession{Run: a.Run, Agent: a.Agent}
 				if run := snap.Find(a.Run); run != nil {
 					ses.Project, ses.Start = path.Base(run.Cwd), run.Start
+					ses.Managed = run.LocalApprovalAuthority != nil
 				}
 				d.Sessions = append(d.Sessions, ses)
 				roots(a.Run)
@@ -1184,9 +1497,11 @@ func rowActsOf(e ledgerview.Event, live, contract bool) rowActs {
 	var what, value string
 	switch e.Kind {
 	case "exec":
-		// An exec row's target is the command line; the program is its first word.
+		// The program as the command names it (a path, or the bare name the agent typed, which a live block takes
+		// too), read from the recorded arguments: the first word of the command line a row shows is not it when the
+		// path holds a space.
 		kind, what = liveblock.KindExec, "program"
-		value, _, _ = strings.Cut(strings.TrimSpace(e.Target), " ")
+		value = e.Argv0()
 	case "net":
 		kind, what, value = liveblock.KindNet, "destination", e.Target
 		if m := hostDst.FindStringSubmatch(e.Target); m != nil {
@@ -1289,11 +1604,11 @@ func progKey(row ledgerview.Row) (key, prog string) {
 	if row.Kind != "exec" && row.Op != "exec" {
 		return "", ""
 	}
-	f := strings.Fields(row.Target)
-	if len(f) == 0 || !strings.HasPrefix(f[0], "/") {
+	p := row.Argv0()
+	if !strings.HasPrefix(p, "/") {
 		return "", ""
 	}
-	return row.Run + "\x00" + row.Rule + "\x00" + row.Reason + "\x00" + path.Base(f[0]), f[0]
+	return row.Run + "\x00" + row.Rule + "\x00" + row.Reason + "\x00" + path.Base(p), p
 }
 
 // refKey names a listed row: its run and line.

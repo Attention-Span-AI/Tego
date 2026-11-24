@@ -1,0 +1,83 @@
+{
+  "id": "p25-leading-zero",
+  "group": "parser",
+  "pins": [
+    "B015",
+    "B016"
+  ],
+  "why": "B015: A leading zero is not one valid JSON number.",
+  "bundle": {
+    "version": 1,
+    "adapter": "square.refund.v1",
+    "server": "square",
+    "rules": [
+      {
+        "id": "cap",
+        "kind": "per_call",
+        "currency": "USD",
+        "limit": "10000"
+      },
+      {
+        "id": "currencies",
+        "kind": "currencies",
+        "codes": [
+          "USD"
+        ]
+      }
+    ]
+  },
+  "bundle_wire_hex": null,
+  "request": {
+    "adapter": "square.refund.v1",
+    "call_hex": "7b226964223a312c226a736f6e727063223a22322e30222c226d6574686f64223a22746f6f6c732f63616c6c222c22706172616d73223a7b22617267756d656e7473223a7b226d6574686f64223a227061796d656e74222c2272657175657374223a7b22616d6f756e745f6d6f6e6579223a7b22616d6f756e74223a303130302c2263757272656e6379223a22555344227d2c226964656d706f74656e63795f6b6579223a226b31222c227061796d656e745f6964223a227031227d2c2273657276696365223a22726566756e6473227d2c226e616d65223a226d616b655f6170695f72657175657374227d7d",
+    "contract_bundle_digest": "762086c3104e609f82fb5c5bbb9dc077417803897248181a048adf6b74c7b6f9",
+    "contract_verdict": "allow",
+    "evaluator_status": "ready",
+    "request_id": "1",
+    "run_id": "run1",
+    "server": "square",
+    "state": {
+      "bundle_digest": "762086c3104e609f82fb5c5bbb9dc077417803897248181a048adf6b74c7b6f9",
+      "epoch": "e1",
+      "revision": "0",
+      "run_id": "run1",
+      "seen_keys": [],
+      "server": "square",
+      "status": "ready",
+      "totals": []
+    },
+    "tool_source": "contract",
+    "topology": "exclusive",
+    "version": 1
+  },
+  "request_wire_hex": null,
+  "expected": {
+    "adapter": "square.refund.v1",
+    "bundle_digest": "762086c3104e609f82fb5c5bbb9dc077417803897248181a048adf6b74c7b6f9",
+    "business": {
+      "verdict": "deny",
+      "rule_id": "$adapter",
+      "condition": "input.json"
+    },
+    "asks": [],
+    "call_digest": "1b524859659b7d5824da0f3e5916a49a880faf031f72f5aba254a9c9e51ef862",
+    "facts": null,
+    "final": {
+      "verdict": "deny",
+      "source": "business",
+      "condition": "input.json"
+    },
+    "record": {
+      "coverage": "unknown",
+      "delivery": "not_attempted",
+      "remote_outcome": "unknown",
+      "required": true,
+      "stage": "evaluated"
+    },
+    "request_id": "1",
+    "reservation": null,
+    "run_id": "run1",
+    "server": "square",
+    "version": 1
+  }
+}

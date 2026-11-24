@@ -110,6 +110,46 @@ func TestSnapshotRefusalOfAnExec(t *testing.T) {
 	}
 }
 
+// TestSnapshotRefusalOfAnExecWhereThePlaneDecidesExecs: at a root tier whose kernel plane decides execs
+// (Options.KernelExecHandoff true) an exec is handed to the kernel before the decision core runs, which would continue an
+// image beneath a name made after launch and write no line, while the ruleset refuses it in file_open. The handover is
+// skipped for an image the snapshot refuses, so it takes the same refusal as at tier landlock: EACCES, one line, refused,
+// read-denied, deny-read-snapshot. An image the listing granted is still handed over (no line from this loop).
+func TestSnapshotRefusalOfAnExecWhereThePlaneDecidesExecs(t *testing.T) {
+	nr := nrFor(t, "execve")
+	images := map[string]execImage{
+		"/work/late/tool": fakeImage("/work/late/tool"),
+		"/usr/bin/true":   fakeImage("/usr/bin/true"),
+	}
+	for _, c := range []struct {
+		path    string
+		refused bool
+	}{
+		{"/work/late/tool", true},
+		{"/usr/bin/true", false},
+	} {
+		f := newFake()
+		f.images = images
+		pol := testPolicy(nil, []agent.FSRule{{Path: "/work/secret", Kind: agent.FSDenyRead, Raw: "./secret/"}}, nil)
+		pol.Rules.Contract = &agent.Contract{}
+		l, sink := newTestLoopOpts(t, f, pol, Options{
+			KernelExecHandoff: func() bool { return true },
+			DenyReadSnapshot:  func(p string) bool { return p == "/work/late/tool" }})
+		execAt(l, f, nr, 42, 0, c.path, filepath.Base(c.path))
+		if !c.refused {
+			if len(sink.events) != 0 {
+				t.Errorf("%s: a handed-over exec the listing granted wrote %d lines from this loop", c.path, len(sink.events))
+			}
+			continue
+		}
+		ev := sink.one(t)
+		if ev.Verdict != record.VerdictRefused || ev.Rule != ruleDenyReadSnapshot || ev.Reason != record.ReasonReadDenied {
+			t.Errorf("%s: %s %s %s, want refused read-denied %s", c.path, ev.Verdict, ev.Reason, ev.Rule, ruleDenyReadSnapshot)
+		}
+		wantExecAnswer(t, f, record.VerdictRefused)
+	}
+}
+
 // TestSnapshotExplainsAHeldReadsEACCES: a held read is opened by the open deputy in the run's own domain, so the
 // ruleset refuses it the same name it refuses the task; the deputy's EACCES is then the snapshot's, and the line says
 // refused, read-denied, deny-read-snapshot, where it said allow with syscall_ret -13 (and under record: summary had no

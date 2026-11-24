@@ -31,7 +31,8 @@ var (
 	// A folder name with a hyphen in it ("tego-workdir/", the temporary folder's own parts when TMPDIR has one) is
 	// wrapped in <span class="nb">, which would stop lockedShort mid-path; the span is taken off a path part (one
 	// with a slash), never off other text such as a question's id.
-	lockedNB = regexp.MustCompile(`<span class="nb">([^<"]*/[^<"]*)</span>`)
+	lockedToken = regexp.MustCompile(`<span class="path-token">([^<]*)</span>`)
+	lockedNB    = regexp.MustCompile(`<span class="nb">([^<"]*/[^<"]*)</span>`)
 	// The two pieces ADR 0125 adds to a Locked run's pages: the run page's time limit on Block now, and the Rules
 	// page's Mode line. Each is one element with no element of its own kind inside.
 	lockedAdds = []*regexp.Regexp{
@@ -44,6 +45,9 @@ var (
 // folders) and, with strip, ADR 0125's additions taken out.
 func lockedPage(page string, strip bool, paths ...string) string {
 	page = csrfValue.ReplaceAllString(page, `name="csrf" value="CSRF"`)
+	// Identity instrumentation adds a wrapper around each plain path token.
+	// Remove only that wrapper before the existing temporary-path normalization.
+	page = lockedToken.ReplaceAllString(page, "$1")
 	page = lockedNB.ReplaceAllString(page, "$1")
 	for i, p := range paths {
 		page = wbrPath(p).ReplaceAllLiteralString(page, "/TMP"+string(rune('A'+i)))

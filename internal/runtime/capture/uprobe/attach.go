@@ -54,6 +54,45 @@ var ErrNoPinDir = errors.New("uprobe: the build has no pin directory")
 // It returns bpf.ErrNotGenerated when this binary was built without the compiled objects, which callers
 // turn into a mechanism-unavailable gap, never a panic.
 func LoadCollection(pinRoot, bpfHash string) (*ebpf.Collection, error) {
+	coll, err := loadCaptureCollection(pinRoot, bpfHash)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkCaptureCollection(coll); err != nil {
+		coll.Close()
+		return nil, err
+	}
+	return coll, nil
+}
+
+// The same check covers fresh loads and both adoption paths. A failure remains
+// the ordinary mechanism-unavailable cause; no enforcing program depends on it.
+func checkCaptureCollection(coll *ebpf.Collection) error {
+	for _, name := range bpf.SSLSinglePrograms {
+		if coll.Programs[name] == nil {
+			return fmt.Errorf("uprobe: cannot verify capture stack safety: missing program %s", name)
+		}
+	}
+	// Check the actual inventory too, so adding a capture program cannot bypass
+	// read-back by omitting its name from the required fallback list.
+	for name, p := range coll.Programs {
+		if p == nil {
+			return fmt.Errorf("uprobe: cannot verify capture stack safety: missing program %s", name)
+		}
+		if err := checkCaptureStack(name, p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Test seams for loading and read-back without kernel privileges.
+var (
+	loadCaptureCollection = loadCollectionForBuild
+	checkCaptureStack     = bpf.CheckCaptureStack
+)
+
+func loadCollectionForBuild(pinRoot, bpfHash string) (*ebpf.Collection, error) {
 	dir := mapDir(pinRoot, bpfHash)
 	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
 		return nil, fmt.Errorf("%w: %s", ErrNoPinDir, dir)

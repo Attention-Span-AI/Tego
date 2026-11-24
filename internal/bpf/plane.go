@@ -85,6 +85,9 @@ func (h PlaneHook) Target(m PlaneMode) string {
 	return h.Security
 }
 
+// PlaneHookSocketRecvmsg is the plane hook that refuses a receive carrying a control buffer (ADR 0128, amended).
+const PlaneHookSocketRecvmsg = "socket_recvmsg"
+
 // PlaneHooks are the plane's hooks, steps A, D, B and C (in the order they landed), in enum tego_plane_hook order;
 // each is two programs, one per mode (bpf/tests TestPlaneHooksHaveBothSections pins the C side).
 var PlaneHooks = []PlaneHook{
@@ -121,6 +124,8 @@ var PlaneHooks = []PlaneHook{
 	{Name: "capable", LSM: "capable", Security: "security_capable", Decides: true},
 
 	{Name: "unix_may_send", LSM: "unix_may_send", Security: "security_unix_may_send", Decides: true},
+	// ADR 0128 (amended): refuses a receive carrying a control buffer under net.assurance: kernel (decide_import.h).
+	{Name: PlaneHookSocketRecvmsg, LSM: "socket_recvmsg", Security: "security_socket_recvmsg", Decides: true},
 }
 
 // PlaneDecidesMappings reports whether the plane's hooks include step C's, whose bodies decide an executable mapping
@@ -191,7 +196,112 @@ const (
 	// MapPlaneExecArmed is the TASK_STORAGE map of each task's pin state (ExecArmed): the plane writes it, and the
 	// recorder's sched_process_exec reads the pin seq from it, so both objects declare it, pinned by name.
 	MapPlaneExecArmed = "tego_plane_exec_armed"
+	// MapPlaneBlocks is a HASH_OF_MAPS from run_idx to the slot's live-block rows (ADR 0124, amendment 2026-11-21): a
+	// struct inode *, or a directory's and a name's mixed key, -> PlaneBlockRow. The fill writes and deletes them from
+	// the launcher's descriptors, so no key reaches userspace.
+	MapPlaneBlocks = "tego_plane_blocks"
+	// MapPlaneBlockStates is an ARRAY of PlaneBlockState by run_idx, which the launcher writes whole.
+	MapPlaneBlockStates = "tego_plane_block_states"
 )
+
+// PlaneBlockRow is a MapPlaneBlocks row: struct tego_plane_block_row. Only the kernel writes one (the fill); userspace
+// reads none (its key is an address), so this mirror exists for the layout tests and the doctor's reader.
+type PlaneBlockRow struct {
+	_           structs.HostLayout
+	IIno        uint64
+	IGeneration uint32
+	SDev        uint32
+	// FromNs is the CLOCK_BOOTTIME instant before which the row refuses nothing (a dormant block), 0 for now.
+	FromNs uint64
+	// NameKey is a name row's PlaneNameKey, 0 for an inode row.
+	NameKey uint64
+	Gen     uint32
+	// IDRead, IDWrite and IDGuard are the live blocks refusing reads, changes and the object's own move or removal; 0
+	// is none.
+	IDRead  uint16
+	IDWrite uint16
+	IDGuard uint16
+	Flags   uint8
+	// SelfQ and BeneathQ are the classes the row refuses at its object and beneath it, which the fill derives.
+	SelfQ    uint8
+	BeneathQ uint8
+	Pad      uint8
+	Pad2     uint16
+}
+
+// PlaneBlockNameKey is the key of a live-block name row's name (bpf/decide.bpf.c tego_block_name_hash): its length and
+// its first 32 bytes, mixed, bit 0 set. Two names of one length whose first 32 bytes agree share it, so a row refuses
+// creating either; false for an empty name or one longer than a dentry's.
+func PlaneBlockNameKey(name string) (uint64, bool) {
+	if name == "" || len(name) > NameMax-1 {
+		return 0, false
+	}
+	mix := func(h uint64) uint64 {
+		h ^= h >> 33
+		h *= 0xff51afd7ed558ccd
+		h ^= h >> 33
+		h *= 0xc4ceb9fe1a85ec53
+		h ^= h >> 33
+		return h
+	}
+	h := mix(uint64(len(name)))
+	for i := 0; i < 32 && i < len(name); i += 8 {
+		var w [8]byte
+		copy(w[:], name[i:])
+		h = mix(h ^ binary.NativeEndian.Uint64(w[:]))
+	}
+	return h>>1 | 1, true
+}
+
+// PlaneBlockRow.Flags bits (enum tego_plane_block_flag).
+const (
+	PlaneBlockSelf      uint8 = 0x01
+	PlaneBlockBeneath   uint8 = 0x02
+	PlaneBlockMountOnly uint8 = 0x04
+	PlaneBlockName      uint8 = 0x08
+)
+
+// The classes a block refuses (enum tego_plane_block_class), and PlaneBlockState.Over's bits.
+const (
+	PlaneBlockRead  uint32 = 0x01
+	PlaneBlockWrite uint32 = 0x02
+)
+
+// PlaneBlockState is the MapPlaneBlockStates value: struct tego_plane_block_state. The launcher writes it whole, in the
+// order its doc gives: On and Names before rows go in, cleared after they are gone; Over before a row is given up,
+// cleared after the rows it stood for are in.
+type PlaneBlockState struct {
+	_ structs.HostLayout
+	// Gen is the run's; a state of another gen holds no blocks.
+	Gen   uint32
+	On    uint32
+	Names uint32
+	// Over is PlaneBlockRead | PlaneBlockWrite: every action of the class is refused, named by OverRead or OverWrite.
+	Over      uint32
+	OverRead  uint16
+	OverWrite uint16
+	Pad       uint32
+}
+
+// PlaneBlockRowsMax is the row count of one slot's live-block map (TEGO_PLANE_BLOCK_ROWS_MAX).
+const PlaneBlockRowsMax = 1024
+
+// PlaneRuleLiveBlock is the bit of a refusal a live block made (TEGO_PLANE_RULE_LIVE_BLOCK), below it the block's id (1
+// to PlaneBlockIDMax), which the launcher names live.block[<kind>:<value>]. It fits the 16 bits a recorder fexit's
+// header carries: no fs row reaches it, and a name entry's tag and PlaneRuleNone have the name bit (0x8000) set.
+const (
+	PlaneRuleLiveBlock uint16 = 0x4000
+	PlaneBlockIDMax    uint16 = 0x3fff
+)
+
+// PlaneLiveBlockID is the live block a plane refusal's rule_idx names, false for a rule no live block made.
+func PlaneLiveBlockID(idx uint16) (uint16, bool) {
+	if idx&0x8000 != 0 || idx&PlaneRuleLiveBlock == 0 {
+		return 0, false
+	}
+	id := idx & PlaneBlockIDMax
+	return id, id != 0
+}
 
 // PlaneExecPinProgram is the plane's tp_btf/sched_process_exec program of mode m (ADR 0048 (3) P2,
 // bpf/decide_execpin.h): it checks each exec of a pinned run against its armed pin and kills it before its first
@@ -397,7 +507,12 @@ type PlaneSlot struct {
 	// tid: nsfs's s_dev in the kernel's encoding (major << 20 | minor, not stat's st_dev) and the namespace's inode.
 	PidnsDev uint64
 	PidnsIno uint64
-	Pad2     [16]uint8
+	// DeputyTgid and DeputyStart are the run's open deputy (ADR 0128, amended 2026-11-21), which socket_recvmsg passes
+	// under PlaneSlotImportsDenied: its thread-group id in the pid namespace PidnsDev and PidnsIno name and its start
+	// time in USER_HZ ticks since boot (/proc/<pid>/stat field 22). 0: no deputy.
+	DeputyTgid  uint32
+	DeputyPad   uint32
+	DeputyStart uint64
 }
 
 // SetLeads writes the header's name prefilter: leads (decide.PlaneRows.Leads, folded literals' first bytes, each 1
@@ -455,10 +570,15 @@ const (
 	PlaneSlotExecPin uint32 = 0x100
 	// PlaneSlotBuiltinTTY delegates terminal opens to the inherited tty domain.
 	PlaneSlotBuiltinTTY uint32 = 0x200
+	// PlaneSlotImportsDenied: the run's net.assurance is kernel; socket_recvmsg refuses a receive that carries a control
+	// buffer (ADR 0128, amended), so the seccomp filter may leave recvmsg to the plane.
+	PlaneSlotImportsDenied uint32 = 0x400
 	// PlaneRuleBuiltinHost is a native peer refusal whose inode could not name a row.
 	PlaneRuleBuiltinHost uint32 = 0x40000
 	// PlaneRuleBuiltinSurface names the ledger control socket floor.
 	PlaneRuleBuiltinSurface uint32 = 0x80000
+	// PlaneRuleSocketImport is socket_recvmsg's refusal of a control-bearing receive; the ledger names it socket-import.
+	PlaneRuleSocketImport uint32 = 0x100000
 )
 
 // The exec pin's forms (ExecPin.Form, enum tego_pin_form) and flags (ExecPin.Flags, enum tego_pin_flag).

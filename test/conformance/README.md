@@ -99,7 +99,9 @@ ancestor route and an approval scope with the same startup refusal. These expect
 unchanged tree instead of trying an action after a refused start.
 
 Different filesystem instances showing the same data are not recognised at any tier, and name-entry scopes receive
-no alias check (GAPS C68).
+no alias check at the listener (GAPS C68). `mounts-bindwrite.yaml` (ADR 0011, amended 2026-11-19, round 5) binds a
+write entry read-write elsewhere and reads and writes a nested deny_read target and a declared deny_write target
+through both names.
 
 The changed expectations compile and have unit checks; they are owed in a guest on Debian 13's 6.12 and Fedora's
 7.0, both boots. Saved fix-round-1 guest baselines show `mounts-bindmove` and `mounts-bindhidden` failing before that
@@ -384,3 +386,10 @@ away. A file written under `sudo` keeps its mode and owner.
 
 To add cells: add them to a fixture with distinct paths, run both runners, and put only the disagreements that belong in
 the baseline there, with their reason. A table's `deferred:` list (`Deferred()`) names what later spaces of ADR 0017 add.
+
+Compile comparisons run one fixture at a time in sequential subtests. Cleanup
+reclaims its tree and helper resources before the next fixture, rather than
+retaining every actor copy until the parent ends on the guest's tmpfs.
+`TestCompileFixturesReleaseSpace` measures the retained regular-file bytes with
+a fixed 1 MiB actor over all 64 grid fixtures, checks each copy is independent,
+and requires at most one fixture's data at peak and none left at the end.

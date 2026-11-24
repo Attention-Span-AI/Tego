@@ -51,6 +51,8 @@ const struct tego_pin_keyval *tego_btf_pin_keyval;
 const struct tego_exec_armed *tego_btf_exec_armed;
 const struct tego_ev_exec_kill *tego_btf_ev_exec_kill;
 const struct tego_ev_exec_held *tego_btf_ev_exec_held;
+const struct tego_plane_block_row *tego_btf_plane_block_row;
+const struct tego_plane_block_state *tego_btf_plane_block_state;
 
 /* The mode a program body runs in: a constant per program once the body is inlined, so a mode-only branch (the
  * security_ wrapper's own early exits, which fmod_ret mode must reproduce, ADR 0024 (8)) costs the other mode
@@ -641,6 +643,276 @@ static __always_inline void tego_plane_unslotted_fs(const struct tego_run *run, 
     tego_plane_fallback(run, hook, dentry, TEGO_PLANE_RULE_NONE, TEGO_R_PATH_UNRESOLVED, flags);
 }
 
+/* ---- Live blocks (ADR 0124, amendment 2026-11-21) ----
+ *
+ * A person's path, read or write block on a running run, put in force here by the run's launcher: rows in the slot's
+ * tego_plane_blocks, keyed by the objects the block's path named when it landed (bpf/include/events.h struct
+ * tego_plane_block_row), and the slot's tego_plane_block_state. Every fs hook asks them after the contract's own
+ * decision allowed (tego_block_check); a hit refuses under TEGO_PLANE_RULE_LIVE_BLOCK | the block's id. */
+
+/* The block walk's state, on the global function's stack: as tego_walk_state, with the classes asked (q) and the
+ * hit row's ids and the classes it matched, which the global function reads after the loop. */
+struct tego_block_walk_state {
+    void *rows;
+    __u64 d;
+    __u64 m;
+    __u64 mroot;
+    __u64 now;
+    __u32 gen;
+    __u32 steps;
+    __u32 q;
+    __u32 result;   /* enum tego_block_result */
+    __u16 id_read;
+    __u16 id_write;
+    __u16 id_guard;
+    __u8  hit;      /* the classes the hit row matched */
+    __u8  crossed;
+};
+
+enum tego_block_result {
+    TEGO_BLOCK_NONE = 0,
+    TEGO_BLOCK_HIT = 1,
+    TEGO_BLOCK_MISMATCH = 2,
+    TEGO_BLOCK_UNRESOLVED = 3,
+};
+
+/* The caller's zeroed seed: every field tego_block_step branches on is read from it, not written as a constant, for the
+ * verifier reason tego_plane_walk gives (a callback verified once, from its first call's state, before 6.8). q is the
+ * classes asked and refuse_as and read_as the hook's reasons, which the global functions cannot take as arguments
+ * beyond five. */
+struct tego_block_seed {
+    __u32 zero;
+    __u32 q;
+    __u8  refuse_as;
+    __u8  read_as;
+    __u16 pad;
+    __u32 pad2;
+};
+
+/* One level of the block walk: the inode of the dentry at this level, looked up in the slot's block rows (a mount
+ * crossing's mountpoint is not, as tego_walk_step does not: it names the path the mount root below it did). A row of
+ * the run's gen (a MOUNT_ONLY one only on the walk inside one superblock, m 0) whose key inode still carries its
+ * identity and whose instant has come refuses the classes asked that its mask for this level holds: self_q at the
+ * object itself (steps 0: a guard for a move or removal, a SELF row's read or write), beneath_q above it. The walk does
+ * not stop at a row that refuses nothing asked: it goes on to the namespace root, past every contract row. */
+static long tego_block_step(__u32 i, struct tego_block_walk_state *s)
+{
+    __u64 d = s->d;
+
+    if (!s->crossed) {
+        if (s->steps > TEGO_PLANE_WALK_MAX) {
+            s->result = TEGO_BLOCK_UNRESOLVED;
+            return 1;
+        }
+        __u64 inode = TEGO_D_INODE(d);
+
+        if (inode) {
+            __u64 key = inode;
+            struct tego_plane_block_row *r = bpf_map_lookup_elem(s->rows, &key);
+
+            if (r && r->gen == s->gen && !(s->m && (r->flags & TEGO_BLOCK_MOUNT_ONLY))) {
+                if (r->i_ino != TEGO_I_INO(inode) || r->i_generation != TEGO_I_GEN(inode) ||
+                    r->s_dev != TEGO_I_SDEV(inode)) {
+                    s->result = TEGO_BLOCK_MISMATCH;
+                    return 1;
+                }
+                __u8 hit = (s->steps ? r->beneath_q : r->self_q) & s->q;
+
+                if (hit && (!r->from_ns || s->now >= r->from_ns)) {
+                    s->hit = hit;
+                    s->id_read = r->id_read;
+                    s->id_write = r->id_write;
+                    s->id_guard = r->id_guard;
+                    s->result = TEGO_BLOCK_HIT;
+                    return 1;
+                }
+            }
+        }
+    }
+    s->crossed = 0;
+    if (d == s->mroot) {
+        __u64 m = s->m;
+        if (!m) {
+            s->result = TEGO_BLOCK_NONE; /* the superblock's root */
+            return 1;
+        }
+        __u64 pm = TEGO_M_PARENT(m);
+
+        if (!pm || pm == m) {
+            s->result = TEGO_BLOCK_NONE; /* the namespace root */
+            return 1;
+        }
+        s->d = TEGO_M_MOUNTPOINT(m);
+        s->m = pm;
+        s->mroot = TEGO_M_ROOT(pm);
+        s->crossed = 1;
+        return 0;
+    }
+    __u64 p = TEGO_D_PARENT(d);
+    if (!p || p == d) {
+        s->result = TEGO_BLOCK_UNRESOLVED;
+        return 1;
+    }
+    s->d = p;
+    s->steps++;
+    return 0;
+}
+
+/* The id and class of a hit that matched the classes hit: a change first (the write block), then a guard, then a read. */
+static __always_inline __u64 tego_block_pick(__u8 hit, __u16 id_read, __u16 id_write, __u16 id_guard)
+{
+    if ((hit & TEGO_BLOCK_WRITE) && id_write)
+        return (__u64)TEGO_BLOCK_WRITE << 16 | id_write;
+    if ((hit & TEGO_BLOCK_GUARD) && id_guard)
+        return (__u64)TEGO_BLOCK_GUARD << 16 | id_guard;
+    if (id_read)
+        return (__u64)TEGO_BLOCK_READ << 16 | id_read;
+    return (__u64)TEGO_BLOCK_GUARD << 16 | (id_write ? id_write : id_guard);
+}
+
+/* The key of a name a creation makes (a name row's, ADR 0124 amendment 2026-11-21): its length and its first 32 bytes,
+ * mixed (internal/bpf.PlaneBlockNameKey is the same function), with bit 0 set. Read in four straight words through the
+ * build's reader, no loop: two names in one directory that share their length and first 32 bytes share a key, and a
+ * row of one refuses creating the other too, which only refuses more. */
+static __always_inline __u64 tego_block_name_hash(__u64 name, __u32 len)
+{
+    __u64 h = tego_mix64(len);
+
+    if (len > 0)
+        h = tego_mix64(h ^ tego_word_mask(TEGO_RD_WORD(name), len));
+    if (len > 8)
+        h = tego_mix64(h ^ tego_word_mask(TEGO_RD_WORD(name + 8), len - 8));
+    if (len > 16)
+        h = tego_mix64(h ^ tego_word_mask(TEGO_RD_WORD(name + 16), len - 16));
+    if (len > 24)
+        h = tego_mix64(h ^ tego_word_mask(TEGO_RD_WORD(name + 24), len - 24));
+    return (h >> 1) | 1;
+}
+
+/* The live blocks' answer, a global function verified once per program (ADR 0124, amendment 2026-11-21): for the run
+ * at idx_gen (run_idx | gen << 32) and the classes, reasons and zero the seed carries, the walk from dentry on vfsmount
+ * (0: inside the dentry's superblock), and for a creation the name row of dentry's name in its directory parent (a
+ * scalar the caller laundered). Returns 0 when no block refuses, else reason << 32 | rule: a hit refuses the hook's
+ * reason (a read hit read_as) under TEGO_PLANE_RULE_LIVE_BLOCK | the block's id; a row whose key inode lost its identity
+ * refuses identity-mismatch; a walk that cannot reach the root path-unresolved, since a slot holding blocks cannot say
+ * none lies above; and a class in overflow refuses whatever the rows said. A slot whose block state is not of the run's
+ * gen, or holds nothing, answers 0 at once. */
+__attribute__((noinline)) __u64 tego_block_decide(__u64 dentry, __u64 vfsmount, __u64 parent, __u64 idx_gen,
+                                                   struct tego_block_seed *seed)
+{
+    __u32 idx = (__u32)idx_gen;
+    __u32 gen = (__u32)(idx_gen >> 32);
+    struct tego_plane_block_state *st;
+    struct tego_block_walk_state s = {};
+    __u64 pick = 0;
+    __u32 code = TEGO_BLOCK_NONE;
+
+    if (!seed)
+        return 0;
+    st = bpf_map_lookup_elem(&tego_plane_block_states, &idx);
+    if (!st || st->gen != gen || !(st->on | st->over))
+        return 0;
+    if (st->on) {
+        s.rows = bpf_map_lookup_elem(&tego_plane_blocks, &idx);
+        if (!s.rows) {
+            code = TEGO_BLOCK_UNRESOLVED;
+        } else {
+            s.d = dentry;
+            if (vfsmount) {
+                s.m = vfsmount - bpf_core_field_offset(struct mount, mnt);
+                s.mroot = TEGO_VM_ROOT(vfsmount);
+            } else {
+                s.m = seed->zero;
+                s.mroot = TEGO_D_SBROOT(dentry);
+            }
+            s.gen = gen;
+            s.q = seed->q;
+            s.steps = seed->zero;
+            s.crossed = (__u8)seed->zero;
+            s.now = bpf_ktime_get_boot_ns();
+            /* Only a step that reached a root says NONE: a walk that runs out of iterations (mounts stacked on one
+             * mountpoint) cannot say no row lies above, and stays UNRESOLVED. */
+            s.result = TEGO_BLOCK_UNRESOLVED;
+            bpf_loop(TEGO_PLANE_WALK_ITERS, tego_block_step, &s, 0);
+            code = s.result;
+            if (code == TEGO_BLOCK_HIT)
+                pick = tego_block_pick(s.hit, s.id_read, s.id_write, s.id_guard);
+            if (code == TEGO_BLOCK_NONE && (s.q & TEGO_BLOCK_CREATE) && st->names && parent) {
+                /* The name row of a creation at dentry, a negative dentry in parent. */
+                __u64 nk, key;
+                __u32 len;
+                struct tego_plane_block_row *r;
+#if TEGO_PLANE_RDONLY
+                len = bpf_core_cast((void *)dentry, struct dentry)->d_name.len;
+                nk = (__u64)bpf_core_cast((void *)dentry, struct dentry)->d_name.name;
+#else
+                len = tego_rd32(dentry + bpf_core_field_offset(struct dentry, d_name) + bpf_core_field_offset(struct qstr, len));
+                nk = tego_rd64(dentry + bpf_core_field_offset(struct dentry, d_name) + bpf_core_field_offset(struct qstr, name));
+#endif
+                nk = tego_block_name_hash(nk, len);
+                key = tego_block_name_key(parent, nk);
+                r = bpf_map_lookup_elem(s.rows, &key);
+                if (r && r->gen == gen && r->name_key == nk) {
+                    if (r->i_ino != TEGO_I_INO(parent) || r->i_generation != TEGO_I_GEN(parent) ||
+                        r->s_dev != TEGO_I_SDEV(parent)) {
+                        code = TEGO_BLOCK_MISMATCH;
+                    } else if (r->self_q && (!r->from_ns || s.now >= r->from_ns)) {
+                        code = TEGO_BLOCK_HIT;
+                        pick = tego_block_pick(TEGO_BLOCK_WRITE | TEGO_BLOCK_GUARD, r->id_read, r->id_write, r->id_guard);
+                    }
+                }
+            }
+        }
+    }
+    if (code == TEGO_BLOCK_HIT) {
+        __u8 reason = ((pick >> 16) & 0xff) == TEGO_BLOCK_READ ? seed->read_as : seed->refuse_as;
+
+        return (__u64)reason << 32 | TEGO_PLANE_RULE_LIVE_BLOCK | ((__u16)pick & TEGO_PLANE_BLOCK_ID_MAX);
+    }
+    if (code == TEGO_BLOCK_MISMATCH) {
+        TEGO_PLANE_COUNT(idx, mismatch);
+        return (__u64)TEGO_R_IDENTITY_MISMATCH << 32 | TEGO_PLANE_RULE_NONE;
+    }
+    if (code) {
+        TEGO_PLANE_COUNT(idx, unresolved);
+        return (__u64)TEGO_R_PATH_UNRESOLVED << 32 | TEGO_PLANE_RULE_NONE;
+    }
+    if ((seed->q & TEGO_BLOCK_READ) && (st->over & TEGO_BLOCK_READ))
+        return (__u64)seed->read_as << 32 | TEGO_PLANE_RULE_LIVE_BLOCK | (st->over_read & TEGO_PLANE_BLOCK_ID_MAX);
+    if ((seed->q & (TEGO_BLOCK_WRITE | TEGO_BLOCK_GUARD | TEGO_BLOCK_CREATE)) && (st->over & TEGO_BLOCK_WRITE))
+        return (__u64)seed->refuse_as << 32 | TEGO_PLANE_RULE_LIVE_BLOCK | (st->over_write & TEGO_PLANE_BLOCK_ID_MAX);
+    return 0;
+}
+
+/* The live blocks' answer to an action the contract allowed, at dentry on mnt (NULL: inside its superblock), for the
+ * classes q (enum tego_plane_block_class): 0 when no block refuses it, else the reason, with *rule the block's (or none
+ * for a walk that failed closed). A hit of the read class refuses read_as (file_open's read-denied), any other
+ * refuse_as, the hook's own reason (tego_block_decide). The pointers reach the global function as scalars through the
+ * task's scratch value, the directory of a creation's new name among them. */
+static __always_inline __u8 tego_block_check(struct tego_plane_decision *sc, const struct tego_run *run,
+                                              struct dentry *dentry, struct vfsmount *mnt, __u32 q, __u8 refuse_as,
+                                              __u8 read_as, __u32 *rule)
+{
+    struct tego_block_seed seed = {};
+    __u64 d, m, p = 0, res;
+
+    seed.q = q;
+    seed.refuse_as = refuse_as;
+    seed.read_as = read_as;
+    sc->launder_dentry = (__u64)dentry;
+    sc->launder_mnt = (__u64)mnt;
+    d = *(volatile __u64 *)&sc->launder_dentry;
+    m = *(volatile __u64 *)&sc->launder_mnt;
+    if (q & TEGO_BLOCK_CREATE)
+        p = tego_plane_unknown(sc, (__u64)dentry->d_parent->d_inode);
+    res = tego_block_decide(d, m, p, (__u64)run->run_idx | (__u64)run->gen << 32, &seed);
+    if (!res)
+        return 0;
+    *rule = (__u32)res;
+    return res >> 32;
+}
+/* ---- end of the live blocks ---- */
+
 /* ADR 0043's name entries: the prefilter, the name check, the climb and D5, which the hooks below ask. */
 #include "decide_names.h"
 #include "decide_builtin.h"
@@ -712,6 +984,12 @@ TEGO_PLANE_HOOK(file_open, file_open, security_file_open, (struct file *file), (
     settled = tego_plane_settle(sc, reason, rule32);
     reason = settled >> 32;
     rule32 = (__u32)settled;
+    /* What the contract allowed, a live block may refuse (ADR 0124, amendment 2026-11-21): a read by a block on reads,
+     * a modification by one on changes. Asked once the decision is settled, so the verifier walks it on one path. */
+    if (!reason)
+        reason = tego_block_check(sc, run, file->f_path.dentry, file->f_path.mnt,
+                                  (read ? TEGO_BLOCK_READ : 0) | (modify ? TEGO_BLOCK_WRITE : 0),
+                                  TEGO_R_WRITE_OUTSIDE_CONTRACT, TEGO_R_READ_DENIED, &rule32);
     if (tego_plane_record(sc, TEGO_HOOK_FILE_OPEN, (__u64)file, rule32, reason)) {
         tego_plane_fallback(run, TEGO_HOOK_FILE_OPEN, file->f_path.dentry, rule32, reason, file->f_flags);
         return -EACCES;
@@ -1146,6 +1424,15 @@ TEGO_PLANE_HOOK(path_rename, path_rename, security_path_rename,
     settled = tego_plane_settle(sc, reason, rule);
     reason = settled >> 32;
     rule = (__u32)settled;
+    /* A live block refuses a rename with either end at or beneath it, of an object its path runs through, and onto its
+     * missing name (ADR 0124, amendment 2026-11-21). */
+    if (!reason &&
+        !(reason = tego_block_check(sc, run, old_dentry, old_dir->mnt,
+                                    TEGO_BLOCK_READ | TEGO_BLOCK_WRITE | TEGO_BLOCK_GUARD,
+                                    TEGO_R_RENAME_OUTSIDE_CONTRACT, TEGO_R_RENAME_OUTSIDE_CONTRACT, &rule)))
+        reason = tego_block_check(sc, run, new_dentry, new_dir->mnt,
+                                  TEGO_BLOCK_READ | TEGO_BLOCK_WRITE | TEGO_BLOCK_GUARD | TEGO_BLOCK_CREATE,
+                                  TEGO_R_RENAME_OUTSIDE_CONTRACT, TEGO_R_RENAME_OUTSIDE_CONTRACT, &rule);
     if (tego_plane_record(sc, TEGO_HOOK_PATH_RENAME, (__u64)old_dentry, rule, reason)) {
         tego_plane_fallback(run, TEGO_HOOK_PATH_RENAME, old_dentry, rule, reason, 0);
         return -EACCES;
@@ -1214,6 +1501,14 @@ TEGO_PLANE_HOOK(path_link, path_link, security_path_link,
     settled = tego_plane_settle(sc, reason, rule);
     reason = settled >> 32;
     rule = (__u32)settled;
+    /* A live block refuses a link from a file at or beneath it and a new name at or beneath it or at its missing name
+     * (ADR 0124, amendment 2026-11-21). */
+    if (!reason &&
+        !(reason = tego_block_check(sc, run, old_dentry, new_dir->mnt, TEGO_BLOCK_READ | TEGO_BLOCK_WRITE,
+                                    TEGO_R_WRITE_OUTSIDE_CONTRACT, TEGO_R_WRITE_OUTSIDE_CONTRACT, &rule)))
+        reason = tego_block_check(sc, run, new_dentry, new_dir->mnt,
+                                  TEGO_BLOCK_READ | TEGO_BLOCK_WRITE | TEGO_BLOCK_CREATE,
+                                  TEGO_R_WRITE_OUTSIDE_CONTRACT, TEGO_R_WRITE_OUTSIDE_CONTRACT, &rule);
     if (tego_plane_record(sc, TEGO_HOOK_PATH_LINK, (__u64)new_dentry, rule, reason)) {
         /* Named by its source, as the recorder's link line names it first. */
         tego_plane_fallback(run, TEGO_HOOK_PATH_LINK, old_dentry, rule, reason, 0);
@@ -1232,7 +1527,7 @@ TEGO_PLANE_HOOK(path_link, path_link, security_path_link,
  * (T9b). Returns the reason, 0 for an allow. */
 static __always_inline __u8 tego_modify_hook(struct dentry *dentry, struct vfsmount *mnt, struct tego_run *run,
                                               const struct tego_plane_slot *hdr, int names, __u16 hook, __u64 obj,
-                                              __u8 refuse_as)
+                                              __u8 refuse_as, __u32 bq)
 {
     struct tego_plane_decision *sc = tego_plane_scratch_get();
     __u32 depth, rule32, nrule = TEGO_PLANE_RULE_NONE;
@@ -1260,6 +1555,10 @@ static __always_inline __u8 tego_modify_hook(struct dentry *dentry, struct vfsmo
     settled = tego_plane_settle(sc, reason, rule32);
     reason = settled >> 32;
     rule32 = (__u32)settled;
+    /* What the contract allowed, a live block on changes may refuse (ADR 0124, amendment 2026-11-21): bq is the
+     * hook's classes, a guard for a removal and the name rows for a creation. */
+    if (!reason)
+        reason = tego_block_check(sc, run, dentry, mnt, bq, refuse_as, refuse_as, &rule32);
     reason = tego_plane_record(sc, hook, obj, rule32, reason);
     if (reason && !(hook == TEGO_HOOK_PATH_MKNOD && sc->listen_sock && sc->bind.op == TEGO_EV_BIND_RESULT &&
                     sc->listen_run_idx == run->run_idx && sc->listen_gen == run->gen))
@@ -1285,7 +1584,7 @@ TEGO_PLANE_HOOK(path_unlink, path_unlink, security_path_unlink, (const struct pa
         return -EACCES;
     }
     if (tego_modify_hook(dentry, dir->mnt, run, hdr, 1, TEGO_HOOK_PATH_UNLINK, (__u64)dentry,
-                          TEGO_R_DELETE_OUTSIDE_CONTRACT))
+                          TEGO_R_DELETE_OUTSIDE_CONTRACT, TEGO_BLOCK_WRITE | TEGO_BLOCK_GUARD))
         return -EACCES;
     return 0;
 }
@@ -1309,7 +1608,7 @@ TEGO_PLANE_HOOK(path_rmdir, path_rmdir, security_path_rmdir, (const struct path 
     }
     /* A directory's removal: no name entry decides it (ADR 0043 D1). */
     if (tego_modify_hook(dentry, dir->mnt, run, hdr, 0, TEGO_HOOK_PATH_RMDIR, (__u64)dentry,
-                          TEGO_R_DELETE_OUTSIDE_CONTRACT))
+                          TEGO_R_DELETE_OUTSIDE_CONTRACT, TEGO_BLOCK_WRITE | TEGO_BLOCK_GUARD))
         return -EACCES;
     return 0;
 }
@@ -1613,6 +1912,8 @@ TEGO_PLANE_HOOK(socket_sendmsg, socket_sendmsg, security_socket_sendmsg, (struct
 #include "decide_control.h"
 
 #include "decide_listen.h"
+
+#include "decide_import.h"
 
 /* No recorder fexit wraps unix_may_send. Its named sample has one owner,
  * regardless of the filesystem recorder mask. */

@@ -700,6 +700,12 @@ func (l *Loop) emitNet(n *notif, c *compiled, d dest, proto string, dec verdictO
 	if v != record.VerdictRefused && !c.recording() {
 		return
 	}
+	if d.isUnspec() && dec.rule == ruleUnmatched && l.observing() {
+		// An observe run continues the send its tier would have refused (R30): the line says what the call was, not
+		// the rule that would have refused it. A connect(2) disassociation never reaches here under ruleUnmatched
+		// (it is ruleUnspec); the enforcing tiers' refusal keeps ruleUnmatched.
+		dec.rule = ruleUnspecSend
+	}
 	var reason record.Reason
 	if v == record.VerdictRefused {
 		reason = record.ReasonNetNotAllowed
@@ -715,7 +721,7 @@ func (l *Loop) emitNet(n *notif, c *compiled, d dest, proto string, dec verdictO
 		ev.Authority = record.AuthorityHuman
 	}
 	payload := netPayload{
-		NetPayload:    record.NetPayload{Proto: proto, Dst: d.String(), Host: dec.host},
+		NetPayload:    record.NetPayload{Proto: proto, Dst: d.String(), Host: dec.host, Op: l.netOp(n, proto)},
 		BestEffort:    m.bestEffort,
 		ResultUnknown: m.resultUnknown,
 		GateFields:    gatePayload(dec.gate, dec.unsupported),
@@ -733,6 +739,19 @@ func (l *Loop) emitNet(n *notif, c *compiled, d dest, proto string, dec verdictO
 		return
 	}
 	l.emitFor(n, ev, payload)
+}
+
+// netOp is the op of a net line decided for n: record.NetOpSend for a UDP datagram a send call carried, "" for every
+// other line, a connect(2) of a UDP socket included (it sends nothing: GAPS C172).
+func (l *Loop) netOp(n *notif, proto string) string {
+	if n == nil || proto != protoUDP {
+		return ""
+	}
+	switch l.dispatch[dispatchKey{arch: n.arch, nr: n.nr}].name {
+	case "sendto", "sendmsg", "sendmmsg", "sendfile", "splice":
+		return record.NetOpSend
+	}
+	return ""
 }
 
 // hostSocketWhat is what the socket a refusal of rule host-sockets names gives an agent that reaches it

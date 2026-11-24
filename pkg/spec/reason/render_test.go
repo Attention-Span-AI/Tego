@@ -74,6 +74,7 @@ func TestRenderAccountsForEveryRefusal(t *testing.T) {
 				var listed, more uint64
 				for _, l := range strings.Split(strings.TrimSuffix(got, "\n"), "\n")[1:] {
 					switch {
+					case strings.HasPrefix(l, "Scope: "):
 					case strings.HasPrefix(l, "- x"):
 						k, _ := strconv.ParseUint(strings.Fields(l)[1][1:], 10, 64)
 						listed += k

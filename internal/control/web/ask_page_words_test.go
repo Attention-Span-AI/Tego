@@ -98,7 +98,7 @@ func TestSignInPage(t *testing.T) {
 			t.Fatalf("%s: %d, cookies %v; want 401 and no session", name, res.StatusCode, res.Cookies())
 		}
 		for _, want := range []string{"<title>Sign in · Tego</title>", `<meta name="viewport" content="width=device-width, initial-scale=1">`,
-			`<meta name="color-scheme" content="light dark">`, "Open the dashboard from your terminal", "<code>tego dashboard</code>"} {
+			`<meta name="color-scheme" content="light dark">`, "Open your dashboard safely", "<code>tego dashboard</code>"} {
 			if !strings.Contains(page, want) {
 				t.Errorf("%s: the page lacks %q", name, want)
 			}
@@ -139,10 +139,11 @@ func f3Serve(s *Server, r *http.Request) *http.Response {
 
 // TestR9F3AskWords: a Codex ask older than 30 s says Codex has likely given up and when Tego refuses it (the run's
 // ask.timeout), on the card and in the banner; a fresh ask keeps giveUp's words and carries the late words for
-// live.js; paths read against the run's home; the request names its line, its id in the title.
+// live.js; paths read against the run's home; the request shows its id in view, then its line.
 func TestAskWords(t *testing.T) {
 	s, c := f3Server(t)
 	ap := do(s, "GET", "/approvals", "127.0.0.1:8484", c).Body.String()
+	ap += get(t, s, c, "/approvals?run="+f3FreshRun+"&ask=q-fresh")
 	text := f3Text(ap)
 	for _, want := range []string{
 		"asked 2 m 0 s ago · Codex has likely given up; Tego refuses it at 3 m",
@@ -157,8 +158,9 @@ func TestAskWords(t *testing.T) {
 	if strings.Contains(text, "Codex gives up at about 30 s") {
 		t.Error("Approvals still says Codex gives up at about 30 s two minutes after the ask")
 	}
-	if !strings.Contains(ap, `<dt>Request</dt><dd><span title="Request q-late">line #1</span></dd>`) || strings.Contains(text, "q-late · line") {
-		t.Error("the request's id is not in a title, or still sits in the row")
+	if !strings.Contains(ap, `<dt>Request</dt><dd><span class="mono" title="The id the terminal and the record show for this request">q-late</span> <span class="soft">· line #1</span></dd>`) ||
+		!strings.Contains(text, "q-late · line #1") {
+		t.Error("the request's id is not in view on the card beside its line (DASH-G10: it is the id tego approve takes)")
 	}
 	// The fresh ask: giveUp's words now, the late ones for live.js at ask + 30 s.
 	lateAt := f3Now.Add(-5 * time.Second).Add(harnessWait).Format(time.RFC3339Nano)
@@ -169,9 +171,8 @@ func TestAskWords(t *testing.T) {
 	ov := do(s, "GET", "/", "127.0.0.1:8484", c).Body.String()
 	banner := ov[strings.Index(ov, `id="ask-banner"`):]
 	banner = banner[:strings.Index(banner, "</section>")]
-	if bt := f3Text(banner); !strings.Contains(bt, "~/.config/telemetry/token") || !strings.Contains(bt, "Codex has likely given up; Tego refuses it at 3 m") ||
-		strings.Contains(bt, "/d/with/home") {
-		t.Errorf("the banner does not shorten against the run's home or keeps the old words: %s", bt)
+	if bt := f3Text(banner); !strings.Contains(bt, "~/.config/telemetry/token") || !strings.Contains(banner, "data-late-at") || !strings.Contains(bt, "asked at") || !strings.Contains(bt, "/d/with/home/.config/telemetry/token") {
+		t.Errorf("the banner lacks the exact phone target, home-relative desktop target or wait context: %s", bt)
 	}
 	wait := ov[strings.Index(ov, `id="h-asks"`):]
 	wait = wait[:strings.Index(wait, "</section>")]
@@ -219,21 +220,22 @@ func TestTimedOutChip(t *testing.T) {
 }
 
 // TestR9F3NoBannerOverCard: a run page with its own ask card renders no floating banner (it could cover the card's
-// Allow once and Deny); a page without a card still gets it; Approvals never does.
+// Allow once and Deny); a page without a card still gets it; Approvals never does: its band is the page's own
+// compact request (ap-compact), not the shared one.
 func TestNoBannerOverCard(t *testing.T) {
 	s, c := f3Server(t)
 	for _, tc := range []struct {
 		path   string
 		banner bool
 	}{
-		{"/runs/" + f3LateRun, false},
-		{"/runs/" + f3FreshRun, false},
+		{"/runs/" + f3LateRun, true},
+		{"/runs/" + f3FreshRun, true},
 		{"/runs/" + f3DoneRun, true},
 		{"/approvals", false},
 		{"/", true},
 	} {
 		b := do(s, "GET", tc.path, "127.0.0.1:8484", c).Body.String()
-		if got := strings.Contains(b, `id="ask-banner"`); got != tc.banner {
+		if got := strings.Contains(b, `id="ask-banner"`) && !strings.Contains(b, `ap-compact" id="ask-banner"`); got != tc.banner {
 			t.Errorf("%s: banner %v, want %v", tc.path, got, tc.banner)
 		}
 	}
@@ -245,7 +247,7 @@ func TestNoBannerOverCard(t *testing.T) {
 }
 
 // TestR9F3Shell: the sidebar has no foot sentence (the pill's title says it), the Runs filter shows no "Lost 0",
-// a long hostname is cut with the whole name on hover, and This machine folds the ids under Capability flags.
+// a long hostname is cut with the whole name on hover, and This machine folds the ids under recorded details.
 func TestShell(t *testing.T) {
 	s, c := f3Server(t)
 	s.host = "somebody-ACME-LAB-Gaming-X15-ZQ123AB4"
@@ -256,14 +258,16 @@ func TestShell(t *testing.T) {
 	if strings.Contains(runs, "state=lost") {
 		t.Error("Runs shows a Lost chip with no lost run")
 	}
-	if !strings.Contains(runs, `title="This computer: somebody-ACME-LAB-Gaming-X15-ZQ123AB4">`) || strings.Contains(runs, ">somebody-ACME-LAB-Gaming-X15-ZQ123AB4<") {
-		t.Error("the hostname is not cut with the full name in its title")
+	// The header shows it cut with the whole name in its title; the whole name is also one click away in its own
+	// control (C112), and nowhere else is it written whole.
+	if !strings.Contains(runs, `title="This computer: somebody-ACME-LAB-Gaming-X15-ZQ123AB4">`) || strings.Count(runs, ">somebody-ACME-LAB-Gaming-X15-ZQ123AB4<") != 1 ||
+		!strings.Contains(runs, `tabindex="0">somebody-ACME-LAB-Gaming-X15-ZQ123AB4</code>`) {
+		t.Error("the hostname is not cut with the full name in its title, or its whole name is not in its control")
 	}
 	if lost := do(s, "GET", "/runs?state=lost", "127.0.0.1:8484", c).Body.String(); !strings.Contains(lost, `href="/runs?state=lost" aria-current="true">Lost 0</a>`) {
 		t.Error("the Lost filter in use lost its chip")
 	}
-	if m := do(s, "GET", "/machine", "127.0.0.1:8484", c).Body.String(); !strings.Contains(m, "<summary>Capability flags</summary>") ||
-		!strings.Contains(m, `<details class="cli-more">`) {
-		t.Error("This machine does not fold the ids under Capability flags, or lost the gap after them")
+	if m := do(s, "GET", "/machine", "127.0.0.1:8484", c).Body.String(); !strings.Contains(m, `<details class="detail-disclosure" id="machine-record"><summary>Full recorded machine details</summary>`) {
+		t.Error("This machine does not fold the capability ids under recorded details")
 	}
 }

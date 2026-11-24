@@ -160,6 +160,7 @@ func (h *Handle) PlaneFilter(hooks map[string]bool) (prog []bpf.RawInstruction, 
 		return nil, nil, nil
 	}
 	skip := planeSkips(hooks, h.filterOpts.full, h.ask)
+	skip.recvmsg = h.recvmsgInPlane(hooks)
 	if !skip.any() {
 		return h.filter, nil, nil
 	}
@@ -184,6 +185,33 @@ func (h *Handle) PlaneFilter(hooks map[string]bool) (prog []bpf.RawInstruction, 
 		dropped = append(dropped, "truncate")
 	}
 	return prog, dropped, nil
+}
+
+// recvmsgInPlane reports whether the filter may leave recvmsg(2) to the plane: the run's net.assurance is kernel (its
+// filter denies recvmsg at all) and the plane reports socket_recvmsg attached (ADR 0128, amended). Without both the
+// filter keeps its ENOSYS. A run that starts the open deputy is no exception (amendment 2026-11-21): the hook passes the
+// deputy by the identity the launcher writes into the run's slot before Arm (cgroup.Handle.ExemptDeputy), and refuses
+// every other task's control receive. cgroup's fillPlane makes the same choice for the slot's flag (importsDenied), and
+// the two stay in step.
+func (h *Handle) recvmsgInPlane(hooks map[string]bool) bool {
+	return len(h.filter) != 0 && h.filterOpts.strictNet && hooks[HookSocketRecvmsg]
+}
+
+// PlaneImportsFilter is SeccompFilter with recvmsg(2) left to the plane's socket_recvmsg, which refuses a receive
+// that carries a control buffer in the kernel (ADR 0128, amended), and every other arm kept: it is the filter of a
+// run with net.assurance: kernel whose plane reports that hook attached, whether or not the run also uses the plane's
+// fs answers (PlaneFilter). left is false, and prog SeccompFilter's own, when the run keeps the filter's ENOSYS
+// (no strict assurance, or no such hook).
+func (h *Handle) PlaneImportsFilter(hooks map[string]bool) (prog []bpf.RawInstruction, left bool, err error) {
+	if !h.recvmsgInPlane(hooks) {
+		return h.filter, false, nil
+	}
+	o := h.filterOpts
+	o.plane = planeSkip{recvmsg: true}
+	if prog, err = assembleFilter(NativeArch(), o); err != nil {
+		return nil, false, err
+	}
+	return prog, true, nil
 }
 
 // Attach is a no-op: tier 1 has no cgroup-keyed kernel state.

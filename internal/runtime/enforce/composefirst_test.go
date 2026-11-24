@@ -127,3 +127,34 @@ func TestTheTierTwoHandleNamesWhatItsRulesetFroze(t *testing.T) {
 	}
 	var _ interface{ DenyReadFrozen() []string } = (*landlock.Handle)(nil)
 }
+
+// snapshotInherited is composed tier-1 state whose ruleset holds a deny_read snapshot.
+type snapshotInherited struct {
+	fakeInherited
+	refuses func(string) bool
+}
+
+func (s snapshotInherited) DenyReadSnapshot() func(path string) bool { return s.refuses }
+
+// TestTheTierTwoHandleHandsOnItsRulesetsSnapshot (GAPS A12): a root tier installs the tier-1
+// ruleset it composed, whose deny_read enumeration froze at Prepare, so a read of a name made beside an enumerated
+// ancestor after launch is refused by the same domain as at tier landlock. The handle hands the supervisor that
+// ruleset's own snapshot, not a copy and not a question of its own; inherited state that enumerated nothing hands none.
+func TestTheTierTwoHandleHandsOnItsRulesetsSnapshot(t *testing.T) {
+	closed := 0
+	asked := ""
+	h := cgroupHandle{Handle: new(cgroupenforce.Handle), inherited: snapshotInherited{fakeInherited{&closed},
+		func(p string) bool { asked = p; return p == "/home/late/f" }}}
+	got := h.DenyReadSnapshot()
+	if got == nil || !got("/home/late/f") || got("/home/old/f") || asked != "/home/old/f" {
+		t.Fatalf("DenyReadSnapshot() nil %t (asked %q), want the inherited ruleset's own answer", got == nil, asked)
+	}
+	if got := (snapshotInherited{fakeInherited{&closed}, nil}).DenyReadSnapshot(); got != nil {
+		t.Error("a ruleset that enumerated nothing hands a snapshot")
+	}
+	if got := (cgroupHandle{Handle: new(cgroupenforce.Handle), inherited: fakeInherited{&closed}}).DenyReadSnapshot(); got != nil {
+		t.Error("inherited state with no snapshot hands one")
+	}
+	var _ interface{ DenyReadSnapshot() func(path string) bool } = (*landlock.Handle)(nil)
+	var _ interface{ DenyReadSnapshot() func(path string) bool } = cgroupHandle{}
+}

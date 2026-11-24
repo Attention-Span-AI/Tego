@@ -501,3 +501,111 @@ plane elsewhere: RHEL 9.8's 5.14.0-687.61.1 verifies d-rd in 2,975 and Fedora's 
 there costs what it costs on 6.12, so the rd budget would have loosened to 70,331 and 51,514 on those kernels
 (7.0 is the hosted runners' kernel), and on RHEL 9.8 a plane program whose walk became form a-rd (35,855 alone on
 5.14 in T0) would have passed. socket_listen keeps its own 64,000, which 6.19.4 did not move.
+
+
+### Verifier budget amendment (2026-11-21): the live blocks' walk
+
+ADR 0124's amendment of 2026-11-21 gives every plane fs program a second form-d walk, the live blocks'
+(`tego_block_decide`, a global function verified once per program, walking to the namespace root). One test binary
+at 858f6def7 measured the largest walking program at 16,864 on 6.17 (was 13,804) and 24,167 on Fedora's 7.0.14 (was
+19,834, so the old 20,000 had 166 to spare there); 5.14 (RHEL 9.8) and 6.12 (Debian 13) verified the same objects
+(6392c64b3) in at most 19,171. The budget is now 20,000 plus `planeBlockWalkBudget`, 8,000, on every kernel; the 6.19.4 to 6.19.y
+family keeps its scale on the 20,000 and adds the 8,000 unscaled (95,817 rd, 57,527 pr), since scaling the sum would
+lift the pr budget over form b's bare walk (67,514). T0's cheapest loop-form walk alone, a-rd at 35,855 on 5.14, still
+exceeds 28,000. Not measured: the block walk on 6.19.4 to 6.19.y, which charges bpf_loop callbacks as loops without
+7.0's offset; a program there over its budget fails with its counts logged, the sign to measure that family again.
+
+### Startup prerequisite order amendment (2026-11-17)
+
+A run checks the contract and caller before asking the kernel which backend can
+serve them. Previously `internal/cli` probed first and `runtime.newRunner` then
+refused prerequisites that needed no capability answer. On the pinned Ubuntu
+6.17 image a cold invalid-parent refusal waited 10.39–12.38 seconds for probes;
+on Fedora 7.0 it waited 4.83–7.94 seconds. No agent ran in those cases.
+
+`runtime.Preflight` now shares those prerequisite checks with `newRunner`. The
+order is flags, trusted configuration and compilation; structural launch inputs,
+caller identity, recorded extras, compiled HTTP/proxy policy and limits, network
+policy and inherited streams, asks, agent identity, and explicit harness socket
+requests; status-file eligibility,
+canonical contract copy and chain-anchor eligibility; then machine probing and
+backend selection. The first failing check in this order supplies the refusal.
+Thus an invalid parent wins over an unavailable machine tier, while an invalid
+flag still wins over the parent. Every refusal remains exit 125 except existing
+flag/schema exit codes. The CLI retains the parent and stream snapshot it checked
+and passes it to Run.
+
+The rule table's tier is a compiler hint, not a kernel capability answer. Network
+backend requirements, ask-read's landlock requirement, observe restrictions and
+final capture requirements remain checks of the selected backend. In particular,
+`AtTier(landlock)` can convert uprobe capture to the forwarder; preflight must
+allow that possibility rather than refuse a valid fallback. Run repeats the
+shared prerequisites and validates the actual backend before acquiring resources.
+File/anchor operations retain their later checks too; preflight does not turn an
+earlier observation into authority over a subsequently changed file.
+
+An otherwise admissible request retains every machine probe, actual-program
+load, attachment, exercise and known-answer cell. No refusal or best_effort
+condition is removed by this order. A successful preflight
+is never a capability proof, and does not populate a cache. Cache keys, fault
+handling and kernel-object ownership remain those above.
+
+An enforcing CLI start also owns a one-second delayed stderr note while checks
+and program preparation are pending. It stops and joins the timer before the
+Started callback releases the agent, and on every return or panic. Fast starts
+print no wait note. The note uses the existing diagnostic writer and bracketed
+code, with no stdout output or additional process; it is independent of verbose
+and terminal start/end notices. A cached answer can still require expensive
+runtime loads once the separate loaded-build linger ends.
+
+Literal socket paths for an explicitly declared Claude harness, and `%R` for an
+explicitly different harness, are also contract-only prerequisites. Their shared
+request check precedes probing. A private `%R` directory still needs actual
+provisioning and its path budget is checked again afterward. An `auto` harness
+stays at that runtime check: an adapter can replace argv, so the final command can
+resolve to a different harness than the compiler's hint. Preflight must not refuse
+that valid provision. The live/io_uring contradiction is already refused by
+compilation; its runtime backstop remains unchanged.
+
+The status-file eligibility precheck releases its directory descriptor before
+probing. The real writer is opened and revalidated at its original post-selection
+point and retains its directory only for the run. Moving a held writer earlier
+would add a descriptor to the probe's resource requirement. The regression checks
+that no descriptor for that exact directory is live in the probe callback and
+that the runtime still receives a writable, revalidated status sink.
+
+### Listen amendment (2026-11-23, D28): a net: section with no net.listen refuses a TCP listen in the plane
+
+`socket_listen` returned 0 for every listen of a run whose slot header lacked `TEGO_SLOT_LISTEN_DECIDES`, that is, with
+no `net.listen`. Under a `net:` section the supervisor refuses a TCP `listen(2)` on its own (`handleListen`, rule
+`unmatched`), since Landlock's `BIND_TCP` never sees the autobind of a listen with no bind. A ring's `IORING_OP_LISTEN`
+(Linux 6.11+) reaches `security_socket_listen` through `__sys_listen_socket` with no listen syscall and so no seccomp
+notification, so its autobind took an ephemeral port on every address with nothing to refuse it (GAPS C44's io_uring
+half).
+
+Decided. With the header's net flag (`TEGO_SLOT_NET_DECIDES`, a `net:` section) set and its listener flag clear,
+`socket_listen` refuses a listen on an AF_INET or AF_INET6 socket other than UDP's (TCP, MPTCP, SCTP, any other protocol): `-EACCES`, reason `net-not-allowed`,
+rule none, and the plane's own sample when the current task is the run's, as the listener policy's refusals are written.
+Every other listen returns 0 as before: a unix listen, which `handleListen` leaves to the contract's absent list, and a
+UDP socket's, which the kernel answers `EOPNOTSUPP` (the supervisor admits only UDP among inet listens, and the
+`LISTEN_DECIDES` branch refuses every inet protocol but TCP; an MPTCP socket autobinds as a TCP one does, so a test of
+"protocol is not TCP" would pass the one listen that matters, found in review); with no `net:` section nothing is decided. No new slot flag: net
+flag set and listener flag clear is exactly "a `net:` section and no `net.listen`", the two predicates the supervisor
+reads (`NetSocketPolicy().Restricted`, `RuleTable.Listen == nil`), so the plane and the supervisor cannot drift apart.
+It is an inet-not-UDP arm ahead of the `LISTEN_DECIDES` return; a list, `net.listen: []` included, is decided as before.
+Fail closed: a header with the net flag and no listener flag never passes a listen on an inet socket other than UDP. The record minor stays 41.
+
+Rejected: refusing at launch every `io_uring: true` run with a `net:` section and no `net.listen` (it breaks every ring
+client that never listens, which must then write `net.listen: []`), and keeping the compile warning (it closes nothing).
+The warning `io-uring` for this case (2026-11-02) is removed, since its claim, that nothing refuses the ring's listen,
+is no longer true.
+
+Reach, stated. `io_uring: true` is a compile error where a contract may land at tier `cgroup` or `bpflsm` (ADR 0113),
+and tier landlock and the fanotify fallback keep io_uring `ENOSYS`, so `tego run` starts no ring where a plane decides.
+The rule is the plane's own floor: it holds for a ring in a run's cgroup whenever one exists, and it is what ADR 0113's
+refusal may be lifted on. It is proved through the backend's `Prepare` and the plane's hook cells, not through a ring
+workload under `tego run`. Before Linux 6.11 no ring listen exists (`io_uring` completes it `EINVAL`); the cells check
+that answer there and `listen(2)` is refused on every kernel.
+
+Verifier: the added arm is a few instructions in `socket_listen`, which has its own budget (64,000; `planeListenVerifiedBudget`).
+See the measured counts per kernel in the guest proof.

@@ -10,12 +10,15 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/runscope"
+	"github.com/attention-span-ai/tego/internal/selfbin"
 	"github.com/attention-span-ai/tego/internal/shellword"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
+	"github.com/attention-span-ai/tego/pkg/spec/identity"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -38,8 +41,10 @@ type As struct {
 	// why there is none, for a process outside that cgroup that is not root; both "" otherwise.
 	Scope        string `json:"scope,omitempty"`
 	ScopeMissing string `json:"scope_missing,omitempty"`
-	// ScopeAs is the user Scope opens a shell as when the person who reads it is another user (Opening.As): this
-	// process was started from another user's shell through sudo or su, so Scope begins with sudo -u. "" otherwise.
+	// ScopeAs is the user whose account this process runs as when the person who reads its lines is another user
+	// (Opening.As): this process was started from another user's shell through sudo or su, from a place outside that
+	// user's user manager's cgroup. Scope, when there is one, begins with sudo -u, and so does every tego command a
+	// next step names (ForReader). It is set whether or not a command opens a shell there. "" otherwise.
 	ScopeAs string `json:"scope_as,omitempty"`
 }
 
@@ -50,8 +55,10 @@ type Host struct {
 }
 
 // Invoker describes this process (As). A part it cannot read is the cautious answer: a cgroup it cannot read is not
-// the user manager's, and a run membership it cannot rule out is in a run.
-func Invoker() As {
+// the user manager's, and a run membership it cannot rule out is in a run. membership is this process's own answer to
+// "outside every tego run?", which the command line computes (internal/platform/peer.Self) and hands in: the guide
+// makes no such read itself, and anything but an outside answer is in a run to it.
+func Invoker(membership runscope.Answer) As {
 	uid, _ := config.InvokingUID()
 	a := As{UID: uid, Root: config.InitNSRoot(), SSH: os.Getenv("SSH_CONNECTION") != "" || os.Getenv("SSH_CLIENT") != ""}
 	if u, err := user.LookupId(strconv.Itoa(uid)); err == nil {
@@ -59,8 +66,7 @@ func Invoker() As {
 	}
 	cg, _ := os.ReadFile("/proc/self/cgroup")
 	a.InUserCgroup = inUserManager(cg, uid)
-	in, err := runscope.InRun()
-	a.InRun = in || err != nil
+	a.InRun = !membership.Outside()
 	a.Where = place(a.Root, a.InUserCgroup)
 	if a.Where == WhereShell {
 		o := OpenScope()
@@ -76,16 +82,16 @@ const DefaultScope = "systemd-run --user --scope bash"
 type Opening struct {
 	// Command opens it; "" when none is known to work from here, and Missing says why.
 	Command, Missing string
-	// As is the user Command opens the shell as, its name from the passwd entry as Command writes it, when the person
-	// who reads the line is another user (config.StartedByAnother): Command then begins with sudo -u. "" when the reader is
-	// the user this process runs as.
+	// As is the account of the user this process runs as, its name from the passwd entry as Command writes it, when the
+	// person who reads the line is another user (config.StartedByAnother): Command then begins with sudo -u. "" when
+	// the reader is the user this process runs as. It is set when Command is "" too.
 	As string
 }
 
 // OpenScope is the command that opens a shell in the invoking user's user manager's cgroup from this process, where
 // tier 1 starts its runs (DefaultScope, with $SHELL's name in place of bash when it is one of scopeShells and on PATH),
-// or "" and why none is known to work from here: systemd-run is not on PATH, or the user manager cannot be reached
-// from this shell (systemd-run --user connects through $XDG_RUNTIME_DIR, which su and sudo -u leave unset or another
+// or "" and why none is known to work from here: systemd-run is absent from /usr/bin and /bin, or the user manager
+// cannot be reached from this shell (systemd-run --user connects through $XDG_RUNTIME_DIR, which su and sudo -u leave unset or another
 // user's). There, when the user's own logind folder (/run/user/<uid>, a directory the user owns) holds its manager's
 // socket, as after loginctl enable-linger, the command names that folder: XDG_RUNTIME_DIR=/run/user/<uid> before
 // systemd-run (after linger, sudo -u svc tego setup named no command). When this process was started
@@ -93,8 +99,9 @@ type Opening struct {
 // shell, so the command is that one with sudo -u and this user's name in front: typed without it, it opened the
 // reader's own scope on Ubuntu 24.04 and AlmaLinux 9.8, where tego setup then said ready for the wrong user, and failed
 // on Fedora 44. Its shell is then bash, whatever $SHELL says: the shell was this process's,
-// and the fix: line beside it (cgroup.PlacementFix, cgroup.NoManagerFix) names bash, so both name one command. It starts no program; it looks at PATH, a folder, its sockets and /proc. A
-// process whose real and effective uids differ gets no command. The next: lines of tego setup, doctor, run, watch,
+// and the fix: line beside it (cgroup.PlacementFix, cgroup.NoManagerFix) names bash, so both name one command. It starts
+// no program; it looks at fixed systemd-run paths, PATH for the shell, a folder, its sockets and /proc. A process whose
+// real and effective uids differ gets no command. The next: lines of tego setup, doctor, run, watch,
 // test and learn name it where they would otherwise name a command that fails from here; tego agents, which runs as root, names DefaultScope.
 func OpenScope() Opening {
 	uid := os.Getuid()
@@ -111,6 +118,22 @@ func OpenScope() Opening {
 	return openScope(os.Getenv, uid, config.LogindRuntimeRoot, r)
 }
 
+// ReaderAccount is the account (Opening.As) whose lines another user reads, for a tego command a hint names (ForReader),
+// or "" when the reader is the user this process runs as: this process is root, or inside the user's user manager's
+// cgroup (the shell a person opened there, where bare tego commands are right), or was not started from another user's
+// shell through sudo or su, or cannot be shown to be.
+func ReaderAccount() string {
+	uid := os.Getuid()
+	if uid == 0 || uid != os.Geteuid() {
+		return ""
+	}
+	cg, _ := os.ReadFile("/proc/self/cgroup")
+	if inUserManager(cg, uid) {
+		return ""
+	}
+	return OpenScope().As
+}
+
 // reader is who reads OpenScope's command: the user this process runs as (the zero reader), or another user, who
 // started it through sudo or su (other), with this user's name from the passwd entry (named when there is one).
 type reader struct {
@@ -119,12 +142,90 @@ type reader struct {
 	named bool
 }
 
-// openScope is OpenScope over getenv, uid, logindRoot (config.LogindRuntimeRoot) and its reader, for tests.
+// openScope is OpenScope over getenv, uid, logindRoot (config.LogindRuntimeRoot) and its reader, for tests. Whatever
+// its answer, a reader who is another user is told whose account this is (Opening.As): the tego commands a next step
+// names are typed with sudo -u in front even where no command opens a shell (ForReader).
 func openScope(getenv func(string) string, uid int, logindRoot string, r reader) Opening {
-	path := getenv("PATH")
-	if !onPath(path, "systemd-run") {
-		return Opening{Missing: "systemd-run is not on your PATH"}
+	o := scopeCommand(getenv, uid, logindRoot, r)
+	if r.other {
+		o.As = r.word(uid)
 	}
+	return o
+}
+
+// word is the account of uid as sudo -u reads it: the name from the passwd entry as one quoted word, or '#<uid>' when
+// there is none or sudo would not read it as the name (config.PlainUserName). cgroup.ScopeAsCommand's words (this
+// package links no engine package).
+func (r reader) word(uid int) string {
+	if r.named && config.PlainUserName(r.name) {
+		return shellword.Quote(r.name)
+	}
+	return "'#" + strconv.Itoa(uid) + "'"
+}
+
+// The sentences of a next step that cannot name a sudo line (ForReader): selfbin's reasons.
+const (
+	// ReaderNoPathText: this tego's own path cannot be named (unreadable, or it no longer identifies the running file).
+	ReaderNoPathText = selfbin.NoPath
+	// ReaderUnsafePathText: the path holds a character that does not print safely.
+	ReaderUnsafePathText = selfbin.Unsafe
+	// ReaderNoExecText: the account cannot run this copy of tego (its folder is closed to it).
+	ReaderNoExecText = selfbin.NoExec
+	// ReaderUntrustedText: path ownership or write authority cannot be verified.
+	ReaderUntrustedText = selfbin.Untrusted
+)
+
+// SelfPath is the running binary as a sudo line names it (selfbin.Named: its absolute path from the running executable,
+// links followed, quoted, never from PATH, which sudo replaces with its secure_path), read once. why is "" when the
+// path is usable, else one of the Reader...Text sentences. A variable so a test describes the binary.
+var SelfPath = sync.OnceValues(func() (word, why string) { return selfbin.Named(os.Executable) })
+
+// ForReader is command, a next step's command line, as the person who reads it types it: where this process was
+// started from another user's shell through sudo or su (As.ScopeAs, the account's word), a tego command is written
+// with sudo -u, the account and this tego's absolute path (SelfPath) in front of its arguments, since typed bare in the
+// reader's own shell it reads the reader's record and fails, or worse, answers for the wrong user, and typed as
+// `sudo -u svc tego` it is found only where sudo's secure_path has tego (acceptance 4, 2026-11-11). A command after
+// "cd <folder> && " does the cd as the account too: `sudo -u svc sh -c 'cd <folder> && exec <tego> <arguments>'`, since
+// the cd typed in the reader's shell fails when the account's home is closed to the reader (mode 0700) and the
+// command after it then never runs as the account. sudo -u svc -D <folder> would not need the shell, but it wants sudo
+// 1.9.3 and a sudoers option (runcwd) that AlmaLinux 9.8, Ubuntu 24.04 and Fedora 44 do not all grant. The sh -c form
+// needs a grant to run a shell as the account; a grant for the binary alone may refuse it. Any other command, and an
+// account of "", is returned as it is: sudo and
+// systemd-run commands already say whose they are. why is "" unless the line should have named a tego and could not
+// (SelfPath's sentence); the command is then "" and the caller says why instead.
+func ForReader(account, command string) (line, why string) {
+	if account == "" {
+		// This command adds no authority: a group member who can write the folder
+		// could already replace this user's own programs. Keep same-user guidance unchanged.
+		return command, ""
+	}
+	head, rest := "", command
+	if strings.HasPrefix(command, "cd ") {
+		if i := strings.LastIndex(command, " && "); i >= 0 {
+			head, rest = command[:i+len(" && ")], command[i+len(" && "):]
+		}
+	}
+	args, ok := strings.CutPrefix(rest, "tego ")
+	if !ok {
+		return command, ""
+	}
+	self, why := SelfPath()
+	if why != "" {
+		return "", why
+	}
+	if head == "" {
+		return "sudo -u " + account + " " + self + " " + args, ""
+	}
+	dir := strings.TrimSuffix(strings.TrimPrefix(head, "cd "), " && ")
+	return "sudo -u " + account + " sh -c " + shellword.Quote("cd "+dir+" && exec "+self+" "+args), ""
+}
+
+// scopeCommand is openScope without the reader's account.
+func scopeCommand(getenv func(string) string, uid int, logindRoot string, r reader) Opening {
+	if _, err := scopeRunner(); err != nil {
+		return Opening{Missing: err.Error()}
+	}
+	path := getenv("PATH")
 	own := filepath.Join(logindRoot, strconv.Itoa(uid))
 	prefix := ""
 	if r.other {
@@ -149,13 +250,7 @@ func openScope(getenv func(string) string, uid int, logindRoot string, r reader)
 	if !r.other {
 		return Opening{Command: prefix + "systemd-run --user --scope " + shell}
 	}
-	// cgroup.ScopeAsCommand's words (this package links no engine package): the name from the passwd entry as one
-	// quoted word, or '#<uid>' when there is none or sudo would not read it as the name (config.PlainUserName).
-	word := "'#" + strconv.Itoa(uid) + "'"
-	if r.named && config.PlainUserName(r.name) {
-		word = shellword.Quote(r.name)
-	}
-	return Opening{Command: "sudo -u " + word + " XDG_RUNTIME_DIR=" + own + " systemd-run --user --scope " + shell, As: word}
+	return Opening{Command: "sudo -u " + r.word(uid) + " XDG_RUNTIME_DIR=" + own + " systemd-run --user --scope " + shell}
 }
 
 // managerUnder is "" when rt, an absolute folder, holds a socket of uid's user manager (systemd/private or bus), which
@@ -165,6 +260,9 @@ func managerUnder(rt string, uid int) string {
 		return "XDG_RUNTIME_DIR is not set in this shell (as after su or sudo -u), so systemd-run --user cannot reach your user manager"
 	}
 	if !ownSocket(filepath.Join(rt, "systemd", "private"), uid) && !ownSocket(filepath.Join(rt, "bus"), uid) {
+		if !identity.EnvPlace(rt) { // not a place: never echoed (identity envtext.go, rule (b))
+			return "XDG_RUNTIME_DIR is not an absolute clean path, so systemd-run --user cannot reach your user manager; " + identity.EnvInspect("XDG_RUNTIME_DIR")
+		}
 		return "your user manager's socket is not under " + record.Printable(rt) + ", so systemd-run --user cannot reach it"
 	}
 	return ""

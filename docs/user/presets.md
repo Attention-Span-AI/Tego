@@ -2,10 +2,12 @@
 
 A preset is a set of rules that ships inside the `tego` binary.
 Your contract (`agent.yaml`) names the presets it wants in `extends:`, then adds what is particular to your project:
-its folders, its hosts, its model, the variables it needs. There are three:
+its folders, its hosts, its model, the variables it needs. There are four:
 - `tego/no-secrets`: the agent cannot read your secret files, and your secret variables never reach it.
 - `tego/no-prod`: the agent reaches no network host except the ones your contract names.
 - `tego/repo-only-writes`: the agent writes only in the folders your contract names.
+- `tego/ci` (From source): records refused read opens at tier landlock, removes named CI token variables,
+  and blocks ordinary writes to the workspace's `.github/`. It needs the action's extra checks before signing.
 
 ## The rules `tego start` offers
 
@@ -50,7 +52,7 @@ is never read in its place, and `tego rules check` says so (`shadowed-builtin`).
 `tego/no-secret` is an error that lists the names there are:
 ```
 error: agent.yaml:3:10: built-in profile "tego/no-secret" not found: names under tego/ are tego's own profiles, and this binary has none by that name [extends-not-found]
-  fix: the built-in profiles are tego/no-prod, tego/no-prod@1, tego/no-secrets, tego/no-secrets@1, tego/repo-only-writes, tego/repo-only-writes@1; name one of them, or remove it from extends:
+  fix: the built-in profiles are tego/ci, tego/ci@1, tego/no-prod, tego/no-prod@1, tego/no-secrets, tego/no-secrets@1, tego/repo-only-writes, tego/repo-only-writes@1; name one of them, or remove it from extends:
 ```
 
 ## Pin a revision
@@ -135,6 +137,63 @@ What it does not cover:
 - A tool that writes its temporary files to `/tmp` is refused there: give it a folder of yours, for example `TMPDIR`
   under one of your write folders.
 
+### CI (From source)
+
+Add `tego/ci` to `extends:` for a CI job, or pin `tego/ci@1`. Run from `$GITHUB_WORKSPACE`, the workspace
+root. Combine it with the other presets when you need their environment allow list or network rules.
+It grants no write folder, network host or environment variable.
+
+Its `reason.reads: on` records refused read opens under enforced `deny_read` rules at the no-root tier.
+Allowed reads are still absent under summary recording. Each read open costs about 17 microseconds more;
+the offline workload measured in ADR 0077 was 19 percent slower. Your contract can set
+`reason: {reads: off}`. If no other recording mechanism applies, the receipt then says the run did not
+record allowed or refused reads. Full recording, held reads and read gates can still record them.
+Root-tier read recording needs root and keeps its own limits, including possible missing records on preempting kernels.
+
+The preset denies these exact environment names:
+
+- `ACTIONS_ID_TOKEN_REQUEST_URL`, `ACTIONS_ID_TOKEN_REQUEST_TOKEN`.
+- `ACTIONS_RUNTIME_TOKEN`, `ACTIONS_RUNTIME_URL`, `ACTIONS_CACHE_URL`, `ACTIONS_RESULTS_URL`,
+  `ACTIONS_CACHE_SERVICE_V2`.
+- `GITHUB_TOKEN`, `GH_TOKEN`, `SIGSTORE_ID_TOKEN`, `INPUT_TOKEN`, `INPUT_GITHUB_TOKEN`.
+
+`INPUT_TOKEN`, `INPUT_GITHUB_TOKEN` and `ACTIONS_CACHE_SERVICE_V2` are recalled, to verify on a runner;
+the input names depend on the action. The cache switch is configuration, not a credential.
+Even an explicit `env.pass` cannot pass one of these names; compile warns `redundant-rule` that the
+passed name is removed again by `env.deny`. Setting one through `env.set` is a compile error.
+`GITHUB_TOKEN` stays denied because it may be the receipt writer's token. A job that deliberately
+gives that authority to its agent needs a different contract without this preset. Other secrets and inputs
+under other names need your own `env.pass` list or `tego/no-secrets`.
+
+Hyphenated names such as `INPUT_GITHUB-TOKEN` cannot be denied by any contract: environment rule
+names accept only letters, digits and underscores, starting with a letter or underscore. GitHub keeps
+the hyphen in a `github-token` action input. The action must scrub the launcher environment or the
+contract must use an `env.pass` allow list that excludes it.
+
+`fs.deny_write: [./.github/]` blocks workflow and local-action changes beneath that directory:
+**blocked for ordinary commands; not race-free at the no-root tier**. It is also best effort on a cgroup
+run using the fanotify listener; the cgroup tier needs root. If `.github/` is missing under a write grant, compile warns `unenforced`.
+A narrower write grant inside it reopens that part. The action must refuse these cases before signing.
+Keep write grants to folders such as `src/` and `tests/`, outside protected paths. With a retained denial
+beneath a write grant, `fs.assurance: kernel` makes compile fail at tier landlock with `unenforced`
+(exit 1). A landlock pin alone uses the ordinary best-effort refusal. Outside every write and ask scope,
+the preset denial is redundant and silently omitted, so a missing `.github/` there produces no warning.
+
+This preset cannot locate `$RUNNER_TEMP`, the runner's full `_actions` folder or `$GITHUB_EVENT_PATH`.
+Filesystem rules accept `~/`, relative and absolute paths; they do not expand environment variables.
+`${TEGO_PROJECT_DIR}` expands only inside `env.set`. The action must supply concrete runner paths and
+reject write grants that overlap them, its evidence, runner installation and trusted tools. It must also
+keep credentials out of readable files, other processes, inherited descriptors and sockets. The preset
+alone does not establish that boundary or make a receipt signed. Whoever controls the workflow can still
+fabricate a receipt before signing it.
+
+The runner file-command files named by `GITHUB_ENV`, `GITHUB_PATH`, `GITHUB_OUTPUT`, `GITHUB_STATE`
+and `GITHUB_STEP_SUMMARY`, and stdout workflow commands, are not protected by this preset. Writable
+command files can change later steps' environment, PATH, outputs, action state or summaries. The action
+must protect their concrete paths and control workflow-command parsing while forwarding agent output.
+Removing an environment variable does not deny access to its file. See GitHub's
+[workflow commands reference](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands).
+
 ## Start from tego rules create
 
 `tego rules create --preset` writes an `agent.yaml` that extends the presets you choose and lists your folders and hosts,
@@ -145,8 +204,8 @@ tego rules create --preset no-secrets,no-prod,repo-only-writes --write src --wri
 ```
 
 What each flag does:
-- `--preset <list>`: a comma list of `no-secrets`, `no-prod` and `repo-only-writes`, in any order; `extends:` lists
-  them in that fixed order. An unknown name is a usage error listing the three.
+- `--preset <list>`: a comma list of `no-secrets`, `no-prod`, `repo-only-writes` and `ci` (From source), in any order;
+  `extends:` lists them in that fixed order. An unknown name is a usage error listing the four.
 - `--write <dir>` (repeatable): a folder the agent may write. A missing folder inside the project is created; one
   outside it must exist. An absolute (or `~/`) folder is placed where the links on its way lead: one spelled through
   the link you reached the project by is inside it and written `./x/`, and one a link leads out of the project is
@@ -210,7 +269,8 @@ project folder the contract writes, as
 ## Start from the dashboard
 
 The dashboard (`tego-control serve`) writes the same file without a terminal: Contracts, then
-"New contract". Type the project folder, tick the presets, add the folders it may write and the hosts it may
+"New contract". A fresh form selects `no-secrets` and `no-prod`; `repo-only-writes` and `ci` start unchecked.
+Type the project folder, tick the presets, add the folders it may write and the hosts it may
 reach (comma-separated, as `--write` and `--allow-host` take them) and its command, then Preview: the page shows
 what the agent may do in plain sentences, every preset laid in, and what `tego rules check --offline` says. Create
 makes the folders the file names in the project, never through a symbolic link (one on the way to a folder it makes
@@ -220,8 +280,9 @@ what that run did and no more (`tego rules learn`), except where a run that leak
 where `tego rules learn <run> --save <name>` saves it, `~/.config/tego/agents/<name>.yaml`, so `cd <run folder> && tego run
 <name>` and the `tego-agent@<name>` unit find it; "The project folder" writes `agent.yaml` there instead. A "Show
 refused reads (slower)" switch adds `reason: {reads: on}`: a read the contract refuses is recorded at tier 1 too, and
-each read open is about 17 µs slower. From a run it is on by default, as `--save`'s default is; with presets it is off,
-as `tego rules create` writes no `reason:` block. The run page's Tighten tab links to it
+each read open is about 17 µs slower. From a run it is on by default, as `--save`'s default is; with the original three presets it is off,
+as `tego rules create` writes no `reason:` block. The `ci` preset (From source) supplies its own read default even
+when no block is written. The run page's Tighten tab links to it
 ("Make a contract from this run"). A new `agent.yaml` is on the Contracts page as "not run yet" until its first run;
 a saved registry entry is listed from its first run.
 
@@ -253,3 +314,7 @@ The [built-in refusals](built-in-refusals.md) apply after every preset is combin
 `host_sockets: true` nor an explicit socket allow reopens the session bus, the systemd user manager,
 non-SSH GnuPG agents, Tego control sockets or other terminals. An exact container-daemon socket allow
 is the documented exception, with an escape warning.
+
+The CI acceptance check is `test/vm/ci-preset-check.sh`, for a disposable guest. `tego/ci` deliberately adds no
+write grants: contracts that use shell redirection to `/dev/null` must grant that path themselves, or extend
+`tego/repo-only-writes` as well. This keeps the preset composable with the caller's selected write policy.

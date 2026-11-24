@@ -6,6 +6,8 @@ package cli
 
 import (
 	"errors"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -87,5 +89,24 @@ func TestTestPricesHook(t *testing.T) {
 	testPricesHook("/h", plain)(set)
 	if set.Prices.Value != "/etc/p.yaml" {
 		t.Errorf("a layer's prices became %q", set.Prices.Value)
+	}
+}
+
+func TestHookEnvironmentDiagnosticHidesValue(t *testing.T) {
+	for _, value := range []string{"QZ", "private-environment-value-that-is-long"} {
+		out, err := os.CreateTemp(t.TempDir(), "diagnostic")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer out.Close()
+		machineTestHooks("", value, func() (bool, error) { return false, nil }, out)
+		data, err := os.ReadFile(out.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(data)
+		if !strings.Contains(text, EnvTestLinger) || strings.Contains(text, value) {
+			t.Errorf("test-hook diagnostic: %s", text)
+		}
 	}
 }

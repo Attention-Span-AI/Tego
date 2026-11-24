@@ -38,8 +38,9 @@ tego route clear <run> api.anthropic.com       # back to the endpoint itself
 On a Locked run (the default, and the only mode at tier landlock; docs/user/live-modes.md) an endpoint stays where its
 contract sends it: `tego route set` to any route but `direct` is refused with `[locked]` and exit 1, and the Model
 routes page says "Not done: this run is Locked: loosening applies from its next run." `tego route clear` (back to
-`direct`) is still taken. Routes move live on an Adjustable run. Tego's own writers make this check; the forwarder
-does not, so a route written into the run's `model-routes.json` some other way still applies (docs/GAPS.md C39).
+`direct`) is still taken. Routes move live on an Adjustable run. Tego's own writers make this check, and so does the
+forwarder: a route written into the run's `model-routes.json` some other way is not put in force on a Locked run, and the
+ledger has one `model-route-changed` line for it with route `direct` and who asked, "not in force: the run is Locked".
 
 `<run>` is the run id; the endpoint is its `host:port` (the host alone for port 443) or its provider
 when the contract has one entry of it. The change applies to the next request; a request that arrived before it (one

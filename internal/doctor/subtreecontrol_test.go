@@ -164,7 +164,7 @@ func TestControllersResultNamesACeilingOnAMissingController(t *testing.T) {
 	var c calls
 	ch := passingChecks(&c)
 	var seen []config.Value
-	ch.cgroup = func(_ int, cs []config.Value) Result { seen = cs; return Result{ID: CheckCgroupV2, OK: true} }
+	ch.cgroup = func(_ int, cs []config.Value, _ bool) Result { seen = cs; return Result{ID: CheckCgroupV2, OK: true} }
 	scope{root: true, checks: ch, ceilings: ceilings}.run(context.Background())
 	if len(seen) != len(ceilings) || seen[0] != ceilings[0] {
 		t.Errorf("D3 was handed %v, want the machine's ceilings %v", seen, ceilings)

@@ -89,12 +89,12 @@
  88 bpf.LoadAbsolute ld [0]
  89 bpf.JumpIf       jneq #97,4
  90 bpf.LoadAbsolute ld [16]
- 91 bpf.JumpIf       jset #268566528,0,1
+ 91 bpf.JumpIf       jset #838991872,0,1
  92 bpf.RetConstant  ret #2143289344
  93 bpf.LoadAbsolute ld [0]
  94 bpf.JumpIf       jneq #220,4
  95 bpf.LoadAbsolute ld [16]
- 96 bpf.JumpIf       jset #268566528,0,1
+ 96 bpf.JumpIf       jset #838991872,0,1
  97 bpf.RetConstant  ret #2143289344
  98 bpf.LoadAbsolute ld [0]
  99 bpf.JumpIf       jneq #268,1

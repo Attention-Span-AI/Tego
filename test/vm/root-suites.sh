@@ -21,9 +21,15 @@
 #        test/vm/root-suites.sh --gather DIR              (after the VM_SHARD runs: below)
 # Environment: GO (go), VM_OUT (bin/vm: binaries, logs, summary.json), VM_BPF (auto|yes|no: whether
 #   to build the tegobpf variants; auto builds them when internal/bpf compiles with the tag, i.e.
-#   after `make gen`), VM_RUN (a -test.run pattern for every suite), VM_SUITE_TIMEOUT (seconds per
-#   guest; a "pkg=seconds" word sets one package's; default "1500 internal/runtime/enforce/cgroup=6000": that
-#   package's tegobpf suite took 2517-3765 s of a guest on a loaded host on 2026-10-17, far past 1500's own 1200 s;
+#   after `make gen`), VM_RUN (a -test.run pattern for every suite, which runs a split package whole), VM_PART_RUN (an
+#   extended regular expression, grep -E, of top-level test names: a split package keeps its parts, each running only
+#   its own tests the expression matches, and a part that has none runs no guest; a package that is not split runs
+#   them by -test.run; the must-pass gate holds nothing then, as with VM_RUN), VM_COUNT (a -test.count for every suite: one
+#   guest loops a test, as a capture loss once needed tens of rounds of one test), VM_SUITE_TIMEOUT (seconds per
+#   guest; "pkg=seconds" sets one package, "suite=seconds" one build (e.g. internal_runtime_enforce_cgroup.tegobpf); default "1500 internal/runtime/enforce/cgroup=3000": that
+#   package runs as the parts of test/vm/suites.sh's ROOT_SPLITS (below), a guest each, and a part takes at most 1111 s (its whole
+#   tegobpf suite took 5093 s on 2026-11-19, 2517-3765 s on a loaded host on 2026-10-17, past 1500's own 1200 s; a cap named for
+#   a package or a build is each part's);
 #   the suite's own go test -timeout is that less 300), VM_HOST (kvm, the default, or sudo: see below), VM_BOOTS (empty, or both: every
 #   suite on the lsm=...,bpf boot and again on the host's list without bpf, below; lsm-bpf or default-lsm: that boot alone), VM_CGROUP (empty, or
 #   service: see below), VM_MODULES (kernel modules each guest loads before its suite, space-separated,
@@ -195,7 +201,7 @@ GO="${GO:-go}"
 OUT="${VM_OUT:-$repo/bin/vm}"
 case "$OUT" in /*) ;; *) OUT="$repo/$OUT" ;; esac
 BPF="${VM_BPF:-auto}"
-SUITE_TIMEOUT_SPEC="${VM_SUITE_TIMEOUT:-1500 internal/runtime/enforce/cgroup=6000}"
+SUITE_TIMEOUT_SPEC="${VM_SUITE_TIMEOUT:-1500 internal/runtime/enforce/cgroup=3000}"
 HOSTMODE="${VM_HOST:-kvm}"
 # DISPOSABLE is the TEGO_DISPOSABLE_HOST a VM_HOST=sudo suite gets (a guest always gets "kvm"): the caller's own, or
 # github-actions on a GitHub Actions runner, whose sudo drops GITHUB_ACTIONS from the tests' environment.
@@ -224,6 +230,18 @@ case "$CGROUP" in "" | service) ;; *) echo "root-suites: VM_CGROUP must be empty
 ROW="${TEGO_VM_ROW:-}"
 if [ -n "$ROW" ]; then
 	[ "$HOSTMODE" = kvm ] || { echo "root-suites: TEGO_VM_ROW=$ROW needs VM_HOST=kvm: a row is a guest's kernel" >&2; exit 2; }
+	# The fedora-7.0 and fedora-7.2 kernels preempt kernel code (lazy preemption), so a product doctor rules fmod_ret mode out
+	# there and the fmod_ret subtests of the plane suites skip (unlisted, so the skip gate fails) and conformance's required
+	# fmod_ret axis fails. vm-matrix sets the waiver for these rows; a caller that forgot it (q22, 2026-11-20) got that
+	# failure, not a regression. The row therefore defaults to it; a value the caller set, even an empty "none", is kept.
+	case "$ROW" in
+	fedora-7.0 | fedora-7.2)
+		if [ -z "${TEGO_TEST_PLANE_PREEMPT+x}" ]; then
+			PREEMPT_WAIVER=waive
+			echo "root-suites: TEGO_VM_ROW=$ROW preempts kernel code: TEGO_TEST_PLANE_PREEMPT=waive by default (set it to another value to override)" >&2
+		fi
+		;;
+	esac
 	if [ "$ROW" = host ]; then
 		row_kernel="$(uname -r)"
 	else
@@ -249,6 +267,7 @@ if [ -n "$ROW" ]; then
 		case "$ROW" in
 		debian-13 | al2023 | al2023-6.12) export VM_MODULES="overlay crc32c_generic loop btrfs unix_diag tcp_diag" ;;
 		fedora-7.0 | fedora-7.2) export VM_MODULES="loop" ;;
+		ubuntu-24.04 | ubuntu-25.10) export VM_MODULES="overlay btrfs unix_diag inet_diag tcp_diag" ;;
 		*) export VM_MODULES="" ;;
 		esac
 	fi
@@ -318,6 +337,7 @@ PART=""
 if [ -n "$SHARD" ]; then
 	[ $# -eq 0 ] || { echo "root-suites: VM_SHARD=$SHARD selects its own packages; name none" >&2; exit 2; }
 	[ -z "${VM_RUN:-}" ] || { echo "root-suites: VM_SHARD=$SHARD runs its own part of each suite; VM_RUN would narrow it again" >&2; exit 2; }
+	[ -z "${VM_PART_RUN:-}" ] || { echo "root-suites: VM_SHARD=$SHARD runs its own part of each suite; VM_PART_RUN would narrow it again" >&2; exit 2; }
 	shard_plan || exit 2
 	entry=""
 	for e in "${ROOT_SHARDS[@]}"; do [ "${e%%|*}" != "$SHARD" ] || entry="$e"; done
@@ -343,6 +363,10 @@ mkdir -p "$OUT/bin" "$OUT/prebuilt" "$OUT/logs"
 rm -f "$OUT/shard.done"
 results="$OUT/results.tsv"
 : >"$results"
+# The host packages the guest copies are the host's own and not pinned (kvm-run.sh HOST_PKGS): the run's environment
+# facts name their versions, so two machines' runs can be compared.
+"$here/host-facts.sh" python3 git nodejs >"$OUT/host-packages.txt"
+echo "root-suites: host packages in the guest (the host's own, not pinned): $(tr '\n' ' ' <"$OUT/host-packages.txt")"
 cd "$repo" || exit 1
 export CGO_ENABLED=0
 
@@ -376,17 +400,70 @@ for v in TEGO_CONFORMANCE_BUDGET TEGO_CONFORMANCE_REPORT TEGO_CONFORMANCE_SPACES
 	[ -z "${!v:-}" ] || { conformance_env+=("$v=${!v}"); conformance_env_args+=(--env "$v=${!v}"); }
 done
 # The filesystems the conformance runner's mount fixtures must mount (ADR 0017 space 5, TEGO_CONFORMANCE_FS_REQUIRE):
-# those of overlay and btrfs this run loads (VM_MODULES, below), so a guest that loads them fails a fixture whose mount
-# fails, and a row whose guests load none runs the fixtures its kernel has built in and logs the others MOUNTS-ABSENT.
+# those of overlay and btrfs this run loads (VM_MODULES, below). Every named full matrix row except RHEL 9 requires
+# Btrfs too, including Fedora's built-in driver and explicit empty module lists: losing the driver must fail the
+# fixture. RHEL 9 alone may report it absent; the skip registry restricts the plane fixture's allowance to that row.
 fs_required=""
 for m in ${VM_MODULES-${GUEST_MODULES[*]}}; do
 	case "$m" in overlay | btrfs) fs_required="${fs_required:+$fs_required }$m" ;; esac
 done
+case "$ROW" in
+"" | rhel-9) ;;
+*) case " $fs_required " in *" btrfs "*) ;; *) fs_required="${fs_required:+$fs_required }btrfs" ;; esac ;;
+esac
 if [ -n "$fs_required" ]; then
 	conformance_env+=("TEGO_CONFORMANCE_FS_REQUIRE=$fs_required")
 	conformance_env_args+=(--env "TEGO_CONFORMANCE_FS_REQUIRE=$fs_required")
 fi
 echo "root-suites: TEGO_CONFORMANCE_FS_REQUIRE=$fs_required"
+
+# suite_list DIR TAGS: every top-level test a package's test build holds, read from its sources (nothing is run), one
+# name a line, in the order of the package's files.
+suite_list() {
+	(cd "$1" && "$GO" list -tags "$2" -f '{{range .TestGoFiles}}{{.}} {{end}}{{range .XTestGoFiles}}{{.}} {{end}}' . |
+		xargs sed -n 's/^func \(Test[A-Z0-9_][A-Za-z0-9_]*\)(\([a-z]*\) \*testing\.T) {$/\1/p')
+}
+
+# split_count PKG: the number of parts test/vm/suites.sh's ROOT_SPLITS gives a package ("" when it is run whole).
+split_count() {
+	local e name pkg n
+	for e in "${ROOT_SPLITS[@]}"; do
+		IFS='|' read -r name pkg n <<<"$e"
+		if [ "$pkg" = "$1" ]; then echo "$n"; return 0; fi
+	done
+	return 0
+}
+
+# split_part J N LISTFILE: part J of N of the tests LISTFILE names (one a line). A test is in the part its position in the
+# list says: the J-th, J+N-th, J+2N-th ... of it, so each test is in exactly one part whatever the list holds, and a
+# test added to the package is in one of them without anyone naming it. Sets PART_MINE (this part's tests), PART_TOTAL
+# (the list's) and PART_ARGS: parts 1 to N-1 run theirs by -test.run; part N skips every other part's tests by -test.skip
+# instead (-test.run when the list is one part's own), so it also runs whatever the list does not hold (fuzz targets,
+# examples, a test the list's sed missed): together the N parts run every test of the binary once.
+# With VM_PART_RUN each part keeps only its own tests the expression matches, and runs them by -test.run, part N too.
+split_part() {
+	local pj="$1" pn="$2" t i=0 others=() kept=()
+	PART_MINE=() PART_ARGS=() PART_TOTAL=0
+	while IFS= read -r t; do
+		[ -n "$t" ] || continue
+		if [ $((i % pn + 1)) = "$pj" ]; then PART_MINE+=("$t"); else others+=("$t"); fi
+		i=$((i + 1))
+	done <"$3"
+	PART_TOTAL=$i
+	if [ -n "${VM_PART_RUN:-}" ]; then
+		for t in "${PART_MINE[@]+"${PART_MINE[@]}"}"; do
+			if printf '%s\n' "$t" | grep -Eq -- "$VM_PART_RUN"; then kept+=("$t"); fi
+		done
+		PART_MINE=("${kept[@]+"${kept[@]}"}")
+		[ "${#PART_MINE[@]}" -eq 0 ] || PART_ARGS=("-test.run=^($(IFS='|'; echo "${PART_MINE[*]}"))\$")
+		return 0
+	fi
+	if [ "$pj" != "$pn" ]; then
+		PART_ARGS=("-test.run=^($(IFS='|'; echo "${PART_MINE[*]-}"))\$")
+	elif [ "${#others[@]}" -gt 0 ]; then
+		PART_ARGS=("-test.skip=^($(IFS='|'; echo "${others[*]}"))\$")
+	fi
+}
 
 # ---- build --------------------------------------------------------------------------------------
 
@@ -419,7 +496,7 @@ for h in "${HELPERS[@]}"; do
 	done
 done
 
-suites=() # suite|pkg|tags|binary
+suites=() # suite|pkg|tags|binary|part (j/n or empty)|the build's own name, whose .list holds all its tests
 declare -A bpfpkg=() # the packages whose tests load the objects, so whose plain build skips those tests
 for p in "${PKGS[@]}"; do
 	base="${p//\//_}"
@@ -440,12 +517,28 @@ for p in "${PKGS[@]}"; do
 		bin="$OUT/bin/$suite.test"
 		echo "   go test -c -tags $tags ./$p"
 		if "$GO" test -c -tags "$tags" -o "$bin" "./$p" >"$OUT/logs/build-$suite.log" 2>&1; then
-			suites+=("$suite|$p|$tags|$bin")
 			# Every top-level test this build holds, read from its sources (nothing is run), so the
 			# report can name the tests a crash or a timeout never let run.
-			(cd "$p" && "$GO" list -tags "$tags" -f '{{range .TestGoFiles}}{{.}} {{end}}{{range .XTestGoFiles}}{{.}} {{end}}' . |
-				xargs sed -n 's/^func \(Test[A-Z0-9_][A-Za-z0-9_]*\)(\([a-z]*\) \*testing\.T) {$/\1/p') \
-				>"$OUT/logs/$suite.list" 2>/dev/null
+			suite_list "$p" "$tags" >"$OUT/logs/$suite.list" 2>/dev/null
+			# A package ROOT_SPLITS splits runs as its parts, each its own guest and its own suite row of the same package,
+			# unless this run is a shard (VM_SHARD names its parts itself) or runs a named test (VM_RUN).
+			split_n=""
+			{ [ -n "$SHARD" ] || [ -n "${VM_RUN:-}" ]; } || split_n="$(split_count "$p")"
+			if [ -n "$split_n" ]; then
+				for ((j = 1; j <= split_n; j++)); do
+					if [ -n "${VM_PART_RUN:-}" ]; then
+						split_part "$j" "$split_n" "$OUT/logs/$suite.list"
+						[ "${#PART_MINE[@]}" -gt 0 ] || continue # no test of this part matches: no guest for it
+					fi
+					suites+=("$suite.p$j|$p|$tags|$bin|$j/$split_n|$suite")
+				done
+			elif [ -n "${VM_PART_RUN:-}" ]; then
+				# Not split: the matching tests by name, as a part runs them.
+				split_part 1 1 "$OUT/logs/$suite.list"
+				if [ "${#PART_MINE[@]}" -gt 0 ]; then suites+=("$suite|$p|$tags|$bin|1/1|$suite"); fi
+			else
+				suites+=("$suite|$p|$tags|$bin|$PART|$suite")
+			fi
 		else
 			printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$suite" "$p" "$tags" "build-failed" "-" "$OUT/logs/build-$suite.log" >>"$results"
 			cat "$OUT/logs/build-$suite.log" >&2
@@ -456,7 +549,12 @@ done
 # ---- run ----------------------------------------------------------------------------------------
 
 run_args=()
+[ -z "${VM_RUN:-}" ] || [ -z "${VM_PART_RUN:-}" ] || { echo "root-suites: VM_RUN runs a package whole and VM_PART_RUN keeps its parts; set one" >&2; exit 2; }
 [ -z "${VM_RUN:-}" ] || run_args+=("-test.run=$VM_RUN")
+if [ -n "${VM_COUNT:-}" ]; then
+	[[ "$VM_COUNT" =~ ^[1-9][0-9]{0,3}$ ]] || { echo "root-suites: VM_COUNT must be a count from 1 to 9999, got $VM_COUNT" >&2; exit 2; }
+	run_args+=("-test.count=$VM_COUNT")
+fi
 module_args=()
 # test/vm/suites.sh's GUEST_MODULES by default, which says what needs each (overlay; btrfs, amended 2026-10-05;
 # unix_diag, 2026-10-16; tcp_diag, 2026-10-27); scripts/coverage.sh --vm's guests load the same. VM_MODULES="" loads
@@ -505,33 +603,21 @@ service_cgroup=()
 
 lost=() # the suites whose guest kvm-run.sh reported lost (vm-lost), each with its status line
 for s in "${suites[@]+"${suites[@]}"}"; do
-	IFS='|' read -r suite pkg tags bin <<<"$s"
-	# The default is the bare number; a "pkg=seconds" word overrides it for that package. The suite's own
+	IFS='|' read -r suite pkg tags bin spart lname <<<"$s"
+	# The default is the bare number; "pkg=seconds" or "suite=seconds" overrides that package/build. The suite's own
 	# -test.timeout ends it 300s before the guest's (or timeout's) bound does, so its panic names the running tests.
 	SUITE_TIMEOUT=1500
 	for w in $SUITE_TIMEOUT_SPEC; do
-		case "$w" in *=*) [ "${w%%=*}" != "$pkg" ] || SUITE_TIMEOUT="${w#*=}" ;; *) SUITE_TIMEOUT="$w" ;; esac
+		case "$w" in *=*) [ "${w%%=*}" != "$pkg" ] && [ "${w%%=*}" != "$lname" ] || SUITE_TIMEOUT="${w#*=}" ;; *) SUITE_TIMEOUT="$w" ;; esac
 	done
 	go_timeout="$((SUITE_TIMEOUT - 300))s"
-	# A part j/n of the suite: the top-level tests at positions j, j+n, j+2n... of its .list (read from its sources),
-	# by -test.run; part n skips every other part's tests instead (-test.skip), so it also runs whatever the list does
-	# not hold (fuzz targets, examples, a test the list's sed missed), and the n parts together run every test once.
-	# The .list is then this part's tests, for summarize.py's "never started".
+	# A part j/n of the suite (split_part): its .list is then this part's tests, for summarize.py's "never started".
 	part_args=()
-	if [ -n "$PART" ]; then
-		pj="${PART%%/*}" pn="${PART#*/}" mine=() others=() i=0
-		while IFS= read -r t; do
-			[ -n "$t" ] || continue
-			if [ $((i % pn + 1)) = "$pj" ]; then mine+=("$t"); else others+=("$t"); fi
-			i=$((i + 1))
-		done <"$OUT/logs/$suite.list"
-		if [ "$pj" != "$pn" ]; then
-			part_args=("-test.run=^($(IFS='|'; echo "${mine[*]}"))\$")
-		elif [ "${#others[@]}" -gt 0 ]; then
-			part_args=("-test.skip=^($(IFS='|'; echo "${others[*]}"))\$")
-		fi
-		printf '%s\n' "${mine[@]+"${mine[@]}"}" >"$OUT/logs/$suite.list"
-		echo "   part $PART of $suite: ${#mine[@]} of the $i tests its sources list$([ "$pj" != "$pn" ] || echo ', and any they do not')"
+	if [ -n "$spart" ]; then
+		split_part "${spart%%/*}" "${spart#*/}" "$OUT/logs/$lname.list"
+		part_args=("${PART_ARGS[@]+"${PART_ARGS[@]}"}")
+		printf '%s\n' "${PART_MINE[@]+"${PART_MINE[@]}"}" >"$OUT/logs/$suite.list"
+		echo "   part $spart of $lname: ${#PART_MINE[@]} of the $PART_TOTAL tests its sources list$([ "${spart%%/*}" != "${spart#*/}" ] || echo ', and any they do not')"
 	fi
 	echo
 	if [ "$HOSTMODE" = sudo ]; then
@@ -550,8 +636,8 @@ for s in "${suites[@]+"${suites[@]}"}"; do
 		[ -z "$PREEMPT_WAIVER" ] || env_args+=(--env "TEGO_TEST_PLANE_PREEMPT=$PREEMPT_WAIVER")
 		[ "$tags" = integration ] || env_args+=(--env "GOFLAGS=-tags=$tags")
 		# VM_SUITE_MEM gives one package's guests their own TEGO_VM_MEM ("pkg=size ..."), where the rest share a
-		# smaller one: enforce/cgroup's 32 concurrent runs of TestTier2ConcurrentRunsOfOneBuild need about 2.5G, and in
-		# a 1536M guest the OOM killer ends some of them (TIER3-PLAN T11).
+		# smaller one: 2560M passed historically elsewhere; Debian and RHEL use a 3G pass point, not a measured
+		# minimum. One OOM victim was about 72 MB, so 32 such runs fit 2560M only tightly (test/vm/README.md).
 		suite_mem="${TEGO_VM_MEM:-}"
 		for m in ${VM_SUITE_MEM:-}; do [ "${m%%=*}" != "$pkg" ] || suite_mem="${m#*=}"; done
 		TEGO_VM_MEM="$suite_mem" fwd_run "$here/kvm-run.sh" --sudo --timeout "$SUITE_TIMEOUT" --log "$OUT/logs/$suite.console" --status "$OUT/logs/$suite.status" \
@@ -562,7 +648,7 @@ for s in "${suites[@]+"${suites[@]}"}"; do
 		code="$(vm_code $? "$OUT/logs/$suite.status")"
 		[ "$code" != vm-lost ] || lost+=("$suite ($(cat "$OUT/logs/$suite.status"))")
 	fi
-	tr -d '\r' <"$OUT/logs/$suite.console" | "$GO" tool test2json -p "$module/$pkg" >"$OUT/logs/$suite.json" 2>/dev/null
+	tr -d '\r' <"$OUT/logs/$suite.console" | python3 "$here/consoleframe.py" | "$GO" tool test2json -p "$module/$pkg" >"$OUT/logs/$suite.json" 2>/dev/null
 	printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$suite" "$pkg" "$tags" "$code" "$OUT/logs/$suite.json" "$OUT/logs/$suite.console" >>"$results"
 done
 
@@ -614,7 +700,7 @@ if [ "$HOSTMODE" = sudo ]; then
 else
 	echo "== $doctor_suite (tego doctor as root in a KVM guest)"
 	fwd_run "$here/kvm-run.sh" --sudo --timeout 300 --log "$OUT/logs/$doctor_suite.console" --status "$OUT/logs/$doctor_suite.status" \
-		--file "$doctor_bin:/vm/tego" -- "${service_cgroup[@]+"${service_cgroup[@]}"}" /bin/sh -c "$doctor_script" /vm/tego "$bpf_state"
+		"${module_args[@]+"${module_args[@]}"}" --file "$doctor_bin:/vm/tego" -- "${service_cgroup[@]+"${service_cgroup[@]}"}" /bin/sh -c "$doctor_script" /vm/tego "$bpf_state"
 	code="$(vm_code $? "$OUT/logs/$doctor_suite.status")"
 	[ "$code" != vm-lost ] || lost+=("$doctor_suite ($(cat "$OUT/logs/$doctor_suite.status"))")
 fi
@@ -669,7 +755,7 @@ fi
 # on fedora-7.0 for TestIntegrationAdoptSkipIsRecordedAtOnce. Unscoped entries, other rows' entries and entries of
 # packages it did not run are left to the run that holds them; VM_RUN and a shard still hold none here.
 mustlist=""
-if [ -z "${VM_RUN:-}" ] && [ -z "$SHARD" ] && [ "${#strict[@]}" -gt 0 ]; then
+if [ -z "${VM_RUN:-}" ] && [ -z "${VM_PART_RUN:-}" ] && [ -z "$SHARD" ] && [ "${#strict[@]}" -gt 0 ]; then
 	if [ $# -eq 0 ]; then
 		mustlist="$here/root-must-pass.txt"
 	elif [ -n "$ROW" ]; then

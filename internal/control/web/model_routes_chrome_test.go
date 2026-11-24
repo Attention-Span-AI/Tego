@@ -5,7 +5,6 @@
 package web
 
 import (
-	"bytes"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -123,7 +122,7 @@ func TestModelRoutesInChrome(t *testing.T) {
 		"--no-default-browser-check", "--disable-gpu", "--disable-extensions", "--disable-sync",
 		"--disable-background-networking", "--disable-component-update", "--enable-logging=stderr", "--v=0", "about:blank")
 	cmd.ExtraFiles = []*os.File{cmdR, outW}
-	var stderr bytes.Buffer
+	var stderr chromeOutput
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -170,6 +169,7 @@ func TestModelRoutesInChrome(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
+				c.closeTarget(t, tb.target)
 			}
 		}
 	}

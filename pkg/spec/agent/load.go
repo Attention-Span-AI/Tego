@@ -4,10 +4,10 @@ package agent
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"reflect"
@@ -67,15 +67,40 @@ func Load(path string, profiles ProfileSource) (*Contract, []Diagnostic, error) 
 // LoadBytes is Load for bytes already in memory (stdin, tests, fuzzing);
 // path is used only to label diagnostics and the implicit contract entry.
 func LoadBytes(path string, data []byte, profiles ProfileSource) (*Contract, []Diagnostic, error) {
-	l := &loader{profiles: profiles, top: path}
+	return loadBytes(path, data, profiles, nil)
+}
+
+func loadBytes(path string, data []byte, profiles ProfileSource, budget *loadBudget) (*Contract, []Diagnostic, error) {
+	l := &loader{profiles: profiles, top: path, budget: budget}
+	l.ds.budget = budget
+	if budget != nil {
+		defer func() {
+			// Diagnostics must not retain the request context or the merged graph.
+			for i := range l.ds.list {
+				l.ds.list[i].budget = nil
+			}
+		}()
+	}
 	c, _, _ := l.load(path, data, "", nil)
+	if err := budget.check(); err != nil {
+		return nil, l.ds.list, err
+	}
 	if c != nil {
 		c.profiles = l.used
 		l.denyReadSwitch(c)
 		l.nullExecAllow(c)
 		validateMerged(&l.ds, c, path)
 	}
+	if err := budget.check(); err != nil {
+		return nil, l.ds.list, err
+	}
 	SortDiagnostics(l.ds.list, path)
+	if budget != nil {
+		// firstError wraps a diagnostic value; clear the request reference before it copies one.
+		for i := range l.ds.list {
+			l.ds.list[i].budget = nil
+		}
+	}
 	if err := firstError(l.ds.list); err != nil {
 		return nil, l.ds.list, err
 	}
@@ -88,7 +113,7 @@ func LoadBytes(path string, data []byte, profiles ProfileSource) (*Contract, []D
 // of file, or the writer's bytes, so `tego compile <(generate)` still works.
 const OpenFlags = os.O_RDONLY | syscall.O_NONBLOCK
 
-// readCapped opens path with OpenFlags and reads it with ReadCapped, once the file it opened passes the one-name
+// readCapped opens path with OpenFlags and reads it with config.ReadRulesFile, once the file it opened passes the one-name
 // rule (config.CheckOneName, R10, ADR 0059): a contract with a second name could be rewritten through it by a run
 // whose write entry no R10 target is compared with, and the next run would load what that run wrote.
 func readCapped(path string) ([]byte, error) {
@@ -105,7 +130,7 @@ func readCapped(path string) ([]byte, error) {
 		}
 		return nil, fmt.Errorf("agent: %w", err)
 	}
-	return ReadCapped(f, path)
+	return config.ReadRulesFile(context.Background(), f, path, MaxContractSize+1)
 }
 
 // untrustedContract is a contract file the one-name rule refused, said in the contract's words (the error's own text
@@ -118,27 +143,8 @@ func (e untrustedContract) Error() string {
 
 func (e untrustedContract) Unwrap() error { return e.ue }
 
-// ReadCapped reads an input opened with OpenFlags, at most MaxContractSize+1 bytes so a YAML bomb
-// never reaches the decoder (E25), and only from a regular file, a pipe or a socket: a device or a
-// directory is refused by name rather than read (a tty would wait forever). A socket is standard input
-// handed over as a stream, as a pipe is: Node's child_process stdio 'pipe' is a socketpair. A path names
-// no socket that open(2) can read, so only a descriptor reaches here as one.
-func ReadCapped(f *os.File, name string) ([]byte, error) {
-	st, err := f.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("agent: %w", err)
-	}
-	if m := st.Mode(); !m.IsRegular() && m.Type() != fs.ModeNamedPipe && m.Type() != fs.ModeSocket {
-		return nil, fmt.Errorf("agent: %s: %w", name, ErrNotAFile)
-	}
-	data, err := io.ReadAll(io.LimitReader(f, MaxContractSize+1))
-	if err != nil {
-		return nil, fmt.Errorf("agent: read %s: %w", name, err)
-	}
-	return data, nil
-}
-
 type loader struct {
+	budget   *loadBudget
 	profiles ProfileSource
 	top      string
 	ds       diags
@@ -167,6 +173,9 @@ type loader struct {
 // whole view (mergeScalars), what a list naming the file is checked against, and the longest chain of names beneath
 // the file (E15).
 func (l *loader) load(file string, data []byte, kind ProfileKind, chain []string) (merged, whole *Contract, below []string) {
+	if kind == "" && !l.budget.input(file, len(data)) {
+		return nil, nil, nil
+	}
 	isProfile := kind != ""
 	c := l.parse(file, data, isProfile)
 	if c != nil && isProfile {
@@ -183,6 +192,9 @@ func (l *loader) load(file string, data []byte, kind ProfileKind, chain []string
 	// already named merges once with one warning at its line, as a repeated name does.
 	var listed []string
 	for i, name := range c.Extends {
+		if l.budget.check() != nil {
+			return nil, nil, nil
+		}
 		pos := c.origins["extends"]
 		if p, ok := c.origins["extends."+strconv.Itoa(i)]; ok {
 			pos = p
@@ -219,7 +231,10 @@ func (l *loader) load(file string, data []byte, kind ProfileKind, chain []string
 	if len(wholes) == 0 {
 		return c, c, below
 	}
-	base, conflicts := checkParents(wholes)
+	base, conflicts := l.combineBounded(wholes, true)
+	if !l.budget.merge(file, base, c) {
+		return nil, nil, nil
+	}
 	l.fsAssuranceOutvoted(base, c)
 	l.execAssuranceOutvoted(base, c)
 	var written map[string]bool
@@ -227,6 +242,7 @@ func (l *loader) load(file string, data []byte, kind ProfileKind, chain []string
 		written = map[string]bool{}
 	}
 	whole = mergeScalars(base, c, written)
+	l.budget.merged(whole, base, c)
 	for _, x := range conflicts {
 		if !written[x.path] {
 			l.extendsConflict(x, file)
@@ -235,7 +251,13 @@ func (l *loader) load(file string, data []byte, kind ProfileKind, chain []string
 	if len(fresh) == 0 {
 		return c, whole, below
 	}
-	return merge(combineParents(fresh), c), whole, below
+	base, _ = l.combineBounded(fresh, false)
+	if !l.budget.merge(file, base, c) {
+		return nil, nil, nil
+	}
+	merged = merge(base, c)
+	l.budget.merged(merged, base, c)
+	return merged, whole, below
 }
 
 // profileVisit is a profile the walk has reached: merged, the profile merged with those of its parents the walk had
@@ -287,7 +309,13 @@ func (l *loader) parentVisit(pos Pos, name string, chain []string) (profileVisit
 	if l.visited == nil {
 		l.visited = map[string]*profileVisit{}
 	}
-	r := resolveProfile(l.profiles, name)
+	if !l.budget.profile(pos.File) {
+		return profileVisit{}, false
+	}
+	r := l.resolveBounded(name)
+	if l.budget.check() != nil {
+		return profileVisit{}, false
+	}
 	if r.shadowed != "" {
 		// The reserved namespace is never read from a profiles directory (ADR 0066 D2): a file there would read
 		// as the profile its author meant to extend, and it is not.
@@ -355,6 +383,7 @@ func (l *loader) notFound(pos Pos, name string, err error) {
 	}
 	d := l.ds.errorf(pos, CodeExtendsNotFound, "profile %q not found", name)
 	if !errors.Is(err, os.ErrNotExist) {
+		d.cause = err
 		d.fix("%v", err)
 		return
 	}
@@ -426,10 +455,14 @@ func (l *loader) parse(file string, data []byte, isProfile bool) *Contract {
 			fix("write the values out instead of repeating an alias")
 		return nil
 	}
+	if !l.budget.expansion(file, doc) {
+		return nil
+	}
 	w := walker{file: file, ds: &l.ds, origins: origins{}}
 	before := len(l.ds.list)
 	w.walk(doc, contractSchema, "")
 	c := &Contract{file: file, origins: w.origins}
+	l.budget.parsed(c)
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 	if err := config.GuardYAML(func() error { return dec.Decode(c) }); err != nil {

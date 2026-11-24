@@ -12,7 +12,6 @@ import (
 
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"syscall"
 
@@ -54,6 +53,17 @@ func (r *runner) createCgroup() error {
 		return fmt.Errorf("runtime: create cgroup: %w", err)
 	}
 	r.cg = cg
+	r.statusScopeAcquired = true
+	if id, err := r.cgm.ID(cg); err == nil {
+		r.cg.ID = id
+	} else {
+		// A cached or guessed value cannot identify this scope when the kernel lookup failed.
+		r.cg.ID = 0
+		r.log.Warn("runtime: cgroup id unknown", "err", err)
+	}
+	if err := r.writeRunStatus(false, false); err != nil {
+		return fmt.Errorf("runtime: initial run status: %w", err)
+	}
 	limits, err := cgroup.FromResolved(r.rt.Limits)
 	if err != nil {
 		return fmt.Errorf("runtime: limits: %w", err)
@@ -61,12 +71,8 @@ func (r *runner) createCgroup() error {
 	if err := r.cgm.SetLimits(cg, limits); err != nil {
 		return fmt.Errorf("runtime: set limits: %w", err)
 	}
+	r.applied = r.readAppliedLimits(cg, limits)
 	r.checkSwapCap(cg, limits)
-	if id, err := r.cgm.ID(cg); err == nil {
-		r.cg.ID = id
-	} else {
-		r.log.Warn("runtime: cgroup id unknown", "err", err)
-	}
 	// The oom and pids counters' baseline is read here, while the cgroup holds no process, and not
 	// when watchCgroup starts: that is after the ack, and an agent that meets pids.max in its first
 	// milliseconds would already be counted in a later baseline and never read as over it, ending
@@ -119,6 +125,9 @@ func (r *runner) prepareEnforcement(ctx context.Context) error {
 		return fmt.Errorf("runtime: prepare %s: %w", r.deps.Enforce.Tier(), err)
 	}
 	r.handle = h
+	if err := validateBaselineLaunch(r.rt, r.deps.Config, recordsOnly(h)); err != nil {
+		return err
+	}
 	// A tier whose handle owns a loop (tier 2's fanotify listener) starts it first, before anything else
 	// this process does. Its permission marks are placed only at the arming point (arm), but they cover
 	// whole mounts, so from then on an open on a marked mount by any process, this launcher included, waits
@@ -410,7 +419,7 @@ func unsetOr(v string) string {
 	if v == "" {
 		return "not set"
 	}
-	return strconv.Quote(v) + ", not an absolute path"
+	return "set to a value that is not an absolute path; print it with: echo $XDG_RUNTIME_DIR"
 }
 
 // checkRuntimeParent refuses a table whose write or ask entry is tego's runtime parent, holds it, or lies inside

@@ -11,12 +11,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/control/draftcompile"
 	"github.com/attention-span-ai/tego/internal/control/rules"
 	"github.com/attention-span-ai/tego/internal/ledger"
+	"github.com/attention-span-ai/tego/internal/testutil"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
+
+// savedDraftCompilerChild registers the dashboard compiler's child entrypoint for
+// save parity tests. Keep the control import in this permitted cross-binary test.
+func savedDraftCompilerChild(args []string, in io.Reader, out io.Writer) (bool, int) {
+	return draftcompile.Helper(args, in, out)
+}
 
 // saveParityRun is an ended run in cwd that wrote under cwd/out, connected to an address and started a program: a
 // draft from it has an fs.write entry, an address in net.allow and an exec entry.
@@ -95,14 +103,27 @@ func TestLearnSaveAndTheDashboardSaveTheSameFile(t *testing.T) {
 				t.Fatal(err)
 			}
 
+			// The dashboard's plan and save are durable writes, and a disk whose journal stalls holds them in the kernel
+			// for as long as it stalls, whatever else is true (gate 14: "this computer's disk did not finish writing in
+			// time"). A small durable write made over and over in the same filesystem says whether the disk stalled
+			// beside them: an independent measurement of the host. A refusal while it did is skipped, naming the
+			// numbers; a refusal while the disk was quiet fails.
+			endProbe := testutil.ProbeDurableWrites(t.TempDir(), testutil.DurableWrite)
 			req := rules.NewReq{Dir: project, Name: c.name, FromRun: id, Registry: true, Reads: c.reads}
 			p, err := s.PlanNew(t.Context(), req)
-			if err != nil || len(p.Problems) > 0 || !p.OK || p.File != file {
-				t.Fatalf("the dashboard's plan: %v, problems %q, ok %v, file %s, diagnostics %q", err, p.Problems, p.OK, p.File, p.Diagnostics)
+			var cr *rules.Created
+			if err == nil && len(p.Problems) == 0 && p.OK && p.File == file {
+				cr, err = s.CreateNew(t.Context(), req, p.Base)
 			}
-			cr, err := s.CreateNew(t.Context(), req, p.Base)
-			if err != nil || cr.Path != file || !cr.Registry {
-				t.Fatalf("the dashboard's save: %+v, %v", cr, err)
+			stalled := endProbe()
+			if (err != nil || cr == nil || cr.Path != file || !cr.Registry) && stalled >= testutil.StalledDisk {
+				t.Skipf("the dashboard's plan or save was refused (%v) while the disk was stalled: a small durable write in the same filesystem took %v (limit %v)", err, stalled, testutil.StalledDisk)
+			}
+			if err != nil || p == nil || len(p.Problems) > 0 || !p.OK || p.File != file {
+				t.Fatalf("the dashboard's plan: %v, %+v", err, p)
+			}
+			if cr == nil || cr.Path != file || !cr.Registry {
+				t.Fatalf("the dashboard's save: %+v", cr)
 			}
 			dash, err := os.ReadFile(file)
 			if err != nil {

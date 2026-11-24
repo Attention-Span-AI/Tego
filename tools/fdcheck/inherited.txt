@@ -1,8 +1,12 @@
 # ADR 0023 A10 F4: the sites that may call sys.Inherited, for a number this process received at exec on purpose:
-# the child stage's entry and ReapMain, where those calls are the process's first descriptor operations. One line
+# helper entries, where those calls are the process's first descriptor-owner operations. One line
 # per site: "file function count", the function as fdcheck names it. fdcheck admits up to count calls there and
 # fails on a line with fewer.
 internal/runtime/launch/child.go inheritFile 1
 internal/runtime/launch/child.go stage.setup 1
 internal/runtime/mcprelay/server.go ServerMain 1
 internal/runtime/reap.go inheritReapFDs 5
+# The user-scope re-entry receives its request and readiness FIFOs at exec as 3 and 4, and the interrupt channel's socket
+# as 5 (an outer process of an older build offers none), before config or run state.
+# TestScopeEntryInMainAcceptsInheritedPipesBeforeAnyOwner follows cmd/tego main through cli.Main and pins the seal.
+internal/cli/runscope.go scopedMain 3

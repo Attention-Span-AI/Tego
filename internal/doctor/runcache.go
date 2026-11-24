@@ -358,17 +358,29 @@ func (c *runCache) openDir(create bool) (fd int, err error) {
 			c.refused = err.Error()
 		}
 	}()
-	fd, err = unix.Open(c.base, unix.O_DIRECTORY|unix.O_RDONLY|unix.O_CLOEXEC, 0)
+	// The components above the cache are opened O_PATH: a walk needs search permission on them, never read,
+	// and fstat checks their owner and mode all the same. Only the cache itself, which is listed, is read.
+	const ancestor, cache = unix.O_DIRECTORY | unix.O_NOFOLLOW | unix.O_PATH | unix.O_CLOEXEC,
+		unix.O_DIRECTORY | unix.O_NOFOLLOW | unix.O_RDONLY | unix.O_CLOEXEC
+	baseFlags := ancestor &^ unix.O_NOFOLLOW
+	if len(c.dir) == 0 {
+		baseFlags = cache &^ unix.O_NOFOLLOW
+	}
+	fd, err = unix.Open(c.base, baseFlags, 0)
 	if err != nil {
 		return -1, err
 	}
 	for i, name := range c.dir {
 		last := i == len(c.dir)-1
+		flags := ancestor
+		if last {
+			flags = cache
+		}
 		var next int
-		next, err = unix.Openat(fd, name, unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_RDONLY|unix.O_CLOEXEC, 0)
+		next, err = unix.Openat(fd, name, flags, 0)
 		if errors.Is(err, unix.ENOENT) && create && last {
 			if err = unix.Mkdirat(fd, name, 0o700); err == nil || errors.Is(err, unix.EEXIST) {
-				next, err = unix.Openat(fd, name, unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_RDONLY|unix.O_CLOEXEC, 0)
+				next, err = unix.Openat(fd, name, flags, 0)
 			}
 		}
 		_ = unix.Close(fd)

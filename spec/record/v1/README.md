@@ -45,12 +45,12 @@ and the optional `run_command_grant` (the absolute path of the exec rule the com
 added for that run, admitted for every exec of that file in the run, which the contract hash does not cover; absent
 when the run execs the contract's own command or a declared entry already covered it; additive within v1,
 2026-09-24, absent in ledgers that predate it), and the optional `record_minor` (the revision of v1's
-optional fields the writer implements, every revision from `1` to it included: a revision is the next free number in
+optional fields the writer implements, subject to the explicit supported-revision set below: a revision is the next free number in
 the build that merges it, whatever number a plan expected, so a reader's "absent at revision N or later" holds for
-every ledger at N or later (*added 2026-10-25*, `TestRecordMinorsAreContiguous`);
+every supported ledger at N or later (*added 2026-10-25*, `TestRecordMinorsAreContiguous`);
 `1`: `run_command_grant` is written for every run that had a grant, so its
 absence means none; `2`: `decision_plane` is written for every run of tier `cgroup` or `bpflsm`; `3` to `7` as the
-paragraphs below say; `8` (2026-10-16, ADR 0057 D5): held reads and alternates, below; absent, read as `0`,
+paragraphs below say; `8` (2026-10-16): the `exec_missing` counter; `9` (2026-10-16, ADR 0057 D5): held reads and alternates, below; absent, read as `0`,
 in ledgers that predate it, whose missing `run_command_grant` says nothing; additive within v1, 2026-09-24), and the
 optional `decision_plane` (`lsm|fmod_ret` where the kernel decision plane decided the run's fs actions and execs in
 that mode, `fanotify` where tier `cgroup` ran on the listener; absent for a tier with no plane, and in ledgers that
@@ -370,7 +370,9 @@ writer saw itself), `serial` the change's number in the run's overlay (from 1, o
 made. An overlay the launcher could not read (malformed, not a regular file, owned by another user, or writable by
 others) is one `gap what=enforce why=live-block-unreadable` per state of the file, and the blocks it read last stay in
 force; changes the overlay no longer held when the launcher read it (it keeps the newest 256) are counted in one
-`gap what=enforce why=live-block-lost` line's `count`. Below revision 21 no rule is `live.block[...]` and no gap names `live_block`.
+`gap what=enforce why=live-block-lost` line's `count`. A path, read or write block whose file's other names (binds of it, WSL's views of it) the mount
+table could not all list when the block was added is also one `gap what=enforce why=live-block-partial` line: `binary` is the block's value, then the
+reason; the block refuses every name that was listed and no more. Below revision 21 no rule is `live.block[...]` and no gap names `live_block`.
 Fixture: `fixtures/live-block.jsonl`.
 
 At `record_minor` 22 (`MinorLedgerCap`; 2026-10-26), a machine config's `record.max_run_bytes` bounds one run's
@@ -567,8 +569,37 @@ the field ignores it, as any unknown key. `Event.ValidateAt` reads it exactly, b
 [`deny-read-frozen`], and the ledger Writer keeps it on its line whatever its size. No released build wrote revision 30
 before this field took it.
 
-Record minors 31 to 35 are reserved. Their fields are declared and validated ahead of any writer (`Event.ValidateAt`) and
-refused in a ledger below their revision; nothing writes `record_minor` 31 or more, and a launcher refuses to start a run whose `run_start` would carry one.
+### Revision 31: learn history in the contract source
+
+`run_start.contract_source.learn`, when present, is
+`{"run":"r-12345678-0aaaaaaaaaaaa-abcdef","withheld":["tcp://203.0.113.9:443"]}`.
+It is copied from the compiled contract's optional `learn` key. The run id names
+its claimed source run. The list contains 1 to 100000 distinct canonical TCP/UDP
+IP address:port endpoints in byte order, without zones and with a nonzero port;
+IPv4-mapped addresses are written as IPv4. This is editable contract history,
+never an allow rule, a leak verdict, or proof of an unchanged learned contract.
+Record validation refuses malformed history and history below minor 31. Older
+records without it cannot establish what learn withheld. Stdin and generated contracts, including
+`watch` without `--boundary`, record no source and get no receipt sentence.
+Receipts match protocol, address and port only to a recorded
+`unmatched` / `net-not-allowed` connect refusal, and name
+the conditional `tego rule <run> <seq> --allow` step for a future run. An edited or
+missing contract file after launch changes none of these words (ADR 0016).
+A missing network operation is read as connect; bind, listen, sendmsg and accept
+do not qualify. History changes no grant or refusal, but editing only history
+changes `contract_hash`.
+
+This reader strict-decodes a present `contract_source` at every record minor,
+including minors before 13, when writers first added the key. `ValidateAt` and
+Verify now refuse null, case variants of `contract_source` or learn-history keys,
+wrong types for known fields, repeated members and unpaired surrogates inside that object in older records too.
+Raw invalid UTF-8 still receives the scanner's existing U+FFFD repair before this
+decoding. A valid older `contract_source` without `learn` is still
+accepted; the older-minor valid fixture pins it. The minor-31 valid fixture
+exercises both TCP and UDP history.
+
+Record minors 32 to 35 are reserved. Their fields are declared and validated ahead of any writer (`Event.ValidateAt`) and
+refused in a ledger below their revision; their writers remain absent. No-baseline launches retain revision 31; nonempty baseline snapshots use MinorBaseline (39). Readers refuse reserved revisions 36 through 38 and anything above 39.
 
 At `record_minor` 11 (2026-10-16), `run_start` also
 carries the optional `runtime_grants`: the rule name of every grant the run makes on its own authority
@@ -884,9 +915,46 @@ were. One line each, right after `run_start` for what the launcher restored befo
 before `run_end` for what the run restored at its end (
 "Modes taken from the owner"). No action was lost: a reader does not count the line among the gaps that make the run's
 counts a minimum.
+Four more `gap` whys record a loss the run's log used to hold alone (additive within v1, 2026-11-20, no new revision and
+no new field; a reader that does not know one reads it as any `gap` it cannot size, which is the conservative reading):
+
+- `what=record why=mcp-response-oversize` is an answer of an MCP server the relay dropped for its size: a stdio server's
+  JSON-RPC line, or a url server's JSON answer to a `tools/list`, past the size the relay reads (8 MiB for a stdio line
+  and a url answer). The client got no answer to it (an HTTP client got a 502). `why=mcp-stream-oversize` is one message
+  of a url server's event stream past that size, left out of a stream whose other messages passed. Both carry `binary`:
+  the server's name, a colon and a space, the message's size and the limit, as `<server>: <n> bytes, limit <m> bytes`, or
+  `<server>: more than <m> bytes, limit <m> bytes` where the relay stopped reading at the limit and never learned the size.
+  A run writes at most 16 such lines of one why for one server; the messages past that are counted in one line of the same
+  why with `count` and no `binary`, written when the relay stops. No action went unrecorded: a reader counts these lines
+  apart from the gaps that make a run's counts a minimum (`gaps.Dropped`; the receipt's coverage code `messages-dropped`).
+  A client line past the bound is no gap: it is refused, and its `mcp` line says so.
+- `what=enforce why=model-route-unreadable` is one line per state of a run's model-route overlay the forwarder could not
+  read: the routes it read last stay in force, so a route change a person made in that state is not applied, and no request
+  goes by a route no line put in force. It has no `count` and no `binary`. A reader that knows it counts it apart from the gaps that make a
+  run's counts a minimum (`gaps.RoutesKept`; the receipt's coverage code `model-routes-kept`, "no action went
+  unrecorded"); a reader that does not know it reads it as any `gap` it cannot size, the conservative reading.
+
 `what=limits` (additive within v1, 2026-09-24) is a limit the run's cgroup cannot hold as asked: `why=memory-swap-uncapped`,
-a memory cap on a kernel that accounts no swap to cgroups while swap is on.
+a memory cap on a kernel that accounts no swap to cgroups while swap is on; and `why=ledger-ceiling-overshoot` (additive
+within v1, 2026-11-20, no new revision), written once just before `run_end` by a run that ended on its ledger size limit
+(`limit` with `which=ledger_bytes`, `record.max_run_bytes`) when its `events.jsonl` holds more than the ceiling:
+`count` is the number of bytes past the ceiling. The lines already queued when the limit tripped are all written (a
+refusal or a verdict is never dropped to keep the size), so the overshoot is recorded, not bounded; the `limit` line
+says what the ledger held when it tripped and this gap what it held when the pipeline drained. The gap line, a later
+gap and `run_end` are not in the count.
 `limit` records a budget hit (`which`, `value`, `ceiling`).
+`run_end.signal` is the signal the kernel reported for the agent's end (`reason` `exit`, `limit`, `oom`, `pids`
+and `signal` or `stopped` alike), or, for a run that was asked to stop (`reason` `signal` or `stopped`) and whose
+agent left by its own exit code, the signal that started `stop_grace` (SIGINT, SIGTERM or SIGHUP). When `escalated`
+is true, Tego killed the agent with `cgroup.kill`, because `stop_grace` ran out or a second SIGINT came within two
+seconds (the record does not say which), and for `signal` and `stopped` the `signal` is the one that started the
+stop, not the kill's 9. A run whose reason is `limit`, `oom` or `pids` keeps the kernel's signal even if a stop also
+escalated. An agent that the first signal did not end and that then died of another signal records that one.
+*Clarified 2026-11-11*, ADR 0147: `spec/identity/RUN-IDENTITY.md` "Signals" previously named
+`signal=<n> escalated=<bool>` without defining which signal `<n>` selects. Binaries through v0.1.2 wrote 9 for an
+escalated stop. `escalated: true` alone does not distinguish old records from new ones; the `tego_version` of the
+run's `run_start` identifies the writer. ADR 0147 treats this clarification as a correction within v1: it adds and
+removes no key and changes no key's type, so it moves neither `v` nor `record_minor` (docs/VERSIONING.md §2).
 `run_end` carries `reason` (`exit|signal|stopped|oom|pids|limit|exec-failed|orphaned|error`), `exit_code`, `signal`
 and `escalated` for `signal`, `detail` for `error` (at most `MaxDetailBytes`, 4096 bytes: a longer one is cut at a
 character boundary and ends ` [cut N bytes]`, `record.CutDetail`, 2026-10-25), `supervisor{notifications, held_ms,
@@ -939,3 +1007,218 @@ or record minor is introduced. The pty relay records an installed slave as an al
 under `builtin.other_tty`. `builtin.host_ipc/datagram` is a `best_effort` cell disclosing admitted or
 unsupported datagram/address alias limitations where no native peer plane runs, not a
 new reason. The native Unix peer plane emits an ordinary refused net/sendmsg line with its built-in rule and `mechanism: plane`. At root tiers, an actual kernel refusal of a numeric terminal is attributed to `builtin.other_tty` using the recorded file identity and inherited-terminal exception. Tier landlock may have no line for a read without a notification under summary mode.
+
+### Machine baseline evidence (ADR 0144 slice 6)
+
+`MinorBaseline` names the allocated baseline revision in `pkg/spec/record/record.go`. This build understands revisions 0 through 35, `MinorLocalRoles` (37), `MinorBaseline` and `MinorAppliedLimits`. Reserved revisions 36 and 38 are unsupported here, just like a revision above this build’s ceiling: record decoding and validation, receipts, drift, historical replay, rulesview and metadata projection refuse them with an unsupported-revision reason. No writer for the declared revisions 32 through 35 is added.
+
+A nonempty configured snapshot selects `MinorBaseline`; its block and effective hash are mandatory, including with zero rules. Earlier supported revisions refuse these fields (`below-minor`).
+
+A record without the baseline block proves nothing about a baseline, neither that one applied nor that none did.
+
+The launch and adoption writer seams are byte-compared with pre-baseline fixtures from `2910acb2b` for `run_start` and `run_end`, with the exact host-field masks listed in `internal/runtime/testdata/prebaseline/README.md`. Other event kinds and complete running-process streams are not proven by this comparison.
+
+[baseline.schema.json](baseline.schema.json) defines required fields. Unknown optional fields
+remain ignorable. Baseline readers validate required evidence on the raw record bytes through `record.ValidateRunStartBaseline` before typed use. Omitted, null, wrong-type and duplicate required facts refuse with a reason; nullability follows `Event.ValidateAt`, including nullable source fields and opaque replay facts. A decode error is a refusal; callers discard typed destinations on every error. Known member spellings are exact, duplicate keys and invalid UTF-8 are refused,
+and integer tokens cannot be fractions or exponents. Every array is explicit, including empty
+`rule`, `operations`, `conditions`, `limits` and `sources` arrays. Null is allowed only for an
+absent/unselected source's `sha256` and `bytes`, and inside the compiler replay projection.
+Baseline, effective-hash and source-hash members are checked on original bytes before UTF-8 repair,
+including nested strings and opaque replay facts. Invalid bytes refuse with the member name.
+The ordinary scanner's E18 repair for other fields and line kinds is unchanged.
+
+The evidence block has a 1 MiB encoded budget and stays on the run-start line, never a blob.
+Exceeding it fails recording; no row, layer or byte string is discarded.
+
+The block includes `v:1`, `mode:applied|not-applied`, `sha256`, `owner_uid`, `home`,
+`owner_known`, `sources`, `protected_owner_layer`, `rules`, `source_contract`,
+`effective_contract`, `replay`, `fact_sha256` and `evidence_sha256`. The contract byte strings
+and consulted source `bytes` use base64 JSON strings. Present empty bytes use an empty string, distinct from
+null for absence. `source_contract` hashes to `contract_hash`; `effective_contract` hashes to
+`effective_hash`. The same effective bytes are saved as `effective.yaml`; the legacy source copy
+and source hash keep their previous meaning. Both hashes use 64 lowercase hexadecimal digits.
+
+The three consulted sources are in `etc`, `user`, `env` order. Each records `layer`, `file`,
+`state`, `sha256`, `bytes`. Present bytes must reproduce the digest. Absent files retain their
+path with null bytes/digest; an unselected layer has no path and null bytes/digest. Unknown
+sources cannot establish a baseline. An unknown governed owner's home is empty with
+`owner_known:false`; it cannot mint a verified replay handle. A fallback compile home is not
+reported as that owner's passwd home.
+
+Each rule preserves union order and has an `id` equal to `baseline.<zero-based position>`,
+`key`, raw `value`, home-expanded `expanded`, resolution `state`, action `rule` ids,
+`empty_reason`, all contributing `sources` (`layer,file,line`), actual `tier`, `plane`,
+`held`, `image_mode`, `operations`, `conditions`, `limits`. An empty action membership requires
+an absence/redundancy/not-applied reason. Recording-only entries all say `not-applied`, with
+no action rule membership. Environment delivery does not invent syscall refusals.
+
+`sha256` hashes normalized configured entries: fixed fields `v`, `fs.deny_read`,
+`fs.deny_write`, `exec.deny`, `env.deny`; v=1, unique expanded strings in UTF-8 byte order,
+explicit arrays, Go JSON Encoder with HTML escaping disabled and one final LF. Sources,
+positions, identities and coverage are excluded. Actual insertion order still determines
+`effective_hash`. `evidence_sha256` separately hashes the Go evidence struct's compact JSON
+with its own field empty, covering the auxiliary facts. Neither hash authenticates the writer.
+The chain continues to hash original line bytes.
+
+`replay` contains the resolved entries, alias/detached/link inventory and identity facts,
+write-scope facts, compiled fs/ask/exec/read projections and actual exec-pin capability. This
+is historical evidence. The sealed agent verifier parses recorded layers to reproduce union
+order and source lines, checks expansion and both contract hashes, reproduces insertion, and
+checks action membership and the coverage cell against that projection. No current config,
+passwd or mounts are consulted while minting it. Launch/adoption reject every replay table.
+Recorded facts cannot prove their own truthful collection; a writer replacing and rehashing
+all evidence can fabricate a consistent run. Ordinary historical table compilation can still
+fail on disappeared source paths, separately from insertion verification.
+
+Receipts show the same per-entry mechanism/coverage and consulted absence, full digests, and
+only recorded refusals by action rule membership. Shared membership does not imply unique
+causation. Binding 3 adds `effective_hash`, `baseline_sha256`, `baseline_evidence_sha256`;
+bindings 1 and 2 preserve their old source-only binding/comparison semantics. No current
+baseline is used to check old receipts. The new fixtures are under `fixtures/baseline`, and
+shared chain vectors 130 to 132 exercise their original bytes with both verifier implementations.
+
+`MinorBaseline` is the single baseline revision constant. Maintainers regenerate schema gates,
+fixture chains, shared vectors and revision documentation together; earlier fixtures stay unchanged. The reserved `answer.principal` grammar remains
+declared with no writer. Revision 36 itself is unsupported here; supported profiles may validate
+the inert field grammar.
+
+`fact_sha256` is a map of named fact paths to SHA-256 commitments, including each source field
+and each entry field. It identifies an independently edited fact before the aggregate check.
+The opaque `replay` object's keys are sorted, preserving integer tokens exactly; map-key order is
+not an enforcement fact. Its path-relations inventory is required for every path involved in the
+recorded coverage cell. Missing historical identity relations refuse coverage, never invoke a
+current filesystem walk. The final evidence digest includes the fact commitments.
+
+### Applied limits of an adoption (A52) and of a launch (GAPS C221)
+
+At `record_minor` 40 (`MinorAppliedLimits`; 2026-11-20), `run_start` may carry `applied_limits`, the kernel limits a
+boundary adoption wrote into the scope it moved the agent into, as written: `cpu_max` (the `cpu.max` line, `max <period>`
+or `<quota> <period>` in microseconds), `cpu_weight` (1 to 10000) and `pids_max` (a positive count); each is absent when
+the adoption wrote that file nothing, and at least one is present. `run_start.limits` carries budgets only and is not
+this: a ceiling the machine config holds is in force on an adoption only because the adoption wrote it, and this says
+what it wrote. A launch, a record-only adoption and an adoption whose table held none of the three write no block and keep
+their revision and their bytes; a ledger below 40 says nothing either way. Below 40 the block is refused (`below-minor`).
+A revision above 39 holds the baseline block only when the run had a baseline to record; at 39 itself it is mandatory
+(ADR 0144), so a reader asks the run_start whether it recorded one (`BaselineRecorded`) and not whether its revision is
+at least 39. A reader that predates revision 40 refuses such a ledger as unsupported, as it does every later revision.
+
+*A launch, 2026-11-20 (GAPS C221, no new revision):* a launch's `run_start` carries the same block at revision 41, for
+each limit file its launcher wrote (`cpu.max`, `cpu.weight`, `memory.max`, `memory.high`, `pids.max`), as the kernel reports
+the file back after the write, not as the contract worded it: memory is held in pages, so a `memory` of 1,000,000 bytes
+reads back 999,424. Two members join the three, `memory_max` and `memory_high` (bytes, 0 or more; `0` is a cap of nothing),
+valid from revision 41 and refused below it (`below-minor`). A limit that reads back `max`, a file that could not be read and
+a value the record cannot state (a `pids.max` of 0) are absent, and a run that wrote no limit writes no block. *Amended
+(GAPS N85, no new revision):* a launch's member is the lowest ceiling along the chain of cgroups above the scope, up to the
+cgroup2 mount, read once at the run's start: the kernel holds the run to that one, so `memory_max`, `memory_high`, `pids_max`
+and `cpu_max` (compared by quota over period) are the smaller of the scope's file and every ancestor's, `max` being no
+ceiling. `cpu_weight` is a share and stays the scope's own. A member whose ancestors could not all be read is absent, not the
+scope's own number, and the run's log names the file; so is every one of those four when the mount is not the real cgroup2
+root (a private cgroup namespace's root, a cgroup with limit files of its own, whose ancestors the kernel applies and the
+run cannot see: it has `cgroup.type`, the real root has none); absence therefore says "not written, or not known". An ancestor's
+ceiling over a limit the run wrote none is not in the block, and a ceiling changed after the start is not followed.
+`run_start.limits` still carries the budgets only, and the contract's copy in the run directory the limits asked for.
+An adoption's block keeps its three members as written (it holds no memory limit).
+
+### A UDP datagram's net line carries op send (GAPS C172, no new revision)
+
+The `net` line of a UDP datagram the run sent (`sendto`, `sendmsg`, `sendmmsg`, or a kernel record's unconnected datagram)
+carries `op: "send"`, refused or allowed. The `net` line of a connect(2), a UDP socket's included, has no `op`, as before:
+a UDP connect sends nothing, and musl's route probe is one. A ledger written before this has no `op` on either, so a reader
+reads such a line as an attempt of either kind. The receipt's `connection_tries` still counts every attempt; its
+`datagram_sends` counts how many of them sent and each connection's `sends` how many of its attempts did, so
+`connection_tries - datagram_sends` is the attempts that only connected.
+
+### Every launch writes revision 41 (ADR 0157)
+
+At `record_minor` 41 (`MinorEveryLaunch`; 2026-11-20) every launch and every adoption writes revision 41 from `run_start`
+on, whether or not a live block ever comes: a block can come at any time after `run_start`, and the revision its line
+needs can only be declared there. Revision 41 **includes everything 39 and 40 allow**: the machine baseline block is
+mandatory at 39 itself and carried at 41 when the run had one (`BaselineRecorded`), and `applied_limits` is allowed from 40.
+A ledger at 31, 39 or 40 reads exactly as before. Three fields are new:
+
+- `run_start.home`: the home directory the run resolved (the passwd home of the launching user, never `$HOME`; of the agent's
+  owner for an adoption), a clean absolute path of at most 4096 bytes with no control character, absent when the run
+  resolved none. A receipt folds `~` under it, then under the baseline evidence's owner home, else prints paths whole.
+  Below 41 it is refused (`below-minor`); a malformed one is refused `run-home`.
+- `live_block.addrs` (strings) and `live_block.addrs_more` (integer), on the gap line of a net `live-block-added` or
+  `live-rule-restored` change whose value names a host (not an address or a socket): the addresses the block was
+  enforced on when the line was written, as enforced (unmapped, an IPv6 zone kept), sorted by address with no repeat, at
+  most 32, and the number of addresses past that cap (more than 0 only on a list of 32). A block by address, and a name
+  whose lookup answered no address, carry neither. Below 41 they are refused (`below-minor`); a list that is not
+  sorted, not canonical, mapped, past the cap, on another kind or why, or with a count on a short list is refused
+  `live-block`. A later lookup of the name may add addresses the line does not name (ADR 0157, Limits).
+
+- `live_block.note` (string), on the gap line of a `live-rule-lifted` change only (a lift or a grant the launcher put in
+  force; ADR 0125, amendment 2026-11-23): the text the person gave with the lift, at most 200 bytes of valid UTF-8 whose
+  every character is printable (no control character, line break, tab, invisible format character or line separator), or
+  absent when the lift had none. A reader shows it and never interprets it. It is not `reason`, which on a line is the
+  closed reason set. The launcher writes it as its writer signed it: the note is one more field of the lift's MAC
+  (a second HMAC domain, `tego-live-lift-v2`; a lift with no note keeps `tego-live-lift-v1` and its inputs), so a lift
+  whose note was changed or taken off in the overlay is refused (`refused: mac`). Minor 41 never shipped in a release
+  (v0.1.3 ends at 30), so the field is part of 41, not a new revision. Below 41 it is refused (`below-minor`); on any other
+  why, over the bound, or with a character that is not printable it is refused `live-block`. Fixtures:
+  `fixtures/live/valid/live-rule-lifted-note*.json` and `fixtures/live/invalid/*note*.json`.
+
+A reader that predates revision 41 refuses such a ledger as unsupported, as it does every later revision.
+
+### Local approval authority, optional profile at revision 37
+
+Minor 33 is occupied by vault and secrets, 34 and 35 are declared, and 36 is
+reserved for team `answer.principal`. `MinorLocalRoles` is 37 and readers support it; 38 stays reserved for
+business-rule lines. A run that writes this payload (the system root-approval floor is pinned) carries the revision its launch writes when
+that is 37 or later, and 37 otherwise; it never drops to write the payload (`max(launch, 37)`). Every launch and adoption
+writes revision 41 now (ADR 0157), so a run under the floor carries 41, with the fields below validated at 41; a ledger a
+build before revision 41 wrote may carry the payload at 37 or 39. The fields' minimum revision is 37 and they are valid
+at every supported revision from there. An absent system setting adds nothing to a run's record and changes no approval
+wire frame. This profile asserts no team principal,
+deployment, secret or share.
+
+Enabled `run_start` carries `local_approval_authority` with `mode: owner_only`,
+`sha256` of exact system bytes and nonzero `agent_uid`, verified from the child's
+acknowledged credential drop. Its answers carry exactly one of:
+
+- `actor`: `{uid: 0, pid, start_boot_ns, user_namespace: 4026531837,
+  source: kernel-local-uid, role: owner}`. Both approve and deny require this actor.
+  `by` agrees with the UID and PID and never ends with `always`. An approval
+  has an absent or empty `answer_reason`; a denial requires `ask-denied`.
+- `system_cause`: `timeout`, `cancelled`, `shutdown` or `unavailable`, with no actor,
+  no approval and no alternate. `by` names the same cause.
+
+The new objects are closed. At minor 37 or later, every answer's decision
+fields are decoded by exact, case-sensitive name; duplicate and folded-duplicate
+names are refused.
+Null, duplicate, unknown or differently spelt object members,
+invalid UID/PID/start/namespace/role/source/digest and fields below minor 37
+refuse. The writer validates the final redacted shape and requires attribution
+before managed answer acknowledgement. Required file and directory sync precedes
+release; sync failures grant nothing. A recorded approval alone is not proof of
+operation completion. Source drift, expiry, shutdown and cancellation may refuse
+completion afterward. Missing actor or role means not recorded, including old
+answers whose `by` happens to name root. CLI and dashboard share the receipt's
+projection only after the run revision carries the fields and the complete
+answer validates. An `actor` below minor 37 never becomes authenticated identity.
+The displayed authority is `local approval authority: root-only`. This display
+requires the complete run_start payload to validate at its exact revision.
+
+The run's floor ties its answers together (a rule over the whole run, which `tego events --verify`, the writer and its
+resume apply beyond the per-line schema): in a run whose `run_start` carries `local_approval_authority` every `answer`
+line carries exactly one `actor` or `system_cause`, and in a run whose `run_start` does not, no answer carries either, so
+a line rewritten to claim root in a run that never had the floor is refused. A reader (the dashboard, the JSON receipt,
+`tego ask <run> <id>`) shows an answer as root's only when the run's validated `run_start` carries the floor.
+
+An appended actor approval can precede a refused operation, for example when
+cancellation overtakes fsync. The answer remains a valid recorded selection.
+Read the following operation/refusal line's verdict and completion fields
+(`operation_completed`, `fd_delivered`, `syscall_ret` for a held open) to establish
+what happened. No such line means completion is not recorded. Receipts and
+dashboard label this selection "approval recorded" and never infer completion.
+A request expired during final authority reads is returned as a timeout refusal;
+its previously appended actor answer is not rewritten.
+If a sender cannot complete coherent admission after the selection was
+appended, the broker keeps the operation held and publishes a fresh ask ID at
+the original deadline. Each ask ID still has one immutable answer. The earlier
+selection does not claim the retry's operation result. Packet-time PID/UID/GID
+identify the answer sender; decision-time namespace, cgroup, current real UID
+and start facts come from the validated process handle. Those later readings
+do not establish namespace or scope at the send. A completed final snapshot is not revoked by later
+changes the sender makes to itself.

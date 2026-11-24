@@ -37,6 +37,9 @@ var (
 	ErrOutsideFence = liveblock.ErrOutsideFence
 	// ErrNoKey is a lift of a run whose lift key cannot be read (liveblock.ReadKey).
 	ErrNoKey = liveblock.ErrNoKey
+	// ErrNoNote is a lift with a note of a run whose launcher does not say it reads one (liveblock.CheckNote): nothing
+	// is asked, and the same lift without a note is not refused for it.
+	ErrNoNote = liveblock.ErrNoNote
 )
 
 // Lifted is what a lift, a grant or a restore asked.
@@ -51,6 +54,8 @@ type Lifted struct {
 	Source string
 	// Until is the lift's time limit; zero is the rest of the run.
 	Until time.Time
+	// Note is the note the lift carries, "" for none.
+	Note string
 	// Serial is the overlay's serial after the change: the launcher's line carrying it says what took effect.
 	Serial uint64
 }
@@ -58,13 +63,33 @@ type Lifted struct {
 // Lift asks the launcher of an Adjustable run to allow the fence entry of kind on value until until (zero: the rest
 // of the run), as `tego lift` and `tego grant` do (ADR 0125 decision 3): it writes a lift, MAC'ed under the run's key,
 // into the run's overlay, and the launcher decides what takes effect and records it. It loosens, so it is refused,
-// in this order: to a caller inside a run (SelfGoverned; an error from the check counts as inside); for a run, kind
+// in this order: to a caller that is not outside every run (SelfGoverned: unknown counts as inside); for a run, kind
 // or value that do not parse; by liveblock.CheckFence, as the CLI refuses it, for a run that is not running
 // (ErrNotRunning), a limit its launcher does not read (ErrNoTimeLimits), a Locked run (ErrLocked) and an entry its
 // fence does not list (ErrOutsideFence); for a limit outside liveblock.CheckUntil's bounds; and when the run's key
 // cannot be read (ErrNoKey). via is "cli" or "dashboard" (liveblock.By).
 func Lift(ctx context.Context, root, run, kind, value string, until time.Time, via string) (Lifted, error) {
-	if in, _ := SelfGoverned(); in { // fails closed: a cgroup it cannot judge refuses too
+	return lift(ctx, root, run, kind, value, "", until, via, nil)
+}
+
+// LiftAt is Lift bound to the overlay revision the caller checked: the write is made only while the overlay's serial
+// is serial, checked under the overlay's lock in the same step as the write, so a change another writer made between
+// the check (the dashboard's acknowledgement of a preview) and the write (a `tego restore`, a block, a pause) is
+// ErrOverlayMoved and nothing is written. It is the lift the dashboard confirms.
+func LiftAt(ctx context.Context, root, run, kind, value string, until time.Time, via string, serial uint64) (Lifted, error) {
+	return lift(ctx, root, run, kind, value, "", until, via, &serial)
+}
+
+// LiftAtNote is LiftAt with the note the person typed with the lift (at most liveblock.MaxNote bytes of printable text;
+// "" for none), signed inside the lift's MAC so it is written on the launcher's line exactly as given. A run whose
+// launcher does not say it reads a note refuses it (ErrNoNote, liveblock.CheckNote) and nothing is asked: a note is
+// never dropped without a word.
+func LiftAtNote(ctx context.Context, root, run, kind, value, note string, until time.Time, via string, serial uint64) (Lifted, error) {
+	return lift(ctx, root, run, kind, value, note, until, via, &serial)
+}
+
+func lift(ctx context.Context, root, run, kind, value, note string, until time.Time, via string, serial *uint64) (Lifted, error) {
+	if !SelfGoverned().Outside() { // inside a run, and whatever cannot be shown to be outside one
 		return Lifted{}, fmt.Errorf("%w (run %s)", ErrGoverned, run)
 	}
 	dir, k, v, f, err := fenceTarget(root, run, kind, value, until)
@@ -72,7 +97,7 @@ func Lift(ctx context.Context, root, run, kind, value string, until time.Time, v
 		return Lifted{}, err
 	}
 	e, _ := f.InFence(string(k), v)
-	out := Lifted{Run: run, Rule: liveblock.FenceRule(k, v), Source: e.Source, Until: until.UTC(), Word: WordLiftAsked}
+	out := Lifted{Run: run, Rule: liveblock.FenceRule(k, v), Source: e.Source, Until: until.UTC(), Word: WordLiftAsked, Note: note}
 	if e.Source == record.LiveFenceSourceNew {
 		out.Word = WordGrantAsked
 	}
@@ -81,12 +106,18 @@ func Lift(ctx context.Context, root, run, kind, value string, until time.Time, v
 			return Lifted{}, err
 		}
 	}
+	if err := liveblock.CheckNote(dir, run, note); err != nil {
+		return Lifted{}, err
+	}
 	key, err := liveblock.LiftKey(dir, run)
 	if err != nil {
 		return Lifted{}, err
 	}
 	o, err := liveblock.Update(ctx, dir, run, func(o *liveblock.Overlay) (bool, error) {
-		_, err := o.Lift(k, v, liveblock.By(via), time.Now(), until, key)
+		if serial != nil && o.Serial != *serial {
+			return false, ErrOverlayMoved
+		}
+		_, err := o.LiftNote(k, v, liveblock.By(via), note, time.Now(), until, key)
 		return err == nil, err
 	})
 	if err != nil {

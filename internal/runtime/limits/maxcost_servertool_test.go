@@ -3,6 +3,8 @@
 package limits
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/attention-span-ai/tego/internal/ledger"
@@ -56,7 +58,15 @@ func TestMaxCostServerToolWithNoFees(t *testing.T) {
 // A table that names models but prices none (every entry partial) bounds nothing: under a cost budget the
 // response is unmetered rather than passing at $0 in silence.
 func TestCostBudgetUnmeteredWhenTablePricesNoModel(t *testing.T) {
-	tab := &PriceTable{Version: PriceVersion, Models: map[string]ModelPrice{"m": {partial: true, InputPerMTok: 1}}}
+	// An entry with an input price and no output price loads, and is unpriced (pricetable.Load).
+	file := filepath.Join(t.TempDir(), "prices.yaml")
+	if err := os.WriteFile(file, []byte("version: 1\nupdated: 2026-11-01T00:00:00Z\nmodels:\n  m:\n    input_per_mtok: 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tab, err := Load(file)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var reports int
 	w := NewWatcher(agent.ResolvedLimits{CostUSD: 1, Set: agent.BudgetCostUSD}, tab, &fakeKiller{},
 		cgroup.Cgroup{}, &fakeClock{}, &fakeSink{}, WithOnUnmetered(func(n int64, _ string) { reports += int(n) }))

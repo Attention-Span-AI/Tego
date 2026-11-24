@@ -68,6 +68,10 @@ func JournalPath(root string) string {
 // FeedMax. It is read again only when the journal file or the set of runs changed, so a page that re-renders each
 // second reads it once. A journal that cannot be read is no feed and no error a page must show: its lines still show.
 func (s *Service) Feed() ([]FeedEntry, error) {
+	if s.remote() {
+		return remoteService[[]FeedEntry](s, unclassified(), "Feed", struct{}{})
+	}
+
 	fi, err := os.Stat(JournalPath(s.Ledger))
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -107,7 +111,7 @@ func (s *Service) Feed() ([]FeedEntry, error) {
 			Line: e.Line, Direction: e.Direction, UndoneBy: e.UndoneBy, Agent: s.feedAgent(agents, e)}
 		f.Words = feedWords(e, byID)
 		for _, l := range e.Live {
-			f.Live = append(f.Live, LiveResult{Run: l.Run, Block: l.Block, OK: l.OK, Err: l.Err, Lift: l.Lift})
+			f.Live = append(f.Live, liveResult(l))
 		}
 		for _, st := range sts {
 			if st.Resolved == e.Contract && st.At.Before(e.At) {

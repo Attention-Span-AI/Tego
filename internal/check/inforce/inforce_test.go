@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/check/compiledview"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
@@ -571,9 +572,14 @@ func TestExecCommandRules(t *testing.T) {
 	// words admits carries its program's rule, exec[git], with the entry in command_rule; a refusal carries
 	// exec.deny[...] or exec.ask[...].
 	v := Of(rt, backend.TierLandlock, "")
-	v.Count(slices.Values([]string{"exec[git]", "exec[git]", "exec.ask[git commit]", "exec.deny[git push]"}))
-	if r := findRule(t, &v, "exec.allow", "git status"); r.RuleKey != "exec[git]" || r.Hits != 2 {
-		t.Errorf("an exec.allow entry with words counts its program's lines: key %s, hits %d", r.RuleKey, r.Hits)
+	v.Count(slices.Values([]string{"exec[git]", "exec[git]", "exec[git]", "exec.ask[git commit]", "exec.deny[git push]"}))
+	if r := findRule(t, &v, "exec.allow", "git status"); r.RuleKey != "exec[git]" || r.Invocation != "git status" || r.Hits != 0 {
+		t.Errorf("an exec.allow entry with words is counted by invocation, not by its program's lines: key %s, invocation %q, hits %d", r.RuleKey, r.Invocation, r.Hits)
+	}
+	// Two of the three git execs were admitted by "git status" (command_rule), the third by another entry.
+	v.CountCommands(map[string]int{"git status": 2, "git diff": 1})
+	if r := findRule(t, &v, "exec.allow", "git status"); r.Hits != 2 {
+		t.Errorf("an exec.allow entry with words counts the lines that name it: hits %d, want 2", r.Hits)
 	}
 	if r := findRule(t, &v, "exec.ask", "git commit"); r.Hits != 1 {
 		t.Errorf("exec.ask hits %d", r.Hits)
@@ -1018,7 +1024,8 @@ func TestDatagramResidual(t *testing.T) {
 		{"TCP only, resolver off, a write entry", "fs:\n  write: [\"./out/\"]\nnet:\n  allow: [\"tcp://127.0.0.1:1\"]\n  dns: {mode: off}\n", backend.TierLandlock, true, true},
 		{"TCP only, the DNS broker", "net:\n  allow: [\"tcp://127.0.0.1:1\"]\n  dns: {mode: broker}\n", backend.TierLandlock, true, true},
 		{"nothing at all, resolver off", "net:\n  allow: []\n  dns: {mode: off}\n", backend.TierLandlock, true, true},
-		{"a root tier", "net:\n  allow: [\"127.0.0.1:1\"]\n", backend.TierCgroup, false, false},
+		{"a root tier without a plane", "net:\n  allow: [\"127.0.0.1:1\"]\n", backend.TierCgroup, true, false},
+		{"the bpflsm tier", "net:\n  allow: [\"127.0.0.1:1\"]\n", backend.TierBPFLSM, false, false},
 		{"watched", "net:\n  allow: [\"127.0.0.1:1\"]\n", backend.TierObserve, false, false},
 		{"no net section", "", backend.TierLandlock, false, false},
 	} {
@@ -1044,8 +1051,12 @@ func TestDatagramResidual(t *testing.T) {
 			if (got != nil) != c.want {
 				t.Fatalf("datagram row %+v, want one: %v\n%s", got, c.want, v.Text())
 			}
-			if got != nil && (got.Effect != EffectDeny || got.State != StateBestEffort || got.Enforced || got.EnforcedText != textDatagram ||
-				got.Source.Origin != OriginBuiltIn || got.Sentence != "Cannot send datagrams anywhere it may not connect") {
+			wantText, wantSentence := textDatagram, "Cannot send datagrams anywhere it may not connect"
+			if c.tier == backend.TierCgroup { // the root tier's residual is a kernel boundary, not tier landlock's race (C156)
+				wantText, wantSentence = compiledview.TextDatagramRoot, "Cannot send unix datagrams to a socket it may not connect to"
+			}
+			if got != nil && (got.Effect != EffectDeny || got.State != StateBestEffort || got.Enforced || got.EnforcedText != wantText ||
+				got.Source.Origin != OriginBuiltIn || got.Sentence != wantSentence) {
 				t.Errorf("datagram row %+v", got)
 			}
 			if strings.HasPrefix(c.body, "net:\n  allow: []\n") && v.Group(GroupNetwork).Default != "Cannot connect anywhere." {

@@ -16,6 +16,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
 	"github.com/attention-span-ai/tego/internal/control/linewords"
+	"github.com/attention-span-ai/tego/internal/liveblock"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -36,6 +37,9 @@ func init() {
 	funcs["pieces"] = breakPieces
 	funcs["pathPieces"] = pathPieces
 	funcs["hasHidden"] = hasHidden
+	funcs["blockWords"] = blockWords
+	funcs["isMarkLabel"] = func(l string) bool { return strings.HasPrefix(l, "Marked live") }
+	funcs["blockKindWord"] = blockKindWord
 }
 
 // visibleText is s with each invisible character written as a visible literal, "⟦U+202E⟧": every format character (a
@@ -179,6 +183,7 @@ var sameHost = regexp.MustCompile(`^(\S+) \((\S+):(\d+)\)$`)
 
 // rowPayload is what shown reads from an answer, a gap, a live-block gap or an ask line.
 type rowPayload struct {
+	record.AnswerAuthority
 	Approved *bool   `json:"approved"`
 	By       string  `json:"by"`
 	After    float64 `json:"after_s"`
@@ -246,6 +251,10 @@ func shown(e ledgerview.Event) string {
 		if decoded && p.What == record.GapRecord && p.Why == record.GapOwnStateModeRestored {
 			return mask(p.Binary)
 		}
+		// A message the MCP relay dropped for its size (gaps.Dropped) names its server, the size and the limit.
+		if decoded && p.What == record.GapRecord && (p.Why == record.GapMCPResponseOversize || p.Why == record.GapMCPStreamOversize) {
+			return mask(p.Binary)
+		}
 		return ""
 	case "ssl_request", "ssl_response":
 		return mask(modelServer(e))
@@ -277,6 +286,9 @@ func shellTail(cmd string) string {
 // a gap's sentence, a live block's "block" or "unblock"; an action keeps its verb (read, write, connect), and exec
 // reads "run".
 func shownOp(e ledgerview.Event) string {
+	if e.Malformed != "" {
+		return capFirst(e.Malformed) // not a question and not an answer (askpair)
+	}
 	switch e.Kind {
 	case "gap":
 		// A time limit's end (record minor 26) is no block: it reads as its own sentence below.
@@ -310,6 +322,13 @@ func shownOp(e ledgerview.Event) string {
 		var p rowPayload
 		if json.Unmarshal([]byte(e.Raw), &p) == nil && p.Approved != nil {
 			out := capFirst(answerPhrase(*p.Approved, p.Reason, p.By, p.After))
+			a := record.AnswerAuthorityOf(json.RawMessage(e.Raw), e.RecordMinor, e.LocalFloor)
+			if a.Actor != nil && *p.Approved {
+				out = "Approval recorded; operation completion is separate"
+			}
+			if a.Actor != nil || a.SystemCause != "" {
+				out += "; " + ledgerview.ApprovalIdentity(a)
+			}
 			if i := strings.LastIndex(out, " after "); i >= 0 {
 				// "1 m 29 s" wraps as a whole, never as "after 41" / "s".
 				out = out[:i+7] + strings.ReplaceAll(out[i+7:], " ", " ")
@@ -353,8 +372,9 @@ func gapWords(what, why string) string {
 	switch why {
 	case "no-models":
 		return "Model traffic not recorded (no model capture for this agent)"
-	case "no-price-table":
-		return "Cost not counted (no price table for this model)"
+	case record.GapNoPriceTable, record.GapPriceTableVersion, record.GapUnpricedModel:
+		w, _ := record.PriceGapWords(why)
+		return upperFirst(w)
 	case "argv-truncated":
 		return "A command line too long to record whole"
 	case "path-truncated":
@@ -365,26 +385,34 @@ func gapWords(what, why string) string {
 		return "A live block could not be read"
 	case "live-block-lost":
 		return "A live block was lost"
-	case "run-paused":
+	case "model-route-unreadable":
+		return "The model routes could not be read: the last ones read stay in force"
+	case record.GapMCPResponseOversize:
+		return "An MCP server's answer was too large for the relay and was dropped"
+	case record.GapMCPStreamOversize:
+		return "A message of an MCP server's event stream was too large for the relay and was dropped"
+	case "live-block-partial":
+		return "A live block may not cover every name of its file (the mount table could not list them all)"
+	case record.GapRunPaused:
 		return "Run paused: the agent is frozen"
-	case "run-resumed":
+	case record.GapRunResumed:
 		return "Run resumed"
-	case "pause-failed":
-		return "Pause failed: the agent kept running"
-	case "resume-failed":
-		return "Resume failed: the run stays paused"
+	case record.GapPauseFailed:
+		return "Pause did not take: the agent kept running"
+	case record.GapResumeFailed:
+		return "Resume did not take: the run stays paused"
 	// ADR 0125's live whys (record minor 26) are what happened to the run's live rules, never "Not enforced".
-	case "live-block-expired":
+	case record.GapLiveBlockExpired:
 		return "Live block ended: its time ran out"
-	case "live-unblock-expired":
+	case record.GapLiveUnblockExpired:
 		return "Live block back: its time off ran out"
-	case "live-rule-lifted":
+	case record.GapLiveRuleLifted:
 		return "Rule in the fence allowed"
-	case "live-rule-restored":
+	case record.GapLiveRuleRestored:
 		return "Rule in the fence refuses again"
-	case "live-lift-expired":
+	case record.GapLiveLiftExpired:
 		return "Allowed rule ended: its time ran out"
-	case "live-lift-refused":
+	case record.GapLiveLiftRefused:
 		return "Request to allow a rule refused: nothing was loosened"
 	// No action was lost (gaps.Restored): the line names the file whose owner's rights tego gave back.
 	case record.GapOwnStateModeRestored:
@@ -632,7 +660,7 @@ func blockLabels(run *ledgerview.Run) map[string]string {
 	evs := run.AllEvents()
 	for i := range evs {
 		e := &evs[i]
-		if e.Kind != "gap" || !strings.HasSuffix(e.Target, "live-block-added") {
+		if e.Kind != "gap" || !strings.HasSuffix(e.Target, record.GapLiveBlockAdded) {
 			continue
 		}
 		var p struct {
@@ -657,6 +685,7 @@ func blockLabels(run *ledgerview.Run) map[string]string {
 // through find.
 func relabelLive(rows []ledgerview.Row, find func(id string) *ledgerview.Run) {
 	labels := map[string]map[string]string{}
+	runs := map[string]*ledgerview.Run{}
 	for i := range rows {
 		e := &rows[i].Event
 		if !strings.HasPrefix(e.Rule, "live.block[") {
@@ -664,13 +693,24 @@ func relabelLive(rows []ledgerview.Row, find func(id string) *ledgerview.Run) {
 		}
 		l, ok := labels[e.Run]
 		if !ok {
-			l = blockLabels(find(e.Run))
+			runs[e.Run] = find(e.Run)
+			l = blockLabels(runs[e.Run])
 			labels[e.Run] = l
 		}
 		if s, ok := l[e.Rule]; ok {
-			rows[i].Label = sameFileLabel(s, e)
+			rows[i].Label = sameFileLabel(watchedMarkLabel(runs[e.Run], e, s), e)
 		}
 	}
+}
+
+// watchedMarkLabel is the label of a live block's line when its run is only watched: the block there is a mark that
+// refuses nothing, so the line reads "Marked live at 21:50 by you: recorded only, not enforced", never "Blocked
+// live". label is the block's own label (blockLabels); any other line keeps it.
+func watchedMarkLabel(r *ledgerview.Run, e *ledgerview.Event, label string) string {
+	if rest, ok := strings.CutPrefix(label, "Blocked live"); ok && ledgerview.WatchedLine(r, e) {
+		return "Marked live" + rest + ": recorded only, not enforced"
+	}
+	return label
 }
 
 // sameFileLabel is a live block's label for the row of e, with what the line itself shows when the block refused e's
@@ -682,4 +722,37 @@ func sameFileLabel(label string, e *ledgerview.Event) string {
 		return label + ": " + note
 	}
 	return label
+}
+
+// blockWords is a live block's key ("exec:/usr/bin/curl", liveblock.Key) in the words the run page uses for it
+// (kindWord): "Program /usr/bin/curl". The raw key names a mechanism, not what the block holds back; a text that is
+// no key is returned as it is.
+func blockWords(key string) string {
+	kind, value, ok := strings.Cut(key, ":")
+	if !ok {
+		return key
+	}
+	w := kindWord(liveblock.Kind(kind))
+	if w == kind {
+		return key
+	}
+	return w + " " + value
+}
+
+// blockKindWord is a live block's kind in lower-case words for a button ("Block program ... now"), the run page's
+// kindWord otherwise.
+func blockKindWord(kind string) string {
+	if w := kindWord(liveblock.Kind(kind)); w != kind {
+		return strings.ToLower(w)
+	}
+	return kind
+}
+
+// upperFirst is s with its first letter capitalised, for a shared sentence a row or a heading shows as its own.
+func upperFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	r, n := utf8.DecodeRuneInString(s)
+	return string(unicode.ToUpper(r)) + s[n:]
 }

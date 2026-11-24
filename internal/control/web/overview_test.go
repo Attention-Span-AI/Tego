@@ -32,7 +32,14 @@ func TestEmptyStatesGiveOneStepForAnyAgent(t *testing.T) {
 		if !slices.Equal(got, []string{"tego watch -- <the command that starts your agent>"}) {
 			t.Errorf("%s gives %q, not the one tego watch step", path, got)
 		}
-		empty := body[strings.Index(body, "<h3>No runs"):]
+		start := strings.Index(body, "<h2>No runs")
+		if start < 0 {
+			start = strings.Index(body, "<h3>No runs")
+		}
+		if start < 0 {
+			t.Fatalf("%s lacks a no-runs heading", path)
+		}
+		empty := body[start:]
 		empty = empty[:strings.Index(empty, "</section>")]
 		for _, bad := range []string{"examples/", "claude", "codex", "<details"} {
 			if strings.Contains(strings.ToLower(empty), bad) {

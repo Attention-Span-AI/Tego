@@ -218,7 +218,7 @@ func TestLogsPageQueryParts(t *testing.T) {
 	for _, want := range []string{
 		`class="chip lq-chip"`, `>kind:exec<`, `class="chip lq-chip lq-neg"`, `aria-label="Remove kind:exec from the query"`,
 		`href="/logs?where=-host%3Ax.org"`, // removing kind:exec keeps the other term
-		`data-live="r-logs-facets"`, `<h2 class="lq-fh">Verdict</h2>`, `aria-current="true"><span class="lq-l">Commands</span><span class="lq-n">2</span>`,
+		`data-live="r-logs-facets"`, `<h2 class="lq-fh">Verdict</h2>`, `aria-current="true"><span class="lq-l" title="Commands · kind:exec">Commands</span><span class="lq-n">2</span>`,
 		`href="/logs.jsonl?where=kind%3Aexec&#43;-host%3Ax.org"`, `href="/logs.csv?where=kind%3Aexec&#43;-host%3Ax.org"`,
 		"Not masked", `href="/static/logs.css"`, ">5 min<", ">Latest run<",
 	} {
@@ -227,8 +227,15 @@ func TestLogsPageQueryParts(t *testing.T) {
 		}
 	}
 	b = do(s, "GET", "/logs?where="+url.QueryEscape("pid:abc kind:exec"), "127.0.0.1:8484", c).Body.String()
-	if !strings.Contains(b, "Part of the query was left out: pid:abc: not a process number") || matchedOn(t, b) != 2 {
-		t.Errorf("query error: %d lines", matchedOn(t, b))
+	if !strings.Contains(b, "This query could not be read in full, so no lines are shown. pid:abc: not a process number") || matchedOn(t, b) != 0 {
+		t.Errorf("query error: %d lines, want none beside the error", matchedOn(t, b))
+	}
+	// The downloads refuse too: the lines of the part that could be read would pass for all of what was asked.
+	for _, path := range []string{"/logs.csv", "/logs.jsonl"} {
+		rec := do(s, "GET", path+"?where="+url.QueryEscape("pid:abc kind:exec"), "127.0.0.1:8484", c)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "could not be read in full, so nothing is downloaded. pid:abc: not a process number") {
+			t.Errorf("%s with an unreadable query: %d %q", path, rec.Code, rec.Body.String())
+		}
 	}
 	// A facet value adds its token; its − leaves it out.
 	b = do(s, "GET", "/logs", "127.0.0.1:8484", c).Body.String()
@@ -238,7 +245,8 @@ func TestLogsPageQueryParts(t *testing.T) {
 		}
 	}
 	// The time presets replace a time range rather than add to it (html/template writes + as &#43;).
-	b = do(s, "GET", "/logs?where="+url.QueryEscape("kind:exec since:1h"), "127.0.0.1:8484", c).Body.String()
+	pin := do(s, "GET", "/logs?where="+url.QueryEscape("kind:exec since:1h"), "127.0.0.1:8484", c) // pinned: logs_window_test.go
+	b = do(s, "GET", pin.Header().Get("Location"), "127.0.0.1:8484", c).Body.String()
 	if !strings.Contains(b, `href="/logs?where=kind%3Aexec&#43;since%3A5m"`) || !strings.Contains(b, `aria-current="true">1 hour<`) {
 		t.Error("time presets do not replace the range")
 	}

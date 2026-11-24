@@ -153,7 +153,7 @@ func TestPlaneExecPinsOnRealKernel(t *testing.T) {
 	}
 	hash := fmt.Sprintf("p2pins%09d", os.Getpid())
 	b := New(Options{Machine: machineLinger(0), BPFFS: DefaultBPFFS, StateDir: pinState(t), Hash: hash,
-		Events: &sink{}, Plane: PlaneSetup{Mode: mode, Build: build}})
+		Events: &sink{}, Plane: PlaneSetup{Mode: mode, Build: build, RecheckAdmission: testPlaneAdmission}})
 	b.opts.planeHeld = holdPaths(t, rows.Keyed...).held
 	t.Cleanup(func() {
 		if pins, err := newPinLayout(DefaultBPFFS, hash); err == nil {

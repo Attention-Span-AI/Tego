@@ -12,6 +12,8 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
 	"github.com/attention-span-ai/tego/internal/control/routeact"
+	"github.com/attention-span-ai/tego/pkg/policy/modelroute"
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 // The Model routes page (ADR 0127): per run, each models[] endpoint, the route its requests go by now, and the
@@ -52,10 +54,11 @@ type routeRunOpt struct {
 
 // routesData is the Model routes page's data.
 type routesData struct {
-	Runs  []routeRunOpt
-	State *routeact.State
-	Err   string
-	CSRF  string
+	Runs    []routeRunOpt
+	State   *routeact.State
+	Err     string
+	Numbers countScopes
+	CSRF    string
 }
 
 // routesPreviewData is the preview's data.
@@ -93,8 +96,14 @@ func (s *Server) routesPost(w http.ResponseWriter, r *http.Request) bool {
 func (s *Server) renderRoutes(w http.ResponseWriter, snap *ledgerview.Snapshot, name, title string, data any) {
 	c := s.chromeOf(snap, title, "routes")
 	c.Host, c.Ledger, c.CSRF, c.Preview = s.host, s.cfg.Ledger, s.csrf, s.cfg.Preview
-	// No live regions: live.js leaves a page without a signature alone (a reload shows new counts).
-	c.Sig, c.Rev = "", ""
+	// The routes page follows the ledger (its "content" region, regions.go); the preview has no live regions, and live.js
+	// leaves a page without a signature alone.
+	if name != "model-routes" {
+		c.Sig, c.Rev = "", ""
+	}
+	if d, ok := data.(routesData); ok {
+		c.Numbers = d.Numbers
+	}
 	if fw, ok := w.(*flashWriter); ok {
 		c.Flash = fw.flash
 	}
@@ -112,7 +121,22 @@ func (s *Server) routesPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	svc := routesService(s.cfg.Ledger)
-	d := routesData{CSRF: s.csrf}
+	// The request counts and route changes come from the read model's summary of the run, which it folded as it read
+	// the lines, not from a walk of the ledger on every refresh (Run.RouteFacts says when it cannot answer exactly).
+	svc.Indexed = func(run string) (map[modelroute.RouteKey]int, []record.ModelRouteChange, bool) {
+		rr := snap.Find(run)
+		if rr == nil {
+			return nil, nil, false
+		}
+		f, ok := rr.RouteFacts()
+		return f.Tally, f.Changes, ok
+	}
+	d := routesData{CSRF: s.csrf, Numbers: snapshotNumbers(snap)}
+	if len(snap.Runs) > maxRouteRuns {
+		d.Numbers.Runs = worse(d.Numbers.Runs, countScope{Lower: true, Reason: "Only the newest run contracts were checked for model routes."})
+		d.Numbers.Aggregate = worse(d.Numbers.Aggregate, d.Numbers.Runs)
+		d.Numbers.addLink(countLink{Label: "All runs", URL: "/runs"})
+	}
 	want := r.URL.Query().Get("run")
 	// Live runs first, then the newest; only runs whose contract declares a route.
 	var live, ended []routeRunOpt

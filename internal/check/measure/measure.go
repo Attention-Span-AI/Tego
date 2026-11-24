@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/attention-span-ai/tego/internal/check/internal/mirror"
+	"github.com/attention-span-ai/tego/internal/check/mirror"
 	"github.com/attention-span-ai/tego/internal/check/resources"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -21,8 +21,8 @@ import (
 
 // Prices estimates what one model response cost. It is the one thing this view cannot derive from
 // the ledger, and it is an interface rather than a concrete table so the read side never imports
-// the engine (REPO-LAYOUT.md): internal/runtime/limits' *PriceTable satisfies it, and the CLI —
-// which may import both — hands one over. A nil Prices prices nothing, which is a supported state.
+// the engine (REPO-LAYOUT.md): internal/pricetable's *PriceTable satisfies it, and the CLI and the
+// dashboard — which may import it — hand one over. A nil Prices prices nothing, which is a supported state.
 type Prices interface {
 	// Cost returns the estimated USD cost of one response's usage and whether it was priced: its model, and
 	// every usage counter it reports (R2: 1-hour cache writes, server-tool requests).

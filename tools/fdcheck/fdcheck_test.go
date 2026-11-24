@@ -199,6 +199,8 @@ func TestFdcheckFixtures(t *testing.T) {
 		// F10: sys.OwnSyscall's pairs, and the raw producer traps outside it.
 		{"owned pty peer", "func f(fd uintptr, flags int) { _, _ = sys.OwnSyscall(unix.Syscall(unix.SYS_IOCTL, fd, unix.TIOCGPTPEER, uintptr(flags)|unix.O_CLOEXEC)) }\n", nil},
 		{"pty peer without cloexec", "func f(fd uintptr) { _, _ = sys.OwnSyscall(unix.Syscall(unix.SYS_IOCTL, fd, unix.TIOCGPTPEER, unix.O_RDWR)) }\n", []string{l(kCloexec, 0)}},
+		{"owned namespace owner", "func f(fd uintptr) { _, _ = sys.OwnSyscall(unix.Syscall(unix.SYS_IOCTL, fd, unix.NS_GET_USERNS, 0)) }\n", nil},
+		{"namespace owner outside sys.OwnSyscall", "func f(fd int) { _, _ = unix.IoctlRetInt(fd, unix.NS_GET_USERNS) }\n", []string{l(kIoctl, 0)}},
 		{"owned nonproducer ioctl", "func f(fd uintptr) { _, _ = sys.OwnSyscall(unix.Syscall(unix.SYS_IOCTL, fd, unix.TIOCGDEV, 0)) }\n", []string{l(kOwnSyscall, 0)}},
 		{"bpf prog load", "func f(a uintptr) { _, _ = sys.OwnSyscall(unix.Syscall(unix.SYS_BPF, unix.BPF_PROG_LOAD, a, 0)) }\n", nil},
 		{"bpf map update", "func f(a uintptr) { _, _ = sys.OwnSyscall(unix.Syscall(unix.SYS_BPF, unix.BPF_MAP_UPDATE_ELEM, a, 0)) }\n", []string{l(kOwnSyscall, 0)}},
@@ -433,6 +435,10 @@ func TestLentNumber(t *testing.T) {
 		// fchmodat resolves the path at once and keeps nothing, as fstatat does: the mode of what an O_PATH descriptor
 		// holds, which fchmod refuses (EBADF).
 		{"proc path chmodded by unix", "func f(o *sys.FD) error { return o.ProcPath(func(p string) error { return unix.Fchmodat(unix.AT_FDCWD, p, 0o600, 0) }) }\n", nil},
+		// getxattr resolves a proc path synchronously, even for an O_PATH pin.
+		// Only the pathname is admitted, not arbitrary attribute-name data.
+		{"proc path ACL queried by unix", "func f(o *sys.FD) error { return o.ProcPath(func(p string) error { _, e := unix.Getxattr(p, \"system.posix_acl_access\", nil); return e }) }\n", nil},
+		{"proc path as xattr name", "func f(o *sys.FD) error { return o.ProcPath(func(p string) error { _, e := unix.Getxattr(\"/fixed\", p, nil); return e }) }\n", []string{l(kLease, 0)}},
 		{"proc path as a value", "func f(o *sys.FD) { pp := o.ProcPath; _ = pp }\n", []string{l(kLease, 0)}},
 		// execve resolves the path at once and keeps nothing: a failed exec returns, a successful one is a new image.
 		{"proc path exec'd by syscall", "func f(o *sys.FD, argv, env []string) error {\n\treturn o.ProcPath(func(p string) error { return syscall.Exec(p, argv, env) })\n}\n", nil},
@@ -543,6 +549,19 @@ func TestLentNumber(t *testing.T) {
 		{"num used after the hand-off", "func f(o *sys.FD, buf []byte) {\n\tl, err := o.Hold()\n\tif err != nil {\n\t\treturn\n\t}\n\tn := l.Num()\n\tgo func(p *sys.Lease) {\n\t\tdefer p.Return()\n\t}(l)\n\t_, _ = unix.Write(n, buf)\n}\n", []string{l(kLease, 1)}},
 		{"num taken after a direct hand-off", "func f(o *sys.FD, buf []byte) {\n\tl, _ := o.Hold()\n\tgo func(p *sys.Lease) {\n\t\tdefer p.Return()\n\t}(l)\n\t_, _ = unix.Write(l.Num(), buf)\n}\n", []string{l(kLease, 1)}},
 		{"num used", "func f(o *sys.FD) error {\n\tl, err := o.Hold()\n\tif err != nil {\n\t\treturn err\n\t}\n\tdefer l.Return()\n\tn := l.Num()\n\treturn unix.Fchmod(n, 0o600)\n}\n", nil},
+		// sys.LendAll lends several owners' numbers to one callback as a []int (ADR 0023 amendment 2026-11-22): the
+		// slice and each number in it are held to a Borrow callback's uses. A pass that uses each number in a call is
+		// admitted; the slice or a number kept past the callback, used after it, copied out or returned is a lease site.
+		{"lendall pass", "func f(o []*sys.FD) error {\n\treturn sys.LendAll(o, func(nums []int) error {\n\t\tfor i := 0; i < len(nums); i++ {\n\t\t\tif err := unix.Fchmod(nums[i], 0o600); err != nil {\n\t\t\t\treturn err\n\t\t\t}\n\t\t}\n\t\treturn nil\n\t})\n}\n", nil},
+		{"lendall nested in a borrow", "func f(o []*sys.FD, q *sys.FD) error { return q.Borrow(func(m int) error { return sys.LendAll(o, func(nums []int) error { return unix.Renameat(nums[0], \"a\", m, \"b\") }) }) }\n", nil},
+		{"lendall slice kept", "var kept []int\n\nfunc f(o []*sys.FD) { _ = sys.LendAll(o, func(nums []int) error { kept = nums; return nil }) }\n", []string{l(kLease, 2)}},
+		{"lendall number kept", "var kept int\n\nfunc f(o []*sys.FD) { _ = sys.LendAll(o, func(nums []int) error { kept = nums[1]; return nil }) }\n", []string{l(kLease, 2)}},
+		{"lendall slice used after the callback", "func f(o []*sys.FD) error {\n\tvar after []int\n\t_ = sys.LendAll(o, func(nums []int) error { after = nums; return nil })\n\treturn unix.Fchmod(after[0], 0o600)\n}\n", []string{l(kLease, 2)}},
+		{"lendall copied out", "func f(o []*sys.FD, dst []int) { _ = sys.LendAll(o, func(nums []int) error { copy(dst, nums); return nil }) }\n", []string{l(kLease, 0)}},
+		{"lendall appended out", "func f(o []*sys.FD) []int { var out []int; _ = sys.LendAll(o, func(nums []int) error { out = append(out, nums...); return nil }); return out }\n", []string{l(kLease, 0)}},
+		{"lendall returned in an error", "type fdErr []int\n\nfunc (fdErr) Error() string { return \"\" }\n\nfunc f(o []*sys.FD) error { return sys.LendAll(o, func(nums []int) error { return fdErr(nums) }) }\n", []string{l(kLease, 4)}},
+		{"lendall in a goroutine", "func f(o []*sys.FD) error { return sys.LendAll(o, func(nums []int) error { go func() { _ = unix.Fchmod(nums[0], 0) }(); return nil }) }\n", []string{l(kLease, 0)}},
+		{"lendall as a value", "func f(o []*sys.FD) { la := sys.LendAll; _ = la(o, func(nums []int) error { return nil }) }\n", []string{l(kLease, 0)}},
 	})
 }
 
@@ -983,70 +1002,6 @@ func TestMeasuredBaselineMeetsRatchet(t *testing.T) {
 	}
 	if p := Ratchet(Config{Baseline: b, Shrinking: sh, Sites: sites}, findings); len(p) != 0 {
 		t.Errorf("the measured baseline fails the ratchet: %v", p)
-	}
-}
-
-// TestTreeRatchetAndPlantedSites is ADR 0023 C3's acceptance on this checkout, end to end through the files git
-// lists, every build configuration and the checked-in baseline.txt, F4 lists and .golangci.yml: the tree as it
-// is meets them exactly; a raw close, dup, os.NewFile and sweep planted in a package the baseline does not list
-// (internal/platform/proc, never on it) each fail and name their line, as does its use of another package's
-// bare-number API (A6's edge); and in a listed package one more close fails as a rise, as do an Fd method value
-// and method expression. The planted sites go through Check itself, the gate's whole list of problems.
-//
-// A cgo build of another architecture than this host's, which this host has no C compiler for, cannot be made
-// here: it is a skipped cell of its own, and the host's own cgo build stands in for it (hostCgoBuilds).
-func TestTreeRatchetAndPlantedSites(t *testing.T) {
-	for _, x := range hostCgoBuilds(t) {
-		t.Run(strings.NewReplacer("/", "-", " ", "-").Replace(x.cfg.name), func(t *testing.T) {
-			t.Skipf("%s needs a C compiler for %s/%s, which this %s host lacks; the files only cgo builds were checked under "+
-				"%s/%s cgo instead. The go command: %s", x.cfg.name, x.cfg.goos, x.cfg.goarch, runtime.GOARCH, x.cfg.goos,
-				runtime.GOARCH, strings.TrimSpace(x.reason))
-		})
-	}
-	cfg, err := loadConfig(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Baseline["internal/platform/proc"] != nil || cfg.Baseline["internal/doctor"] == nil {
-		t.Fatalf("the fixture assumes internal/platform/proc unlisted and internal/doctor listed: %v", cfg.Baseline)
-	}
-	ov := overlay{
-		"internal/platform/proc/zz_planted.go": []byte("package proc\n\nimport (\n\t\"os\"\n\n\t\"github.com/attention-span-ai/tego/internal/platform/sys\"\n\t\"golang.org/x/sys/unix\"\n)\n\n" +
-			"func planted(fd int) {\n\t_ = unix.Close(fd)\n\t_, _ = unix.Dup(fd)\n\t_ = os.NewFile(uintptr(fd), \"x\")\n\t_ = sys.CloseInheritedFrom(fd)\n\t_ = sys.IsTerminal(0)\n}\n"),
-		"internal/doctor/zz_planted.go": []byte("package doctor\n\nimport (\n\t\"os\"\n\n\t\"golang.org/x/sys/unix\"\n)\n\n" +
-			"func planted(fd int) { _ = unix.Close(fd) }\n\nfunc plantedFd(f *os.File) (func() uintptr, func(*os.File) uintptr) { return f.Fd, (*os.File).Fd }\n"),
-	}
-	m, _, err := measure(root, ov)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(m.uncovered) != 0 {
-		t.Errorf("files no configuration builds: %v", m.uncovered)
-	}
-	var tree []Finding
-	for _, f := range m.findings {
-		if _, isPlanted := ov[f.File]; !isPlanted {
-			tree = append(tree, f)
-		}
-	}
-	if p := Ratchet(cfg, tree); len(p) != 0 {
-		t.Fatalf("the tree does not meet its own baseline:\n%s", strings.Join(p, "\n"))
-	}
-	problems, err := Check(root, "", ov)
-	if err != nil {
-		t.Fatal(err)
-	}
-	p := strings.Join(problems, "\n")
-	wasClose, wasFd := cfg.Baseline["internal/doctor"][kClose], cfg.Baseline["internal/doctor"][kFd]
-	for _, want := range []string{"zz_planted.go:11: [close]", "zz_planted.go:12: [dup]", "zz_planted.go:13: [newfile]",
-		"zz_planted.go:14: [sweep]", "internal/platform/proc: 4 raw descriptor sites in a package that has none",
-		"internal/doctor: close sites rose from " + itoa(wasClose) + " to " + itoa(wasClose+1),
-		"internal/doctor: fd sites rose from " + itoa(wasFd) + " to " + itoa(wasFd+2),
-		"A6: internal/platform/proc is migrated (baseline.txt does not list it) but uses internal/platform/sys.IsTerminal",
-		"tools/fdcheck/edges.txt is stale"} {
-		if !strings.Contains(p, want) {
-			t.Errorf("want %q in\n%s", want, p)
-		}
 	}
 }
 

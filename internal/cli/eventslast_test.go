@@ -197,3 +197,42 @@ func TestEventsLastReadsOnlyTheEnd(t *testing.T) {
 		t.Fatalf("exit %d, stderr %q; want 125 [ledger-corrupt] for damage --last read", code, errs)
 	}
 }
+
+// TestEventsCellsAreTheTablesCells: `events --cells` prints each event as four tab-separated cells, seq, verdict, rule
+// and detail, which are the table's own (a script reads them instead of copying how the table is made), under the
+// same filters, and it is refused with the views it cannot be.
+func TestEventsCellsAreTheTablesCells(t *testing.T) {
+	dir := fixtureRun(t)
+	code, table, errs := run(t, "events", dir, "--kind", "refused", "--kind", "fs")
+	if code != identity.ExitOK {
+		t.Fatalf("events: exit %d: %s", code, errs)
+	}
+	code, cells, errs := run(t, "events", dir, "--kind", "refused", "--kind", "fs", "--cells")
+	if code != identity.ExitOK {
+		t.Fatalf("events --cells: exit %d: %s", code, errs)
+	}
+	rows := strings.Split(strings.TrimSuffix(cells, "\n"), "\n")
+	tableRows := strings.Split(strings.TrimSuffix(table, "\n"), "\n")
+	if len(rows) < 2 || len(rows) != len(tableRows)-1 {
+		t.Fatalf("%d cell lines for a table of %d rows:\n%s\n%s", len(rows), len(tableRows)-1, cells, table)
+	}
+	for i, row := range rows {
+		f := strings.Split(row, "\t")
+		if len(f) != 4 {
+			t.Fatalf("line %q has %d cells, want 4", row, len(f))
+		}
+		for _, cell := range f[1:] {
+			if cell != "" && !strings.Contains(tableRows[i+1], cell) {
+				t.Errorf("cell %q of %q is not in the table's row %q", cell, row, tableRows[i+1])
+			}
+		}
+		if !strings.HasPrefix(strings.TrimSpace(tableRows[i+1]), f[0]+" ") {
+			t.Errorf("row %d: cells say seq %s, the table row is %q", i, f[0], tableRows[i+1])
+		}
+	}
+	for _, also := range []string{"--json", "--verify", "--follow"} {
+		if code, _, errs := run(t, "events", dir, "--cells", also); code != identity.ExitUsage || !strings.Contains(errs, "--cells cannot be combined") {
+			t.Errorf("--cells %s: exit %d, %q; want a usage error", also, code, errs)
+		}
+	}
+}

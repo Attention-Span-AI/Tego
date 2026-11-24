@@ -21,7 +21,7 @@
 // after the rule of the file it resolved to, as a run's lines name it, and covers that file's other rules, the helper
 // images compile granted its tool (git's exec-path git) and a script command's #! interpreter, so entries that name one
 // file share its hits (execNames; internal/control/rulesview's TestIntegrationRuleKeysAreARunsKeys holds the keys of
-// the Rules page's view to a real run's ledger). (*View).Count adds each rule's hits from a run's ledger lines, and
+// the Rules page's view to a real run's ledger). (*View).Count adds each rule's hits from a run's ledger lines (an entry with command words is counted by (*View).CountCommands, from the lines that name it in command_rule), and
 // (*View).CountDefault each line no rule named to the default of the group that decided it (an exec line the programs',
 // a net line the network's: Group.DefaultKind); Words is the one plain label for a ledger rule key, the vocabulary
 // the dashboard names every line's rule in (through rulesview.RuleWords: it keeps no table of its own).
@@ -37,8 +37,11 @@
 // Nothing here does I/O, reads a clock or starts a goroutine: the caller hands it a table, a contract's bytes or the
 // rule keys of a run's events.
 //
-// Imports: internal/check/livestatus, pkg/policy/gate (the gate's predicates, which the table holds), pkg/spec/agent,
-// pkg/spec/backend, pkg/spec/record, pkg/policy/execmatch and its rows (an exec entry's words and tool, read as compile
-// reads them), gopkg.in/yaml.v3, the standard library.
+// The pure compiled projection lives in internal/check/compiledview, shared with
+// the contracts command. This package retains source fallback, live state, hit
+// counting and dashboard text; those operations are not linked into cmd/tego.
+//
+// Imports: internal/check/compiledview, internal/check/livestatus, pkg/spec/agent,
+// pkg/spec/backend, pkg/spec/record, gopkg.in/yaml.v3 and the standard library.
 // Must not import: internal/runtime, internal/policy, internal/control, os, syscall.
 package inforce

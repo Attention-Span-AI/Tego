@@ -59,6 +59,10 @@ import (
 type PlaneSetup struct {
 	// Mode is lsm or fmod_ret, "" for the fanotify fallback.
 	Mode ebpfbindings.PlaneMode
+	// RecheckAdmission rereads the selected mode's mutable admission facts. Doctor
+	// supplies it at selection; a selected fmod_ret mode without it is refused.
+	// Arm and the final adoption check call it without selecting a fallback mode.
+	RecheckAdmission func() error
 	// Build is the object build the probe chose (bpf.ObjectPlaneRdonly or bpf.ObjectPlaneProbe).
 	Build ebpfbindings.Object
 	// ExecPins is doctor's exec pin cell passed in Mode (ADR 0048 (7)): only then may a pinned run claim that the
@@ -110,6 +114,9 @@ type planeFillRequest struct {
 	Net planeNetPolicy
 	// Pin is the run's exec pin state (ADR 0048 (3) P2), nil for a run that is not pinned.
 	Pin *planePin
+	// ImportsDenied is a net.assurance: kernel run whose plane has socket_recvmsg attached: the slot header says so
+	// (PlaneSlotImportsDenied), and the hook refuses a receive carrying a control buffer (ADR 0128, amended).
+	ImportsDenied bool
 }
 
 // planeUnixPolicy is what the slot's unix policy says: Decides when the plane decides the run's unix names (its
@@ -179,6 +186,9 @@ func slotHeader(req planeFillRequest, unix bool, fsRows, execRows int) ebpfbindi
 	}
 	if req.KeyringAllowed {
 		h.Flags |= ebpfbindings.PlaneSlotKeyringAllowed
+	}
+	if req.ImportsDenied {
+		h.Flags |= ebpfbindings.PlaneSlotImportsDenied
 	}
 	// ADR 0043 D9: a table with name entries has its name rows and config row written before the header
 	// (putNameEntries), and the header carries the prefilter's leads and the flag that makes the hooks ask them. A
@@ -284,6 +294,10 @@ type bpfPlane struct {
 	pinsInner         *ebpf.MapSpec
 	// slots is the slot headers' map (bpf.MapPlaneSlots).
 	slots *ebpf.Map
+	// blocks and blockStates are the slots' live-block rows and states (bpf.MapPlaneBlocks, MapPlaneBlockStates; ADR
+	// 0124, amendment 2026-11-21); blockInner is the block rows map's definition.
+	blocks, blockStates *ebpf.Map
+	blockInner          *ebpf.MapSpec
 	// unixPolicy is the slot-indexed step D policy map; unix is whether the step D hooks were loaded and attached.
 	unixPolicy *ebpf.Map
 	unix       bool
@@ -410,8 +424,10 @@ func newBPFPlane(k *bpfKernel, hash string, setup PlaneSetup, state *hoststate.D
 	p.nameRows = coll.Maps[ebpfbindings.MapPlaneNameRows]
 	// The same holds for the exec pin maps (ADR 0048 (3) P2): the pin program reads them in every slot it is flagged in.
 	p.execPins, p.pinKeys = coll.Maps[ebpfbindings.MapPlaneExecPins], coll.Maps[ebpfbindings.MapPlanePinKeys]
+	// And the live-block maps (ADR 0124, amendment 2026-11-21): every fs hook reads the state.
+	p.blocks, p.blockStates = coll.Maps[ebpfbindings.MapPlaneBlocks], coll.Maps[ebpfbindings.MapPlaneBlockStates]
 	if p.rows == nil || p.execRows == nil || p.listenRows == nil || p.counters == nil || p.unixPolicy == nil || p.slots == nil ||
-		p.nameRows == nil || p.execPins == nil || p.pinKeys == nil {
+		p.nameRows == nil || p.execPins == nil || p.pinKeys == nil || p.blocks == nil || p.blockStates == nil {
 		return p, fmt.Errorf("%w: the plane's row maps are missing from %s", ErrProgramLoad, setup.Build)
 	}
 	if compact {
@@ -463,7 +479,8 @@ func newBPFPlane(k *bpfKernel, hash string, setup PlaneSetup, state *hoststate.D
 		return p, fmt.Errorf("%w: no fill build goes with %s", ErrProgramLoad, setup.Build)
 	}
 	endFiller := startphase.Begin(k.phase, "plane.filler")
-	p.filler, err = openPlaneFiller(fill, lay.Fill, p.rows, p.execRows, p.lockFill, p.listenRows)
+	p.filler, err = openPlaneFiller(fill, lay.Fill, fillMaps{Rows: p.rows, ExecRows: p.execRows, ListenRows: p.listenRows,
+		Blocks: p.blocks}, p.lockFill)
 	endFiller()
 	if err != nil {
 		return p, err
@@ -476,13 +493,14 @@ func newBPFPlane(k *bpfKernel, hash string, setup PlaneSetup, state *hoststate.D
 func (p *bpfPlane) setInnerSpecs(spec *ebpf.CollectionSpec, build ebpfbindings.Object) error {
 	rows, execRows := spec.Maps[ebpfbindings.MapPlaneRows], spec.Maps[ebpfbindings.MapPlaneExecRows]
 	listen, names := spec.Maps[ebpfbindings.MapPlaneListenRows], spec.Maps[ebpfbindings.MapPlaneNameRows]
-	pins := spec.Maps[ebpfbindings.MapPlaneExecPins]
-	if rows == nil || execRows == nil || listen == nil || names == nil || pins == nil || rows.InnerMap == nil || execRows.InnerMap == nil ||
-		listen.InnerMap == nil || names.InnerMap == nil || pins.InnerMap == nil {
+	pins, blocks := spec.Maps[ebpfbindings.MapPlaneExecPins], spec.Maps[ebpfbindings.MapPlaneBlocks]
+	if rows == nil || execRows == nil || listen == nil || names == nil || pins == nil || blocks == nil || rows.InnerMap == nil ||
+		execRows.InnerMap == nil || listen.InnerMap == nil || names.InnerMap == nil || pins.InnerMap == nil || blocks.InnerMap == nil {
 		return fmt.Errorf("%w: the plane's row maps in %s declare no inner map", ErrProgramLoad, build)
 	}
 	p.rowsInner, p.execInner = rows.InnerMap, execRows.InnerMap
 	p.listenInner, p.nameInner, p.pinsInner = listen.InnerMap, names.InnerMap, pins.InnerMap
+	p.blockInner = blocks.InnerMap
 	p.loadInner = nil
 	return nil
 }
@@ -504,6 +522,9 @@ func (p *bpfPlane) innerSpec(name string) (*ebpf.MapSpec, error) {
 	}
 	if name == ebpfbindings.MapPlaneExecPins {
 		return p.pinsInner, nil
+	}
+	if name == ebpfbindings.MapPlaneBlocks {
+		return p.blockInner, nil
 	}
 	return p.execInner, nil
 }
@@ -647,16 +668,16 @@ func repinPlaneProgram(prog *ebpf.Program, path string, owns func(*ebpf.Program)
 // unpinned, which is as sound (its maps are this process's own); a reaper then finds none to clear with, and the
 // slot's next Prepare clears it. (bpffs refuses a name with a dot, so the pins cannot be made under a temporary
 // name and renamed into place.)
-func openPlaneFiller(fill ebpfbindings.Object, dir string, rows, execRows *ebpf.Map, lock func() (func(), error), listeners ...*ebpf.Map) (*planeFiller, error) {
+func openPlaneFiller(fill ebpfbindings.Object, dir string, m fillMaps, lock func() (func(), error)) (*planeFiller, error) {
 	unlock, err := lock()
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
-	if f, ok := adoptPlaneFiller(fill, dir, rows, execRows, listeners...); ok {
+	if f, ok := adoptPlaneFiller(fill, dir, m); ok {
 		return f, nil
 	}
-	f, err := newPlaneFiller(fill, rows, execRows, listeners...)
+	f, err := newPlaneFiller(fill, m)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrProgramLoad, err)
 	}
@@ -692,9 +713,11 @@ func pinPlaneFiller(f *planeFiller, dir string) error {
 }
 
 // adoptPlaneFiller opens the fill pinned in dir, and reports false, having kept nothing, unless the whole of it is
-// there and its programs read the plane's row maps given and the fill's own pinned maps and nothing else.
-func adoptPlaneFiller(fill ebpfbindings.Object, dir string, rows, execRows *ebpf.Map, listeners ...*ebpf.Map) (*planeFiller, bool) {
-	f := &planeFiller{obj: fill, rows: rows, execRows: execRows}
+// there and its programs read the plane's row maps given and the fill's own pinned maps and nothing else. m.Blocks may
+// be nil for a build pinned before the live-block rows, whose programs then read no such map.
+func adoptPlaneFiller(fill ebpfbindings.Object, dir string, m fillMaps) (*planeFiller, bool) {
+	rows, execRows := m.Rows, m.ExecRows
+	f := &planeFiller{obj: fill, rows: rows, execRows: execRows, blocks: m.Blocks}
 	var err error
 	closeAll := func() {
 		for _, c := range []interface{ Close() error }{f.prog, f.clear, f.config, f.wants} {
@@ -720,7 +743,10 @@ func adoptPlaneFiller(fill ebpfbindings.Object, dir string, rows, execRows *ebpf
 		}
 	}
 	allowed := map[ebpf.MapID]bool{}
-	for _, m := range append([]*ebpf.Map{rows, execRows, f.config, f.wants}, listeners...) {
+	for _, m := range []*ebpf.Map{rows, execRows, f.config, f.wants, m.ListenRows, m.Blocks} {
+		if m == nil {
+			continue
+		}
 		info, err := m.Info()
 		if err != nil {
 			closeAll()
@@ -805,6 +831,12 @@ func (p *bpfPlane) lockFill() (func(), error) {
 func (p *bpfPlane) prepareSlot(slot uint32) error {
 	if err := makeSlotMaps(p.rows, p.execRows, p.innerSpec, slot, p.listenRows); err != nil {
 		return err
+	}
+	// The slot's live-block rows map (ADR 0124, amendment 2026-11-21), made once and kept like its rows map.
+	if p.blocks != nil {
+		if err := makeSlotMap(p.blocks, ebpfbindings.MapPlaneBlocks, p.innerSpec, slot); err != nil {
+			return err
+		}
 	}
 	if err := p.counters.Put(slot, ebpfbindings.PlaneCounts{}); err != nil {
 		return fmt.Errorf("cgroup: zero slot %d's plane counters: %w", slot, err)
@@ -928,6 +960,11 @@ func (p *bpfPlane) fill(req planeFillRequest) (planeFillReport, error) {
 	if err := p.putPins(req); err != nil {
 		return rep, err
 	}
+	// The slot's live-block state: the run's gen, nothing on (ADR 0124, amendment 2026-11-21). Written whole before Arm,
+	// when no hook decides for the run, so a previous run's state is never read as this one's.
+	if err := p.blockStates.Put(req.Slot, &ebpfbindings.PlaneBlockState{Gen: req.Gen}); err != nil {
+		return rep, fmt.Errorf("cgroup: write slot %d's %s: %w", req.Slot, ebpfbindings.MapPlaneBlockStates, err)
+	}
 	hdr := slotHeader(req, p.unix, rep.Rows, rep.ExecRows+len(keys))
 	if err := nameHeaderFits(req, &hdr); err != nil {
 		return rep, err
@@ -936,6 +973,28 @@ func (p *bpfPlane) fill(req planeFillRequest) (planeFillReport, error) {
 		return rep, fmt.Errorf("cgroup: write slot %d's %s: %w", req.Slot, ebpfbindings.MapPlaneSlots, err)
 	}
 	return rep, nil
+}
+
+// setDeputy writes the run's open deputy into slot's header of gen (Handle.ExemptDeputy): its thread-group id and start
+// ticks, and the pid namespace they are numbered in. The header is read back and written whole before Arm, when no hook
+// decides for the run; a header of another gen is no run's to change.
+func (p *bpfPlane) setDeputy(slot, gen, tgid uint32, start, pidnsDev, pidnsIno uint64) error {
+	var hdr ebpfbindings.PlaneSlot
+	if err := p.slots.Lookup(slot, &hdr); err != nil {
+		return fmt.Errorf("cgroup: read slot %d's %s: %w", slot, ebpfbindings.MapPlaneSlots, err)
+	}
+	if hdr.Gen != gen {
+		return fmt.Errorf("cgroup: slot %d's header is of gen %d, not the run's %d", slot, hdr.Gen, gen)
+	}
+	if hdr.Flags&ebpfbindings.PlaneSlotExecPin != 0 && (hdr.PidnsDev != pidnsDev || hdr.PidnsIno != pidnsIno) {
+		return fmt.Errorf("cgroup: slot %d's exec pins name another pid namespace", slot)
+	}
+	hdr.DeputyTgid, hdr.DeputyStart = tgid, start
+	hdr.PidnsDev, hdr.PidnsIno = pidnsDev, pidnsIno
+	if err := p.slots.Put(slot, &hdr); err != nil {
+		return fmt.Errorf("cgroup: write slot %d's %s: %w", slot, ebpfbindings.MapPlaneSlots, err)
+	}
+	return nil
 }
 
 // nameHeaderFits fails a header whose run has name rows and which does not say the name check decides: one that
@@ -1199,11 +1258,19 @@ func openPinnedPlanes(base, hash string, state *hoststate.Dir) ([]*bpfPlane, err
 			errs = append(errs, err)
 			continue
 		}
-		f, ok := adoptPlaneFiller("", lay.Fill, rows, execRows, listenRows)
+		// The live-block rows (ADR 0124, amendment 2026-11-21); a build pinned before them has none, and its fill reads none.
+		blocks, err := loadPinnedMap(lay.Maps, ebpfbindings.MapPlaneBlocks)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		f, ok := adoptPlaneFiller("", lay.Fill, fillMaps{Rows: rows, ExecRows: execRows, ListenRows: listenRows, Blocks: blocks})
 		if !ok {
 			_ = rows.Close()
 			_ = execRows.Close()
 			_ = listenRows.Close()
+			if blocks != nil {
+				_ = blocks.Close()
+			}
 			continue
 		}
 		// The headers' map, to zero a dead slot's header before its rows go; a plane pinned without one (none is
@@ -1227,7 +1294,7 @@ func openPinnedPlanes(base, hash string, state *hoststate.Dir) ([]*bpfPlane, err
 			errs = append(errs, err)
 		}
 		out = append(out, &bpfPlane{mode: m, layout: lay, hash: hash, state: state, rows: rows, execRows: execRows, listenRows: listenRows,
-			slots: slots, nameRows: names, filler: f, execPins: execPins, pinKeys: pinKeys})
+			slots: slots, nameRows: names, filler: f, execPins: execPins, pinKeys: pinKeys, blocks: blocks})
 	}
 	return out, errors.Join(errs...)
 }
@@ -1235,7 +1302,7 @@ func openPinnedPlanes(base, hash string, state *hoststate.Dir) ([]*bpfPlane, err
 // closePinned releases what openPinnedPlanes opened.
 func (p *bpfPlane) closePinned() error {
 	errs := []error{p.close()}
-	for _, m := range []*ebpf.Map{p.rows, p.execRows, p.listenRows, p.slots, p.execPins, p.pinKeys, p.nameRows} {
+	for _, m := range []*ebpf.Map{p.rows, p.execRows, p.listenRows, p.slots, p.execPins, p.pinKeys, p.nameRows, p.blocks} {
 		if m != nil {
 			errs = append(errs, m.Close())
 		}

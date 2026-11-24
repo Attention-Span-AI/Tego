@@ -91,7 +91,7 @@ func machineTestHooks(plane, linger string, secureExec func() (bool, error), std
 		d, err := config.ParseDuration(linger)
 		if err != nil {
 			if stderr != nil {
-				_, _ = fmt.Fprintf(stderr, "tego: %s=%q sets nothing: %v\n", EnvTestLinger, linger, err)
+				_, _ = fmt.Fprintf(stderr, "tego: %s value sets nothing: not a duration (use d, h, m, s, ms); print it with: echo $%s\n", EnvTestLinger, EnvTestLinger)
 			}
 		} else {
 			hooks = append(hooks, func(m *config.Machine) { setTestLinger(m, d) })

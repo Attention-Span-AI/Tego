@@ -8,7 +8,8 @@ import "strings"
 
 // The Receipt tab's activity sections (UX-FINISH): where the run connected, the programs it ran and the
 // secret-looking files it read, from the receipt's own lists (internal/check/receipt through ledgerview), so
-// the page says what `tego receipt` prints. A watched run refuses nothing; without these its tab said "Nothing was
+// recorded totals agree with `tego receipt`; the dashboard also classifies custom protected paths from the
+// run's contract copy. A watched run refuses nothing; without these its tab said "Nothing was
 // refused" about a run that read a key and connected out. Nothing here counts: each method shapes a list or a count
 // the receipt already holds.
 
@@ -17,8 +18,8 @@ const receiptSensShown = 20
 
 // verdictChip is one count of a try's outcome, said as a badge.
 type verdictChip struct {
-	Class, Text string
-	N           int
+	Class, Icon, Text string
+	N                 int
 }
 
 // Chips says what happened to an action's tries (a receipt Verdicts' counts), one badge per outcome that
@@ -26,39 +27,43 @@ type verdictChip struct {
 func (v *receiptView) Chips(observed, allowed, refused int) []verdictChip {
 	var out []verdictChip
 	if refused > 0 {
-		out = append(out, verdictChip{Class: "b-refused", Text: "Refused", N: refused})
+		out = append(out, verdictChip{Class: "b-refused", Icon: "i-ban", Text: "Refused", N: refused})
 	}
 	if allowed > 0 {
-		out = append(out, verdictChip{Class: "b-neutral", Text: "Allowed", N: allowed})
+		out = append(out, verdictChip{Class: "b-neutral", Icon: "i-check", Text: "Allowed", N: allowed})
 	}
 	if observed > 0 {
-		out = append(out, verdictChip{Class: "b-observed", Text: "Recorded, not refused", N: observed})
+		out = append(out, verdictChip{Class: "b-observed", Icon: "i-eye", Text: "Recorded, not refused", N: observed})
 	}
 	return out
 }
 
-// SensChips is Chips for a secret-looking file at path: a read that went through is the thing to look at (red when
-// nothing blocked it, amber when a rule allowed it), unless it is the agent's own file (its login: grey, Low); a
-// blocked one is the protection working.
+// SensChips is Chips for a secret-looking file at path: a read that went through is the thing to look at (red whether
+// observed or allowed by a rule). An allowed read of the agent's own login is grey; an observed read keeps the
+// went-through colour. A blocked read is the protection working.
 func (v *receiptView) SensChips(path string, observed, allowed, refused int) []verdictChip {
 	var out []verdictChip
-	own := ledgerview.AgentOwn(ledgerview.CommandAgent(strings.Join(v.R.Command, " ")), path)
-	if observed > 0 {
-		out = append(out, verdictChip{Class: "b-leak", Text: "Read, not refused", N: observed})
+	own := ledgerview.AgentOwn(ledgerview.CommandAgent(v.R.Command), path)
+	for _, v := range []struct {
+		verdict string
+		n       int
+	}{{"observed", observed}, {"allow", allowed}} {
+		if v.n > 0 {
+			c := protectedReadChip(v.verdict, own, false)
+			c.N = v.n
+			out = append(out, c)
+		}
 	}
-	if allowed > 0 && own {
-		out = append(out, verdictChip{Class: "b-neutral", Text: "Allowed", N: allowed})
-	} else if allowed > 0 {
-		out = append(out, verdictChip{Class: "b-asked", Text: "Read, allowed", N: allowed})
-	}
+
 	if refused > 0 {
-		out = append(out, verdictChip{Class: "b-refused", Text: "Refused", N: refused})
+		out = append(out, verdictChip{Class: "b-refused", Icon: "i-ban", Text: "Refused", N: refused})
 	}
 	return out
 }
 
-// Places is how many destinations the run connected to, listed or not.
-func (v *receiptView) Places() int { return len(v.R.Connections) + v.R.ConnectionsMore }
+// Places is how many destinations the receipt explicitly lists. Overflow counts
+// include attempts to identities outside the builder cap, not distinct places.
+func (v *receiptView) Places() int { return len(v.R.Connections) }
 
 // ProgramStarts is how many times the listed programs were started.
 func (v *receiptView) ProgramStarts() int {

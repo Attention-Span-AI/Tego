@@ -54,8 +54,11 @@ var askKeys = []string{"fs.ask_read", "fs.ask", "net.ask"}
 // PATH_MAX.
 const MaxEntry = 4096
 
-// maxEdits bounds one request: the form makes one edit, and a "never" a few changes.
-const maxEdits = 16
+// MaxEdits bounds one request: the form makes one edit, a "never" a few changes, and the Several changes at once
+// form up to this many in one transaction.
+const MaxEdits = 16
+
+const maxEdits = MaxEdits
 
 // EditRequest is one structured change to a contract file.
 type EditRequest struct {
@@ -85,8 +88,12 @@ type EditRequest struct {
 // ~/.config/telemetry/" then "Can never read ~/.config/telemetry/".
 type Sentence struct {
 	Before, After string
-	// Direction is this change's own.
+	// Direction is this change's own, from the lexical model of the file. A caller that compiles both texts replaces
+	// it with the compiled comparison's (internal/control/rules): the model is not the compiler.
 	Direction Direction
+	// Key is the list the sentence is about (the first change that says it), so a caller can find the compiled
+	// family its words belong to.
+	Key string
 }
 
 // EditResult is the new contract text and what it changes.
@@ -105,6 +112,9 @@ type EditResult struct {
 	// Why says what decided Direction, one clause per change. A removal of an entry the file lists more than once
 	// says so: "fs.deny_read -= ./secrets/ widens (the file lists it twice: every copy goes)".
 	Why string
+	// Notes are the clauses of Why that are facts about the edit and not about its direction: "fs.deny_read -=
+	// ./secrets/: the file lists it twice, so every copy goes".
+	Notes []string
 }
 
 // ApplyEdits makes the edits on the contract text, keeping every comment and every byte it does not change where it
@@ -164,14 +174,17 @@ func ApplyEdits(req EditRequest) (*EditResult, error) {
 		}
 	}
 	if err := req.Check(text); err != nil {
-		return nil, refuse("the new contract does not compile, so nothing was written: %v", err)
+		return nil, compileRefusal(err)
 	}
 	res := &EditResult{Text: text, Changes: changes, Diff: Diff(path.Base(req.ContractPath), req.Contract, text)}
 	before, now := newModel(top, ep.r), newModel(after, ep.r)
 	var why []string
 	for _, pc := range ep.changes {
 		s, w := describe(pc, before, now)
-		if !slices.Contains(res.Sentences, s) {
+		if pc.copies > 1 {
+			res.Notes = append(res.Notes, pc.String()+": the file lists it "+copiesWord(pc.copies)+", so every copy goes")
+		}
+		if !slices.ContainsFunc(res.Sentences, func(o Sentence) bool { return o.Before == s.Before && o.After == s.After && o.Direction == s.Direction }) {
 			res.Sentences = append(res.Sentences, s)
 		}
 		res.Direction = res.Direction.join(s.Direction)
@@ -200,7 +213,7 @@ func relaxesMore(relaxes func([]byte) (int, error), before, after []byte) (strin
 	}
 	a, err := relaxes(after)
 	if err != nil {
-		return "", refuse("the new contract does not compile, so nothing was written: %v", err)
+		return "", compileRefusal(err)
 	}
 	if a <= b {
 		return "", nil
@@ -365,7 +378,18 @@ func (ep *editPlanner) never(key, entry string) error {
 func describe(pc plannedChange, before, now model) (Sentence, string) {
 	c := pc.Change
 	a, b := before.at(c.Key, c.Entry), now.at(c.Key, c.Entry)
-	s := Sentence{Before: sentence(c.Key, a, c.Entry), After: sentence(c.Key, b, c.Entry)}
+	what := c.Entry
+	glob := strings.HasPrefix(c.Key, "fs.") && strings.ContainsAny(c.Entry, "*?[")
+	if glob {
+		// A pattern names no one place, so the lexical model reads nothing at it: say what the entry itself does to
+		// the files it matches (the compiler expands it, and the compiled comparison decides the direction).
+		a, b = globAccess(c)
+		what = "files matching " + c.Entry
+	}
+	s := Sentence{Before: sentence(c.Key, a, what), After: sentence(c.Key, b, what), Key: c.Key}
+	if glob {
+		s.Before, s.After = globSentence(c.Key, a, c.Entry), globSentence(c.Key, b, c.Entry)
+	}
 	switch {
 	case pc.moved:
 		s.Direction = Narrows
@@ -381,11 +405,7 @@ func describe(pc plannedChange, before, now model) (Sentence, string) {
 		why = c.String() + " mixed: no home was given, so whether it relaxes a built-in deny_read entry is unknown"
 	}
 	if pc.copies > 1 {
-		n := fmt.Sprintf("%d times", pc.copies)
-		if pc.copies == 2 {
-			n = "twice"
-		}
-		why += " (the file lists it " + n + ": every copy goes)"
+		why += " (the file lists it " + copiesWord(pc.copies) + ": every copy goes)"
 	}
 	return s, why
 }
@@ -469,4 +489,48 @@ func hasString(top *yaml.Node, key, entry string) bool {
 		}
 	}
 	return false
+}
+
+// copiesWord says how many times a file lists one entry.
+func copiesWord(n int) string {
+	if n == 2 {
+		return "twice"
+	}
+	return fmt.Sprintf("%d times", n)
+}
+
+// globAccess is what an entry that is a pattern does to the files it matches, before and after the change c: the entry
+// listed refuses, asks or grants, and not listed it does none of that.
+func globAccess(c Change) (before, after access) {
+	var off, on access
+	switch c.Key {
+	case "fs.deny_read":
+		off, on = allowed, refusedDeny
+	case "fs.ask_read":
+		off, on = allowed, asked
+	case "fs.deny_write":
+		off, on = allowed, refusedDeny
+	case "fs.write":
+		off, on = refusedNone, allowed
+	default: // fs.ask
+		off, on = refusedNone, asked
+	}
+	if c.Remove {
+		return on, off
+	}
+	return off, on
+}
+
+// globLimit is what is true of a pattern's refusal: the compiler expands it over the files there when the run starts, so
+// a matching file created later is not covered (spec/policy/SEMANTICS.md §2, deny_read globs).
+const globLimit = " that exist when the agent starts (a file created later is not covered)"
+
+// globSentence says what a pattern entry does, without claiming more than the compiled contract gives: "Can never read
+// files matching ./*.pem" would be false of a match made after the run starts.
+func globSentence(key string, a access, entry string) string {
+	what := "files matching " + entry
+	if key == "fs.deny_read" && (a == refusedDeny || a == refusedNone) {
+		return "Refuses reads of the " + what + globLimit
+	}
+	return sentence(key, a, what)
 }

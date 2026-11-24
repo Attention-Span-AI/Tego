@@ -13,6 +13,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/askclient"
+	"github.com/attention-span-ai/tego/internal/control/pathcheck"
 	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/pkg/spec/askproto"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -91,6 +92,9 @@ func openAlternate(path string) (altFile, string, error) {
 // `tego alternate <run> <ask_id> --file <path> [--always]` does (ADR 0057): the file is opened only now, after the
 // run and ask checks passed, and handed to the broker by descriptor.
 func Alternate(ctx context.Context, root, run, askID, path string, always bool) (Answered, error) {
+	if !pathcheck.InHelper() {
+		return alternateRemote(ctx, root, run, askID, path, always)
+	}
 	dir, err := runDir(root, run)
 	if err != nil {
 		return Answered{}, err

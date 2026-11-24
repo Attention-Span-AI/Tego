@@ -4,14 +4,13 @@ package rulefile
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 
 	"golang.org/x/sys/unix"
 
+	"github.com/attention-span-ai/tego/internal/registry"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
@@ -35,6 +34,9 @@ const createMode = 0o644
 // taken name is ErrExists; a journal append that fails after the file is written is ErrJournal with the entry, as
 // Replace reports it.
 func Create(ctx context.Context, g Guard, path string, text []byte, c Change) (*Entry, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if g.LedgerRoot == "" {
 		return nil, errors.New("rulefile: no ledger root to journal the new contract in, so nothing is written")
 	}
@@ -46,6 +48,9 @@ func Create(ctx context.Context, g Guard, path string, text []byte, c Change) (*
 		return nil, err
 	}
 	defer p.close()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	j, err := openJournal(g.LedgerRoot)
 	if err != nil {
 		return nil, err
@@ -68,7 +73,7 @@ func Create(ctx context.Context, g Guard, path string, text []byte, c Change) (*
 	if err := j.putBlob(text, sum); err != nil {
 		return nil, fmt.Errorf("journal the new text: %w", err)
 	}
-	if err := p.create(text); err != nil {
+	if err := p.create(ctx, text); err != nil {
 		return nil, err
 	}
 	e := &Entry{V: JournalVersion, ID: newID(), Op: OpCreate, At: now().UTC(), Via: c.Via, UID: geteuid(), PID: os.Getpid(),
@@ -95,61 +100,19 @@ func (p *pinned) taken() bool {
 
 // create writes b to a temporary file in the pinned directory and moves it to the file's name only while the name is
 // free, then syncs the directory. A reader sees no file or the whole file, never part of one.
-func (p *pinned) create(b []byte) error {
-	var rnd [8]byte
-	if _, err := rand.Read(rnd[:]); err != nil {
-		return err
+func (p *pinned) create(ctx context.Context, b []byte) error {
+	err := registry.WriteFileAt(p.dir, p.name, b, registry.WriteOptions{Context: ctx, Mode: createMode,
+		BeforePublish: func() error {
+			if err := step("rename"); err != nil {
+				return err
+			}
+			if p.beforePublish != nil {
+				return p.beforePublish()
+			}
+			return nil
+		}})
+	if errors.Is(err, unix.EEXIST) {
+		return fmt.Errorf("%w: %s appeared while the new contract was being written; nothing was written over it", ErrExists, p.path)
 	}
-	tmp := "." + p.name + ".tego-new-" + hex.EncodeToString(rnd[:])
-	fd, err := p.dir.Openat(tmp, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
-	if err != nil {
-		return err
-	}
-	f, err := fd.Release(tmp)
-	if err != nil {
-		_ = fd.Close() // Release failed, so the owner still holds the number; its error is the one to report
-		p.unlink(tmp)
-		return err
-	}
-	_, werr := f.Write(b)
-	if werr == nil {
-		werr = f.Chmod(createMode)
-	}
-	if werr == nil {
-		werr = f.Sync()
-	}
-	if cerr := f.Close(); werr == nil {
-		werr = cerr
-	}
-	if werr == nil {
-		werr = step("rename")
-	}
-	if werr == nil {
-		werr = p.dir.Borrow(func(n int) error { return noReplace(n, tmp, p.name) })
-	}
-	if werr != nil {
-		p.unlink(tmp)
-		if errors.Is(werr, unix.EEXIST) {
-			return fmt.Errorf("%w: %s appeared while the new contract was being written; nothing was written over it", ErrExists, p.path)
-		}
-		return werr
-	}
-	if err := p.dir.Fsync(); err != nil {
-		return fmt.Errorf("%s is written, but its folder could not be synced: %w", p.path, err)
-	}
-	return nil
-}
-
-// noReplace moves from to to in the directory n, failing with EEXIST when to exists. renameat2 RENAME_NOREPLACE does
-// it in one step; a filesystem without it (EINVAL) gets a hard link, which also refuses a taken name, and the
-// temporary name's removal, so the file ends with one link as Read requires.
-func noReplace(n int, from, to string) error {
-	err := unix.Renameat2(n, from, n, to, unix.RENAME_NOREPLACE)
-	if !errors.Is(err, unix.EINVAL) && !errors.Is(err, unix.ENOSYS) {
-		return err
-	}
-	if err := unix.Linkat(n, from, n, to, 0); err != nil {
-		return err
-	}
-	return unix.Unlinkat(n, from, 0)
+	return err
 }

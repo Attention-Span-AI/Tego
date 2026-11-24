@@ -73,6 +73,13 @@ func TestCheckExitsFindsPlantedViolations(t *testing.T) {
 		"internal/cli/main_test.go": "package cli\n\nfunc h() int { return 9 }\n",
 		"internal/y/y.go":           "package y\n\nfunc n() int { return 4 }\n",
 		"internal/cli/sub/sub.go":   "package sub\n\nfunc n() int { return 4 }\n",
+		// a directory or file the go tool does not build ("_" or "." first) holds no program of this checkout.
+		"archive/_old/cmd/x/main.go":   "package main\n\nimport \"os\"\n\nfunc main() { os.Exit(1) }\n",
+		"archive/_old/internal/x/x.go": "package x\n\nimport \"os\"\n\nfunc f() { os.Exit(1) }\n",
+		"internal/x/_draft.go":         "package x\n\nimport \"os\"\n\nfunc f() { os.Exit(1) }\n",
+		"internal/.hidden/h.go":        "package h\n\nimport \"os\"\n\nfunc f() { os.Exit(1) }\n",
+		// the same file in a directory the go tool does build is found.
+		"archive/old/internal/x/x.go": "package x\n\nimport \"os\"\n\nfunc f() { os.Exit(1) }\n",
 		// log.Fatal* ends the process through os.Exit(1), under any import name; test/conformance/cmd is exempt.
 		"internal/x/logfatal.go":      "package x\n\nimport \"log\"\n\nfunc f() { log.Fatal(1) }\n",
 		"internal/x/logfatalf.go":     "package x\n\nimport lg \"log\"\n\nfunc f() { lg.Fatalf(\"x\") }\n",
@@ -119,6 +126,7 @@ func TestCheckExitsFindsPlantedViolations(t *testing.T) {
 		"I6 internal/x/logmethod.go:5",
 		"I6 internal/x/flagparse.go:5",
 		"I6 internal/x/flagexit.go:5",
+		"I6 archive/old/internal/x/x.go:5",
 	}
 	for _, w := range want {
 		if !got[w] {

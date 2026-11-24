@@ -117,8 +117,8 @@ func TestRawUnchangedWithMultilineEnv(t *testing.T) {
 		if err != nil || !p.Nothing || p.Err == "" || p.Diff != "" {
 			t.Errorf("%s: the unchanged editor text plans %+v, %v; want nothing to save", name, p, err)
 		}
-		if _, err := f.s.ApplyRaw(context.Background(), RawReq{Ref: ref.Ref, Base: ref.Base, Text: cur.Editor, Ack: p.Ack}); !errors.Is(err, ErrRefused) {
-			t.Errorf("%s: saving the unchanged editor text: %v, want refused", name, err)
+		if _, err := f.s.ApplyRaw(context.Background(), RawReq{Ref: ref.Ref, Base: ref.Base, Text: cur.Editor, Ack: p.Ack}); !errors.Is(err, ErrNeedsAck) {
+			t.Errorf("%s: saving unchanged editor text without a valid review: %v, want ErrNeedsAck", name, err)
 		}
 		if f.text(t) != withEnv {
 			t.Errorf("%s: an unchanged save rewrote the file:\n%s", name, f.text(t))
@@ -152,5 +152,21 @@ func TestDiffHidesEnvValues(t *testing.T) {
 	}
 	if strings.Contains(p.Diff, "sekrit-canary") {
 		t.Errorf("the free edit's diff shows an env value:\n%s", p.Diff)
+	}
+}
+
+// Every restored environment value is private, including values shorter than four bytes.
+func TestCompileDiagnosticHidesEveryEnvValue(t *testing.T) {
+	for _, v := range []string{"7", "xy", "xyz", "long-value", "é", ""} {
+		t.Run(v, func(t *testing.T) {
+			msg := "line 7: invalid value: " + v
+			want := msg
+			if v != "" {
+				want = strings.ReplaceAll(msg, v, rulesview.Hidden)
+			}
+			if got := scrub(msg, []string{v}); got != want {
+				t.Fatalf("diagnostic = %q, want %q", got, want)
+			}
+		})
 	}
 }

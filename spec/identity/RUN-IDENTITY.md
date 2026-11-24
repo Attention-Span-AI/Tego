@@ -91,7 +91,10 @@ The agent shares the launcher's process group. Terminal-generated `SIGINT`/`SIGQ
 directly and are not re-sent; `tego run` forwards `SIGTERM`/`SIGHUP`/`SIGUSR1`/`SIGUSR2` always and
 `SIGINT`/`SIGQUIT` only when stdin is not a terminal. `SIGINT`/`SIGTERM`/`SIGHUP` start `stop_grace` (machine config,
 default 10 s); a second `SIGINT` within 2 s or expiry writes `cgroup.kill`. Ledger: `run_end reason=signal signal=<n>
-escalated=<bool>`; exit code: passthrough. `reason=stopped` is reserved for `tego stop`.
+escalated=<bool>` (`<n>` is what the kernel reported for the agent, except that an escalated run whose reason is
+`signal` or `stopped` records the signal that started `stop_grace`; an agent that left by its own exit code also
+records that initiating signal). A run whose reason is `limit`, `oom` or `pids` keeps the kernel's signal even if a
+stop also escalated. A `cgroup.kill` written after `stop_grace` by the end of a main process that left processes running (the rule of `keep_descendants: false`) is the escalation too when a stop signal had been handled, whichever of the two timers wrote it; with no stop it is not, and the run keeps `escalated=false`. Exit code: passthrough. `reason=stopped` is reserved for `tego stop`.
 
 ## Messages
 One sentence on stderr per error, in `<file>:<line>[:<col>]: <what is wrong> [<code>]` form followed by the fix, so

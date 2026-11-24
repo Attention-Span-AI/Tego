@@ -38,6 +38,7 @@ PKGS=(
 	internal/control/web # the dashboard's peer check refusing a client of another real uid on the kernel's own tcp table (F21)
 	internal/runscope # InRun as root, in the initial cgroup namespace and in a child's own (ADR 0100)
 	internal/platform/peer # the peer check as root on the guest's kernel: below 6.5 (rhel-9, al2023) its pidfd_open fallback for real
+	internal/platform/hostaddr # policy rules and the tables they lead to, added as root in a network namespace of the guest (GAPS C46, D30)
 )
 # The kernel modules each guest loads before its suite (kvm-run.sh --module), unless VM_MODULES names others. A guest
 # has no module tree of its own, so its kernel cannot load one on demand as a host's does; on a kernel-matrix row's
@@ -55,24 +56,43 @@ PKGS=(
 #              internal/control/cli's suites fail without it (2026-10-27)
 GUEST_MODULES=(overlay btrfs unix_diag tcp_diag)
 # Helpers the tests `go build` at run time; go-shim.sh serves them by last path element.
-HELPERS=(cmd/tego test/conformance/cmd/actor internal/runtime/cgroup/testdata/memhog test/workloads/model-agent test/workloads/retriever-agent test/workloads/signaller test/workloads/sigio test/workloads/procscope test/workloads/uringsock test/workloads/uringbind test/workloads/execracer test/workloads/ifaces test/vm/cmd/permlistener)
+HELPERS=(cmd/tego test/conformance/cmd/actor internal/runtime/cgroup/testdata/memhog test/workloads/model-agent test/workloads/retriever-agent test/workloads/signaller test/workloads/sigio test/workloads/procscope test/workloads/uringsock test/workloads/uringbind test/workloads/execracer test/workloads/ifaces test/workloads/strictimport test/vm/cmd/permlistener)
+# The packages whose suites run as parts, "<name>|<package>|<n>": each of the package's two suites (plain and tegobpf) in
+# n guests, part j of n running the tests at positions j, j+n, j+2n ... of the suite's list (read from its sources), and
+# part n also every test the list does not hold (the fuzz targets, an example): root-suites.sh's split_part. Every test of
+# the package is in exactly one part, and a test added to it needs no entry anywhere. A run of the package by
+# test/vm/root-suites.sh (a developer's `make vm-root-test`, a maintainer's run, vm-matrix.yml's tier 3 steps) runs its parts
+# one after another as suite rows of the same package (internal_runtime_enforce_cgroup.p1 ... .tegobpf.p6), so the skip
+# gate and summary.json see one package, and a row of root-skips.txt matches whichever part ran the test. A run that names a
+# test (VM_RUN) runs the package whole. CI's shards (ROOT_SHARDS below) are these parts, one runner each.
+#
+# Why 6 (2026-11-20, per-test times of the green KVM run of 2026-11-19, 4 vCPUs, the suite's tests run one at a time): the
+# tegobpf suite took 5093 s whole, the cap of its 5700 s go timeout nearly reached by a host 20% slower (the run on c974e4c64
+# ran out of it); its parts at n=4 take 1542 s at most, and at n=6 1110 s at most (the 3000 s guest cap's go timeout is 2700 s:
+# 41% of it, 59% headroom; at 1.22x slower still 50%). The plain suite is 600 s whole, 218 s at most in a part. The length of the longest part is
+# bounded by the longest tests (TestPlaneRunStallFollowsWhatTheSupervisorAnswers alone takes 209 s), so more parts would
+# not shorten it much.
+ROOT_SPLITS=(
+	"cgroup|internal/runtime/enforce/cgroup|6"
+)
 # The shards of CI's root-suites job (.github/workflows/ci.yml's root-suites-shard matrix, one runner each), for
 # VM_SHARD=<name> test/vm/root-suites.sh: "<name>|<packages>|<part>". <packages> is a space-separated list of exact
 # package paths, or "*" for every package of PKGS no other shard names, so a package added to PKGS runs without a new
 # shard. <part> is empty (the packages' whole suites) or "j/n": each of those packages' suites, plain and tegobpf, runs
-# only part j of its top-level tests (every n-th of its .list, from the j-th; part n runs every test the other parts do
-# not, the fuzz targets and any the list missed included), and parts 1 to n of the same packages must all be shards
+# only part j of its top-level tests (ROOT_SPLITS above), and parts 1 to n of the same packages must all be shards
 # here. `test/vm/root-suites.sh --gather DIR` then holds every shard named here to have run and passed, and runs the
 # must-pass gate over all of them. On GitHub's runner (run 41706261848, 2026-11-03, one job) enforce/cgroup's tegobpf
 # suite took 48 of the job's 91 minutes and its plain one 4, internal/runtime's two 15, test/conformance 10 (its
-# TestConformanceKernel 8.7 alone) and the other 28 suites 11 together; every-4th parts of enforce/cgroup's lists sum
-# to 12.4-14 minutes each of its two suites on those numbers.
-ROOT_SHARDS=(
-	"cgroup-1|internal/runtime/enforce/cgroup|1/4"
-	"cgroup-2|internal/runtime/enforce/cgroup|2/4"
-	"cgroup-3|internal/runtime/enforce/cgroup|3/4"
-	"cgroup-4|internal/runtime/enforce/cgroup|4/4"
+# TestConformanceKernel 8.7 alone) and the other 28 suites 11 together. The cgroup shards are ROOT_SPLITS' parts, made
+# from it so the two cannot disagree.
+ROOT_SHARDS=()
+for _e in "${ROOT_SPLITS[@]}"; do
+	IFS='|' read -r _name _pkg _n <<<"$_e"
+	for ((_j = 1; _j <= _n; _j++)); do ROOT_SHARDS+=("$_name-$_j|$_pkg|$_j/$_n"); done
+done
+ROOT_SHARDS+=(
 	"runtime|internal/runtime|"
 	"conformance|test/conformance|"
 	"rest|*|"
 )
+unset _e _name _pkg _n _j

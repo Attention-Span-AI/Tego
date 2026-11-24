@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -19,6 +18,9 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/attention-span-ai/tego/internal/check/inforce"
+	"github.com/attention-span-ai/tego/internal/check/rule"
+	"github.com/attention-span-ai/tego/internal/control/draftcompile"
+	"github.com/attention-span-ai/tego/internal/control/pathcheck"
 	"github.com/attention-span-ai/tego/internal/control/rulesview"
 	"github.com/attention-span-ai/tego/internal/profilesrc"
 	"github.com/attention-span-ai/tego/internal/registry"
@@ -31,27 +33,50 @@ import (
 )
 
 // "Set up a new agent" (rules design RD-SETUP-NEW): the dashboard composes a new contract from the presets
-// (internal/setup, the code `tego init --preset` writes through) or from a finished run's least-privilege proposal
-// (`tego learn`), compiles it as `tego compile --offline` would in the project folder, and writes <dir>/agent.yaml
+// (internal/setup, the code `tego rules create --preset` writes through) or from a finished run's least-privilege proposal
+// (`tego rules learn`), compiles it as `tego rules check --offline` would in the project folder, and writes <dir>/agent.yaml
 // with rulefile.Create: never over a file, through the same guards and journal a change goes through. The project
 // folder is the one value a request names as a path, so it is checked before anything reads under it: an existing
 // directory, this user's, not writable by others unless sticky, and not under the ledger root or tego's home. The
-// folders the contract needs are made beneath the checked folder opened with no symlink followed (setup.Create), so a
+// folders the contract needs are made beneath the checked folder opened with no symlink followed (setup.CreateContext), so a
 // link swapped into its path after the check is refused, never followed out of it. The new contract joins the
 // bounded set Contracts lists (its journal line names it), so the Rules page offers it and a later change can edit it
 // before any run of it.
 //
 // A draft from a run may instead be saved as the user registry's entry <name> (NewReq.Registry): registry.Save writes
-// it, the writer `tego learn --save` writes through, with the same refusals (a name taken from the run's folder, a
+// it, the writer `tego rules learn --save` writes through, with the same refusals (a name taken from the run's folder, a
 // file inside the draft's own write entries, a draft that does not compile, a file already there) and the same 0700
 // folder and 0600 file. That entry is in no change record: the Rules page lists it from its first run.
 
-// NewFile is the file "Set up a new agent" writes in the project folder: what `tego init` writes and `tego run`
+// NewFile is the file "Set up a new agent" writes in the project folder: what `tego rules create` writes and `tego run`
 // finds.
 const NewFile = setup.ContractFile
 
 // NewReq is the "Set up a new agent" form.
 type NewReq struct {
+	// PreviewOnly checks fresh source without accessing the retained draft/review store.
+	// The authenticated handler sets it when the peer cannot Save.
+	PreviewOnly bool
+	// PrepareDirectories permits destination preparation only after the caller has
+	// passed the same POST authorization as Save. It is never read from form data.
+	PrepareDirectories bool
+
+	// Draft is an opaque server-held composition. Session comes from the authenticated HTTP handler.
+	Draft, Session string
+
+	// Text is an explicit draft edited by the viewer. Nil composes the original learn/setup draft.
+	// Drop names only entries already in Text. Blank starts with no access grants.
+	Text      []byte
+	Drop      []string
+	NameHosts map[string]string
+	Blank     bool
+	// Switches are applied only after an explicit builder update, never when opening a file.
+	Switches         bool
+	Wall             string
+	RemoveWall       bool
+	AskHosts         []string
+	WantAsk, DropAsk bool
+
 	// Dir is the project folder as typed: an absolute path, or ~/ for the invoking user's home.
 	Dir string
 	// Name is the agent id ([a-z0-9-]{1,40}); empty, it is made from the folder's name.
@@ -69,12 +94,12 @@ type NewReq struct {
 	// FromRun, when set, makes the draft that run's least-privilege proposal (rulesview.Learn) in place of the
 	// presets, with Name as its name: what the run did, and no more.
 	FromRun string
-	// Registry saves a FromRun draft as the user registry's entry Name (<registry>/agents/<Name>.yaml) through
-	// registry.Save, the writer `tego learn --save` writes through, in place of Dir/agent.yaml: `tego run <Name>`
+	// Registry saves the draft as the user registry's entry Name (<registry>/agents/<Name>.yaml) through
+	// registry.Save, the writer `tego rules learn --save` writes through, in place of Dir/agent.yaml: `tego run <Name>`
 	// typed in Dir, and the tego-agent@<Name> unit, find it there. Dir is then the folder the agent runs in.
 	Registry bool
 	// Reads makes the draft record each read it refuses, at tier landlock too (reason: {reads: on}). A FromRun draft
-	// is then what `tego learn --reads on` writes, learn's own rendering of the proposal (rulesview.Learned.TextReads);
+	// is then what `tego rules learn --reads on` writes, learn's own rendering of the proposal (rulesview.Learned.TextReads);
 	// a draft from presets gets the same block from setup (setup.Options.Reads).
 	Reads bool
 	// Withhold are the destinations the run FromRun leaked secrets to (the dashboard's verdict of it, never a field a
@@ -114,6 +139,22 @@ const AddressNote = "Tego saw an address, not a name; the next run may reach ano
 // NewPlan is what the form shows: the composed contract, its rules in sentences, what compile said, and what stops
 // Create, if anything. A mistake in the form is a Problem, never an error, so the form is shown again with it.
 type NewPlan struct {
+	// ReviewID names this save-eligible Preview alone; PreviewOnly leaves it empty.
+	ReviewID     string
+	dependencies string
+	setup        string
+	sources      string
+	directory    registry.DirectoryIdentity
+	Draft        string
+	merged       []byte
+	planned      []string
+
+	Decisions []Decision
+	Wall      string
+	AskHosts  []string
+	// Source is the draft before Keep/Drop choices, so a dropped entry can be kept again.
+	Source []byte
+
 	// Dir is the project folder with its symlinks resolved, "" when it is not one Create may write in; File is
 	// Dir/agent.yaml.
 	Dir, File string
@@ -126,15 +167,15 @@ type NewPlan struct {
 	Withheld []string
 	// Command is the command line typed, which the contract's command: holds (setup.Options.Command).
 	Command string
-	// Text is the contract as Create writes it; Base its sha256, which Create's request carries back so that the
-	// file written is the one previewed.
+	// Text is the contract as Create writes it; a save-eligible plan's Base is the acknowledgement of its bytes,
+	// destination, directory identity, dependency snapshot and compiled result.
 	Text []byte
 	Base string
 	// Groups are the draft's rules, every profile it extends laid in, as sentences; ViewNote says what they rest on.
 	Groups   []NewGroup
 	ViewNote string
 	// Diagnostics are what compile said, one line each ("error: …", "warning: …"); OK is that no field has a
-	// problem and compile found no error, so Create may write.
+	// problem and compile found no error. Create also requires a retained review; PreviewOnly retains none.
 	Diagnostics []string
 	OK          bool
 	// Problems are the form's mistakes, each a sentence with its fix.
@@ -170,50 +211,80 @@ type Created struct {
 	Registry bool
 }
 
-// PlanNew composes and checks the contract req asks for and writes nothing. Its error is the service's own failure
+// PlanNew composes and checks the contract req asks for and creates no contract.
+// Destination preparation requires the caller's guarded POST authorization via
+// PrepareDirectories. Its error is the service's own failure
 // (no machine config to compile against is a Problem, as every mistake in req is).
 func (s *Service) PlanNew(ctx context.Context, req NewReq) (*NewPlan, error) {
-	p, _, _ := s.planNew(ctx, req)
+	if err := ctx.Err(); err != nil {
+		return &NewPlan{Problems: []string{err.Error()}}, nil
+	}
+	if s.remote() {
+		return remoteService[*NewPlan](s, ctx, "PlanNew", struct{ Req NewReq }{req})
+	}
+
+	ctx = draftcompile.WithBudget(ctx)
+	if req.PreviewOnly && req.Draft != "" {
+		return &NewPlan{Problems: []string{"Saving is not available from this connection; preview fresh source outside a governed run."}}, nil
+	}
+	// Read-only previews must not prepare directories, even for a direct caller.
+	if req.PreviewOnly {
+		req.PrepareDirectories = false
+	}
+	p, res, _ := s.planNew(ctx, req)
+	if p.OK && !req.PreviewOnly {
+		p.ReviewID = newDraftID()
+		p.Base = s.reviewAck(p.reviewed())
+		if err := s.keepReview(req.Session, p.Base, reviewedDraft{Binding: p.reviewed(), Sources: p.sources, New: p, Setup: res, Request: req, Writes: p.writeDirs}); err != nil {
+			p.OK = false
+			p.Problems = append(p.Problems, err.Error())
+		}
+	}
 	return p, nil
 }
 
 // CreateNew writes the contract PlanNew shows for req into its project folder, when the plan has no problem, compiles,
-// and still is the text base names (ErrStale otherwise: the folder's markers or a preset changed what is composed).
-// It makes the plan's folders beneath the checked project folder, refusing a symbolic link on the way (setup.Create),
-// compiles again with them in place (setup.Apply), writes agent.yaml with rulefile.Create (ErrRefused when a file is
-// there) and removes the folders it made when anything after them fails (setup.Remove: only while empty, never
+// and its retained proposal still has the binding base names. A missing review refuses without rebuilding.
+// It makes the plan's folders beneath the checked project folder, refusing a symbolic link on the way (setup.CreateContext),
+// verifies its reviewed dependencies at publication, refuses an existing agent.yaml and removes the folders it made when anything after them fails (setup.Remove: only while empty, never
 // through a link).
 // A write that lands but is not journaled returns the Created and an error wrapping rulefile.ErrJournal.
 func (s *Service) CreateNew(ctx context.Context, req NewReq, base string) (*Created, error) {
-	p, res, env := s.planNew(ctx, req)
-	switch {
-	case len(p.Problems) > 0:
-		return nil, fmt.Errorf("%w: %s", ErrRefused, strings.Join(p.Problems, " "))
-	case !p.OK:
-		return nil, fmt.Errorf("%w: the contract does not compile, so nothing was written: %s", ErrRefused, strings.Join(p.Diagnostics, "; "))
-	case base == "" || base != p.Base:
-		return nil, fmt.Errorf("%w: the contract composed now is not the one previewed; look at the preview again", ErrStale)
+	if s.remote() {
+		return remoteService[*Created](s, ctx, "CreateNew", struct {
+			Req  NewReq
+			Base string
+		}{req, base})
 	}
+
+	ctx = draftcompile.WithBudget(ctx)
+	p, res, err := s.savedNew(ctx, req, base)
+	if err != nil {
+		return nil, err
+	}
+	env := s.newEnv()
 	if p.Registry {
-		return s.saveNew(ctx, p, env)
+		made, err := setup.CreateContext(ctx, res, p.Dir)
+		if err != nil {
+			setup.Remove(made, p.Dir)
+			return nil, fmt.Errorf("%w: %v", ErrRefused, err)
+		}
+		out, err := s.saveNew(ctx, p, env)
+		if err != nil {
+			setup.Remove(made, p.Dir)
+			return nil, err
+		}
+		out.Made, out.Ignore = made, p.Ignore
+		return out, nil
 	}
-	cr, ok := s.writer().(Creator)
+	cr, ok := s.boundWriter(p.directory, func() error {
+		return s.verifySources(ctx, CheckContext{Contract: p.File, Cwd: p.Dir}, p.Text, nil, p.sources)
+	}).(Creator)
 	if !ok {
 		return nil, fmt.Errorf("%w: this dashboard's writer cannot write a new contract", ErrRefused)
 	}
 	var made []string
-	var err error
-	if env == nil { // a test compiler (Service.Compile): no second compile to make
-		made, err = setup.Create(res, p.Dir)
-	} else {
-		var ds []agent.Diagnostic
-		var compiled bool
-		made, ds, compiled, err = setup.Apply(res, p.Dir, *env)
-		if err == nil && !compiled {
-			return nil, fmt.Errorf("%w: with its folders in place the contract does not compile, so nothing was written: %s",
-				ErrRefused, strings.Join(diagLines(ds, true), "; "))
-		}
-	}
+	made, err = setup.CreateContext(ctx, res, p.Dir)
 	if err != nil {
 		setup.Remove(made, p.Dir)
 		return nil, fmt.Errorf("%w: %v", ErrRefused, err)
@@ -243,6 +314,10 @@ func (s *Service) CreateNew(ctx context.Context, req NewReq, base string) (*Crea
 // DescribeNew is the plan of a contract of the bounded set that no run ran yet (Contracts' Runs is 0): its text, its
 // rules in sentences and what compile says, for the Rules page to show before its first run.
 func (s *Service) DescribeNew(ctx context.Context, ref string) (*NewPlan, error) {
+	if s.remote() {
+		return remoteService[*NewPlan](s, ctx, "DescribeNew", struct{ Ref string }{ref})
+	}
+
 	c, err := s.contract(ref)
 	if err != nil {
 		return nil, err
@@ -255,14 +330,13 @@ func (s *Service) DescribeNew(ctx context.Context, ref string) (*NewPlan, error)
 		return nil, err
 	}
 	p := &NewPlan{Dir: filepath.Dir(f.Path), File: f.Path, Name: c.Agent, Text: f.Text, Base: f.SHA256}
-	switch env := s.newEnv(); {
-	case s.Compile != nil || s.Check != nil:
-		p.Diagnostics, p.OK = s.seamCheck(ctx, p.File, p.Dir, f.Text)
-	case env != nil:
-		ds, ok := setup.Check(f.Text, p.Dir, *env)
-		p.Diagnostics, p.OK = diagLines(ds, false), ok
-	default:
-		p.Problems = append(p.Problems, errNoCompiler.Error())
+	p.OK = true
+	if _, err := s.newSnapshot(ctx, p); err != nil {
+		if mapped := pathcheck.LocationError(err); mapped != nil && pathcheck.IsUnanswered(mapped) {
+			return nil, mapped
+		}
+		p.OK = false
+		p.Diagnostics = append(p.Diagnostics, "error: "+err.Error())
 	}
 	s.sentences(p)
 	return p, nil
@@ -279,8 +353,11 @@ const (
 // planNew is PlanNew with what CreateNew needs besides: the setup result and the compile environment (nil when a test
 // compiler stands in, or there is no machine config).
 func (s *Service) planNew(ctx context.Context, req NewReq) (*NewPlan, *setup.Result, *setup.CheckEnv) {
+	if s.proposalBuilt != nil {
+		s.proposalBuilt("new")
+	}
 	p := &NewPlan{FromRun: strings.TrimSpace(req.FromRun), Command: strings.TrimSpace(req.Command)}
-	dir, problem := s.projectDir(req.Dir)
+	dir, problem := s.projectDir(ctx, req.Dir)
 	if problem != "" {
 		p.Problems = append(p.Problems, problem)
 		return p, nil, nil
@@ -291,12 +368,22 @@ func (s *Service) planNew(ctx context.Context, req NewReq) (*NewPlan, *setup.Res
 		p.Problems = append(p.Problems, problem)
 	}
 	p.Name = name
-	p.Registry, p.Reads = req.Registry && p.FromRun != "", req.Reads
+	p.Registry, p.Reads = req.Registry, req.Reads
 	var st unix.Stat_t
 	if p.Registry {
+		if s.Machine != nil {
+			if err := registryNoLinks(s.Machine.Registry.Value); err != nil {
+				p.Problems = append(p.Problems, err.Error())
+				return p, nil, nil
+			}
+		}
 		// The file is the registry's entry, and what Save would refuse is a problem now, before the preview.
 		sv := s.registrySave(p, nil)
 		path, err := sv.Check()
+		var se *registry.SaveError
+		if errors.As(err, &se) && (se.Step == registry.SaveExists || se.Step == registry.SaveTaken && se.Entry != nil) {
+			p.Exists = true
+		}
 		if path != "" {
 			p.File = path
 		}
@@ -314,22 +401,67 @@ func (s *Service) planNew(ctx context.Context, req NewReq) (*NewPlan, *setup.Res
 		p.Problems = append(p.Problems, errNoCompiler.Error())
 	}
 	var res *setup.Result
-	if p.FromRun != "" {
+	switch {
+	case req.Text != nil || req.Blank || req.Draft != "":
+		res = s.builderSource(ctx, p, req)
+	case p.FromRun != "":
 		res = s.fromRun(ctx, p, req.Withhold)
-	} else {
+	default:
 		res = s.fromPresets(ctx, p, req, env, seam)
 	}
 	if res == nil {
 		return p, nil, nil
 	}
-	switch strings.TrimSpace(req.LiveMode) {
-	case "", NewLiveLocked: // Locked: the contract exactly as it always was
-	case NewLiveAdjustable:
-		s.adjustable(ctx, p, req, res, env, seam)
-	default:
-		p.Problems = append(p.Problems, fmt.Sprintf("%q is not a live mode: pick Locked or Adjustable (live both ways).", req.LiveMode))
+	if err := s.builderChoices(ctx, p, req, res); err != nil {
+		// Capitalise the page's instruction while keeping Go errors lowercase.
+		p.Problems = append(p.Problems, strings.TrimSuffix(sentence(err.Error()), "."))
 	}
-	p.Text, p.Base = res.Contract, rulefile.Sum(res.Contract)
+	if p.Registry && len(p.writeDirs) > 0 && len(p.Problems) == 0 {
+		// Restored learned drafts keep the same independent registry guard as
+		// their first preview, before the person is offered Save.
+		if _, err := s.registrySave(p, res.Contract).Check(); err != nil {
+			p.Problems = append(p.Problems, saveProblem(err, p.Name))
+		}
+	}
+	if len(req.Text) == 0 {
+		switch strings.TrimSpace(req.LiveMode) {
+		case "", NewLiveLocked: // Locked: the contract exactly as it always was
+		case NewLiveAdjustable:
+			s.adjustable(ctx, p, req, res, env, seam)
+		default:
+			p.Problems = append(p.Problems, fmt.Sprintf("%q is not a live mode: pick Locked or Adjustable (live both ways).", req.LiveMode))
+		}
+	}
+	p.Text = res.Contract
+	p.planned = append([]string{}, res.MakeDirs...)
+	var errDirectory error
+	p.directory, errDirectory = directoryIdentityContext(ctx, p.File, p.Registry && req.PrepareDirectories)
+	if errDirectory != nil {
+		if p.Registry && errors.Is(errDirectory, unix.ENOENT) {
+			p.Problems = append(p.Problems, "The registry folder is not prepared. Use Preview to prepare it, then review and save.")
+		} else {
+			p.Problems = append(p.Problems, errDirectory.Error())
+		}
+	}
+	// Preparation changes protected-path metadata; bind the prepared disk state.
+	// The final bytes and inherited sources are compiled once for this acknowledgement.
+	var errReview error
+	p.dependencies, errReview = s.newSnapshot(ctx, p)
+	if errReview != nil {
+		p.Diagnostics = append(p.Diagnostics, "error: "+errReview.Error())
+		p.OK = false
+	}
+	var errSetup error
+	p.setup, errSetup = setupBinding(res, p)
+	if errSetup != nil {
+		p.Problems = append(p.Problems, errSetup.Error())
+	}
+	if !req.PreviewOnly {
+		p.Draft = s.keepDraft(req.Session, res, p)
+		if p.Draft == "" {
+			p.Problems = append(p.Problems, ErrReviewGone.Error())
+		}
+	}
 	p.Presets, p.Ignore, p.Notes, p.Grants = res.Presets, res.Ignore, res.Notes, res.Grants
 	if p.FromRun == "" && len(nonEmpty(req.AskRead)) > 0 {
 		// compose.go pins tier: landlock for these reads, the one tier that can hold one; Adjustable needs another.
@@ -352,7 +484,7 @@ func (s *Service) planNew(ctx context.Context, req NewReq) (*NewPlan, *setup.Res
 	return p, res, nil
 }
 
-// liveHeader opens the live: section an Adjustable draft gets, as `tego init --live-mode adjustable` writes it.
+// liveHeader opens the live: section an Adjustable draft gets, as `tego rules create --live-mode adjustable` writes it.
 const liveHeader = `
 # How this agent's rules change while it runs (docs/user/live-modes.md):
 #   locked:     file, program and network rules are fixed when the run starts; tighten while it runs, loosen from the next run.
@@ -414,16 +546,10 @@ func (s *Service) adjustable(ctx context.Context, p *NewPlan, req NewReq, res *s
 	} else {
 		res.Notes = append(res.Notes, "  Adjustable needs tier cgroup or bpflsm, which need root: a run that lands at tier landlock is refused")
 	}
-	switch {
-	case seam:
-		p.Diagnostics, p.OK = s.seamCheck(ctx, p.File, p.Dir, res.Contract)
-	case env != nil:
-		ds, ok := setup.Check(res.Contract, p.Dir, *env)
-		p.Diagnostics, p.OK = diagLines(ds, false), ok
-	}
+
 }
 
-// fromPresets composes the presets' contract (setup.Draft, the code `tego init --preset` writes through) and sets the
+// fromPresets composes the presets' contract (setup.Draft, the code `tego rules create --preset` writes through) and sets the
 // plan's diagnostics; nil when the form's presets, folders or hosts are a mistake (a Problem).
 func (s *Service) fromPresets(ctx context.Context, p *NewPlan, req NewReq, env *setup.CheckEnv, seam bool) *setup.Result {
 	o := setup.Options{Presets: req.Presets, Writes: nonEmpty(req.Writes), Hosts: nonEmpty(req.Hosts), Command: p.Command,
@@ -432,27 +558,15 @@ func (s *Service) fromPresets(ctx context.Context, p *NewPlan, req NewReq, env *
 		o.Name = "agent" // composed for the preview anyway; the name's own Problem stops Create
 	}
 	if len(nonEmpty(o.Presets)) == 0 {
-		p.Problems = append(p.Problems, "Pick at least one preset: no-secrets, no-prod or repo-only-writes.")
+		p.Problems = append(p.Problems, "Pick at least one preset: no-secrets, no-prod, repo-only-writes or ci.")
 		return nil
 	}
-	var res *setup.Result
-	var err error
-	switch {
-	case seam:
-		if res, err = setup.Compose(o); err == nil {
-			p.Diagnostics, p.OK = s.seamCheck(ctx, p.File, p.Dir, res.Contract)
-		}
-	case env != nil:
-		if res, err = setup.Draft(o, *env); err == nil {
-			p.Diagnostics, p.OK = diagLines(res.Diagnostics, false), res.OK
-		}
-	default:
-		res, err = setup.Compose(o)
-	}
+	res, err := draftcompile.Compose(ctx, o)
 	if err != nil {
 		p.Problems = append(p.Problems, sentence(err.Error()))
 		return nil
 	}
+	p.OK = true
 	return res
 }
 
@@ -492,19 +606,7 @@ func (s *Service) fromRun(ctx context.Context, p *NewPlan, withhold []string) *s
 		p.Notes = append(p.Notes, "  run "+p.FromRun+" leaked secrets to "+strings.Join(held, ", ")+": that address is left out of the proposal")
 	}
 	p.writeDirs = l.WriteDirs
-	if p.Registry && len(p.Problems) == 0 {
-		// The write entries are known now: Save's check again, with them.
-		if _, err := s.registrySave(p, text).Check(); err != nil {
-			p.Problems = append(p.Problems, saveProblem(err, p.Name))
-		}
-	}
-	switch env := s.newEnv(); {
-	case s.Compile != nil || s.Check != nil:
-		p.Diagnostics, p.OK = s.seamCheck(ctx, p.File, p.Dir, text)
-	case env != nil:
-		ds, ok := setup.CheckFile(text, p.File, p.Dir, *env)
-		p.Diagnostics, p.OK = diagLines(ds, false), ok
-	}
+	p.OK = true
 	return &setup.Result{Contract: text, Notes: p.Notes} // planNew sets p.Notes from the result
 }
 
@@ -513,7 +615,7 @@ func (s *Service) fromRun(ctx context.Context, p *NewPlan, withhold []string) *s
 // the chain anchor's directory) refused as a registry's place, and p's write entries. Its Compile is the preview's
 // compile with the entry's path as the contract's file.
 func (s *Service) registrySave(p *NewPlan, text []byte) registry.Save {
-	uid, _ := config.InvokingUID()
+	uid := s.callerContext().UID
 	places := registry.Places{Dir: p.Dir, UID: uid, Own: []string{s.Ledger}}
 	if s.Machine != nil {
 		places.User = s.Machine.Registry.Value
@@ -522,34 +624,39 @@ func (s *Service) registrySave(p *NewPlan, text []byte) registry.Save {
 	if s.Anchor != "" {
 		places.Own = append(places.Own, filepath.Dir(s.Anchor))
 	}
-	return registry.Save{Places: places, From: []string{p.Dir}, Name: p.Name, Text: text, Writes: p.writeDirs}
+	return registry.Save{ExpectedDirectory: &p.directory, Places: places, From: []string{p.Dir}, Name: p.Name, Text: text, Writes: p.writeDirs}
 }
 
 // saveNew is CreateNew of a plan saved in the user registry (NewReq.Registry): registry.Save writes it, the writer
-// `tego learn --save` writes through, after compiling it once more as the entry it will be. A refusal is ErrRefused
+// `tego rules learn --save` writes through, after Save recomputes the reviewed compilation. A refusal is ErrRefused
 // with the sentence saveProblem says; the entry is in no change record.
 func (s *Service) saveNew(ctx context.Context, p *NewPlan, env *setup.CheckEnv) (*Created, error) {
-	sv := s.registrySave(p, p.Text)
-	sv.Compile = func(path string, text []byte) error {
-		if env == nil { // a test compiler (Service.Compile)
-			if ds, ok := s.seamCheck(ctx, path, p.Dir, text); !ok {
-				return errors.New(strings.Join(ds, "; "))
-			}
-			return nil
+	if s.Machine != nil {
+		if err := registryNoLinks(s.Machine.Registry.Value); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrRefused, err)
 		}
-		if ds, ok := setup.CheckFile(text, path, p.Dir, *env); !ok {
-			return errors.New(strings.Join(diagLines(ds, true), "; "))
+	}
+	sv := s.registrySave(p, p.Text)
+	sv.BeforePublish = func() error {
+		return s.verifySources(ctx, CheckContext{Contract: p.File, Cwd: p.Dir}, p.Text, nil, p.sources)
+	}
+	// savedNew just revalidated the held proposal's complete snapshot within this Save's
+	// total budget. Save's compile hook verifies it is publishing those same bytes
+	// at that same path; inherited source bytes are rechecked at publication.
+	sv.Compile = func(path string, text []byte) error {
+		if path != p.File || !bytes.Equal(text, p.Text) {
+			return fmt.Errorf("%w: the reviewed contract or destination changed", ErrStale)
 		}
 		return nil
 	}
-	path, err := sv.Write()
+	path, err := sv.WriteContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrRefused, saveProblem(err, p.Name))
 	}
 	return &Created{Path: path, Dir: p.Dir, Name: p.Name, Command: p.Command, Registry: true}, nil
 }
 
-// saveProblem is a refused registry.Save as the form's sentence with its fix, in the words `tego learn --save` uses.
+// saveProblem is a refused registry.Save as the form's sentence with its fix, in the words `tego rules learn --save` uses.
 func saveProblem(err error, name string) string {
 	var se *registry.SaveError
 	if !errors.As(err, &se) {
@@ -575,6 +682,9 @@ func saveProblem(err error, name string) string {
 		return fmt.Sprintf("%s would lie inside the contract's own write entry %s, and tego refuses to run a contract its agent "+
 			"could rewrite: save it in the project folder instead.", se.Path, se.Write)
 	case registry.SaveNoCompile:
+		if words, ok := rule.NotFinishedWords(se.Err); ok {
+			return "Tego " + strings.ToLower(words[:1]) + words[1:] + "; nothing was saved; try again."
+		}
 		return "The contract does not compile here, so nothing was saved: " + strings.TrimSuffix(se.Err.Error(), ".") + "."
 	case registry.SaveExists:
 		return se.Path + " is there already, and a contract is never written over a file: give another name."
@@ -591,7 +701,7 @@ func saveProblem(err error, name string) string {
 }
 
 // newEnv is the machine a new contract is compiled against, as nextrun compiles the next run of a contract and
-// `tego compile --offline` compiles one (setup.Check adds Offline and the project folder as the cwd): the machine
+// `tego rules check --offline` compiles one (setup.Check adds Offline and the project folder as the cwd): the machine
 // config and its profile sources, the dashboard's PATH, the invoking user's home, the chain anchor and runtime
 // directories. No tiers are passed: tego-control links no backend, so an auto contract resolves to the machine
 // ceiling. nil without a machine config.
@@ -599,25 +709,18 @@ func (s *Service) newEnv() *setup.CheckEnv {
 	if s.Machine == nil {
 		return nil
 	}
-	opts := []agent.CompileOption{agent.WithPATH(s.path()), agent.WithClock(time.Now), agent.WithRuntimeDir(config.RuntimeDirBases()...), agent.WithOwnBinaries("")}
+	caller := s.callerContext()
+	opts := []agent.CompileOption{agent.WithPATH(s.path()), agent.WithClock(func() time.Time { return caller.CheckedAt }), agent.WithCallerContext(*caller), agent.WithRuntimeDir(caller.RuntimeDirs...), agent.WithOwnBinaries("")}
 	if s.Machine.Home != "" {
 		opts = append(opts, agent.WithHome(s.Machine.Home))
 	}
 	if s.Anchor != "" {
 		opts = append(opts, agent.WithChainAnchor(s.Anchor))
 	}
-	return &setup.CheckEnv{Machine: s.Machine, Profiles: profilesrc.Chain(s.Machine), Options: opts}
+	return &setup.CheckEnv{Machine: s.Machine, Profiles: profilesrc.Chain(s.Machine, *caller), Options: opts}
 }
 
-// seamCheck is the test compiler's verdict on text as the contract file in dir.
-func (s *Service) seamCheck(ctx context.Context, file, dir string, text []byte) ([]string, bool) {
-	if _, err := s.compile(ctx, CheckContext{Contract: file, Cwd: dir}, text); err != nil {
-		return []string{"error: " + err.Error()}, false
-	}
-	return nil, true
-}
-
-// sentences fills p.Groups from p.Text: the merged contract (every profile it extends laid in, as `tego compile
+// sentences fills p.Groups from p.Text: the merged contract (every profile it extends laid in, as `tego rules check
 // --merged` prints it) read by inforce.Declared, so a preset's rules are said too. A draft makes no enforcement
 // claim: the run's tier decides that.
 func (s *Service) sentences(p *NewPlan) {
@@ -625,19 +728,13 @@ func (s *Service) sentences(p *NewPlan) {
 		return
 	}
 	text := p.Text
-	var profiles agent.ProfileSource
-	if s.Machine != nil {
-		profiles = profilesrc.Chain(s.Machine)
-	} else {
-		profiles = profilesrc.Chain(nil)
-	}
 	p.ViewNote = "What the agent may do under this contract, every preset it extends laid in. A run's protection level decides how each rule is enforced."
-	if c, _, err := agent.LoadBytes(p.File, p.Text, profiles); err == nil {
-		if merged, err := c.Canonical(); err == nil {
-			text = merged
-		}
+	if len(p.merged) > 0 {
+		text = p.merged
 	} else {
-		p.ViewNote = "Read from the file as written: its profiles could not be read, so a preset's own rules are not listed."
+		// A failed bounded compile must not fall back to loading untrusted profiles
+		// in the HTTP worker. The raw YAML remains available for correction.
+		p.ViewNote = "Read from the file as written: its inherited rules were not compiled, so a preset's own rules are not listed."
 	}
 	v, err := inforce.Declared(text, p.File)
 	if err != nil {
@@ -722,61 +819,19 @@ func builtInSecretRules() []NewRule {
 
 // projectDir checks the typed project folder and returns it with its symlinks resolved: an absolute path (or ~/ for
 // the invoking user's home), an existing directory, this user's, not writable by others unless sticky, and not the
-// ledger root, tego's home or under either. Each refusal is a sentence with its fix. setup.Create opens the path it
+// ledger root, tego's home or under either. Each refusal is a sentence with its fix. setup.CreateContext opens the path it
 // returns again with no symlink followed, so a link swapped into that path after this check is refused, never
-// followed out of the project; a real folder renamed into the path after the check is used, since neither these
-// checks nor the descriptor that made them are carried to Create.
-func (s *Service) projectDir(typed string) (dir, problem string) {
-	typed = strings.TrimSpace(typed)
-	switch {
-	case typed == "":
-		return "", "Type the project folder: the folder the agent works in, where agent.yaml is written."
-	case len(typed) > 4096 || strings.ContainsRune(typed, 0):
-		return "", "That is not a folder path."
-	case typed == "~" || strings.HasPrefix(typed, "~/"):
-		h := s.home()
-		if h == "" {
-			return "", "This dashboard does not know your home folder: type the full path."
-		}
-		typed = filepath.Join(h, strings.TrimPrefix(strings.TrimPrefix(typed, "~"), "/"))
-	case !filepath.IsAbs(typed):
-		return "", fmt.Sprintf("Type the full path of the project folder (it starts with / or ~/), not %q.", typed)
-	}
-	dir, err := filepath.EvalSymlinks(filepath.Clean(typed))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return "", fmt.Sprintf("%s does not exist. Set up an agent in a project folder that exists: create it first.", typed)
-		}
-		return "", fmt.Sprintf("%s cannot be read: %v.", typed, err)
-	}
-	var st unix.Stat_t
-	if err := unix.Stat(dir, &st); err != nil {
-		return "", fmt.Sprintf("%s cannot be read: %v.", dir, err)
-	}
-	switch euid := uint32(os.Geteuid()); {
-	case st.Mode&unix.S_IFMT != unix.S_IFDIR:
-		return "", fmt.Sprintf("%s is not a folder.", dir)
-	case st.Uid != euid:
-		return "", fmt.Sprintf("%s is owned by uid %d, not by you (uid %d): set up an agent in a folder of your own.", dir, st.Uid, euid)
-	case st.Mode&0o002 != 0 && st.Mode&unix.S_ISVTX == 0:
-		return "", fmt.Sprintf("%s is writable by every user, so another user could swap the rules file: chmod o-w %s, or pick another folder.", dir, dir)
-	}
+// followed out of the project. The acknowledgement binds the resolved destination and directory identity;
+// the publisher verifies that identity against the descriptor beneath which it creates the file.
+func (s *Service) projectDir(ctx context.Context, typed string) (dir, problem string) {
 	g := s.guard()
 	refuse := append([]string{g.LedgerRoot}, g.Refuse...)
-	if h := s.home(); h != "" {
-		refuse = append(refuse, filepath.Join(h, ".tego"))
+	if home := s.home(); home != "" {
+		refuse = append(refuse, filepath.Join(home, ".tego"))
 	}
-	for _, r := range refuse {
-		if r == "" {
-			continue
-		}
-		rr := r
-		if e, err := filepath.EvalSymlinks(r); err == nil {
-			rr = e
-		}
-		if within(dir, rr) {
-			return "", fmt.Sprintf("%s is tego's own folder (the ledger root or tego's home, %s) or inside it: an agent's rules never live there. Pick the project folder.", dir, r)
-		}
+	dir, err := draftcompile.ProjectDirectory(ctx, draftcompile.DirectoryRequest{Typed: typed, Home: s.home(), Refuse: refuse})
+	if err != nil {
+		return "", err.Error()
 	}
 	return dir, ""
 }
@@ -790,12 +845,6 @@ func (s *Service) home() string {
 		return s.Machine.Home
 	}
 	return ""
-}
-
-// within is whether p is dir or inside it.
-func within(p, dir string) bool {
-	rel, err := filepath.Rel(dir, p)
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, "../")
 }
 
 // newName is the typed agent id, or one made from the folder's name when none is typed; problem says why it is not
@@ -827,7 +876,7 @@ func newName(typed, dir string) (name, problem string) {
 }
 
 // renamed is text with its top-level name set to name, double-quoted: an agent id may be all digits or a word YAML
-// reads as a bool or a null, and name is a string (R3), as tego init writes it. The key is found in the YAML tree, not
+// reads as a bool or a null, and name is a string (R3), as tego rules create writes it. The key is found in the YAML tree, not
 // by a line's text, so a name: in a comment or inside another value is never the one set. Its old value alone is
 // replaced in the text where the result reads as text did with only the name changed, so the rest of its line (a
 // comment) and every other byte stay; otherwise (a name over several lines) the tree is written out with the name set,
@@ -920,29 +969,6 @@ func byteAt(s string, col int) int {
 		col--
 	}
 	return -1
-}
-
-// diagLines is ds as one line each, "error: …" or "warning: …", the errors alone with errorsOnly.
-func diagLines(ds []agent.Diagnostic, errorsOnly bool) []string {
-	var out []string
-	for _, d := range ds {
-		if errorsOnly && !d.IsError() {
-			continue
-		}
-		line := d.Severity + ": "
-		if d.Line > 0 {
-			line += fmt.Sprintf("%s:%d: ", filepath.Base(d.File), d.Line)
-		}
-		line += d.Message
-		if d.Code != "" {
-			line += " [" + d.Code + "]"
-		}
-		if d.Fix != "" {
-			line += " (fix: " + d.Fix + ")"
-		}
-		out = append(out, line)
-	}
-	return out
 }
 
 // nonEmpty is xs without its blank items, each trimmed.

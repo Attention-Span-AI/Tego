@@ -37,11 +37,12 @@ func cmdWatch() Command {
 		noSummary  bool
 	)
 	return Command{
-		Name:        "watch",
-		Passthrough: true,
-		Supervises:  true,
-		Summary:     "run any command as a black box and record everything it does",
-		Usage:       "[--boundary <agent.yaml | name>] [--tier <t>] [--record <full|summary|off>] [--offline] [--no-summary] [-v] -- <command> [args]",
+		Name:         "watch",
+		Passthrough:  true,
+		Supervises:   true,
+		HoldsSecrets: true,
+		Summary:      "run any command as a black box and record everything it does",
+		Usage:        "[--boundary <agent.yaml | name>] [--tier <t>] [--record <full|summary|off>] [--offline] [--no-summary] [-v] -- <command> [args]",
 		Flags: func(fs *flag.FlagSet) {
 			fs.StringVar(&boundary, "boundary", "", "hold the command to this contract (files, programs, connections, limits, approvals); without it no rule refuses anything and the run only records")
 			fs.StringVar(&tier, "tier", "", "with --boundary, pin the enforcement tier (auto|landlock|cgroup|bpflsm)")
@@ -70,6 +71,13 @@ func cmdWatch() Command {
 			if _, err := parseRecordMode(recordMode); recordMode != "" && err != nil {
 				message(stderr, "", 0, 0, "tego watch: "+err.Error(), codeUsage)
 				return identity.ExitUsage
+			}
+			if code, done := rulesBeforeScope(runOptions{cmd: "tego watch", contract: boundary, command: command, tier: tier,
+				record: recordMode, offline: offline, verbose: verbose, watched: true}, stderr); done {
+				return code
+			}
+			if code, done := enterUserScope(ctx, stderr); done {
+				return code
 			}
 			path, cleanup := boundary, func() {}
 			if boundary == "" {
@@ -100,7 +108,7 @@ func cmdWatch() Command {
 				observe: boundary == "", offline: offline, verbose: verbose, watched: true, noSummary: noSummary,
 				report: func(res tegoruntime.Result, sum *endSummary) {
 					// The footer, then the reads line (a bounded watch can refuse a read), then the next step.
-					fmt.Fprint(stderr, watchFooter(res, sum)+sum.readsLine())
+					fmt.Fprint(stderr, fitTerminal(stderr, watchFooter(res, sum)+sum.readsLine()))
 					if text, command := watchNext(ctx, stderr, res, sum, boundary, cwd); text != "" {
 						writeHint(stderr, text, command)
 					}
@@ -181,9 +189,9 @@ func writeGenericContract(command []string) (string, func(), error) {
 	return path, cleanup, nil
 }
 
-// watchNotice is what tego says before the run starts, so nobody mistakes a recording for a cage. Without a boundary
+// watchNotice is what tego says before the run starts, so nobody mistakes a recording for enforcement. Without a boundary
 // it is at most four lines (ten lines plus a warning filled the presenter's terminal): what is recorded at the
-// level in force and that no rule refuses anything, that it is not a cage, and how to confine the command. verbose
+// level in force and that no rule refuses anything, that it is recording only, and how to confine the command. verbose
 // (watch -v) prints the full text: what is still refused and what is not recorded. record is the level the run uses;
 // "" is full, the no-boundary default. sockets says a warning naming a socket the command can reach follows (one of
 // its standard streams is a socket, warnStdio); the sentence pointing at those warnings is printed only then.
@@ -207,7 +215,7 @@ func watchNotice(argv0 string, bounded bool, record agent.RecordMode, verbose, s
 		}
 		return fmt.Sprintf(`tego watch: recording %[1]s and everything it starts. No rule refuses anything (details: tego watch -v -- %[1]s).
   recorded: %[2]s.
-  not a cage: it can still ask another service (systemd --user, D-Bus, an SSH or GPG agent) to act for it%[3]s.
+  recording only: it can still ask another service (systemd --user, D-Bus, an SSH or GPG agent) to act for it%[3]s.
   to confine it: tego run <agent.yaml> -- %[1]s, or tego watch --boundary <agent.yaml> -- %[1]s
 `, argv0, recorded, socketsNote)
 	}
@@ -231,7 +239,7 @@ func watchNotice(argv0 string, bounded bool, record agent.RecordMode, verbose, s
   recorded: %[2]s%[3]s
   still refused, and not recorded: 32-bit programs; io_uring, openat2, clone3 and open_by_handle_at ("not implemented",
   programs fall back); the terminal-input ioctls TIOCSTI and TIOCLINUX; MPTCP sockets.
-  not a cage: it can still ask another service on this machine (systemd --user, D-Bus, an SSH or GPG agent) to act
+  recording only: it can still ask another service on this machine (systemd --user, D-Bus, an SSH or GPG agent) to act
   for it outside the run%[4]s. To confine it, write a contract and run: tego run <agent.yaml> -- %[1]s,
   or tego watch --boundary <agent.yaml> -- %[1]s
 `, argv0, recorded, notRecorded, socketsNote)

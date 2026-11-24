@@ -24,7 +24,7 @@ import (
 // GET /runs/<run>/lift?kind=&value=&for=&until=&tz= is the preview: what the run will be able to do, for how long, in
 // whose hands the enforcement is, and a confirm form bound to that one change by the rule service's acknowledgement
 // (LiveAck: the run, the entry, the absolute limit, the permanent flag and the overlay's serial). POST
-// /runs/<run>/lift checks the checkbox and the acknowledgement against the overlay as it is now and asks runact.Lift;
+// /runs/<run>/lift checks the checkbox and the acknowledgement against the overlay as it is now and asks runact.LiftAt, bound to that overlay's serial;
 // POST /runs/<run>/restore asks runact.Restore, which narrows and needs no acknowledgement. Both POSTs pass the same
 // session, CSRF, Host and governed-peer checks as every change (server.go), and runact refuses a lift from inside a
 // run again (SelfGoverned). The page decides nothing: the run's launcher checks the lift's MAC and writes the line
@@ -38,7 +38,7 @@ type LiveAckService interface {
 
 // The writers the forms call; tests may replace them.
 var (
-	liftRun    = runact.Lift
+	liftRun    = runact.LiftAtNote
 	restoreRun = runact.Restore
 	blockRun   = runact.BlockUntil
 	// liveNow is the clock a limit is made and checked on: runact checks it against the real clock, whatever clock
@@ -100,10 +100,7 @@ func untilOf(choice, until, span, tz string, now time.Time) (end time.Time, perm
 		if until == "" {
 			return time.Time{}, false, errNoUntil
 		}
-		loc := time.Local
-		if m, err := strconv.Atoi(tz); err == nil && m >= -16*60 && m <= 16*60 {
-			loc = time.FixedZone("", -m*60)
-		}
+		loc := zoneOf(tz)
 		for _, layout := range []string{"2006-01-02T15:04", "2006-01-02T15:04:05"} {
 			if end, err = time.ParseInLocation(layout, until, loc); err == nil {
 				break
@@ -126,12 +123,26 @@ func untilOf(choice, until, span, tz string, now time.Time) (end time.Time, perm
 	return end, false, nil
 }
 
-// whenWords says a limit's end as the pages do: "until Fri 31 Oct 17:00 (in 3 days)", or "for the rest of this run".
-func whenWords(until, now time.Time) string {
+// zoneOf is the zone a form's tz names: minutes west of UTC, as a browser's getTimezoneOffset says it, so the time the
+// person typed is read, and said back, in the zone they typed it in. Its name is its offset ("+0900"). Anything
+// else (no script, a value that is no offset) is the dashboard's own zone.
+func zoneOf(tz string) *time.Location {
+	if m, err := strconv.Atoi(tz); err == nil && m >= -16*60 && m <= 16*60 {
+		return time.FixedZone("", -m*60)
+	}
+	return time.Local
+}
+
+// whenWords says a limit's end as the pages do, in the dashboard's zone: "until Fri 31 Oct 17:00 CET (in 3 days)", or
+// "for the rest of this run".
+func whenWords(until, now time.Time) string { return whenWordsIn(until, now, time.Local) }
+
+// whenWordsIn is whenWords in the zone loc: the absolute time names its zone, and the relative words follow.
+func whenWordsIn(until, now time.Time, loc *time.Location) string {
 	if until.IsZero() {
 		return "for the rest of this run"
 	}
-	return "until " + until.Local().Format("Mon 2 Jan 15:04") + " (" + inWords(until.Sub(now)) + ")"
+	return "until " + until.In(loc).Format("Mon 2 Jan 15:04 MST") + " (" + inWords(until.Sub(now)) + ")"
 }
 
 // inWords is a span ahead in rounded words: "in 45 minutes", "in 5 hours", "in 3 days", "in 7 weeks".
@@ -156,13 +167,14 @@ func inWords(d time.Duration) string {
 	return n(d.Hours()/24/7, "week", "weeks")
 }
 
-// chipUntil is a lifted row's or a timed block's end, short: "Fri 17:00", with the date when it is not this week.
+// chipUntil is a lifted row's or a timed block's end, short, in the zone of the machine and naming it: "Fri 17:00 CET",
+// with the date when it is not this week.
 func chipUntil(until, now time.Time) string {
 	l := until.Local()
 	if until.Sub(now) < 6*24*time.Hour {
-		return l.Format("Mon 15:04")
+		return l.Format("Mon 15:04 MST")
 	}
-	return l.Format("Mon 2 Jan 15:04")
+	return l.Format("Mon 2 Jan 15:04 MST")
 }
 
 func init() {
@@ -171,10 +183,10 @@ func init() {
 }
 
 // activeBlocks is how many of blocks refuse at now: neither past their limit nor unblocked for a while.
-func activeBlocks(blocks []liveblock.Entry, now time.Time) int {
+func activeBlocks(blocks []liveblock.Entry, now time.Time, f ledgerview.LiveFacts) int {
 	n := 0
 	for _, b := range blocks {
-		if t := blockTimeOf(b, now); !t.Ended && !t.Dormant {
+		if t := blockTimeOf(b, now, f); !t.Ended && !t.Dormant {
 			n++
 		}
 	}
@@ -185,11 +197,13 @@ func activeBlocks(blocks []liveblock.Entry, now time.Time) int {
 // keeps an ended block in the file for a day (endedKeep), and a block unblocked for a while stays listed with From
 // set (RemoveUntil); livestatus knows neither, so a page that showed only its state would call both in force.
 type blockTime struct {
-	// Ended: its limit has passed by the page's clock, so it refuses nothing (the launcher judges on its own clocks
-	// and writes live-block-expired within a poll). Dormant: it is unblocked until From and refuses again then.
-	Ended, Dormant bool
-	// Ends is the row's words: "until Fri 17:00", "ended at Tue 13:51", "unblocked until Fri 17:00, then refused
-	// again"; "" for a block in force with no limit.
+	// Ended: the run's launcher recorded that its limit passed, so it refuses nothing. The launcher judges a limit on
+	// its wall clock and on a clock no step moves, so a page never decides this by its own clock (ledgerview.LiveFacts
+	// Limits). Dormant: it is unblocked until From and refuses again then. Reached: this page's clock is past its limit
+	// and the launcher has not recorded the end: it still refuses, and the run ends it by its own clock.
+	Ended, Dormant, Reached bool
+	// Ends is the row's words: "until Fri 17:00 CET (in 3 hours)", "ended at Tue 13:51 CET", "unblocked until Fri
+	// 17:00 CET, then refused again"; "" for a block in force with no limit.
 	Ends string
 	// Why replaces the chip's plain line when the limit changes what it says; "" keeps it.
 	Why string
@@ -198,21 +212,26 @@ type blockTime struct {
 // Timed: the block has a limit or an unblock with one, so "they end with the run" no longer says all.
 func (t blockTime) Timed() bool { return t.Ends != "" }
 
-// blockTimeOf is block b's time limit at now.
-func blockTimeOf(b liveblock.Entry, now time.Time) blockTime {
+// blockTimeOf is block b's time limit at now, by f's record of what its run's launcher ended. Every time it names is
+// absolute in the zone of the machine (chipUntil) and, while it is ahead, relative to now (inWords).
+func blockTimeOf(b liveblock.Entry, now time.Time, f ledgerview.LiveFacts) blockTime {
+	at := f.LimitAt(string(b.Kind), b.Value, now, b.From, b.Until)
 	switch {
-	case !b.Until.IsZero() && !now.Before(b.Until):
+	case at.Ended:
 		return blockTime{Ended: true, Ends: "ended at " + chipUntil(b.Until, now),
 			Why: "Its time limit has passed: it refuses nothing now."}
-	case !b.From.IsZero() && now.Before(b.From):
-		t := blockTime{Dormant: true, Ends: "unblocked until " + chipUntil(b.From, now) + ", then refused again",
-			Why: "Unblocked for now: it refuses nothing until " + chipUntil(b.From, now) + "."}
+	case at.Dormant:
+		t := blockTime{Dormant: true, Ends: "unblocked until " + chipUntil(b.From, now) + " (" + inWords(b.From.Sub(now)) + "), then refused again",
+			Why: "Unblocked for now: it refuses nothing until " + chipUntil(b.From, now) + " (" + inWords(b.From.Sub(now)) + ")."}
 		if !b.Until.IsZero() {
 			t.Ends += " until " + chipUntil(b.Until, now)
 		}
 		return t
+	case at.Reached:
+		return blockTime{Reached: true, Ends: "until " + chipUntil(b.Until, now),
+			Why: "Its time limit, " + chipUntil(b.Until, now) + ", has passed on this clock, but the run keeps its own time: it refuses until the run records the end."}
 	case !b.Until.IsZero():
-		return blockTime{Ends: "until " + chipUntil(b.Until, now)}
+		return blockTime{Ends: "until " + chipUntil(b.Until, now) + " (" + inWords(b.Until.Sub(now)) + ")"}
 	}
 	return blockTime{}
 }
@@ -227,7 +246,7 @@ type blockChip struct {
 
 // blockChipOf is block b's chip on the run v describes, at now.
 func blockChipOf(b liveblock.Entry, v liveView, now time.Time) blockChip {
-	c := blockChip{liveChip: liveChipOf(b, v), blockTime: blockTimeOf(b, now)}
+	c := blockChip{liveChip: liveChipOf(b, v), blockTime: blockTimeOf(b, now, v.Facts)}
 	if c.State == ledgerview.LiveEnded || c.State == ledgerview.LiveRecordedOnly {
 		return c // the run has ended, or refuses nothing anyway: the limit changes nothing it says
 	}
@@ -238,7 +257,9 @@ func blockChipOf(b liveblock.Entry, v liveView, now time.Time) blockChip {
 		c.Label, c.Class, c.Note = "Ended at "+chipUntil(b.Until, now), "b-done", c.Why
 		c.Ends = ""
 	case c.Dormant:
-		c.Label, c.Class, c.Note = "Unblocked until "+chipUntil(b.From, now), "b-waiting", c.Why
+		c.Label, c.Class, c.Note = "Unblocked until "+chipUntil(b.From, now), "b-neutral", c.Why
+	case c.Reached && c.State == ledgerview.LiveInForce:
+		c.Note = c.Why
 	case c.Ends != "" && c.State == ledgerview.LiveInForce:
 		c.Note = "Refused from the next try " + c.Ends + "."
 	}
@@ -288,9 +309,9 @@ func fenceViewOf(run *ledgerview.Run, now time.Time) *fenceView {
 		case r.State != ledgerview.FenceLifted:
 			row.Chip, row.ChipClass = "Blocked", "b-refused"
 		case r.Until.IsZero():
-			row.Chip, row.ChipClass = row.Done+" for this run", "b-asked"
+			row.Chip, row.ChipClass = row.Done+" for this run", "b-neutral"
 		default:
-			row.Chip, row.ChipClass = row.Done+" until "+chipUntil(r.Until, now), "b-asked"
+			row.Chip, row.ChipClass = row.Done+" until "+chipUntil(r.Until, now), "b-neutral"
 		}
 		v.Rows = append(v.Rows, row)
 	}
@@ -341,7 +362,7 @@ func (s *Server) liftPreview(w http.ResponseWriter, r *http.Request, id string) 
 	if err != nil && d.Err == "" {
 		d.Err = "The time limit is not one: " + err.Error() + "."
 	}
-	d.When, d.Permanent = whenWords(until, now), perm
+	d.When, d.Permanent = whenWordsIn(until, now, zoneOf(q.Get("tz"))), perm
 	if !until.IsZero() {
 		d.Until = until.Format(time.RFC3339Nano)
 	}
@@ -415,8 +436,8 @@ func (s *Server) fenceEntryOf(run *ledgerview.Run, kind, value string) (k, v, wh
 // liftMu makes a lift's acknowledgement check and its write one step against this dashboard's other lifts and
 // restores: a second confirm of the same preview (a double click, a second tab) then reads the serial the first one
 // moved and is refused, and a restore made here cannot slip between a lift's check and its write. A change made
-// elsewhere (tego restore in a terminal) in that window still can; closing it needs runact.Lift to check the serial
-// inside the overlay's own lock.
+// elsewhere (tego restore in a terminal) in that window cannot slip through: the write itself checks the serial the
+// acknowledgement was made for inside the overlay's own lock (runact.LiftAt), and refuses with runact.ErrOverlayMoved.
 var liftMu sync.Mutex
 
 // liftPost serves POST /runs/<run>/lift: the confirm.
@@ -467,7 +488,10 @@ func (s *Server) liftPost(w http.ResponseWriter, r *http.Request, id string) {
 		notDone("the time limit has passed or is out of bounds (it ends 1 minute to 400 days from now). Preview again.")
 		return
 	}
-	l, err := liftRun(r.Context(), s.cfg.Ledger, id, string(k), v, until, "dashboard")
+	// The write is bound to the overlay revision the acknowledgement was checked against (lb.Serial), under the
+	// overlay's own lock: a change another writer made since is refused there (runact.ErrOverlayMoved), never lifted over.
+	note := strings.TrimSpace(f.Get("note"))
+	l, err := liftRun(r.Context(), s.cfg.Ledger, id, string(k), v, note, until, "dashboard", lb.Serial)
 	if err != nil {
 		notDone(liftErr(err))
 		return
@@ -479,7 +503,7 @@ func (s *Server) liftPost(w http.ResponseWriter, r *http.Request, id string) {
 	what := liftWhat(string(k), v, rr)
 	if perm {
 		if rr != nil {
-			if ref := rules.Ref(rr.Contract); ref != "" {
+			if ref := rules.RefContext(r.Context(), rr.Contract); ref != "" {
 				done := "Lifted"
 				if e, ok := ledgerview.LiveFactsOf(rr).InFence(string(k), v); ok && e.Source == record.LiveFenceSourceNew {
 					done = "Granted" // new access, as the fence row's chip says
@@ -523,6 +547,10 @@ func (s *Server) restorePost(w http.ResponseWriter, r *http.Request, id string) 
 	s.redirectBack(w, r, back, flash{OK: true, Text: "Restored: " + what + " is refused again on run " + shortRun(id) + "."})
 }
 
+// movedWords is the page's words for a lift refused because the run's live rules changed after the preview was
+// acknowledged (runact.ErrOverlayMoved).
+const movedWords = "this run's live rules changed since the preview. Preview again."
+
 // lockedWords is the page's words for a loosening a Locked run refuses: a lift or a restore here, an MCP tool switch
 // (mcpErrWords) and a model route (routesErrWords).
 const lockedWords = "this run is Locked: loosening applies from its next run."
@@ -553,8 +581,12 @@ func liftErr(err error) string {
 		return lockedWords
 	case errors.Is(err, runact.ErrOutsideFence):
 		return "that entry is outside this run's fence, so it applies from the next run."
+	case errors.Is(err, runact.ErrOverlayMoved):
+		return movedWords
 	case errors.Is(err, runact.ErrNoKey):
 		return "this run's live key cannot be read, so no lift can be asked (a run started by an older tego has none)."
+	case errors.Is(err, runact.ErrNoNote):
+		return "this run's launcher does not say it reads a note on a lift (an older tego, or a run that is still starting), so nothing was asked. Lift again without a note, or wait a few seconds and lift again with it."
 	case errors.Is(err, liveblock.ErrInvalid):
 		return plainErr(err) + "."
 	}

@@ -394,8 +394,21 @@ ignored folders, scratch worktrees among them, are never scanned.
       Dup). That is one atomic flag set on the first such construction. A second owner of a live number therefore
       cannot be minted later in the process.
 
-    Its sites are listed in inherited.txt: the child stage's entry and ReapMain. In both, the Inherited calls are
-    the process's first descriptor operations, and a test pins that.
+    Its sites are listed in inherited.txt: the child stage, reaper, MCP server and user-scope re-entry. In each,
+    the Inherited calls are the process's first descriptor-owner operations, and a test pins that. The scope
+    entry receives request and readiness FIFOs at exec as descriptors 3 and 4. Its parent creates both pipes
+    through `sys.Pipe2(O_CLOEXEC | O_NONBLOCK)` before releasing them to `os.File` for ExtraFiles and cancelable I/O.
+    Nonblocking mode lets `os.NewFile` register each end with Go's poller, so timeout and cancellation can close
+    blocked handshake I/O. `TestScopeHandshakePipesKeepCancelableIO` requires both ends to support deadlines.
+    `TestScopeHandshakePipesAreOwnedBeforeStart` checks the seal after the parent makes its pipes;
+    `TestScopeEntryInMainAcceptsInheritedPipesBeforeAnyOwner` follows cmd/tego's real main through cli.Main and
+    requires the child to read a request larger than the pipe buffer before refusing its invalid noun.
+
+    The two new scope entries are paid for under A9's F4 total check by migrating the adoption record writer's
+    temporary file: `adoptStore.write` now owns its `Openat` result at birth, then releases it to `os.File` for
+    writing and syncing. This removes one raw producer and one `os.NewFile` from `internal/runtime`'s baseline.
+    `TestAdoptStoreWriteOwnsTheTemporaryRecord` checks the seal in a fresh process; `TestAdoptStoreIsRootsAlone`
+    checks the record round trip and the existing ownership, mode and run/scope refusals.
   - **Function values.** A producer, `ReleaseNumber`, `Abandon`, `Adopt`, `Inherited` or `Stdio` taken as a
     function value or a method value is a raw site. Seam variables such as `fanotifyInit = unix.FanotifyInit`
     (fanotify.go:318) therefore become owner-returning seams:
@@ -1257,7 +1270,7 @@ and Stdio sites, a `//nolint` that hides nothing, a file whose build constraints
 tegotesthooks file), plus the ratchet (a rise, a fall, a swap of kinds, a stale line, a migrated package's new
 close, dup and os.NewFile, the list and `.golangci.yml` disagreeing, a listed site beyond its count and a stale
 list entry), the total against a base (a rise fails, a moved count does not), the exemptions, F11's
-classification, producer generation and edges, and `TestTreeRatchetAndPlantedSites` on the checkout itself (the
+classification, producer generation and edges, and the complete-source tree ratchet (retained separately) on the checkout itself (the
 tree meets baseline.txt exactly; a close, a dup and an os.NewFile planted in internal/platform/proc, which the file
 never listed, each fail on their line, and one more close in internal/ledger fails as a rise; with the unlisted
 branch of the ratchet disabled the test fails); `scripts/check-fd_test.sh` runs golangci-lint on
@@ -1311,7 +1324,7 @@ counts there. Departures, each kept within the decision:
 - **check-fd.sh builds fdcheck** and runs the binary: `go run` answers 1 for every failing exit, which turned
   fdcheck's 2 (the files could not be read) into a rule failure. check-fd_test.sh holds the 2 on a directory git
   does not track; it no longer runs the whole check on the checkout, which make lint, precommit and CI's
-  build-test each run as their own step and `TestTreeRatchetAndPlantedSites` runs in the unit tests.
+  build-test each run as their own step and the complete-source tree ratchet (retained separately) runs in the unit tests.
 
 *Amended 2026-10-17 (implementation note):* C3 left forms that passed both
 gates; each is now counted, with a fixture that failed before the change.
@@ -1349,7 +1362,7 @@ gates; each is now counted, with a fixture that failed before the change.
   residual: a method value whose receiver is a call result (other than os's File constructors) or another
   package's struct field fdcheck cannot type without a type checker; forbidigo's typed rule still reports
   `(*os.File).Fd` there in a migrated package. `TestFdcheckMethodValues` holds 18 forms in a listed and an
-  unlisted package, cilium's, and a type and a variable declared in another file; `TestTreeRatchetAndPlantedSites`
+  unlisted package, cilium's, and a type and a variable declared in another file; the complete-source tree ratchet (retained separately)
   plants a method value and a method expression in internal/ledger, where only fdcheck sees them.
 - **The ADR 0023 exclusions are pinned.** `ParseShrinking` treated any ADR 0023 exclusion whose path was not one
   package's files as permanent, so a rule `- path: ^internal/` with text ADR 0023 passed both fdcheck and its
@@ -1784,7 +1797,7 @@ placement rules were looser than written, and two smaller gaps remained; each is
   found under all twelve builds; TestProducerSourcesEnvironment adds a GOENV file holding `GOFLAGS=-mod=bogus`.
 - **Mutation gaps.** Dropping ProcPath from the synchronous lenders, or the edge check from Check, failed no test.
   A TestLentNumber row uses a held number inside a ProcPath callback, and Check now takes an overlay,
-  so TestTreeRatchetAndPlantedSites runs the gate's whole Check on the planted sites, among them a migrated
+  so the complete-source tree ratchet (retained separately) runs the gate's whole Check on the planted sites, among them a migrated
   package's use of sys.IsTerminal, an edge API, which must fail as A6.
 
 *Amended 2026-10-19 (implementation note, FD-LINT):* F3's placement walked from the taker to its
@@ -1804,7 +1817,7 @@ internal/runtime/enforce/api, so the one raw site the ratchet counted in enforce
 `api`) moved with it. As this ADR's baseline rule has it, a move of code moves its counts: baseline.txt's
 `internal/runtime/enforce api=1` is now `internal/runtime/enforce/api api=1`, the package's .golangci.yml exclusion
 moved with it, and edges.txt names the producer enforce/api. No kind's total changed; C5 still owns making the
-number an owner (a Dup of the ruleset). `TestTreeRatchetAndPlantedSites` and `scripts/check-fd.sh` failed on the
+number an owner (a Dup of the ruleset). the complete-source tree ratchet (retained separately) and `scripts/check-fd.sh` failed on the
 merge until the move and pass after it.
 
 *Amended 2026-10-19 (implementation note):* the unix ask work was built on a base
@@ -2109,3 +2122,40 @@ the agent's requested close-on-exec flag is applied separately at delivery. F10 
 named descriptor-producing ioctl under OwnSyscall, and F9 requires O_CLOEXEC. F5 additionally
 recognises the non-producing TIOCGDEV and TIOCGPTN queries. Bare TIOCGPTPEER and other ioctls remain
 refused by the ownership checker; decision-table tests hold all three cases. No raw-site ratchet is raised.
+
+### F4 entry for the interrupt channel, paid by a migration — 2026-11-20
+
+`scopedMain` receives the interrupt channel's socket as inherited descriptor 5 (a third `Inherited` site beside the
+request and readiness FIFOs), which is a new F4 entry; A9 requires a new entry to be paid for by raw sites the same
+change removes, and the two sites the earlier entries were paid with left the total short by one. `statEntry` in
+internal/runtime/observe now owns its O_PATH descriptor at birth (`sys.Own`, `FD.Fstat`, `FD.Statx`, `FD.Close`),
+which removes its raw `unix.Open` and `unix.Close` and with them the package's last raw sites: its line in
+baseline.txt and its `.golangci.yml` exclusion are deleted. Against 70a9e8c56 the F4 lists admit 12 sites to its 9 and
+the raw total fell by 4.
+
+### `sys.LendAll`: several numbers for one kernel pass — 2026-11-22
+
+The kernel decision plane's live-block fill (ADR 0124, amendment 2026-11-21) keys each row in the kernel by the
+`struct inode *` of a descriptor the launcher holds, so no key reaches userspace. Its iter/task_file program walks
+the launcher's own descriptor table once and matches each file against templates keyed by (tgid, descriptor number),
+as the Prepare fill does. One pass therefore needs the numbers of every descriptor it writes rows for, all valid at
+once, and those numbers must reach the wants map as keys. A Borrow lends one number; a Hold in a loop cannot defer
+its Return (H1); neither may put a lent number in a slice or hand it to cilium's `Map.Put`. The Prepare fill avoids
+the question only because its descriptors are raw numbers in packages not yet migrated, and raising those packages'
+raw counts is what A9 forbids.
+
+`sys.LendAll(owners []*FD, fn func(nums []int) error) error` is that lease. It takes one lease on each owner in order
+(a nil or non-lending owner is `ErrClosed`, fn is not called, and the leases already taken are returned), calls fn
+with the numbers, and returns every lease when fn returns or panics; a Close meanwhile is deferred until then, as under
+Borrow. It is a root lender in fdcheck (`rootFuncLenders`, callback parameter 1 receiving argument 0) and a
+synchronous one, so fn's body is held to a Borrow callback's uses with the slice as the lent value: indexing it, `len`
+and a number in a syscall's argument are admitted. Keeping the slice or a number past fn, using it after fn, copying
+or appending it out, returning it inside an error, naming it in a goroutine, and taking `LendAll` as a value are lease
+sites (fixtures `lendall *` in `TestLentNumber`).
+
+The fill pass itself encodes the numbers as the templates' keys (`bpf.PlaneFillBlockKeys`, admitted as an encoder),
+and writes, reads and deletes those templates inside the one callback (`putWantsRoom`, `readWants` and
+`deleteWants` of internal/runtime/enforce/cgroup, admitted in `lentSinks` for their keys argument): no key outlives the
+lease that makes its number name the row's file. These three admissions are narrow, named functions, not cilium's
+map methods in general. The live-block descriptors are owned at birth (`sys.Own`, `FD.Openat`, `FD.Dup`,
+`FD.Close`), and the raw-site and lease totals do not rise.

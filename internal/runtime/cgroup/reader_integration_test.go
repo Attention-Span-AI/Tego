@@ -52,7 +52,9 @@ func TestIntegrationThePlacementFixReadByAnotherUserNamesSudo(t *testing.T) {
 		}
 		os.Exit(0)
 	case "svc":
-		// A refusal for the place: no cgroup.procs to write above this process, so canPlace says what to do instead.
+		// A refusal for the place: no cgroup.procs to write above this process, so canPlace says what to do instead. This
+		// test holds the reader chain, not the sockets: the account has no user manager here, so say it keeps one.
+		managerReachable = func(int) bool { return true }
 		err := canPlace("/nonexistent-tego-mount", []byte("0::/user.slice/user-4243.slice/session-1.scope\n"),
 			"/nonexistent-tego-mount/user.slice/user-4242.slice/user@4242.service", placementRemedy)
 		var de *DetectError

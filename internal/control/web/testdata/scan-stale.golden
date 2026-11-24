@@ -1,0 +1,58 @@
+{
+  "Steps": [
+    {
+      "ID": "install",
+      "State": "done",
+      "Title": "Install",
+      "Word": "Done",
+      "Fact": "tego v0.0.0-fixture (commit f1x7ure)"
+    },
+    {
+      "ID": "check",
+      "State": "done",
+      "Title": "Check this machine",
+      "Word": "Done",
+      "Fact": "ready: tier 1 (landlock) from a shell in your user manager's cgroup, checked 2026-11-11 09:30 UTC"
+    },
+    {
+      "ID": "find",
+      "State": "todo",
+      "Title": "Find your agents",
+      "Word": "To do",
+      "Fact": "Tego has recorded no run here yet"
+    },
+    {
+      "ID": "record",
+      "State": "todo",
+      "Title": "Record one run",
+      "Word": "To do",
+      "Fact": "no run has been recorded with tego watch yet"
+    },
+    {
+      "ID": "contract",
+      "State": "todo",
+      "Title": "Make its contract",
+      "Word": "To do",
+      "Fact": "no contract in the registries"
+    },
+    {
+      "ID": "enforce",
+      "State": "todo",
+      "Title": "Enforce it",
+      "Word": "To do",
+      "Fact": "no run under a contract has ended"
+    }
+  ],
+  "Rule": "record-todo",
+  "Text": "record your own agent. From its folder, start it as you always do:",
+  "Command": "tego watch -- \u003cthe command you start it with\u003e",
+  "Commands": 1,
+  "NotKnown": [
+    "The saved scan is older than five minutes. Run tego scan from your project folder.",
+    "agents outside a scan's rules and sources, or activity between scans",
+    "a contract in no registry (a file given by its path) that no run used"
+  ],
+  "Found": true,
+  "Folded": false,
+  "Empty": false
+}

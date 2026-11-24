@@ -14,3 +14,5 @@ summary: tier cgroup; bpflsm needs plane
 tier: cgroup
 missing for bpflsm: plane: LSM mode: no build of decide.bpf.c loads here: lockdown=confidentiality refuses the probe-read build and this kernel's BTF has no bpf_rdonly_cast for the rd build
 fix: boot without lockdown=confidentiality, or a kernel whose BTF has bpf_rdonly_cast (6.2+ or a backport)
+
+business rules: business rules unavailable: the root-owned trusted worker, exclusive route and durable admission owner are not implemented; this build refuses business-bearing runs on every tier

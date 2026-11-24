@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: Apache-2.0
+# imports: the descriptor-import guard under net.assurance: kernel (ADR 0128, amendments 2026-11-20 and 2026-11-21;
+# SEMANTICS §Network assurance). The plane's socket_recvmsg hook refuses with EACCES every recvmsg on an AF_UNIX socket
+# whose msghdr carries a control buffer, so no SCM_RIGHTS or SCM_PIDFD descriptor can be installed, and writes one
+# refused line: op recvmsg, target `AF_UNIX SOCK_DGRAM protocol 0`, reason net-not-allowed, rule socket-import,
+# mechanism plane. The cell is the agent's own socketpair: one byte sent with a descriptor, received with a control
+# buffer. Only the plane column runs it: tier landlock refuses to start a net.assurance: kernel run, and tier cgroup's
+# listener refuses it below Linux 6.7 and above runs it with the seccomp filter's ENOSYS, which writes no line (the
+# runner checks the startup refusal and leaves the cell unasked there). The held variant is the same run with every
+# open completed by the open deputy, which receives descriptors with a control buffer itself: the plane passes it by its
+# identity (thread-group id and start time) and still refuses the agent's receive.
+version: 2
+name: imports
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./out/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  net:
+    assurance: kernel
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [out]
+model:
+  write: [out]
+  exec_allow: [bin/actor]
+  net_declared: true
+  net_assurance_kernel: true
+variants: [held]
+cells:
+  - name: recv-fd
+    op: recv-fd
+    no_compile: 'compile --test has no recvmsg action: a receive on the agent''s own socketpair names no destination or path'
+    want:
+      plane: {verdict: refused, rule: socket-import, errno: EACCES}
+    unasked:
+      landlock: 'net.assurance: kernel needs a plane-capable root tier: tier landlock refuses to start the run (exit 125), so no actor runs'
+      cgroup/fanotify: 'net.assurance: kernel needs a plane-capable root tier: the listener refuses to start the run below Linux 6.7, and above it the filter answers recvmsg ENOSYS and writes no line'
+    source: 'ADR 0128 (amended 2026-11-20 and 2026-11-21: the plane refuses a control-bearing recvmsg on an AF_UNIX socket with EACCES, rule socket-import, the open deputy alone passed); SEMANTICS §Network assurance (net.assurance: kernel admits no descriptor import)'

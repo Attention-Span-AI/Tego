@@ -49,7 +49,7 @@ func told(t *testing.T, outputs []string) (listed map[string]int, notListed uint
 		}
 		for _, line := range strings.Split(strings.TrimSuffix(context(t, out, EventPostToolUse), "\n"), "\n") {
 			switch {
-			case strings.HasPrefix(line, "Tego, "):
+			case strings.HasPrefix(line, "Tego, "), strings.HasPrefix(line, "Scope: "):
 			case strings.HasPrefix(line, "- "):
 				i := strings.Index(line, "/home/user/out-")
 				if i < 0 || strings.HasPrefix(line, "- x") {

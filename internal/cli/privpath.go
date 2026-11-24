@@ -178,8 +178,12 @@ func guardPrivilege(args []string, stderr io.Writer, f privFacts, clear func() e
 		return 0, true
 	case privRefuse:
 	}
+	command, reason := sudoSelf("run")
+	if reason != "" {
+		command = reason
+	}
 	message(stderr, "", 0, 0, "tego: refused: "+why+"; the root tiers are reached only by a root launcher "+
-		"(`sudo tego run`), and a capability or setuid copy of tego is not supported (ADR 0042 (3)); "+
+		"("+command+"), and a capability or setuid copy of tego is not supported (ADR 0042 (3)); "+
 		"run tego unprivileged for tier landlock", identity.CodePrivilegedPathUnsupported)
 	return identity.ExitLauncher, false
 }

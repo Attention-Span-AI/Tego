@@ -23,6 +23,13 @@ import (
 // write is refused when Compile refuses the new text in this context, so it must be the context tego compiles in, or
 // a write path refuses what tego runs or writes what tego then refuses.
 type Context struct {
+	// Caller is selected process context for an offline helper; nil uses local defaults.
+	Caller *config.CallerContext
+	// PlannedDirectories are setup-generated directories made before a new contract is published.
+	PlannedDirectories []string
+
+	// Replay is supplied only for historical reconstruction. Current validation leaves it nil.
+	Replay *agent.BaselineReplay
 	// Contract is the contract file's absolute path: where relative profile and fs entries are placed from.
 	Contract string
 	// Cwd is the run's working directory (run_start.cwd), which relative entries are read from; empty, the contract's
@@ -64,18 +71,35 @@ func Compile(ctx context.Context, m *config.Machine, cc Context, text []byte) (*
 	if m == nil {
 		return nil, errors.New("no machine config to compile against")
 	}
-	c, ds, err := agent.LoadBytes(cc.Contract, text, profilesrc.Chain(m))
+	c, ds, err := agent.LoadBytes(cc.Contract, text, profileChain(m, cc.Caller))
 	if err != nil {
 		return nil, DiagError(ds, err)
 	}
+	return CompileLoaded(ctx, m, cc, c)
+}
+
+// CompileLoaded compiles one already loaded immutable contract snapshot in cc.
+// It never loads profiles again, so callers can bind or redact using exactly the
+// merged values that the compiler reads. Its offline resolution and PATH fallback
+// are the same as Compile's.
+func CompileLoaded(ctx context.Context, m *config.Machine, cc Context, c *agent.Contract) (*agent.RuleTable, error) {
+	if m == nil {
+		return nil, errors.New("no machine config to compile against")
+	}
+	if c == nil {
+		return nil, errors.New("no loaded contract to compile")
+	}
 	// Offline: a host name is resolved at run start (E18), as `tego compile --offline` defers it. Offline alone still
 	// looks every host up and only makes a failure a warning, so the check answers every lookup itself (noLookup).
-	// Neither write path does DNS on a check (a dashboard preview compiles three times), a box without a resolver can
+	// Neither write path does DNS on a check, a box without a resolver can
 	// still change a contract that names hosts, and both give a mistyped host the same verdict: it fails the next run's
 	// start. No verdict reads an address: offline, only warnings do, and Compile returns none. The host names a change
 	// adds are looked up apart, once and within a budget, for a warning (UnresolvedHosts).
 	opts := []agent.CompileOption{agent.WithContext(ctx), agent.WithClock(time.Now), agent.Offline(),
-		agent.WithResolver(noLookup{}), agent.WithOwnBinaries(cc.Exe)}
+		agent.WithResolver(noLookup{}), agent.WithOwnBinaries(cc.Exe), agent.WithPlannedDirectories(cc.PlannedDirectories)}
+	if cc.Caller != nil {
+		opts = append(opts, agent.WithCallerContext(*cc.Caller), agent.WithClock(func() time.Time { return cc.Caller.CheckedAt }))
+	}
 	if len(cc.RuntimeDirs) > 0 {
 		opts = append(opts, agent.WithRuntimeDir(cc.RuntimeDirs...))
 	}
@@ -98,14 +122,18 @@ func Compile(ctx context.Context, m *config.Machine, cc Context, text []byte) (*
 	} else if len(cc.Tiers) > 0 {
 		opts = append(opts, agent.WithTiers(cc.Tiers...))
 	}
-	rt, ds, err := agent.Compile(c, m, append(opts, agent.WithPATH(cc.PATH))...)
+	compile := agent.Compile
+	if cc.Replay != nil {
+		compile = cc.Replay.Compile
+	}
+	rt, ds, err := compile(c, m, append(opts, agent.WithPATH(cc.PATH))...)
 	if err != nil {
 		more := cc.ExecDirs
 		if more == "" && cc.RunDir != "" {
 			more = ExecDirs(cc.RunDir, cc.PATH)
 		}
 		if more != "" {
-			rt, ds, err = agent.Compile(c, m, append(opts, agent.WithPATH(joinPath(cc.PATH, more)))...)
+			rt, ds, err = compile(c, m, append(opts, agent.WithPATH(joinPath(cc.PATH, more)))...)
 		}
 	}
 	if err != nil {
@@ -195,4 +223,11 @@ func DiagError(ds []agent.Diagnostic, err error) error {
 	var b bytes.Buffer
 	_ = agent.WriteDiagnostics(&b, errs) // a bytes.Buffer write does not fail
 	return errors.New(strings.TrimSpace(b.String()))
+}
+
+func profileChain(m *config.Machine, caller *config.CallerContext) agent.ProfileSource {
+	if caller != nil {
+		return profilesrc.Chain(m, *caller)
+	}
+	return profilesrc.Chain(m)
 }

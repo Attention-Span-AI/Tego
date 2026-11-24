@@ -430,9 +430,9 @@ for bad in ("../escape.ko", "kernel//escape.ko", "kernel/./escape.ko"):
           refused(lambda: m.cpio_modules(io.BytesIO(cpio_bytes([
               (f"./lib/modules/{rel}/" + bad, b"bad", 0o100644)])), rel, tempfile.mkdtemp())))
 
-def deb_bytes(members):
+def deb_bytes(members, compressed=True):
     data = io.BytesIO()
-    with tarfile.open(fileobj=data, mode="w:xz") as tar:
+    with tarfile.open(fileobj=data, mode="w:xz" if compressed else "w") as tar:
         for name, body in members:
             ti = tarfile.TarInfo(name)
             if isinstance(body, tuple):
@@ -443,7 +443,8 @@ def deb_bytes(members):
                 tar.addfile(ti, io.BytesIO(body))
     out = io.BytesIO(b"!<arch>\n")
     out.seek(0, io.SEEK_END)
-    for name, body in ((b"debian-binary", b"2.0\n"), (b"control.tar.xz", lzma.compress(b"")), (b"data.tar.xz", data.getvalue())):
+    for name, body in ((b"debian-binary", b"2.0\n"), (b"control.tar.xz", lzma.compress(b"")),
+                       (b"data.tar.xz" if compressed else b"data.tar", data.getvalue())):
         out.write(name.ljust(16) + b"0".ljust(12) + b"0".ljust(6) + b"0".ljust(6) + b"100644".ljust(8)
                   + str(len(body)).encode().ljust(10) + b"`\n" + body + (b"\n" if len(body) % 2 else b""))
     return out.getvalue()
@@ -527,10 +528,13 @@ def refusal(fn):
     except m.EnvError as e:
         return str(e)
     return ""
+saved_index = m.deb_index
+m.deb_index = lambda *args: {}
 said = refusal(lambda: m.fetch("ubuntu-24.04", modules=True))
-check("a .deb row whose image package carries no module is refused, with no tree left behind",
-      "carries no kernel module" in said and "linux-modules-<release>" in said
+check("an Ubuntu companion missing from the image's authenticated index is refused, with no tree left behind",
+      "linux-modules-6.8.0-90-generic" in said
       and not os.path.lexists(os.path.join(cache2, "kernel", "matrix-ubuntu-24.04", "mods")))
+m.deb_index = saved_index
 saved_rpm_modules = m.rpm_modules
 m.rpm_modules = lambda *args: 0
 check("an RPM image with no modules is refused rather than serving an empty tree",
@@ -574,9 +578,125 @@ with contextlib.redirect_stdout(out):
     rc = m.main(["--modules", "debian-13"])
 check("--modules prints the tree's path", rc == 0 and out.getvalue().strip() == tree)
 with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+    m.deb_index = lambda *args: {}
     rcs = (m.main(["--modules"]), m.main(["--modules", "no-such-row"]), m.main(["--modules", "ubuntu-24.04"]))
+m.deb_index = saved_index
 check("--modules of no row or an unknown row is a usage error", rcs[:2] == (m.EXIT_USAGE, m.EXIT_USAGE))
 check("--modules of a row with no tree to serve is EXIT_ENV", rcs[2] == m.EXIT_ENV)
+
+# Ubuntu's image and linux-modules-<release> are separate DEBs. Exercise the real index/hash/archive path;
+# only transport and OpenPGP are fixtures (kernel-auth_test.py checks real signatures). The retained image
+# snapshot must authenticate the companion too, even on a cache hit, and no file outside its module tree survives.
+m.FETCHERS["deb"] = m.fetch_deb
+saved_download, saved_signed = m.download, m.signed_bytes
+ubuntu_downloads = []
+ubuntu_files = {}
+def ubuntu_download(url, path):
+    ubuntu_downloads.append(url)
+    open(path, "wb").write(ubuntu_files[url])
+def ubuntu_signed(raw, body, keys):
+    if not raw.startswith(b"signed-fixture\n") or keys != ["ubuntu-2018"]:
+        raise m.EnvError("bad Ubuntu signature fixture")
+    return raw.split(b"\n", 1)[1], ["ubuntu-fixture"]
+m.download, m.signed_bytes = ubuntu_download, ubuntu_signed
+
+def ubuntu_repo(row, module_hash="auto", index_hash="auto", companion_release=None, module_release=None,
+                module_version=None):
+    series, _, _, params = m.ROWS[row]
+    release = series + ".0-42-generic"
+    companion = companion_release or release
+    module_release = module_release or release
+    image = deb_bytes([(f"./boot/vmlinuz-{release}", b"UBUNTU-IMAGE")])
+    modules = deb_bytes([
+        (f"./lib/modules/{module_release}/kernel/net/ipv4/inet_diag.ko", b"inet"),
+        (f"./lib/modules/{module_release}/kernel/net/ipv4/tcp_diag.ko", b"tcp"),
+        (f"./lib/modules/{module_release}/modules.builtin", b"kernel/drivers/block/loop.ko\n"),
+        (f"./lib/modules/{module_release}/build", ("link", "/outside")),
+        ("./lib/modules/other/kernel/foreign.ko", b"foreign"),
+        ("./boot/forbidden", b"outside the module tree")], compressed=row != "ubuntu-24.04")
+    if module_hash == "auto":
+        module_hash = hashlib.sha256(modules).hexdigest()
+    index = lzma.compress((
+        f"Package: linux-image-generic\nVersion: 1\nDepends: linux-image-{release}\n\n"
+        f"Package: linux-image-{release}\nVersion: 42\nFilename: pool/image.deb\n"
+        f"SHA256: {hashlib.sha256(image).hexdigest()}\n\n"
+        f"Package: linux-modules-{companion}\nVersion: {module_version or '42'}\nFilename: pool/modules.deb\n"
+        + (f"SHA256: {module_hash}\n" if module_hash else "") + "\n").encode())
+    if index_hash == "auto":
+        index_hash = hashlib.sha256(index).hexdigest()
+    release_bytes = (f"Suite: {params['suite']}\nDate: {m.email.utils.format_datetime(m.datetime.datetime.now(m.datetime.timezone.utc))}\n"
+                     f"SHA256:\n {index_hash} {len(index)} main/binary-amd64/Packages.xz\n").encode()
+    base = params["base"]
+    ubuntu_files.clear()
+    ubuntu_files.update({f"{base}/dists/{params['suite']}/InRelease": b"signed-fixture\n" + release_bytes,
+                         f"{base}/dists/{params['suite']}/main/binary-amd64/Packages.xz": index,
+                         f"{base}/pool/image.deb": image, f"{base}/pool/modules.deb": modules})
+    ubuntu_downloads.clear()
+    return release, modules
+
+for row in ("ubuntu-24.04", "ubuntu-25.10", "ubuntu-22.04"):
+    ubuntu_cache = tempfile.mkdtemp()
+    m.cache_root = lambda: ubuntu_cache
+    release, modules = ubuntu_repo(row)
+    # Fetch the image first: --modules must reuse its signed snapshot, never today's possibly newer index.
+    m.fetch(row)
+    before = list(ubuntu_downloads)
+    try:
+        tree = m.fetch(row, modules=True)
+    except m.EnvError as e:
+        check(row + " fetches its separate authenticated module DEB: " + str(e), False)
+        continue
+    written = sorted(os.path.relpath(os.path.join(d, f), tree) for d, _, fs in os.walk(tree) for f in fs)
+    check(row + " extracts only the exact release's regular module-tree files",
+          tree.endswith(f"/mods/lib/modules/matrix-{row}") and written ==
+          ["kernel/net/ipv4/inet_diag.ko", "kernel/net/ipv4/tcp_diag.ko", "modules.builtin"])
+    check(row + " downloads only the companion against the retained image snapshot",
+          ubuntu_downloads == before + [m.ROWS[row][3]["base"] + "/pool/modules.deb"])
+    proof_dir = os.path.join(ubuntu_cache, "kernel", "matrix-" + row, "proof")
+    records = json.load(open(os.path.join(os.path.dirname(proof_dir), "mods", "packages.json")))
+    check(row + " records the companion digest and publisher authentication",
+          len(records) == 1 and records[0]["sha256"] == hashlib.sha256(modules).hexdigest()
+          and records[0]["verification"]["publisher_signature_checked"])
+    count = len(ubuntu_downloads)
+    check(row + " reauthenticates a cached companion without network", m.fetch(row, modules=True) == tree
+          and len(ubuntu_downloads) == count)
+    cached_module = os.path.join(tree, "kernel/net/ipv4/tcp_diag.ko")
+    open(cached_module, "wb").write(b"tampered module tree")
+    m.fetch(row, modules=True)
+    check(row + " replaces a tampered cached module from its authenticated DEB",
+          open(cached_module, "rb").read() == b"tcp" and len(ubuntu_downloads) == count)
+    # The tree/stamp already exist. A cached companion still must pass its authenticated SHA256.
+    companion_path = os.path.join(proof_dir, "modules.deb")
+    open(companion_path, "wb").write(b"tampered")
+    check(row + " refuses a tampered companion even with an existing tree",
+          "SHA256" in refusal(lambda: m.fetch(row, modules=True)))
+    open(companion_path, "wb").write(modules)
+    index_path = os.path.join(proof_dir, "Packages.xz")
+    index = open(index_path, "rb").read()
+    open(index_path, "wb").write(bytes([index[0] ^ 1]) + index[1:])
+    check(row + " refuses a tampered Packages hash", "SHA256" in refusal(lambda: m.fetch(row, modules=True)))
+    open(index_path, "wb").write(index)
+    open(os.path.join(proof_dir, "InRelease"), "wb").write(b"forged signature")
+    check(row + " refuses an unauthenticated retained snapshot",
+          "signature" in refusal(lambda: m.fetch(row, modules=True)))
+
+for label, args, reason in (
+        ("a wrong module DEB hash", {"module_hash": "0" * 64}, "SHA256"),
+        ("a missing module DEB hash", {"module_hash": None}, "SHA256"),
+        ("a malformed module DEB hash", {"module_hash": "not-a-digest"}, "SHA256"),
+        ("a wrong Packages hash", {"index_hash": "0" * 64}, "SHA256"),
+        ("only another release's companion", {"companion_release": "6.8.0-99-generic"}, "linux-modules-6.8.0-42-generic"),
+        ("a companion of another version", {"module_version": "41"}, "version"),
+        ("a companion with only another release's modules", {"module_release": "6.8.0-99-generic"}, "carries no kernel module")):
+    ubuntu_cache = tempfile.mkdtemp()
+    ubuntu_repo("ubuntu-24.04", **args)
+    said = refusal(lambda: m.fetch("ubuntu-24.04", modules=True))
+    check("Ubuntu refuses " + label + " before publishing a tree",
+          reason in said and not os.path.exists(os.path.join(ubuntu_cache, "kernel", "matrix-ubuntu-24.04", "mods")))
+    if args.get("module_hash", "auto") in (None, "not-a-digest"):
+        check("Ubuntu does not download a companion without a valid authenticated hash",
+              not any(url.endswith("/pool/modules.deb") for url in ubuntu_downloads))
+m.download, m.signed_bytes = saved_download, saved_signed
 
 # A reply the parsers do not expect, or a full disk, is this box unable to fetch the row (EXIT_ENV), not a fail.
 for exc in (ValueError("not xml"), KeyError("Filename"), OSError(28, "No space left on device")):

@@ -224,6 +224,9 @@ func (b *Backend) Prepare(ctx context.Context, rt *agent.RuleTable, run Run) (_ 
 	if rt == nil {
 		return nil, ErrNoTable
 	}
+	if err := rt.RecheckBaseline(); err != nil {
+		return nil, fmt.Errorf("cgroup: baseline preparation: %w", err)
+	}
 	defer startphase.Begin(b.opts.Phase, "prepare")()
 	// The table must describe a tier-2 run, because Evaluate and every reader of rt.Tier answer in that
 	// tier's semantics. Compile resolves tier: auto to the machine's ceiling, so an auto contract arrives
@@ -341,6 +344,13 @@ func (b *Backend) Prepare(ctx context.Context, rt *agent.RuleTable, run Run) (_ 
 	// (BuildRuleMaps, unixPlane).
 	if err = h.choosePlane(rt); err != nil {
 		return nil, err
+	}
+	mechanism := string(h.planeMode)
+	if mechanism == "" {
+		mechanism = PlaneFanotify
+	}
+	if err = rt.BaselineAt(b.Tier(), mechanism); err != nil {
+		return nil, fmt.Errorf("cgroup: baseline mechanism: %w", err)
 	}
 	// The listener decides this run: a bind alias it cannot hold, or reads only it holds that setuid: true can reach
 	// past, refuse the run before anything is armed (ErrListenerAlias, ErrListenerSetuid; fix round 1, findings 1, 5).
@@ -510,6 +520,13 @@ type Handle struct {
 	planeFilter    []bpf.RawInstruction
 	planeDropped   []string
 	usePlaneFilter bool
+	// importsFilter is the inherited filter with recvmsg(2) left to the plane's socket_recvmsg (ADR 0128, amended), and
+	// importsInPlane that the filter any run gets leaves it so: the run's net.assurance is kernel and the plane reports
+	// the hook attached (preparePlaneFilter). importsFlagged is that the run's slot header carries
+	// PlaneSlotImportsDenied, so the hook refuses a control-bearing receive for this run (fillPlane).
+	importsFilter  []bpf.RawInstruction
+	importsInPlane bool
+	importsFlagged bool
 	// skips is the skip counters of the programs the run's rules rely on (skips.go, ADR 0148), resolved at the first
 	// ProgramSkips; skipMu guards it, since the runtime polls it from a worker.
 	skipMu sync.Mutex
@@ -620,6 +637,9 @@ func (h *Handle) SeccompFilter() ([]bpf.RawInstruction, bool) {
 	}
 	if h.usePlaneFilter && len(h.planeFilter) > 0 {
 		return h.planeFilter, true
+	}
+	if h.importsInPlane && len(h.importsFilter) > 0 {
+		return h.importsFilter, true
 	}
 	return h.inherited.SeccompFilter()
 }

@@ -3,7 +3,9 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/check/livestatus"
+	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/liveblock"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -216,5 +219,46 @@ func TestBlockUntimedGolden(t *testing.T) {
 	}
 	if s != string(want) {
 		t.Errorf("untimed output drifted from %s:\ngot:\n%s\nwant:\n%s", golden, s, want)
+	}
+}
+
+// TestBlockListFollowsTheLaunchersClock (C215): `tego block --list` says a limit passed once the run's ledger records
+// it, as the dashboard does, and not when this computer's clock reads past it: a block whose end this clock has
+// passed, with no launcher line, is still in force; with the line it is ended, whatever the clock reads.
+func TestBlockListFollowsTheLaunchersClock(t *testing.T) {
+	dir, id := minorRun(t, record.MinorLiveModes)
+	now := time.Now()
+	until := now.Add(-2 * time.Hour).Truncate(time.Second) // this clock reads two hours past the limit
+	if _, err := liveblock.Update(context.Background(), dir, id, func(o *liveblock.Overlay) (bool, error) {
+		_, ok, err := o.AddUntil(liveblock.KindExec, "/bin/ls", liveblock.By("cli"), now.Add(-3*time.Hour), until)
+		return ok, err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	appendGap(t, dir, id, 1, "exec", "/bin/ls", int(mustRead(t, dir, id).Serial))
+	code, out, _ := run(t, "block", "--list", id)
+	if code != identity.ExitOK || strings.Contains(out, livestatus.SentenceExpired) || !strings.Contains(out, livestatus.SentenceInForceReached) {
+		t.Errorf("a limit this clock passed, no line: exit %d stdout %q, want it still in force", code, out)
+	}
+	appendLimitGap(t, dir, id, 2, "live-block-expired", "exec", "/bin/ls", until)
+	code, out, _ = run(t, "block", "--list", id)
+	if code != identity.ExitOK || !strings.Contains(out, livestatus.SentenceExpired) || strings.Contains(out, livestatus.SentenceInForceReached) {
+		t.Errorf("a limit the launcher recorded: exit %d stdout %q, want it ended", code, out)
+	}
+}
+
+// appendLimitGap appends the launcher's line recording that the limit until of a block passed.
+func appendLimitGap(t *testing.T, dir, run string, seq int, why, kind, value string, until time.Time) {
+	t.Helper()
+	l := fmt.Sprintf(`{"v":1,"seq":%d,"id":"%064x","prev":"%064x","ts":"%s","mono_ns":%d,"run":"%s","agent":"tester","pid":10,"tid":10,"cgroup":1,"kind":"gap","source":"launcher",`+
+		`"what":"enforce","why":"%s","live_block":{"op":"expire","kind":"%s","value":"%s","rule":"live.block[%s:%s]","by":"uid:1000 pid:9 cli","serial":1,"at":"2026-10-27T12:00:00Z","until":"%s"}}`+"\n",
+		seq, seq+1, seq, time.Now().UTC().Format(time.RFC3339Nano), seq+1, run, why, kind, value, kind, value, until.UTC().Format(time.RFC3339Nano))
+	f, err := os.OpenFile(filepath.Join(dir, ledger.EventsFile), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	if _, err := f.WriteString(l); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -91,10 +91,20 @@ func (c contractRef) label() string {
 // table was compiled from), and the name and registry it was resolved from. nil for standard input.
 func (c contractRef) source(rt *agent.RuleTable) *record.ContractSource {
 	if c.entry != nil {
-		return &record.ContractSource{Path: c.entry.Path, Name: c.entry.Name, Registry: c.entry.Registry}
+		return &record.ContractSource{Learn: contractLearn(rt), Path: c.entry.Path, Name: c.entry.Name, Registry: c.entry.Registry}
 	}
 	if c.arg == stdinContract || rt == nil || rt.ContractPath == "" {
 		return nil
 	}
-	return &record.ContractSource{Path: rt.ContractPath}
+	return &record.ContractSource{Path: rt.ContractPath, Learn: contractLearn(rt)}
+}
+
+// contractLearn copies the compiled top-level history, never a file read after compile.
+func contractLearn(rt *agent.RuleTable) *record.LearnNote {
+	if rt == nil || rt.Contract == nil || rt.Contract.Learn == nil {
+		return nil
+	}
+	n := *rt.Contract.Learn
+	n.Withheld = append([]string(nil), n.Withheld...)
+	return &n
 }

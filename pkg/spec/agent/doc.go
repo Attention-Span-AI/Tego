@@ -3,7 +3,7 @@
 // Package agent holds the agent contract: the Go types for agent.yaml v0,
 // Load (YAML → Contract with a line and column on every diagnostic, the
 // extends merge, every §5 validation rule), Compile (Contract + machine
-// ceilings → an immutable RuleTable with resolved paths, loaders, addresses
+// baseline/ceilings → an immutable RuleTable with separate source/effective hashes, resolved paths, loaders, addresses
 // and clamped limits), PrintRuleTable for `tego compile`, Canonical and the
 // contract_hash, and the types of `compile --test` plus LoadTestTable: the
 // Action and EvalResult of a verdict a compiled table gives a hypothetical
@@ -18,7 +18,7 @@
 // touches the kernel, prints, or keeps a goroutine or fd past a call.
 //
 // Imports: standard library, gopkg.in/yaml.v3, pkg/spec/backend,
-// pkg/spec/config (parameter type only), pkg/spec/record.
+// pkg/spec/config (parameter type only), pkg/spec/record, pkg/spec/bizrule.
 // Must not import: anything under internal/, golang.org/x/sync/errgroup or
 // any other third-party module.
 package agent

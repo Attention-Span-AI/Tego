@@ -3,20 +3,26 @@
 package web
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/contractsrc"
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
+	"github.com/attention-span-ai/tego/internal/control/pathcheck"
 	"github.com/attention-span-ai/tego/internal/control/rules"
 	"github.com/attention-span-ai/tego/internal/control/rulesview"
 	"github.com/attention-span-ai/tego/internal/control/runact"
 	"github.com/attention-span-ai/tego/internal/liveblock"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
 // The Rules page (GET /rules[?run=<id>|?c=<ref>]): one run's Rules in force (rulesview.InForce), one table per group
@@ -54,9 +60,10 @@ func isLegacyRef(ref string) bool {
 type refMemo map[string]string
 
 func (m refMemo) of(path string) string {
+	path = filepath.Clean(path)
 	ref, ok := m[path]
 	if !ok {
-		ref = rules.Ref(path)
+		ref = rules.RefLexical(path)
 		m[path] = ref
 	}
 	return ref
@@ -65,8 +72,13 @@ func (m refMemo) of(path string) string {
 // contractOpt is one rules file in the chooser; Gone marks one no longer at its path (rulesview.ContractRun).
 type contractOpt struct {
 	Ref, Path, Agent string
-	Runs, Live       int
-	Gone             bool
+	// Aliases are the other spellings of the file the runs (and the rule service) recorded; the file is listed once,
+	// and the page says the others reach it.
+	Aliases    []string
+	Runs, Live int
+	Gone       bool
+	Why        string
+	Last       time.Time
 }
 
 // runOpt is one run of the chosen rules file in the chooser.
@@ -79,6 +91,8 @@ type runOpt struct {
 // ruleRow is one rule as the page shows it.
 type ruleRow struct {
 	Sentence, Target string
+	Summary          string
+	Key, URL         string
 	// Note is said beside the rule: a draft from a run's note on an address entry (rules.AddressNote).
 	Note string
 	// Effect is inforce's effect word: allow, ask, deny, limit or note.
@@ -92,8 +106,7 @@ type ruleRow struct {
 	HitsURL string
 	// Kind and Value are a live block's, for Remove.
 	Kind, Value string
-	// ByOS: the kernel enforces it in full, the usual case, so its Enforced by cell stays empty and the exceptions
-	// stand out (the rule's ByKernel, which inforce sets).
+	// ByOS is the rule's ByKernel claim from inforce. The page still prints the exact enforcement text.
 	ByOS bool
 	// Devices are the terminal device rules folded under this one row (rulesview.FoldDevices), each kept whole for
 	// the expander; Hits is then their sum. Nil for a rule shown alone.
@@ -123,19 +136,30 @@ type ruleGroup struct {
 
 // rulesData is the Rules page's data.
 type rulesData struct {
-	Contracts []contractOpt
-	Ref       string
+	General       *contractsrc.General
+	BaselineState string
+	Query, State  string
+	FilterPage    bool
+	List          bool
+	Selected      *ruleRow
+	Contracts     []contractOpt
+	Ref           string
 	// CanChange is changeBuilt: the Change rules button links to the form, or is disabled with a hint.
 	CanChange bool
 	Runs      []runOpt
+	// RunPage says which page of the rules file's runs Runs is, and whether older or newer ones exist (chooserRuns).
+	RunPage chooserPage
 	// Run is the run shown; nil on an empty ledger.
 	Run *ledgerview.Run
 	V   *rulesview.InForceView
 	// Agent is the name the page says, Tier the tier in words, Source the rules file shortened.
 	Agent, Tier, Source string
-	Running, Watch      bool
-	Groups              []ruleGroup
-	Live                *ruleGroup
+	CannotChange        string
+	// SelectionErr keeps the catalogue visible when a requested alias cannot be checked.
+	SelectionErr   string
+	Running, Watch bool
+	Groups         []ruleGroup
+	Live           *ruleGroup
 	// EndedLive is an ended run's live blocks, each said by what it did while the run ran (rulesview's EndedLive:
 	// blocked, marked on a watched run, or never put in force), listed under a collapsed row below the note that counts
 	// them; they refuse nothing now, so no live table holds them and none offers Remove.
@@ -171,6 +195,30 @@ type pendingView struct {
 	// the next run of the rules file with the command this run was started with ("" when the run names none).
 	Live    bool
 	Restart string
+	// Compare is what the file says now against what this run ran, family by family, for a file edited outside Tego or
+	// one that differs with nothing to date it (fillSourceCompare); nil when it was not asked for.
+	Compare *rules.SourceComparison
+}
+
+// SourceCompareService is the rule service's comparison of a run's rules with its file as it is now
+// (rules.Service.CompareSource); a Config.Rules without it shows the banner without the comparison.
+type SourceCompareService interface {
+	CompareSource(ctx context.Context, run string) rules.SourceComparison
+}
+
+// fillSourceCompare adds the comparison to a pending banner that names an edit outside Tego, or says the file differs
+// with nothing to date it: both say only that the file changed, and the comparison says what the next run does
+// differently and which way it moves.
+func (s *Server) fillSourceCompare(ctx context.Context, d *rulesData) {
+	p := d.Pending
+	if p == nil || d.Run == nil || (p.Edited.IsZero() && !p.Differs) {
+		return
+	}
+	if cs, ok := s.cfg.Rules.(SourceCompareService); ok {
+		if c := cs.CompareSource(ctx, d.Run.ID); !c.NoCompiler {
+			p.Compare = &c
+		}
+	}
 }
 
 // pendingChange is one journaled change of the rules file that stands (rulesview.Pending: a revert's Summary says what
@@ -191,20 +239,25 @@ func (s *Server) rules(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	ctx, cancel := pathcheck.Bound(r.Context())
+	defer cancel()
+	r = r.WithContext(ctx)
 	q := r.URL.Query()
 	d := rulesData{CanChange: changeBuilt, CanSetUp: s.cfg.Setup != nil}
-	refs := refMemo{}
-	ran := rulesview.ContractsFromRuns(snap)
-	if old := q.Get("c"); isLegacyRef(old) {
-		for _, c := range ran {
-			if legacyRef(c.Path) == old {
-				q.Set("c", refs.of(c.Path))
-				http.Redirect(w, r, "/rules?"+q.Encode(), http.StatusSeeOther)
-				return
-			}
+	if q.Get("run") == "" && q.Get("c") == "" {
+		uid, _ := config.InvokingUID()
+		general := s.readGeneral(r.Context(), s.cfg.Machine, uid)
+		d.General = &general
+		d.BaselineState = s.baselineNotice()
+		if d.BaselineState == "" {
+			d.BaselineState = "No machine baseline entries are configured in this snapshot."
 		}
 	}
-	d.Contracts = s.chooserContracts(ran, refs)
+	refs := refMemo{}
+	// list is the landing page: every contract that ran, not one contract's rules.
+	list := q.Get("c") == "" && q.Get("run") == ""
+	// Obtain the selected run before location or catalogue reads can consume the request
+	// budget on a source location. The source view retains a recorded-text fallback.
 	var run *ledgerview.Run
 	if want := q.Get("run"); want != "" {
 		run = snap.Find(want)
@@ -218,6 +271,57 @@ func (s *Server) rules(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	selected := run
+	if ref := q.Get("c"); ref != "" {
+		if selected == nil || rules.RefLexical(selected.Contract) != ref {
+			selected = nil
+			for _, rr := range snap.Runs {
+				if rules.RefLexical(rr.Contract) == ref {
+					selected = rr
+					break
+				}
+			}
+		}
+	} else if !list && selected == nil && len(snap.Runs) > 0 {
+		selected = snap.Runs[0]
+	}
+	if selected != nil {
+		d.V = rulesview.InForce(r.Context(), s.cfg.Ledger, selected.ID, rulesview.Options{Machine: s.cfg.Machine, Anchor: s.cfg.Anchor, Profiles: s.cfg.Profiles, Run: selected})
+	}
+	ran := rulesview.ContractsFromRunsContext(r.Context(), snap)
+	for _, entry := range ran {
+		resolved := entry.Resolved
+		if resolved == "" {
+			resolved = entry.Path
+		}
+		refs[entry.Path] = rules.RefLexical(resolved)
+	}
+	if old := q.Get("c"); isLegacyRef(old) {
+		for _, c := range ran {
+			if legacyRef(c.Path) == old {
+				q.Set("c", refs.of(c.Path))
+				http.Redirect(w, r, "/rules?"+q.Encode(), http.StatusSeeOther)
+				return
+			}
+		}
+	}
+	d.Contracts = s.chooserContracts(ran, refs, r.Context())
+	if list {
+		d.List, d.Now = true, s.cfg.Now()
+		d.Query, d.State, d.FilterPage = strings.TrimSpace(q.Get("q")), q.Get("state"), q.Get("filters") == "1"
+		if d.Query != "" || d.State != "" {
+			filtered := make([]contractOpt, 0, len(d.Contracts))
+			for _, c := range d.Contracts {
+				match := d.State == "" || d.State == "running" && c.Live > 0 || d.State == "gone" && c.Gone || d.State == "not-run" && c.Runs == 0
+				if match && strings.Contains(strings.ToLower(c.Agent+" "+c.Path), strings.ToLower(d.Query)) {
+					filtered = append(filtered, c)
+				}
+			}
+			d.Contracts = filtered
+		}
+		s.render(w, http.StatusOK, "rules", s.chromeOf(snap, "Contracts", "rules"), d)
+		return
+	}
 	if ref := q.Get("c"); ref != "" {
 		var found *contractOpt
 		for i := range d.Contracts {
@@ -226,11 +330,39 @@ func (s *Server) rules(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if found == nil {
+			if (len(ref) == 16 && strings.Trim(ref, "0123456789abcdef") == "") || isLegacyRef(ref) {
+				for _, entry := range d.Contracts {
+					if pathcheck.UnansweredText(entry.Why) {
+						d.SelectionErr = "The requested contract cannot be identified: " + entry.Why
+						break
+					}
+				}
+			}
+			if d.SelectionErr != "" {
+				d.CanChange = false
+				s.render(w, http.StatusOK, "rules", s.chromeOf(snap, "Contracts", "rules"), d)
+				return
+			}
 			s.fail(w, http.StatusNotFound, "No such contract file", "No run used that contract file · pick one on the Contracts page")
 			return
 		}
 		if found.Runs == 0 { // set up here, not run yet: its rules as written and the line that starts it
-			if d.NotRun = s.notRun(r, ref); d.NotRun != nil {
+			d.Ref, d.Agent = ref, found.Agent
+			var err error
+			if found.Why != "" {
+				d.SelectionErr = found.Why
+			} else {
+				d.NotRun, err = s.notRun(r, ref)
+				if err != nil {
+					d.SelectionErr = err.Error()
+				}
+			}
+			if d.SelectionErr != "" {
+				d.CanChange = false
+				s.render(w, http.StatusOK, "rules", s.chromeOf(snap, "Contracts", "rules"), d)
+				return
+			}
+			if d.NotRun != nil {
 				d.Ref, d.Agent = ref, found.Agent
 				c := s.chromeOf(snap, "Contract · "+found.Agent, "rules")
 				s.render(w, http.StatusOK, "rules", c, d)
@@ -258,12 +390,78 @@ func (s *Server) rules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d.Run, d.Ref = run, refs.of(run.Contract)
-	d.Runs = chooserRuns(snap, run, d.Ref, refs)
+	page, _ := strconv.Atoi(q.Get("rp"))
+	pg := chooserRuns(snap, run, d.Ref, refs, page)
+	if d.Ref != "" {
+		if pg.Older {
+			pg.OlderURL = "/rules?c=" + d.Ref + "&rp=" + strconv.Itoa(pg.Page+1)
+		}
+		if pg.Newer {
+			pg.NewerURL = "/rules?c=" + d.Ref
+			if pg.Page > 1 {
+				pg.NewerURL += "&rp=" + strconv.Itoa(pg.Page-1)
+			}
+		}
+	}
+	d.Runs, d.RunPage = pg.Runs, pg
+	for _, entry := range d.Contracts {
+		if entry.Ref == d.Ref && entry.Why != "" {
+			d.CanChange = false
+			d.CannotChange = entry.Why
+		}
+	}
 	d.Running = run.State() == "running"
-	d.V = rulesview.InForce(r.Context(), s.cfg.Ledger, run.ID, rulesview.Options{Machine: s.cfg.Machine, Anchor: s.cfg.Anchor, Profiles: s.cfg.Profiles, Run: run})
+	if d.V == nil || d.V.Run != run.ID {
+		d.V = rulesview.InForce(r.Context(), s.cfg.Ledger, run.ID, rulesview.Options{Machine: s.cfg.Machine, Anchor: s.cfg.Anchor, Profiles: s.cfg.Profiles, Run: run})
+	}
+	why := d.V.SourceUnavailable
+	if pathcheck.UnansweredText(d.V.Err) {
+		why = d.V.Err
+	}
+	if why != "" {
+		d.CanChange = false
+		d.CannotChange = joinRefusal(d.CannotChange, why)
+		for i := range d.Contracts {
+			if d.Contracts[i].Ref == d.Ref {
+				d.Contracts[i].Why = joinRefusal(d.Contracts[i].Why, why)
+			}
+		}
+	}
 	s.fillRules(&d)
+	if note := rulesview.LaunchNoteOf(snap, d.Ref, refs.of, run); note != "" {
+		d.V.View.Notes = append(d.V.View.Notes, note)
+	}
 	s.fillPendingLive(r.Context(), &d)
+	s.fillSourceCompare(r.Context(), &d)
 	s.fillLiveMode(&d)
+	if key := q.Get("rule"); key != "" {
+		if d.Live != nil {
+			for _, row := range d.Live.Rows {
+				if row.Key == key {
+					r := row
+					d.Selected = &r
+				}
+			}
+		}
+		for _, g := range d.Groups {
+			for _, row := range g.Rows {
+				if row.Key == key {
+					r := row
+					d.Selected = &r
+				}
+				for _, device := range row.Devices {
+					if device.Key == key {
+						r := device
+						d.Selected = &r
+					}
+				}
+			}
+		}
+		if d.Selected == nil {
+			s.fail(w, http.StatusNotFound, "No such rule", "This run has no rule with that key. Open its contract to choose a rule.")
+			return
+		}
+	}
 	if d.Agent != "" {
 		c.Title = "Contract · " + d.Agent
 	}
@@ -289,13 +487,14 @@ func (s *Server) fillLiveMode(d *rulesData) {
 		blocks[b.Key()] = b
 	}
 	timed := false
+	facts := ledgerview.LiveFactsOf(d.Run)
 	for i := range d.Live.Rows {
 		row := &d.Live.Rows[i]
 		b, ok := blocks[liveblock.Key(liveblock.Kind(row.Kind), row.Value)]
 		if !ok {
 			continue
 		}
-		t := blockTimeOf(b, d.Now)
+		t := blockTimeOf(b, d.Now, facts)
 		row.Ends, row.Ended = t.Ends, t.Ended
 		timed = timed || t.Timed()
 		// livestatus says "In force since line #N" for any block the launcher confirmed; past its limit, or
@@ -314,48 +513,103 @@ func (s *Server) fillLiveMode(d *rulesData) {
 // so a file two runs recorded through two spellings of its folder (one through a link) is one entry, under its newest
 // run's spelling, counting the runs of both, and gone when nothing is at that spelling now (both reach one file when
 // they share a ref); then those the rule service set up here that no run ran yet.
-func (s *Server) chooserContracts(ran []rulesview.ContractRun, refs refMemo) []contractOpt {
+func (s *Server) chooserContracts(ran []rulesview.ContractRun, refs refMemo, ctx context.Context) []contractOpt {
 	var out []contractOpt
 	at := map[string]int{}
 	for _, c := range ran {
 		ref := refs.of(c.Path)
 		if i, ok := at[ref]; ok {
+			out[i].Aliases = addAlias(out[i].Aliases, out[i].Path, c.Path)
 			out[i].Runs += c.Runs
 			out[i].Live += c.Live
+			out[i].Why = joinRefusal(out[i].Why, c.Why)
+			if c.NewestStart.After(out[i].Last) {
+				out[i].Last = c.NewestStart
+			}
 			continue
 		}
 		at[ref] = len(out)
-		out = append(out, contractOpt{Ref: ref, Path: c.Path, Agent: c.Agent, Runs: c.Runs, Live: c.Live, Gone: c.Gone})
+		out = append(out, contractOpt{Ref: ref, Path: c.Path, Agent: c.Agent, Runs: c.Runs, Live: c.Live, Gone: c.Gone, Why: c.Why, Last: c.NewestStart})
 	}
-	for _, c := range s.notRunContracts() {
-		if _, ok := at[c.Ref]; !ok { // its first run is in the snapshot already
+	for _, c := range s.catalogueContracts(ctx) {
+		if i, ok := at[c.Ref]; ok {
+			// Location metadata can answer while a guarded source read fails.
+			// Keep the catalogue's refusal for contracts that already ran too.
+			out[i].Why = joinRefusal(out[i].Why, c.Why)
+			out[i].Aliases = addAlias(out[i].Aliases, out[i].Path, c.Path)
+			for _, a := range c.Aliases {
+				out[i].Aliases = addAlias(out[i].Aliases, out[i].Path, a)
+			}
+		} else if c.Runs == 0 {
 			out = append(out, c)
 		}
 	}
 	return out
 }
 
-// chooserRuns is the chooser's run list: the newest maxChooserRuns runs of the rules file ref, and the run shown when
-// it is not among them (an older run reached by ?run=, or one read from disk past the snapshot) in its place by start,
-// so the list never names another run than the one the page shows. A run that named no rules file is listed alone.
-func chooserRuns(snap *ledgerview.Snapshot, run *ledgerview.Run, ref string, refs refMemo) []runOpt {
+// addAlias adds spelling to aliases unless it is the file's own path shown or already there: one file reached under two
+// spellings is listed once, and the second says so.
+func addAlias(aliases []string, path, spelling string) []string {
+	if spelling == "" || spelling == path || slices.Contains(aliases, spelling) {
+		return aliases
+	}
+	return append(aliases, spelling)
+}
+
+func joinRefusal(previous, current string) string {
+	if previous == "" {
+		return current
+	}
+	if current == "" || current == previous {
+		return previous
+	}
+	return previous + "; " + current
+}
+
+// chooserPage is the chooser's run list as one page of a rules file's runs, newest first.
+type chooserPage struct {
+	Runs []runOpt
+	// Page is the page shown (0 is the newest runs); Older and Newer say another page exists on that side.
+	Page         int
+	Older, Newer bool
+	// OlderURL and NewerURL are the Rules page of the neighbouring page of runs, "" when there is none.
+	OlderURL, NewerURL string
+}
+
+// chooserRuns is the chooser's run list: page (0-based) of maxChooserRuns runs of the rules file ref, newest first, and
+// the run shown when it is not among them (an older run reached by ?run=, or one read from disk past the snapshot) in
+// its place by start, so the list never names another run than the one the page shows. A run that named no rules file
+// is listed alone. Older and Newer say there are runs past either end of the page, which the page links to: no run is
+// reachable only by typing its id.
+func chooserRuns(snap *ledgerview.Snapshot, run *ledgerview.Run, ref string, refs refMemo, page int) chooserPage {
+	page = max(page, 0)
+	first, last := page*maxChooserRuns, (page+1)*maxChooserRuns
 	var out []runOpt
+	seen := 0
+	pg := chooserPage{Page: page, Newer: page > 0}
 	for _, rr := range snap.Runs { // newest start first
-		if len(out) == maxChooserRuns {
+		if refs.of(rr.Contract) != ref || ref == "" && rr.ID != run.ID {
+			continue
+		}
+		if seen >= last {
+			pg.Older = true // one run past the page is enough to say there are more
 			break
 		}
-		if refs.of(rr.Contract) == ref && (ref != "" || rr.ID == run.ID) {
+		if seen >= first {
 			out = append(out, runOpt{ID: rr.ID, Start: rr.Start, State: rr.State()})
 		}
+		seen++
 	}
 	if slices.ContainsFunc(out, func(o runOpt) bool { return o.ID == run.ID }) {
-		return out
+		pg.Runs = out
+		return pg
 	}
 	i := len(out)
 	for i > 0 && out[i-1].Start.Before(run.Start) {
 		i--
 	}
-	return slices.Insert(out, i, runOpt{ID: run.ID, Start: run.Start, State: run.State()})
+	pg.Runs = slices.Insert(out, i, runOpt{ID: run.ID, Start: run.Start, State: run.State()})
+	return pg
 }
 
 // fillRules turns d.V into the page's groups, banner and details.
@@ -374,7 +628,7 @@ func (s *Server) fillRules(d *rulesData) {
 	if file == "" {
 		file = v.CopyPath
 	}
-	d.Source = tailCut(file, 60)
+	d.Source = file
 	if v.Positions == rulesview.PositionsCopy && v.Source != "" {
 		d.CopyNote = "Line numbers are the run's own copy of its rules: " + v.PositionsWhy + "."
 	}
@@ -393,10 +647,30 @@ func (s *Server) fillRules(d *rulesData) {
 			rg.DefaultHits, rg.DefaultURL = g.DefaultHits, logsURL(run.ID, "rule:unmatched kind:"+g.DefaultKind)
 		}
 		toRow := func(rl rulesview.Rule) ruleRow {
-			row := ruleRow{Sentence: rl.Sentence, Target: rl.Target, Effect: string(rl.Effect), Enforced: rl.EnforcedText,
+			key := rl.RuleKey
+			if key == "" {
+				key = rl.Key + "[" + rl.Entry + "]"
+			}
+			row := ruleRow{Key: key, URL: "/rules?run=" + run.ID + "&rule=" + url.QueryEscape(key), Sentence: rl.Sentence, Target: rl.Target, Effect: string(rl.Effect), Enforced: rl.EnforcedText,
 				State: string(rl.State), Hits: rl.Hits, HitsURL: logs(rl.RuleKey)}
+			if rl.Invocation != "" {
+				// Its hits are the lines that name this entry, a part of its program's lines, which Logs cannot
+				// filter by (no command_rule key): a link on the program's rule would list more lines than the count.
+				row.HitsURL = ""
+			}
+			if rl.Key == "record" {
+				row.Sentence = strings.ReplaceAll(row.Sentence, "a record that cannot be changed unnoticed", "a saved record")
+			}
 			if g.ID != "live" && rl.ByKernel {
 				row.ByOS = true
+			}
+			row.Summary = row.Sentence
+			if len(row.Target) > 40 {
+				noun := "this location"
+				if strings.HasPrefix(row.Key, "net") {
+					noun = "this host"
+				}
+				row.Summary = strings.ReplaceAll(row.Sentence, row.Target, noun)
 			}
 			row.Source, row.SourceTitle = sourceWords(rl.Source.File, rl.Source.Line, rl.Source.Origin, v)
 			if g.ID == "live" {
@@ -438,6 +712,10 @@ func (s *Server) fillRules(d *rulesData) {
 	}
 	for _, rl := range v.EndedLive {
 		row := ruleRow{Sentence: rl.Sentence, Hits: rl.Hits, HitsURL: logs(rl.RuleKey)}
+		row.Summary = row.Sentence
+		if row.Target != "" {
+			row.Summary = strings.ReplaceAll(row.Sentence, row.Target, "this location")
+		}
 		row.Source, row.SourceTitle = sourceWords(rl.Source.File, rl.Source.Line, rl.Source.Origin, v)
 		d.EndedLive = append(d.EndedLive, row)
 	}
@@ -483,7 +761,11 @@ func foldRow(devs []rulesview.Rule, toRow func(rulesview.Rule) ruleRow) ruleRow 
 	case "ask":
 		verb = "Asks before it changes"
 	}
+	row.Key = "terminal-devices:" + row.Effect
+	baseURL, _, _ := strings.Cut(row.Devices[0].URL, "&rule=")
+	row.URL = baseURL + "&rule=" + url.QueryEscape(row.Key)
 	row.Sentence = fmt.Sprintf("%s terminal devices (%d)", verb, len(devs))
+	row.Summary = row.Sentence
 	return row
 }
 

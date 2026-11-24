@@ -123,9 +123,11 @@ routes (ADR 0127) can still be loosened on a running run, Locked or Adjustable, 
 confirmation: the mode check those two ADRs planned is not built (docs/GAPS.md C39). *Amended 2026-11-11:* it is
 built in Tego's writers: on a Locked run `tego mcp`, `tego route` and their dashboard pages refuse a change past the
 contract (`liveblock.CheckLoosening`, `[locked]`), and still take a tightening or a change back to the contract. The
-MCP relay and the model forwarder do not read the mode, so a change written into the run's folder another way still
-applies (ADR 0126 and ADR 0127, "Amendment 2026-11-11: Locked runs"; GAPS C39, narrowed). On an Adjustable run both
-still loosen live, outside the fence.
+MCP relay and the model forwarder did not read the mode, so a change written into the run's folder another way still
+applied (ADR 0126 and ADR 0127, "Amendment 2026-11-11: Locked runs"; GAPS C39, narrowed). *Amended 2026-11-21:* they read
+it now: on a Locked run a switch looser than the contract's decision, or a route other than direct, is not in force
+whoever wrote it, and its line says so (ADR 0126 and ADR 0127, "Amendment 2026-11-21"; the zero value of either's mode
+option is Locked). On an Adjustable run both still loosen live, outside the fence.
 
 ### 4. Time limits on every live change, in both modes
 
@@ -349,7 +351,9 @@ choose Adjustable for the next run.
   (`rules.Service.LiveAck`: the run, the entry, the absolute limit, the permanent choice and the overlay's serial)
   and checks it against the overlay as it is when the confirm arrives. The check and runact's write run under one
   dashboard lock that restores take too, so a second confirm of the same preview is refused; a change another writer
-  (the CLI) makes between them is not caught by the acknowledgement, while the launcher's MAC check and its ledger
+  (the CLI) makes between them is refused by the write itself (amended 2026-11-20: `runact.LiftAt` checks the overlay's
+  serial, the one the acknowledgement was made for, under the overlay's lock in the same step as the write, and a
+  moved overlay is `runact.ErrOverlayMoved`, never a lift); the launcher's MAC check and its ledger
   line still hold, and the fence panel shows only what the launcher applied. A "permanent" lift or block is
   the live change with no end plus a separate Change rules edit the person makes (its own preview and confirm); the
   dashboard does not write `agent.yaml` by itself.
@@ -369,3 +373,119 @@ choose Adjustable for the next run.
 - **Naming a lifted read.** A held read is named by the supervisor's floor, not by `decide.Evaluate`. Once a read
   fence entry is lifted, the floor names the read after the entry too.
 - **A lift's shortest limit.** `runact.Lift` holds every limit to 1 minute or more, as it does a block's.
+
+## Amendment 2026-11-18: a limit's pin is kept with it (decision 4)
+
+Decision 4 stands: a block is a narrowing, so after a clock step it may last
+longer and never shorter. Within one boot it ends only when both clocks have
+passed its limit. A wall clock stepped back therefore extends a block until the
+wall clock passes the limit again; that is accepted, and it is what the rule
+means by "the tighter side".
+
+The defect was in the writer, not in the rule. The launcher judged a block's end
+on both clocks, by a BOOTTIME pin it kept in memory; every writer of
+`live-block.json` dropped an ended entry by the wall clock alone, a day after its
+limit. A wall clock stepped forward more than a day past the limit, before
+BOOTTIME reached the pin, let the next write drop a block the launcher still
+refused by, and the launcher stopped refusing when it read that file.
+
+Writer and launcher now judge by one pin. A timed block's entry carries two more
+fields, written once by the write that sets the limit:
+
+- `boot`: the identity of the boot that write ran in (the kernel's `boot_id`);
+- `until_boot`: the CLOCK_BOOTTIME instant, in nanoseconds since that boot, at
+  which `until` fell when the write read both clocks.
+
+The rule, for the launcher's expiry line and for a writer's drop alike:
+
+| The entry | The limit has ended when |
+|---|---|
+| carries a pin of this boot | both clocks have passed it: the wall clock `until`, BOOTTIME `until_boot` |
+| carries a pin of another boot | the wall clock has passed `until` (the pin's boot is gone, and its launcher with it) |
+| carries no pin | the launcher: both clocks, by the pin it makes the first time it reads the entry, as before; a writer: the wall clock, as before |
+
+The launcher takes an entry's pin of its own boot in place of pinning at first
+sight, so a wall clock stepped between the write and the launcher's next poll no
+longer moves the limit either. A writer drops an entry a day after its limit
+ended by that rule, on the same clocks; the day is kept because the launcher
+writes its `live-block-expired` line from the file it last read and the pages
+say "ended at" of an entry still listed. Where this boot cannot be named, a
+write pins nothing and drops no pinned entry.
+
+Format and older readers. The fields are optional members of an entry and the
+overlay's version does not change. A launcher or writer built before them
+ignores both when it reads the file: such a launcher pins the limit itself
+within a poll of the write, as it always did, so the two pins differ only by a
+clock step inside that half second. A writer built before them drops both
+fields when it rewrites the file, and the entry is then one with no pin. An
+entry with no pin is treated exactly as before this amendment, the forward step
+of more than a day included: that residual is confined to files written or
+rewritten by an older tego.
+
+Tests inject both clocks and the boot identity: a step of +25 h inside the boot
+keeps the entry through a write and the launcher refusing until BOOTTIME reaches
+the pin; after a restart with the wall clock a day past the limit the next write
+drops it; a backward step extends the block; an entry with no pin behaves as
+before.
+
+## Amendment 2026-11-20: the launcher's pins and expiry marks are bounded; a lift is bound to the overlay it was acknowledged on
+
+*Status: accepted 2026-11-20; built.*
+
+**Retention (decision 4).** The launcher held a BOOTTIME pin and an expiry mark for every limit it ever saw, one key per
+distinct until or from, never dropped, so a 24/7 run that placed timed blocks for months grew both maps without bound.
+It now keeps a pin and a mark only while a block of the overlay it last read carries that limit (`pruneDeadlines`, run
+after each read and when the overlay is gone). A block that ended stays in the file a day, so its pin and its mark stay
+exactly that long: the end is still recorded once and a pin is never derived again for a limit still carried. Once the
+block is gone from the file (removed, replaced by another limit, dropped after its day, or the overlay removed) both
+go, bounded by the overlay (at most `MaxBlocks` blocks, so at most 128 keys). A limit that comes back later is a new
+block's: it is pinned from its writer's pin or its own first sight, and its end is recorded again. An unreadable overlay
+leaves both maps as they were. `TestPinAndDoneMapsStayBoundedOverALongRun` runs 1500 limits and finds one key at a
+time and 1500 expiry lines, each once.
+
+**The lift's write (decision 8).** `runact.LiftAt` is the lift the dashboard confirms. Its write carries the overlay serial
+the acknowledgement bound (`LiveAck`'s serial) and checks it inside `liveblock.Update`, under the writers' lock; a change
+another writer made since (a `tego block`, a `tego restore`, a pause) is `ErrOverlayMoved` and nothing is written. The
+terminal's `tego lift` writes straight to the overlay and acknowledges nothing, so it is outside this binding.
+
+## Amendment 2026-11-23: a lift may carry a note
+
+*Status: accepted 2026-11-23; built (C218).*
+
+A lift recorded who, when and until when, never why. A person lifting a refusal for a reason had nowhere to put it,
+and the reader of the ledger later had only the name of the entry.
+
+**The field.** `live_block.note` on the `live-rule-lifted` line, one optional member inside record revision 41
+(`MinorEveryLaunch`). No new revision: minor 41 is ADR 0157's and no release carries it (v0.1.3 ends at
+`MinorDenyReadFrozen` = 30, checked on its tag), exactly as `live_block.addrs` joined 41 without a new minor. It is not
+called `reason`: `Reason` on a line is the closed reason set. It is at most 200 bytes of valid UTF-8, printable characters
+only (`unicode.IsPrint`: no control character, line break, tab, invisible format character or line separator), valid on a
+`live-rule-lifted` line only, refused below 41. It is displayed, never interpreted. The readers that print it as a
+sentence (the terminal's `tego lift`, the dashboard's fence row and the receipt) show it through one function
+(`record.LiveNoteShown`: bounded again and written through `Printable`), so a line another writer made cannot move a
+cursor or reorder text; the event view shows the member as it shows every string field of a line (HTML-escaped, and the
+reader's validator refuses a long or non-printable note on a revision 41 line).
+
+**The signature.** The note is inside the lift's MAC (`liveblock.LiftMAC`). A lift with a note is MAC'ed in the domain
+`tego-live-lift-v2` with the note as one more field; a lift with none keeps `tego-live-lift-v1` and the same nine
+fields, so a launcher built before the note still accepts it. A note cannot be taken off a signed lift or put on one
+that had none: either changes the domain and the input, and the launcher refuses the lift (`refused: mac`). The launcher
+writes the note exactly as it checked it. A second lift of an entry already lifted, with the same limit and another note,
+writes a second `live-rule-lifted` line: no note is dropped because an earlier lift was in force.
+
+**The launcher mark.** A launcher built before the note would check the MAC without it and refuse the signed lift, so the
+note is written only to a run whose launcher made the mark `live-note` in its run directory (`liveblock.TakesNote`, as
+`TakesLink` gates a match by link). Without the mark `tego lift --note` and the dashboard refuse the note in words and ask
+nothing: the lift is never made without the note the person wrote, and never refused for a note it was not given. The
+decision to loosen stays the launcher's, which checks the MAC, the fence and the limit as before. The refusal exits 1 with
+`[launcher-too-old]` in the terminal.
+
+**Readers.** The CLI prints the note before it asks and after the launcher's line answers; the dashboard's lift confirm
+has one optional text input and its fence row shows the note of the lift in force (cleared by a restore or an expiry);
+the receipt lists each lift that carries a note; `tego events` labels the member (`linewords` only adds the label; the value is shown as any
+string field is). The terminal, the fence row and the receipt take the note from the same line through
+`record.LiveNoteShown`.
+
+**Proof owed in a guest.** A real run's launcher writing the line, at the tier an Adjustable run needs: `tego lift <run>
+read <path> --note "..." --yes`, then `tego events <run> --kind gap` shows the note, and the same lift with the overlay's
+note edited by hand shows `live-lift-refused` with `refused: mac`.

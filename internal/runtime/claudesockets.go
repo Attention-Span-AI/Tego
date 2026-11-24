@@ -24,16 +24,19 @@ func (r *runner) configureClaudeSockets() error {
 	if !set {
 		return nil
 	}
-	argv := resolveCommand(r.rt, r.cmd)
-	if len(argv) == 0 || declaredHarness(r.rt).Resolve(argv[0]) != harness.ClaudeCode {
-		if dir == "%R" {
-			return fmt.Errorf("%w: XDG_RUNTIME_DIR %%R requires a provisioned claude-code harness", ErrClaudeSocketDir)
-		}
+	name := harness.None
+	if argv := resolveCommand(r.rt, r.cmd); len(argv) > 0 {
+		name = declaredHarness(r.rt).Resolve(argv[0])
+	}
+	if err := checkClaudeSocketRequest(dir, name); err != nil {
+		return err
+	}
+	if name != harness.ClaudeCode {
 		return nil
 	}
 	if dir == "%R" {
 		if r.harness.start == nil || !r.harness.start.Provisioned || r.harness.stateDir == "" {
-			return fmt.Errorf("%w: XDG_RUNTIME_DIR %%R needs a private runtime and a provisioned claude-code harness; run unprivileged with an absolute, short invoking XDG_RUNTIME_DIR (normally /run/user/<uid>)", ErrClaudeSocketDir)
+			return fmt.Errorf("%w: XDG_RUNTIME_DIR requests a private runtime that is unavailable without a provisioned claude-code harness; run unprivileged with an absolute, short invoking XDG_RUNTIME_DIR (normally /run/user/<uid>)", ErrClaudeSocketDir)
 		}
 		dir = r.harness.stateDir
 	}
@@ -49,13 +52,29 @@ func (r *runner) configureClaudeSockets() error {
 	return nil
 }
 
+// checkClaudeSocketRequest checks the literal request independently of a run's
+// provisioned directory. Auto must be resolved after provisioning: an adapter
+// can replace argv, so its final harness is not a preflight fact.
+func checkClaudeSocketRequest(dir string, name harness.Name) error {
+	if name != harness.ClaudeCode {
+		if dir == "%R" {
+			return fmt.Errorf("%w: XDG_RUNTIME_DIR requests a private runtime, which requires a provisioned claude-code harness", ErrClaudeSocketDir)
+		}
+		return nil
+	}
+	if dir != "%R" {
+		return checkClaudeSocketPath(dir)
+	}
+	return nil
+}
+
 func checkClaudeSocketPath(dir string) error {
 	if !filepath.IsAbs(dir) {
-		return fmt.Errorf("%w: XDG_RUNTIME_DIR %q is not absolute; use %%R for the run's private harness runtime", ErrClaudeSocketDir, dir)
+		return fmt.Errorf("%w: XDG_RUNTIME_DIR value is not absolute; print it with: echo $XDG_RUNTIME_DIR; use %%R for the run's private harness runtime", ErrClaudeSocketDir)
 	}
 	path := filepath.Join(dir, "cc-socks", "9999999.sock")
 	if len(path) > 103 {
-		return fmt.Errorf("%w: XDG_RUNTIME_DIR %q gives %q (%d bytes; maximum 103 including a seven-digit PID filename); use %%R with a shorter invoking XDG_RUNTIME_DIR (normally /run/user/<uid>); the shared /tmp/cc-socks-<uid> fallback is not granted", ErrClaudeSocketDir, dir, path, len(path))
+		return fmt.Errorf("%w: XDG_RUNTIME_DIR value gives a socket path that is too long (%d bytes; maximum 103 including a seven-digit PID filename); print it with: echo $XDG_RUNTIME_DIR; use %%R with a shorter invoking XDG_RUNTIME_DIR (normally /run/user/<uid>); the shared /tmp/cc-socks-<uid> fallback is not granted", ErrClaudeSocketDir, len(path))
 	}
 	return nil
 }

@@ -34,7 +34,12 @@ func TestPayloadJSONNamesFrozen(t *testing.T) {
 		payload any
 		keys    string
 	}{
-		{RunStartPayload{}, "launcher_pid launcher_start_ns tego_version commit bpf_hash tier capture net_assurance net_guarantees kernel contract_hash parsers stop_grace command command_blob cwd limits capabilities stdio run_command_grant record_minor decision_plane best_effort ask_read_relaxes runtime_grants contract_source harness profiles host_sockets launcher_uid launcher_user sudo_uid sudo_user host parent_run labels role contract_revision fs_reads deployment secrets vault shares reads_notified live_mode live_fence deny_read_frozen"},
+		{RunStartPayload{}, "local_approval_authority launcher_pid launcher_start_ns tego_version commit bpf_hash tier capture net_assurance net_guarantees kernel effective_hash baseline contract_hash parsers stop_grace command command_blob cwd limits capabilities stdio run_command_grant record_minor decision_plane best_effort ask_read_relaxes runtime_grants contract_source harness profiles host_sockets launcher_uid launcher_user sudo_uid sudo_user host parent_run labels role contract_revision fs_reads deployment secrets vault shares reads_notified live_mode live_fence deny_read_frozen applied_limits home"},
+
+		{Baseline{}, "v mode sha256 owner_uid home owner_known sources protected_owner_layer rules source_contract effective_contract replay fact_sha256 evidence_sha256"},
+		{BaselineSource{}, "layer file state sha256 bytes"},
+		{BaselineOrigin{}, "layer file line"},
+		{BaselineRule{}, "id key value expanded state rule empty_reason sources tier plane held image_mode operations conditions limits"},
 		{DeploymentChange{}, "from_revision class"},
 		{SecretUse{}, "name version deliver env exposure"},
 		{VaultUse{}, "peer memory"},
@@ -52,6 +57,7 @@ func TestPayloadJSONNamesFrozen(t *testing.T) {
 		{SSLRequestPayload{}, "endpoint method path host request_id blob size trace_id span_id parent_span_id retry_of headers body_sha256 frame messages truncated wire_size route side tool_results"},
 		{Usage{}, "input output cache_read cache_write output_bound cache_write_1h server_tool modified"},
 		{SSLResponsePayload{}, "request_seq status model response_id stop_reason usage latency_ms request_id content_encoding parser_version blob headers truncated wire_size"},
+		{AppliedLimits{}, "cpu_max cpu_weight pids_max memory_max memory_high"},
 		{DecisionPayload{}, "step tool_use_id tool name input_hash text unparsed why"},
 		{GapPayload{}, "what why binary count decision_plane live_block live_control mcp_tool model_route"},
 		{MCPToolChange{}, "server tool decision by serial at"},
@@ -74,6 +80,11 @@ func TestPayloadJSONNamesFrozen(t *testing.T) {
 		got := strings.Join(jsonNames(tc.payload), " ")
 		if got != tc.keys {
 			t.Errorf("%T keys\n got %s\nwant %s", tc.payload, got, tc.keys)
+		}
+
+		switch tc.payload.(type) {
+		case Baseline, BaselineRule:
+			continue // Common-field collisions constrain payloads, not nested evidence's v/id members.
 		}
 		for _, k := range strings.Fields(tc.keys) {
 			if IsReservedField(k) {
@@ -219,10 +230,8 @@ func TestRecordMinorCoversTheRunIdentity(t *testing.T) {
 	}
 }
 
-// TestRecordMinorsHaveNoGap: the Minor* revision constants in record.go are exactly 1 to the highest, each once, and
-// Minor is the constant at the highest. A ledger's record_minor tells a reader
-// which optional fields the writer knew, every lower revision's included, so a number no feature holds would make a
-// reader take a missing field of a later package for "the run had none" in a ledger whose writer never knew the field.
+// TestRecordMinorsHaveNoGap rejects unnamed supported revisions and duplicate
+// allocations, allowing only the three explicitly unsupported registry gaps.
 func TestRecordMinorsHaveNoGap(t *testing.T) {
 	f, err := parser.ParseFile(token.NewFileSet(), "record.go", nil, 0)
 	if err != nil {
@@ -275,6 +284,12 @@ func TestRecordMinorsHaveNoGap(t *testing.T) {
 		written = max(written, n)
 	}
 	for n := 1; n <= written; n++ {
+		if n == 36 || n == 38 {
+			if SupportsMinor(n) {
+				t.Errorf("reserved revision %d treated as supported", n)
+			}
+			continue
+		}
 		if byValue[n] == "" {
 			t.Errorf("no Minor* constant is revision %d: the numbers must have no gap (highest written %d)", n, written)
 		}

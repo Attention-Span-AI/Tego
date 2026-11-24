@@ -9,10 +9,12 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/liveblock"
 	"github.com/attention-span-ai/tego/internal/mcptools"
+	"github.com/attention-span-ai/tego/internal/runscope"
 	"github.com/attention-span-ai/tego/pkg/policy/mcptool"
 )
 
@@ -73,7 +75,7 @@ func fixtureMode(t *testing.T, broker bool, live string) (*Service, string) {
 	}
 	t.Cleanup(func() { _ = f.Close() })
 	s := New(root)
-	s.governed = func() (bool, error) { return false, nil }
+	s.governed = answerOutside
 	return s, dir
 }
 
@@ -202,7 +204,7 @@ func TestLooseningUnderTheLockIsRefusedInsideARun(t *testing.T) {
 	ctx := context.Background()
 	s, dir := fixture(t, true)
 	calls := 0
-	s.governed = func() (bool, error) { calls++; return true, nil }
+	s.governed = func() runscope.Answer { calls++; return answerGoverned() }
 	s.beforeLock = func() {
 		if _, err := mcptools.Update(ctx, dir, run, func(o *mcptools.Overlay) (bool, error) {
 			return o.Set("open", "read_file", mcptools.Deny, "uid:1 pid:3 cli", s.now())
@@ -230,7 +232,7 @@ func TestRefusals(t *testing.T) {
 	if _, err := s.Set(ctx, "r-bad", "files", "x", "deny", ""); !errors.Is(err, ErrBadRun) {
 		t.Errorf("bad run: %v", err)
 	}
-	s.governed = func() (bool, error) { return true, nil }
+	s.governed = answerGoverned
 	p, _ := s.Plan(run, "files", "delete_file", "allow")
 	if _, err := s.Set(ctx, run, "files", "delete_file", "allow", p.Ack); !errors.Is(err, ErrGoverned) {
 		t.Errorf("loosening from inside a run: %v", err)
@@ -393,5 +395,67 @@ func TestAdjustableRunLoosens(t *testing.T) {
 	}
 	if p, err := s.Set(context.Background(), run, "files", "delete_file", "allow", p.Ack); err != nil || !p.Changed {
 		t.Fatalf("set: %+v %v", p, err)
+	}
+}
+
+// TestStateOfALockedRunShowsWhatTheRelayDecides (C208): a switch written into a Locked run's overlay some other way, one that
+// loosens the contract, is not in force in the relay, so the page does not show it as the decision; one that tightens is. A
+// run whose run_start is not known to be Adjustable is shown the same way, never with the loosening.
+func TestStateOfALockedRunShowsWhatTheRelayDecides(t *testing.T) {
+	for _, c := range []struct {
+		name        string
+		live        string
+		wantLoosens string // delete_file's decision shown
+		wantLive    bool
+	}{
+		{"Locked", "", "deny", false},
+		{"Adjustable", adjustable, "allow", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			s, dir := fixtureMode(t, true, c.live)
+			for _, sw := range [][3]string{{"delete_file", "allow", ""}, {"read_file", "deny", ""}, {"write_file", "allow", ""}} {
+				if _, err := mcptools.Update(context.Background(), dir, run, func(o *mcptools.Overlay) (bool, error) {
+					return o.Set("files", sw[0], sw[1], "uid:1 pid:2 other", time.Now())
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			st, err := s.State(run)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := map[string]Tool{}
+			for _, tl := range st.Servers[0].Tools {
+				got[tl.Name] = tl
+			}
+			if d := got["delete_file"]; d.Decision != c.wantLoosens || d.Live != c.wantLive || d.Contract != "deny" {
+				t.Errorf("delete_file %+v, want decision %s, live %v", d, c.wantLoosens, c.wantLive)
+			}
+			if d := got["read_file"]; d.Decision != "deny" || !d.Live {
+				t.Errorf("read_file (a tightening) %+v", d)
+			}
+			if d := got["write_file"]; c.live == "" && (d.Decision != "ask" || d.Live) {
+				t.Errorf("write_file (ask to allow) %+v", d)
+			}
+		})
+	}
+	// A run_start that cannot be read is not an Adjustable run.
+	s, dir := fixtureMode(t, true, adjustable)
+	if _, err := mcptools.Update(context.Background(), dir, run, func(o *mcptools.Overlay) (bool, error) {
+		return o.Set("files", "delete_file", "allow", "uid:1 pid:2 other", time.Now())
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte("{\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, err := s.State(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tl := range st.Servers[0].Tools {
+		if tl.Name == "delete_file" && (tl.Decision != "deny" || tl.Live) {
+			t.Errorf("with the run_start unreadable: %+v", tl)
+		}
 	}
 }

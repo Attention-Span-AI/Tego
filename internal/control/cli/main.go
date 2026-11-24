@@ -13,9 +13,12 @@ import (
 	"syscall"
 	"text/tabwriter"
 
+	"github.com/attention-span-ai/tego/internal/contracts"
+	"github.com/attention-span-ai/tego/internal/control/draftcompile"
 	"github.com/attention-span-ai/tego/internal/handoff"
 	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
+	"golang.org/x/sys/unix"
 )
 
 // Command is one tego-control command: its noun, the summary usage lists, its synopsis, and the function that runs
@@ -24,12 +27,19 @@ type Command struct {
 	Name    string
 	Summary string
 	Usage   string
-	Run     func(ctx context.Context, args []string, stdout, stderr io.Writer) int
+	// HoldsSecrets is a command whose process takes a secret into its memory (serve: the sign-in token, the CSRF and
+	// acknowledgement keys, a Vault page value). It is made undumpable before it does anything else, and does not run
+	// when that cannot be done (ADR 0100 (7), amended 2026-11-22).
+	HoldsSecrets bool
+	Run          func(ctx context.Context, args []string, stdout, stderr io.Writer) int
 }
 
-// privilege is what the guard reads: the effective uid and the effective and permitted capability sets.
+// privilege is what the guard reads: the effective uid, whether the real or the saved uid is 0 (a process that dropped
+// only its effective uid keeps root in them, and the root-only approval floor admits an answer on the real uid), and
+// the effective and permitted capability sets.
 type privilege struct {
 	euid      int
+	rootReal  bool // the real or the saved uid is 0
 	effective uint64
 	permitted uint64
 }
@@ -40,7 +50,8 @@ func hostPrivilege() privilege {
 	if err != nil {
 		eff, perm = ^uint64(0), ^uint64(0)
 	}
-	return privilege{euid: os.Geteuid(), effective: eff, permitted: perm}
+	ruid, _, suid := unix.Getresuid()
+	return privilege{euid: os.Geteuid(), rootReal: ruid == 0 || suid == 0, effective: eff, permitted: perm}
 }
 
 // Main runs tego-control's argv (argv[1] the noun) and returns the exit code. Every command, version and help
@@ -54,18 +65,26 @@ func Main(argv []string, stdout, stderr io.Writer) int {
 
 // mainWith is Main with the privilege given.
 func mainWith(ctx context.Context, argv []string, stdout, stderr io.Writer, p privilege) int {
-	if p.euid == 0 || p.effective != 0 || p.permitted != 0 {
+	if p.euid == 0 || p.rootReal || p.effective != 0 || p.permitted != 0 {
 		what := handoff.Name + " runs as the user and never as root"
-		if p.euid != 0 {
+		if p.euid != 0 && p.rootReal {
+			what = handoff.Name + " holds root as its real or saved user id, and runs only as the user"
+		} else if p.euid != 0 {
 			what = fmt.Sprintf("%s holds capabilities (effective %#x, permitted %#x), and runs only without them",
 				handoff.Name, p.effective, p.permitted)
 		}
 		diag(stderr, what, handoff.CodeAsRoot, "run it as yourself, without sudo, setcap or a unit that grants capabilities")
 		return handoff.Exit(handoff.CodeAsRoot)
 	}
+	if handled, code := draftcompile.Helper(argv, os.Stdin, stdout); handled {
+		return code
+	}
 	if len(argv) < 2 {
 		writeUsage(stderr)
 		return identity.ExitUsage
+	}
+	if argv[1] == contracts.HelperCommand {
+		return contracts.HelperMain(argv[2:])
 	}
 	switch argv[1] {
 	case "help", "-h", "--help":
@@ -77,8 +96,22 @@ func mainWith(ctx context.Context, argv []string, stdout, stderr io.Writer, p pr
 		diag(stderr, fmt.Sprintf("%s: unknown command %q", handoff.Name, argv[1]), codeUsage, "run "+handoff.Name+" help for the list")
 		return identity.ExitUsage
 	}
+	if c.HoldsSecrets {
+		if err := makeUndumpable(); err != nil {
+			diag(stderr, fmt.Sprintf("%s %s: this process could not be made undumpable, and it holds secrets (%v); it did not start",
+				handoff.Name, c.Name, err), codeUndumpable, "run it on a kernel that allows prctl(PR_SET_DUMPABLE)")
+			return exits[codeUndumpable]
+		}
+	}
 	return c.Run(ctx, argv[2:], stdout, stderr)
 }
+
+// makeUndumpable is the one place this package sets PR_SET_DUMPABLE 0 on its own process, with a read-back
+// (sys.MakeUndumpable): from then on no other process of this user reads its memory, descriptors or environment, ptraces
+// it or takes a descriptor of it, and what the processes that read it need (stat, status, cmdline, cgroup, pidfd) stays
+// readable. A variable so a test can fail it and the test binary, one process that runs every command, is not left
+// undumpable (main_test.go).
+var makeUndumpable = sys.MakeUndumpable
 
 // The reason codes tego-control gives of its own; handoff's [control-as-root] is the guard's.
 const (
@@ -86,6 +119,8 @@ const (
 	codeNotBuilt = "not-built"
 	codeNotFound = "not-found"
 	codeIO       = "io"
+	// codeUndumpable is a command that holds secrets and could not make its process undumpable.
+	codeUndumpable = "undumpable"
 )
 
 // exits is each of tego-control's own reason codes' exit code (TestControlCodesMapToIdentityExits).
@@ -94,6 +129,8 @@ var exits = map[string]int{
 	codeNotBuilt: identity.ExitError,
 	codeNotFound: identity.ExitError,
 	codeIO:       identity.ExitError,
+
+	codeUndumpable: identity.ExitError,
 }
 
 // diag writes one diagnostic line, "<what>; <fix> [<code>]", as tego's own lines are (RUN-IDENTITY.md "Messages").

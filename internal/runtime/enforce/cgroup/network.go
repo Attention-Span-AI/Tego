@@ -63,6 +63,12 @@ func (h *Handle) NetworkGuarantees() backend.NetworkGuarantees {
 	}); ok {
 		client := inherited.NetworkGuarantees()
 		g.SocketImportsDenied, g.ListenersDenied = client.SocketImportsDenied, client.ListenersDenied
+		// ADR 0128 (amended): where the filter leaves recvmsg(2) to the plane, the guard is the plane's
+		// socket_recvmsg, which needs the hook attached and this run's slot flagged. The filter's ENOSYS or the plane's
+		// refusal: a run with neither has no import guard, and is refused before it starts.
+		if h.importsInPlane {
+			g.SocketImportsDenied = g.SocketImportsDenied && h.importsFlagged && h.plane != nil && h.plane.hooks()[bpf.PlaneHookSocketRecvmsg]
+		}
 		filterSockets = client.SocketFamilies
 	}
 	// ADR 0018's socket bound (§5 R4, ADR 0018 (7)). The run's own programs are its kernel half (programGuarantees):

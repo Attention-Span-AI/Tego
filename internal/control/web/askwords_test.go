@@ -114,6 +114,7 @@ func TestHeldMutationAsksReadInPlainWords(t *testing.T) {
 	c := login(t, s)
 	ap := do(s, "GET", "/approvals", "127.0.0.1:8484", c).Body.String()
 	for _, a := range mutAsks {
+		ap = get(t, s, c, "/approvals?run="+mutRun+"&ask="+a.id)
 		q := section(ap, `<h2 class="ask-q" id="q-`+a.id+`"`, "</h2>")
 		if got := f3Text(q + "</h2>"); got != a.question {
 			t.Errorf("the %s card asks %q, want %q", a.op, got, a.question)
@@ -123,7 +124,7 @@ func TestHeldMutationAsksReadInPlainWords(t *testing.T) {
 		}
 	}
 
-	banner := section(do(s, "GET", "/runs", "127.0.0.1:8484", c).Body.String(), `id="ask-banner"`, "</section>")
+	banner := section(do(s, "GET", "/", "127.0.0.1:8484", c).Body.String(), `id="ask-banner"`, "</section>")
 	bt := f3Text(banner)
 	for _, want := range []string{"claude-tego wants to delete ", "claude-tego wants to create a folder at ", "claude-tego wants to rename "} {
 		if !strings.Contains(bt, want) {
@@ -176,6 +177,7 @@ func TestHeldMutationAskShowsBothNames(t *testing.T) {
 	)
 	ap := do(s, "GET", "/approvals", "127.0.0.1:8484", c).Body.String()
 	for id, want := range map[string]string{"q-3": rename, "q-4": "./src/current → ../releases/v2", "q-5": link} {
+		ap = get(t, s, c, "/approvals?run="+mutRun+"&ask="+id)
 		card := section(ap, `<section class="ask" id="`+id+`"`, "</section>")
 		if got := f3Text(section(card, `<p class="ask-path">`, "</p>")); got != want {
 			t.Errorf("the card of %s shows %q, want %q", id, got, want)
@@ -185,7 +187,7 @@ func TestHeldMutationAskShowsBothNames(t *testing.T) {
 		t.Errorf("Answered recently does not say where the rename went: %s", recent)
 	}
 
-	if bt := f3Text(section(do(s, "GET", "/runs", "127.0.0.1:8484", c).Body.String(), `id="ask-banner"`, "</section>")); !strings.Contains(bt, "claude-tego wants to rename "+rename+" ·") {
+	if bt := f3Text(section(do(s, "GET", "/", "127.0.0.1:8484", c).Body.String(), `id="ask-banner"`, "</section>")); !strings.Contains(bt, "claude-tego wants to rename "+rename) {
 		t.Errorf("the banner does not show both of the rename's names: %s", bt)
 	}
 

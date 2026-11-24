@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -57,11 +58,14 @@ type factsView struct {
 	// RuleKey is the line's rule key as the column shows it, the run's home written ~ and its working directory .
 	// (runText); RuleKeyFull the key as the ledger has it, for the title, "" when RuleKey is the same.
 	RuleKey, RuleKeyFull string
-	RuleFound            bool
-	RuleFile             string // Rule.File's base name
-	Reason, ReasonKey    string
-	Errno                string
-	Tier, Mechanism      string
+	// Target is the line's target as the headline writes it (the run's home ~/, its working directory ./: runText);
+	// TargetFull the target as the ledger has it, for the title, "" when Target is the same.
+	Target, TargetFull string
+	RuleFound          bool
+	RuleFile           string // Rule.File's base name
+	Reason, ReasonKey  string
+	Errno              string
+	Tier, Mechanism    string
 	// Ask is the question card, nil for a line that belongs to none.
 	Ask *askCard
 	// Chain is the run's chain verdict (ledgerview.VerifyRun, cached for ended runs) in words; ChainState its state.
@@ -86,7 +90,7 @@ type procStep struct {
 type askCard struct {
 	*ledgerview.AskFacts
 	AskedAt, AnsweredAt string
-	// Outcome is the answer in words; Pending says no answer is in the record.
+	// Outcome is the answer in words; Pending is an unanswered ask on a live run.
 	Outcome string
 	Pending bool
 	// Rule is the rule key that asked, written as runText writes it; RuleFull the key as the ledger has it, for the
@@ -100,6 +104,7 @@ func (s *Server) buildFacts(ctx context.Context, rr *ledgerview.Run, at *ledgerv
 	f := &factsView{}
 	home := ledgerview.RunHome(rr)
 	f.RuleKey, f.RuleKeyFull = shownKey(at.Rule, home, rr.Cwd)
+	f.Target, f.TargetFull = shownKey(mask(at.Target), home, rr.Cwd)
 	lv, err := ledgerview.Explain(s.cfg.Ledger, rr, at.Seq)
 	if err != nil {
 		f.Err = "Line unreadable · showing its row only"
@@ -155,6 +160,10 @@ func (s *Server) buildFacts(ctx context.Context, rr *ledgerview.Run, at *ledgerv
 		}
 	}
 	f.By = runText(f.By, home, rr.Cwd)
+	if f.By != "" {
+		// "Decided by" is said once, in the decision: the authority field it came from is not listed again.
+		lv.Fields = slices.DeleteFunc(lv.Fields, func(fd ledgerview.Field) bool { return fd.Key == "authority" })
+	}
 	if at.Reason != "" {
 		f.Reason, f.ReasonKey = reasonText(at.Reason), at.Reason
 	}
@@ -312,7 +321,7 @@ func msWords(d time.Duration) string {
 
 // askCardOf is a's card: the times of its ask and answer lines read from the run, and its outcome in words.
 func askCardOf(rr *ledgerview.Run, a *ledgerview.AskFacts) *askCard {
-	c := &askCard{AskFacts: a, Pending: !a.Answered}
+	c := &askCard{AskFacts: a, Pending: !a.Answered && rr.Live}
 	c.Rule, c.RuleFull = shownKey(a.Rule, ledgerview.RunHome(rr), rr.Cwd)
 	evs := rr.AllEvents()
 	at := func(seq uint64) string {
@@ -335,6 +344,8 @@ func askCardOf(rr *ledgerview.Run, a *ledgerview.AskFacts) *askCard {
 		c.Outcome = "Answered with another file"
 	case a.Approved != nil && *a.Approved && strings.HasSuffix(a.By, " always"):
 		c.Outcome = "Allowed for the rest of the run"
+	case a.Approved != nil && *a.Approved && a.Managed:
+		c.Outcome = "Approval recorded; operation completion is separate"
 	case a.Approved != nil && *a.Approved:
 		c.Outcome = "Allowed once"
 	case a.AnswerReason == "ask-timeout":
@@ -370,7 +381,7 @@ func askActWords(f *factsView) string {
 }
 
 // serveBlob answers GET /runs/<run>/lines/<seq>?blob=<sha>: the blob this line names, as a download. Only a sha one
-// of the line's blob fields names (ledgerview marks them Blob) is served: 400 for a value that is not a sha256 name,
+// of the line's blob fields names (ledgerview.BlobFieldKey, which reads that one line's keys and does not explain the line) is served: 400 for a value that is not a sha256 name,
 // 404 for one the line does not name. The blob is the agent's own bytes, so it is opened with ReadBlob's checks
 // (ledgerview.OpenBlob: no link followed, no FIFO, a regular file of at most maxBlobDownload bytes whose sha256 is its
 // name, all made before a header is sent; 404 for one that fails them) and streamed as an attachment of type
@@ -382,17 +393,10 @@ func (s *Server) serveBlob(w http.ResponseWriter, rr *ledgerview.Run, seq uint64
 		s.fail(w, http.StatusBadRequest, "Not a blob name", "A blob is named by 64 lower-case hexadecimal digits.")
 		return
 	}
-	lv, err := ledgerview.Explain(s.cfg.Ledger, rr, seq)
+	key, err := ledgerview.BlobFieldKey(s.cfg.Ledger, rr, seq, sha)
 	if err != nil {
 		s.fail(w, http.StatusNotFound, "No such line", "Run "+rr.ID+" has no line #"+strconv.FormatUint(seq, 10)+".")
 		return
-	}
-	key := ""
-	for _, f := range lv.Fields {
-		if f.Blob != nil && f.Blob.SHA == sha {
-			key = f.Key
-			break
-		}
 	}
 	if key == "" {
 		s.fail(w, http.StatusNotFound, "No such blob", "Line #"+strconv.FormatUint(seq, 10)+" names no blob "+sha[:12]+"….")

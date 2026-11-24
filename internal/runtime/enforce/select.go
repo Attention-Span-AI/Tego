@@ -138,6 +138,15 @@ func Select(m *config.Machine, rt *agent.RuleTable, probe backend.Probe, opts ..
 					"or drop fs.assurance: kernel to run with the supervisor's best-effort refusal (run_start best_effort deny_write/default)"})
 		}
 	}
+	if rt != nil && rt.Baseline != nil && rt.Baseline.Applied {
+		mechanism := string(plane.Mode)
+		if tier == backend.TierCgroup && (mechanism == "" || planeCannotHold(rt) != nil) {
+			mechanism = cgroupenforce.PlaneFanotify
+		}
+		if err := rt.BaselineAt(tier, mechanism); err != nil {
+			return nil, append(ds, unavailable(file, err))
+		}
+	}
 	b, err := construct(tier, m, plane)
 	if err != nil {
 		return nil, append(ds, unavailable(file, err))

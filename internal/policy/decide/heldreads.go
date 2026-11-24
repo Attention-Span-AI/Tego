@@ -134,6 +134,40 @@ func (x *HeldReadIndex) RefusalOn(rules *AdvisoryList, path string, dir bool, id
 		}
 		reopen, _ = ruleSteps(x.rt.FS[i], path)
 	}
+	if rule, ok := x.nameRefusal(path, dir, reopen); ok {
+		return rule, true
+	}
+	// The same object under the other names the mount table gives the name rules' scope roots (Reads.Aliases): a held
+	// read at an alias is asked as the name it shows too, so a file made during the run is refused under every name.
+	for _, a := range x.rt.Reads.Aliases {
+		if q, ok := underAlias(path, a.Alias, a.Original); ok {
+			if rule, ok := x.nameRefusal(q, dir, reopen); ok {
+				return rule, true
+			}
+		}
+	}
+	return "", false
+}
+
+// underAlias is path, at or beneath alias, under original instead, and whether it lies there.
+func underAlias(path, alias, original string) (string, bool) {
+	switch {
+	case path == alias:
+		return original, true
+	case alias == "/":
+		return original + path, true
+	case len(path) > len(alias) && path[len(alias)] == '/' && path[:len(alias)] == alias:
+		if original == "/" {
+			return path[len(alias):], true
+		}
+		return original + path[len(alias):], true
+	}
+	return "", false
+}
+
+// nameRefusal is (c) of RefusalOn for one spelling of the object, path, with reopen the steps to the write entry
+// deciding a read there (-1 for none).
+func (x *HeldReadIndex) nameRefusal(path string, dir bool, reopen int) (rule string, refused bool) {
 	folded := agent.FoldName(path)
 	if len(x.literal) > 0 || len(x.globs) > 0 {
 		for end, steps := len(path), 0; end > 0 && (reopen < 0 || steps <= reopen); steps++ {

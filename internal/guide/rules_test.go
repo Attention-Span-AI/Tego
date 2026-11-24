@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/guide"
 	"github.com/attention-span-ai/tego/internal/guide/guidetest"
 	"github.com/attention-span-ai/tego/internal/ledger"
+	"github.com/attention-span-ai/tego/internal/selfbin"
 	"github.com/attention-span-ai/tego/internal/testutil/ledgertest"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -85,7 +87,7 @@ func TestItNeverSaysNoAgentsCompleteOrClean(t *testing.T) {
 				t.Errorf("%s says %q:\n%s", name, word, b)
 			}
 		}
-		if !strings.Contains(strings.Join(s.NotKnown, "\n"), "agents Tego never recorded") {
+		if !strings.Contains(strings.Join(s.NotKnown, "\n"), "agents outside a scan") {
 			t.Errorf("%s: not_known does not say agents Tego never recorded are not known: %q", name, s.NotKnown)
 		}
 	}
@@ -340,9 +342,9 @@ func forgeRun(t *testing.T, f *guidetest.Fixture, cwd string, after time.Duratio
 }
 
 // TestAForgedRunNeverChoosesTheNextCommand: a recorded run's working folder becomes the next step's cd, and a recorded
-// run becomes what tego learn reads, only when that run's record checks out against the chain anchor. A newer observe
+// run becomes what tego rules learn reads, only when that run's record checks out against the chain anchor. A newer observe
 // run folder an ungoverned process wrote, with no anchor line, gives `tego run bot` with no cd, and on a half-done
-// machine the record step is blocked and the next step is to see where the record breaks, never `tego learn` of it.
+// machine the record step is blocked and the next step is to see where the record breaks, never `tego rules learn` of it.
 func TestAForgedRunNeverChoosesTheNextCommand(t *testing.T) {
 	f := guidetest.Make(t, guidetest.ContractMade)
 	evil := filepath.Join(f.Root, "attacker", "bot")
@@ -458,12 +460,12 @@ func TestMoreNamesThanTheGuideCompilesSaysSo(t *testing.T) {
 	}
 }
 
-// TestFromAShellThatCannotEnforceTheNextStepOpensOne: over SSH (place shell, no tier from here) with a stored check
-// from the user manager's cgroup that is ready, the step that would start a run (tego run, tego watch) is never named
-// from here, where it exits 125: the next step opens a shell in the user manager's cgroup and runs tego setup there.
+// TestRunStepsFromAnOutsideShellOpenTheirOwnScope: over SSH (place shell, no tier from here) with a stored check
+// from the user manager's cgroup that is ready, the next step names the run or watch command directly: that command
+// opens its own scope before any run state. If a scope cannot be opened, the guide gives the reason and no command.
 // With only root's check ready and a shell that fails for another cause, the words say that
 // check holds a run started with sudo, and the command is tego doctor, never tego run (F9).
-func TestFromAShellThatCannotEnforceTheNextStepOpensOne(t *testing.T) {
+func TestRunStepsFromAnOutsideShellOpenTheirOwnScope(t *testing.T) {
 	for _, name := range []string{guidetest.Fresh, guidetest.ContractMade} {
 		t.Run(name, func(t *testing.T) {
 			f := guidetest.Make(t, name)
@@ -475,12 +477,11 @@ func TestFromAShellThatCannotEnforceTheNextStepOpensOne(t *testing.T) {
 			in.Fresh = &guide.Check{Where: guide.WhereShell, Build: f.Probe.Build, BootID: f.Probe.BootID, Time: f.Probe.Time,
 				FirstFix: guidetest.Fix, Cause: guide.CauseOutsideUserManager}
 			s := guide.Compute(t.Context(), in)
-			if st := step(s, guide.StepCheck); st.State != guide.Done || !strings.Contains(*st.Fact, "not even tego watch") {
+			if st := step(s, guide.StepCheck); st.State != guide.Done || !strings.Contains(*st.Fact, "run, watch and test can try a user scope") {
 				t.Fatalf("check: %s %q", st.State, *st.Fact)
 			}
-			if s.Next.Rule != guide.RuleHereOutside || s.Next.Command != "systemd-run --user --scope zsh" ||
-				guide.StartsRun(s.Next.Command) || !strings.Contains(s.Next.Text, "tego setup") {
-				t.Errorf("next %+v", s.Next)
+			if !guide.StartsRun(s.Next.Command) || strings.Contains(s.Next.Command, "systemd-run") {
+				t.Errorf("run should open its own scope: %+v", s.Next)
 			}
 			if line := "next: " + s.Next.Text; len([]rune(line)) > 80 {
 				t.Errorf("the next: line is wider than 80 columns: %q", line)
@@ -563,7 +564,7 @@ func TestAfterARebootThePlacesNotCheckedAreSaid(t *testing.T) {
 		!strings.Contains(*st.Fact, want) {
 		t.Errorf("check: %s %q, want it to say %q", st.State, *st.Fact, want)
 	}
-	if s.Next.Rule != guide.RuleCheckOutside || s.Next.Command != guide.DefaultScope {
+	if s.Next.Rule != guide.RuleRecordTodo || !guide.StartsRun(s.Next.Command) {
 		t.Errorf("next %+v", s.Next)
 	}
 	// The dashboard, with only the old boot's check stored: the spec's sentence, and tego setup.
@@ -696,14 +697,15 @@ func TestNoUserManagerNamesTheCommandThatStartsOne(t *testing.T) {
 	}
 }
 
-// TestTheScopeLineSaysWhoseShellItOpens: after linger, tego setup started as a service account from an administrator's
+// TestTheAutomaticScopeStepKeepsTheReadersAccount: after linger, tego setup started as a service account from an administrator's
 // shell (sudo -u svc) named XDG_RUNTIME_DIR=/run/user/1002 systemd-run --user --scope bash with "open a shell in your
 // user manager's cgroup": the administrator typed it in their own shell, which opened their own scope on Ubuntu 24.04
-// and AlmaLinux 9.8 (where tego setup then said ready, for the wrong user) and failed on Fedora 44.
-// With As.ScopeAs the step's words say to type it in your own shell and that it opens a shell as this
-// user, and step 2 names that user; the command is the invoker's (OpenScope's sudo -u form). The reader who is the
-// user keeps the words as they were.
-func TestTheScopeLineSaysWhoseShellItOpens(t *testing.T) {
+// and AlmaLinux 9.8 (where tego setup then said ready, for the wrong user) and failed on Fedora 44 (acceptance 3,
+// 2026-11-11). With As.ScopeAs the next command carries the account and this binary's absolute path. Run-starting
+// commands open their own scope as that account; receipt and learn keep the same account too. Step 2 says whose
+// command it is. The reader who is the user keeps the bare command.
+func TestTheAutomaticScopeStepKeepsTheReadersAccount(t *testing.T) {
+	guidetest.SelfAs(t, guidetest.SelfWord, "")
 	const asSvc = "sudo -u svc XDG_RUNTIME_DIR=/run/user/1002 systemd-run --user --scope bash"
 	for _, state := range []string{guidetest.Fresh, guidetest.HalfDone, guidetest.Finished} {
 		t.Run(state, func(t *testing.T) {
@@ -714,23 +716,23 @@ func TestTheScopeLineSaysWhoseShellItOpens(t *testing.T) {
 			in.As = &guide.As{User: "svc", UID: 1002, Where: guide.WhereShell, Scope: asSvc, ScopeAs: "svc"}
 			in.Fresh = &c
 			s := guide.Compute(t.Context(), in)
-			if s.Next.Command != asSvc || s.Next.Text != guide.ScopeAsText || !strings.Contains(s.Next.Text, "from your own shell") {
+			if !strings.HasPrefix(s.Next.Command, "sudo -u svc "+guidetest.SelfWord+" ") || strings.Contains(s.Next.Command, "systemd-run") {
 				t.Errorf("next %+v", s.Next)
 			}
 			if line := "next: " + s.Next.Text; len([]rune(line)) > 80 {
 				t.Errorf("the next: line is wider than 80 columns: %q", line)
 			}
-			if fact := *step(s, guide.StepCheck).Fact; !strings.Contains(fact, "it opens a shell as svc in svc's user manager's cgroup, not in yours") {
+			if fact := *step(s, guide.StepCheck).Fact; !strings.Contains(fact, "it runs as svc (sudo -u), not as you") {
 				t.Errorf("step 2 does not say whose shell: %q", fact)
 			}
 			// Read in a shell sudo su -s opened as svc, "your own shell" would be that shell, where sudo -u svc fails:
 			// the words say which shell.
-			if fact := *step(s, guide.StepCheck).Fact; !strings.Contains(fact, "in your own login shell, not in one sudo or su opened") {
+			if fact := *step(s, guide.StepCheck).Fact; !strings.Contains(fact, "in your own login shell, not in one sudo or su opened (if you are in one, type exit first)") {
 				t.Errorf("step 2 does not say to leave a shell sudo or su opened: %q", fact)
 			}
 			in.As.Scope, in.As.ScopeAs = "XDG_RUNTIME_DIR=/run/user/1002 systemd-run --user --scope bash", ""
 			s = guide.Compute(t.Context(), in)
-			if s.Next.Command != in.As.Scope || strings.Contains(s.Next.Text, "own shell") || strings.Contains(*step(s, guide.StepCheck).Fact, "svc's") {
+			if !strings.HasPrefix(s.Next.Command, "tego ") || strings.Contains(s.Next.Command, "systemd-run") || strings.Contains(s.Next.Text, "own shell") || strings.Contains(*step(s, guide.StepCheck).Fact, "svc's") {
 				t.Errorf("the user's own shell: next %+v, fact %q", s.Next, *step(s, guide.StepCheck).Fact)
 			}
 		})
@@ -763,5 +765,255 @@ func TestANameSystemdRefusesNamesNoCommand(t *testing.T) {
 				t.Errorf("step 2: %q", fact)
 			}
 		})
+	}
+}
+
+// TestAnotherReadersCommandCarriesSudo: tego setup started as a service account from an administrator's shell
+// (sudo -u svc tego setup), after the account was set up, ended with "next: tego session show <id>". The administrator reads
+// the line in their own shell, where that command reads their record and fails (acceptance 4, 2026-11-11). With
+// As.ScopeAs the command is written with sudo -u and the account in front, whatever the step: the receipt, the learn
+// of a recorded run and the watch of the first one; and a command already written to run as another user, such as the
+// shell that opens the account's scope, is left alone. The reader who is the user keeps the bare commands.
+func TestAnotherReadersCommandCarriesSudo(t *testing.T) {
+	guidetest.SelfAs(t, guidetest.SelfWord, "")
+	cases := []struct{ state, bare string }{
+		{guidetest.Finished, "tego session show "},
+		{guidetest.HalfDone, "tego rules learn "},
+		{guidetest.Fresh, "tego watch -- <the command you start it with>"},
+	}
+	for _, c := range cases {
+		t.Run(c.state, func(t *testing.T) {
+			f := guidetest.Make(t, c.state)
+			in := f.Inputs(t)
+			in.As = &guide.As{User: "svc", UID: 1002, Where: guide.WhereShell, ScopeAs: "svc",
+				ScopeMissing: "the user manager of uid 1002 keeps no socket under /run/user/1002"}
+			probe := f.Probe
+			in.Fresh = &probe
+			s := guide.Compute(t.Context(), in)
+			if !strings.HasPrefix(s.Next.Command, "sudo -u svc "+guidetest.SelfWord+" "+strings.TrimPrefix(c.bare, "tego ")) {
+				t.Errorf("next %+v: the command is not the bare one with sudo -u svc in front", s.Next)
+			}
+			// Step 2 says what the next command does: it runs as the account. It claimed the receipt "opens a shell as
+			// svc in svc's user manager's cgroup, not in yours" (acceptance 4).
+			if fact := *step(s, guide.StepCheck).Fact; strings.Contains(fact, "opens a shell") {
+				t.Errorf("step 2 says the next command opens a shell: %q", fact)
+			}
+			in.As.ScopeAs = ""
+			s = guide.Compute(t.Context(), in)
+			if !strings.HasPrefix(s.Next.Command, c.bare) {
+				t.Errorf("the reader who is the user: next %+v", s.Next)
+			}
+		})
+	}
+	const self = guidetest.SelfWord
+	for command, want := range map[string]string{
+		"tego session show abc":             "sudo -u svc " + self + " session show abc",
+		"cd /home/svc/bot && tego run bot":  "sudo -u svc sh -c 'cd /home/svc/bot && exec " + self + " run bot'",
+		"sudo loginctl enable-linger svc":   "sudo loginctl enable-linger svc",
+		"sudo -u svc systemd-run --scope b": "sudo -u svc systemd-run --scope b",
+		"cd /x && sudo tego test":           "cd /x && sudo tego test",
+		"":                                  "",
+		"tegoish receipt":                   "tegoish receipt",
+	} {
+		got, why := guide.ForReader("svc", command)
+		if got != want || why != "" {
+			t.Errorf("ForReader(svc, %q) = %q, %q, want %q", command, got, why, want)
+		}
+		if got, _ := guide.ForReader("", command); got != command {
+			t.Errorf("ForReader(\"\", %q) = %q", command, got)
+		}
+	}
+}
+
+// TestASudoLineNamesTheRunningBinary: a sudo line is typed in a shell whose sudo resets PATH to its secure_path, which
+// leaves out the installer's ~/.local/bin (Ubuntu, Fedora) and /usr/local/bin too (AlmaLinux 9.8), so `sudo -u svc
+// tego session show` answered "command not found". The line names the running
+// binary's absolute path, quoted, read once from the executable and never from PATH. A binary whose path cannot be read,
+// or that the account cannot execute (a copy in another user's closed home), gives no command and says why.
+func TestASudoLineNamesTheRunningBinary(t *testing.T) {
+	real := guide.SelfPath
+	for _, tc := range []struct{ self, want string }{
+		{"/home/svc/.local/bin/tego", "sudo -u svc /home/svc/.local/bin/tego session show abc"},
+		{"/usr/local/bin/tego", "sudo -u svc /usr/local/bin/tego session show abc"},
+		{"'/home/a b/it'\\''s/tego'", "sudo -u svc '/home/a b/it'\\''s/tego' session show abc"},
+	} {
+		guidetest.SelfAs(t, tc.self, "")
+		if got, why := guide.ForReader("svc", "tego session show abc"); got != tc.want || why != "" {
+			t.Errorf("self %s: %q, %q, want %q", tc.self, got, why, tc.want)
+		}
+	}
+	for _, why := range []string{guide.ReaderNoPathText, guide.ReaderUnsafePathText, guide.ReaderNoExecText, guide.ReaderUntrustedText} {
+		guidetest.SelfAs(t, "", why)
+		// The ownership refusal includes the installation remedy, which is longer than a short next line.
+		if line := "next: " + why; why != guide.ReaderUntrustedText && len([]rune(line)) > 80 {
+			t.Errorf("the next: line is wider than 80 columns: %q", line)
+		}
+		if got, w := guide.ForReader("svc", "tego session show abc"); got != "" || w != why {
+			t.Errorf("no usable binary: %q, %q, want no command and %q", got, w, why)
+		}
+		// The bare reader is told nothing of it: a command sudo does not run needs no binary.
+		if got, w := guide.ForReader("svc", "sudo loginctl enable-linger svc"); got == "" || w != "" {
+			t.Errorf("a sudo command needs no tego: %q, %q", got, w)
+		}
+		if got, w := guide.ForReader("", "tego session show abc"); got != "tego session show abc" || w != "" {
+			t.Errorf("the user's own shell: %q, %q", got, w)
+		}
+		// Through the guide: the step names no command and says why.
+		f := guidetest.Make(t, guidetest.Finished)
+		in := f.Inputs(t)
+		in.As = &guide.As{User: "svc", UID: 1002, Where: guide.WhereShell, ScopeAs: "svc", ScopeMissing: "no socket"}
+		probe := f.Probe
+		in.Fresh = &probe
+		if s := guide.Compute(t.Context(), in); s.Next.Command != "" || s.Next.Text != why {
+			t.Errorf("next %+v, want no command and %q", s.Next, why)
+		}
+	}
+	// The real binary follows the same checked path; a shared build directory may require refusing it.
+	word, why := real()
+	wantWord, wantWhy := selfbin.Named(os.Executable)
+	if word != wantWord || why != wantWhy {
+		t.Errorf("SelfPath() = %q, %q: want %q, %q", word, why, wantWord, wantWhy)
+	}
+	if why != "" {
+		namedGroupRepair := strings.HasPrefix(why, "cannot establish membership of group ") && strings.Contains(why, "run chmod g-w ") && strings.HasSuffix(why, "then run this step again.")
+		if word != "" || why != selfbin.Untrusted && !namedGroupRepair {
+			t.Errorf("SelfPath() = %q, %q: want no command and an installation-trust refusal", word, why)
+		}
+	} else if !strings.HasPrefix(word, "/") && !strings.HasPrefix(word, "'/") {
+		t.Errorf("SelfPath() = %q, %q: want the test binary's absolute path", word, why)
+	}
+}
+
+// TestTheSudoLineRunsTheCommandInTheFolderAsTheAccount: "cd <folder> && tego run bot" typed by an administrator runs the cd
+// as the administrator, which fails when the account's home is closed to them (mode 0700) before sudo starts. The line does the cd and the command together as the account:
+// sudo -u svc sh -c 'cd <folder> && exec <tego> run <name>', quoted as one word. sudo -D is not used: it wants sudo 1.9.3 and
+// a sudoers option. The test runs the line for real in a shell with a stand-in sudo and a folder and a binary whose names
+// hold a space and a quote: the command runs in the folder, with its arguments, as one process.
+func TestTheSudoLineRunsTheCommandInTheFolderAsTheAccount(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "my agent's dir")
+	bin := filepath.Join(root, "bin dir", "tego")
+	for _, d := range []string{dir, filepath.Dir(bin)} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nprintf 'cwd=%s\\n' \"$PWD\"\nprintf 'arg=%s\\n' \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	shq := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
+	guidetest.SelfAs(t, shq(bin), "")
+	line, why := guide.ForReader("svc", "cd "+shq(dir)+" && tego run 'a b'")
+	if why != "" || !strings.HasPrefix(line, "sudo -u svc sh -c ") {
+		t.Fatalf("line %q, %q", line, why)
+	}
+	if strings.HasPrefix(line, "cd ") {
+		t.Errorf("the cd runs in the reader's shell: %q", line)
+	}
+	// A stand-in sudo: drop "-u <account>" and run the rest, as sudo does.
+	out, err := exec.Command("sh", "-c", "sudo() { shift 2; \"$@\"; }\n"+line).CombinedOutput()
+	if err != nil {
+		t.Fatalf("running %q: %v\n%s", line, err, out)
+	}
+	want := "cwd=" + dir + "\narg=run\narg=a b\n"
+	if string(out) != want {
+		t.Errorf("the line ran as\n%s\nwant\n%s", out, want)
+	}
+}
+
+// TestAnotherReadersStepNamesNoCommandWhereNoneWorks: the user manager runs but keeps no socket under the user's logind
+// folder, so no command opens a shell in it from another user's shell (sudo -u svc tego setup; Opening.As is set, the
+// command is ""). The fix: line names no command there either, and the step says whose manager it is, not "your user
+// manager's", which an administrator reads as their own (integration pass 5, 2026-11-11).
+func TestAnotherReadersStepNamesNoCommandWhereNoneWorks(t *testing.T) {
+	const missing = "the user manager of uid 1002 keeps no socket under /run/user/1002, so systemd-run --user cannot reach it from another user's shell"
+	for _, state := range []string{guidetest.Fresh, guidetest.HalfDone, guidetest.Finished} {
+		t.Run(state, func(t *testing.T) {
+			f := guidetest.Make(t, state)
+			c := guide.Check{Where: guide.WhereShell, Build: f.Probe.Build, BootID: f.Probe.BootID, Time: f.Probe.Time,
+				FirstFix: guidetest.OutsideFix, Cause: guide.CauseOutsideUserManager}
+			in := f.Inputs(t)
+			in.As = &guide.As{User: "svc", UID: 1002, Where: guide.WhereShell, ScopeAs: "svc", ScopeMissing: missing}
+			in.Fresh = &c
+			s := guide.Compute(t.Context(), in)
+			if s.Next.Command != "" || s.Next.Text != guide.ScopeAsMissingText {
+				t.Errorf("next %+v", s.Next)
+			}
+			if line := "next: " + s.Next.Text; len([]rune(line)) > 80 {
+				t.Errorf("the next: line is wider than 80 columns: %q", line)
+			}
+			if fact := *step(s, guide.StepCheck).Fact; !strings.Contains(fact, "no command opens one from here: "+missing) {
+				t.Errorf("step 2 does not say why: %q", fact)
+			}
+			// The reader who is the user keeps the words as they were.
+			in.As.ScopeAs = ""
+			s = guide.Compute(t.Context(), in)
+			if s.Next.Command != "" || s.Next.Text != "systemd-run cannot open a shell in your user manager's cgroup here." {
+				t.Errorf("the user's own shell: next %+v", s.Next)
+			}
+		})
+	}
+}
+
+// TestTheStepDoesNotClaimTheReceiptOpensAShell: after the account is ready (its check was stored from its scope), tego
+// setup started from the administrator's shell (sudo -u svc) says in step 2 that the next command opens a shell as
+// svc "in svc's user manager's cgroup, not in yours", and the next command is the receipt, which opens none (acceptance
+// 4, 2026-11-11: "the step text says the next command opens a shell as svc, but it does not"). The sentence is kept
+// for the step that does open one; for any other next command the fact says it runs as the account.
+func TestTheStepDoesNotClaimTheReceiptOpensAShell(t *testing.T) {
+	guidetest.SelfAs(t, guidetest.SelfWord, "")
+	f := guidetest.Make(t, guidetest.Finished)
+	if err := guide.StoreCheck(f.Home, f.Probe); err != nil {
+		t.Fatal(err)
+	}
+	here := guide.Check{Where: guide.WhereShell, Build: f.Probe.Build, BootID: f.Probe.BootID, Time: f.Probe.Time,
+		FirstFix: guidetest.OutsideFix, Cause: guide.CauseOutsideUserManager}
+	in := f.Inputs(t)
+	in.As = &guide.As{User: "svc", UID: 1002, Where: guide.WhereShell, ScopeAs: "svc",
+		Scope: "sudo -u svc XDG_RUNTIME_DIR=/run/user/1002 systemd-run --user --scope bash"}
+	in.Fresh = &here
+	s := guide.Compute(t.Context(), in)
+	fact := *step(s, guide.StepCheck).Fact
+	// The finished walk's next step is the receipt; it runs as the account and opens no shell.
+	if s.Next.Rule != guide.RuleEnforceDone || !strings.HasPrefix(s.Next.Command, "sudo -u svc "+guidetest.SelfWord+" session show ") {
+		t.Fatalf("next %+v", s.Next)
+	}
+	if !strings.Contains(fact, "ready: ") || !strings.Contains(fact, "tego ran as svc") || strings.Contains(fact, "opens a shell") ||
+		!strings.Contains(fact, "it runs as svc (sudo -u), not as you") {
+		t.Errorf("step 2: %q", fact)
+	}
+	// A machine with a contract made names the run directly, with cd inside the account's shell form. Its check step
+	// says whose command it is, without claiming to open an interactive shell.
+	h := guidetest.Make(t, guidetest.ContractMade)
+	if err := guide.StoreCheck(h.Home, h.Probe); err != nil {
+		t.Fatal(err)
+	}
+	in = h.Inputs(t)
+	in.As = &guide.As{User: "svc", UID: 1002, Where: guide.WhereShell, ScopeAs: "svc",
+		Scope: "sudo -u svc XDG_RUNTIME_DIR=/run/user/1002 systemd-run --user --scope bash"}
+	here.Build, here.BootID, here.Time = h.Probe.Build, h.Probe.BootID, h.Probe.Time
+	in.Fresh = &here
+	s = guide.Compute(t.Context(), in)
+	if s.Next.Rule != guide.RuleContractDone || !strings.HasPrefix(s.Next.Command, "sudo -u svc sh -c ") ||
+		!strings.Contains(s.Next.Command, "exec "+guidetest.SelfWord+" run ") {
+		t.Fatalf("next %+v", s.Next)
+	}
+	if fact := *step(s, guide.StepCheck).Fact; !strings.Contains(fact, "it runs as svc (sudo -u), not as you") {
+		t.Errorf("step 2 lost the sentence naming the account: %q", fact)
+	}
+}
+
+func TestGroupedMachineTestStartsARun(t *testing.T) {
+	for command, want := range map[string]bool{
+		"tego machine test":                true,
+		"tego machine test --observe":      true,
+		"cd /project && tego machine test": true,
+		"tego machine check":               false,
+		"tego machine":                     false,
+		"sudo tego machine test":           false,
+	} {
+		if got := guide.StartsRun(command); got != want {
+			t.Errorf("StartsRun(%q) = %v, want %v", command, got, want)
+		}
 	}
 }

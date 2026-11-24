@@ -1,12 +1,15 @@
 # Repository layout
 
-One Go module, two binaries, one monorepo: `tego`, the engine; and `tego-control`, the one-person dashboard. The tree mirrors the four layers of `docs/FEATURES.md`, and the import direction is enforced by `golangci-lint` (see `.golangci.yml`).
+One Go module, two Linux binaries and one Windows launcher, one monorepo: `tego`, the engine; and `tego-control`, the one-person dashboard. The tree mirrors the four layers of `docs/FEATURES.md`, and the import direction is enforced by `golangci-lint` (see `.golangci.yml`).
 
 ```
 tego/
 ├── cmd/tego/                 the engine's binary; main.go dispatches internal helpers before internal/cli
+├── cmd/tego-windows/         native Windows launcher; links no Linux engine or dashboard
 ├── cmd/tego-control/         the dashboard's binary; main.go runs internal/control/cli
 ├── pkg/spec/                  Layer 0 in Go: public types and codecs, independent of internal/ (agent, record, identity, backend, config, presets: the built-in presets)
+│   ├── agentdiff/             pure exhaustive compiled-family comparison; spec/agent and standard library only
+│   └── runstatus/             versioned teardown status and strict codec; standard library and pkg/spec/identity only
 ├── pkg/policy/evaluate/       experimental, version-pinned public facade over the decision core
 ├── pkg/policy/httppolicy/     immutable HTTP method/path matcher; standard library only, no I/O
 ├── pkg/policy/execmatch/      the exec command matcher and its per-tool rows (ADR 0048); standard library only, no I/O
@@ -18,6 +21,7 @@ tego/
 │   ├── policy/
 │   │   └── decide/            the decision core: every tier's verdict model, pure (ADR 0028)
 │   ├── runtime/               Layer 1, the engine
+│   │   ├── admission/         named adoption checks shared by staged preparation and final migration admission; standard library only
 │   │   ├── launch/            child stage + exec under the prepared handle, uid drop, signals, exit code; links no backend
 │   │   ├── cgroup/            cgroup v2 fs ops, limits, kill
 │   │   ├── enforce/           Backend interface + selection
@@ -39,6 +43,7 @@ tego/
 │   │   │   └── mcp/           JSON-RPC over stdio and HTTP
 │   │   ├── limits/            token, cost, wall, stall, repeat budgets → stop
 │   ├── ledger/                shared: append-only writer, hash chain, blobs, redaction, reader, gc
+│   │   └── runstart/          bounded run-start metadata and its shared projection; no action history or dashboard imports
 │   ├── bpf/                   bpf2go-generated bindings (go generate)
 │   ├── platform/              Linux helpers: proc, dns, sys
 │   │   ├── kernelconfig/      running-kernel build configuration shared by admission checks
@@ -49,11 +54,18 @@ tego/
 │   │   └── jsonschema/        the real JSON Schema validator, for tests; its module is never in a binary (TestValidatorNotInBinary)
 │   ├── check/                 Layer 2, the read side
 │   │   ├── status/  drift/  measure/  learn/  events/
+│   │   ├── compiledview/      pure compiled rule sentences and source positions shared by contracts and inforce
+│   │   ├── inforce/           dashboard view: shared compiled sentences plus source fallback, live rules and ledger hits
 │   │   ├── receipt/           the run receipt: one streaming builder for tego receipt, tego run's end summary and the dashboard's Receipt tab
+│   │   ├── cireceipt/         CI evidence/manifest checks, pinned cosign bundle verification and certified identities
 │   │   ├── secretpath/        the name-based secret classifier (secretpath.Is): pure, stdlib only; the receipt and ledgerview share it
 │   │   ├── syslookup/         the routine system lookup classifier (nscd, userdb, D-Bus, the run's resolvers) and NoPlace (AF_UNSPEC, netlink): pure, stdlib only; the receipt, learn and ledgerview share it
+│   ├── grouptrust/            strict bounded local group evidence for scan discovery reads only; reuses config placement resolver (ADR 0145)
+│   ├── scan/                  observation above watcher/sig: catalog, collection and saved result reader (ADR 0145)
 │   ├── control/               Layer 2, the dashboard: its command line, pages, and the views and actions behind them
 │   ├── doctor/                machine checks in plain sentences
+│   ├── contractsrc/           Layer 2, trusted general-source selection and provenance only (ADR 0153); no launch or compile
+│   ├── contracts/             Layer 2, read-only catalog above registry, ledger view and rulefile; never imported by the engine (ADR 0144 slice 1)
 │   ├── registry/              an agent's name to its contract file: project registry, then user registry (agent-contract.md R26)
 │   ├── adapters/              Layer 3, Go-side harness glue (claudecode, openaicodex)
 │   │   └── claudecode/        `tego hook claude-code`: new refusals to Claude Code hook output, once each (ADR 0063); stdlib, x/sys/unix, pkg/spec/reason and pkg/spec/harness only (depguard claudecode-imports)
@@ -62,13 +74,14 @@ tego/
 ├── examples/                  contracts per common agent, quickstart; demo/ is the live demo kit (README.md, demo.sh, a rogue stand-in agent and its contracts)
 ├── docs/                      start at docs/README.md: engine docs, adr/, user/ (the user guide; its README states what the root tiers and adopt need, and fixes the label for what is not built yet)
 ├── tools/  scripts/           dev tooling; operator scripts
+├── action/                    CI receipt implementation, offline tests and display fixtures; receipt workflow .github/workflows/ci-receipt.yml; optional signer ci-receipt-sign.yml
 ├── .github/                   CI, CODEOWNERS
 ├── go.mod  Makefile  .golangci.yml  .gitignore  README  CONTRIBUTING  SECURITY  LICENSE (Apache-2.0)
 ├── NOTICE  THIRD_PARTY_NOTICES.txt  LICENSES/   licensing notices, linked dependencies' notices, the GPL/BSD/LGPL texts
 ├── notices.go                 package tego, the module root: embeds those files for `tego licenses` and `tego-control licenses`
 ```
 
-Packages added since 2026-09-22 and not drawn above: `internal/watch/` (watcher, adopt, tree, procconn, sig: watching and adopting any agent, ADRs 0054 and 0055), `internal/runtime/deputy/` (the run's open deputy, ADR 0041), `internal/runtime/dnsbroker/` (opt-in DNS transport for cooperating clients), `internal/runtime/hoststate/` (the root tiers' `/run/tego`, ADR 0034), `internal/realtego/` (the `~/.tego` directories a process could reach), `internal/selftest/` (`tego test`, Layer 2: starts the tego binary and reads its ledger, ADR 0074), `internal/check/gaps/` and `internal/check/resources/`, `internal/platform/hostaddr/` and `internal/platform/startphase/`, `internal/shellword/` (one word of a shell command line, standard library only: the dashboard's terminal twins and tego doctor's fix line quote by it), and `pkg/policy/gate/`, `pkg/policy/dnspolicy/`, `pkg/policy/fsplan/`.
+Packages added since 2026-09-22 and not drawn above: `internal/watch/` (watcher, adopt, tree, procconn, sig: watching and adopting any agent, ADRs 0054 and 0055), `internal/runtime/deputy/` (the run's open deputy, ADR 0041), `internal/runtime/dnsbroker/` (opt-in DNS transport for cooperating clients), `internal/runtime/hoststate/` (the root tiers' `/run/tego`, ADR 0034), `internal/realtego/` (the `~/.tego` directories a process could reach), `internal/selftest/` (`tego test`, Layer 2: starts the tego binary and reads its ledger, ADR 0074), `internal/check/gaps/` and `internal/check/resources/`, `internal/platform/hostaddr/` and `internal/platform/startphase/`, `internal/platform/winpeer/` (the Windows dashboard relay's owner check: which Windows user's process holds a loopback connection, standard library and x/sys/windows only) and `internal/relaymux/` (the framed multiplex the relay speaks over one wsl.exe pipe, standard library only; ADR 0123, "A browser on Windows"), `internal/shellword/` (one word of a shell command line, standard library only: the dashboard's terminal twins and tego doctor's fix line quote by it), and `pkg/policy/gate/`, `pkg/policy/dnspolicy/`, `pkg/policy/fsplan/`.
 
 The tree includes reserved packages for later phases (`internal/adapters/openaicodex` is one); a reserved package's presence does not mean its feature is implemented, and additional provider parsers are roadmap entries. `learn` is built (2026-10-06): `tego learn` proposes a contract from a run's ledger (docs/OPERATIONS.md). Current capability and Tier 3 status are in `spec/backend/CAPABILITIES.md`.
 
@@ -81,6 +94,7 @@ cmd/tego
           ├── internal/runtime ──► internal/policy/decide, internal/ledger, internal/bpf, internal/platform, pkg/spec
           ├── internal/check   ──► internal/ledger, pkg/spec
           ├── internal/doctor  ──► internal/platform, internal/runtime/enforce
+          ├── internal/contracts ──► internal/registry, internal/ledger/runstart, internal/check/compiledview, internal/platform/sys, internal/platform/proc, internal/platform/peer, internal/rulefile, internal/profilesrc, pkg/spec
           ├── internal/registry──► pkg/spec
           └── internal/adapters──► pkg/spec (the reason file through pkg/spec/reason), golang.org/x/sys/unix and the standard library only
                                  (never the engine, the ledger, the read side, the CLI or BPF: depguard adapters-never-import-engine)
@@ -121,8 +135,8 @@ the module root (notices.go, package tego) ──► embed and the standard libr
 - `pkg/spec` never imports `internal`; it provides the versioned public types and codecs corresponding to `spec/`. `pkg/policy/evaluate` is a separate experimental public facade over the pure decision core. External callers must pin its module version to the binary whose kernel policy they model. The decision core also registers the deprecated `pkg/spec/agent` evaluation shims (`agent.RegisterDecider`, ADR 0028); this compatibility registration is not the supported extension mechanism.
 - `internal/policy/decide` is pure: no I/O, no goroutines, no clock (depguard `decide-is-pure`).
 - The engine (`internal/runtime`) never imports the read side (`internal/check`); the read side never imports the engine. They meet only through the ledger and the spec types.
-- `internal/ledger` is shared infrastructure, owned by neither side. It imports `pkg/spec` and, for its descriptors (ADR 0023), `internal/platform/sys`. It holds the one follower of a live run (`Follow`, `WatchLive`) that `tego events --follow` reads and later services are to read.
-- The layer rules for the packages added since (`reason-spec-is-leaf`, `harness-spec-is-leaf`, `receipt-spec-is-a-leaf`, `adapters-never-import-engine`, `claudecode-imports`, `receipt-reads-the-ledger-only`, `setup-never-imports-engine`, `selftest-never-imports-runtime`, `tools-are-stdlib`) are all in `.golangci.yml`, and are inert until their directory exists. TestEveryLayeredDirHasARule (tools/rulecheck) fails when a directory under `internal/adapters/*`, `internal/check/*`, `internal/setup`, `internal/selftest`, `pkg/spec/*` or one of the three V1 launch tools is governed by no depguard rule, so a package is under its layer's rule the day it appears. Each package that adds a directory adds its own row to the tree above.
+- `internal/ledger` is shared infrastructure, owned by neither side. It imports `pkg/spec` and, for its descriptors (ADR 0023), `internal/platform/sys`. It holds the one follower of a live run (`Follow`, `WatchLive`, `internal/ledger/follow.go` and `livewatch.go`) that `tego events --follow` reads and later services are to read.
+- The layer rules for the packages added since (`reason-spec-is-leaf`, `harness-spec-is-leaf`, `receipt-spec-is-a-leaf`, `adapters-never-import-engine`, `claudecode-imports`, `receipt-reads-the-ledger-only`, `setup-never-imports-engine`, `selftest-never-imports-runtime`, `tools-are-stdlib`) are all in `.golangci.yml`, and are inert until their directory exists. TestEveryLayeredDirHasARule (tools/rulecheck) fails when a directory under `internal/scan`, `internal/scan/catalog`, `internal/scan/result`, `internal/adapters/*`, `internal/check/*`, `internal/setup`, `internal/selftest`, `pkg/spec/*` or one of the three V1 launch tools is governed by no depguard rule, so a package is under its layer's rule the day it appears. Each package that adds a directory adds its own row to the tree above.
 - Backends (`enforce/landlock`, `enforce/bpflsm`, `enforce/observe`) never import each other.
 - Provider parsers (`derive/anthropic`, `derive/mcp`) never import each other.
 
@@ -152,9 +166,10 @@ its own says otherwise.
 | `pkg/spec/askproto` | 0 | standard library only: the ask wire format (frames, codes, sentinel errors, limits, strict decoders) | `askproto-is-stdlib` |
 | `internal/runlock` | 1 | `internal/ledger` (the lock file and its regular-file openers), `internal/platform`, x/sys; never `internal/runtime` | `run-clients-never-import-runtime` |
 | `internal/askclient` | 1 | `pkg/spec/askproto`, `internal/runlock`, `internal/ledger` (`LedgerTarget`'s redaction), x/sys; never `internal/runtime` | `run-clients-never-import-runtime` |
-| `internal/runscope` | 1 | standard library and `pkg/spec/identity` only: the one run-membership rule (`GovernedBy`, `LooksGoverned`, `InRun`, the strict cgroup reader `Unified`) | `runscope-is-a-leaf` |
-| `internal/platform/peer` | 1 | `internal/runscope`, `internal/platform/sys` (the pidfd owners), `internal/platform/proc` (the stat parser), `pkg/spec/identity` and x/sys only: the one peer check every socket uses | `platform-peer-imports` |
-| `internal/check/inforce` | 2 | `internal/check/livestatus`, `pkg/policy/gate`, `pkg/spec/agent`, `pkg/spec/backend`, `pkg/spec/record`, yaml.v3; pure (no `os`, no clock), never `internal/control` or `internal/liveblock` | `inforce-is-pure`, `linked-into-control-never-imports-engine` |
+| `internal/runscope` | 1 | standard library and `pkg/spec/identity` only: the one run-membership rule (`GovernedBy`, `LooksGoverned`, the three-valued `Answer` with `Decide` and `Prove` for the calling process, the strict cgroup reader `Unified`) | `runscope-is-a-leaf` |
+| `internal/platform/peer` | 1 | `internal/runscope`, `internal/platform/sys` (the pidfd owners), `internal/platform/proc` (the stat parser), `pkg/spec/identity` and x/sys only: the one peer check every socket uses, and `Self`, the kernel's reads behind the run-membership rule for the calling process | `platform-peer-imports` |
+| `internal/check/compiledview` | shared read core | `internal/check/livestatus` (state type only), `pkg/policy/gate`, `pkg/spec/agent`, `pkg/spec/backend`, `pkg/spec/record`, `pkg/policy/execmatch` and its `rows`, yaml.v3; pure, no I/O, no control or engine imports | `compiledview-is-pure`, `linked-into-control-never-imports-engine` |
+| `internal/check/inforce` | 2 | `internal/check/compiledview`, `internal/check/livestatus`, `pkg/spec/agent`, `pkg/spec/backend`, `pkg/spec/record`, yaml.v3; pure (no `os`, no clock), never `internal/control` or `internal/liveblock` | `inforce-is-pure`, `linked-into-control-never-imports-engine` |
 
 Two forbidigo rules go with the table: no product file names a trusted `html/template` type (`HTML`, `HTMLAttr`, `JS`,
 `JSStr`, `URL`, `CSS`, `Srcset`), and no file of `internal/control/web` dials, listens, looks a name up, lists the
@@ -175,8 +190,9 @@ and a noun never spans both binaries (ADR 0100 (2)).
 | I am looking for… | Go to |
 |---|---|
 | the shape of `agent.yaml` | `spec/agent/v0/` (schema) and `pkg/spec/agent` (types, validation, compile) |
+| the contracts catalog and compiled view | `internal/contracts`, `internal/cli/contracts.go`, `spec/contracts/v1/` |
 | the shape of an event | `spec/record/v1/` and `pkg/spec/record` |
-| the built-in presets (`tego/no-secrets`, `tego/no-prod`, `tego/repo-only-writes`), their revisions and the host groups | `pkg/spec/presets` (the YAML, `README.md` is normative), registered in `internal/cli/profiles.go`; the user's page `docs/user/presets.md` (ADR 0068) |
+| the built-in presets (`tego/no-secrets`, `tego/no-prod`, `tego/repo-only-writes`, `tego/ci`), their revisions and the host groups | `pkg/spec/presets` (the YAML, `README.md` is normative), registered in `internal/cli/profiles.go`; the user's page `docs/user/presets.md` (ADR 0068) |
 | `tego init --preset`: a contract from presets, folders, markers and host groups | `internal/setup` (compose.go, ecosystem.go, check.go: Draft/Create/Remove/Check; goldens in testdata/compose/), flags and printing in `internal/cli/init.go`; `docs/user/presets.md` "Start from tego init" |
 | env vars a run sets | `pkg/spec/identity` |
 | what a run provisions for its agent harness (`harness:`, the per-run settings files, hook-state) | `internal/runtime/harness.go` (the point), `pkg/spec/harness` (its types), `internal/adapters` (the provisioners) |
@@ -212,7 +228,7 @@ and a noun never spans both binaries (ADR 0100 (2)).
 
 ## Growth path (how this stays a monorepo)
 
-- Today: one module, two binaries. New capability = new package under the layer it belongs to.
+- Today: one module, two Linux binaries and one Windows launcher. New capability = new package under the layer it belongs to.
 - Another binary: add it under `cmd/`; it reuses `internal/` packages; still one module. (*Amended 2026-10-24, [ADR 0100](adr/0100-second-binary-and-handoff.md):* the second binary is `cmd/tego-control`, the dashboard, reached from `tego` only through a sealed hash-pinned handoff; see "The dashboard's packages" above.) (*Amended 2026-10-05, ADR 0042 (7)(a):* tegod is `tego __tegod` in the one binary, not `cmd/tegod`.)
 - A component with an incompatible dependency set or release cadence (a Python or TypeScript adapter package): give it its own directory and its own module, and add a `go.work` at the root. Split only when this pressure is real.
 - A Rust reimplementation of the low-level runtime: `runtime-rs/` at the root, conformant to `spec/`, tested by `test/e2e`; `cmd/tego` can exec it behind the same `enforce.Backend` interface.
@@ -268,3 +284,12 @@ type Sink  func(*record.Event) error
 type Stage func(next Sink) Sink
 // Ledger transforms wrap the writer: redact(splitBlobs(writer.Append)).
 ```
+
+`internal/scan` collects bounded observations above watcher signatures; it never
+imports runtime, ledger, guide or control. `catalog` is data over sig; `result`
+reads untrusted saved observations and never imports collection or sig. Runtime,
+policy, BPF, watcher, runscope and pkg never import scan. Guide and control may
+import only the result reader, never collection, catalog or watcher. Depguard's
+parent deny uses `internal/scan$` plus child prefixes (ADR 0145).
+
+`internal/agentid` is a pure layer over caller-supplied evidence (standard library only): one named run per recorded row, separate scan observations and no transferred ticks. `internal/guide` supplies checked record snapshots and bounded verification through it for setup. `internal/control/agents` owns Agents projection and the bounded private remembered-discovery leaf store; it uses guide, ledgerview, scan/result and shellword, never collection or runtime. Reading a page may atomically update remembered observations but starts no discovery process. `internal/control/web/agents.go` renders this data without opening a file or starting a process.

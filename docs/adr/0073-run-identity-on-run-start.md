@@ -7,7 +7,7 @@ spec/record/v1 (record_minor 17, `MinorRunIdentity`) and spec/identity/RUN-IDENT
 
 A ledger said what a run did, under which contract and binary, but not who started it or where. `launcher_pid` named a
 process that is gone after the run; nothing named the account, and under `sudo` the account that matters (the person
-who typed `sudo tego run`) was invisible behind uid 0. A ledger copied off a machine named no host. `TEGO_PARENT_RUN`
+who typed `tego run` launched through sudo) was invisible behind uid 0. A ledger copied off a machine named no host. `TEGO_PARENT_RUN`
 was passed to the child (identity env) and never recorded, so a nested run could not be joined to its parent from the
 ledger. The later packages that build on the record need
 these facts fixed, with their names and types, before they can rely on them: labels a caller attaches to a run, a role
@@ -142,7 +142,7 @@ here, and none ships.
   unsigned 32-bit decimal other than `4294967295`), and only for root of the initial user namespace (ADR 0042
   (5)(d)): under `unshare -r` no `sudo_uid` is recorded, as no drop is made to it. The root arm,
   `TestRootRunStartNamesTheSudoAccount` (root-must-pass), passed in the KVM guest on 6.17 under both boots
-  (lsm=…,bpf and the default LSM list): `sudo tego run --tier cgroup` recorded `launcher_uid` 0 with the invoking
+  (lsm=…,bpf and the default LSM list): `tego run --tier cgroup` run through sudo recorded `launcher_uid` 0 with the invoking
   account's `sudo_uid` and `sudo_user`, the same contract run by that account at tier landlock its own uid and no
   `sudo_uid`, and both `host` equal to `uname -n`.
 - 2026-10-25: `fillRunIdentity` read `SUDO_UID` from `Deps.Environ` when it was set, the agent's

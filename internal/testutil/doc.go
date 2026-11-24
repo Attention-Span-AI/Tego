@@ -38,6 +38,10 @@
 // Unix socket paths cannot fit beneath TempDir. Cleanup removes only that child; the normal
 // login runtime is never handed to a test run or swept. Durable state still belongs in TempDir.
 //
+// SunPathDir is the temporary directory for a Unix socket fixture: short enough, whatever TMPDIR is, that a socket name of the
+// length the caller gives binds beneath it (sun_path holds 107 bytes), beneath TMPDIR when that leaves room and beneath
+// /tmp when it does not.
+//
 // TimingMode, Mode.Measure, Mode.Judge and Mode.JudgeRatio are how a test holds code to an absolute timing budget
 // (docs/BENCHMARKS.md, "Timing budgets in the test suites"): Measure takes the fastest of many interleaved rounds, less
 // the clock's own cost, on the wall clock alone in budget mode (MinOf) and in the unit gate on the calling thread's
@@ -58,7 +62,9 @@
 // cannot hide. CPU time alone would never see a regression that only waits. MinOf on ThreadCPU alone is for relative
 // bounds, two sizes of the same code.
 //
-// Imports: the standard library, golang.org/x/sys/unix and internal/realtego (which imports only the standard
+// BaselineCases supplies raw required-member mutations for independent record readers.
+//
+// Imports: pkg/spec/record, the standard library, golang.org/x/sys/unix and internal/realtego (which imports only the standard
 // library, and is where the test build of tego finds the same homes). Must not import anything else under internal/ or pkg/: a helper
 // every package's tests import cannot depend on any of them without an import cycle.
 // The separate contracttest and ledgertest subpackages depend on the public

@@ -13,6 +13,7 @@ import (
 
 	"github.com/attention-span-ai/tego/pkg/policy/execmatch"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
+	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
 // origins maps a dotted field path ("fs.write.2", "limits.memory",
@@ -178,6 +179,10 @@ var contractSchema = mapping(map[string]*field{
 	// One profile name or a list of 1 to MaxExtendsList (ADR 0066).
 	"extends": nullRefused(oneOrList(scalar(checkProfileName), MaxExtendsList), "no profile is merged", "name the profile, or remove the key"),
 	"command": seq(scalar(nonEmpty("command entry"))),
+	"learn": nullRefused(requiring(mapping(map[string]*field{
+		"run":      text(scalar(nonEmpty("learn.run"))),
+		"withheld": seq(text(scalar(nonEmpty("learn.withheld entry")))),
+	}), "run", "withheld"), "no learn history", "write run and withheld, or remove the key"),
 	"fs": nullRefused(mapping(map[string]*field{
 		"write": seq(scalar(checkPath)),
 		"ask":   seq(scalar(checkAskPath)),
@@ -259,6 +264,14 @@ var contractSchema = mapping(map[string]*field{
 		"command": seq(scalar(nonEmpty("mcp command entry"))),
 		// Read by validateMCP (ParseMCPURL), which also asks for exactly one of command and url (R16a).
 		"url": scalar(nonEmpty("mcp url")),
+		"business_rules": nullRefused(requiring(mapping(map[string]*field{
+			"version":       number(scalar(intRange("business version", 1, 1))),
+			"topology":      text(scalar(enumCheck("business topology", "trusted-stdio-worker-v1"))),
+			"worker_digest": text(scalar(businessDigestText)),
+			"bundle_sha256": text(scalar(businessDigestText)),
+			"bundle_json":   text(scalar(businessBundleText)),
+		}), "version", "topology", "worker_digest", "bundle_sha256", "bundle_json"),
+			"a business rule cannot be disabled by null", "remove it only in a newly reviewed contract"),
 		// Per-tool rules behind Tego's MCP relay (R16b, ADR 0126); validateMCPTools reads the names. A key with no value
 		// parsed as absent: tools: left the server off the relay, and allow: allowed every tool, the opposite of allow: [].
 		"tools": nullRefused(mapping(map[string]*field{
@@ -444,9 +457,20 @@ func checkHost(v string) (string, string) {
 
 func checkEnvName(v string) (string, string) {
 	if !envNameRE.MatchString(v) {
-		return fmt.Sprintf("environment variable name %q must match ^[A-Za-z_][A-Za-z0-9_]*$", v), ""
+		return envNameProblem(v), "supply a variable name here; put a value in env.set instead"
 	}
 	return "", ""
+}
+
+// envNameProblem says what is wrong with an entry of a field that takes a variable's name, without printing a value
+// (identity.EnvEntryName, rule (a)): a shell-style NAME=value names its variable and hides the rest; any other text
+// may be a value pasted where a name belongs, so nothing of it is shown and the diagnostic's own path and position
+// say which entry it is.
+func envNameProblem(entry string) string {
+	if name, ok := identity.EnvEntryName(entry); ok {
+		return fmt.Sprintf("environment entry for variable %q must supply only a name matching ^[A-Za-z_][A-Za-z0-9_]*$ (value hidden)", name)
+	}
+	return "this entry is not an environment variable name: it must match ^[A-Za-z_][A-Za-z0-9_]*$ (the entry is not shown)"
 }
 
 func checkEnvValue(v string) (string, string) {
@@ -691,6 +715,13 @@ func (w *walker) walkMapping(n *yaml.Node, f *field, path string) {
 			continue
 		}
 		key := kn.Value
+		// Validate free-map names before duplicate diagnostics or child paths can print an invalid KEY=VALUE.
+		if f.kind == kindMapFree {
+			if msg, fix := f.keyCheck(key); msg != "" {
+				w.ds.errorf(kpos, CodeSchema, "%s: %s", path, msg).fix("%s", fix)
+				continue
+			}
+		}
 		if prev, dup := seen[key]; dup {
 			w.ds.errorf(kpos, CodeSchema, "key %q already defined at line %d", key, prev.Line).fix("keep one %s:", key)
 			continue
@@ -699,10 +730,6 @@ func (w *walker) walkMapping(n *yaml.Node, f *field, path string) {
 		child := childPath(path, key)
 		switch f.kind {
 		case kindMapFree:
-			if msg, fix := f.keyCheck(key); msg != "" {
-				w.ds.errorf(kpos, CodeSchema, "%s: %s", path, msg).fix("%s", fix)
-				continue
-			}
 			// A null value under a free map is not absent: the typed decode keeps the key with its zero value,
 			// so `set: {PATH: }` (a value left out or commented out) set PATH to "" with no diagnostic and no
 			// origin for a later one to point at. It is an error, as a null list entry is.

@@ -18,6 +18,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/internal/registry"
 	rtcgroup "github.com/attention-span-ai/tego/internal/runtime/cgroup"
+	"github.com/attention-span-ai/tego/internal/selfbin"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
@@ -63,7 +64,8 @@ func isTerminalFile(f *os.File) bool {
 }
 
 // hintsOn reports whether the guidance lines go to stderr: TEGO_HINTS=off never, TEGO_HINTS=on or a terminal yes,
-// and never from inside a governed run, whose agent reads them as its own output (selfInRun fails closed).
+// and never from inside a governed run, whose agent reads them as its own output (selfAnswer: only a process shown
+// to be outside every run gets them).
 func hintsOn(stderr io.Writer) bool {
 	switch os.Getenv(hintsEnv) {
 	case "off":
@@ -74,9 +76,21 @@ func hintsOn(stderr io.Writer) bool {
 			return false
 		}
 	}
-	in, _ := selfInRun()
-	return !in
+	return selfAnswer().Outside()
 }
+
+// unsafeFolderText and unsafeCommandText are the next: sentences for a command that cannot be shown as it is: a value from
+// the record (a folder, a name) holds a control, invisible or invalid character. The command is not altered to be printable
+// (record.Printable writes a newline as backslash and n, which names another folder); none is given.
+const (
+	unsafeFolderText  = "this run's folder name cannot be shown safely, so no command is given."
+	unsafeCommandText = "a name in the command that comes next cannot be shown safely, so none is given."
+)
+
+// faithful reports whether s can be written into a command a person pastes exactly as it is (selfbin.Safe: valid UTF-8,
+// no control, no invisible or bidirectional format character). Values are checked raw, before they are quoted: quoting
+// keeps the shell syntax of a value, not what the terminal shows of it.
+func faithful(s string) bool { return selfbin.Safe(s) }
 
 // hintBlock is the "next:" block of text and command ("" for none).
 func hintBlock(text, command string) string {
@@ -87,11 +101,49 @@ func hintBlock(text, command string) string {
 	return s
 }
 
+// readerAccount is guide.ReaderAccount: the account of this process when the person who reads its lines is another
+// user, who started it through sudo or su from outside that user's user manager's cgroup, else "". A variable so a test
+// describes the reader without being started by one.
+var readerAccount = guide.ReaderAccount
+
+// forReader is a hint's text and command as the person who reads this process's lines types them (guide.ForReader): a
+// tego command read by an administrator who ran sudo -u svc tego ... is written with sudo -u svc and this tego's
+// absolute path in front, since typed bare in their own shell it reads their record, not the service account's, and
+// `sudo -u svc tego` is found only where sudo's secure_path has tego (acceptance 4, 2026-11-11). A tego whose path
+// cannot be named gives no command, and the text says why instead.
+func forReader(text, command string) (string, string) {
+	if command == "" {
+		return text, ""
+	}
+	line, why := guide.ForReader(readerAccount(), command)
+	if why != "" {
+		return why, ""
+	}
+	return text, line
+}
+
 // writeHint writes the "next:" block when the guidance lines are on.
 func writeHint(stderr io.Writer, text, command string) {
-	if hintsOn(stderr) {
-		_, _ = io.WriteString(stderr, hintBlock(text, command)) // guidance never changes an exit
+	if !hintsOn(stderr) {
+		return
 	}
+	if !faithful(command) {
+		text, command = unsafeCommandText, ""
+	}
+	text, typed := forReader(text, command)
+	if typed != command && typed != "" {
+		// The command now begins with sudo -u: in a shell sudo or su opened, the account may not use sudo (acceptance 4).
+		note := "\nThe command below is for your own login shell: sudo runs it as the account tego ran as " +
+			"(in a shell sudo or su opened, type exit first)."
+		if strings.Contains(typed, " sh -c ") {
+			// Tego cannot read the sudoers policy: a grant that lets the account run only tego refuses a shell, so the words
+			// do not promise the line works (the confirm pass).
+			note += " It runs sh as the account, which your sudoers may not allow; if sudo refuses it, open a shell as the account" +
+				" and run the same command there."
+		}
+		_, _ = io.WriteString(stderr, note+"\n")
+	}
+	_, _ = io.WriteString(stderr, hintBlock(text, typed)) // guidance never changes an exit
 }
 
 // writeGuide writes one guidance line (text ends with its newline) when the guidance lines are on.
@@ -119,13 +171,19 @@ func outsideHint(stderr io.Writer, then string) {
 	o := scopeOpener()
 	text := "open a shell in your user manager's cgroup, then " + then + ":"
 	switch {
+	case o.Command == "" && o.As != "":
+		// Another user reads it (sudo -u svc tego run): the manager is svc's, and the fix: line names no command either
+		// (cgroup.placementRemedy). Integration pass 5, 2026-11-11.
+		writeGuide(stderr, "\nsystemd-run --user cannot open a shell in "+o.As+"'s user manager's cgroup from here: "+
+			record.Printable(o.Missing)+"; a terminal on that user's desktop is in it.\n")
+		text = "open a shell in " + o.As + "'s user manager's cgroup, then " + then + "."
 	case o.Command == "":
 		writeGuide(stderr, "\nsystemd-run --user cannot open a shell in your user manager's cgroup here: "+
 			record.Printable(o.Missing)+"; a terminal on your desktop is in it.\n")
 		text = strings.TrimSuffix(text, ":") + "."
 	case o.As != "":
 		writeGuide(stderr, "\ntego ran as "+o.As+", started from another user's shell through sudo or su. Type the command "+
-			"below in your own login shell, not in one sudo or su opened: it opens a shell as "+o.As+", in "+o.As+"'s user manager's cgroup, not in yours.\n")
+			"below in your own login shell, not in one sudo or su opened (if you are in one, type exit first): it opens a shell as "+o.As+", in "+o.As+"'s user manager's cgroup, not in yours.\n")
 		text = "from your own shell, open a shell as this user; " + strings.Replace(then, " there", " in it", 1) + ":"
 	}
 	writeHint(stderr, text, o.Command)
@@ -239,18 +297,17 @@ func isDir(path string) bool {
 	return err == nil && fi.IsDir()
 }
 
-// runHint writes the next: block of text and command, a step whose command may start a run (guide.StartsRun). From a
-// shell beside the user manager's cgroup (besideUserManager), where that command exits 125, a guidance line says the
-// command and the block opens a shell inside the cgroup instead (outsideHint), never tego run, which fails there. Its
-// command is never one that starts a run, and never
-// the command that printed it. Root's block names guide.DefaultScope, which the person types as themselves: this
-// process's environment is root's, not the shell's the person returns to.
+// runHint names the run directly when no known reason prevents automatic scope entry. A known missing opener
+// retains the manual fallback; the command itself checks placement and fails closed if entry fails.
 func runHint(stderr io.Writer, text, command string) {
-	if !guide.StartsRun(command) || !hintsOn(stderr) || !besideUserManager() {
+	if !faithful(command) {
+		text, command = unsafeCommandText, ""
+	}
+	if !guide.StartsRun(command) || !hintsOn(stderr) || !besideUserManager() || scopeOpener().Missing == "" {
 		writeHint(stderr, text, command)
 		return
 	}
-	writeGuide(stderr, "\ntego starts no run from this shell, which is outside your user manager's cgroup. In a shell inside it, "+
+	writeGuide(stderr, "\nThis shell is outside your user manager's cgroup and automatic scope entry may fail. In a shell inside it, "+
 		text+" "+command+"\n")
 	const then = "run that command there"
 	if config.InitNSRoot() {
@@ -261,17 +318,18 @@ func runHint(stderr io.Writer, text, command string) {
 }
 
 // shortRun is how a hint names run id: its last part, which every command takes for the run (resolveRunDir), when
-// that names this run alone among the runs under root now; else the whole id.
+// that names this run alone among the runs under root now; else the whole id, as it is: a hint never alters a value to make
+// it printable, writeHint and runHint decline a command that holds one that does not print safely.
 func shortRun(root, id string) string {
 	i := strings.LastIndexByte(id, '-')
 	if root == "" || i < 0 || i == len(id)-1 {
-		return record.Printable(id)
+		return id
 	}
 	short := id[i+1:]
 	if got, err := expandRunAbbrev(short, root); err == nil && got == id {
 		return short
 	}
-	return record.Printable(id)
+	return id
 }
 
 // namePlaceholder is what a hint writes for an agent name only the person can choose.

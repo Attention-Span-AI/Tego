@@ -1,26 +1,28 @@
 {{/* SPDX-License-Identifier: Apache-2.0 */}}
-{{/* machine: This machine (insights.go machine): the protection levels the runs here used, then what the newest run recorded; the raw capability ids folded for auditors. Labels, not sentences. */}}
-{{define "content"}}{{with .Data}}{{$now := .Now}}
-<div class="head"><div><h1>This machine</h1>{{if .Run}}<p class="lede">{{with .Best}}Up to <strong>{{tier .Name}}</strong> <span class="soft">({{.Word}})</span>{{else}}Watched only so far{{end}}</p>{{end}}</div></div>
-{{if not .Run}}<section class="panel"><div class="empty"><div class="glyph">{{template "i" "i-terminal"}}</div><h3>No runs yet</h3><details class="cli-more"><summary>In a terminal</summary><div class="cli"><code>tego machine check</code></div></details></div></section>
-{{else}}
-{{if .Err}}<div class="banner banner-danger" role="alert">{{template "i" "i-triangle-alert"}}<div class="grow" title="{{.Err}}">Newest run unreadable</div></div>{{end}}
-<section class="panel" aria-labelledby="h-tiers"><div class="panel-head"><h2 id="h-tiers">Protection levels</h2></div>
-<div class="panel-body"><ul class="tiers">{{range .Tiers}}<li class="{{if .Has}}has{{end}}"><div class="row"><strong>{{tier .Name}}</strong> <span class="soft">tier {{.N}} · {{.Word}}</span> {{if .Has}}<span class="b b-allowed">{{template "i" "i-check"}}Available</span>{{else}}<span class="b b-neutral">Not used yet</span>{{end}}</div>
-<p class="soft">{{.Needs}}</p>{{if not .Has}}<p class="mc-next">{{template "i" "i-play"}}{{.Missing}}</p>{{end}}{{with .Used}}<p class="mc-used">Last: <a class="link" href="/runs/{{pathEsc .ID}}">{{if .Agent}}{{.Agent}}{{else}}{{rid .ID}}{{end}}</a> · <time datetime="{{iso .Start}}" title="{{stamp .Start}}">{{when .Start $now}}</time></p>{{end}}</li>{{end}}</ul></div></section>
-<section class="panel" aria-labelledby="h-facts"><div class="panel-head"><h2 id="h-facts">Newest run</h2><span class="soft"><a class="mono link" href="/runs/{{pathEsc .Run.ID}}">{{rid .Run.ID}}</a> · {{tier .Tier}}</span></div>
-<div class="panel-body stack-sm"><dl class="kv">
-<dt>Kernel</dt><dd>{{if .Kernel}}Linux {{.Kernel}}{{else}}<span class="muted">Not recorded</span>{{end}}</dd>
-<dt>Kernel decides</dt><dd>{{if .Plane}}{{.Plane}}{{else if eq .Tier "landlock"}}<span title="Landlock refuses the files and programs the contract does not allow; at this level Tego's supervisor decides hosts">Files and programs (Landlock)</span>{{else if .Watch}}<span class="muted">Nothing: watched only</span>{{else}}<span class="muted">Not recorded</span>{{end}}</dd>
-<dt>Network</dt><dd>{{if eq .NetAssurance "best-effort"}}<span title="tego checks each connection; the kernel does not prove every kind">Best effort</span>{{else if .NetAssurance}}{{.NetAssurance}}{{else}}<span class="muted">Not recorded</span>{{end}}</dd>
-<dt>Capabilities</dt><dd>{{len .Caps}} on · {{len .NoCaps}} unavailable{{if .BestEffort}} · {{len .BestEffort}} best effort{{end}}</dd>
-</dl>
-<details class="mc-tech"><summary>Capability flags</summary><dl class="kv mc-ids">
-<dt>Network assurance</dt><dd>{{if .NetAssurance}}<span class="mono">{{.NetAssurance}}</span>{{else}}<span class="muted">Not recorded</span>{{end}}{{if .NetGuards}} · proven: {{range $i, $g := .NetGuards}}{{if $i}}, {{end}}<span class="mono">{{$g}}</span>{{end}}{{end}}{{if .NetMissing}} · not proven: {{range $i, $g := .NetMissing}}{{if $i}}, {{end}}<span class="mono">{{$g}}</span>{{end}}{{end}}</dd>
-<dt>On</dt><dd>{{if .Caps}}{{range $i, $c := .Caps}}{{if $i}}, {{end}}<span class="mono">{{$c}}</span>{{end}}{{else}}<span class="muted">None recorded</span>{{end}}</dd>
-<dt>Unavailable</dt><dd>{{if .NoCaps}}{{range $i, $c := .NoCaps}}{{if $i}}, {{end}}<span class="mono">{{$c}}</span>{{end}}{{else}}<span class="muted">None</span>{{end}}</dd>
-<dt>Best effort</dt><dd>{{if .BestEffort}}{{range $i, $c := .BestEffort}}{{if $i}}, {{end}}<span class="mono">{{$c}}</span>{{end}}{{else}}<span class="muted">None</span>{{end}}</dd>
-</dl></details>
-<details class="cli-more"><summary>In a terminal</summary><div class="cli"><code>tego machine check</code></div></details></div></section>
+{{/* Readiness is historical evidence, never a new capability probe. */}}
+{{define "content"}}<link rel="stylesheet" href="/static/support.css">{{with .Data}}{{$d := .}}
+<div class="page-interior machine-page">
+{{template "guide-show" $}}
+<div class="head"><div>{{if $.Tour}}<h2>{{else}}<h1>{{end}}Can this machine enforce rules?{{if $.Tour}}</h2>{{else}}</h1>{{end}}</div></div>
+<section class="panel machine-answer" aria-labelledby="machine-answer"><div class="panel-body stack">
+<h2 id="machine-answer">{{if .Err}}Readiness unknown{{else if not .Run}}Not checked yet{{else if .Watch}}Watched only in the newest run{{else if .Best}}Current readiness is not checked{{else}}Readiness unknown{{end}}</h2>
+<p>{{if and .Best (not .Watch)}}{{tier .Best.Name}} worked in a recorded run. {{end}}{{if .Err}}The newest run's machine facts could not be read.{{else if not .Run}}{{template "quantity" (quantityZero "machine.runs" "No runs yet. There is no recorded check for this machine." .Numbers)}}{{else if .Watch}}That run watched actions without enforcement.{{else}}These are facts from past runs. They do not check this machine's setup now.{{end}}</p>
+<p><strong>First, check the machine:</strong></p><div class="cli"><code>tego machine check</code></div>
+<a class="text-link" href="/glossary#protection">What do the protection levels cover?</a>
+</div></section>
+{{if .Run}}
+<section class="panel" aria-labelledby="h-tiers"><div class="panel-head"><h2 id="h-tiers">Protection checks</h2></div><div class="machine-checks">
+{{range .Tiers}}<details class="machine-check" id="check-{{.Name}}"><summary><span class="check-name">{{tier .Name}}</span><span class="b b-neutral">{{if .Used}}Used before{{else}}Not checked{{end}}</span><span class="phone-when">{{if .Used}}<time datetime="{{iso .Used.Start}}" data-started="{{iso .Used.Start}}" data-number-exclude="machine.tier-time" data-ck>{{when .Used.Start $d.Now}}</time>{{else}}{{template "quantity" (quantityZero "machine.tier-runs" "No run" $d.Numbers)}}{{end}}</span></summary>
+<div class="panel-body stack-sm"><p>{{if eq .Name "landlock"}}File and program restrictions can run without administrator rights. Network decisions use Tego's supervisor and may be best effort.{{else if eq .Name "cgroup"}}Adds network checks and file supervision with administrator rights.{{else}}Adds kernel checks with BPF LSM enabled at boot.{{end}}</p>
+<p><span data-number-exclude="machine.requirement">{{.Needs}}</span>. {{if .Has}}Recorded in a run at this level or above; check again with <span class="mono">tego machine check</span>.{{else}}{{.Missing}}. Check the doctor's result before changing the machine.{{end}}</p>
+{{with .Used}}<a class="text-link" href="/runs/{{pathEsc .ID}}" data-number-exclude="machine.last-run">Last recorded use: {{if .Agent}}{{.Agent}}{{else}}{{.ID}}{{end}}</a>{{end}}</div></details>{{end}}
+</div></section>
+{{if .Checks}}<section class="panel" aria-labelledby="h-check-limits"><div class="panel-head"><h2 id="h-check-limits">Checks with limits</h2></div>{{range .Checks}}<details class="machine-check"><summary><span class="check-name">{{.Label}}</span><span class="b b-neutral">{{.State}}</span></summary><div class="panel-body stack-sm"><p>{{.Next}}</p><p class="detail-value mono">{{.Flag}}</p></div></details>{{end}}</section>{{end}}
+<details class="detail-disclosure" id="machine-record"><summary>Full recorded machine details</summary><div class="panel-body stack">
+{{with .Err}}<p class="detail-value">{{.}}</p>{{end}}
+<p>From <a class="text-link" href="/runs/{{pathEsc .Run.ID}}" data-number-exclude="machine.source-run">{{.Run.ID}}</a>. {{tier .Tier}}.</p>
+<dl class="kv"><dt>Kernel</dt><dd class="detail-value">{{if .Kernel}}Linux {{.Kernel}}{{else}}Not recorded{{end}}</dd><dt>Kernel decides</dt><dd class="detail-value">{{if .Plane}}{{.Plane}}{{else if .Watch}}Watching without enforcement{{else if eq .Tier "landlock"}}Files and programs (Landlock){{else}}Not recorded{{end}}</dd><dt>Network assurance</dt><dd class="detail-value">{{if .NetAssurance}}{{.NetAssurance}}{{else}}Not recorded{{end}}</dd><dt>Proven network checks</dt><dd class="detail-value">{{range .NetGuards}}<div class="mono">{{.}}</div>{{else}}{{template "quantity" (quantityZero "machine.netguards" "None recorded" .Facts)}}{{end}}</dd><dt>Unproven network checks</dt><dd class="detail-value">{{range .NetMissing}}<div class="mono">{{.}}</div>{{else}}{{template "quantity" (quantityZero "machine.netmissing" "None recorded" .Facts)}}{{end}}</dd><dt>Capabilities on</dt><dd class="detail-value">{{range .Caps}}<div class="mono">{{.}}</div>{{else}}{{template "quantity" (quantityZero "machine.caps" "None recorded" .Facts)}}{{end}}</dd><dt>Unavailable</dt><dd class="detail-value">{{range .NoCaps}}<div class="mono">{{.}}</div>{{else}}{{template "quantity" (quantityZero "machine.nocaps" "None recorded" .Facts)}}{{end}}</dd><dt>Best effort</dt><dd class="detail-value">{{range .BestEffort}}<div class="mono">{{.}}</div>{{else}}{{template "quantity" (quantityZero "machine.besteffort" "None recorded" .Facts)}}{{end}}</dd></dl>
+<p>For a missing or best effort check, run <span class="mono">tego machine check</span> and follow that check's next step. A past run cannot prove a missing check works now.</p>
+</div></details>
 {{end}}
-{{end}}{{end}}
+</div>{{end}}{{end}}

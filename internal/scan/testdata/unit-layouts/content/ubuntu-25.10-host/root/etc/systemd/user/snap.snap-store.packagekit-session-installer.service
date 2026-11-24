@@ -1,0 +1,14 @@
+[Unit]
+# Auto-generated, DO NOT EDIT
+Description=Service for snap application snap-store.packagekit-session-installer
+X-Snappy=yes
+
+[Service]
+EnvironmentFile=-/etc/environment
+ExecStart=/usr/bin/snap run snap-store.packagekit-session-installer
+SyslogIdentifier=snap-store.packagekit-session-installer
+Restart=on-failure
+WorkingDirectory=/var/snap/snap-store/1468
+TimeoutStopSec=30s
+Type=dbus
+BusName=org.freedesktop.PackageKit

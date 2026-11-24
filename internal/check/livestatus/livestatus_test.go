@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
@@ -134,5 +135,74 @@ func TestFromStart(t *testing.T) {
 	}
 	if got := FromStart(nil); !reflect.DeepEqual(got, Facts{}) {
 		t.Fatalf("FromStart(nil) = %+v", got)
+	}
+}
+
+// TestStatusOnAPlaneRun: on a run whose kernel plane decides file changes (Facts.KernelDecidesChanges) a write block
+// and a path block, once the launcher confirmed them, are only partly in force: the supervisor refuses what still
+// reaches it and the plane's own answers are not covered. They say so, and never "In force". The other kinds, which
+// the plane does not decide, are in force as before; a block still waiting, and a run that ended or is only watched,
+// say what they said.
+func TestStatusOnAPlaneRun(t *testing.T) {
+	plane := Facts{KernelDecidesChanges: true, ReadsSeen: true}
+	for _, kind := range []string{KindWrite, KindPath} {
+		got := Status(kind, plane, 1, 1)
+		if got.State != PartlyKernel || got.Sentence != SentencePartlyKernel || !got.State.Refuses() {
+			t.Errorf("%s on a plane run = %+v, want partly in force", kind, got)
+		}
+		if strings.Contains(got.Sentence, "In force") {
+			t.Errorf("%s on a plane run says %q", kind, got.Sentence)
+		}
+		// A path block on a plane run that also does not see its reads says both gaps.
+		noReads := Facts{KernelDecidesChanges: true}
+		if got := Status(kind, noReads, 1, 1); got.State != PartlyKernel || (kind == KindPath) != (got.Sentence == SentencePartlyKernelNoReads) {
+			t.Errorf("%s on a plane run without reads = %+v", kind, got)
+		}
+		if got := Status(kind, plane, 2, 1); got.State != Waiting {
+			t.Errorf("%s on a plane run, unconfirmed = %+v, want waiting", kind, got)
+		}
+		ended := plane
+		ended.Ended = true
+		if got := Status(kind, ended, 1, 1); got.State != Ended {
+			t.Errorf("%s on an ended plane run = %+v", kind, got)
+		}
+		watched := plane
+		watched.Observe = true
+		if got := Status(kind, watched, 1, 1); got.State != RecordedOnly {
+			t.Errorf("%s on a watched plane run = %+v", kind, got)
+		}
+	}
+	for _, kind := range []string{KindExec, KindNet, KindRead} {
+		if got := Status(kind, plane, 1, 1); got.State != InForce {
+			t.Errorf("%s on a plane run = %+v, want in force", kind, got)
+		}
+	}
+	// A time limit keeps the partial wording: the sentence never turns into "In force ... until its time limit ends".
+	if got := StatusAt(KindWrite, plane, 1, 1, time.Unix(100, 0), time.Time{}, time.Unix(200, 0)); got.State != PartlyKernel {
+		t.Errorf("timed write block on a plane run = %+v", got)
+	}
+}
+
+// TestStatusOnAPlaneRunWhoseLauncherBlocksInThePlane (ADR 0124, amendment 2026-11-21): on a run whose kernel plane
+// decides file changes and whose launcher puts file blocks in force there too (the run directory's plane mark,
+// Facts.PlaneBlocks), a write, path or read block the launcher confirmed is in force, reads included where the
+// supervisor does not see them, since the plane decides every open; a time limit says so. Without the mark it stays
+// partly in force (TestStatusOnAPlaneRun). ReadsDecided says a read block refuses reads there.
+func TestStatusOnAPlaneRunWhoseLauncherBlocksInThePlane(t *testing.T) {
+	marked := Facts{KernelDecidesChanges: true, PlaneBlocks: true}
+	for _, kind := range []string{KindWrite, KindPath, KindRead} {
+		if got := Status(kind, marked, 1, 1); got.State != InForce || got.Sentence != SentenceInForce {
+			t.Errorf("%s on a plane run with the mark = %+v, want in force", kind, got)
+		}
+		if got := Status(kind, marked, 2, 1); got.State != Waiting {
+			t.Errorf("%s unconfirmed = %+v, want waiting", kind, got)
+		}
+	}
+	if got := StatusAt(KindWrite, marked, 1, 1, time.Unix(100, 0), time.Time{}, time.Unix(200, 0)); got.State != InForce ||
+		got.Sentence != SentenceInForceUntil {
+		t.Errorf("a timed write block with the mark = %+v, want in force until its limit", got)
+	}
+	if !marked.ReadsDecided() || (Facts{KernelDecidesChanges: true}).ReadsDecided() || (Facts{PlaneBlocks: true}).ReadsDecided() {
+		t.Error("ReadsDecided: the plane decides reads only on a plane run whose launcher blocks there")
 	}
 }

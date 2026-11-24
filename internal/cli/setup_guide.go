@@ -25,6 +25,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"golang.org/x/sys/unix"
 
+	"github.com/attention-span-ai/tego/internal/guide"
 	"github.com/attention-span-ai/tego/internal/platform/proc"
 	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/internal/registry"
@@ -34,6 +35,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 // Links the guide shows for reading more.
@@ -595,6 +597,10 @@ func (g *walk) typeText(q, example string, secret bool, valid func(string) error
 	return val, nil
 }
 
+// guideTestCommand is a command that works on the test project the guide creates: its own tests, which read the fake
+// secret and fail to send it (measured in the Windows guest: the run is refused twice and the test passes).
+const guideTestCommand = "python3 -m unittest -v"
+
 // guideListRows is how many items a list shows; a longer one scrolls inside them.
 const guideListRows = 6
 
@@ -706,7 +712,7 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 		return identity.ExitError, nil
 	}
 	home := m.Home
-	onMac := os.Getenv("TEGO_ON_MAC") == "1"
+	host := setupHost()
 
 	g.line("")
 	g.top(g.bold + "Welcome to Tego" + g.offEsc)
@@ -718,6 +724,10 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 		return 0, err
 	case pa.tier == "" && pa.outside:
 		mark(g.red, "✗", "Tego can't supervise agents started from this shell.")
+		if pa.scopeError != "" {
+			g.line("%s  It is outside your user manager's cgroup, and tego could not open a user scope from it: %s",
+				colTop, record.Printable(pa.scopeError))
+		}
 		if o := scopeOpener(); o.Command != "" {
 			g.line("%s  Open one where it can, then run tego start again: %s%s%s", colTop, g.bold, o.Command, g.offEsc)
 		}
@@ -727,6 +737,10 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 		return identity.ExitFinding, nil
 	}
 	mark(g.green, "✓", fmt.Sprintf("This machine can run Tego · %s protection, no root needed", levelName(pa.tier)))
+	if pa.throughScope {
+		// Outside the user manager's cgroup, with entry rehearsed and working: no blocker (ADR 0142, amended 2026-11-19).
+		g.line("%s  %s", colTop, upperFirst(guide.ThroughScopeFact)+".")
+	}
 
 	// 1/4: the agent.
 	g.step(1, "Agent")
@@ -741,6 +755,9 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 	a := guideAgents[pick]
 	command := a.command
 	if a.harness == "" {
+		// The placeholder below is only an example: the test project has no bot.py, and a person without an agent
+		// account who takes the placeholder reads it as the way to try Tego (the Windows walkthrough, 2026-11-19).
+		g.detail("python3 bot.py is only an example. To try Tego on its test project, type: " + guideTestCommand)
 		if command, err = g.typeText("What command starts it?", "python3 bot.py", false, func(s string) error {
 			if strings.TrimSpace(s) == "" {
 				return errors.New("type the command, for example python3 bot.py")
@@ -774,7 +791,7 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 
 	// 3/4: its project.
 	g.step(3, "Project")
-	abs, test, err := g.project(name, home, onMac)
+	abs, test, err := g.project(name, home, host)
 	if err != nil {
 		return 0, err
 	}
@@ -803,12 +820,13 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 	if ctx.Err() != nil {
 		return 0, errStopped
 	}
-	url := ""
-	if g.tty {
-		url = guideDashboard(ctx, home)
-	}
+	url, busProblem := g.dashboardStep(ctx, home)
 	if ctx.Err() != nil {
 		return 0, errStopped
+	}
+	if busProblem.found() {
+		g.line("")
+		writeUserBusProblem(g, busProblem)
 	}
 	g.line("")
 	g.line("%s%s%s%s", colTop, g.dim, strings.Repeat("─", 62), g.offEsc)
@@ -818,16 +836,17 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 	row("Agent", agentName+" · "+name)
 	row("Project", tildeHome(abs, home))
 	row("Rules", rc.label)
-	switch {
-	case url == "":
-		row("Dashboard", "tego dashboard opens it")
-	case onMac:
-		row("Dashboard", url+"   "+g.dim+"opening in your browser"+g.offEsc)
-	default:
-		row("Dashboard", url)
+	for i, v := range dashboardRows(host, url, busProblem, windowsNative(), g.dim, g.offEsc) {
+		k := ""
+		if i == 0 {
+			k = "Dashboard"
+		}
+		row(k, v)
 	}
-	if onMac {
-		row("Shell", "Tego's Linux VM · type exit to return to your Mac")
+	if host == hostWindows {
+		row("Shell", "Tego's Linux, inside Windows · type exit to return to Windows")
+	} else if host != hostLinux {
+		row("Shell", "Tego's Linux VM · type exit to return to "+host.returnTo())
 	}
 	g.line("")
 	g.top(g.bold + "Next steps" + g.offEsc)
@@ -839,6 +858,9 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 		next("Use the saved login", unsetLine(guideShell(), g.unsetLogins))
 	}
 	next("Run "+name+" under Tego", "cd "+shellword.Quote(abs)+" && tego run "+agentName)
+	if host == hostWindows {
+		g.detail("To start, copy the line above that begins with cd and press Enter.")
+	}
 	next("List your sessions", "tego session list")
 	next("Show the last session", "tego session show --last")
 	next("Edit the rules", "tego rules edit "+agentName)
@@ -859,6 +881,9 @@ var guideDashboard = func(ctx context.Context, home string) string {
 	if err != nil {
 		return ""
 	}
+	// The daily retention timer beside the dashboard's own unit (retain_timer.go): made even when the dashboard
+	// already runs, since a machine set up before the timer existed has none.
+	guideRetentionTimer(ctx)
 	if u := runningDashboard(home); u != "" {
 		return u // restarting it would sign out the tabs already open
 	}
@@ -885,6 +910,10 @@ var guideDashboard = func(ctx context.Context, home string) string {
 	if err != nil {
 		return ""
 	}
+	// This unit names the running program by os.Executable, without selfbin.Named's installation check, on purpose
+	// (ADR 0142, amendment 2026-11-18, same-user producers): a unit of the person's own service manager runs as that
+	// person with no added authority, and anyone who can replace the program in its folder can already replace the
+	// programs this person runs. A unit root or another account runs would be privileged and take the checked path.
 	args := []string{"--user", "--unit=tego-dashboard", "--quiet", "--pipe", "--setenv=TEGO_CONFIG=" + configFile}
 	// The option arrived in systemd 254. Probe its presence for backports too;
 	// older service managers use the documented $$ escaping. --setenv is already literal.
@@ -926,6 +955,9 @@ var guideDashboard = func(ctx context.Context, home string) string {
 				if ctx.Err() != nil {
 					return ""
 				}
+				// The program the dashboard runs is recorded by the dashboard itself, on the line after its link
+				// (handoff.ProgramLine): a later tego reuses the dashboard only when the program it would start has
+				// the same bytes (dashboardAt).
 				started = true
 				return string(u)
 			}
@@ -1415,7 +1447,7 @@ func publishGuideFile(home, rel string, text []byte, mode os.FileMode) (*os.File
 
 // project asks which project the agent works in: the test project, this folder (when tego start runs inside one), or
 // another folder by its path. It reports the folder and whether it is the test project.
-func (g *walk) project(name, home string, onMac bool) (string, bool, error) {
+func (g *walk) project(name, home string, host guideHost) (string, bool, error) {
 	wd, _ := os.Getwd()
 	inProject := wd != "" && wd != home && wd != "/" && !strings.HasPrefix(home, wd+"/") && unixWritable(wd) &&
 		filepath.Base(wd) != guideSample
@@ -1447,21 +1479,31 @@ func (g *walk) project(name, home string, onMac bool) (string, bool, error) {
 		g.ok("Using " + tildeHome(wd, home))
 		return wd, false, nil
 	}
-	path, err := g.typeText("Path to the project", "~/code/my-app", false, func(s string) error {
-		_, err := projectPath(s, home, onMac)
+	placeholder := "~/code/my-app"
+	if host == hostWindows {
+		placeholder = "~/my-app"
+	}
+	path, err := g.typeText("Path to the project", placeholder, false, func(s string) error {
+		_, err := projectPath(s, home, host)
 		return err
 	})
 	if err != nil {
 		return "", false, err
 	}
-	abs, _ := projectPath(path, home, onMac)
+	abs, _ := projectPath(path, home, host)
 	g.ok("Using " + tildeHome(abs, home))
 	return abs, false, nil
 }
 
 // projectPath turns a typed path into the project folder, or says in one line what is wrong with it.
-func projectPath(s, home string, onMac bool) (string, error) {
+func projectPath(s, home string, host guideHost) (string, error) {
 	s = strings.TrimSpace(s)
+	if host == hostWindows {
+		s = windowsLinuxPath(s)
+	}
+	if host == hostWindows && windowsProjectPath(s) {
+		return "", errors.New(`that folder is on Windows. Tego protects folders in Tego's Linux, inside Windows. In File Explorer, paste \\wsl$\tego\home\tego in the address bar, copy your project there, then type ~/my-app here. Or choose the test project`)
+	}
 	if s == "" {
 		return "", errors.New("type the project's path, for example ~/code/my-app")
 	}
@@ -1476,7 +1518,9 @@ func projectPath(s, home string, onMac bool) (string, error) {
 	abs = filepath.Clean(abs)
 	fi, err := os.Stat(abs)
 	switch {
-	case err != nil && onMac:
+	case err != nil && host == hostWindows:
+		return "", fmt.Errorf(`%s is missing from Tego's Linux, inside Windows. Copy your project using File Explorer at \\wsl$\tego\home\tego, then enter ~/my-app, or choose the test project`, s)
+	case err != nil && host != hostLinux:
 		return "", fmt.Errorf("%s isn't in Tego's VM. Copy or clone it into the VM first", s)
 	case err != nil:
 		return "", fmt.Errorf("%s doesn't exist", s)
@@ -1578,9 +1622,12 @@ func rulesFile(ctx context.Context, m *config.Machine, s, cwd string) (string, e
 	if err != nil {
 		return "", err
 	}
-	text, err := os.ReadFile(p)
-	if err != nil {
+	text, err := readRulesPath(p)
+	if errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("%s doesn't exist", s)
+	}
+	if err != nil {
+		return "", fmt.Errorf("%s cannot be read: %w", s, err)
 	}
 	var diag bytes.Buffer
 	// Relative entries resolve against the chosen project, where tego run will read this file.
@@ -1599,7 +1646,7 @@ var diagLine = regexp.MustCompile(`^(?:error: )?[^:]+:([0-9]+):[0-9]+: (.*?)(?: 
 
 // rulesFileName is the agent name a rules file gives itself (name:), or "" when it gives none that names an agent.
 func rulesFileName(file string) string {
-	b, err := os.ReadFile(file)
+	b, err := readRulesPath(file)
 	if err != nil {
 		return ""
 	}
@@ -1689,7 +1736,7 @@ func (g *walk) saveAgent(ctx context.Context, m *config.Machine, a guideAgent, c
 // saveOwnRules saves a rules file the person wrote as the agent named name, in the user registry where tego run <name>
 // finds it. Its name: line is set to name. replace atomically replaces an existing file.
 func saveOwnRules(m *config.Machine, name, abs, file string, replace bool, stderr io.Writer) (string, int) {
-	text, err := os.ReadFile(file)
+	text, err := readRulesPath(file)
 	if err != nil {
 		message(stderr, file, 0, 0, "tego start: "+err.Error(), codeIO)
 		return "", identity.ExitError
@@ -1716,7 +1763,7 @@ func agentFile(m *config.Machine, name string) (string, error) {
 // guideSaveRules composes an agent's rules file from rc, the way tego init --agent does, with the agent's own
 // interactive program (its own approval prompts kept), and saves it in the user registry, outside the
 // project, where tego run <name> finds it. replace atomically replaces an existing file.
-func guideSaveRules(_ context.Context, m *config.Machine, a guideAgent, command, name, abs string, rc rulesChoice, test, replace bool, stderr io.Writer) (string, int) {
+func guideSaveRules(ctx context.Context, m *config.Machine, a guideAgent, command, name, abs string, rc rulesChoice, test, replace bool, stderr io.Writer) (string, int) {
 	dir, err := filepath.EvalSymlinks(abs)
 	if err != nil {
 		message(stderr, abs, 0, 0, "tego start: "+err.Error(), codeIO)
@@ -1751,7 +1798,7 @@ func guideSaveRules(_ context.Context, m *config.Machine, a guideAgent, command,
 	}
 	// The rules file lives in the user registry, outside the project, so it is checked as that file, run from the
 	// project, once the folders it names exist.
-	made, err := setup.Create(composed, dir)
+	made, err := setup.CreateContext(ctx, composed, dir)
 	if err != nil {
 		message(stderr, dir, 0, 0, "tego start: "+err.Error(), codeIO)
 		return "", identity.ExitError
@@ -1846,4 +1893,42 @@ func makeSample(dir string) error {
 		}
 		return werr
 	})
+}
+
+// dashboardStep starts the dashboard when a person is at the terminal, and returns its link; with no user bus to start
+// it in (userbus.go) it starts nothing and returns the problem, which the Ready panel prints before it.
+func (g *walk) dashboardStep(ctx context.Context, home string) (string, userBusProblem) {
+	if !g.tty {
+		return "", userBusProblem{}
+	}
+	if p := classifyUserBus(userBusProbe()); p.found() {
+		return "", p
+	}
+	return guideDashboard(ctx, home), userBusProblem{}
+}
+
+// dashboardRows is the Ready panel's Dashboard lines: dashboardReady's, or, when no dashboard could start for want of a
+// user bus, that it did not and what to type after the fix.
+func dashboardRows(host guideHost, url string, p userBusProblem, native bool, dim, off string) []string {
+	if p.found() {
+		return []string{"not started (see above); after the fix, type tego dashboard"}
+	}
+	return dashboardReady(host, url, native, dim, off)
+}
+
+// dashboardReady is the Ready panel's Dashboard lines: where it is, and, when the guide opens it, what to type if it
+// did not open (D2 of the Windows walkthrough).
+func dashboardReady(host guideHost, url string, native bool, dim, off string) []string {
+	switch {
+	case host == hostWindows && url != "" && native:
+		// The Windows tego command opens it through its relay when the guide returns (ADR 0123).
+		return []string{"opening in your browser", dim + "Did not open? Type tego dashboard in PowerShell or cmd." + off}
+	case host == hostWindows:
+		return []string{"tego dashboard in Windows opens it in your browser"}
+	case url == "":
+		return []string{"tego dashboard opens it"}
+	case host == hostMac:
+		return []string{url + "   " + dim + "opening in your browser" + off, dim + "Did not open? Type tego dashboard." + off}
+	}
+	return []string{url}
 }

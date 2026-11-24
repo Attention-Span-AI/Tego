@@ -23,6 +23,8 @@ import (
 	"github.com/attention-span-ai/tego/internal/bpf"
 	"github.com/attention-span-ai/tego/internal/policy/decide"
 	"github.com/attention-span-ai/tego/internal/runtime/enforce/landlock"
+	"github.com/attention-span-ai/tego/internal/testutil"
+	"github.com/attention-span-ai/tego/internal/testutil/uring"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/cilium/ebpf"
@@ -159,6 +161,92 @@ func TestNetworkListenAutobindOnRealKernel(t *testing.T) {
 	}
 }
 
+// TestNetworkListenWithoutNetListenOnRealKernel is ADR 0024's amendment of 2026-11-23 (D28, GAPS C44's io_uring half),
+// through the backend's own Prepare, so the slot header is the one a run is given. Under a net: section with no
+// net.listen the plane's socket_listen refuses a TCP listen with EACCES, as the supervisor refuses the syscall, and so
+// refuses a ring's IORING_OP_LISTEN (6.11+), which no seccomp filter sees and whose listen on an unbound socket takes
+// its port by autobind. A unix listen and a UDP socket's listen are not decided by that rule; with no net: section
+// nothing is. The sockets are made inside the run's cgroup and listened on by this process, the socket cgroup's run
+// deciding, so the cells hold at the plane tier this boot gives (fmod_ret, or lsm with bpf in the LSM list). A kernel
+// without IORING_OP_LISTEN completes the ring's listen EINVAL on every socket, and the ring cells say so and check that.
+// bindUnix binds a unix socket to an abstract name of its own: the kernel refuses a listen on an unbound unix socket.
+func bindUnix(t *testing.T, fd int, family, tag string) {
+	t.Helper()
+	if family != "unix-stream" {
+		return
+	}
+	if err := unix.Bind(fd, &unix.SockaddrUnix{Name: "@tego-d28-" + tag + "-" + strconv.Itoa(os.Getpid()) + "-" + strconv.Itoa(fd)}); err != nil {
+		t.Fatalf("bind a unix socket: %v", err)
+	}
+}
+
+func TestNetworkListenWithoutNetListenOnRealKernel(t *testing.T) {
+	type cell struct {
+		family string
+		want   error // nil: the listen is not refused
+	}
+	for _, tc := range []struct {
+		name     string
+		contract *agent.Contract
+		cells    []cell
+	}{
+		{"net section, no net.listen", &agent.Contract{Net: &agent.NetSection{}},
+			[]cell{{"tcp4", unix.EACCES}, {"tcp6", unix.EACCES}, {"unix-stream", nil}, {"udp4", unix.EOPNOTSUPP}}},
+		{"no net section", &agent.Contract{}, []cell{{"tcp4", nil}, {"unix-stream", nil}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt := &agent.RuleTable{Contract: tc.contract, Tier: backend.TierCgroup, Record: agent.RecordFull}
+			_, dir, _ := realControlRun(t, "listen-nolist", rt)
+			ringListen := true
+			if probe, err := unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0); err != nil {
+				t.Fatal(err)
+			} else {
+				// Bound, so that EINVAL is the opcode's absence and not the kernel's refusal of an unbound unix listen.
+				if err := unix.Bind(probe, &unix.SockaddrUnix{Name: "@tego-d28-probe-" + strconv.Itoa(os.Getpid())}); err != nil {
+					t.Fatal(err)
+				}
+				res, err := uring.Listen(probe, 8)
+				unix.Close(probe)
+				switch {
+				case errors.Is(err, uring.ErrUnavailable):
+					t.Logf("no io_uring here (%v): the ring cells are not run", err)
+					ringListen = false
+				case err != nil:
+					t.Fatalf("io_uring probe: %v", err)
+				case res == -int32(unix.EINVAL):
+					t.Logf("no IORING_OP_LISTEN on this kernel: the ring's listen completes EINVAL, so no ring can listen")
+					ringListen = false
+				}
+			}
+			for _, c := range tc.cells {
+				fd := controlSocket(t, dir, c.family)
+				bindUnix(t, fd, c.family, "a")
+				err := unix.Listen(fd, 8)
+				if c.want == nil && err != nil || c.want != nil && !errors.Is(err, c.want) {
+					t.Errorf("%s listen(2) on an unbound socket: %v, want %v", c.family, err, c.want)
+				}
+				fd = controlSocket(t, dir, c.family)
+				bindUnix(t, fd, c.family, "b")
+				res, rerr := uring.Listen(fd, 8)
+				if rerr != nil && !errors.Is(rerr, uring.ErrUnavailable) {
+					t.Fatalf("%s ring listen: %v", c.family, rerr)
+				}
+				switch {
+				case rerr != nil && ringListen:
+					t.Errorf("%s ring listen: %v after a probe that found a working ring", c.family, rerr)
+				case rerr != nil:
+				case !ringListen:
+					if res != -int32(unix.EINVAL) {
+						t.Errorf("%s ring listen on a kernel without IORING_OP_LISTEN: %d, want EINVAL", c.family, -res)
+					}
+				case c.want == nil && res != 0, c.want != nil && res != -int32(c.want.(unix.Errno)):
+					t.Errorf("%s ring listen on an unbound socket: errno %d, want %v", c.family, -res, c.want)
+				}
+			}
+		})
+	}
+}
+
 // An inherited socket has an outside creator cgroup. Its original governed
 // task must still apply its own listener policy at the actual listen hook.
 func TestNetworkImportedListenOnRealKernel(t *testing.T) {
@@ -194,6 +282,7 @@ func TestNetworkImportedListenOnRealKernel(t *testing.T) {
 			cmd.ExtraFiles = []*os.File{outside}
 			cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: int(dir.Fd())}
 			out, err := cmd.CombinedOutput()
+			out = testutil.WithoutCoverageDiagnostics(out)
 			if err != nil {
 				t.Fatalf("child actual listen: %v %s", err, out)
 			}
@@ -246,7 +335,7 @@ func realControlRun(t *testing.T, name string, rt *agent.RuleTable) (*Handle, *o
 		t.Fatal(err)
 	}
 	ll := landlock.New(landlock.Options{})
-	b := New(Options{Machine: machineLinger(0), StateDir: pinState(t), Events: &sink{}, Plane: PlaneSetup{Mode: mode, Build: build},
+	b := New(Options{Machine: machineLinger(0), StateDir: pinState(t), Events: &sink{}, Plane: PlaneSetup{Mode: mode, Build: build, RecheckAdmission: testPlaneAdmission},
 		Inherit: func(ctx context.Context, rt *agent.RuleTable, _ Run) (Inherited, error) {
 			return ll.Prepare(ctx, rt, landlock.Run{Plane: rows, PlaneMaps: true})
 		}})

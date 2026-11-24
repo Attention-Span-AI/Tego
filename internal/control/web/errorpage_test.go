@@ -30,8 +30,8 @@ func TestErrorPageChrome(t *testing.T) {
 			t.Errorf("%s: %d, want 404", p, w.Code)
 		}
 		mustContain(t, p, b, liveWord, `id="ask-banner"`, "demo-harm is waiting for you", `name="ask" value="ask-7"`,
-			`value="approve"`, `value="deny"`, `<title>(1) `, `<span class="count" aria-live="polite">1`)
-		for _, bad := range []string{"Nothing running", "data-sig=", "Showing the newest"} {
+			`value="approve"`, `value="deny"`, `<title>(1) `, `aria-label="1 waiting">1`)
+		for _, bad := range []string{"Nothing running", "data-sig=", "Showing up to"} {
 			if strings.Contains(b, bad) {
 				t.Errorf("%s: the error page has %q", p, bad)
 			}
@@ -44,16 +44,16 @@ func TestErrorPageChrome(t *testing.T) {
 	t.Cleanup(func() { ledgerview.MaxRuns = was })
 	cut := newServer(t, fixture(t))
 	cc := login(t, cut)
-	if b := do(cut, "GET", "/runs", "127.0.0.1:8484", cc).Body.String(); !strings.Contains(b, "Showing the newest 1 of 2 runs.") {
+	if b := do(cut, "GET", "/runs", "127.0.0.1:8484", cc).Body.String(); !strings.Contains(b, "Showing up to 1 of 2 runs.") {
 		t.Fatal("the cut ledger's Runs page lacks its note: the test no longer cuts the snapshot")
 	}
-	if b := do(cut, "GET", "/nope", "127.0.0.1:8484", cc).Body.String(); strings.Contains(b, "Showing the newest") {
+	if b := do(cut, "GET", "/nope", "127.0.0.1:8484", cc).Body.String(); strings.Contains(b, "Showing up to") {
 		t.Error("an error page carries the note about runs left out")
 	}
 }
 
-// TestErrorPageUnreadableLedger: when the ledger cannot be read, the error page that says so has the bare chrome:
-// nothing it could read says a run is live or an ask waits.
+// TestErrorPageUnreadableLedger: an unreadable root leaves both global presence
+// and the waiting queue unknown, including the badge and document title.
 func TestErrorPageUnreadableLedger(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "ledger")
 	if err := os.WriteFile(root, []byte("not a folder"), 0o600); err != nil {
@@ -66,8 +66,11 @@ func TestErrorPageUnreadableLedger(t *testing.T) {
 	if w.Code != http.StatusInternalServerError || !strings.Contains(b, "The ledger could not be read") {
 		t.Fatalf("an unreadable ledger: %d\n%s", w.Code, b)
 	}
-	mustContain(t, "the unreadable ledger's page", b, "Nothing running")
-	for _, bad := range []string{liveWord, `id="ask-banner"`, "<title>(", `class="count"`, "data-sig="} {
+	mustContain(t, "the unreadable ledger's page", b, "Could not read running state", "could not tell whether a request is waiting", "<title>(?)", `class="count"`)
+	if strings.Contains(b, "Nothing running") {
+		t.Error("unreadable global presence claimed an all-clear")
+	}
+	for _, bad := range []string{liveWord, `id="ask-banner"`, "data-sig="} {
 		if strings.Contains(b, bad) {
 			t.Errorf("the unreadable ledger's page has %q", bad)
 		}

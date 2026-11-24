@@ -232,9 +232,42 @@ look-alike of one, and in the broker's cgroup namespace. The broker reads its pe
 `SO_PEERCRED` pid and uid, that pid's cgroup and cgroup namespace, proved by the peer's pidfd), at the connect and
 again once the packet is in, and judges it by `peer.Refuse` beside this run's own cgroup: a peer of another run, a watched agent, an adopted process, a run's container, a process that unshared a
 cgroup namespace, and every peer while the broker is outside the initial cgroup namespace are unauthorized, and the
-ask stays pending for the person. A record-only watched agent is not a cage: it can leave its scope before it
+ask stays pending for the person. A record-only watched agent is not confined: it can leave its scope before it
 answers, by a cgroup of its own in the person's delegated subtree (`cgroup.procs`) or through `systemd --user`, and
 then answers as same-user software outside any run (X4); `tego watch --boundary` closes both (compile R10,
 `builtin.host_ipc`). The uid rule is unchanged (the run's owner or root). The broker's list and detail
 show every client a target in its ledger form (`askclient.LedgerTarget`), so an `http_request`'s path and query never
 leave the run; the ask and answer lines already recorded that form.
+
+
+### Measurement note, 2026-11-18: no private-namespace outside exception
+
+A WSL 3.0.5 / Ubuntu 24.04.5 guest did not satisfy the proposed same-namespace service-manager proof. A normal
+user connected to its own manager's private socket and obtained the correct UID, exact manager cgroup and a live
+peer pidfd, but stat/readlink of the manager's namespace links returned EACCES. Its permitted capabilities included
+CAP_WAKE_ALARM. Same UID alone is not namespace identity authority. The existing membership and peer refusals remain
+unchanged; unknown membership cannot widen governance. A scope rehearsal is placement evidence only and grants no
+peer, approval or scan authority. In particular, an ordinary WSL shell and a Windows browser do not acquire a
+person-facing control exception. A Windows dashboard relay is separate work and is not implemented here.
+
+
+### Amendment, 2026-11-18: the broker's own answer outside the first cgroup namespace
+
+The rule "every peer is unauthorized while the broker is outside the initial cgroup namespace" becomes: there, a peer
+is served only when the broker's own run-membership answer is outside (`peer.Self`, the base-cgroup-namespace rule of
+ADR 0100's amendment of the same day). Inside and unknown refuse every peer as before, with `[peer-cgroupns]` and the
+answer's reason; the peer's own tests (its uid, a run's or an adoption's scope or a look-alike, a path above the
+namespace root, another or an unreadable cgroup namespace) are unchanged in both branches, and the initial-namespace
+table is unchanged. The broker's answer is computed in the broker, a process the agent of an enforcing run does not
+own. On a WSL machine an ordinary build's answer is unknown (cause `wsl-launcher-unproven`), so no ask is answered
+through `ask.sock` there yet: a process an agent starts through WSL's own launcher is truly outside the run, and the
+run's refusal of that launcher has no guest proof. Peer identification also reads the cgroup of every thread of the
+peer and refuses a peer whose first thread has exited (a dead first thread keeps its old cgroup when the process is
+moved into an adoption's scope).
+
+*Amended 2026-11-19 (ADR 0100's amendment of that day).* On WSL the broker serves no peer in the initial cgroup
+namespace either: a distribution with `isolateDistroCgroup=false` sits there, and a process an agent starts through
+WSL's own launcher would be truly outside the run, so `peer.Refuse` asks the same gate there and answers
+`[peer-cgroupns]` with its reason. Outside WSL the initial-namespace table is unchanged. Outside WSL beyond the
+initial namespace (a container, a nested system) the broker's own answer is unknown, cause `system-unproven`, so no
+peer is served there, as before the rule.

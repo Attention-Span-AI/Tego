@@ -12,7 +12,7 @@ import (
 )
 
 // ackField is the acknowledgement checkbox a page renders: its value is the preview's Ack (rules ack.go).
-var ackField = regexp.MustCompile(`<input type="checkbox" name="ack" value="([0-9a-f]{64})" required>`)
+var ackField = regexp.MustCompile(`<input type="checkbox" name="ack" value="((?:[0-9a-f]{48}\.)?[0-9a-f]{64})" required>`)
 
 // ackIn is the first acknowledgement a page offers; the test fails when it offers none.
 func ackIn(t *testing.T, page string) string {
@@ -20,6 +20,16 @@ func ackIn(t *testing.T, page string) string {
 	m := ackField.FindStringSubmatch(page)
 	if m == nil {
 		t.Fatalf("the page offers no acknowledgement checkbox:\n%s", page)
+	}
+	return m[1]
+}
+
+// hiddenAckIn is the review binding a narrowing carries without an extra checkbox.
+func hiddenAckIn(t *testing.T, page string) string {
+	t.Helper()
+	m := regexp.MustCompile(`<input type="hidden" name="ack" value="((?:[0-9a-f]{48}\.)?[0-9a-f]{64})">`).FindStringSubmatch(page)
+	if m == nil {
+		t.Fatal("the page offers no hidden review acknowledgement")
 	}
 	return m[1]
 }

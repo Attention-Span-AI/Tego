@@ -3,9 +3,9 @@
 package ledgerview
 
 import (
-	"slices"
 	"strings"
 
+	"github.com/attention-span-ai/tego/internal/check/mirror"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -15,65 +15,44 @@ import (
 // tab, the line page's Similar) counts the pair once: the mirror is marked here, as the read model takes each line
 // (runState.take), and left out wherever the action line is shown. A refused line with no action next to it (a
 // first write the relay reset, an older ledger) is a refusal of its own and stays. This is the package's one
-// counting rule (Event.Refusal). `tego measure` (R19), drift, learn and the receipt pair by the same rule, written
-// again in internal/check/internal/mirror (Pairs), which this layer cannot import: the same window, envelope, rule
-// and reason, and the same fallback. TestReceiptAgreesWithDashboardAndMeasure holds the two to one count over every
-// record fixture, mirror-split.jsonl among them, whose mirrors do not each follow their action; a change to one is made
-// to both.
+// counting rule (Event.Refusal). The pairing itself is internal/check/mirror's, the one implementation `tego measure`
+// (R19), drift, learn and the receipt use too: the same window, envelope, rule and reason, and the same fallback, so
+// a count cannot differ between them. TestReceiptAgreesWithDashboardAndMeasure holds the counts to one over every
+// record fixture, mirror-split.jsonl among them, whose mirrors do not each follow their action.
 
-// mirrorWindow is how many lines back a mirror's action may be, as internal/check/internal/mirror's window. The writer
-// appends the mirror right after its action, so it is the line before; the window only absorbs a line another writer
-// slipped in between.
-const mirrorWindow = 4
-
-// markMirror sets ev.Mirror when ev is a kind=refused line that mirrors a refused action no earlier mirror took,
-// with the same rule and reason. The mirror is a copy of its action's envelope, so the action is first looked for by
-// pid and monotonic clock among the run's last mirrorWindow lines: that passes over a line slipped in between, and
-// pairs each mirror with its own action when two refusals were written before either mirror. Failing that (a line
-// with no monotonic clock, an older ledger), the line just before it is its action.
+// markMirror sets ev.Mirror when ev is a kind=refused line that mirrors a refused action no earlier mirror took
+// (internal/check/mirror, Pairs.Fold), and notes which action it took. Every line of the run goes through it, in order,
+// as Fold's window counts lines; ev is the line about to be added to st.b.Events, whose last line is the one just before
+// it.
 //
-// Which actions a mirror took is the builder's own state (st.paired), never a mark on the lines: a published Run
-// shares its lines with every request holding it, so a line is not written once it is taken.
+// Which actions a mirror took is the builder's own state (st.pairs), never a mark on the lines: a published Run shares
+// its lines with every request holding it, so a line is not written once it is taken.
 func (st *runState) markMirror(ev *Event) {
 	ev.Mirror = false
-	if ev.Kind != string(record.KindRefused) {
+	back, mirrors := st.foldMirror(ev)
+	if !mirrors {
 		return
 	}
-	evs := st.b.Events
-	// Only the window's lines can still be taken.
-	st.paired = slices.DeleteFunc(st.paired, func(i int) bool { return i < len(evs)-mirrorWindow })
-	prev := -1
-	for i, n := len(evs)-1, 0; i >= 0 && n < mirrorWindow; i, n = i-1, n+1 {
-		a := &evs[i]
-		if !record.Kind(a.Kind).IsAction() || a.Verdict != string(record.VerdictRefused) || slices.Contains(st.paired, i) {
-			continue
-		}
-		if a.Rule != ev.Rule || a.Reason != ev.Reason {
-			continue
-		}
-		if ev.mono != 0 && a.mono == ev.mono && a.pid == ev.pid {
-			st.pair(ev, i)
-			return
-		}
-		if n == 0 {
-			prev = i
-		}
+	ev.Mirror = true
+	// A mirror carries no open flags and a reason such as fs-gate says nothing of the access, so whether it would have
+	// changed a file is its action's to say (fsOp). So is what a rename or a link would have replaced: a mirror names one
+	// path, the first, and an atomic write is a rename onto the file it writes.
+	i := len(st.b.Events) - 1 - back
+	if i < 0 {
+		return // the action fell out of the retained window
 	}
-	if prev >= 0 {
-		st.pair(ev, prev)
-	}
-}
-
-// pair marks ev as the mirror of line i. A mirror carries no open flags and a reason such as fs-gate says nothing of
-// the access, so whether it would have changed a file is its action's to say (fsOp). So is what a rename or a link
-// would have replaced: a mirror names one path, the first, and an atomic write is a rename onto the file it writes.
-func (st *runState) pair(ev *Event, i int) {
-	st.paired, ev.Mirror = append(st.paired, i), true
 	a := &st.b.Events[i]
 	ev.write = a.Kind == string(record.KindFS) && a.Op != "read"
 	if ev.write && (a.Op == record.FSRename || a.Op == record.FSLink) {
 		_, ev.to, _ = strings.Cut(a.Target, " → ")
 	}
+}
+
+// foldMirror takes ev, the run's next line, through the pairing window: whether it mirrors a refused action, and how many
+// lines before it that action is.
+func (st *runState) foldMirror(ev *Event) (back int, mirrors bool) {
+	return st.pairs.Fold(mirror.Fields{Kind: record.Kind(ev.Kind), Verdict: record.Verdict(ev.Verdict), Rule: ev.Rule,
+		Reason: record.Reason(ev.Reason), PID: ev.pid, MonoNS: ev.mono})
 }
 
 // Refusal reports whether the line is one refusal as a person counts it: a refused action, or a refused line that

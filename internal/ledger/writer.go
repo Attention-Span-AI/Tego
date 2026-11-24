@@ -121,9 +121,11 @@ type Writer struct {
 	started bool
 	// minor is the run's revision, its run_start's record_minor: every line is encoded at it (MarshalLineAt), so a
 	// field malformed or below its revision is refused, never written.
-	minor  int
-	closed bool
-	torn   error // sticky: a partial line on disk that could not be cut back (E6)
+	minor      int
+	floor      bool // the run's run_start carries the root-only approval floor: every answer then says who decided it
+	closed     bool
+	durability error // required approval durability failed; no further append can grant
+	torn       error // sticky: a partial line on disk that could not be cut back (E6)
 	// orphanGap says this Writer wrote the orphaned run's gap (Close), so a Close retried after a refused run_end
 	// does not write a second one.
 	orphanGap bool
@@ -408,8 +410,12 @@ func (w *Writer) resume() error {
 			if w.minor, err = e.RunStartMinor(); err != nil {
 				return fmt.Errorf("ledger: resume: %w: line %d: %w", ErrUnverified, e.Seq, err)
 			}
+			w.floor = e.RunStartFloor()
 		}
 		if err := e.ValidateAt(w.minor); err != nil {
+			return fmt.Errorf("ledger: resume: %w: line %d: %w", ErrUnverified, e.Seq, err)
+		}
+		if err := e.ValidateFloor(w.floor); err != nil {
 			return fmt.Errorf("ledger: resume: %w: line %d: %w", ErrUnverified, e.Seq, err)
 		}
 		if e.Run != w.ref.ID {
@@ -564,6 +570,9 @@ func (w *Writer) appendNext(e *record.Event) error {
 	if w.closed {
 		return ErrClosed
 	}
+	if w.durability != nil {
+		return w.durability
+	}
 	if w.torn != nil {
 		return fmt.Errorf("%w: %w", ErrTorn, w.torn)
 	}
@@ -609,6 +618,13 @@ func (w *Writer) encode(e *record.Event) (line []byte, minor int, err error) {
 	if line, err = e.MarshalLineAt(minor); err != nil {
 		return nil, 0, fmt.Errorf("ledger: append seq %d: %w", e.Seq, err)
 	}
+	floor := w.floor
+	if e.Kind == record.KindRunStart {
+		floor = e.RunStartFloor()
+	}
+	if err = e.ValidateFloor(floor); err != nil {
+		return nil, 0, fmt.Errorf("ledger: append seq %d: %w", e.Seq, err)
+	}
 	if len(line) >= MaxLineBytes {
 		// Every reader refuses a line past MaxLineBytes as corruption, so writing one would end the run's
 		// record at that line for every reader after it. R10 keeps real lines far below the bound.
@@ -642,7 +658,7 @@ func (w *Writer) writeLine(e *record.Event, line []byte, minor int) error {
 	w.seq++
 	w.prevID = e.ID
 	if e.Kind == record.KindRunStart {
-		w.started, w.minor = true, minor
+		w.started, w.minor, w.floor = true, minor, e.RunStartFloor()
 	}
 	if e.Kind == record.KindRefused {
 		w.refusal.post(w, e)
@@ -719,6 +735,7 @@ type refusalSlot struct {
 	seq     uint64
 	ts      time.Time
 	pid     int
+	lineage string // the refused process's ancestry (record.Event.Lineage), for the file's owners
 	reason  record.Reason
 	rule    string
 	payload []byte
@@ -758,6 +775,7 @@ func (r *lastRefusal) post(w *Writer, e *record.Event) {
 	r.release(s)
 	r.count++
 	s.nth, s.seq, s.ts, s.pid, s.reason, s.rule, s.cut, s.long = r.count, e.Seq, e.TS, e.PID, e.Reason, e.Rule, nil, long
+	s.lineage = e.Lineage
 	r.waiting += len(long)
 	s.payload = s.payload[:0]
 	if long == nil {
@@ -907,7 +925,7 @@ func (w *Writer) encodeLastRefusal(count uint64, recent []refusalSlot) []byte {
 			}
 			p.Reason, p.Rule = s.reason, s.rule // the line's own, as the file has always said
 			// Encode's own first cut, which keeps each cut field's length: the file is the one Encode makes of p.
-			c := reason.Refusal{Seq: s.seq, TS: s.ts, PID: s.pid, Payload: p}.Cut()
+			c := reason.Refusal{Seq: s.seq, TS: s.ts, PID: s.pid, Payload: p, Owners: s.lineage}.Cut()
 			s.cut = &c
 			w.refusal.decoded++
 		}
@@ -1248,6 +1266,20 @@ func writeFileAt(at *sys.FD, dir, name string, b []byte, durable bool) error {
 	if err := at.Borrow(func(n int) error { return unix.Renameat(n, tname, n, name) }); err != nil {
 		_ = unlinkAt(at, tname)
 		return &os.LinkError{Op: "rename", Old: filepath.Join(dir, tname), New: filepath.Join(dir, name), Err: err}
+	}
+	return nil
+}
+
+// WriteEffective saves the exact applied contract through the held run-directory
+// descriptor. Unlike the legacy source copy, missing new evidence is fatal.
+func (w *Writer) WriteEffective(data []byte) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return ErrClosed
+	}
+	if err := writeFileAt(w.dirFD, w.dir, "effective.yaml", data, true); err != nil {
+		return fmt.Errorf("ledger: effective.yaml: %w", err)
 	}
 	return nil
 }

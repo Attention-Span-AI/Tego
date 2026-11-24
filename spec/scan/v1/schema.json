@@ -1,0 +1,926 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "started_at",
+    "finished_at",
+    "boot_id",
+    "catalog",
+    "mode",
+    "as",
+    "project",
+    "status",
+    "check",
+    "other_listed",
+    "rules",
+    "items",
+    "sources",
+    "not_looked_at",
+    "limits",
+    "tego",
+    "counts",
+    "unreadable_program_pids",
+    "unreadable_programs_warning"
+  ],
+  "properties": {
+    "schema": {
+      "const": "tego.scan/1"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time",
+      "maxLength": 40
+    },
+    "finished_at": {
+      "type": "string",
+      "format": "date-time",
+      "maxLength": 40
+    },
+    "boot_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f-]{36}$"
+    },
+    "catalog": {
+      "type": "string",
+      "pattern": "^c[1-9][0-9]{0,8}$"
+    },
+    "mode": {
+      "enum": [
+        "basic",
+        "advanced"
+      ]
+    },
+    "as": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid",
+        "recipient_uid",
+        "root"
+      ],
+      "properties": {
+        "uid": {
+          "$ref": "#/$defs/uid"
+        },
+        "recipient_uid": {
+          "$ref": "#/$defs/uid"
+        },
+        "root": {
+          "type": "boolean"
+        }
+      }
+    },
+    "project": {
+      "$ref": "#/$defs/path"
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "partial",
+        "failed"
+      ]
+    },
+    "check": {
+      "enum": [
+        "not-requested",
+        "none-observed",
+        "outside-observed",
+        "unknown",
+        "unreadable-observed",
+        "none-observed-allow-unreadable"
+      ]
+    },
+    "other_listed": {
+      "type": "boolean"
+    },
+    "rules": {
+      "type": "array",
+      "maxItems": 320,
+      "items": {
+        "$ref": "#/$defs/rule"
+      }
+    },
+    "items": {
+      "type": "array",
+      "maxItems": 512,
+      "items": {
+        "$ref": "#/$defs/item"
+      }
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2048,
+      "items": {
+        "$ref": "#/$defs/source"
+      }
+    },
+    "not_looked_at": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/exclusion"
+      }
+    },
+    "limits": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/limit"
+      }
+    },
+    "tego": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9.+_-]{0,127}$"
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "running",
+        "in_run",
+        "outside_run",
+        "membership_unknown",
+        "installed",
+        "settings",
+        "project",
+        "other",
+        "exited_during_scan",
+        "kernel_threads",
+        "unreadable_programs"
+      ],
+      "properties": {
+        "running": {
+          "$ref": "#/$defs/count"
+        },
+        "in_run": {
+          "$ref": "#/$defs/count"
+        },
+        "outside_run": {
+          "$ref": "#/$defs/count"
+        },
+        "membership_unknown": {
+          "$ref": "#/$defs/count"
+        },
+        "installed": {
+          "$ref": "#/$defs/count"
+        },
+        "settings": {
+          "$ref": "#/$defs/count"
+        },
+        "project": {
+          "$ref": "#/$defs/count"
+        },
+        "other": {
+          "$ref": "#/$defs/count"
+        },
+        "exited_during_scan": {
+          "$ref": "#/$defs/count"
+        },
+        "kernel_threads": {
+          "$ref": "#/$defs/count"
+        },
+        "unreadable_programs": {
+          "$ref": "#/$defs/count"
+        },
+        "mcp_servers": {
+          "$ref": "#/$defs/count"
+        },
+        "user_units": {
+          "$ref": "#/$defs/count"
+        },
+        "system_units": {
+          "$ref": "#/$defs/count"
+        },
+        "cron_entries": {
+          "$ref": "#/$defs/count"
+        }
+      }
+    },
+    "unreadable_program_pids": {
+      "type": "array",
+      "maxItems": 2000,
+      "uniqueItems": true,
+      "items": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 2147483647
+      }
+    },
+    "unreadable_programs_warning": {
+      "const": "Tego cannot tell whether these are agents; any program can make itself unreadable."
+    }
+  },
+  "$defs": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+    },
+    "exclusion": {
+      "enum": [
+        "other-users",
+        "system-units",
+        "containers-unattributed",
+        "mcp-deferred",
+        "units-deferred",
+        "unreadable-processes",
+        "unknown-owners",
+        "between-scans",
+        "libraries",
+        "remote-agents",
+        "environment",
+        "memory",
+        "source-code",
+        "network",
+        "unknown-formats",
+        "other-user-settings",
+        "nonlocal-homes",
+        "unresolved-units",
+        "unresolved-cron",
+        "scan-not-performed",
+        "unknown-names",
+        "outer-pid-namespace",
+        "project-deferred",
+        "project-parents",
+        "project-children",
+        "project-alternates",
+        "project-includes",
+        "container-patterns"
+      ]
+    },
+    "limit": {
+      "enum": [
+        "pid-limit",
+        "thread-limit",
+        "argv-limit",
+        "path-limit",
+        "glob-limit",
+        "file-limit",
+        "byte-limit",
+        "parse-limit",
+        "item-limit",
+        "source-limit",
+        "result-limit",
+        "deadline"
+      ]
+    },
+    "caveat": {
+      "enum": [
+        "name-collision",
+        "settings-only",
+        "declaration-only",
+        "configured-only",
+        "identity-unknown",
+        "membership-unknown",
+        "container-hint",
+        "user-rule",
+        "metadata-omitted",
+        "historical"
+      ]
+    },
+    "path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^/[^\\x00-\\x1f\\x7f-\\x9f؜​-‏ -‮⁠-⁯­﻿�]*$"
+    },
+    "uid": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967294
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "origin"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/name"
+        },
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "origin": {
+          "enum": [
+            "catalog",
+            "user"
+          ]
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "locator",
+        "state",
+        "read",
+        "not_read",
+        "reason"
+      ],
+      "properties": {
+        "account_repair": { "type": "string", "minLength": 1, "maxLength": 2048, "description": "Printable account-file placement repair, only with accounts-unreadable group evidence on a discovery mode refusal, or an owner refusal before discovery on a failed scan." },
+        "group_evidence": {
+          "type": "string",
+          "enum": ["accounts-unreadable", "accounts-limit", "accounts-malformed", "directory-service", "owner-not-local", "group-missing", "shared-primary", "other-member", "access-acl"]
+        },
+        "writable_group": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^([a-zA-Z0-9_.$-]{1,256}|gid [0-9]{1,10})$"
+        },
+        "id": {
+          "$ref": "#/$defs/name"
+        },
+        "kind": {
+          "enum": [
+            "A",
+            "B",
+            "C",
+            "D",
+            "E",
+            "F",
+            "G",
+            "advanced",
+            "meta",
+            "result",
+            "system",
+            "cron"
+          ]
+        },
+        "locator": {
+          "$ref": "#/$defs/path"
+        },
+        "state": {
+          "enum": [
+            "read",
+            "partial",
+            "missing",
+            "not-read",
+            "deferred",
+            "excluded",
+            "unreadable-program"
+          ]
+        },
+        "read": {
+          "$ref": "#/$defs/count"
+        },
+        "not_read": {
+          "$ref": "#/$defs/count"
+        },
+        "reason": {
+          "enum": [
+            "none",
+            "permission",
+            "gone",
+            "changed",
+            "owner",
+            "mode",
+            "symlink",
+            "type",
+            "size",
+            "syntax",
+            "unsupported",
+            "unresolved",
+            "limit",
+            "deadline",
+            "scope",
+            "not-built",
+            "privilege",
+            "governed",
+            "not-live",
+            "io",
+            "usage",
+            "bug",
+            "mount"
+          ]
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rule_id",
+        "source_id",
+        "fact"
+      ],
+      "properties": {
+        "rule_id": {
+          "$ref": "#/$defs/name"
+        },
+        "source_id": {
+          "$ref": "#/$defs/name"
+        },
+        "fact": {
+          "enum": [
+            "exe-name",
+            "argv-pattern",
+            "file-id",
+            "path",
+            "settings-path",
+            "dependency",
+            "mcp-key",
+            "exec-start",
+            "timer-unit",
+            "cron-command",
+            "interpreter",
+            "cgroup",
+            "argv0-name",
+            "comm-name"
+          ]
+        }
+      }
+    },
+    "process": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pid",
+        "ppid",
+        "uid",
+        "start_ticks",
+        "exe",
+        "cwd",
+        "membership",
+        "run_id",
+        "unit",
+        "container"
+      ],
+      "properties": {
+        "pid": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "ppid": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "uid": {
+          "$ref": "#/$defs/uid"
+        },
+        "start_ticks": {
+          "type": "string",
+          "pattern": "^[0-9]{1,20}$"
+        },
+        "exe": {
+          "$ref": "#/$defs/path"
+        },
+        "cwd": {
+          "description": "Always null for a process owned by an account other than the advanced result recipient.",
+          "$ref": "#/$defs/path"
+        },
+        "membership": {
+          "enum": [
+            "in-run",
+            "outside-run",
+            "unknown"
+          ]
+        },
+        "run_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^r-[0-9a-f]{8}-[0-9a-z]{13}-[0-9a-z]{6}$"
+        },
+        "unit": {
+          "$ref": "#/$defs/unitname"
+        },
+        "container": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "runtime",
+                "id"
+              ],
+              "properties": {
+                "runtime": {
+                  "enum": [
+                    "docker",
+                    "podman",
+                    "containerd"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "target",
+        "mtime",
+        "file_type"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "target": {
+          "$ref": "#/$defs/path"
+        },
+        "mtime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "maxLength": 40
+        },
+        "file_type": {
+          "enum": [
+            "executable",
+            "directory",
+            "file"
+          ]
+        }
+      }
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "client",
+        "scope",
+        "transport",
+        "program",
+        "host",
+        "server",
+        "arguments"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "client": {
+          "$ref": "#/$defs/name"
+        },
+        "scope": {
+          "enum": [
+            "user",
+            "project",
+            "local"
+          ]
+        },
+        "transport": {
+          "enum": [
+            "stdio",
+            "http",
+            "sse",
+            "unknown"
+          ]
+        },
+        "program": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/name"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "host": {
+          "type": "null"
+        },
+        "server": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "arguments": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 128
+        }
+      }
+    },
+    "unit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "uid",
+        "program",
+        "triggers",
+        "enablement_link",
+        "unit",
+        "arguments",
+        "specifiers_unexpanded"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "uid": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/uid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "program": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/name"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "triggers": {
+          "$ref": "#/$defs/unitname"
+        },
+        "enablement_link": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "unit": {
+          "$ref": "#/$defs/unitname"
+        },
+        "arguments": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        },
+        "specifiers_unexpanded": {
+          "type": "boolean"
+        }
+      }
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "dependency"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "dependency": {
+          "enum": [
+            "dep-claude",
+            "dep-codex",
+            "dep-opencode",
+            "dep-gemini",
+            "dep-langgraph-js",
+            "dep-langgraph",
+            "dep-crewai",
+            null
+          ]
+        }
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "evidence",
+        "detail",
+        "caveats"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/name"
+        },
+        "kind": {
+          "enum": [
+            "process",
+            "program",
+            "settings",
+            "mcp_server",
+            "user_unit",
+            "system_unit",
+            "timer",
+            "cron",
+            "project",
+            "other_program"
+          ]
+        },
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        },
+        "detail": {
+          "type": "object"
+        },
+        "caveats": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/caveat"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "process",
+                  "other_program"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "detail": {
+                "$ref": "#/$defs/process"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "program",
+                  "settings"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "detail": {
+                "$ref": "#/$defs/file"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "mcp_server"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "detail": {
+                "$ref": "#/$defs/config"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "user_unit",
+                  "system_unit",
+                  "timer"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "detail": {
+                "$ref": "#/$defs/unit"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "project"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "detail": {
+                "$ref": "#/$defs/project"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "cron"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "detail": {
+                "$ref": "#/$defs/cron"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "unitname": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.@:-]*\\.(service|scope|timer|slice)$"
+    },
+    "cron": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "uid",
+        "program"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "uid": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/uid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "program": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/name"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "$id": "https://tego.dev/spec/scan/v1/schema.json"
+}

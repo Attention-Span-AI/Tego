@@ -19,7 +19,7 @@ var sysConst = regexp.MustCompile(`(?m)^\s+SYS_([A-Z0-9_]+)\s+= (\d+)\s*$`)
 // TestSyscallTablesMatchXSys checks the embedded tables LinuxSyscalls serves against the golang.org/x/sys source
 // this module pins (`go list -m`), entry for entry both ways, so the tables the filter and supervisor tests check
 // their numbers against are x/sys's, not a third hand-typed copy. An x/sys upgrade that adds syscalls fails it
-// until testdata/sysnum_linux_*.txt is regenerated from the new zsysnum files.
+// until sysnumdata/sysnum_linux_*.txt is regenerated from the new zsysnum files.
 func TestSyscallTablesMatchXSys(t *testing.T) {
 	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "golang.org/x/sys")
 	out, err := cmd.Output()

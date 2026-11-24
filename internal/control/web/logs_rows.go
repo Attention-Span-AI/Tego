@@ -5,9 +5,14 @@ package web
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"maps"
 	"net/http"
+	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -27,20 +32,30 @@ const logsPage = 100
 // actions need.
 type rowView struct {
 	ledgerview.Row
+	// Numbers is the row's run completeness, for the counts its cells show.
+	Numbers countScopes
 	// Home is the run's home, for the path shortener; Live marks a running run (its exec, net and fs rows offer Block)
 	// and Contract a run that names a contract file (only its rows can become a rule).
 	Home string
 	// Cwd is the run's working directory: a file of the project reads ./… (pathWordsIn).
 	Cwd            string
 	Live, Contract bool
-	// ProgURL narrows the search to the row's program and PIDURL to its process; "" when the line names none.
-	ProgURL, PIDURL string
+	// ProgTerm and PIDTerm are the query term that narrows the search to the row's program and to its process ("" when
+	// the line names none): the row's buttons send it (name=narrow) with the page's one shared form (narrowFields), and
+	// the server adds it to the query, or takes it out when it is there. A row carries two short terms, not two copies
+	// of the whole search.
+	ProgTerm, PIDTerm string
 	// PID is the line's process (0 when it names none).
 	PID int
 	// Key is the row's identity on the page (run-seq): logs.js reads the run and line from it.
 	Key string
 	// Severity is a blocked row's severity (ledgerview.Severity, "Routine" for a background one), "" otherwise.
-	Severity string
+	Severity    string
+	Now         time.Time
+	Reads       *readContext
+	PhoneAction string
+	// Words is the row's verdict, action and reason in words, the ones the CSV download says too (lineWordsOf).
+	Words lineWords
 }
 
 // rowViews labels a page's rows and gives each its links.
@@ -51,23 +66,31 @@ func (s *Server) rowViews(lq *logsQuery, rows []ledgerview.Row, snap *ledgerview
 	homes := homesOf(rows, snap)
 	sigs := s.signals(snap.Runs)
 	out := make([]rowView, len(rows))
+	reads := map[string]*readContext{}
 	for i, r := range rows {
-		v := rowView{Row: r, Home: homes[r.Run], Key: r.Run + "-" + strconv.FormatUint(r.Seq, 10)}
+		v := rowView{PhoneAction: shownOp(r.Event), Row: r, Home: homes[r.Run], Key: r.Run + "-" + strconv.FormatUint(r.Seq, 10), Now: s.cfg.Now()}
+		if v.PhoneAction == "net" {
+			v.PhoneAction = "connect to"
+		}
 		if run := snap.Find(r.Run); run != nil {
 			if sig := sigs.ownOf(run); sig != nil && r.Refused() {
 				v.Severity = sig.SeverityOf(&r.Event).String()
 			}
+			if reads[r.Run] == nil {
+				reads[r.Run] = readContextOf(run, sigs.ownOf(run))
+			}
+			v.Reads = reads[r.Run]
+			v.Numbers = runNumbers(run)
 			v.Live, v.Contract, v.Cwd = run.State() == "running", run.Contract != "", run.Cwd
 		}
 		if r.Program != "" {
-			toks, _ := lq.toggled(ledgerview.Token{Key: "prog", Value: r.Program})
-			v.ProgURL = lq.with("/logs", toks, nil)
+			v.ProgTerm = ledgerview.Token{Key: "prog", Value: r.Program}.String()
 		}
 		if pid := r.PID(); pid > 0 {
 			v.PID = pid
-			toks, _ := lq.toggled(ledgerview.Token{Key: "pid", Value: strconv.Itoa(pid)})
-			v.PIDURL = lq.with("/logs", toks, nil)
+			v.PIDTerm = ledgerview.Token{Key: "pid", Value: strconv.Itoa(pid)}.String()
 		}
+		v.Words = lineWordsOf(r.Event, v.Reads)
 		out[i] = v
 	}
 	return out
@@ -96,10 +119,29 @@ func (s *Server) logsRows(w http.ResponseWriter, r *http.Request) {
 	f := lq.f
 	f.PageSize = logsPage
 	after, before := q.Get("after"), q.Get("before")
+	// tail is the page's append cursor (ledgerview.Tail): the rows with a line appended since, whatever their time. It
+	// replaces the sort-key cursor after, which a line of a run whose recorder lags another's slips behind.
+	var tail *ledgerview.Tail
+	if tok := q.Get("tail"); tok != "" {
+		t, ok := ledgerview.ParseTail(tok)
+		if !ok || before != "" {
+			http.Error(w, "tego-control serve: tail is not an append cursor", http.StatusBadRequest)
+			return
+		}
+		if !t.Overflow {
+			tail = &t
+		}
+	}
 	switch {
 	case after != "" && before != "":
 		http.Error(w, "tego-control serve: give after or before, not both", http.StatusBadRequest)
 		return
+	case tail != nil:
+		f.Appended, f.PageSize = tail, logsPage+1
+		if after != "" && !validCursor(after) {
+			http.Error(w, "tego-control serve: after is not a row cursor", http.StatusBadRequest)
+			return
+		}
 	case after != "":
 		if !validCursor(after) {
 			http.Error(w, "tego-control serve: after is not a row cursor", http.StatusBadRequest)
@@ -117,7 +159,10 @@ func (s *Server) logsRows(w http.ResponseWriter, r *http.Request) {
 	}
 	pg := snap.Query(f)
 	more := false
-	if after != "" {
+	if tail != nil {
+		more = len(pg.Rows) > logsPage
+		pg.Rows = pg.Rows[:min(len(pg.Rows), logsPage)]
+	} else if after != "" {
 		n := 0
 		for n < len(pg.Rows) && pg.Rows[n].NewerThan(after) {
 			n++
@@ -134,17 +179,54 @@ func (s *Server) logsRows(w http.ResponseWriter, r *http.Request) {
 	h := w.Header()
 	h.Set("Content-Type", "text/html; charset=utf-8")
 	newest := after
-	if len(pg.Rows) > 0 && (after != "" || before == "") {
+	switch {
+	case tail != nil:
+		// The newest row the page can hold, for the sort-key fallback (an overflowed tail): never older than the one it has.
+		if len(pg.Rows) > 0 && (after == "" || pg.Rows[0].NewerThan(after)) {
+			newest = pg.Rows[0].Cursor()
+		}
+	case len(pg.Rows) > 0 && (after != "" || before == ""):
 		newest = pg.Rows[0].Cursor()
 	}
 	h.Set("X-Tego-After", newest)
+	if before == "" && (tail == nil || snap.Rev >= tail.Rev) {
+		h.Set("X-Tego-Tail", snap.TailOf().String())
+	}
 	if after == "" {
 		h.Set("X-Tego-Next", pg.Next)
 	}
 	if more {
 		h.Set("X-Tego-More", "1")
 	}
-	h.Set("X-Tego-Rows", strconv.Itoa(pg.Groups))
+	// The total is qualified like the page's own count, so a script that writes it in never makes it look exact.
+	rowsText, err := quantityText("logs.folded-rows", pg.Groups, snapshotNumbers(snap))
+	if err != nil {
+		http.Error(w, "tego-control serve: render: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	h.Set("X-Tego-Rows", rowsText)
+	writeFragment(w, r, buf.Bytes())
+}
+
+// logsChangeRows is GET /logs/changes?<search>: the rule-change rows the search shows (logsChanges), newest first, as the
+// page writes them, for static/logs.js to place among the rows it holds when a rule changes (live.js's tego:changes,
+// from the live state's crev). X-Tego-Crev is the rule-change journal's revision they were read at.
+func (s *Server) logsChangeRows(w http.ResponseWriter, r *http.Request) {
+	snap, err := ledgerview.Load(s.cfg.Ledger)
+	if err != nil {
+		http.Error(w, "tego-control serve: the ledger could not be read", http.StatusInternalServerError)
+		return
+	}
+	crev := s.changeRev() // before the feed is read: a change in between is asked for again
+	lq := readLogsQuery(r.URL.Query(), s.cfg.Now()).onPage()
+	var buf bytes.Buffer
+	if err := s.pages["logs"].ExecuteTemplate(&buf, "logchanges", logsChanges(s.feed(r.Context()), lq.f, snap)); err != nil {
+		http.Error(w, "tego-control serve: render: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", "text/html; charset=utf-8")
+	h.Set("X-Tego-Crev", crev)
 	writeFragment(w, r, buf.Bytes())
 }
 
@@ -263,5 +345,46 @@ func (s *Server) logsLine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// The row's revision: a hash of the panel as sent, so an open panel (logs.js, run.js) asks again when the state
+	// behind it moves and the answer is 304 with no body while it has not (If-None-Match carries the revision it shows).
+	sum := sha256.Sum256(visibleHTML(buf.Bytes()))
+	rev := `"` + hex.EncodeToString(sum[:8]) + `"`
+	w.Header().Set("ETag", rev)
+	w.Header().Add("Vary", "If-None-Match")
+	if r.Header.Get("If-None-Match") == rev {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
 	writeFragment(w, r, buf.Bytes())
+}
+
+// narrowFields are the search's own parameters (what lq.with carries to any address of it), written once as the hidden
+// fields of the form the rows' program and process buttons belong to, in the order the address writes them.
+func (lq *logsQuery) narrowFields() []narrowField {
+	u, err := url.Parse(lq.with("/logs", nil, nil))
+	if err != nil {
+		return nil
+	}
+	var out []narrowField
+	for _, k := range slices.Sorted(maps.Keys(u.Query())) {
+		for _, v := range u.Query()[k] {
+			out = append(out, narrowField{k, v})
+		}
+	}
+	return out
+}
+
+// narrowField is one hidden field of the narrow form.
+type narrowField struct{ Name, Value string }
+
+// narrowAddress is where a row's narrow button leads: the search with that one term added to its query, or taken out
+// when the query already holds it (the press that undoes the last one). ok is false for a term that is no program or
+// process term, which no button writes.
+func (lq *logsQuery) narrowAddress(term string, now time.Time) (to string, ok bool) {
+	_, toks, err := ledgerview.ParseQueryAt(term, now, time.Local)
+	if err != nil || len(toks) != 1 || toks[0].Neg || (toks[0].Key != "prog" && toks[0].Key != "pid") {
+		return "", false
+	}
+	next, _ := lq.toggled(toks[0])
+	return lq.with("/logs", next, nil), true
 }
