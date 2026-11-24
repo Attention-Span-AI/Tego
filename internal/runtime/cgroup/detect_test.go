@@ -356,12 +356,25 @@ func TestCommonAncestor(t *testing.T) {
 	}
 }
 
+// ownLauncher fixes what placementRemedy asks the host: that the process was not started from another user's shell,
+// and that its user manager has a socket. Unpinned, the remedy follows the host's real /proc: a root job started by sudo
+// from the runner's home (CI's root-suites) is told the other remedy, which names no command, and the two tests below
+// that hold the command's text failed there. nomanager_test.go holds the other branches.
+func ownLauncher(t *testing.T) {
+	t.Helper()
+	prevReader, prevReach := readByAnother, managerReachable
+	readByAnother = func() bool { return false }
+	managerReachable = func(int) bool { return true }
+	t.Cleanup(func() { readByAnother, managerReachable = prevReader, prevReach })
+}
+
 // TestCanPlace is case 41 over a temporary directory: a process inside the root can always place a run
 // there, and one outside it only when it may write the cgroup.procs of the two cgroups' common ancestor,
 // which systemd leaves to root for a login's session-<n>.scope and a service alike.
 //
 // Also pins: an unprivileged launcher outside its delegated subtree is refused with ErrOutsideSubtree, and root is not.
 func TestCanPlace(t *testing.T) {
+	ownLauncher(t)
 	mount := t.TempDir()
 	const user = "/user.slice/user-1000.slice"
 	root := filepath.Join(mount, user, "user@1000.service")
@@ -422,6 +435,7 @@ func TestCanPlace(t *testing.T) {
 // instead, which nothing here pinned: a reworded separator would have sent case 39's refusal back to
 // the Delegate= fix, which cannot help there, with every test still passing.
 func TestEveryDetectRefusalNamesItsRemedy(t *testing.T) {
+	ownLauncher(t)
 	tmp := t.TempDir()
 	const own = "/user.slice/user-1000.slice/session-3.scope"
 	mount := agreeingMount(t, own)

@@ -6,6 +6,8 @@ anchor, contract, teardown status, fresh comparison, release identity and GitHub
 run metadata. It does not sign `blobs/` or establish that a privileged runner
 reported honest evidence.
 
+The workflows and receipts this page checks are new in v0.2.0. v0.1.3 does not make them.
+
 Install the expected Tego release independently. Authenticate its release
 checksums against the release workflow before using them. Obtain the exact
 repository IDs, source commit/ref, caller workflow commit, reusable signer

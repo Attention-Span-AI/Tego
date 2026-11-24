@@ -385,3 +385,37 @@ func TestAskJSONOfARunWhoseSocketIsGoneAgreesWithTheText(t *testing.T) {
 		t.Errorf("run with no ask rule, --json: exit %d stdout %q stderr %q", code, &out, &errs)
 	}
 }
+
+// TestAskAcrossSaysWhichRunItLeftOut (N125 (b)): `tego ask` with no run lists the pending asks of the runs that serve an
+// ask socket. A live run whose start record says it served approvals, and whose socket is gone (its broker closed as it
+// shut down), used to be passed over without a word, so a list that left out a run that had held requests read as the
+// whole. Now it is named on stderr with the words `tego ask <run>` uses; the list on stdout, the --json form and the exit
+// code are what they were (the run's requests ended with its broker), and a run whose contract has no ask rule, which
+// holds none and was never shown to, is still not mentioned.
+func TestAskAcrossSaysWhichRunItLeftOut(t *testing.T) {
+	root := gcRoot(t)
+	const idPlain, idServing = "r-3f9c2a1b-0dllq06ts7510-k7m2pa", "r-3f9c2a1b-0dllq06ts7511-k7m2pb"
+	newCLIRunServing(t, root, idPlain, false)
+	newCLIRunServing(t, root, idServing, true) // served approvals; no broker is listening now
+
+	code, out, errs := run(t, "ask")
+	if code != identity.ExitOK || out != "no pending approvals: no running run under "+root+" takes approvals\n" {
+		t.Errorf("tego ask: exit %d stdout %q (stderr %q)", code, out, errs)
+	}
+	if !strings.Contains(errs, idServing+" takes approvals, but its ask socket is not there now") || !strings.Contains(errs, "[not-found]") {
+		t.Errorf("tego ask passed over %s without saying so: stderr %q", idServing, errs)
+	}
+	if strings.Contains(errs, idPlain) {
+		t.Errorf("a run with no ask rule holds none and is not named: stderr %q", errs)
+	}
+	code, out, errs = run(t, "ask", "--json")
+	var listed struct {
+		Runs []askPending `json:"runs"`
+	}
+	if code != identity.ExitOK || json.Unmarshal([]byte(out), &listed) != nil || len(listed.Runs) != 0 {
+		t.Errorf("tego ask --json: exit %d stdout %q", code, out)
+	}
+	if !strings.Contains(errs, idServing+" takes approvals, but its ask socket is not there now") {
+		t.Errorf("tego ask --json passed over %s without saying so: stderr %q", idServing, errs)
+	}
+}

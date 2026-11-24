@@ -392,9 +392,6 @@ internal/runtime TestRootAgentInOtherRunCannotAnswer # needs root: two runs at t
 internal/runtime TestAdoptedAgentCannotAnswer # needs root: an adoption moves another process between cgroups and loads tier 2's programs
 internal/runtime TestIntegrationAskUnixScopeSpellings/bind-mount_alias # needs root: a net.ask unix: scope declared through a bind mount of the write entry (mount(2))
 # ADR 0048 P2 K6: real runs at a plane cell with command rules, pinned (and the unpinned control).
-# The demo kit's real-agent contracts: each names its harness binary, which compile resolves on PATH.
-examples/demo TestContractsCompile/claude-code.yaml # claude is not on the runner's PATH (CI and the gate install no harness), so its contract cannot compile
-examples/demo TestContractsCompile/codex.yaml # codex is not on the runner's PATH (CI and the gate install no harness), so its contract cannot compile
 
 # Opt-in measurements: a budget check that reads a big ledger copy named in its environment, and skips without one.
 internal/control/web TestBuilderGovernedPreviewsCannotEvictPersonsReview/* # skips, naming the times, only when other work on the host leaves even a person's own check slow (over a second) or starves the lowest-priority checks of every CPU; a governed request's priority itself is held in internal/contracts (TestGovernedHelperWorkerRunsAtTheLowestPriority) and, while the load runs, by this test
@@ -430,12 +427,12 @@ internal/runtime/observe TestMissCountersFollowAttachedPrograms # needs root, bp
 internal/runtime/observe TestMissingActiveMissInstanceIsUncertain # needs root, bpffs and the compiled objects; exercised in the tegobpf KVM root suite
 internal/doctor TestCaptureStackInvariantOnThisKernel # needs root to load and read back capture programs and attach uprobes; every full kernel row requires this test in a guest
 # These checks read component notes or the tier plan, which are not part of this repository.
-tools/deadcodereport TestNoSpecNamesATestOnlyFunction # required component documents are not part of this repository
-tools/rulecheck TestSpecsDoNotNameSymbolsThatNeverExisted # required component documents are not part of this repository
-tools/rulecheck TestADRNotBuiltClaimsAgreeWithTier3Plan # required component documents are not part of this repository
-tools/rulecheck TestNoRuleDefinedAfterChangesList # required component documents are not part of this repository
-tools/rulecheck TestTicketStatusOnTheTree # required component documents are not part of this repository
-pkg/spec/agent TestR5ListsEveryMergeClassRow # required component documents are not part of this repository
+tools/deadcodereport TestNoSpecNamesATestOnlyFunction # required component documents are not part of this repository; a tree that keeps frozen copies in an archive folder reads them there and runs the test
+tools/rulecheck TestSpecsDoNotNameSymbolsThatNeverExisted # required component documents are not part of this repository; a tree that keeps frozen copies in an archive folder reads them there and runs the test
+tools/rulecheck TestADRNotBuiltClaimsAgreeWithTier3Plan # required component documents are not part of this repository; a tree that keeps frozen copies in an archive folder reads them there and runs the test
+tools/rulecheck TestNoRuleDefinedAfterChangesList # required component documents are not part of this repository; a tree that keeps frozen copies in an archive folder reads them there and runs the test
+tools/rulecheck TestTicketStatusOnTheTree # required component documents are not part of this repository; a tree that keeps frozen copies in an archive folder reads them there and runs the test
+pkg/spec/agent TestR5ListsEveryMergeClassRow # required component documents are not part of this repository; a tree that keeps frozen copies in an archive folder reads them there and runs the test
 
 internal/cli TestLoginControllingTerminal/* # needs a usable pseudo-terminal and, for script cases, script(1); skips with a reason when either is unavailable
 internal/cli TestLoginCaptureWithSystemScript # needs system script(1); skips with a reason when /usr/bin/script is absent

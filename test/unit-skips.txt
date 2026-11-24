@@ -51,8 +51,6 @@ internal/runtime/enforce/cgroup TestFanotifyQuotaFailuresNameTheirSetting # the 
 internal/runtime/enforce/cgroup TestLoopRemovesItsMarksWithoutNamingAPath/* # the same thread budget, per case
 internal/runtime/enforce/cgroup TestNewListenerSettlesOnTheLoop # the same thread budget
 internal/runtime/hoststate TestOpenHostAsRoot # needs root: the trusted directory is root's (runs in root-suites, which requires it to pass)
-tools/fdcheck TestTreeRatchetAndPlantedSites/linux-amd64-cgo # the amd64 cgo build needs a C compiler for linux/amd64, which the arm64 runner lacks; there the files only cgo builds are checked under arm64's cgo build, and the amd64 jobs check amd64's
-tools/fdcheck TestTreeRatchetAndPlantedSites/linux-amd64-cgo-integration,tegobpf,tegotesthooks # the same build with the lint's tags
 
 # arm64's syscall table has no creat, chmod, chown, lchown or mknod, only their *at forms, so a case that drives one of
 # those calls has nothing to drive there; amd64 runs every one of them. Seen on GitHub's ubuntu-24.04-arm runner (2026-11-02).
@@ -96,12 +94,12 @@ pkg/policy/execmatch/rows TestNodeRowGeneratedDifferential # compares the node r
 pkg/policy/execmatch/rows TestNodeInventoryDifferential # checks installed node inventories and actual script paths; skips only where node is absent
 pkg/policy/execmatch/rows TestNodeReviewDifferential # executes the security review argv; skips only without node
 # These checks read component notes or the tier plan, which are not part of this repository.
-tools/deadcodereport TestNoSpecNamesATestOnlyFunction # required component documents are not part of this repository
-tools/rulecheck TestSpecsDoNotNameSymbolsThatNeverExisted # required component documents are not part of this repository
-tools/rulecheck TestADRNotBuiltClaimsAgreeWithTier3Plan # required component documents are not part of this repository
-tools/rulecheck TestNoRuleDefinedAfterChangesList # required component documents are not part of this repository
-tools/rulecheck TestTicketStatusOnTheTree # required component documents are not part of this repository
-pkg/spec/agent TestR5ListsEveryMergeClassRow # required component documents are not part of this repository
+tools/deadcodereport TestNoSpecNamesATestOnlyFunction # required component documents are not part of this repository; a tree that keeps frozen copies in an archive folder reads them there and runs the test
+tools/rulecheck TestSpecsDoNotNameSymbolsThatNeverExisted # required component documents are not part of this repository; a tree that keeps frozen copies in an archive folder reads them there and runs the test
+tools/rulecheck TestADRNotBuiltClaimsAgreeWithTier3Plan # required component documents are not part of this repository; a tree that keeps frozen copies in an archive folder reads them there and runs the test
+tools/rulecheck TestNoRuleDefinedAfterChangesList # required component documents are not part of this repository; a tree that keeps frozen copies in an archive folder reads them there and runs the test
+tools/rulecheck TestTicketStatusOnTheTree # required component documents are not part of this repository; a tree that keeps frozen copies in an archive folder reads them there and runs the test
+pkg/spec/agent TestR5ListsEveryMergeClassRow # required component documents are not part of this repository; a tree that keeps frozen copies in an archive folder reads them there and runs the test
 
 internal/cli TestLoginControllingTerminal/* # needs a usable pseudo-terminal and, for script cases, script(1); skips with a reason when either is unavailable
 internal/cli TestLoginCaptureWithSystemScript # needs system script(1); skips with a reason when /usr/bin/script is absent

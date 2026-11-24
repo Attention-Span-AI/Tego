@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -22,7 +21,7 @@ const scopeReadyLine = "TEGO_SCOPE_READY"
 // the person's command keeps its original stdin, stdout, stderr and status.
 // This is not a background service or a dashboard transport.
 type linuxReady struct {
-	cmd   *exec.Cmd
+	cmd   *proc.Cmd
 	input io.WriteCloser
 	done  chan struct{}
 	log   startupLog

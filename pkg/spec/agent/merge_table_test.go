@@ -122,9 +122,14 @@ func TestContractMergeClassesADR0065(t *testing.T) {
 // TestR5ListsEveryMergeClassRow: agent-contract R5's class table names every key of the merge table under its class,
 // and nothing else, so the spec a profile author reads is the table the merge runs.
 func TestR5ListsEveryMergeClassRow(t *testing.T) {
-	src, err := os.ReadFile(filepath.Join("..", "..", "..", "docs", "p0", "agent-contract.md"))
+	// The tree's own docs/p0, else a frozen copy under the archive folder (a tree with neither skips).
+	root := filepath.Join("..", "..", "..")
+	src, err := os.ReadFile(filepath.Join(root, "docs", "p0", "agent-contract.md"))
 	if os.IsNotExist(err) {
-		t.Skip("no docs/p0 here")
+		src, err = os.ReadFile(filepath.Join(root, "archive", "_p0", "docs", "p0", "agent-contract.md"))
+	}
+	if os.IsNotExist(err) {
+		t.Skip("no component documents here (a tree that keeps frozen copies reads them from its archive folder)")
 	}
 	if err != nil {
 		t.Fatal(err)

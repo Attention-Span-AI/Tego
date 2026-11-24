@@ -87,6 +87,46 @@ var logsBudgetPages = []string{
 	"/logs/rows?after=" + url.QueryEscape("0.r.0"),
 }
 
+// warmBytes is what one call of fn allocates, as the least of n calls. TotalAlloc is the whole process's: whatever else
+// allocates while fn runs (the runtime's pools refilling after a collection, a goroutine another test left behind)
+// adds to a sample and never takes from it, so the least sample is the cost of fn itself, and a structure fn builds
+// per line is in every sample (N121: one sample of /logs?group=process was 221 bytes over the band, which a ledger's
+// real growth, about 14 bytes a line from the fold's row list, leaves 84 KB of).
+func warmBytes(n int, fn func()) uint64 {
+	best := ^uint64(0)
+	for range n {
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		fn()
+		runtime.ReadMemStats(&after)
+		best = min(best, after.TotalAlloc-before.TotalAlloc)
+	}
+	return best
+}
+
+var warmSink []byte
+
+// TestWarmBytesIgnoresAllocationFromOutsideTheCall: an allocation another goroutine makes inside some of the samples
+// does not move the figure, and one the call makes itself in every sample does.
+func TestWarmBytesIgnoresAllocationFromOutsideTheCall(t *testing.T) {
+	const own, other = 1 << 20, 1 << 19
+	calls := 0
+	fn := func() {
+		warmSink = make([]byte, own)
+		calls++
+		if calls%3 != 0 { // the stray allocation lands in two samples of three
+			warmSink = make([]byte, other)
+		}
+	}
+	got := warmBytes(5, fn)
+	if got < own || got > own+other/2 {
+		t.Errorf("warmBytes = %d, want about %d: the stray allocation was counted", got, own)
+	}
+	if got := warmBytes(5, func() { warmSink = make([]byte, own+other) }); got < own+other {
+		t.Errorf("warmBytes = %d, want at least %d: the call's own allocation was dropped", got, own+other)
+	}
+}
+
 // TestLogsWarmBudget holds the Logs page's warm budget (40 ms on the demo ledger of 19,528 lines, 5 runs; docs/DASHBOARD.md,
 // "Read model") by what makes it true, counted, on a seeded ledger every runner has. A warm page is built from what a
 // version of each run memoized (the folded rows, the counts, the facets, the haystacks of a text search), so it shows
@@ -121,13 +161,9 @@ func TestLogsWarmBudget(t *testing.T) {
 			}
 			do(l.s, "GET", p, "127.0.0.1:8484", l.c) // warm: the memos of this version of each run are built
 			allocs = append(allocs, testing.AllocsPerRun(3, func() { do(l.s, "GET", p, "127.0.0.1:8484", l.c) }))
-			var before, after runtime.MemStats
-			runtime.ReadMemStats(&before)
-			do(l.s, "GET", p, "127.0.0.1:8484", l.c)
-			runtime.ReadMemStats(&after)
-			bytes = append(bytes, after.TotalAlloc-before.TotalAlloc)
+			bytes = append(bytes, warmBytes(5, func() { do(l.s, "GET", p, "127.0.0.1:8484", l.c) }))
 		}
-		t.Logf("%-120s %7.0f allocations on %d lines, %7.0f on %d", p, allocs[0], ledgers[0].lines, allocs[1], ledgers[1].lines)
+		t.Logf("%-120s %7.0f allocations on %d lines, %7.0f on %d; %d bytes, %d", p, allocs[0], ledgers[0].lines, allocs[1], ledgers[1].lines, bytes[0], bytes[1])
 		if allocs[1] > allocs[0]*1.10+slack {
 			t.Errorf("%s: a warm page allocated %.0f objects on %d lines and %.0f on %d: it does work per line", p, allocs[0], ledgers[0].lines, allocs[1], ledgers[1].lines)
 		}

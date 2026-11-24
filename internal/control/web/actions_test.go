@@ -166,6 +166,12 @@ func TestHelperLockHolder(t *testing.T) {
 	if _, err := fmt.Fprintf(f, "%d %d %d\n", os.Getpid(), start, runlock.OwnPIDNS()); err != nil {
 		os.Exit(6)
 	}
+	// Collect now, as a long-lived launcher would sooner or later: a lock descriptor nothing keeps reachable is
+	// closed by its finalizer and the lock goes with it (this helper once lost the run's lock a few
+	// milliseconds after the test saw it, in one run of ten). With the KeepAlive calls below the lock survives this.
+	runtime.GC()
+	runtime.GC()
+	time.Sleep(200 * time.Millisecond)
 	select {
 	case <-sig:
 		_, err := os.Stat(filepath.Join(dir, "stop.request"))

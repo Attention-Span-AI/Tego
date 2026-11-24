@@ -151,6 +151,13 @@
     },
     {
       "page": "hours",
+      "id": "hours.day",
+      "label": "refused in one day of the week (the phone view)",
+      "source": "daily",
+      "incomplete": "at least N if runs omitted; could not read on reader failure"
+    },
+    {
+      "page": "hours",
       "id": "hours.row",
       "label": "refused in one hour",
       "source": "daily",

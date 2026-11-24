@@ -6,6 +6,8 @@ project hints. It saves that snapshot to
 `~/.tego/scan/last.json`. It does
 not start or change a process. It makes no network requests.
 
+`tego scan` is new in v0.2.0. v0.1.3 does not have it.
+
 ```sh
 tego scan
 tego scan --verbose

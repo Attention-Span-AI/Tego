@@ -67,6 +67,10 @@ type ChangeService interface {
 // MiB), which form encoding can triple.
 const maxRawForm = 3<<20 + maxForm
 
+// maxPreviewForm bounds POST /rules/change/preview: rules.MaxEdits rows, each an entry of up to rules.MaxEntry bytes
+// written as a form value (a byte may take three: %XX), with the action and the list of each row and the form's own fields.
+const maxPreviewForm = rules.MaxEdits*(rules.MaxEntry*3+64) + maxForm
+
 // widens is the direction word of a widening (rules.ChangePlan.Direction): undoing anything else asks for the
 // acknowledgement, since undoing a narrowing widens and a mixed change or a free edit cannot be classified.
 const widens = "widens"
@@ -422,15 +426,15 @@ func (s *Server) serviceFail(w http.ResponseWriter, heading string, err error) {
 	}
 }
 
-// rulesChange serves GET /rules/change and /rules/change/preview.
+// rulesChange serves GET /rules/change and /rules/change/preview (the POST is rulesPreviewPost).
 func (s *Server) rulesChange(w http.ResponseWriter, r *http.Request) {
 	svc, ok := s.changeService(w, r)
 	if !ok {
 		return
 	}
 	switch r.URL.Path {
-	case "/rules/change/preview":
-		s.rulesPreview(w, r, svc)
+	case previewPath:
+		s.rulesPreview(w, r, svc, r.URL.Query())
 		return
 	case "/rules/change/saved":
 		s.rulesSaved(w, r, svc)
@@ -659,9 +663,26 @@ func hintOf(key string) string {
 	return ""
 }
 
-// rulesPreview serves GET /rules/change/preview: the change planned, nothing written.
-func (s *Server) rulesPreview(w http.ResponseWriter, r *http.Request, svc ChangeService) {
-	q := r.URL.Query()
+// previewPath is the preview's address. A single change asks for it by GET (its address carries one entry); the Several
+// changes at once form posts (N124: sixteen entries of up to rules.MaxEntry bytes pass the server's 16 KiB header limit
+// as an address, and the browser got a bare "431" page). A preview writes nothing, so a peer inside a run may ask for
+// it either way (ServeHTTP, baselinePostAllowed).
+const previewPath = "/rules/change/preview"
+
+// previewBackMax is the longest address a refused Save sends the person back to (the preview of the same edits): well
+// inside the 16 KiB the server reads (Serve's MaxHeaderBytes), with the flash and the host's own headers beside it.
+const previewBackMax = 6 << 10
+
+// rulesPreviewPost serves POST /rules/change/preview, which postAllowed has passed: the same preview as the GET, for the
+// values the form posted.
+func (s *Server) rulesPreviewPost(w http.ResponseWriter, r *http.Request) {
+	if svc, ok := s.changeService(w, r); ok {
+		s.rulesPreview(w, r, svc, r.PostForm)
+	}
+}
+
+// rulesPreview is the change planned for the values q (the address's, or the form's), nothing written.
+func (s *Server) rulesPreview(w http.ResponseWriter, r *http.Request, svc ChangeService, q url.Values) {
 	edits, why := editsOf(q)
 	if why != "" {
 		if q.Get("batch") != "" { // the several form's own page says what to fix and keeps what was typed
@@ -814,7 +835,14 @@ func (s *Server) rulesChangePost(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, rules.ErrAlreadyApplied) {
 			text = "Already in the contract · nothing written"
 		}
-		s.redirectBack(w, r, "/rules/change/preview?"+q.Encode(), flash{Text: text})
+		back := previewPath + "?" + q.Encode()
+		if len(back) > previewBackMax && r.Header.Get(inlineHeader) == "" {
+			// Too long to carry as an address (the server refuses a request line past 16 KiB, and the browser would
+			// show a bare 431): plan the same edits again here and say the same line above the preview (N124).
+			s.rulesPreview(&flashWriter{w, &flash{Text: text}}, r, svc, q)
+			return
+		}
+		s.redirectBack(w, r, back, flash{Text: text})
 		return
 	}
 	d := savedData{Ref: a.Plan.Ref, Contract: a.Plan.Contract, Agent: a.Plan.Agent, Applied: a, UndoID: a.ID, Warn: a.Warn,

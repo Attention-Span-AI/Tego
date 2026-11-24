@@ -100,10 +100,17 @@ noisy='Feed FeedExchange BuildRuleMaps SendMMsgTail IterFullRun SeccompNotifyRou
 # (script), +16.2% (16 arguments) and +17.4% (128 arguments), each at p=0.000 n=10, allocs/op 59 -> 66, 58 -> 67
 # and 239 -> 257, sec/op inside the gate, the unguarded exec and the floor's refusal unchanged. The ceiling, +25%,
 # leaves room for one hosted runner's spread against another's and is still a ceiling: a larger step fails.
+# v0.2.0 (against public main a2263f548514, before it): the watcher's Tick samples the clock before any activity snapshot
+# or callback (GAPS C73: a pause after the snapshot aged it against a later clock and stopped a live run on a
+# false 4.4 s stall). The call order alone moved 20.91 ns to 27.42 ns (+31.08%, p=0.000 n=10, no allocation either way)
+# on a hosted runner, and 64 to 69 ns (+8%) on the development box with the old order compiled into the same binary;
+# Tick runs once a second per run. The ceiling, +45%, is again room for a runner's spread and a ceiling: a larger step
+# fails. The v0.1.3 entries stay: bench-gate_test.sh holds the mechanism with them, and they expire by themselves.
 accepted='
 f8efe5ca2ab899598df2173c05119686b4c2cd57  internal/runtime/supervisor  ExecCommandCost/script   B/op  25  v0.1.3 decides a guarded exec with two readers of the command rules (ADR 0048)
 f8efe5ca2ab899598df2173c05119686b4c2cd57  internal/runtime/supervisor  ExecCommandCost/args16   B/op  25  v0.1.3 decides a guarded exec with two readers of the command rules (ADR 0048)
 f8efe5ca2ab899598df2173c05119686b4c2cd57  internal/runtime/supervisor  ExecCommandCost/args128  B/op  25  v0.1.3 decides a guarded exec with two readers of the command rules (ADR 0048)
+a2263f548514b072565668f25a2b0b7a6d9d13f8  internal/runtime/limits  Tick  sec/op  45  the watcher samples the clock before any activity snapshot or callback (GAPS C73)
 '
 
 GO=${GO:-go}

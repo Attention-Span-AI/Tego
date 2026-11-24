@@ -128,7 +128,9 @@ func probePlane(root bool, uid int, release, pin string, keep bool) (*PlaneState
 	var rows []HookResult
 	for _, m := range bpfobj.PlaneModes {
 		endMode := startphase.Begin(nil, "probe.plane."+string(m)+".total")
-		res, modeRows := probePlaneMode(m, spec, st.Env, lsm, build, why, buildFix, uid, known, image)
+		res, modeRows := probePlaneModeTwice(m, func() (PlaneModeResult, []HookResult) {
+			return probePlaneMode(m, spec, st.Env, lsm, build, why, buildFix, uid, known, image)
+		})
 		endMode()
 		st.Modes = append(st.Modes, res)
 		rows = append(rows, modeRows...)
@@ -618,7 +620,7 @@ func exercisePlane(rig *planeRig, uid int, rows []HookResult, img *planeImage) (
 	for i, h := range bpfobj.PlaneHooks {
 		// Outside first, in hook order for every hook, the absent ones too: the side's fixtures are made for
 		// that order (removexattr after setxattr).
-		outside := planeOutcome(planeAction(h.Name, outDir, outPre))
+		outside := planeTestOutcome(rig.mode, h.Name, planeOutcome(planeAction(h.Name, outDir, outPre)))
 		if rows[i].Absent {
 			continue
 		}
@@ -833,7 +835,7 @@ func planeMap(hook string, fd int) error {
 	if fd < 0 {
 		var err error
 		if fd, err = planeMapFile(); err != nil {
-			return fmt.Errorf("the mapped file: %w", err)
+			return planeFixtureErr("the mapped file", err)
 		}
 		defer func() { _ = unix.Close(fd) }()
 	}
@@ -954,19 +956,19 @@ func planeAction(hook, dir string, pre planePre) error {
 	case "socket_connect":
 		fd, done, err := planeSocket(pre.stream, unix.SOCK_STREAM)
 		if err != nil {
-			return err
+			return planeFixtureErr("socket fixture", err)
 		}
 		defer done()
 		return unix.Connect(fd, &unix.SockaddrUnix{Name: filepath.Join(dir, "sock")})
 	case "unix_may_send":
 		fd, done, err := planeSocket(pre.dgram, unix.SOCK_DGRAM)
 		if err != nil {
-			return err
+			return planeFixtureErr("socket fixture", err)
 		}
 		defer done()
 		if pre.dgram < 0 {
 			if err := unix.Connect(fd, &unix.SockaddrUnix{Name: filepath.Join(dir, "dg")}); err != nil {
-				return err
+				return planeFixtureErr("socket fixture (connect before send)", err)
 			}
 		}
 		_, err = unix.Write(fd, []byte{0})
@@ -977,7 +979,7 @@ func planeAction(hook, dir string, pre planePre) error {
 		// receive finds nothing queued (EAGAIN), which is the hook having run and let it by.
 		fd, done, err := planeSocket(pre.dgram, unix.SOCK_DGRAM)
 		if err != nil {
-			return err
+			return planeFixtureErr("socket fixture", err)
 		}
 		defer done()
 		_, _, _, _, err = unix.Recvmsg(fd, make([]byte, 1), make([]byte, unix.CmsgSpace(4)), unix.MSG_DONTWAIT|unix.MSG_CMSG_CLOEXEC)
@@ -988,7 +990,7 @@ func planeAction(hook, dir string, pre planePre) error {
 	case "socket_sendmsg":
 		fd, done, err := planeSocket(pre.dgram, unix.SOCK_DGRAM)
 		if err != nil {
-			return err
+			return planeFixtureErr("socket fixture", err)
 		}
 		defer done()
 		return unix.Sendto(fd, []byte{0}, 0, &unix.SockaddrUnix{Name: filepath.Join(dir, "dg")})
@@ -1043,7 +1045,7 @@ func planeAction(hook, dir string, pre planePre) error {
 		if fd < 0 {
 			var err error
 			if fd, err = unix.Open(filepath.Join(dir, "ftr"), unix.O_WRONLY|unix.O_CLOEXEC, 0); err != nil {
-				return fmt.Errorf("the file to truncate: %w", err)
+				return planeFixtureErr("the file to truncate", err)
 			}
 			defer func() { _ = unix.Close(fd) }()
 		}
@@ -1098,6 +1100,12 @@ func planeOutcomeFaulted(s string) bool {
 		}
 	}
 	return true
+}
+
+// planeOutcomeFixture reports whether a row's outcome is a planeFixtureErr: doctor's own step that prepares the
+// row's syscall (a socket, a key, a helper child, a file) failed, so the hook was never exercised.
+func planeOutcomeFixture(s string) bool {
+	return strings.HasPrefix(s, "failed: "+planeFixtureMarker+" (")
 }
 
 // planeCgroup is the probe's scratch cgroup.

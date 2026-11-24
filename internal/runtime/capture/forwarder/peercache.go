@@ -43,9 +43,6 @@ import (
 // procPeerAdmitter, and anything that cannot answer refuses.
 type procAdmitter struct {
 	mu sync.Mutex
-	// dirs is the run cgroup's directory by its id; a cgroup's id is fixed for the boot, and a directory whose
-	// inode is no longer the id is looked for again.
-	dirs map[uint64]string
 	// fds is each run process's descriptors as last read.
 	fds map[int]*procFDs
 	// holder is where a socket inode was last seen, and conns where each admitted connection's peer was.
@@ -113,7 +110,7 @@ const admitterCacheCap = 1 << 16
 // newProcAdmitterOn is an admitter whose exact lookup is d, the run's (Options.tcpDiag).
 func newProcAdmitterOn(d *tcpDiag) *procAdmitter {
 	return &procAdmitter{
-		dirs: map[uint64]string{}, fds: map[int]*procFDs{},
+		fds:    map[int]*procFDs{},
 		holder: map[uint64]fdRef{}, conns: map[connKey]fdRef{},
 		diag: d.inode, fallback: procPeerAdmitter, pause: time.Sleep, now: time.Now,
 	}
@@ -194,19 +191,9 @@ func (a *procAdmitter) forget(peer, local netip.AddrPort) {
 // runPIDs lists the processes of the run's cgroup subtree, lowest pid first, and forgets the descriptors of any
 // process no longer in it.
 func (a *procAdmitter) runPIDs(mount string, runCgroup uint64) ([]int, error) {
-	dir, ok := a.dirs[runCgroup]
-	if ok {
-		if id, err := cgroupIDOf(dir); err != nil || id != runCgroup {
-			ok = false
-		}
-	}
-	if !ok {
-		var err error
-		if dir, err = findCgroupDir(mount, runCgroup); err != nil {
-			delete(a.dirs, runCgroup)
-			return nil, err
-		}
-		a.dirs[runCgroup] = dir
+	dir, err := sharedCgroupDir(mount, runCgroup)
+	if err != nil {
+		return nil, err
 	}
 	pids, err := readCgroupProcs(dir, nil)
 	if err == nil && hasDescendants(dir) {
@@ -261,9 +248,83 @@ func hasDescendants(dir string) bool {
 	return true
 }
 
+// cgroupWalks counts the walks findCgroupDir made; a test reads it.
+var cgroupWalks atomic.Int64
+
+// maxCgroupDirs bounds the directories sharedCgroupDir keeps: the runs a launcher serves at once, with room to spare.
+const maxCgroupDirs = 256
+
+type cgroupDirKey struct {
+	mount string
+	id    uint64
+}
+
+// dirWalk is a walk in progress that the callers who need its answer wait for.
+type dirWalk struct {
+	done chan struct{}
+	dir  string
+	err  error
+}
+
+// cgroupDirs is the run cgroups' directories by id, shared by every listener of the process (GAPS C75): a run has a
+// listener for each model host it may reach, each with an admitter of its own, and each used to walk the tree for
+// the same directory on its first connection. order is the keys by when they were kept, oldest first.
+var cgroupDirs = struct {
+	sync.Mutex
+	dirs    map[cgroupDirKey]string
+	order   []cgroupDirKey
+	walking map[cgroupDirKey]*dirWalk
+}{dirs: map[cgroupDirKey]string{}, walking: map[cgroupDirKey]*dirWalk{}}
+
+// sharedCgroupDir is the directory of the cgroup with id under mount: the one kept, while that directory still has
+// the id (a cgroup's id is fixed for the boot; one whose inode is something else was removed, and is looked for
+// again), else the result of one walk of the tree, which callers who arrive during it wait for rather than repeat.
+// A failure is not kept.
+func sharedCgroupDir(mount string, id uint64) (string, error) {
+	k := cgroupDirKey{mount, id}
+	cgroupDirs.Lock()
+	if dir, ok := cgroupDirs.dirs[k]; ok {
+		cgroupDirs.Unlock()
+		if got, err := cgroupIDOf(dir); err == nil && got == id {
+			return dir, nil
+		}
+		cgroupDirs.Lock()
+		if cgroupDirs.dirs[k] == dir {
+			delete(cgroupDirs.dirs, k)
+			cgroupDirs.order = slices.DeleteFunc(cgroupDirs.order, func(o cgroupDirKey) bool { return o == k })
+		}
+	}
+	if w, ok := cgroupDirs.walking[k]; ok {
+		cgroupDirs.Unlock()
+		<-w.done
+		return w.dir, w.err
+	}
+	w := &dirWalk{done: make(chan struct{})}
+	cgroupDirs.walking[k] = w
+	cgroupDirs.Unlock()
+	defer func() {
+		cgroupDirs.Lock()
+		delete(cgroupDirs.walking, k)
+		if w.err == nil && w.dir != "" {
+			if len(cgroupDirs.order) >= maxCgroupDirs {
+				delete(cgroupDirs.dirs, cgroupDirs.order[0])
+				cgroupDirs.order = cgroupDirs.order[1:]
+			}
+			cgroupDirs.dirs[k] = w.dir
+			cgroupDirs.order = append(cgroupDirs.order, k)
+		}
+		cgroupDirs.Unlock()
+		close(w.done)
+	}()
+	w.err = fmt.Errorf("%w: walk of %s did not finish", ErrPeer, mount) // what a panic in the walk leaves for waiters
+	w.dir, w.err = findCgroupDir(mount, id)
+	return w.dir, w.err
+}
+
 // findCgroupDir is the directory under the cgroup2 mount whose inode, a cgroup's id, is id. It walks the
 // hierarchy, which is why its answer is kept.
 func findCgroupDir(mount string, id uint64) (string, error) {
+	cgroupWalks.Add(1)
 	var found string
 	err := filepath.WalkDir(mount, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || !d.IsDir() {

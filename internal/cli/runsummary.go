@@ -318,12 +318,33 @@ func (s *endSummary) disclosures() string {
 	}
 	var b strings.Builder
 	b.WriteString(sameFileLines(s.rc))
+	b.WriteString(devNullLine(s.rc))
 	for _, g := range s.rc.Coverage.Gaps {
 		if g.Field == "record" || g.Field == "refusals" {
 			fmt.Fprintf(&b, "  %s: %s\n", record.Printable(g.Field), record.Printable(g.Why))
 		}
 	}
 	return b.String()
+}
+
+// devNullLine is the one line a run that was refused /dev/null by the default deny gets (N14, ADR 0158): a shell's
+// `> /dev/null` or `2>/dev/null` outside every fs.write entry fails with "permission denied", and a beginner's first rules
+// file (`fs.write: [./]`) has no entry for it. The refusal counts like any other and is routine on the dashboard; the line
+// names the cause and the fix, which costs nothing, since the device holds no file. A refusal an entry of the contract
+// made (a deny_write on /dev/null) is not the default and gets no line. "" when there is none. The count is of the
+// refusals the receipt lists (at most receipt.MaxRefusals).
+func devNullLine(rc *receipt.Receipt) string {
+	n := 0
+	for _, r := range rc.Refusals.List {
+		if r.Kind == string(record.KindFS) && r.Target == "/dev/null" && r.Rule == agent.UnmatchedRule {
+			n++
+		}
+	}
+	if n == 0 {
+		return ""
+	}
+	return fmt.Sprintf("  /dev/null: refused, no fs.write entry covers it (%d %s); it holds no file: add /dev/null to fs.write so `> /dev/null` works\n",
+		n, pluralWord(n, "time", "times"))
 }
 
 // maxSameFile is how many programs refused as another name of a blocked file the summary names.

@@ -1913,7 +1913,7 @@ What it costs and what it leaves:
   administrator cannot establish the assertion or will not accept that residual. The default refusal warning
   names unreadable AppArmor namespace depth, `EACCES` / Permission denied, `held-label-unavailable`, the
   readable-securityfs fix, and this opt-in. An outer seccomp filter must still permit `lsm_list_modules`
-  when securityfs cannot enumerate modules; the option never supplies a guessed module list.
+  when securityfs cannot enumerate modules; the option never supplies a guessed module list. On a kernel before 6.8 (Debian 12's 6.1) there is no such call to permit, so under Docker's defaults, where the file cannot be read either, the list cannot be read at all and every held open is refused (`held-label-unavailable`) whatever `tomoyo.facts_dir` or the AppArmor opt-in say: the list is read first. The refusal stays on purpose, since a list that cannot be read cannot be assumed to name no label-bearing module; the launch note and `tego doctor` say what each way answered (`lsm_list_modules(2)` and `/sys/kernel/security/lsm`) and what can be changed. [The container guide](user/container.md#held-file-opens-and-the-list-of-security-modules) has the measured table.
   Key/socket creation and other operations are outside this file-open check. Previous timing figures predate
   these checks; current performance acceptance remains open.
 - Still copied: `O_PATH` opens (`gate.fs.read/o_path`), non-open changes (rename, unlink, chmod and the rest:

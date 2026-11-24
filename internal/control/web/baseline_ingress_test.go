@@ -135,7 +135,16 @@ func TestBaselineRawEvidenceIngresses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, tc := range cases {
+	subset := 0
+	if raceEnabled {
+		subset = testutil.ShuffleOffset(t, 4) // which fourth: the -shuffle seed's, so a few runs cover all of them
+	}
+	for i, tc := range cases {
+		// Every case reads the line through several readers, three of them with a helper process each; a race build starts
+		// that helper race-instrumented (about a second), so every fourth case runs there and all of them everywhere else.
+		if raceEnabled && i%4 != subset {
+			continue
+		}
 		t.Run(tc.Name, func(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, ledger.EventsFile), append(tc.Line, '\n'), 0600); err != nil {
 				t.Fatal(err)

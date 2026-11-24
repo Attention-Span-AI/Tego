@@ -38,6 +38,11 @@ func TestPolicySystemPlacementAndAbsence(t *testing.T) {
 				if err := os.WriteFile(path, []byte("source"), tc.mode); err != nil {
 					t.Fatal(err)
 				}
+				// The mode written is cut by the process's umask (0022 on a hosted runner turns the writable source's
+				// 0666 into 0644, which is not writable), so it is set, not asked for.
+				if err := os.Chmod(path, tc.mode); err != nil {
+					t.Fatal(err)
+				}
 			case "parent":
 				if err := os.Chmod(dir, tc.mode); err != nil {
 					t.Fatal(err)

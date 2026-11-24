@@ -605,6 +605,20 @@ bash -c 'set -u; here=$1; GO=${GO:-go}; command -v "$GO" >/dev/null || { echo "n
 	done
 ' _ "$here" || fail "the parts of ROOT_SPLITS do not cover each suite's list exactly once (above)"
 
+# 4c2. internal/runtime is run as parts. Its tegobpf suite is 1006 s of tests one at a time on the 2026-11-24 KVM boot with
+# the bpf LSM (4 vCPUs, 1012 s for its plain suite) against a go timeout of 1200 s: boot 2 of that day's qualification (the
+# host's own security-module list), on a busier host, ran the same tests 2 to 3 times slower and was ended by the
+# timeout 7 s into TestIntegrationStopAfterPidReuseSignalsNothing, a third of its tests unrun. A suite that long whole
+# has no headroom for a loaded host; as 3 parts it is 431 s at most (36% of the timeout) and a part survives the
+# slowdown that was seen.
+bash -c 'set -u; here=$1; . "$here/suites.sh"
+	for e in "${ROOT_SPLITS[@]}"; do
+		IFS="|" read -r name pkg n <<<"$e"
+		if [ "$pkg" = internal/runtime ] && [ "$n" -ge 3 ]; then exit 0; fi
+	done
+	echo "internal/runtime is not a ROOT_SPLITS package of 3 parts or more" >&2; exit 1
+' _ "$here" || fail "internal/runtime runs whole in one guest, 1006 s of a 1200 s timeout (above)"
+
 # 4d. VM_PART_RUN keeps the parts and narrows each: part j runs, by -test.run, only its own tests the expression
 # matches (part n too, which then skips nothing), a part with none has no arguments and no test, and the parts together
 # hold exactly the list's matching tests, once each.
@@ -660,17 +674,17 @@ mkgather
 rm "$g/root-suites-cgroup-3/shard.done"
 gather 1 "a shard did not finish" "FAIL cgroup-3: no shard.done"
 mkgather
-echo "runtime 1" >"$g/root-suites-runtime/shard.done"
-gather 1 "a shard failed" "FAIL runtime: exit 1"
+echo "conformance 1" >"$g/root-suites-conformance/shard.done"
+gather 1 "a shard failed" "FAIL conformance: exit 1"
 # A shard that lost a guest (root-suites.sh's exit 98) keeps that through the gather: GUEST-LOST, exit 98, even beside a
 # shard that failed or a must-pass test that a lost guest never ran; never a plain FAIL and exit 1.
 mkgather
 echo "cgroup-2 98" >"$g/root-suites-cgroup-2/shard.done"
 gather 98 "a shard lost a guest" "GUEST-LOST cgroup-2: a guest was lost (exit 98)"
 grep -q "^== root-suites: .*GUEST-LOST" "$tmp/gather.log" || fail "--gather (a shard lost a guest): the last line does not say GUEST-LOST: $(tail -1 "$tmp/gather.log")"
-echo "runtime 1" >"$g/root-suites-runtime/shard.done"
+echo "conformance 1" >"$g/root-suites-conformance/shard.done"
 sed -i '1s/"pass"/"skip"/' "$g/root-suites-rest/logs/all.json"
-gather 98 "a shard lost a guest beside a failed shard and a gate failure" "FAIL runtime: exit 1"
+gather 98 "a shard lost a guest beside a failed shard and a gate failure" "FAIL conformance: exit 1"
 mkgather
 mkdir -p "$g/again"
 echo "rest 0" >"$g/again/shard.done"

@@ -115,9 +115,22 @@ type Results[K comparable, V any] struct {
 	order *list.List
 	slots map[string]*list.Element
 	busy  map[string]int // the computations in flight per slot
-	now   func() time.Time
+	// flights is, per slot, the computation a request started that a request of the same run version and key
+	// waits for instead of computing the result again.
+	flights map[string]*flight[K, V]
+	now     func() time.Time
 	// computes counts the results computed, for tests.
 	computes atomic.Int64
+}
+
+// flight is one computation in flight that other requests for the same result wait on. val and keep are set before
+// done is closed.
+type flight[K comparable, V any] struct {
+	run  RunStamp
+	key  K
+	done chan struct{}
+	val  V
+	keep bool
 }
 
 type resultEntry[K comparable, V any] struct {
@@ -139,26 +152,64 @@ func (e *resultEntry[K, V]) liveFor() time.Duration { return max(liveEvery, 2*e.
 // receipt's time taken to now): a live run's entry is then never reused as exact, only within liveEvery when costly.
 func NewResults[K comparable, V any](max int, timed bool) *Results[K, V] {
 	return &Results[K, V]{max: max, timed: timed, order: list.New(), slots: map[string]*list.Element{}, busy: map[string]int{},
-		now: time.Now}
+		flights: map[string]*flight[K, V]{}, now: time.Now}
 }
 
 // Get is slot's result for the run as stamped and key, from the cache when it holds, else compute's. compute reports
 // whether its result may be kept: a result that failed for a reason that passes (the request cancelled, a read
 // error) is not.
 func (c *Results[K, V]) Get(slot string, run RunStamp, key K, compute func() (V, bool)) V {
-	c.mu.Lock()
-	if el, ok := c.slots[slot]; ok {
-		if e := el.Value.(*resultEntry[K, V]); c.usable(e, run, key) {
-			c.order.MoveToFront(el)
-			c.mu.Unlock()
-			return e.val
+	for {
+		c.mu.Lock()
+		if el, ok := c.slots[slot]; ok {
+			if e := el.Value.(*resultEntry[K, V]); c.usable(e, run, key) {
+				c.order.MoveToFront(el)
+				c.mu.Unlock()
+				return e.val
+			}
 		}
+		// The same result is being computed for the same run version and key: wait for it rather than read the whole
+		// run again (viewers who open one big tab together, GAPS C70). A result that reads the clock of a live run is
+		// never shared as exact, as it is never reused as exact (usable). A computation that was not kept is not
+		// handed on: the waiter goes round again and computes its own.
+		if f, ok := c.flights[slot]; ok && f.run == run && f.key == key && !(c.timed && run.Live) {
+			c.mu.Unlock()
+			<-f.done
+			if f.keep {
+				return f.val
+			}
+			continue
+		}
+		var mine *flight[K, V]
+		if _, taken := c.flights[slot]; !taken && !(c.timed && run.Live) {
+			mine = &flight[K, V]{run: run, key: key, done: make(chan struct{})}
+			c.flights[slot] = mine
+		}
+		c.busy[slot]++
+		c.mu.Unlock()
+		return c.lead(slot, run, key, mine, compute)
 	}
-	c.busy[slot]++
-	c.mu.Unlock()
+}
+
+// lead computes slot's result for a Get that found none to use, keeps it when compute says it may be kept, and lets
+// the requests waiting on mine go, whatever the computation does (a panic included).
+func (c *Results[K, V]) lead(slot string, run RunStamp, key K, mine *flight[K, V], compute func() (V, bool)) V {
 	c.computes.Add(1)
 	start := c.now()
-	v, keep := c.compute(slot, compute)
+	var v V
+	keep := false
+	if mine != nil {
+		defer func() {
+			c.mu.Lock()
+			if c.flights[slot] == mine {
+				delete(c.flights, slot)
+			}
+			c.mu.Unlock()
+			mine.val, mine.keep = v, keep
+			close(mine.done)
+		}()
+	}
+	v, keep = c.compute(slot, compute)
 	if !keep {
 		return v
 	}

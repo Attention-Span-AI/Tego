@@ -10,9 +10,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/askclient"
 	"github.com/attention-span-ai/tego/internal/control/pathcheck"
 	"github.com/attention-span-ai/tego/internal/control/rules"
 	"github.com/attention-span-ai/tego/internal/control/runact"
@@ -198,5 +200,29 @@ func TestHighlightsSecretLeadsToNeverAllow(t *testing.T) {
 	// The link opens a page that can make the rule.
 	if body := do(s, "GET", "/runs/"+detailRun+"/lines/1?a=block", "127.0.0.1:8484", c).Body.String(); !strings.Contains(body, `id="act-check"`) {
 		t.Error("the link's page has no panel to make the rule in")
+	}
+}
+
+// TestAnswerErrSaysWhatIsTrueOfAGoneSocket (N125): a run whose launcher holds its lock but whose answer socket is not
+// there (ENOENT) or has no listener (ECONNREFUSED) has not been shown to have ended, so the line must not say it is not
+// running; a run with no live launcher is the one that says so. The words match `tego ask`'s: the answer was not delivered.
+func TestAnswerErrSaysWhatIsTrueOfAGoneSocket(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"socket not there", fmt.Errorf("dial unix /run/x/ask.sock: %w", os.ErrNotExist), "answer socket is gone"},
+		{"socket not there, wrapped by the client", fmt.Errorf("ask: %w", &os.PathError{Op: "connect", Path: "/run/x/ask.sock", Err: syscall.ENOENT}), "answer socket is gone"},
+		{"nobody listens", fmt.Errorf("dial: %w", syscall.ECONNREFUSED), "nothing is listening on the run's answer socket"},
+		{"no live launcher", fmt.Errorf("run: %w", askclient.ErrNoBroker), "the run is not running"},
+	} {
+		got := answerErr(c.err)
+		if !strings.Contains(got, c.want) {
+			t.Errorf("%s: %q lacks %q", c.name, got, c.want)
+		}
+		if c.want != "the run is not running" && (strings.Contains(got, "not running") || !strings.Contains(got, "was not delivered") || !strings.Contains(got, "may still be waiting")) {
+			t.Errorf("%s: %q says the run is not running, or not that the answer was not delivered", c.name, got)
+		}
 	}
 }

@@ -266,12 +266,20 @@ func TestNoSpecNamesATestOnlyFunction(t *testing.T) {
 			}
 		}
 	}
-	specs, err := filepath.Glob(filepath.Join(repoRoot, "docs", "p0", "*.md"))
-	if err != nil {
-		t.Fatal(err)
+	// The component documents: the tree's own docs/p0, else a frozen copy under the archive folder
+	// (a tree with neither skips).
+	var specs []string
+	for _, base := range []string{repoRoot, filepath.Join(repoRoot, "archive", "_p0")} {
+		var err error
+		if specs, err = filepath.Glob(filepath.Join(base, "docs", "p0", "*.md")); err != nil {
+			t.Fatal(err)
+		}
+		if len(specs) > 0 {
+			break
+		}
 	}
 	if len(specs) == 0 {
-		t.Skip("no docs/p0 here")
+		t.Skip("no component documents here (a tree that keeps frozen copies reads them from its archive folder)")
 	}
 	var bad []string
 	for _, spec := range specs {

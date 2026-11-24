@@ -278,11 +278,20 @@ echo finished > out/finished`
 	}
 }
 
+// atoiFile is the number a shell wrote to path with echo. The shell creates the file and then writes the line, so a
+// reader that comes as soon as the name exists can find it empty: the number is read once its line is complete.
 func atoiFile(t *testing.T, path string) int {
 	t.Helper()
-	n, err := strconv.Atoi(strings.TrimSpace(readFileString(path)))
+	var s string
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		s = readFileString(path)
+		if strings.HasSuffix(s, "\n") || time.Now().After(deadline) {
+			break
+		}
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(s))
 	if err != nil {
-		t.Fatalf("%s: %v", path, err)
+		t.Fatalf("%s holds %q: %v", path, s, err)
 	}
 	return n
 }

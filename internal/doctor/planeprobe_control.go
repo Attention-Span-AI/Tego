@@ -61,6 +61,20 @@ func (p *planePre) closeControls() {
 	}
 }
 
+// planeFixtureErr is the error of a step that only prepares a row's syscall (a socket, a key, a helper child, a fixture
+// file), never the syscall itself. It names the step and the cause in words and drops the errno from the chain
+// (%v, not %w): planeOutcome reads EACCES as "refused", the plane's one answer, so an EACCES made while preparing
+// would read as the hook's refusal and the row could pass without the hook ever being exercised. Without the errno
+// in the chain the outcome is "failed: fixture step (<step>): <cause>", which planeOutcomeFaulted reads as a fault (the probe could
+// not finish) for every errno but the kernel's repeated ENOSYS and EOPNOTSUPP, whose text stays at the end.
+func planeFixtureErr(step string, err error) error {
+	return fmt.Errorf("%s (%s): %v", planeFixtureMarker, step, err)
+}
+
+// planeFixtureMarker opens the text of every planeFixtureErr, so a row's outcome says whether doctor's own preparing
+// step failed (planeOutcomeFixture) and the fix text can name that, not the host's room.
+const planeFixtureMarker = "fixture step"
+
 func planeReleaseKey(key int) {
 	if ring, err := unix.KeyctlGetKeyringID(unix.KEY_SPEC_PROCESS_KEYRING, false); err == nil {
 		_, _ = unix.KeyctlInt(unix.KEYCTL_UNLINK, key, ring, 0, 0)
@@ -123,19 +137,19 @@ func planeControlAction(hook string, p planePre) error {
 	case "socket_bind":
 		fd, closeFD, err := planeSocket(p.bind, unix.SOCK_STREAM)
 		if err != nil {
-			return err
+			return planeFixtureErr("socket fixture", err)
 		}
 		defer closeFD()
 		return unix.Bind(fd, &unix.SockaddrUnix{Name: "@tego-doctor-bind-" + strconv.Itoa(os.Getpid())})
 	case "socket_listen":
 		fd, closeFD, err := planeSocket(p.listening, unix.SOCK_STREAM)
 		if err != nil {
-			return err
+			return planeFixtureErr("socket fixture", err)
 		}
 		defer closeFD()
 		if p.listening < 0 {
 			if err := unix.Bind(fd, &unix.SockaddrUnix{Name: "@tego-doctor-listen-" + strconv.Itoa(os.Getpid())}); err != nil {
-				return err
+				return planeFixtureErr("socket fixture (bind before listen)", err)
 			}
 		}
 		return unix.Listen(fd, 1)
@@ -149,7 +163,8 @@ func planeControlAction(hook string, p planePre) error {
 		key := p.key
 		if key < 0 {
 			if p.keyErr != nil {
-				return p.keyErr
+				// The key could not be prepared: a fault, never the hook's answer (planeFixtureErr).
+				return planeFixtureErr("key fixture", p.keyErr)
 			}
 			// Make, update and release on the thread that owns the ring: the release's unlink needs the ring
 			// in this thread's credentials (planePrivateKey). Its failure would only leave a revoked key linked
@@ -159,7 +174,7 @@ func planeControlAction(hook string, p planePre) error {
 			var err error
 			key, err = planePrivateKey()
 			if err != nil {
-				return err
+				return planeFixtureErr("key fixture", err)
 			}
 			defer planeReleaseKey(key)
 		}
@@ -174,7 +189,7 @@ func planeControlAction(hook string, p planePre) error {
 			var err error
 			target, err = startPlaneChildAs(nil, "ptrace-target", "", -1)
 			if err != nil {
-				return err
+				return planeFixtureErr("ptrace target fixture", err)
 			}
 			defer target.stop()
 		}
@@ -185,7 +200,7 @@ func planeControlAction(hook string, p planePre) error {
 			var err error
 			child, err = startPlaneChildAs(nil, planeTracemeRole, "", -1)
 			if err != nil {
-				return err
+				return planeFixtureErr("ptrace traceme fixture", err)
 			}
 			defer child.stop()
 		}

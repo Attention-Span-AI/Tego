@@ -220,6 +220,55 @@ func TestBuiltinFIFOBudgetProtectsUninventoriedSubtree(t *testing.T) {
 	}
 }
 
+// A desktop's /run/user/<uid>/gnupg holds one directory per GNUPGHOME ever used (4043 on the dev box), each empty or
+// holding a few sockets. Those directory names must not spend the budget meant for the files the walk stats, or the
+// next real folder (systemd, pulse) is refused whole and the FIFO in it is protected only by that blanket refusal.
+func TestBuiltinFIFOBudgetIsNotSpentOnDirectoryNames(t *testing.T) {
+	dir := t.TempDir()
+	gnupg := filepath.Join(dir, "gnupg")
+	for i := 0; i < 4043; i++ {
+		if err := os.MkdirAll(filepath.Join(gnupg, fmt.Sprintf("d.%04d", i)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	later := filepath.Join(dir, "zz-systemd")
+	if err := os.MkdirAll(filepath.Join(later, "units"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 100; i++ {
+		if err := os.WriteFile(filepath.Join(later, "units", fmt.Sprintf("u%d", i)), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fifo := filepath.Join(later, "units", "pipe")
+	if err := unix.Mkfifo(fifo, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	k := &compiler{rt: &RuleTable{Builtins: &BuiltinRefusals{Runtime: []string{dir}}}}
+	k.builtinFIFOs()
+	if len(k.rt.FS) != 1 || k.rt.FS[0].Canonical() != fifo || k.rt.FS[0].RuleName() != BuiltinHostIPC {
+		t.Fatalf("directory names spent the file budget: want only the FIFO %s, got %+v", fifo, k.rt.FS)
+	}
+	if firstError(k.ds.list) != nil {
+		t.Fatalf("inventory failed: %s", render(k.ds.list))
+	}
+}
+
+// The directory count has its own bound: past it the folder that would be the next to open is refused whole.
+func TestBuiltinFIFODirectoryBudgetProtectsUninventoriedSubtree(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < builtinFIFODirs+1; i++ {
+		if err := os.Mkdir(filepath.Join(dir, fmt.Sprintf("d%d", i)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	k := &compiler{rt: &RuleTable{Builtins: &BuiltinRefusals{Runtime: []string{dir}}}}
+	k.builtinFIFOs()
+	if len(k.rt.FS) != 1 || k.rt.FS[0].Canonical() != dir || k.rt.FS[0].RuleName() != BuiltinHostIPC {
+		t.Fatalf("directory bound lost coverage: %+v", k.rt.FS)
+	}
+}
+
 // Creating a protected directory must change neither its configured entry name
 // nor its compiled parent; only Prepare's held identity depends on presence.
 func TestBuiltinNamesIndependentOfHostPresence(t *testing.T) {

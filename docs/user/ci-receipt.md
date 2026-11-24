@@ -5,6 +5,8 @@ on a fresh runner. A second, separately called workflow signs the exact receipt 
 Sigstore keyless cosign when requested. The signer never runs caller code. The implementation has offline tests; real GitHub acceptance,
 beginning with C0 certificate dumps, remains open. This is ready for lab review, not an accepted signing service.
 
+The `tego/ci@1` preset, receipt binding 2 and the teardown status this page uses are new in v0.2.0. v0.1.3 does not have them.
+
 A receipt on a pull request is only as honest as the workflow file that made it. On `pull_request` that file
 comes from the pull request. Trust only a reviewed caller and reusable workflow pinned by full commits.
 Root on the agent runner can fabricate matching evidence. A signature establishes workflow provenance,

@@ -8,7 +8,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
 export TEGO_FIXTURE_VERSION=${TEGO_FIXTURE_VERSION:-v0.2.0}
 export TEGO_FIXTURE_PUBLIC_COMMIT=${TEGO_FIXTURE_PUBLIC_COMMIT:-$(git rev-parse HEAD)}
-./test/vm/service-install-mirror.sh "$1"
+./test/vm/release-fixture.sh "$1"
 release=$(cd "$1/$TEGO_FIXTURE_VERSION" && pwd)
 case "$release/" in "$root/"*) ;; *) echo 'build fixture inside its source checkout for staging validation' >&2; exit 2;; esac
 version=${TEGO_FIXTURE_VERSION#v}

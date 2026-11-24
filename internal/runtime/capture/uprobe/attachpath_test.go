@@ -12,8 +12,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/attention-span-ai/tego/internal/platform/proc"
 	"github.com/attention-span-ai/tego/internal/runtime/source"
@@ -181,6 +183,33 @@ func TestAttachUsesTheLivePathNotACachedProcEntry(t *testing.T) {
 	}
 	if gaps := u.Gaps(); len(gaps) != 0 {
 		t.Errorf("gaps = %v, want none: the library is still there through pid 52's own root", gaps)
+	}
+	if err := u.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+}
+
+// TestAttachOutcomeDoesNotDependOnHowFastTheHostIs pins the test helper, not the product. The product's
+// attach budget (DefaultAttachBudget, §4) is a wall-clock bound on purpose: an exec that cannot be
+// discovered and attached in 50 ms is abandoned with a size-cap gap. A unit test that is about something
+// else must not be subject to it, or it fails on a host that is merely busy: boot 2 of the qualification run
+// (a guest sharing its CPUs with the other suites) read 0 probes for the first process in 0.06 s where the
+// same test took 0.00 s the boot before. Here every look at the clock costs 60 ms, as a starved host's
+// would; the budget is the library's alone to enforce, and TestAttachBudget is the test that sets it.
+func TestAttachOutcomeDoesNotDependOnHowFastTheHostIs(t *testing.T) {
+	tree := newProcTree(t)
+	sharedRootTree(t, tree, []int{81}, map[string]uint64{SymWrite: 0x1100, SymRead: 0x1180})
+	var ticks atomic.Int64
+	slow := func() time.Time { return time.Unix(0, 0).Add(time.Duration(ticks.Add(1)) * 60 * time.Millisecond) }
+	att := &openingAttacher{}
+	u, sink := newTestUprobe(t, nil, Options{Proc: proc.NewAt(tree.root), Attacher: att, Now: slow})
+	if err := u.Start(context.Background(), source.RunRef{ID: "r-1", Agent: "a", CgroupID: 41}, sink); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	u.OnExec(81, 41, "")
+	if got := att.count(); got != 3 {
+		t.Errorf("%d probes on a host whose every clock read costs 60 ms, want 3: the helper left the product's 50 ms budget in force (gaps %v)",
+			got, u.Gaps())
 	}
 	if err := u.Stop(); err != nil {
 		t.Fatalf("Stop: %v", err)

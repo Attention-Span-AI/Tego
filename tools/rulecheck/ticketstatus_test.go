@@ -55,9 +55,16 @@ func TestCheckTicketStatusFlagsAPlantedMismatch(t *testing.T) {
 
 // TestTicketStatusOnTheTree holds FEATURES.md and CAPABILITIES.md to the tier-3 plan's marks.
 func TestTicketStatusOnTheTree(t *testing.T) {
-	plan, notes := loadTicketStatus(filepath.Join("..", ".."))
+	root := filepath.Join("..", "..")
+	docs := componentDocsRoot(root)
+	if docs == "" {
+		t.Skip("no component documents here (a tree that keeps frozen copies reads them from its archive folder)")
+	}
+	// The plan is read where the component documents are; the note files stay the tree's own.
+	plan, _ := loadTicketStatus(docs)
+	_, notes := loadTicketStatus(root)
 	if plan == "" {
-		t.Skip("no docs/p0/TIER3-PLAN.md here")
+		t.Fatalf("no %s under %s", ticketPlan, docs)
 	}
 	if len(BuiltTickets(plan)) < 5 {
 		t.Fatalf("the plan's table reads as %d built tickets", len(BuiltTickets(plan)))

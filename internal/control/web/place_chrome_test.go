@@ -99,7 +99,7 @@ func manyRunsFixture(t *testing.T) string {
 // near fails unless the number expr evaluates to is within 4 pixels of want.
 func near(t *testing.T, tb *tab, what, expr string, want int) int {
 	t.Helper()
-	got, err := strconv.Atoi(tb.eval(t, `Math.round(`+expr+`)`))
+	got, err := strconv.Atoi(tb.eval(t, `Math.round(`+expr+`) + 0`))
 	if err != nil {
 		t.Fatalf("%s: %v", what, err)
 	}
@@ -109,9 +109,12 @@ func near(t *testing.T, tb *tab, what, expr string, want int) int {
 	return got
 }
 
+// pxOf is expr rounded to a whole pixel. The "+ 0" is for a small negative: Math.round(-0.4) is -0, which the DevTools
+// protocol returns as an unserializable value with no text, so Atoi read "" (the runner's wider font put a list's top
+// at -0.42 px).
 func pxOf(t *testing.T, tb *tab, expr string) int {
 	t.Helper()
-	n, err := strconv.Atoi(tb.eval(t, `Math.round(`+expr+`)`))
+	n, err := strconv.Atoi(tb.eval(t, `Math.round(`+expr+`) + 0`))
 	if err != nil {
 		t.Fatalf("%s: %v", expr, err)
 	}

@@ -391,9 +391,11 @@ costs (`TestExecCommandCostBudget`, `TestExecCommandIndexCostBudget`), enforce-p
 (`TestPlanPlaneFillStaysUnderItsBudgetAt1000Rows`), the datagram flood cell (`TestIntegrationUDPFlood`: the
 target at most a tenth behind its 10 s schedule, a notification held under R22's 200 µs on average), and ADR 0023
 P1's pin of Borrow at most 2.5 times two atomic adds (`TestBorrowCostRatio`), a ratio to a fixed workload, which a
-busy machine moves as it moves a duration (below). The read of a 55k-line run from disk under 150 ms
-(`TestInForceLongRunIsFast`, the Rules page's refresh) joined them on 2026-10-28, after it read 213 and 228 ms beside
-the integration suites (70 ms alone). The line page's warm render of one line of a 12,000-line run under 25 ms
+busy machine moves as it moves a duration (below). The read of a 55k-line run from disk (`TestInForceLongRunIsFast`, the Rules page's refresh) joined them on 2026-10-28,
+after it read 213 and 228 ms beside the integration suites (70 ms alone), against 150 ms. It was then re-measured on the
+CPU time of the caller and its worker process together (the read has since moved into a worker process, which the thread's clock
+does not see), at 450 to 550 ms on the reference host, so its Target stays 150 ms (TARGET-MISS in budget mode) and its Limit
+is 1 s. The line page's warm render of one line of a 12,000-line run under 25 ms
 (`TestLinePageRenderBudget`, EVENT-PAGE) joined them on 2026-11-06, after CI's race job read 26.9 ms beside three other
 packages' tests (0.9 to 2.2 ms on the reference box, 8.3 to 11 ms there under the race detector, which makes it about
 seven times slower); under `-race` it renders and checks the page but judges no time. On 2026-10-16 the full gate
@@ -610,7 +612,7 @@ the same for each of its figures.
 | `TestPlanPlaneFillStaysUnderItsBudgetAt1000Rows` | one plan, wall clock | budget mode: the same; unit gate: the fastest own time of five plans against 2 s, their wall clock against 20 s |
 | `TestIntegrationUDPFlood` | pace and mean hold, wall clock | budget mode: the same; unit gate: the same figures against 110 s and 2 ms, the target killed no earlier than 170 s; the count, line and refusal checks in both |
 | `TestBorrowCostRatio` | median of 5 `testing.Benchmark` runs of each side, one side after the other, against 2.5 | budget mode: the same; unit gate: the ratio of the fastest own times of 2000 interleaved batches of 1000 calls of each side against 25, of their wall clocks against 250 |
-| `TestInForceLongRunIsFast` (the Rules page, added 2026-10-27) | fastest of three reads of a 55k-line run, wall clock, against 150 ms | budget mode: the same; unit gate: the fastest own time of five reads against 1.5 s, their wall clock against 15 s |
+| `TestInForceLongRunIsFast` (the Rules page, added 2026-10-27; re-measured on CPU time 2026-11-24) | the process tree's CPU time (the caller's and its worker's, `testutil.MinOfTree`), the fastest of three interleaved reads of a 55k-line run, against a 1 s Limit (Target 150 ms); the same over an 11k-line run at most 6; the wall clock against 1 s when it is also over twice the CPU time | the same with the fastest of five reads, the CPU time against a 3 s ceiling; the ratio and the wall bound as in budget mode |
 | `TestAdvisoryCostDoesNotGrowWithEntries`, `TestFSIndexCostDoesNotGrowWithEntries`, `TestDenyReadMoveTargetCostDoesNotGrowWithEntries`, `TestDenyWriteTargetCostDoesNotGrowWithEntries` | best of 5, small table then large | the least thread CPU time of 20, interleaved |
 | `TestMatchFSCostDoesNotGrowWithEntries`, `TestMatchExecCostDoesNotGrowWithEntries` | best of 3, small then large | the least thread CPU time of 10, interleaved |
 | `TestDecideOpenCostDoesNotGrowWithEntries` | best of 9, small then large | the least thread CPU time of 9, interleaved |

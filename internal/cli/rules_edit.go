@@ -17,10 +17,13 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/attention-span-ai/tego/internal/check/rule"
 	"github.com/attention-span-ai/tego/internal/platform/proc"
+	"github.com/attention-span-ai/tego/internal/rulefile"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 // cmdRulesEdit is `tego rules edit <agent | file>`: it opens a copy of the rules file in $VISUAL or $EDITOR (vi when
@@ -75,14 +78,79 @@ func cmdRulesEdit() Command {
 				fmt.Fprintf(stdout, "✗ Not saved: the rules have errors (above). %s is unchanged; your edit is in %s\n", path, keep)
 				return identity.ExitFinding
 			}
-			if err := writeOverUnchanged(path, edited, original, text); err != nil {
-				message(stderr, path, 0, 0, "tego rules edit: "+err.Error(), codeIO)
-				return identity.ExitError
-			}
-			fmt.Fprintf(stdout, "✓ Saved and checked %s\n", path)
-			return identity.ExitOK
+			return saveEdit(ctx, m, path, edited, original, text, stdout, stderr)
 		},
 	}
+}
+
+// editSummary is the journal's words for a whole-text edit: the dashboard's free edit, so the history lists both in one wording.
+const editSummary = "free edit of the whole text"
+
+// editGuard is where `tego rules edit` journals an edit: the machine's ledger root holds the change journal (the one
+// the dashboard and tego rules history read), and that root and tego's home are not places a contract may be changed.
+// "" as the root journals nothing.
+func editGuard(m *config.Machine) (rulefile.Guard, string) {
+	root, err := ledgerRootOf(m)
+	if err != nil || root == "" {
+		return rulefile.Guard{}, "the ledger root is not known here"
+	}
+	if st, err := os.Stat(root); err != nil || !st.IsDir() {
+		return rulefile.Guard{}, "the ledger root " + root + " does not exist yet"
+	}
+	g := rulefile.DefaultGuard(root)
+	g.Refuse = append(g.Refuse, root)
+	if m.Home != "" {
+		g.Refuse = append(g.Refuse, filepath.Join(m.Home, ".tego"))
+	}
+	return g, ""
+}
+
+// saveEdit writes the checked edit over the file the editor was opened on and says so. The write goes through the one
+// writer the dashboard uses (rulefile.Replace: the same guards, the old text kept as <file>.bak, one journal line via
+// "cli"), so the edit is in the change history and tego rules undo can give the old text back. A file the writer's
+// guards refuse (not yours alone, a link, under tego's own folders) or a machine with no ledger root yet is still
+// saved as before, and the output says that the edit is not in the history and cannot be undone: the limit is stated,
+// never silent (N113).
+func saveEdit(ctx context.Context, m *config.Machine, path string, edited []byte, original os.FileInfo, text []byte, stdout, stderr io.Writer) int {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		message(stderr, path, 0, 0, "tego rules edit: "+err.Error(), codeIO)
+		return identity.ExitError
+	}
+	g, why := editGuard(m)
+	if why == "" {
+		if _, err := rulefile.Read(abs, g); err != nil {
+			why = "the writer that keeps the history refuses this file: " + err.Error()
+		}
+	}
+	if why != "" {
+		if err := writeOverUnchanged(path, edited, original, text); err != nil {
+			message(stderr, path, 0, 0, "tego rules edit: "+err.Error(), codeIO)
+			return identity.ExitError
+		}
+		fmt.Fprintf(stdout, "✓ Saved and checked %s\n", path)
+		fmt.Fprintf(stdout, "Not in the change history, so tego rules undo cannot give the old text back (%s); the old text was not kept.\n", record.Printable(why))
+		return identity.ExitOK
+	}
+	e, err := rulefile.Replace(ctx, g, abs, rulefile.Sum(text), edited,
+		rulefile.Change{Via: "cli", Summary: editSummary, Direction: string(rule.Mixed)})
+	switch {
+	case errors.Is(err, rulefile.ErrStale):
+		message(stderr, path, 0, 0, "tego rules edit: the rules file changed while the editor was open; nothing was saved", codeIO)
+		return identity.ExitError
+	case errors.Is(err, rulefile.ErrJournal) && e != nil:
+		fmt.Fprintf(stdout, "✓ Saved and checked %s\n", path)
+		message(stderr, path, 0, 0, "tego rules edit: "+record.Printable(err.Error())+"; the edit is not in the change history, so tego rules undo cannot undo it", codeIO)
+		return identity.ExitError
+	case err != nil:
+		message(stderr, path, 0, 0, "tego rules edit: "+record.Printable(err.Error()), codeIO)
+		return identity.ExitError
+	}
+	fmt.Fprintf(stdout, "✓ Saved and checked %s\n", path)
+	fmt.Fprintf(stdout, "Recorded in the change history as %s; the old text is %s.\n"+
+		"tego rules undo %s gives it back (history and undo list a rules file once a run here has run it).\n",
+		record.Printable(e.ID), record.Printable(e.Bak), shellQuote(path))
+	return identity.ExitOK
 }
 
 // editCopy opens a copy of text in the person's editor and returns what they saved; nil after printing why not.

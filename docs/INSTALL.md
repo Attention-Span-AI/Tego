@@ -7,7 +7,7 @@ source is the other way.
 |---|---|---|
 | Linux | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | The published v0.1.1 as a new user, tier landlock: AlmaLinux 9.8, Ubuntu 24.04 and 26.04.1, Debian 13, Fedora 44, Amazon Linux 2023 ([details](TIERS.md#the-published-release-as-a-new-user)) |
 | macOS | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | By hand on an Apple silicon Mac, through to a Claude Code session; in CI on GitHub's hosted macOS 15 runners when a pull request changes the installer or the Mac setup ([details](#macos)) |
-| Windows (from the next release) | `irm https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.ps1 \| iex` | Windows 11 Enterprise evaluation, build 26300.9457 under KVM; WSL 3.0.5.0. The guide's WSL blocker was lifted by the rule's switch-on (below); the ordinary build passed the six beginner steps there (below), from a local mirror, unsigned, without a real mouse or HTTPS release; the browser dashboard opens |
+| Windows | `irm https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.ps1 \| iex` | Windows 11 Enterprise evaluation, build 26300.9457 under KVM; WSL 3.0.5.0. The guide's WSL blocker was lifted by the rule's switch-on (below); the ordinary build passed the six beginner steps there (below), from a local mirror, unsigned, without a real mouse or HTTPS release; the browser dashboard opens |
 
 ## Requirements
 
@@ -179,8 +179,6 @@ start a nested VM. `scripts/install_mac_test.sh` covers every installer path
 with stand-ins for Homebrew, Lima, SSH and the browser.
 
 ## Windows
-
-The Windows installer is in the repository and comes with the next release. The latest release, v0.1.3, does not have it: until then run `wsl --install -d Ubuntu-24.04` in PowerShell and the Linux line in Ubuntu.
 
 Tego keeps AI agents inside rules. It needs Linux; the installer sets up **Tego's Linux, inside Windows**.
 WSL (Windows Subsystem for Linux) is the Windows feature that runs Linux. Allow about 5 to 10 minutes for
@@ -419,6 +417,26 @@ docker run --rm --init --cgroupns=private --stop-timeout 40 \
   "$image@$digest" tego run /usr/local/share/tego/hello.yaml
 ```
 
+The run prints a line such as `tego run: r-... ended (exited with code 0) · tier landlock · refused 1 ... · chain
+verified`: the agent wrote the one file its contract allows and was refused the other. To read and check the record from
+a fresh container, give it the same two volumes and the image's user (copy the run name from that line):
+
+```sh
+run=r-REPLACE_WITH_THE_RUN_NAME
+docker run --rm --user 10001:10001 --cap-drop ALL --security-opt no-new-privileges:true \
+  -v tego-state:/home/tego/.tego -v tego-ledger:/var/lib/tego/runs \
+  "$image@$digest" tego events "$run" --verify
+```
+
+It prints `verified 16 lines, run_start to run_end, ... anchored in /home/tego/.tego/chain.log` and exits 0. Replace
+`events "$run" --verify` with `receipt "$run"` for a plain-words account of what the run wrote and was refused. A
+run started without the `tego-state` volume has no anchor outside its own container to check against.
+
+This flow was run on Debian 13 with Docker 26.1.5 and ended at tier landlock. Inside a container Tego may be unable to
+read the kernel's security-module list (Docker's default seccomp profile refuses the system call, and the file may not be
+readable either); held file opens are then refused, as on Debian 12 (kernel 6.1). See
+[the container guide](user/container.md).
+
 The host's Linux kernel still determines which tier works. See [the container guide](user/container.md) for the
 settings, supported hosts and a Compose setup. The published image uses uid/gid 10001; build it locally with your own
 uid/gid when opening the dashboard from the host. First publication also needs an organization/package admin to make
@@ -637,8 +655,6 @@ third-party notices that `NOTICE` refers to. `install.sh` prints where that arch
 `tego-control licenses` print them.
 
 ## Uninstall
-
-`tego uninstall` is in the repository and comes with the next release. The latest release, v0.1.3, does not have it.
 
 ### Linux
 

@@ -46,6 +46,8 @@ Fedora's loop driver the embedded btrfs image cannot mount. `VM_MODULES` overrid
 empty value for missing-feature tests. Other rows keep their previous empty list. The matrix runs it as
 `TEGO_VM_ROW=$KERNEL test/vm/root-suites.sh ...`.
 
+`measure-plane-verifier.sh` (*added 2026-11-24*, ADR 0024 N100) boots each kernel under `$TEGO_VM_CACHE/kernel` it is given (default: the cached mainline 6.18 to 6.19.14 and Fedora 7.0 and 7.2) and runs `internal/bpf`'s `TestPlaneLoadsAndAttaches` as root in it, printing the largest verified-instruction count of the rd and pr plane builds beside the budget the test held them to. It is how a kernel family's budget in `plane_budget_integration_test.go` is measured before it is set; it takes the guest queue's lock when `TEGO_VM_QUEUE_LOCK` names one.
+
 ## The tier-3 perf suite: `make vm-perf`
 
 `test/vm/perf.sh` boots one guest and runs `test/perf/cmd/perfsuite` as root: cold and warm start with per-phase timings,
@@ -737,7 +739,7 @@ each, and `VM_SHARD=<name> test/vm/root-suites.sh` is one of them: its packages 
 no other shard names), and with a part `j/n` only part j of each of their suites' top-level tests. A part is every
 n-th test of the suite's `.list`, read from its sources, from the j-th, given to the binary as `-test.run`; part n
 instead skips the other parts' tests with `-test.skip`, so it also runs the fuzz targets and anything the list
-misses, and the parts run every test once. The parts are `ROOT_SPLITS` in `test/vm/suites.sh`, 6 for enforce/cgroup (on
+misses, and the parts run every test once. The parts are `ROOT_SPLITS` in `test/vm/suites.sh`, 3 for internal/runtime (its two suites took 1006 s and 1012 s whole on the KVM boot of 2026-11-24, against a 1200 s go timeout, and a busier host ran them 2 to 3 times slower and was ended by it; a part is 431 s at most) and 6 for enforce/cgroup (on
 the green KVM run of 2026-11-19 its tegobpf suite took 5093 s whole and 1111 s at most in a part, its plain suite 599 s
 and 218 s; the whole suite had run out of its 5700 s go timeout on a host 20% slower). A run of such a package without
 `VM_SHARD` (`make vm-root-test`, vm-matrix.yml's tier 3 steps, a named package) runs its parts one after another, each its
@@ -755,7 +757,7 @@ finds what the suites before it in one job left on the host (the cgroup suite's 
 which is how each guest has always run them. To run the shards here, one after another:
 
 ```sh
-for s in cgroup-1 cgroup-2 cgroup-3 cgroup-4 cgroup-5 cgroup-6 runtime conformance rest; do
+for s in cgroup-1 cgroup-2 cgroup-3 cgroup-4 cgroup-5 cgroup-6 runtime-1 runtime-2 runtime-3 conformance rest; do
 	VM_SHARD=$s VM_OUT=bin/vm-shards/$s VM_BPF=yes test/vm/root-suites.sh
 done
 test/vm/root-suites.sh --gather bin/vm-shards

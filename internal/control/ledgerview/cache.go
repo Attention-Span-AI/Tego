@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -134,6 +135,9 @@ type runState struct {
 	used     uint64
 	// pairs is the mirror pairing's window over the last lines (markMirror).
 	pairs mirror.Pairs
+	// prog is the run's program index (program.go), built on first use and continued as the run grows; nil again
+	// when the lines are evicted. It is reached without the Store's mutex, so it is an atomic pointer.
+	prog atomic.Pointer[progEntry]
 }
 
 func newRunState(id, path string) *runState {

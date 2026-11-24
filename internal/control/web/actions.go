@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -42,6 +43,8 @@ func (s *Server) routePost(w http.ResponseWriter, r *http.Request) {
 		s.ruleGonePost(w, r)
 	case p == "/rules/change":
 		s.rulesChangePost(w, r)
+	case p == previewPath:
+		s.rulesPreviewPost(w, r)
 	case p == "/rules/revert":
 		s.rulesRevert(w, r)
 	case p == "/rules/new":
@@ -245,8 +248,14 @@ func answerErr(err error) string {
 		return "another answer for the same request is being recorded. The request is still waiting: look again in a moment, or answer it once."
 	case errors.Is(err, askproto.ErrNotPending):
 		return "this request is no longer waiting: it was answered, timed out, or its run ended."
-	case errors.Is(err, askclient.ErrNoBroker), errors.Is(err, os.ErrNotExist):
+	case errors.Is(err, askclient.ErrNoBroker):
 		return "the run is not running, so nothing holds this request any more."
+	case errors.Is(err, os.ErrNotExist):
+		// The dial found no socket: the launcher was seen alive (else ErrNoBroker), so the run is not known to have ended
+		// (N125; tego ask says the same: "the ask socket is not there now, so this answer was not delivered").
+		return "the run's answer socket is gone, so this answer was not delivered. The request may still be waiting: open the run's page to see whether it can still be answered."
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return "nothing is listening on the run's answer socket, so this answer was not delivered. The request may still be waiting: open the run's page to see whether it can still be answered."
 	case errors.Is(err, askproto.ErrProtocol):
 		return "the run's broker did not understand the answer. The request is still waiting."
 	}

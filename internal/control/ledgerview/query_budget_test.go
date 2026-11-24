@@ -84,6 +84,9 @@ func allocated(f func()) (bytes, allocs uint64) {
 //
 // Each query also gives the same count again as it did the first time, on both ledgers.
 func TestQueryBudget(t *testing.T) {
+	if raceEnabled {
+		t.Skip("allocation counts under -race are not the code's own: the first plain query counted 2462 to 2496 objects against a budget of 2400 there, and passed in every other build")
+	}
 	const perMatch, slack = 4, 64 // allocations a matched line may cost (the host facet's is the dearest, under 2), and a query's fixed few
 	const flatWarm = 200          // a warm plain page's allocations (143 measured): its 100 rows, its counts and its facets
 	small := budgetLedger(t, 3, 3000)

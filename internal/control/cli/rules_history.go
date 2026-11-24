@@ -118,16 +118,29 @@ func rulesHistoryVerb(ctx context.Context, name string, args []string, stdout, s
 			"undo": "one agent or rules file, and at most one change id"}[name], codeUsage, "usage: "+usage)
 		return identity.ExitUsage
 	}
+	// An undo asked from inside a run, or from a process that cannot be shown to be outside every run, cannot be told to
+	// narrow until the contract's history is read, and a run's own contract may hide the ledger root that holds it. So
+	// when the contract cannot be listed for such a caller, the answer is the governed refusal, not a usage error about
+	// a file "no run here has run" (N112).
+	var unlisted func(why string) int
+	if name == "undo" {
+		if a := selfGoverned(); !a.Outside() {
+			unlisted = func(why string) int { return finding(stderr, notOutsideWords(a), codeGoverned, undoUnlistedFix(why)) }
+		}
+	}
 	svc, code := rulesHistoryService(name, stderr)
 	if svc == nil {
 		return code
 	}
-	c, code := rulesContractOf(svc, name, pos[0], stderr)
+	c, code := rulesContractOf(svc, name, pos[0], stderr, unlisted)
 	if c == nil {
 		return code
 	}
 	hs, err := svc.History(c.Ref)
 	if err != nil {
+		if unlisted != nil {
+			return unlisted("its change record could not be read")
+		}
 		return historyFailed(name, c, err, stderr)
 	}
 	if name == "history" {
@@ -192,9 +205,15 @@ func rulesHistoryService(name string, stderr io.Writer) (*rules.Service, int) {
 // rulesContractOf is the contract of the set (rules.Service.Contracts: the rules files runs here ran) that ref names, an
 // agent's name or a rules file's path, or the exit code of why it names none. A word with no slash and no .yaml ending is
 // an agent first and a file in the working folder second; a path is made absolute and read as the dashboard names it.
-func rulesContractOf(svc *rules.Service, name, ref string, stderr io.Writer) (*rules.ContractRef, int) {
+//
+// unlisted is set for an undo asked from a caller that is not shown to be outside every run: when the contract cannot be
+// listed or named, it answers instead of the usage error (the caller says why in the governed refusal's words).
+func rulesContractOf(svc *rules.Service, name, ref string, stderr io.Writer, unlisted func(why string) int) (*rules.ContractRef, int) {
 	cs, err := svc.Contracts()
 	if err != nil {
+		if unlisted != nil {
+			return nil, unlisted("the rules files runs here ran could not be listed")
+		}
 		diag(stderr, "tego rules "+name+": the rules files the runs here ran could not be listed: "+record.Printable(err.Error()), codeIO,
 			"tego events <session> --verify checks a record")
 		return nil, identity.ExitError
@@ -237,6 +256,9 @@ func rulesContractOf(svc *rules.Service, name, ref string, stderr io.Writer) (*r
 			agents = append(agents, record.Printable(c.Agent))
 		}
 	}
+	if unlisted != nil {
+		return nil, unlisted("no rules file or agent here is named " + record.Printable(ref) + " in what this process can list")
+	}
 	known := "no run here has run a rules file yet"
 	if len(agents) > 0 {
 		known = "the agents here: " + strings.Join(agents, ", ")
@@ -244,6 +266,12 @@ func rulesContractOf(svc *rules.Service, name, ref string, stderr io.Writer) (*r
 	diag(stderr, "tego rules "+name+": no rules file or agent here is named "+record.Printable(ref)+": only a file a session here ran can be listed",
 		codeUsage, known)
 	return nil, identity.ExitUsage
+}
+
+// undoUnlistedFix is the fix line of the governed refusal of an undo whose contract could not be listed: why it could
+// not, and that only a process outside every run can undo it, since from here tego cannot tell whether it would narrow.
+func undoUnlistedFix(why string) string {
+	return "from this process " + why + " (a run's own rules can hide the ledger root), so tego cannot show that this undo only narrows"
 }
 
 // historyFailed words a History that could not be read: a guard or an I/O failure, exit 125.

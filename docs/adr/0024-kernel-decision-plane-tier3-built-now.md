@@ -515,6 +515,45 @@ lift the pr budget over form b's bare walk (67,514). T0's cheapest loop-form wal
 exceeds 28,000. Not measured: the block walk on 6.19.4 to 6.19.y, which charges bpf_loop callbacks as loops without
 7.0's offset; a program there over its budget fails with its counts logged, the sign to measure that family again.
 
+### Verifier budget amendment (2026-11-24): the live blocks' walk measured on 6.19.4 to 6.19.y
+
+The 2026-11-21 amendment left the block walk on Linux 6.19.4 to 6.19.y unmeasured, and said a program over its budget
+there is the sign to measure the family again. Fedora 44's 6.19.10-300.fc44 (a guest, one test binary, the objects at
+6392c64b3) did: the largest rd program (fmod_ret `path_rename`; lsm `path_rename` 100,292) verified in 100,417 and the
+largest pr program in 59,387, over the 95,817 and 57,527 the amendment set, five programs each (`path_rename`,
+`path_link`, `path_unlink`, `path_symlink` and the fmod_ret rename), 10 over budget in all. The kernel loaded and
+attached every program (its own limit is 1,000,000), and seven other kernels passed with room (5.14, 6.1, 6.8, 6.12 on
+Debian 13 and RHEL 10, 6.17, 7.0). The walk costs about 36,500 (rd) and 30,700 (pr) there, not 8,000: the cause is the
+one the 2026-11-10 amendment names, since this family verifies a bpf_loop callback as a loop, and the block walk is a
+bpf_loop callback with a body (the map lookup, the identity check, the mount step) several times a bare walk step's.
+
+Chosen: record the measured count and a stated headroom rule per family, not a cost cut. The family's budget is the
+count measured there plus 10 %, rounded up: 110,459 (rd) and 65,326 (pr)
+(`planeMeasuredHeadroomPercent`, `planeCharge.measured`). The headroom is stated because it has a ceiling here: form b's
+bare walk costs 67,514 on the family, 13.7 % over the pr program as measured, and the pr budget has to stay under it
+(the test holds that, and holds rd under form a's 248,374). Verifier counts of one object on one kernel build do not
+vary, so the 10 % is room for the family's other releases, not for noise; the kernels that need no scale keep 28,000,
+16 % over the largest of them (24,167 on 7.0.14). A regression still fails: the test checks that a program grown by
+11 % is over the budget on both readers, and that the measured counts are inside it. The earlier scaling by 6.19.3's
+ratio plus an unscaled 8,000 is gone, since it described a walk that costs 8,000 on a family where it costs 30,000 to
+36,000.
+
+Rejected: cutting the block walk's cost. It would mean changing `tego_block_decide`'s or the step callback's source
+(for instance a cheaper step, or fewer iterations), regenerating the objects and showing that the decision logic is
+unchanged, and then verifying the new objects on a 6.19.4+ kernel, where the cost appears; this host runs 6.17 and
+the verifier there does not show it, and no guest was free. A cut made without that measurement would be a guess
+about a kernel the repository cannot reach here, and the allowance protects headroom under the kernel's one million
+limit, which the family keeps by a wide margin (110,459 against 1,000,000). If a later change wants the room back, the cut goes through
+`scripts/check-bpf-objects.sh` (`make gen` in a clean copy must reproduce `internal/bpf`) and a guest run on this
+family.
+
+Not measured: mainline 6.19.4 and 6.19.14 with the block walk (they were measured before it, at 63,939 and 28,681);
+they take this family's budget, and a program there over it fails with its counts logged. 6.18 and 7.2.9 (N100) were
+not measured either; `test/vm/measure-plane-verifier.sh` runs the plane's load test on every kernel under
+`~/.cache/tego-vm/kernel` and prints each program's count beside the budget. Paths of the live blocks that stay
+unit-tested only (no guest has run them on a real kernel): identity-mismatch (a row whose key inode lost its identity),
+the dormant state, the class-overflow answer and the name-row collision; arm64 has no run at all.
+
 ### Startup prerequisite order amendment (2026-11-17)
 
 A run checks the contract and caller before asking the kernel which backend can
@@ -609,3 +648,44 @@ that answer there and `listen(2)` is refused on every kernel.
 
 Verifier: the added arm is a few instructions in `socket_listen`, which has its own budget (64,000; `planeListenVerifiedBudget`).
 See the measured counts per kernel in the guest proof.
+
+### Retry amendment (2026-11-24, N131): a mode that fails on a row is probed once more, and two answers that differ are a fault
+
+(3) says a mode is selected only when every hook counted and that the result is cached per boot and build. A mode that
+failed its probe without a fault was therefore cached as failed for the whole boot (`recordWith` keeps every answer but
+a Faulted one), so one false answer cost the machine the stronger plane until reboot. On 2026-11-24 a guest run of the
+root suites failed the `lsm/key_permission` row once in a boot of dozens of lsm probes (row N131): a goroutine of the
+probe's own key fixture most likely moved to another thread and read an EACCES as the hook's refusal (inferred, not seen). The fixture is fixed
+(the doctor probe fix); the cost of the next false answer from anywhere else is the same, and `R21`'s concern, that a hook which
+decides intermittently must stay visible, is not served by a mode cached as failed on one sample either.
+
+Decided (2026-11-24). When a mode's probe fails on a row verdict, that is, its programs loaded and
+attached, its probe syscalls ran, and a row's inside or outside answer, or its run count, was wrong, and nothing
+faulted, doctor probes that mode once more (`probePlaneModeTwice`, planeretry.go).
+
+- The second probe fails the same rows the same way (each row's load, attach, run, inside and outside answer): the
+  failure is real and is recorded and cached exactly as before. The cost is one extra probe of that mode, once per
+  boot, since the failure is cached.
+- The two answers differ in any row, the second probe passing included, or the second probe could not finish: the mode
+  is Faulted. It is not selected in this run and not cached (the next run probes again), and both probes' rows are in
+  the answer: `plane.modes[].probes` in `--json`, the words of each differing row in the mode's detail (the tier's
+  "missing" line and the plane clause of D7's line), and a line in tego.log (`tego doctor`) or on stderr and in
+  tego.log (`tego run`). A mode whose first probe failed is never selected on the strength of the second.
+- Not retried: a load or attach error, which the kernel repeats (`planeProbeFailed`); a failed scope or known answer; a
+  mode that faulted; a mode that passed.
+
+This keeps (3): the second probe only decides whether the failure is recorded as the mode's answer or as a fault, and
+a mode is still selected only when one probe saw every hook count. It keeps R21's visibility: an intermittently
+mis-deciding hook gives two answers that differ, which is now a fault with both row sets, where before it was either a
+cached failure of one sample or, if the unlucky sample was a pass, a selected mode. It does not make the plane
+stronger on a hook that decides wrongly every time, and it never turns a failed mode into a passed one.
+
+Cost. A mode that does not fail is probed once, as before. A mode that fails on a row costs a second probe: the cold
+attribution of 2026-10-19 (the enforce-plane component note, "Cold attribution") measured the plane probe at 3.5 to
+4.0 s a mode on 6.17 guests, closing the mode's links 3.1 to 3.3 s of it; on 7.0 and 7.2 the same teardown takes 70 to
+107 ms. This has not been measured again for this amendment. It is paid once per boot and build only when
+both probes fail the same way, since that failed answer is then cached. A mode that answers differently each time
+(its first probe fails and its second passes or fails other rows) is Faulted and nothing from the plane is cached
+then (`recordWith` drops the whole plane answer), so every run probes that mode twice and the other mode again, at
+the cost above, until the answers agree or the boot ends. The known answers' cache (`planeknowncache.go`) is separate: it keeps only cells that
+matched, and is read by a later probe as before.

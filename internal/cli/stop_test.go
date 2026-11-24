@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -108,10 +109,11 @@ func TestSecondStopKeepsTheFirstGrace(t *testing.T) {
 			)
 			began := time.Now()
 			prev := escalateRun
-			escalateRun = func(string, string, io.Writer) {
+			escalateRun = func(string, string, io.Writer) bool {
 				mu.Lock()
 				defer mu.Unlock()
 				escalated = time.Since(began)
+				return false
 			}
 			defer func() { escalateRun = prev }()
 			var out, errs bytes.Buffer
@@ -141,6 +143,14 @@ func TestSecondStopKeepsTheFirstGrace(t *testing.T) {
 // can signal, verified by its start time as the lock says.
 func liveRun(t *testing.T) (dir, id string, info tegoruntime.LockInfo) {
 	t.Helper()
+	return liveRunAt(t, true)
+}
+
+// liveRunAt is liveRun for a run at either end of its start: started false leaves the ledger as the launcher has it
+// from the moment it takes the run's lock until run_start is written (events.jsonl exists, no line in it names the
+// agent), the window in which the launcher prepares the run's enforcement, which takes seconds on a first use (N111).
+func liveRunAt(t *testing.T, started bool) (dir, id string, info tegoruntime.LockInfo) {
+	t.Helper()
 	root := gcRoot(t)
 	var host [32]byte
 	rid, err := identity.NewRunID(host, time.Now(), rand.Reader)
@@ -152,8 +162,10 @@ func liveRun(t *testing.T) (dir, id string, info tegoruntime.LockInfo) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := w.WriteRunStart(record.RunStartPayload{Command: []string{"true"}, Cwd: "/", Tier: "landlock"}); err != nil {
-		t.Fatal(err)
+	if started {
+		if err := w.WriteRunStart(record.RunStartPayload{Command: []string{"true"}, Cwd: "/", Tier: "landlock"}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	// The stand-in launcher is a process that holds the run's flock itself: stop signals only a pid that does
 	// (runtime.OpenStopTarget), so a process that merely exists would be refused. The test's own writer lets go
@@ -191,7 +203,7 @@ func TestStopInterruptedDoesNotEscalate(t *testing.T) {
 	dir, id, info := liveRun(t)
 	escalated := false
 	prev := escalateRun
-	escalateRun = func(string, string, io.Writer) { escalated = true }
+	escalateRun = func(string, string, io.Writer) bool { escalated = true; return false }
 	defer func() { escalateRun = prev }()
 	ctx, cancel := context.WithCancel(t.Context())
 	// The cancellation comes while stop waits out the grace, after it placed its marker: a fixed 100 ms could land
@@ -235,7 +247,7 @@ func TestStopLauncherGoneAtDelivery(t *testing.T) {
 	signalTarget = func(*tegoruntime.StopTarget, syscall.Signal) error {
 		return fmt.Errorf("runtime: pidfd_send_signal: %w", syscall.ESRCH)
 	}
-	escalateRun = func(string, string, io.Writer) {}
+	escalateRun = func(string, string, io.Writer) bool { return false }
 	defer func() { signalTarget, escalateRun = prevSig, prevEsc }()
 	var out, errs bytes.Buffer
 	const grace = 200 * time.Millisecond
@@ -289,7 +301,7 @@ func TestAwaitLockInfoWaitsForTheHolderToIdentifyItself(t *testing.T) {
 func TestStopWaitsBrieflyAfterTheBackstopKill(t *testing.T) {
 	dir, id, info := liveRun(t)
 	prevEsc, prevWait := escalateRun, postKillWait
-	escalateRun = func(string, string, io.Writer) {}
+	escalateRun = func(string, string, io.Writer) bool { return false }
 	postKillWait = 50 * time.Millisecond
 	defer func() { escalateRun, postKillWait = prevEsc, prevWait }()
 	const grace = 1500 * time.Millisecond
@@ -378,5 +390,40 @@ func TestR1StopFailedDeliveryMarkerRollback(t *testing.T) {
 				t.Fatal("earlier stop grace changed")
 			}
 		})
+	}
+}
+
+// TestStopOfARunStillStartingSaysSo is N111. A run holds its lock from the moment its ledger is opened, but run_start
+// (the first line that names the agent) is written only after the launcher has prepared the run's enforcement, which
+// takes seconds on a first use. A stop in that window signals a launcher that reads the signal once it has prepared;
+// at the end of the grace there is no scope on record to kill, so its backstop said "run has no agent id yet [io]"
+// (an I/O failure it was not) and then "still running after 3s (and 3s after cgroup.kill)" (a kill it never wrote).
+// The words must be true: no failure, no kill, and what the run is waiting for.
+func TestStopOfARunStillStartingSaysSo(t *testing.T) {
+	dir, id, info := liveRunAt(t, false)
+	if _, err := runAgent(dir); !errors.Is(err, errNoAgentYet) {
+		t.Fatalf("the run is not started, runAgent said %v, want errNoAgentYet", err)
+	}
+	var out, errs bytes.Buffer
+	const grace = 150 * time.Millisecond
+	if code := stopRun(t.Context(), dir, id, info, grace, grace, grace, &out, &errs); code != identity.ExitOK {
+		t.Fatalf("exit %d, want %d (stderr %q)", code, identity.ExitOK, errs.String())
+	}
+	if errs.Len() != 0 {
+		t.Errorf("stderr %q: a run that is still starting is not an I/O failure", errs.String())
+	}
+	got := out.String()
+	for _, bad := range []string{"cgroup.kill", "still running after"} {
+		if strings.Contains(got, bad) {
+			t.Errorf("stdout %q says %q, but no kill was written and the run is not yet running", got, bad)
+		}
+	}
+	for _, want := range []string{id + ": stop requested", "still starting", "run_start"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("stdout %q lacks %q", got, want)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, tegoruntime.StopRequestFile)); err != nil {
+		t.Errorf("the stop request is left for the launcher to read, but its marker is not there: %v", err)
 	}
 }

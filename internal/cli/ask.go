@@ -262,9 +262,10 @@ func noAskSocket(err error) bool {
 
 // askAcross lists the pending asks of every running run under root: one line per ask, "<run> <ask_id> <hold> <op>
 // <target>", or one line saying there are none. A run with no ask socket (no ask rule, a watched run) holds none and
-// is passed over. A run whose broker is there but cannot be reached (a refused peer check, a protocol error, a
-// timeout) is named on stderr and the listing goes on; the command then exits 125, so a script never takes a partial
-// list for the whole.
+// is passed over, unless its start record says it served approvals or does not say (a run in the window where its
+// broker has closed as it shuts down): a note on stderr names it, and the exit code stays. A run whose broker is there
+// but cannot be reached (a refused peer check, a protocol error, a timeout) is named on stderr and the listing goes on;
+// the command then exits 125, so a script never takes a partial list for the whole.
 func askAcross(ctx context.Context, root string, asJSON bool, out, errs io.Writer) int {
 	runs, err := runningRuns(root)
 	if err != nil {
@@ -278,12 +279,22 @@ func askAcross(ctx context.Context, root string, asJSON bool, out, errs io.Write
 		d := filepath.Join(root, r)
 		target, err := askclient.Launcher(d)
 		var pending []ask.Summary
-		if err == nil {
+		reached := err == nil
+		if reached {
 			pending, err = ask.ListFor(ctx, d, target.PID())
 			_ = target.Close()
 		}
 		if noAskSocket(err) {
-			continue // it takes no approvals, or it ended after the probe
+			// It takes no approvals, or it is going or gone (N125 (b)). A run that holds nothing for an answer by
+			// its contract is passed over as before; one that served approvals, whose socket is gone now, or whose
+			// start record cannot say, or that ended after the probe, is named, so a list that leaves it out is not
+			// read as the whole.
+			if !reached {
+				message(errs, "", 0, 0, fmt.Sprintf("note: tego ask: %s ended while the list was made; nothing waits for an answer in it", r), codeNotRunning)
+			} else if words, none := noApprovalsWords(r, d); !none {
+				message(errs, "", 0, 0, "note: tego ask: "+words+"; it is not in this list", codeNotFound)
+			}
+			continue
 		}
 		if err != nil {
 			message(errs, "", 0, 0, fmt.Sprintf("tego ask: %s: %v", r, err), codeIO)

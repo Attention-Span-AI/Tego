@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unsafe"
 
+	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/internal/platform/tomoyo"
 	"golang.org/x/sys/unix"
 )
@@ -81,6 +82,29 @@ var ErrLSMList = errors.New("doctor: cannot read the active LSM list")
 // lsmUnreadFix is the fix when no mechanism could read the active LSM list.
 const lsmUnreadFix = "mount securityfs (mount -t securityfs none /sys/kernel/security) or boot a kernel >= 6.8"
 
+// lsmUnreadDetail is the doctor line for a list no mechanism could read: what was tried and why each way failed, what
+// that stops (tier bpflsm cannot be decided, and the file opens Tego holds for an agent are refused, since without
+// the list it cannot tell which module labels the agent's task) and what it does not (tiers 1 and 2 run).
+func lsmUnreadDetail(err error) string {
+	d := err.Error()
+	var le *LSMReadError
+	if errors.As(err, &le) {
+		d += ": " + le.Why()
+	}
+	return d + " (tier bpflsm cannot be decided safely; held file opens, which tego checks and makes for the agent, " +
+		"are refused until the list can be read, with held-label-unavailable)"
+}
+
+// lsmUnreadFixFor is the fix line for the same: the seccomp or securityfs change that lets Tego read the list, then the
+// host's own remedy.
+func lsmUnreadFixFor(err error) string {
+	var le *LSMReadError
+	if errors.As(err, &le) {
+		return le.Remedy() + "; on a host, " + lsmUnreadFix
+	}
+	return lsmUnreadFix
+}
+
 // bpfInactive is why tier 3's LSM mode cannot run on this list, with the fix, or "" when bpf is active. A list no
 // mechanism could read (ReadLSMState's error, Source none) is unknown, not empty: it is not said to lack bpf, and no
 // GRUB line is built from it, since a bare lsm=bpf would switch off every LSM the machine runs.
@@ -98,20 +122,49 @@ func (s LSMState) bpfInactive() (string, string) {
 // unprivileged), then securityfs, then the kernel log. The first that answers wins; the source is
 // reported so an operator can tell a definitive answer from a parsed boot line.
 func ReadLSMState() (LSMState, error) {
-	if mods, err := listModulesSyscall(); err == nil && len(mods) > 0 {
+	mods, sysErr := listModulesSyscall()
+	if sysErr == nil && len(mods) > 0 {
 		return lsmState(mods, LSMSourceSyscall), nil
 	}
-	if b, err := os.ReadFile(securityFSLSM); err == nil {
+	b, fsErr := os.ReadFile(securityFSLSM)
+	if fsErr == nil {
 		if mods := ParseLSMList(b); len(mods) > 0 {
 			return lsmState(mods, LSMSourceSecurityFS), nil
 		}
+		fsErr = errors.New("it lists no module")
+	}
+	if sysErr == nil {
+		sysErr = errors.New("it listed no module")
 	}
 	if b, err := readKernelLog(); err == nil {
 		if mods, ok := ParseLSMLog(b); ok {
 			return lsmState(mods, LSMSourceKernelLog), nil
 		}
 	}
-	return LSMState{Source: LSMSourceNone}, ErrLSMList
+	return LSMState{Source: LSMSourceNone}, &LSMReadError{Syscall: sysErr, SecurityFS: fsErr}
+}
+
+// LSMReadError is ErrLSMList with what each of the two mechanisms that name a cause answered: lsm_list_modules(2) and
+// /sys/kernel/security/lsm (the kernel log is the third, and says nothing a person can act on). errors.Is(err,
+// ErrLSMList) holds. Why and Remedy are sys.LSMListUnread's words for a person: the cause, and the seccomp or
+// securityfs option that would let Tego read the list.
+type LSMReadError struct {
+	Syscall    error
+	SecurityFS error
+}
+
+func (e *LSMReadError) Error() string { return ErrLSMList.Error() }
+
+// Unwrap makes errors.Is(e, ErrLSMList) true.
+func (e *LSMReadError) Unwrap() error { return ErrLSMList }
+
+// Why is what could not be read and the cause of each failure.
+func (e *LSMReadError) Why() string { why, _ := sys.LSMListUnread(e.Syscall, e.SecurityFS); return why }
+
+// Remedy is what the person can change so that the list can be read.
+func (e *LSMReadError) Remedy() string {
+	_, remedy := sys.LSMListUnread(e.Syscall, e.SecurityFS)
+	return remedy
 }
 
 // lsmState fills the derived fields of a state.
@@ -281,9 +334,7 @@ func readKernelLog() ([]byte, error) {
 func probeLSM(root bool) (Result, LSMState) {
 	state, err := ReadLSMState()
 	if err != nil {
-		return Result{ID: CheckLSM,
-			Detail: fmt.Sprintf("%v (tier bpflsm cannot be decided safely)", err),
-			Fix:    lsmUnreadFix}, state
+		return Result{ID: CheckLSM, Detail: lsmUnreadDetail(err), Fix: lsmUnreadFixFor(err)}, state
 	}
 	detail := fmt.Sprintf("%s via %s", strings.Join(state.Modules, ","), state.Source) + tomoyoHeldOpenDetail(state, tomoyo.ReadFile)
 	if !state.BPFActive {

@@ -1100,7 +1100,7 @@ what it wrote. A launch, a record-only adoption and an adoption whose table held
 their revision and their bytes; a ledger below 40 says nothing either way. Below 40 the block is refused (`below-minor`).
 A revision above 39 holds the baseline block only when the run had a baseline to record; at 39 itself it is mandatory
 (ADR 0144), so a reader asks the run_start whether it recorded one (`BaselineRecorded`) and not whether its revision is
-at least 39. A reader that predates revision 40 refuses such a ledger as unsupported, as it does every later revision.
+at least 39. A released reader (v0.1.3 and earlier) has no table of supported revisions and ignores a field it does not know, so it reads such a ledger without the block; a build that has the table refuses a revision it does not list as unsupported.
 
 *A launch, 2026-11-20 (GAPS C221, no new revision):* a launch's `run_start` carries the same block at revision 41, for
 each limit file its launcher wrote (`cpu.max`, `cpu.weight`, `memory.max`, `memory.high`, `pids.max`), as the kernel reports
@@ -1159,7 +1159,10 @@ A ledger at 31, 39 or 40 reads exactly as before. Three fields are new:
   why, over the bound, or with a character that is not printable it is refused `live-block`. Fixtures:
   `fixtures/live/valid/live-rule-lifted-note*.json` and `fixtures/live/invalid/*note*.json`.
 
-A reader that predates revision 41 refuses such a ledger as unsupported, as it does every later revision.
+A released reader (v0.1.3 and earlier) has no table of supported revisions: it reads and verifies a revision 41 ledger and
+ignores the fields it does not know (checked by running v0.1.3's ledger and record code on a ledger this build wrote and on
+a lift line with a note; the v0.1.3 command line was not run on one). A v0.1.3 launcher refuses a lift that carries a note.
+A build that has the table (`SupportsMinor`) refuses a revision it does not list, 36, 38 and any above 41, as unsupported.
 
 ### Local approval authority, optional profile at revision 37
 

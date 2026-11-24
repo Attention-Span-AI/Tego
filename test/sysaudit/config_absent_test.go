@@ -84,3 +84,18 @@ func TestConfigAbsentLayerAccesses(t *testing.T) {
 		})
 	}
 }
+
+// A statfs passes the audit only as the look at a layer's ancestor that config.ThroughProc makes (GAPS C250's pending
+// exception): not of a sibling folder, not of an unrelated path, and no other call that follows links.
+func TestWalkLookTakesStatfsOnlyOfALayersAncestors(t *testing.T) {
+	layer := "/home/u/.tego/config.yaml"
+	statfs := testutil.Syscall{Name: "statfs", Nr: unix.SYS_STATFS}
+	for p, want := range map[string]bool{"/": true, "/home": true, "/home/u/.tego": true, "/home/other": false, "/opt/catalog": false, layer: false} {
+		if got := walkLook(statfs, p, layer); got != want {
+			t.Errorf("statfs of %s: %t, want %t", p, got, want)
+		}
+	}
+	if walkLook(testutil.Syscall{Name: "stat"}, "/home", layer) {
+		t.Error("a stat that follows links passed as a look at an ancestor")
+	}
+}

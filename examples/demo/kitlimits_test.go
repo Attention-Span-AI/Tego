@@ -67,6 +67,27 @@ func TestNameLookupFollowsTheHostsNameServices(t *testing.T) {
 		t.Fatalf("mdns4_minimal: lookup = %q, note %q (%v)", got, note, err)
 	}
 
+	// N116: a net.allow unix: entry admits the name as the program spelled it, and /var/run is a symlink to /run, so
+	// libnss-mdns on a current distribution asks for /run/avahi-daemon/socket, which an entry spelled /var/run does not
+	// admit (the refusal stayed on Ubuntu 25.10 in a guest). Where the socket exists under both spellings the kit names both;
+	// where only the old spelling exists it names that one, and where only the new one does, the new.
+	listen(t, filepath.Join(root, "run/avahi-daemon/socket"))
+	got, note, err = k.demoSplit(k.env, "lookup")
+	if err != nil || strings.TrimSpace(got) != nscd+`, "unix:/run/avahi-daemon/socket", "unix:/var/run/avahi-daemon/socket"` || note != "" {
+		t.Fatalf("mdns4_minimal, both spellings: lookup = %q, note %q (%v)", got, note, err)
+	}
+	for _, p := range []string{"var/run/avahi-daemon/socket"} {
+		if err := os.Remove(filepath.Join(root, p)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, _, err = k.demoSplit(k.env, "lookup")
+	if err != nil || strings.TrimSpace(got) != nscd+`, "unix:/run/avahi-daemon/socket"` {
+		t.Fatalf("mdns4_minimal, only /run: lookup = %q (%v)", got, err)
+	}
+	// Put the old spelling back for the cases below.
+	listen(t, filepath.Join(root, "var/run/avahi-daemon/socket"))
+
 	// sssd on passwd and group, an LDAP module on hosts and a second line naming a module twice: sssd's socket once; the
 	// kit names ldap and nis as the ones it cannot name, and not the modules it knows.
 	write("passwd: files sss\ngroup: files [SUCCESS=merge] sss\nhosts: files sss ldap dns\nhosts: nis myhostname\nshadow: files vault\n")

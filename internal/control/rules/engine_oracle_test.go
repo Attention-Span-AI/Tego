@@ -125,7 +125,7 @@ func TestPlannedNarrowsNeverLoosensWhatTheEngineAllows(t *testing.T) {
 	keys := []string{"fs.write", "fs.deny_read", "fs.ask_read", "fs.ask", "fs.deny_write", "exec.allow", "net.allow", "net.ask"}
 	r := rand.New(rand.NewSource(20261121))
 	rounds := 300
-	if testing.Short() {
+	if testing.Short() || raceEnabled { // 300 real compiles took 414 s under -race on a loaded machine
 		rounds = 40
 	}
 	var probes []agent.Action

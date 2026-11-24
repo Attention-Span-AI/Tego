@@ -4,6 +4,8 @@ Run `tego contracts` to see the rules files Tego found for you on this machine. 
 starting an agent, adding a rule or changing a file. Use `tego contracts show <name>` to read one contract's rules
 with their sources. If a name appears twice, give the file's path, such as `tego contracts show ./agent.yaml`.
 
+`tego contracts` is new in v0.2.0. v0.1.3 does not have it.
+
 The list includes your configured user registry (normally `~/.config/tego/agents/`), the current project's
 `agent.yaml` and `.tego/agents/`, contract files named by recorded runs in the selected ledger root, and those
 runs' project registries. It lists every place consulted, including absent and unreadable places. A contract that

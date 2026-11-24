@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -290,5 +291,195 @@ func TestReceiptKeptPerRunVersion(t *testing.T) {
 	}
 	if !c.Ended || a.Ended {
 		t.Errorf("ended: before the append %v, after %v", a.Ended, c.Ended)
+	}
+}
+
+// TestResultsConcurrentColdRequestsShareOneComputation: viewers who open the same tab of the same run at the same
+// moment, with nothing kept yet, wait for one computation and get its result (C70); a failed computation is not
+// shared, a run that moved or another key is its own computation, and a timed live result is never shared as exact.
+func TestResultsConcurrentColdRequestsShareOneComputation(t *testing.T) {
+	r, _ := newTestResults(8, false)
+	run := stamp(1, 100, 'a', false)
+	var started atomic.Int64
+	release := make(chan struct{})
+	const viewers = 6
+	vals := make(chan int, viewers)
+	for range viewers {
+		go func() {
+			vals <- r.Get("a", run, "k", func() (int, bool) {
+				n := int(started.Add(1))
+				<-release
+				return n, true
+			})
+		}()
+	}
+	// Give every viewer time to arrive: without sharing, each one starts its own computation within milliseconds.
+	deadline := time.Now().Add(300 * time.Millisecond)
+	for started.Load() < viewers && time.Now().Before(deadline) {
+		time.Sleep(2 * time.Millisecond)
+	}
+	if n := started.Load(); n != 1 {
+		t.Fatalf("%d computations started for %d viewers of one run version, want 1", n, viewers)
+	}
+	close(release)
+	for range viewers {
+		if v := <-vals; v != 1 {
+			t.Errorf("a viewer got %d, want the shared 1", v)
+		}
+	}
+	if len(r.flights) != 0 || len(r.busy) != 0 {
+		t.Errorf("flights %v busy %v after the computation", r.flights, r.busy)
+	}
+	if r.Computes() != 1 {
+		t.Errorf("Computes = %d, want 1", r.Computes())
+	}
+	// The result is kept: a later viewer is served from the cache.
+	if v := r.Get("a", run, "k", func() (int, bool) { return -1, true }); v != 1 {
+		t.Errorf("a later viewer = %d, want the kept 1", v)
+	}
+}
+
+// TestResultsFailedSharedComputationIsNotHanded: a viewer waiting on a computation that failed (a request cancelled)
+// computes its own, and a computation that panics still lets its waiters go.
+func TestResultsFailedSharedComputationIsNotHanded(t *testing.T) {
+	r, _ := newTestResults(8, false)
+	run := stamp(1, 100, 'a', false)
+	inside, release := make(chan struct{}), make(chan struct{})
+	first := make(chan int, 1)
+	go func() {
+		first <- r.Get("a", run, "k", func() (int, bool) {
+			close(inside)
+			<-release
+			return -1, false // cancelled: not kept, not shared
+		})
+	}()
+	<-inside
+	second := make(chan int, 1)
+	go func() { second <- r.Get("a", run, "k", func() (int, bool) { return 7, true }) }()
+	time.Sleep(20 * time.Millisecond) // the second viewer is waiting on the first
+	close(release)
+	if v := <-first; v != -1 {
+		t.Errorf("failed computation returned %d", v)
+	}
+	select {
+	case v := <-second:
+		if v != 7 {
+			t.Errorf("the waiter got %d, want its own 7", v)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the waiter was not released by the failed computation")
+	}
+
+	// A panic in the computation releases the waiters too.
+	r2, _ := newTestResults(8, false)
+	inside2, release2 := make(chan struct{}), make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer func() { _ = recover() }()
+		r2.Get("a", run, "k", func() (int, bool) {
+			close(inside2)
+			<-release2
+			panic("boom")
+		})
+	}()
+	<-inside2
+	waiter := make(chan int, 1)
+	go func() { waiter <- r2.Get("a", run, "k", func() (int, bool) { return 9, true }) }()
+	time.Sleep(20 * time.Millisecond)
+	close(release2)
+	<-done
+	select {
+	case v := <-waiter:
+		if v != 9 {
+			t.Errorf("the waiter after a panic got %d, want its own 9", v)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the waiter was not released by the panicking computation")
+	}
+}
+
+// TestResultsDifferentKeysAndTimedLiveAreNotShared: only the same run version and key share a computation, and a
+// timed result of a live run (it reads the clock) is computed for each viewer unless the live reuse rule serves it.
+func TestResultsDifferentKeysAndTimedLiveAreNotShared(t *testing.T) {
+	check := func(name string, timed bool, runA, runB RunStamp, keyA, keyB string) {
+		r, _ := newTestResults(8, timed)
+		var started atomic.Int64
+		release := make(chan struct{})
+		done := make(chan int, 2)
+		for _, k := range []struct {
+			run RunStamp
+			key string
+		}{{runA, keyA}, {runB, keyB}} {
+			go func() {
+				done <- r.Get("a", k.run, k.key, func() (int, bool) { started.Add(1); <-release; return 1, true })
+			}()
+			time.Sleep(10 * time.Millisecond)
+		}
+		for started.Load() < 2 && !t.Failed() {
+			select {
+			case <-time.After(2 * time.Second):
+				t.Errorf("%s: %d computations started, want 2", name, started.Load())
+				close(release)
+				return
+			default:
+				time.Sleep(time.Millisecond)
+			}
+		}
+		close(release)
+		<-done
+		<-done
+	}
+	ended := stamp(1, 100, 'a', false)
+	check("another key", false, ended, ended, "k", "k2")
+	check("a run that moved", false, ended, stamp(1, 140, 'b', false), "k", "k")
+	live := stamp(1, 100, 'a', true)
+	check("timed live", true, live, live, "k", "k")
+}
+
+// TestResultsOfAnotherRunAreNeverHandedOn: two runs whose files look alike to the stamp (the same size, tail and
+// identity) and whose requests carry the same key still have a computation each, and each gets its own result, in
+// flight and kept; a result computed for an older version of a run is not handed to a request for a newer one.
+func TestResultsOfAnotherRunAreNeverHandedOn(t *testing.T) {
+	r, _ := newTestResults(8, false)
+	run := stamp(1, 100, 'a', false)
+	var started atomic.Int64
+	release := make(chan struct{})
+	got := make(chan [2]any, 2)
+	for _, slot := range []string{"run-a", "run-b"} {
+		go func() {
+			got <- [2]any{slot, r.Get(slot, run, "k", func() (int, bool) {
+				n := int(started.Add(1))
+				<-release
+				return n*10 + len(slot), true
+			})}
+		}()
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for started.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if n := started.Load(); n != 2 {
+		t.Fatalf("%d computations started for two runs, want 2", n)
+	}
+	close(release)
+	seen := map[any]int{}
+	for range 2 {
+		g := <-got
+		seen[g[1]]++
+	}
+	if len(seen) != 2 {
+		t.Errorf("two runs were given %v: one result went to both", seen)
+	}
+	// Kept per run: each run's later request is its own result, not the other's.
+	a := r.Get("run-a", run, "k", func() (int, bool) { return -1, true })
+	b := r.Get("run-b", run, "k", func() (int, bool) { return -2, true })
+	if a == b || a < 0 || b < 0 {
+		t.Errorf("kept results a=%d b=%d", a, b)
+	}
+	// An older version's result, kept, is not served for a newer one.
+	newer := stamp(1, 140, 'b', false)
+	if v := r.Get("run-a", newer, "k", func() (int, bool) { return 99, true }); v != 99 {
+		t.Errorf("a newer version of the run was given %d, the result of the older one", v)
 	}
 }

@@ -80,7 +80,7 @@
   .banner-ask .ab-summary{display:block;width:100%;min-width:0;margin:0;font-size:16px;line-height:24px;white-space:normal;overflow-wrap:anywhere}
   .banner-ask .ab-summary[hidden]{display:block !important}
   .banner-ask .ab-short-target{white-space:pre-wrap}
-  .banner-ask .ab-act { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; width: 100%; gap: 8px; }
+  .banner-ask .ab-act { display: grid; grid-template-columns: minmax(max-content, 1fr) minmax(max-content, 1fr) auto; width: 100%; gap: 8px; }
   .banner-ask :is(.ab-act,.ab-review) .btn { min-height: 44px; padding: 4px; font-size: 16px; line-height: 24px; border-color: var(--c-control); color: var(--c-text); background: var(--c-surface); white-space: nowrap; }
   .banner-ask .ab-act .btn-ghost { min-width: 60px; border-color: transparent; background: transparent; font-size: 16px; }
   .banner-ask .ab-count { display: none; }

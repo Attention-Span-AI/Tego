@@ -193,7 +193,7 @@ func TestRulesEdit(t *testing.T) {
 		t.Setenv("VISUAL", script)
 	}
 	editor("net:\n  allow: [\"api.example.com:443\"]")
-	if code, out, errs := run(t, "rules", "edit", path); code != identity.ExitOK || out != "✓ Saved and checked "+path+"\n" {
+	if code, out, errs := run(t, "rules", "edit", path); code != identity.ExitOK || !strings.HasPrefix(out, "✓ Saved and checked "+path+"\n") {
 		t.Fatalf("a good edit: exit %d\nstdout %s\nstderr %s", code, out, errs)
 	}
 	saved, _ := os.ReadFile(path)

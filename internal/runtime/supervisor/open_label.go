@@ -90,7 +90,10 @@ func checkOpenLabelAuthority(tid, opener, flags int, read func(string) ([]byte, 
 		var err error
 		b, err = read("/sys/kernel/security/lsm")
 		if err != nil {
-			return fmt.Errorf("active LSM list: syscall: %v; securityfs: %w; permit lsm_list_modules in the outer seccomp filter or expose readable /sys/kernel/security/lsm; the AppArmor namespace assertion does not waive module discovery", listErr, err)
+			// Said as what each way answered: ENOSYS on a kernel older than 6.8 has no filter to relax, and a refusal
+			// of the call or the file names the seccomp or AppArmor policy outside Tego (sys.LSMListUnread).
+			why, remedy := sys.LSMListUnread(listErr, err)
+			return fmt.Errorf("active LSM list could not be read, so no module's labels can be checked (%s); %s; the AppArmor namespace assertion does not waive module discovery: %w", why, remedy, err)
 		}
 	}
 	var labels []string

@@ -4,10 +4,15 @@ package runtime
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
 
+	"golang.org/x/sys/unix"
+
+	"github.com/attention-span-ai/tego/internal/doctor"
 	"github.com/attention-span-ai/tego/pkg/policy/gate"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
@@ -161,5 +166,43 @@ func TestHeldLabelWarningModuleCombinations(t *testing.T) {
 				t.Fatal(got)
 			}
 		})
+	}
+}
+
+// TestHeldLabelWarningNamesWhyTheListWasUnreadable (N114): the launch note for an unreadable module list says what each
+// way answered, offers the option that exists for that cause, and keeps the refusal's reason. A kernel before 6.8 has no
+// call to permit.
+func TestHeldLabelWarningNamesWhyTheListWasUnreadable(t *testing.T) {
+	denied := &os.PathError{Op: "open", Path: "/sys/kernel/security/lsm", Err: unix.EACCES}
+	absent := &os.PathError{Op: "open", Path: "/sys/kernel/security/lsm", Err: unix.ENOENT}
+	for _, tc := range []struct {
+		name  string
+		err   error
+		wants []string
+		nots  []string
+	}{
+		{"Debian 13", &doctor.LSMReadError{Syscall: fmt.Errorf("lsm_list_modules(2): %w", unix.EPERM), SecurityFS: denied},
+			[]string{"could not be read (lsm_list_modules(2) was refused", "docker-default AppArmor", "refused when its security labels cannot be verified", "permit lsm_list_modules in the outer seccomp filter"},
+			[]string{"older than Linux 6.8", "doctor:"}},
+		{"Debian 12", &doctor.LSMReadError{Syscall: fmt.Errorf("lsm_list_modules(2): %w", unix.ENOSYS), SecurityFS: absent},
+			[]string{"older than Linux 6.8", "is not there", "only the file can answer", "refused when its security labels cannot be verified"},
+			[]string{"doctor:"}},
+	} {
+		got := heldLabelWarning("fs.reads: held", nil, tc.err)
+		for _, w := range tc.wants {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s: %q lacks %q", tc.name, got, w)
+			}
+		}
+		for _, w := range tc.nots {
+			if strings.Contains(got, w) {
+				t.Errorf("%s: %q says %q", tc.name, got, w)
+			}
+		}
+		for _, jargon := range []string{"held open", "ADR", "docs/"} {
+			if strings.Contains(got, jargon) {
+				t.Errorf("%s: %q says %q", tc.name, got, jargon)
+			}
+		}
 	}
 }

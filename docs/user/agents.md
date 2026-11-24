@@ -3,6 +3,8 @@
 Open Agents at `/agents` in the dashboard. Run `tego scan` from your project
 folder, then refresh the page. Opening the page starts no scan or agent.
 
+The found list comes from `tego scan`, which is new in v0.2.0. v0.1.3 does not have it.
+
 The found list comes from scans. Tego refuses ordinary writes to these files, even with a whole-home grant at tier landlock; this was shown in guest row whole-home-landlock. With the anchor and ledger outside the home, a whole-home grant with direct reads can leave these files readable at landlock; that read case is derived from code and is owed in a guest. The stages shown for a run do not depend on this list.
 
 This is the existing [own-state limit](../GAPS.md) described in C52. A program

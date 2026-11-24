@@ -342,9 +342,7 @@ func (s *Store) evict(keep *runState) {
 		signalMu.Lock()
 		delete(signalCache, st.id)
 		signalMu.Unlock()
-		progCache.Lock()
-		delete(progCache.m, st)
-		progCache.Unlock()
+		st.prog.Store(nil)
 		s.rev++
 		st.publish(s.rev) // root views now disclose that this window is absent
 	}
@@ -398,6 +396,20 @@ func (r *Run) AllEvents() []Event {
 		return r.Events
 	}
 	return r.st.store.lines(r.st)
+}
+
+// heldEvents is AllEvents without the read: the run's lines when they are in memory, else nil.
+func (r *Run) heldEvents() []Event {
+	if r.Events != nil || r.st == nil || r.Lines == 0 {
+		return r.Events
+	}
+	s := r.st.store
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.runs[r.st.id] != r.st || !r.st.resident {
+		return nil
+	}
+	return r.st.pub.Events
 }
 
 // Load scans root. A root that does not exist yet is an empty snapshot, not an error.

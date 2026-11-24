@@ -72,7 +72,7 @@ var shellExemptFiles = map[string]bool{
 	// installed tego for them (scripts/install.sh is the same kind of file).
 	"scripts/windows-entry.py": true,
 	// A release-shaped fixture for the Windows guests: it builds the Windows tego.exe and the Linux assets that only
-	// run inside a guest, never on the build host (its header says so); test/vm/service-install-mirror.sh, which it
+	// run inside a guest, never on the build host (its header says so); test/vm/release-fixture.sh, which it
 	// calls, is itself checked.
 	"scripts/windows-release-fixture.sh": true,
 }

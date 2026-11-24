@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
@@ -101,7 +100,7 @@ func child(path string, args []string) int {
 
 // startWindowsCommand is the reviewed shared start. Every caller is part of
 // this Windows-only launcher, which links no fanotify code (ADR 0009).
-func startWindowsCommand(cmd *exec.Cmd) error {
+func startWindowsCommand(cmd *proc.Cmd) error {
 	if !filepath.IsAbs(cmd.Path) {
 		return errors.New("SystemRoot must name an absolute Windows folder")
 	}

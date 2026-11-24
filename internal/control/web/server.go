@@ -312,8 +312,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t, o := r.URL.Query().Get("t"), r.URL.Query().Get("o")
-	if post || t != "" || o != "" {
-		// A change, or the sign-in that hands out the session a change needs: never from inside a run (governed.go).
+	if (post && r.URL.Path != previewPath) || t != "" || o != "" {
+		// A change (a preview writes nothing, and a peer in a run may ask for one), or the sign-in that hands out the session a change needs: never from inside a run (governed.go).
 		if err := s.governed(r); err != nil {
 			s.governedRefused(w, err)
 			return
@@ -449,6 +449,8 @@ func (s *Server) postAllowed(w http.ResponseWriter, r *http.Request) bool {
 	switch r.URL.Path {
 	case "/rules/change":
 		limit = maxRawForm // the advanced editor posts a whole contract (rules_change.go)
+	case previewPath:
+		limit = maxPreviewForm // the Several changes at once form: up to rules.MaxEdits entries of rules.MaxEntry bytes
 	case "/rules/new":
 		limit = maxRawForm // Full carries the same bounded contract text as Change rules
 	}

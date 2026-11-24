@@ -72,8 +72,15 @@ HELPERS=(cmd/tego test/conformance/cmd/actor internal/runtime/cgroup/testdata/me
 # 41% of it, 59% headroom; at 1.22x slower still 50%). The plain suite is 600 s whole, 218 s at most in a part. The length of the longest part is
 # bounded by the longest tests (TestPlaneRunStallFollowsWhatTheSupervisorAnswers alone takes 209 s), so more parts would
 # not shorten it much.
+#
+# Why internal/runtime is 3 (2026-11-24, a qualification run's two boots on 6.17, 4 vCPUs, tests one at a time):
+# its tegobpf suite is 1006 s of tests whole (1012 s plain), against the 1200 s go timeout of the default 1500 s guest cap, 16%
+# headroom. Boot 2, on a busier host, ran the same tests 2 to 3 times slower and the timeout ended it, a third of the tests
+# unrun. At n=3 a part is 431 s at most (36% of the timeout) in the plain suite and 423 s in the tegobpf one, which a host
+# 2.5 times slower still finishes.
 ROOT_SPLITS=(
 	"cgroup|internal/runtime/enforce/cgroup|6"
+	"runtime|internal/runtime|3"
 )
 # The shards of CI's root-suites job (.github/workflows/ci.yml's root-suites-shard matrix, one runner each), for
 # VM_SHARD=<name> test/vm/root-suites.sh: "<name>|<packages>|<part>". <packages> is a space-separated list of exact
@@ -83,15 +90,14 @@ ROOT_SPLITS=(
 # here. `test/vm/root-suites.sh --gather DIR` then holds every shard named here to have run and passed, and runs the
 # must-pass gate over all of them. On GitHub's runner (run 41706261848, 2026-11-03, one job) enforce/cgroup's tegobpf
 # suite took 48 of the job's 91 minutes and its plain one 4, internal/runtime's two 15, test/conformance 10 (its
-# TestConformanceKernel 8.7 alone) and the other 28 suites 11 together. The cgroup shards are ROOT_SPLITS' parts, made
-# from it so the two cannot disagree.
+# TestConformanceKernel 8.7 alone) and the other 28 suites 11 together. The cgroup and runtime shards are ROOT_SPLITS'
+# parts, made from it so the two cannot disagree.
 ROOT_SHARDS=()
 for _e in "${ROOT_SPLITS[@]}"; do
 	IFS='|' read -r _name _pkg _n <<<"$_e"
 	for ((_j = 1; _j <= _n; _j++)); do ROOT_SHARDS+=("$_name-$_j|$_pkg|$_j/$_n"); done
 done
 ROOT_SHARDS+=(
-	"runtime|internal/runtime|"
 	"conformance|test/conformance|"
 	"rest|*|"
 )

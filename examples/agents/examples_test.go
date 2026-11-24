@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/attention-span-ai/tego/internal/cli"
-	"github.com/attention-span-ai/tego/internal/runtime/enforce"
+	"github.com/attention-span-ai/tego/internal/doctor"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
@@ -339,16 +339,22 @@ func TestPythonSDKExampleIsKillTestSevenB(t *testing.T) {
 	if !bytes.Contains(src, []byte("capture: uprobe")) {
 		t.Error("the example no longer pins capture: uprobe, which kill test 7 (b) runs")
 	}
-	c := compile(t, "anthropic-sdk-python.yaml")
-	// Compile resolves the contract's auto tier to the highest this build constructs (ADR 0019): a build with
-	// tier cgroup, the one kill test 7 (b) runs, keeps uprobe capture, and a tier-1 build lowers it to the
-	// forwarder, since tier landlock runs no uprobes.
-	want := "uprobe"
-	if enforce.Buildable(backend.TierCgroup) != nil {
-		want = "forwarder"
+	c, warnings := compileWarnings(t, "anthropic-sdk-python.yaml")
+	// Compile resolves the contract's auto tier to the highest this process can get (ADR 0019, doctor.AutoTiers):
+	// a tier cgroup or above is one this binary constructs AND this process may start (root in the initial user
+	// namespace), and tier landlock runs no uprobes. A tegobpf build run by a normal user therefore compiles the
+	// contract at tier landlock and lowers its capture to the forwarder with a "ceiling capture=forwarder" warning, the
+	// answer a run of it gets; a root run of the same build, the one kill test 7 (b) makes, keeps uprobe capture.
+	// The build alone (enforce.Buildable) is half of that answer, so the test reads the whole of it.
+	want := "forwarder"
+	if slices.ContainsFunc(doctor.AutoTiers().Tiers, func(t backend.Tier) bool { return t != backend.TierLandlock }) {
+		want = "uprobe"
 	}
 	if c.Capture != want {
 		t.Errorf("capture %q, want %s", c.Capture, want)
+	}
+	if lowered := strings.Contains(warnings, "ceiling capture=forwarder kept from tier landlock"); lowered != (want == "forwarder") {
+		t.Errorf("capture %s, and the warning that says the contract's uprobe was lowered to the forwarder is present: %v\n%s", want, lowered, warnings)
 	}
 	found := false
 	for _, n := range c.Net {

@@ -214,9 +214,6 @@ func TestRecordedPathProcessExit(t *testing.T) {
 	}
 }
 
-// hangGuard ends a traced command or worker that never exits (see traceRecordedPath).
-const hangGuard = 60 * time.Second
-
 // tracedWithoutALocationBound says a stage ends when the tracer says its worker is held, never at the helper's
 // location budget: the tracer steps the worker through every system call it makes before the held one, and on a
 // busy machine that alone can outlast five seconds of the worker's own clock, which would end the call before any

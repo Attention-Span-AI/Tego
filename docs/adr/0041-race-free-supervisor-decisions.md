@@ -2293,3 +2293,53 @@ No behaviour changed.
   Ubuntu run of every shipped contract with an `exec.deny` command rule.
 - A seccomp refusal of `execveat(AT_EMPTY_PATH)`: closes one spelling, since glibc's `fexecve` falls back to
   `/proc/self/fd/N`, which goes back to the walk.
+
+### N114, 2026-11-24: an unreadable module list stays a refusal; the words say why; a bind of the list file is the design if it is wanted
+
+**What the code does when it cannot read the active LSM list.** Two readers, one answer. The supervisor's check of every
+held open (`checkOpenLabelAuthority`, `internal/runtime/supervisor/open_label.go`) reads `lsm_list_modules(2)` first and,
+only if that fails, `/sys/kernel/security/lsm`; if both fail it returns an error and the open is refused,
+`held-label-unavailable`, `EACCES`, reason `fs-gate`, on every path that holds an open: `gate.completion: held`, `fs.reads`
+held, `fs.ask_read`, an alternate-file probe. No other fact waives it (`fs.apparmor_assume_root_namespace` stands in for
+AppArmor's namespace depth only; its text says "does not waive module discovery"). At launch `runtime.warnHeldLabel` reads
+the list through `doctor.ReadLSMState`, which tries a third way (the kernel log) and prints the `[held-label]` note when
+none answered; `tego doctor`'s `lsm` row and `tego machine check`'s `lsm` line print the same failure. The kernel log
+answers only doctor and the launch note, never the supervisor's decision.
+
+**Why refusing is the safe answer.** The comparison D2 makes (the completing process's label equals the agent's) is
+defined per module, and which modules label a task is exactly what the list says: AppArmor, SELinux and Smack each carry a
+per-task label, TOMOYO a domain, and a stacked kernel may carry more than one. A list that cannot be read cannot be
+assumed to name none of them; "no label-bearing module" and "a module whose label I could not compare" are different
+facts, and the second can admit an open the agent's own label would be refused. So the check refuses, as it does for an
+unknown module id.
+
+**Why no fallback is added.** The only other readers on a process that can read neither are: (a) the boot line
+(`/proc/cmdline`): `lsm=` and `security=` change the order and the set, but kernel-parameters.txt says `lsm=` overrides
+`CONFIG_LSM`, which is not readable without `/proc/config.gz`, and a module that fails to initialize is dropped without
+a trace in the line; (b) `/proc/<pid>/attr/<module>/current`: the directories follow what the kernel was built with, not
+what is active, and TOMOYO has no label there; (c) the kernel log (`/dev/kmsg`): readable only where `dmesg_restrict`
+is 0 or with `CAP_SYSLOG`, and a ring buffer that has wrapped no longer holds the boot lines. Each is less trustworthy than
+the kernel's own answer, so none may decide a held open; doctor's use of (c) is a display, and a doctor line that says the
+list came from the kernel log does not mean a held open would pass.
+
+**What changed (words only; no open that was refused is now allowed, and none that was allowed is now refused).**
+`sys.LSMListUnread` turns the two errors into what could not be read and why: `ENOSYS` is "older than Linux 6.8 or a
+filter hides it", `EPERM` from the call is "a seccomp filter outside Tego, such as Docker's default profile", the file
+missing is "securityfs is not mounted here" and the file refused is "a security policy such as docker-default AppArmor".
+The remedy follows the cause: permit `lsm_list_modules` (6.8 and later) or expose a readable list, and on a kernel older
+than 6.8 only the file can answer. The supervisor's error, the launch note, doctor's `lsm` detail and its fix now use those
+words, and the doctor line says what the unread list stops (tier bpflsm is undecided; held opens are refused). Before,
+the note told a Debian 12 container to "permit lsm_list_modules in the outer seccomp filter", a call that kernel does not
+have. `docs/user/container.md` has the table of what Docker's defaults give on Debian 12 and 13.
+
+**Design if it is wanted for Debian 12 under Docker's defaults to hold opens (not built; needs a guest).** The same shape
+as D55: a machine setting `lsm.list_file` in `/etc/tego/config.yaml` (honoured like `tomoyo.facts_dir`; a user layer's value
+ignored with a warning) names a path at which the administrator bound the host's `/sys/kernel/security/lsm` read-only
+(`-v /sys/kernel/security/lsm:/run/tego-lsm:ro`, a path outside `/sys/kernel/security`; whether `docker-default` allows such a bind is not measured). The reader opens it, passes the
+`fstatfs` securityfs check and the D55 mountinfo check (securityfs, read-only per mount, mount root plus the path below the
+mount point exactly `/lsm`), reads it with a 4 KiB bound and parses it as the kernel writes it. Used only when the syscall
+fails and the kernel's path is unreadable, and the result is exactly the kernel's own file, so it is as trustworthy as the
+kernel's path (mounting securityfs needs `CAP_SYS_ADMIN` in the initial user namespace; a container cannot forge one).
+It would give Debian 12 under Docker's defaults the one remedy it lacks. Owed to build it: the setting and its layer
+rule, the reader and doctor line, unit tests for each wrong file (another securityfs file, a tmpfs copy, a writable bind,
+a link), and a guest row on Debian 12 and 13 with `docker-default` and Docker's seccomp profile in force.

@@ -13,9 +13,13 @@ import (
 // TestNoRuleDefinedAfterChangesList: ParseDoc cuts a rules section at its "**Changes.**" list, so a rule
 // defined after that marker is never registered.
 func TestNoRuleDefinedAfterChangesList(t *testing.T) {
-	files, _ := filepath.Glob(filepath.Join("..", "..", "docs", "p0", "*.md"))
+	docs := componentDocsRoot(filepath.Join("..", ".."))
+	if docs == "" {
+		t.Skip("no component documents here (a tree that keeps frozen copies reads them from its archive folder)")
+	}
+	files, _ := filepath.Glob(filepath.Join(docs, "docs", "p0", "*.md"))
 	if len(files) == 0 {
-		t.Skip("no docs/p0 here")
+		t.Fatal("docs/p0 holds no document")
 	}
 	def := regexp.MustCompile(`^\*\*([REI]\d+)\.\*\*`)
 	for _, f := range files {

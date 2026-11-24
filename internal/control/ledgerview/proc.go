@@ -472,6 +472,15 @@ func (e *Event) Program() string {
 	return e.Argv0()
 }
 
+// ExecPath is the program path an exec line recorded (its payload's path), "" for a line of another kind or one that
+// recorded none. It is what the read model decoded once, so a caller needs no second decode of Raw.
+func (e *Event) ExecPath() string {
+	if e.Kind != string(record.KindExec) {
+		return ""
+	}
+	return e.path
+}
+
 // words is the run's command as run_start recorded it, one element per argument (recordedCommand).
 func (r *Run) words() []string { return recordedCommand("", r.command, r.Command) }
 

@@ -154,7 +154,9 @@ lookup_allow() {
   printf '"unix:/var/run/nscd/socket"'
   socks=
   for m in $(nss_modules); do
-    socks="$socks $r$(nss_socket "$m")"
+    for p in $(nss_socket "$m"); do
+      socks="$socks $r$p"
+    done
   done
   # Each socket once, in the order found: systemd-resolved's and the user database's first, then the modules' own that
   # nsswitch.conf names (sssd's, avahi's, systemd-machined's).
@@ -178,11 +180,15 @@ nss_modules() {
 
 # nss_socket MODULE prints the unix socket the module's client talks to, spelled as the client spells it, when the module
 # has one this kit knows. A module that needs none (files, dns, myhostname, ...) and a module this kit does not know
-# print nothing; nss_known says which of the two.
+# print nothing; nss_known says which of the two. A net.allow unix: entry admits a connect by the name as the program
+# spelled it (spec/policy/SEMANTICS.md section 5), and /var/run is a symlink to /run, so a client that connects to
+# /run/avahi-daemon/socket is not admitted by an entry spelled /var/run/avahi-daemon/socket (N116: libnss-mdns on
+# Ubuntu 25.10 spells it /run, an older avahi /var/run). A module whose clients differ prints each spelling, and
+# lookup_allow names those that exist as sockets on this host.
 nss_socket() {
   case $1 in
     sss) echo /var/lib/sss/pipes/nss ;;
-    mdns | mdns4 | mdns6 | mdns_minimal | mdns4_minimal | mdns6_minimal) echo /var/run/avahi-daemon/socket ;;
+    mdns | mdns4 | mdns6 | mdns_minimal | mdns4_minimal | mdns6_minimal) echo /run/avahi-daemon/socket /var/run/avahi-daemon/socket ;;
     mymachines) echo /run/systemd/machine/io.systemd.Machine ;;
   esac
 }

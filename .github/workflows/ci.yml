@@ -162,7 +162,7 @@ jobs:
       - name: release.sh push and tag refusals, bpf-toolchain.sh directory guard
         run: ./scripts/release_test.sh && ./scripts/check-control-pin_test.sh && ./scripts/bpf-toolchain_test.sh && ./scripts/tree-files_test.sh && ./scripts/precommit_test.sh && ./scripts/check-bpf-objects_test.sh
       - name: vm-matrix's KVM step waits for udev
-        run: ./test/vm/kvm-step_test.sh && ./test/vm/held-label_test.sh && ./test/vm/python-pkgs_test.sh && ./test/vm/fetch-kernel_test.sh && ./test/vm/guarded-run_test.sh && ./test/vm/bounded-run_test.sh && ./test/vm/fwd-run_test.sh && ./test/vm/kvm-modules_test.sh && ./test/vm/kvm-files_test.sh && ./test/vm/kvm-cleanup_test.sh && ./test/vm/tier2-pairs_test.sh && ./test/vm/pairs_test.sh && ./test/vm/doctor-refusal_test.sh && ./test/vm/doctor-facts_test.sh && ./test/vm/perf_test.sh && ./test/vm/kvm-run_test.sh && ./test/vm/ssh-suite_test.sh
+        run: ./test/vm/kvm-step_test.sh && ./test/vm/held-label_test.sh && ./test/vm/python-pkgs_test.sh && ./test/vm/fetch-kernel_test.sh && ./test/vm/guarded-run_test.sh && ./test/vm/bounded-run_test.sh && ./test/vm/fwd-run_test.sh && ./test/vm/kvm-modules_test.sh && ./test/vm/kvm-files_test.sh && ./test/vm/kvm-cleanup_test.sh && ./test/vm/tier2-pairs_test.sh && ./test/vm/pairs_test.sh && ./test/vm/doctor-refusal_test.sh && ./test/vm/doctor-facts_test.sh && ./test/vm/perf_test.sh && ./test/vm/kvm-run_test.sh && ./test/vm/ssh-suite_test.sh && ./test/vm/measure-plane-verifier_test.sh
       # With kvm-step_test.sh above, this is make harness-test.
       - name: the kill tests' (kill test 2's request pairing included), overhead harness's and kernel matrix's own tests (kt_run's bound, kill test 4's timing, kill test 5's budget and contracts, kill test 3's cache, run.sh's ledgers and rows, matrix.sh, root-suites.sh's copy)
         run: >
@@ -610,8 +610,9 @@ jobs:
     # cold, about 5 to 6 minutes.
     # The job first asserts the tree's absolute timing budgets (scripts/timing-budgets.sh; docs/BENCHMARKS.md, "Timing
     # budgets in the test suites"): ADR 0048 C8's exec costs, enforce-plane §10's plan fill, DGRAM-VERDICT's flood,
-    # ADR 0023 P1's Borrow ratio and the Rules page's 150 ms read of a 55k-line run (TestInForceLongRunIsFast), held
-    # to their Limits (and Targets) as written. This runner runs nothing but this job, and the step runs before
+    # ADR 0023 P1's Borrow ratio and the Rules page's read of a 55k-line run (TestInForceLongRunIsFast: the CPU time of
+    # the caller and its worker, a cost ratio to an 11k-line run, a loose wall bound), held to their Limits (and
+    # Targets) as written. This runner runs nothing but this job, and the step runs before
     # the gate's builds and rounds, so the figures are taken on a quiet machine; the unit gate (build-test, precommit)
     # holds the same tests only to ten times their Limits, since a busy machine slows CPU work two to five times
     # through the whole measurement. A quiet hosted runner is still not the reference box the budgets are figures on: it
@@ -748,7 +749,7 @@ jobs:
     #
     # One job took 91 minutes (run 41706261848), the whole run's wall clock, 48 of them enforce/cgroup's
     # tegobpf suite. So the suites run as the shards of test/vm/suites.sh's ROOT_SHARDS, one runner each (VM_SHARD):
-    # enforce/cgroup's two suites in six parts of their tests (ROOT_SPLITS), internal/runtime's, test/conformance's, and every other
+    # enforce/cgroup's two suites in six parts of their tests (ROOT_SPLITS), internal/runtime's two in three parts, test/conformance's, and every other
     # package's in the last; the matrix lists the plan's names, in its order, as root-suites_test.sh checks. The job
     # named root-suites, below, is the one the main ruleset requires: it holds every shard to have passed and runs
     # the must-pass gate over all their logs.
@@ -767,7 +768,7 @@ jobs:
     strategy:
       fail-fast: false # every shard's verdict, as the one job gave every suite's
       matrix:
-        shard: [cgroup-1, cgroup-2, cgroup-3, cgroup-4, cgroup-5, cgroup-6, runtime, conformance, rest]
+        shard: [cgroup-1, cgroup-2, cgroup-3, cgroup-4, cgroup-5, cgroup-6, runtime-1, runtime-2, runtime-3, conformance, rest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -859,8 +860,13 @@ jobs:
           path: ${{ runner.temp }}/root-suites/
           if-no-files-found: warn
 
-  race:
-    # The race detector over the unit and the unprivileged integration suites. Specs and tests say their
+  race-shard:
+    # One shard of the race job below (the check the main ruleset requires is `race`, the job after this one).
+    # Two packages run alone, each on its own runner: internal/control/rules and internal/control/web make a draft
+    # compile or a helper process in nearly every test, and a race build starts a race-instrumented child for each
+    # (about a second before it does anything: internal/control/draftcompile's racescale.go), so beside the other
+    # packages' test binaries on four vCPUs each of them passed the 25-minute -timeout of this step on its first run
+    # (2026-11-24). The rest is every other package. The race detector over the unit and the unprivileged integration suites. Specs and tests say their
     # concurrency is race-tested — capture-derive I8's attach refcount, limits-check I1's single limit trip,
     # the DNS set's lock-free match, the supervisor's counters (I7) — and this is the job that makes that
     # true. The detector needs cgo, which the shipped binary never has (CGO_ENABLED=0 in `make build` and
@@ -870,9 +876,26 @@ jobs:
     # dynamically linked stage (ADR 0021 (4): its marks are placed after the stage's execve), but the guest
     # run of a dynamically linked or PIE build is still that ADR's open condition.
     runs-on: ubuntu-24.04
-    timeout-minutes: 75
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: control-rules
+            packages: ./internal/control/rules
+            timeout: 25m
+          # 942 tests, many through a draft compile: it was still going at the 25 minutes of the first run, beside the
+          # others on four vCPUs. Alone, its own runner gets this, measured again on the first run of the shards.
+          - shard: control-web
+            packages: ./internal/control/web
+            timeout: 40m
+          - shard: rest
+            packages: ''
+            timeout: 25m
     env:
       CGO_ENABLED: '1'
+      SHARD_PACKAGES: ${{ matrix.packages }}
+      SHARD_TIMEOUT: ${{ matrix.timeout }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -900,10 +923,35 @@ jobs:
       # -shuffle=on runs each package's tests and benchmarks in a random order, so a test that passes only
       # after another one has run fails here. A failing run prints its -test.shuffle
       # seed, which reproduces the order.
+      # The rest shard is every package but the two the others hold: the list is made here, so a package added
+      # later is in a shard without a line of this file changing.
       - name: unit, raced
-        run: ./scripts/in-user-manager.sh go test -count=1 -race -shuffle=on -p 4 -timeout 25m ./...
+        shell: bash
+        run: |
+          pkgs=${SHARD_PACKAGES:-$(go list ./... | grep -vE '/internal/control/(rules|web)$')}
+          # shellcheck disable=SC2086 # the packages are words
+          ./scripts/in-user-manager.sh go test -count=1 -race -shuffle=on -p 4 -timeout "$SHARD_TIMEOUT" $pkgs
       - name: integration, raced (unprivileged on the runner)
-        run: ./scripts/in-user-manager.sh go test -count=1 -race -shuffle=on -p 4 -timeout 25m -tags integration ./...
+        shell: bash
+        run: |
+          pkgs=${SHARD_PACKAGES:-$(go list -tags integration ./... | grep -vE '/internal/control/(rules|web)$')}
+          # shellcheck disable=SC2086 # the packages are words
+          ./scripts/in-user-manager.sh go test -count=1 -race -shuffle=on -p 4 -timeout "$SHARD_TIMEOUT" -tags integration $pkgs
+
+  race:
+    # The check the main ruleset requires, after every shard above. always(): a job skipped because a shard failed
+    # would count as passed for a required check, so this one runs whatever they did and fails unless every shard
+    # succeeded.
+    needs: race-shard
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: every race shard passed
+        env:
+          RESULT: ${{ needs.race-shard.result }}
+        run: '[ "$RESULT" = success ] || { echo "::error::race-shard: $RESULT (a shard failed, was cancelled or was skipped)"; exit 1; }'
+
 
   reproducible:
     # Two builds of this commit by the release's own goreleaser configuration must be byte-identical, or the
@@ -1070,5 +1118,21 @@ jobs:
         run: |
           google-chrome --version
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      # The browser tests hold two kinds of layout bound. The facts of any font (a label stays inside its button, no
+      # sideways scroll, the whole request sentence shown, lines bounded by the measured text width) are asserted
+      # whatever the page was painted in. The design's pixel bounds (the request sentence's two lines at 1280 px, the
+      # action labels at 320 px; ADR 0123) were measured in Noto Sans, which the stylesheet's system-ui resolves to where
+      # it is installed; the tests assert them only where Chrome reports it painted in Noto Sans, and say so where it did
+      # not. The runner image has no Noto (system-ui falls to DejaVu Sans, about a tenth wider), so the font is installed
+      # and this step fails if system-ui still does not resolve to it: without that, a failed install would only drop
+      # the bounds from the run, unseen.
+      - name: the font the layout bounds were measured in
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends fonts-noto-core
+          fc-match system-ui
+          fc-match sans-serif
+          fc-match system-ui | grep -q '"Noto Sans"' || { echo "::error::system-ui does not resolve to Noto Sans: the design's layout bounds would not be asserted"; exit 1; }
       - name: browser tests (-tags chrome)
         run: ./scripts/chrome-tests.sh

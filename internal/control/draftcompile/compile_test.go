@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -62,8 +63,21 @@ func TestMain(m *testing.M) {
 func TestCompilerCancellationAndAdmission(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 2)
+	// Whatever way the test ends, the stalled compilations are cancelled and have returned before the next test starts:
+	// a failure here once left them holding both slots (every later test then answered busy) and reading the helper
+	// command a later test sets (a data race).
+	var running sync.WaitGroup
+	// The join is bounded: if a cancelled compile never returns (the regression this test exists for), the test says so
+	// and the package still ends, instead of waiting for its own timeout.
+	t.Cleanup(func() {
+		cancel()
+		if !joinedWithin(&running, joinBound) {
+			t.Errorf("a cancelled compilation did not return within %v of the cancel: its slot is still held", joinBound)
+		}
+	})
 	for i := 0; i < cap(slots); i++ {
-		go func() { _, err := Check(ctx, Request{Text: []byte("stall")}); done <- err }()
+		running.Add(1)
+		go func() { defer running.Done(); _, err := Check(ctx, Request{Text: []byte("stall")}); done <- err }()
 	}
 	waitSlots(t, cap(slots))
 	start := time.Now()
@@ -71,7 +85,9 @@ func TestCompilerCancellationAndAdmission(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "busy, try again") {
 		t.Fatalf("capacity exceeded: %v", err)
 	}
-	if time.Since(start) > time.Second {
+	// The refusal comes when the admission wait ends, which a race build scales (raceScale: 1 s there), so the bound is
+	// that wait and a second, not a second.
+	if time.Since(start) > AdmissionWait+time.Second {
 		t.Fatal("admission wait unbounded")
 	}
 	cancel()
@@ -92,6 +108,37 @@ func TestCompilerCancellationAndAdmission(t *testing.T) {
 		t.Fatalf("capacity did not recover: %v", err)
 	}
 }
+
+// joinBound is how long a test waits for cancelled compilations to return: far more than a killed child needs, far
+// less than the package's timeout.
+const joinBound = 5 * time.Second
+
+// joinedWithin reports whether every goroutine of wg returned within d. The goroutines that did not stay behind.
+func joinedWithin(wg *sync.WaitGroup, d time.Duration) bool {
+	over := make(chan struct{})
+	go func() { wg.Wait(); close(over) }()
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-over:
+		return true
+	case <-timer.C:
+		return false
+	}
+}
+
+func TestJoinedWithinGivesUpOnAGoroutineThatNeverReturns(t *testing.T) {
+	var stuck, fine sync.WaitGroup
+	stuck.Add(1)
+	defer stuck.Done() // lets the waiter below end with the test
+	if joinedWithin(&stuck, 50*time.Millisecond) {
+		t.Fatal("a goroutine that has not returned was reported as joined")
+	}
+	if !joinedWithin(&fine, time.Second) {
+		t.Fatal("an empty group was reported as not joined")
+	}
+}
+
 func waitSlots(t *testing.T, n int) {
 	t.Helper()
 	deadline := time.NewTimer(time.Second)

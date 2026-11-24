@@ -32,7 +32,14 @@ func TestBaselineBuilderAndStartRefuse(t *testing.T) {
 	if err := os.Mkdir(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	for _, tc := range cases {
+	subset := 0
+	if raceEnabled {
+		subset = testutil.ShuffleOffset(t, 4) // which fourth: the -shuffle seed's, so a few runs cover all of them
+	}
+	for i, tc := range cases {
+		if raceEnabled && i%4 != subset { // 333 cases at about 1.1 s each in a race build (a race-instrumented helper per call): every fourth there, all in the others
+			continue
+		}
 		t.Run(tc.Name, func(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, ledger.EventsFile), append(tc.Line, '\n'), 0600); err != nil {
 				t.Fatal(err)

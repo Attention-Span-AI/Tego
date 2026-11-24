@@ -218,6 +218,20 @@ host, never hides from root, and root can always see and remove what it installs
 | C15 | Export via ids: OTel GenAI spans, LangSmith, Langfuse (`traceparent`, `request-id`) | Partly | The ids are recorded (`traceparent`, `request-id`, E26). No exporter is built. |
 | C20 | `tego rules check --test tests.yaml`: table-driven verdict tests for a contract | Built | Contracts get unit tests like code; runs nothing. |
 
+
+### 2a. Starting, finding, undoing and removing
+
+| ID | Feature | Status | Notes |
+|----|---------|--------|-------|
+| U1 | `tego start`: a guided first run in four steps (agent, login, project, rules) that ends by printing the command for the next step | Built | Needs no root. Never starts the agent itself. Ctrl-C ends it and every program it started. |
+| U2 | `tego scan`: a private snapshot of your running agents, installed candidates and settings metadata; `--check` for CI; `--advanced` adds explicit discovery across users (root) | Built | [docs/user/scan.md](user/scan.md). A scan inside a nested PID namespace answers unknown, never "none observed". |
+| U3 | `tego contracts`: find contracts, check today's files offline and list each one's newest recorded runs | Built | [docs/user/contracts.md](user/contracts.md). Runs no agent. |
+| U4 | `tego rules history` and `tego rules undo`: the dashboard's change history and its Undo, from a terminal | Built | An undo that lets the next run do more asks for a typed `undo`. `tego rules edit` changes are not in the history. |
+| U5 | `tego uninstall`: remove Tego on Linux and macOS (Windows has its own removal) | Built | Asks before it removes anything; keeps records and contracts unless you say so. The Mac steps are tested against stand-ins for Lima and SSH. |
+| U6 | The dashboard's Agents page: each recorded run and each program a scan saw, with the stages that are and are not known | Built | [docs/user/agents.md](user/agents.md). A stage shows as reached only for a recorded run. |
+| U7 | CI receipt: run an AI agent in CI with a record, a comparison job and optional signing | Partly | [docs/user/ci-receipt.md](user/ci-receipt.md). Signing with real GitHub permission delegation was not tried. |
+| U8 | Windows installer (`install.ps1`) and the browser dashboard on Windows | Partly | Unsigned, from a local mirror in the one guest measured; see [INSTALL.md](INSTALL.md#windows). |
+
 ---
 
 ## Layer 3 — Ecosystem and integrations
