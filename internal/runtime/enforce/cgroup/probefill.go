@@ -29,7 +29,10 @@ type ProbeRows struct {
 	// ExecPins and PinKeys are the exec pin maps (bpf.MapPlaneExecPins, MapPlanePinKeys; ADR 0048 (7)), replaced into
 	// the probe's collections as the rows are: doctor's exec pin cell fills a pinned slot (FillPinned) and writes its
 	// pins (PutPin) through them.
-	ExecPins, PinKeys                                       *ebpf.Map
+	ExecPins, PinKeys *ebpf.Map
+	// Blocks is the live-block rows' outer (ADR 0124, amendment 2026-11-21), which the fill build is loaded over; the
+	// probe places no block, so it holds no slot.
+	Blocks                                                  *ebpf.Map
 	rowsInner, execInner, listenInner, nameInner, pinsInner *ebpf.MapSpec
 	// slotPins are the pin maps of the slots this ProbeRows made, kept open for PutPin.
 	slotPins map[uint32]*ebpf.Map
@@ -63,7 +66,7 @@ func NewProbeRows(o ebpfbindings.Object) (*ProbeRows, error) {
 		inner **ebpf.MapSpec
 	}{{ebpfbindings.MapPlaneRows, &p.Rows, &p.rowsInner}, {ebpfbindings.MapPlaneExecRows, &p.ExecRows, &p.execInner},
 		{ebpfbindings.MapPlaneListenRows, &p.ListenRows, &p.listenInner}, {ebpfbindings.MapPlaneExecPins, &p.ExecPins, &p.pinsInner},
-		{ebpfbindings.MapPlaneNameRows, &p.NameRows, &p.nameInner}} {
+		{ebpfbindings.MapPlaneNameRows, &p.NameRows, &p.nameInner}, {ebpfbindings.MapPlaneBlocks, &p.Blocks, new(*ebpf.MapSpec)}} {
 		ms, err := probeMapSpec(spec, m.name, true)
 		if err != nil {
 			_ = p.Close()
@@ -122,7 +125,7 @@ func (p *ProbeRows) Preload(slots ...uint32) error {
 	if p.filler != nil {
 		return nil
 	}
-	f, err := newPlaneFiller(p.fill, p.Rows, p.ExecRows, p.ListenRows)
+	f, err := newPlaneFiller(p.fill, fillMaps{Rows: p.Rows, ExecRows: p.ExecRows, ListenRows: p.ListenRows, Blocks: p.Blocks})
 	if err != nil {
 		return err
 	}
@@ -326,7 +329,7 @@ func (p *ProbeRows) Close() error {
 	for _, m := range p.slotNames {
 		errs = append(errs, m.Close())
 	}
-	for _, m := range []*ebpf.Map{p.Rows, p.ExecRows, p.ListenRows, p.NameRows, p.Slots, p.ExecPins, p.PinKeys} {
+	for _, m := range []*ebpf.Map{p.Rows, p.ExecRows, p.ListenRows, p.NameRows, p.Slots, p.ExecPins, p.PinKeys, p.Blocks} {
 		if m != nil {
 			errs = append(errs, m.Close())
 		}

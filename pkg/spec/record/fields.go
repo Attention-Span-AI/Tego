@@ -21,7 +21,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/rfc3339"
 )
 
-// This file validates the fields of the reserved record revisions (minors 31 to 35), and run_start.deny_read_frozen (30): their
+// This file validates the reserved revisions (32 to 35), deny_read_frozen (30) and learn history (31): their
 // grammars, their codes and the revision below which each is refused.
 
 // The grammars of the reserved revisions' fields. Each is frozen with its revision: a line written at that revision holds
@@ -63,6 +63,7 @@ var (
 	runIDRe      = regexp.MustCompile(RunIDPattern)
 	secretNameRe = regexp.MustCompile(SecretNamePattern)
 	envNameRe    = regexp.MustCompile(EnvNamePattern)
+	envEntryRe   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	shareNameRe  = regexp.MustCompile(ShareNamePattern)
 
 	deployTriggers = [...]string{DeployTriggerStart, DeployTriggerRestart, DeployTriggerCrashRestart, DeployTriggerBoot,
@@ -84,7 +85,7 @@ var (
 
 // fieldCodes are the codes a FieldError carries, one per rule.
 var fieldCodes = [...]string{
-	"below-minor", "record-minor", "field-case",
+	"below-minor", "record-minor", "field-case", "baseline", "principal", "local-approval",
 	"stopped-by", "stopped-by-reason",
 	"deployment", "deployment-id", "deployment-name", "deployment-revision", "deployment-revision-hash",
 	"deployment-instance", "deployment-trigger", "deployment-previous-run", "deployment-change", "deployment-change-from",
@@ -96,7 +97,7 @@ var fieldCodes = [...]string{
 	"live-block", "live-control",
 	"credential", "mcp-tool",
 	"live-mode", "live-fence",
-	"model-route",
+	"model-route", "learn",
 }
 
 // FieldCodes lists every FieldError code. Editing it does not change validation.
@@ -127,6 +128,19 @@ func FieldCode(err error) string {
 	return ""
 }
 
+// EnvEntryName is the variable an environment entry names, for a message: the text before its first "=" (the whole
+// entry when it has none), when that text is a variable name of any length. ok is false when it is not: the entry's
+// name cannot be told from its value, so the message echoes nothing of it. It restates pkg/spec/identity's
+// EnvEntryName, which this package does not import (doc.go lists what it does); internal/adapters'
+// TestEnvEntryNameParity holds the two to the same answers.
+func EnvEntryName(entry string) (name string, ok bool) {
+	name, _, _ = strings.Cut(entry, "=")
+	if !envEntryRe.MatchString(name) {
+		return "", false
+	}
+	return name, true
+}
+
 func fieldErr(code, field, format string, args ...any) error {
 	return &FieldError{Code: code, Field: field, Why: fmt.Sprintf(format, args...)}
 }
@@ -145,6 +159,25 @@ func belowMinor(field string, present bool, minor, need int) error {
 // empty is refused, since a run with none has no list, and so is one longer than its bound (MaxSecrets, MaxShares).
 func (p *RunStartPayload) ValidateFields() error {
 	m := p.RecordMinor
+	if err := p.ValidateBaseline(); err != nil {
+		return err
+	}
+	if p.LocalApprovalAuthority != nil {
+		if err := belowMinor("run_start.local_approval_authority", true, m, MinorLocalRoles); err != nil {
+			return err
+		}
+		if err := p.LocalApprovalAuthority.Validate(); err != nil {
+			return err
+		}
+	}
+	if p.ContractSource != nil && p.ContractSource.Learn != nil {
+		if err := belowMinor("run_start.contract_source.learn", true, m, MinorLearn); err != nil {
+			return err
+		}
+		if err := p.ContractSource.Learn.Validate(); err != nil {
+			return err
+		}
+	}
 	for _, b := range []struct {
 		field   string
 		present bool
@@ -155,6 +188,8 @@ func (p *RunStartPayload) ValidateFields() error {
 		{"run_start.vault", p.Vault != nil, MinorSecrets},
 		{"run_start.shares", p.Shares != nil, MinorShares},
 		{"run_start.deny_read_frozen", p.DenyReadFrozen != nil, MinorDenyReadFrozen},
+		{"run_start.applied_limits", p.AppliedLimits != nil, MinorAppliedLimits},
+		{"run_start.home", p.Home != "", MinorEveryLaunch},
 	} {
 		if err := belowMinor(b.field, b.present, m, b.need); err != nil {
 			return err
@@ -187,7 +222,40 @@ func (p *RunStartPayload) ValidateFields() error {
 			return err
 		}
 	}
+	if p.AppliedLimits != nil {
+		if err := p.AppliedLimits.validate(); err != nil {
+			return err
+		}
+		// The memory members are a launch's (GAPS C221), added at the revision every launch writes.
+		if err := belowMinor("run_start.applied_limits.memory", p.AppliedLimits.MemoryMax != nil || p.AppliedLimits.MemoryHigh != nil,
+			m, MinorEveryLaunch); err != nil {
+			return err
+		}
+	}
+	if p.Home != "" {
+		if err := validateRunHome(p.Home); err != nil {
+			return err
+		}
+	}
 	return p.validateLiveMode()
+}
+
+// MaxRunHome bounds run_start.home in bytes.
+const MaxRunHome = 4096
+
+// validateRunHome checks run_start.home: a clean absolute path of valid UTF-8 with no control character, at most
+// MaxRunHome bytes. A reader folds a path under it to ~, so one that is not clean could hide a path it does not hold.
+func validateRunHome(home string) error {
+	const f = "run_start.home"
+	switch {
+	case len(home) > MaxRunHome:
+		return fieldErr("run-home", f, "%d bytes, more than %d", len(home), MaxRunHome)
+	case !utf8.ValidString(home) || strings.ContainsFunc(home, unicode.IsControl):
+		return fieldErr("run-home", f, "not printable text")
+	case !path.IsAbs(home) || path.Clean(home) != home:
+		return fieldErr("run-home", f, "%q is not a clean absolute path", home)
+	}
+	return nil
 }
 
 func (d *Deployment) validate() error {
@@ -238,7 +306,11 @@ func validateSecrets(ss []SecretUse) error {
 		case s.Deliver != SecretDeliverEnv:
 			return fieldErr("secret-deliver", f+".deliver", "entry %d: %q is not %q", i, s.Deliver, SecretDeliverEnv)
 		case !envNameRe.MatchString(s.Env):
-			return fieldErr("secret-env", f+".env", "entry %d: %q is not %s", i, s.Env, EnvNamePattern)
+			// The name alone, and only when it is one (EnvEntryName).
+			if name, ok := EnvEntryName(s.Env); ok {
+				return fieldErr("secret-env", f+".env", "entry %d: variable %q must supply only a name matching %s (value hidden)", i, name, EnvNamePattern)
+			}
+			return fieldErr("secret-env", f+".env", "entry %d: not a variable name matching %s (the entry is not shown)", i, EnvNamePattern)
 		case s.Exposure != SecretExposureAgent:
 			return fieldErr("secret-exposure", f+".exposure", "entry %d: %q is not %q", i, s.Exposure, SecretExposureAgent)
 		case names[s.Name] || envs[s.Env]:
@@ -382,9 +454,13 @@ type mvpKey struct {
 }
 
 var mvpKeys = [...]mvpKey{
+	{"tier", KindRunStart}, {"decision_plane", KindRunStart},
+	{"principal", KindAnswer},
+	{"baseline", KindRunStart}, {"effective_hash", KindRunStart}, {"contract_hash", KindRunStart},
 	{"deployment", KindRunStart}, {"secrets", KindRunStart}, {"vault", KindRunStart}, {"shares", KindRunStart},
 	{"stopped_by", KindRunEnd}, {RedactionsKey, ""},
-	{"live_mode", KindRunStart}, {"live_fence", KindRunStart}, {"deny_read_frozen", KindRunStart},
+	{"contract_source", KindRunStart}, {"live_mode", KindRunStart}, {"live_fence", KindRunStart}, {"deny_read_frozen", KindRunStart},
+	{"home", KindRunStart},
 }
 
 // IsMVPField reports whether key, a payload key of a line of kind k, is a field of a reserved revision, or a key a
@@ -400,7 +476,7 @@ func IsMVPField(k Kind, key string) bool {
 	return false
 }
 
-// ValidateAt applies Validate's rules and then those of the exactly read fields (the reserved revisions' 31 to 35, deny_read_frozen's 30) to a line
+// ValidateAt applies Validate's rules and then those of the exactly read fields (the reserved revisions' 32 to 35, deny_read_frozen's 30 and learn's 31) to a line
 // of a ledger at revision minor, the ledger's run_start record_minor; on a run_start, minor must be that line's own
 // record_minor [record-minor]. Each field is read exactly, as a reader holding only the line would: a key, at the top
 // level or inside a block, that a reader matching names without regard to case would take for a field but that is not
@@ -410,6 +486,9 @@ func IsMVPField(k Kind, key string) bool {
 // when Validate does. The ledger's Writer applies the same rules to each line it writes (MarshalLineAt) and Verify to
 // each line it reads.
 func (e *Event) ValidateAt(minor int) error {
+	if !SupportsMinor(minor) {
+		return fieldErr("record-minor", "record_minor", "unsupported revision %d", minor)
+	}
 	if err := e.Validate(); err != nil {
 		return err
 	}
@@ -418,6 +497,11 @@ func (e *Event) ValidateAt(minor int) error {
 		var err error
 		if fields, err = objectFields(e.Payload); err != nil {
 			return fmt.Errorf("%w: payload: %w", ErrInvalidEvent, err)
+		}
+	}
+	if e.Kind == KindRunStart {
+		if err := ValidateRunStartBaseline(e.Payload); err != nil {
+			return err
 		}
 	}
 	return e.validateMVP(minor, fields)
@@ -473,6 +557,9 @@ func runStartMinor(fields []field) (int, error) {
 // and its payload's members fields. A line
 // holding none of them allocates nothing here.
 func (e *Event) validateMVP(minor int, fields []field) error {
+	if err := e.validateLocalRoles(minor, fields); err != nil {
+		return err
+	}
 	if err := validateLiveRule(e.Rule, minor); err != nil {
 		return err
 	}
@@ -506,6 +593,12 @@ func (e *Event) validateMVP(minor int, fields []field) error {
 	case KindRunStart:
 		if err := validateRunStartAt(minor, fields, raw); err != nil {
 			return err
+		}
+	case KindAnswer:
+		if b, ok := raw["principal"]; ok {
+			if err := validateAnswerPrincipal(minor, b); err != nil {
+				return err
+			}
 		}
 	case KindRunEnd:
 		if b, ok := raw["stopped_by"]; ok {
@@ -552,8 +645,13 @@ func validateRunStartAt(minor int, fields []field, raw map[string][]byte) error 
 		key string
 		v   any
 	}{{"deployment", &p.Deployment}, {"secrets", &p.Secrets}, {"vault", &p.Vault}, {"shares", &p.Shares},
-		{"live_mode", &p.LiveMode}, {"live_fence", &p.LiveFence}, {"deny_read_frozen", &p.DenyReadFrozen}} {
+		{"tier", &p.Tier}, {"decision_plane", &p.DecisionPlane}, {"baseline", &p.Baseline}, {"effective_hash", &p.EffectiveHash}, {"contract_hash", &p.ContractHash}, {"contract_source", &p.ContractSource}, {"live_mode", &p.LiveMode}, {"live_fence", &p.LiveFence}, {"deny_read_frozen", &p.DenyReadFrozen}, {"home", &p.Home}} {
 		if v, ok := raw[b.key]; ok {
+			if b.key == "baseline" {
+				if err := baselineRequiredShape(v); err != nil {
+					return err
+				}
+			}
 			if err := decodeField("run_start."+b.key, v, b.v); err != nil {
 				return err
 			}
@@ -564,6 +662,66 @@ func validateRunStartAt(minor int, fields []field, raw map[string][]byte) error 
 
 // fieldKeyCodes maps a field's key path, array indices dropped, to the code a malformed value there is refused with.
 var fieldKeyCodes = map[string]string{
+	"approved":                                  "local-approval",
+	"by":                                        "local-approval",
+	"answer_reason":                             "local-approval",
+	"alternate":                                 "local-approval",
+	"run_start.baseline.fact_sha256":            "baseline",
+	"answer.principal":                          "principal",
+	"run_start.baseline.rules.limits":           "baseline",
+	"run_start.baseline.rules.conditions":       "baseline",
+	"run_start.baseline.rules.operations":       "baseline",
+	"run_start.baseline.rules.image_mode":       "baseline",
+	"run_start.baseline.rules.held":             "baseline",
+	"run_start.baseline.rules.plane":            "baseline",
+	"run_start.baseline.rules.tier":             "baseline",
+	"run_start.baseline.rules.sources":          "baseline",
+	"run_start.baseline.rules.empty_reason":     "baseline",
+	"run_start.baseline.rules.rule":             "baseline",
+	"run_start.baseline.rules.state":            "baseline",
+	"run_start.baseline.rules.expanded":         "baseline",
+	"run_start.baseline.rules.value":            "baseline",
+	"run_start.baseline.rules.key":              "baseline",
+	"run_start.baseline.rules.id":               "baseline",
+	"run_start.baseline.rules.sources.line":     "baseline",
+	"run_start.baseline.rules.sources.file":     "baseline",
+	"run_start.baseline.rules.sources.layer":    "baseline",
+	"run_start.baseline.sources.bytes":          "baseline",
+	"run_start.baseline.sources.sha256":         "baseline",
+	"run_start.baseline.sources.state":          "baseline",
+	"run_start.baseline.sources.file":           "baseline",
+	"run_start.baseline.sources.layer":          "baseline",
+	"run_start.baseline.evidence_sha256":        "baseline",
+	"run_start.baseline.replay":                 "baseline",
+	"run_start.baseline.effective_contract":     "baseline",
+	"run_start.baseline.source_contract":        "baseline",
+	"run_start.baseline.rules":                  "baseline",
+	"run_start.baseline.protected_owner_layer":  "baseline",
+	"run_start.baseline.sources":                "baseline",
+	"run_start.baseline.owner_known":            "baseline",
+	"run_start.baseline.home":                   "baseline",
+	"run_start.baseline.owner_uid":              "baseline",
+	"run_start.baseline.sha256":                 "baseline",
+	"run_start.baseline.mode":                   "baseline",
+	"run_start.baseline.v":                      "baseline",
+	"run_start.baseline":                        "baseline",
+	"run_start.effective_hash":                  "baseline",
+	"local_approval_authority":                  "local-approval",
+	"local_approval_authority.mode":             "local-approval",
+	"local_approval_authority.sha256":           "local-approval",
+	"local_approval_authority.agent_uid":        "local-approval",
+	"actor":                                     "local-approval",
+	"actor.uid":                                 "local-approval",
+	"actor.pid":                                 "local-approval",
+	"actor.start_boot_ns":                       "local-approval",
+	"actor.user_namespace":                      "local-approval",
+	"actor.source":                              "local-approval",
+	"actor.role":                                "local-approval",
+	"system_cause":                              "local-approval",
+	"run_start.contract_source":                 "learn",
+	"run_start.contract_source.learn":           "learn",
+	"run_start.contract_source.learn.run":       "learn",
+	"run_start.contract_source.learn.withheld":  "learn",
 	"run_end.stopped_by":                        "stopped-by",
 	"run_start.deployment":                      "deployment",
 	"run_start.deployment.id":                   "deployment-id",
@@ -771,7 +929,7 @@ func decodeField(field string, raw []byte, v any) error {
 			code, at := codeAt(field, ptr)
 			return fieldErr(code, at, "not well-formed I-JSON: %v", err)
 		}
-		if tok.Kind() == 'n' {
+		if tok.Kind() == 'n' && !baselineNullAllowed(field, string(d.StackPointer())) {
 			code, at := codeAt(field, string(d.StackPointer()))
 			return fieldErr(code, at, "null, which no field ValidateAt checks admits")
 		}
@@ -812,4 +970,35 @@ func decodeField(field string, raw []byte, v any) error {
 		return fieldErr(code, at, "a value of the wrong type: %v", err)
 	}
 	return nil
+}
+
+// cpuMaxPattern is cpu.max as the kernel takes it: a quota in microseconds or max, then the period.
+var cpuMaxPattern = regexp.MustCompile(`^(max|[1-9][0-9]{0,17}) [1-9][0-9]{0,17}$`)
+
+// validate checks an adoption's applied limits: at least one member, cpu_max as the kernel spells it, cpu_weight within
+// the kernel's 1 to 10000 and pids_max a positive count (a limit written as max is no member).
+func (a *AppliedLimits) validate() error {
+	at := "run_start.applied_limits"
+	switch {
+	case a.CPUMax == "" && a.CPUWeight == nil && a.PidsMax == nil && a.MemoryMax == nil && a.MemoryHigh == nil:
+		return fieldErr("applied-limits", at, "present and empty: a run that wrote no limit has no block")
+	case a.CPUMax != "" && !cpuMaxPattern.MatchString(a.CPUMax):
+		return fieldErr("applied-limits", at+".cpu_max", "%q is not a cpu.max value", a.CPUMax)
+	case a.CPUWeight != nil && (*a.CPUWeight < 1 || *a.CPUWeight > 10000):
+		return fieldErr("applied-limits", at+".cpu_weight", "%d is outside 1 to 10000", *a.CPUWeight)
+	case a.PidsMax != nil && *a.PidsMax < 1:
+		return fieldErr("applied-limits", at+".pids_max", "%d is not a positive count", *a.PidsMax)
+	case a.MemoryMax != nil && *a.MemoryMax < 0:
+		return fieldErr("applied-limits", at+".memory_max", "%d is negative", *a.MemoryMax)
+	case a.MemoryHigh != nil && *a.MemoryHigh < 0:
+		return fieldErr("applied-limits", at+".memory_high", "%d is negative", *a.MemoryHigh)
+	}
+	return nil
+}
+
+// BaselineRecorded reports whether the run_start carries the machine baseline evidence a reader may use: it is at
+// MinorBaseline or later and holds the block. A revision above MinorBaseline that a run reached for another field
+// holds none when the run had no baseline, which a reader treats as a ledger with no baseline snapshot.
+func (p *RunStartPayload) BaselineRecorded() bool {
+	return p.RecordMinor >= MinorBaseline && p.Baseline != nil
 }

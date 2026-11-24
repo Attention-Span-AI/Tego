@@ -204,6 +204,12 @@ func (b *fsBuilder) denyWrite(writes []writePath) map[string]bool {
 		// gitdir), and the walk is the kernel's, never filepath.EvalSymlinks's. Everything a target costs is
 		// spent here, within the search's time limit, not after it.
 		res, name, followed, ok := probeLandingName(path)
+		if !ok || !followed {
+			// A candidate this process cannot walk to, or whose link it cannot follow, because of a folder on the way it
+			// may not search, is one root's probe lands: a root-tier prediction is unknown (walkCut asks the kernel
+			// which it was; a link that leads nowhere is the same for root and is not reported).
+			k.walkCut(path)
+		}
 		if !ok || seen[name] {
 			return
 		}
@@ -250,8 +256,12 @@ func (b *fsBuilder) denyWrite(writes []writePath) map[string]bool {
 		}
 		targets = append(targets, denyTarget{rule: r, what: what, under: under})
 	}
-	s := &denySearch{home: k.o.home, probe: add, known: map[fileID]*gitDirInfo{}, proc: procMounted()}
+	s := &denySearch{home: k.o.home, probe: add, known: map[fileID]*gitDirInfo{}, proc: procMounted(), cutShort: k.namePredictionUnavailable,
+		entryTime: k.o.searchEntryTime, wholeTime: k.o.searchWholeTime}
 	for _, name := range globalGitConfigs {
+		if k.o.home == "" {
+			break
+		}
 		p := filepath.Join(k.o.home, name)
 		data, err := readSmallErr(p, maxGitConfig, true)
 		if err == nil {
@@ -282,6 +292,9 @@ func (b *fsBuilder) denyWrite(writes []writePath) map[string]bool {
 		}
 	}
 	for _, n := range denyWriteInHome {
+		if k.o.home == "" {
+			break
+		}
 		add(filepath.Join(k.o.home, n.name), n.what)
 	}
 	rules := make([]FSRule, 0, len(targets))
@@ -436,8 +449,14 @@ func hooksTarget(v, worktree, home string) string {
 	var p string
 	switch {
 	case v == "~":
+		if home == "" {
+			return ""
+		}
 		p = home
 	case strings.HasPrefix(v, "~/"):
+		if home == "" {
+			return ""
+		}
 		p = filepath.Join(home, v[2:])
 	case otherUserHooks(v):
 		return ""
@@ -659,12 +678,18 @@ type denySearch struct {
 	// of them that could not be read, which every write entry's warning carries.
 	globalHooks, globalUnread []string
 
+	// cutShort is compiler.namePredictionUnavailable: a listing, read or probe of the search that a permission failure
+	// cut short is one root finishes, so a root-tier prediction is unknown (ADR 0043, amendment 2026-11-19).
+	cutShort func(path string, err error)
+
 	cur                *entrySearch
 	entry, whole       spend
 	started            time.Time
 	entryEnd, wholeEnd time.Time
-	cuts               cutSet
-	unread             []string
+	// entryTime and wholeTime are the time limits; zero is maxSearchTime and maxSearchTimeWhole.
+	entryTime, wholeTime time.Duration
+	cuts                 cutSet
+	unread               []string
 }
 
 // spend is what a search has spent of its budget.
@@ -690,12 +715,19 @@ type entrySearch struct {
 // compile's go on, the time from the first entry's start.
 func (s *denySearch) resume(e *entrySearch) {
 	now := time.Now()
+	entry, whole := maxSearchTime, maxSearchTimeWhole
+	if s.entryTime > 0 {
+		entry = s.entryTime
+	}
+	if s.wholeTime > 0 {
+		whole = s.wholeTime
+	}
 	if s.wholeEnd.IsZero() {
-		s.wholeEnd = now.Add(maxSearchTimeWhole)
+		s.wholeEnd = now.Add(whole)
 	}
 	s.cur, s.started = e, now
 	s.entry = e.spend
-	s.entryEnd = now.Add(maxSearchTime - e.used)
+	s.entryEnd = now.Add(entry - e.used)
 	s.cuts = 0
 	s.unread = e.unread
 }
@@ -893,7 +925,13 @@ func (s *denySearch) undone(e *entrySearch) (why, fix string) {
 // size past the bound) would otherwise drop what it names from the set in silence. Without /proc every read
 // fails, which undone says once instead.
 func (s *denySearch) unreadable(path string, limit int64, err error) string {
-	if err == nil || errors.Is(err, errSearchCut) || !s.proc {
+	if err == nil || errors.Is(err, errSearchCut) {
+		return ""
+	}
+	if s.cutShort != nil {
+		s.cutShort(path, err) // root reads it: a root-tier prediction is unknown
+	}
+	if !s.proc {
 		return ""
 	}
 	var pe *fs.PathError
@@ -925,6 +963,11 @@ func (s *denySearch) unreadable(path string, limit int64, err error) string {
 // not the agent's doing, and naming it on every compile would say nothing. As root the search is refused
 // nothing by mode, so this is the non-root compile's case.
 func (s *denySearch) unlisted(dir string, err error) {
+	if s.cutShort != nil {
+		// Whoever owns it: root lists a folder of any owner, so a root-tier prediction is unknown (the review's 0711
+		// project folder of another account), while the note below is for the folders the agent can change back.
+		s.cutShort(dir, err)
+	}
 	if !s.proc || errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ENOTDIR) || errors.Is(err, unix.ELOOP) {
 		return
 	}
@@ -1092,7 +1135,13 @@ func (s *denySearch) walkRepos(root string, found func(repoAt)) {
 // entry whose repository it is.
 func (s *denySearch) info(gd string) *gitDirInfo {
 	var st unix.Stat_t
-	if unix.Stat(gd, &st) != nil || st.Mode&unix.S_IFMT != unix.S_IFDIR {
+	if err := unix.Stat(gd, &st); err != nil {
+		if s.cutShort != nil {
+			s.cutShort(gd, err) // a folder on the way this user may not search: root's walk reaches the git directory
+		}
+		return nil
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFDIR {
 		return nil
 	}
 	id := fileID{uint64(st.Dev), st.Ino}
@@ -1221,7 +1270,7 @@ func (s *denySearch) submodules(gd string) []string {
 				return
 			}
 			p := filepath.Join(dir, e.Name())
-			if isGitDir(p) {
+			if isGitDir(p, s.cutShort) {
 				out = append(out, p)
 				continue
 			}
@@ -1286,7 +1335,7 @@ func (s *denySearch) gitDirs(root string) []string {
 			}
 		}
 	}
-	if isGitDir(root) {
+	if isGitDir(root, s.cutShort) {
 		out = append(out, root)
 	}
 	sort.Strings(out)
@@ -1320,13 +1369,23 @@ func (s *denySearch) pointer(file, prefix string, follow bool) (string, bool) {
 
 // isGitDir reports whether dir has the layout git accepts as a repository directory: a HEAD file and
 // objects/ and refs/ directories.
-func isGitDir(dir string) bool {
-	head, err := os.Lstat(filepath.Join(dir, "HEAD"))
+//
+// cut, when set, hears a probe a permission failure refused (a folder this user may not search): root's walk finishes
+// it, so a root-tier prediction is unknown (compiler.namePredictionUnavailable).
+func isGitDir(dir string, cut func(path string, err error)) bool {
+	lstat := func(p string) (os.FileInfo, error) {
+		fi, err := os.Lstat(p)
+		if err != nil && cut != nil {
+			cut(p, err)
+		}
+		return fi, err
+	}
+	head, err := lstat(filepath.Join(dir, "HEAD"))
 	if err != nil || !head.Mode().IsRegular() {
 		return false
 	}
 	for _, d := range []string{"objects", "refs"} {
-		if fi, err := os.Lstat(filepath.Join(dir, d)); err != nil || !fi.IsDir() {
+		if fi, err := lstat(filepath.Join(dir, d)); err != nil || !fi.IsDir() {
 			return false
 		}
 	}

@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -18,6 +19,12 @@ import (
 // (spec/identity/RUN-IDENTITY.md "Messages"). Refusal reasons are
 // record.Reason values and are never mixed with these.
 const (
+	// CodeBaselineUnknown refuses a snapshot loaded for observation after a layer failure.
+	CodeBaselineUnknown = "config-baseline-unknown"
+	// CodeBaselineConflict names a grant that contradicts a machine baseline refusal.
+	CodeBaselineConflict = "baseline-conflict"
+	// CodeBaselinePlacement names an unresolved or unsupported baseline placement.
+	CodeBaselinePlacement     = "baseline-placement"
 	CodeSchema                = "schema"
 	CodeNotYetSupported       = "not-yet-supported"
 	CodeExtendsNotFound       = "extends-not-found"
@@ -137,6 +144,7 @@ const (
 // Diagnostic is one Load or Compile finding, rendered as
 // file:line[:col]: message [code]; Fix is printed by the CLI on the next line.
 type Diagnostic struct {
+	budget   *loadBudget
 	File     string
 	Line     int
 	Col      int
@@ -144,6 +152,10 @@ type Diagnostic struct {
 	Message  string
 	Fix      string
 	Severity string // error | warning
+	// Baseline preserves the full many-source conflict even when text display is bounded.
+	Baseline *BaselineConflictDiagnostic `json:",omitempty"`
+	// BaselinePlacement preserves per-entry refuse-launch coverage when no table is returned.
+	BaselinePlacement *BaselinePlacementDiagnostic `json:",omitempty"`
 	// Tier is the tier the finding holds in, when it does not hold in every tier: a deny_read Landlock cannot
 	// enforce, a setting tier landlock leaves without effect. "" is a finding about every tier. Compile
 	// reports such a finding when the table can land at that tier (RuleTable.Reach), and `tego run`, which
@@ -160,6 +172,9 @@ type Diagnostic struct {
 
 	// overlap marks the R10 contradiction so firstError can wrap ErrContractOverlap.
 	overlap bool
+	// cause retains a profile read failure for availability checks without
+	// changing the diagnostic's public words or JSON.
+	cause error
 }
 
 // Error renders file:line[:col]: message [code]; :col is omitted when Col is 0
@@ -176,6 +191,9 @@ func (d Diagnostic) Error() string {
 	}
 	return s + d.Message + " [" + d.Code + "]"
 }
+
+// Unwrap preserves the underlying failure when a profile could not be read.
+func (d Diagnostic) Unwrap() error { return d.cause }
 
 // Informational reports whether the diagnostic is a note and not a warning about the contract's own rules: it says how
 // a rule applies (a path that is a mount point, the cost of held reads) or that a rule changes nothing (redundant),
@@ -202,7 +220,7 @@ var (
 	ErrTooLarge = errors.New("contract exceeds 1MiB")
 	// ErrNotAFile is wrapped when a contract, profile or test table is neither a regular file nor a
 	// pipe.
-	ErrNotAFile = errors.New("not a regular file or a pipe")
+	ErrNotAFile = config.ErrNotAFile
 )
 
 // HasErrors reports whether any diagnostic is an error.
@@ -275,7 +293,8 @@ func firstError(ds []Diagnostic) error {
 
 // diags collects diagnostics during Load and Compile.
 type diags struct {
-	list []Diagnostic
+	budget *loadBudget
+	list   []Diagnostic
 }
 
 func (ds *diags) errorf(p Pos, code, format string, args ...any) *Diagnostic {
@@ -287,13 +306,20 @@ func (ds *diags) warnf(p Pos, code, format string, args ...any) *Diagnostic {
 }
 
 func (ds *diags) at(p Pos, code, sev, msg string) *Diagnostic {
-	ds.list = append(ds.list, Diagnostic{File: p.File, Line: p.Line, Col: p.Col, Code: code, Message: msg, Severity: sev})
+	if !ds.budget.diagnostic(p, code, msg) {
+		return &Diagnostic{budget: ds.budget}
+	}
+	ds.list = append(ds.list, Diagnostic{budget: ds.budget, File: p.File, Line: p.Line, Col: p.Col, Code: code, Message: msg, Severity: sev})
 	return &ds.list[len(ds.list)-1]
 }
 
 // fix attaches a Fix line to the diagnostic just added.
 func (d *Diagnostic) fix(format string, args ...any) *Diagnostic {
-	d.Fix = fmt.Sprintf(format, args...)
+	msg := fmt.Sprintf(format, args...)
+	if d.budget != nil && !d.budget.spend(d.File, "diagnostic bytes", int64(len(msg)), &d.budget.left.DiagnosticBytes) {
+		return d
+	}
+	d.Fix = msg
 	return d
 }
 

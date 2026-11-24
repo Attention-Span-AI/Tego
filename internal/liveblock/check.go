@@ -60,6 +60,11 @@ var (
 	ErrOutsideFence = errors.New("the entry is outside the run's fence")
 	// ErrNoKey is a lift asked of a run whose live key cannot be read (ReadKey), so no lift can be MAC'ed.
 	ErrNoKey = errors.New("the run's live key cannot be read, so no lift can be asked")
+	// ErrNoNote is a lift asked with a note of a run whose launcher has not made the mark that it reads one (TakesNote):
+	// an older tego, or a run that is still starting. That launcher checks a lift's MAC without the note, so it would
+	// refuse the signed lift, and a note dropped without a word would hide what the person wrote; so nothing is asked.
+	// The same lift without a note is not refused for this.
+	ErrNoNote = errors.New("the run's launcher does not read a note on a lift")
 	// ErrStarting is a change that depends on the run's mode or its launcher's facts, asked of a running run whose
 	// run_start cannot be read yet (Target.Starting): the change fails closed, in words that say the run is still
 	// starting, and is taken once that line is written. A Locked refusal there named a mode nobody knew: the same
@@ -101,6 +106,11 @@ func noTimeLimits(run string) error {
 // RunWords is err's sentence naming its run by id, for the terminal, where nothing else on the line names the run:
 // the refusals of CheckBlock, CheckFence and LiftKey. Any other error is its Error.
 func RunWords(err error) string {
+	// A trusted process boundary may carry the refusal's two display forms.
+	var remote interface{ RunWords() string }
+	if errors.As(err, &remote) {
+		return remote.RunWords()
+	}
 	var r *refusal
 	if errors.As(err, &r) {
 		return r.term
@@ -225,6 +235,26 @@ func locked(run string) error {
 	return refuse(ErrLocked, run, func(run string) string {
 		return run + " is Locked: it keeps to its contract while it runs, so nothing loosens until its next run"
 	})
+}
+
+// CheckNote refuses a lift's note (note "" is none and always passes) that the run in dir cannot take: not valid note
+// text (ValidNote, ErrInvalid), or a launcher that has not made the mark that it reads one (ErrNoNote, TakesNote). It fails
+// closed in words: the lift is never made without the note the person wrote, and never refused for a note it was not
+// given. The decision to loosen stays the launcher's alone.
+func CheckNote(dir, run, note string) error {
+	if note == "" {
+		return nil
+	}
+	if err := ValidNote(note); err != nil {
+		return err
+	}
+	if !TakesNote(dir) {
+		return refuse(ErrNoNote, run, func(run string) string {
+			return run + "'s launcher does not say it reads a note on a lift (an older tego, or a run that is still starting), " +
+				"so nothing was asked; ask the lift again without a note, or wait a few seconds and ask again with it"
+		})
+	}
+	return nil
 }
 
 // LiftKey is the lift key of the run in dir (ReadKey), or ErrNoKey with why, in a refusal that names run.

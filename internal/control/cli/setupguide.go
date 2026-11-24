@@ -3,11 +3,13 @@
 package cli
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime/debug"
 
 	"github.com/attention-span-ai/tego/internal/buildinfo"
+	"github.com/attention-span-ai/tego/internal/contracts"
 	"github.com/attention-span-ai/tego/internal/guide"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
@@ -19,9 +21,8 @@ import (
 // one: a tego of another release, or none found, leaves the check step "not checked since this machine started".
 // It is read on every Overview request, and the page computes the guide again when the build changes, so a tego
 // reinstalled while the dashboard runs shows at once as another build.
-func guideInputs(m *config.Machine, root, anchor string) func() guide.Inputs {
+func guideInputs(m *config.Machine, root, anchor string) func(context.Context) guide.Inputs {
 	s := buildinfo.Resolve(debug.ReadBuildInfo)
-	uid, _ := config.InvokingUID()
 	home := ""
 	if m != nil {
 		home = m.Home
@@ -29,13 +30,16 @@ func guideInputs(m *config.Machine, root, anchor string) func() guide.Inputs {
 	if home == "" {
 		home, _ = os.UserHomeDir()
 	}
-	return func() guide.Inputs {
-		path := os.Getenv("PATH")
-		exe := tegoBinary(path, selfExecutable)
-		in := guide.Inputs{Machine: m, Home: home, UID: uid, LedgerRoot: root, Anchor: anchor, Version: s.Version,
-			Commit: s.Commit, Host: guide.ThisHost(), PATH: path, Exe: exe, RuntimeDirs: config.RuntimeDirBases()}
+	return func(ctx context.Context) guide.Inputs {
+		ctx = contracts.WithCallerContext(ctx)
+		caller := contracts.CallerContext(ctx)
+		path := caller.PATH
+		checked := checkedGuideBinary(ctx, path, s.Version, s.Commit)
+		exe := checked.Exe
+		in := guide.Inputs{Caller: caller, Now: caller.CheckedAt, Machine: m, Home: home, UID: caller.UID, LedgerRoot: root, Anchor: anchor, Version: s.Version,
+			Commit: s.Commit, Host: guide.ThisHost(), PATH: path, Exe: exe, RuntimeDirs: caller.RuntimeDirs}
 		if exe != "" {
-			in.Build = guide.BuildIDOf(exe, s.Version, s.Commit)
+			in.Build = checked.Build
 		}
 		return in
 	}

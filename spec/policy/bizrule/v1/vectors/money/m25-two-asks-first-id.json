@@ -1,0 +1,97 @@
+{
+  "id": "m25-two-asks-first-id",
+  "group": "money",
+  "pins": [
+    "B029"
+  ],
+  "why": "B029: Equal asks retain the first sorted ID; a later approval must cover both.",
+  "bundle": {
+    "version": 1,
+    "adapter": "square.refund.v1",
+    "server": "square",
+    "rules": [
+      {
+        "id": "a",
+        "kind": "threshold",
+        "currency": "USD",
+        "ask_above": "5000",
+        "deny_above": "10000"
+      },
+      {
+        "id": "b",
+        "kind": "threshold",
+        "currency": "USD",
+        "ask_above": "4000",
+        "deny_above": "9000"
+      }
+    ]
+  },
+  "bundle_wire_hex": null,
+  "request": {
+    "adapter": "square.refund.v1",
+    "call_hex": "7b226964223a312c226a736f6e727063223a22322e30222c226d6574686f64223a22746f6f6c732f63616c6c222c22706172616d73223a7b22617267756d656e7473223a7b226d6574686f64223a227061796d656e74222c2272657175657374223a7b22616d6f756e745f6d6f6e6579223a7b22616d6f756e74223a363030302c2263757272656e6379223a22555344227d2c226964656d706f74656e63795f6b6579223a226b31222c227061796d656e745f6964223a227031227d2c2273657276696365223a22726566756e6473227d2c226e616d65223a226d616b655f6170695f72657175657374227d7d",
+    "contract_bundle_digest": "19485724f791f429964f131097abb15ddc3de2d60cd81d5914c9fab578b14427",
+    "contract_verdict": "allow",
+    "evaluator_status": "ready",
+    "request_id": "1",
+    "run_id": "run1",
+    "server": "square",
+    "state": {
+      "bundle_digest": "19485724f791f429964f131097abb15ddc3de2d60cd81d5914c9fab578b14427",
+      "epoch": "e1",
+      "revision": "0",
+      "run_id": "run1",
+      "seen_keys": [],
+      "server": "square",
+      "status": "ready",
+      "totals": []
+    },
+    "tool_source": "contract",
+    "topology": "exclusive",
+    "version": 1
+  },
+  "request_wire_hex": null,
+  "expected": {
+    "adapter": "square.refund.v1",
+    "bundle_digest": "19485724f791f429964f131097abb15ddc3de2d60cd81d5914c9fab578b14427",
+    "business": {
+      "verdict": "ask",
+      "rule_id": "a",
+      "condition": "threshold.ask"
+    },
+    "asks": [
+      {
+        "condition": "threshold.ask",
+        "rule_id": "a"
+      },
+      {
+        "condition": "threshold.ask",
+        "rule_id": "b"
+      }
+    ],
+    "call_digest": "da085916425e5d035348e7264d4aa0da4ae29fcf4a36a2999ad415c10b0f20af",
+    "facts": {
+      "amount_minor": "6000",
+      "currency": "USD",
+      "exponent": 2,
+      "source": "submitted-call"
+    },
+    "final": {
+      "verdict": "ask",
+      "source": "business",
+      "condition": "threshold.ask"
+    },
+    "record": {
+      "coverage": "mediated",
+      "delivery": "not_attempted",
+      "remote_outcome": "unknown",
+      "required": true,
+      "stage": "evaluated"
+    },
+    "request_id": "1",
+    "reservation": null,
+    "run_id": "run1",
+    "server": "square",
+    "version": 1
+  }
+}

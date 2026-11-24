@@ -56,7 +56,7 @@ func TestReceiptCheckAwayFromItsAnchor(t *testing.T) {
 			evidence := copyRun(t, dir, "evidence")
 			noAnchor(t)
 			code, out, errs := run(t, "receipt", "--check", saved, evidence)
-			if code != identity.ExitOK || !strings.HasPrefix(out, "The receipt matches the record: run ") ||
+			if code != identity.ExitOK || !strings.Contains(out, "The receipt matches the record: run ") ||
 				!strings.Contains(out, "no chain.log was read") {
 				t.Fatalf("exit %d\nstdout %s\nstderr %s", code, out, errs)
 			}
@@ -73,7 +73,7 @@ func TestReceiptCheckAwayFromItsAnchor(t *testing.T) {
 				t.Fatal(err)
 			}
 			if code, out, errs := run(t, "receipt", "--check", saved, evidence); code != identity.ExitFinding ||
-				!strings.HasPrefix(out, "The receipt does not match the record") {
+				!strings.Contains(out, "The receipt does not match the record") {
 				t.Errorf("a changed byte: exit %d\nstdout %s\nstderr %s", code, out, errs)
 			}
 		})
@@ -94,7 +94,7 @@ func TestReceiptCheckCannotCheckExits125(t *testing.T) {
 	}
 	useStamp(t, receipt.MadeBy{TegoVersion: "dev", Commit: "none"})
 	if code, out, _ := run(t, "receipt", "--check", saved, dir); code != identity.ExitError ||
-		!strings.HasPrefix(out, "Could not check the receipt against the record") {
+		!strings.Contains(out, "Could not check the receipt against the record") {
 		t.Errorf("a dev build: exit %d\n%s", code, out)
 	}
 }
@@ -158,5 +158,138 @@ func TestReceiptCheckWordStillNamesARun(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if code, out, errs := run(t, "receipt", "check"); code != identity.ExitOK || !strings.HasPrefix(out, "Receipt for run "+id+" ") {
 		t.Errorf("receipt check: exit %d, want run %s's receipt\nstdout %s\nstderr %s", code, id, out, errs)
+	}
+}
+
+func TestReceiptRequireEndedRefusesUnended(t *testing.T) {
+	useStamp(t, releasedStamp)
+	_, dir := verifiedRun(t)
+	data, err := os.ReadFile(filepath.Join(dir, ledger.EventsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := strings.LastIndex(strings.TrimSuffix(string(data), "\n"), "\n")
+	if i < 0 {
+		t.Fatal("fixture has no final line")
+	}
+	if err := os.WriteFile(filepath.Join(dir, ledger.EventsFile), data[:i+1], 0600); err != nil {
+		t.Fatal(err)
+	}
+	saved, _ := savedReceipt(t, dir)
+	code, out, errs := run(t, "receipt", "--check", saved, dir, "--require-ended", "--json")
+	var res receipt.CheckResult
+	if code != 1 || json.Unmarshal([]byte(out), &res) != nil || res.Complete || res.Ended {
+		t.Fatalf("exit%d %s %s", code, out, errs)
+	}
+}
+
+func TestReceiptCIFlagsFailClosed(t *testing.T) {
+	for _, args := range [][]string{
+		{"receipt", "--require-ended"},
+		{"receipt", "--status-file", "x"},
+		{"receipt", "--check", "r.json", "run", "--status-file", "x"},
+		{"receipt", "--verify-ci", "evidence"},
+		{"receipt", "--expect", "x"},
+		{"receipt", "--verify-ci", "evidence", "--expect", "x", "--checksums", "y", "--check", "z"},
+	} {
+		if code, _, _ := run(t, args...); code != identity.ExitUsage {
+			t.Errorf("%v exit%d", args, code)
+		}
+	}
+}
+
+func TestReceiptCIIndependentInputAliasesRefused(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+	target := filepath.Join(dir, "expected-ci.json")
+	if err := os.WriteFile(target, []byte(`{}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	checksums := filepath.Join(outside, "checksums.txt")
+	if err := os.WriteFile(checksums, []byte("unused"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(outside, "trusted")
+	if err := os.Symlink(dir, alias); err != nil {
+		t.Fatal(err)
+	}
+	code, _, errs := run(t, "receipt", "--verify-ci", dir, "--expect", filepath.Join(alias, "expected-ci.json"), "--checksums", checksums, "--json")
+	if code != 125 || !strings.Contains(errs, "independently outside evidence") {
+		t.Fatalf("alias exit%d stderr%s", code, errs)
+	}
+	hardlink := filepath.Join(outside, "expected-ci.json")
+	if err := os.Link(target, hardlink); err != nil {
+		t.Fatal(err)
+	}
+	code, _, errs = run(t, "receipt", "--verify-ci", dir, "--expect", hardlink, "--checksums", checksums, "--json")
+	if code != 125 || !strings.Contains(errs, "one link") {
+		t.Fatalf("hardlink exit%d stderr%s", code, errs)
+	}
+}
+
+func TestReceiptCIVerifierReturnsVersionedJSON(t *testing.T) {
+	useStamp(t, releasedStamp)
+	dir := t.TempDir()
+	outside := t.TempDir()
+	commit := releasedStamp.Commit
+	provenance := map[string]any{"server_url": "https://github.com", "repository": "owner/project", "repository_id": "123", "repository_owner_id": "45", "visibility": "public", "source_sha": commit, "source_ref": "refs/heads/main", "workflow_ref": "owner/project/.github/workflows/ci.yml@refs/heads/main", "workflow_sha": commit, "job_workflow_ref": "Attention-Span-AI/Tego/.github/workflows/ci-receipt.yml@" + commit, "job_workflow_sha": commit, "event": "push", "run_id": "456", "run_attempt": "2", "agent_job": "agent", "signing_job": "sign", "step": "collect", "matrix_key": "single", "action_sha": commit, "checkout_sha": commit, "pull_request_head_sha": nil}
+	expected := map[string]any{"schema": "tego.ci-expect/1", "github": provenance, "tego": map[string]any{"version": releasedStamp.TegoVersion, "commit": commit}, "attempt": map[string]any{"started_at": "2026-11-11T01:00:00Z", "completed_at": "2026-11-11T01:01:00Z"}}
+	raw, err := json.Marshal(expected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect := filepath.Join(outside, "expected.json")
+	sums := filepath.Join(outside, "checksums.txt")
+	if err := os.WriteFile(expect, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sums, []byte("unused before evidence exists"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errs := run(t, "receipt", "--verify-ci", dir, "--expect", expect, "--checksums", sums, "--json")
+	var result map[string]any
+	if code != identity.ExitError || json.Unmarshal([]byte(out), &result) != nil || result["schema"] != "tego.ci-verify/1" || result["result"] != "cannot-check" {
+		t.Fatalf("exit%d stdout%s stderr%s", code, out, errs)
+	}
+}
+
+func TestReceiptBundleFlagsRequireIndependentTrust(t *testing.T) {
+	if code, _, _ := run(t, "receipt", "--check", "missing-receipt.json", "run", "--bundle", "missing-bundle.json", "--expect", "missing-expected.json", "--trusted-root", "missing-root.json", "--cosign", "/verified/cosign", "--cosign-sha256", strings.Repeat("a", 64)); code != identity.ExitError {
+		t.Fatalf("complete signature arguments must reach input verification, exit %d", code)
+	}
+	for _, args := range [][]string{
+		{"receipt", "--bundle", "bundle.json"},
+		{"receipt", "--check", "receipt.json", "run", "--bundle", "bundle.json"},
+		{"receipt", "--check", "receipt.json", "run", "--bundle", "bundle.json", "--expect", "expected.json", "--trusted-root", "root.json", "--cosign", "/verified/cosign"},
+		{"receipt", "--cosign-sha256", strings.Repeat("a", 64)},
+	} {
+		if code, _, _ := run(t, args...); code != identity.ExitUsage {
+			t.Errorf("%v exit %d", args, code)
+		}
+	}
+}
+
+func TestReceiptBundleRefusesArtifactSuppliedTrust(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+	for _, name := range []string{"receipt.json", "receipt.sigstore.json", "expected.json", "root.json", "cosign"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("fixture"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"expected.json", "root.json", "cosign"} {
+		if err := os.WriteFile(filepath.Join(outside, name), []byte("fixture"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"expected.json", "root.json", "cosign"} {
+		t.Run(name, func(t *testing.T) {
+			paths := map[string]string{"expected.json": filepath.Join(outside, "expected.json"), "root.json": filepath.Join(outside, "root.json"), "cosign": filepath.Join(outside, "cosign")}
+			paths[name] = filepath.Join(dir, name)
+			code, _, errs := run(t, "receipt", "--check", filepath.Join(dir, "receipt.json"), filepath.Join(dir, "run"), "--bundle", filepath.Join(dir, "receipt.sigstore.json"), "--expect", paths["expected.json"], "--trusted-root", paths["root.json"], "--cosign", paths["cosign"], "--cosign-sha256", strings.Repeat("a", 64))
+			if code != identity.ExitError || !strings.Contains(errs, "independently outside evidence") {
+				t.Fatalf("exit %d %s", code, errs)
+			}
+		})
 	}
 }

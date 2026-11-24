@@ -13,13 +13,42 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/attention-span-ai/tego/internal/check/askpair"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 // The current broker permits at most 64 simultaneous asks. Never grow a
 // history-sized map from a long ledger or invent readiness from malformed
 // records. Optional payload additions remain compatible with older readers.
-type pendingApprovals map[string]struct{}
+//
+// The pairing of an ask with its answer, and the count that bounds it, are internal/check/askpair's.
+type pendingApprovals struct{ book *askpair.Book[struct{}] }
+
+// maxPendingApprovals is how many asks a run may have open at once.
+const maxPendingApprovals = 64
+
+// len is how many asks are open.
+func (p *pendingApprovals) len() int {
+	if p.book == nil {
+		return 0
+	}
+	return p.book.Len()
+}
+
+// malformed is how many ask lines repeated an ask id and how many answer lines paired with no ask (askpair).
+func (p *pendingApprovals) malformed() (repeated, unpaired int) {
+	if p.book == nil {
+		return 0, 0
+	}
+	return p.book.Repeated(), p.book.Unpaired()
+}
+
+func (p *pendingApprovals) bookOf() *askpair.Book[struct{}] {
+	if p.book == nil {
+		p.book = askpair.NewBook[struct{}](maxPendingApprovals, 0)
+	}
+	return p.book
+}
 
 func (p *pendingApprovals) add(e *record.Event) error {
 	if e.Kind != record.KindAsk && e.Kind != record.KindAnswer {
@@ -81,7 +110,7 @@ func (p *pendingApprovals) add(e *record.Event) error {
 		if err := json.Unmarshal(e.Payload, &answer); err != nil || answer.By == "" || answer.AfterS < 0 || math.IsNaN(answer.AfterS) || math.IsInf(answer.AfterS, 0) {
 			return errors.New("approval answer is malformed")
 		}
-		delete(*p, id)
+		p.bookOf().Answer(id)
 		return nil
 	}
 	// "open" is a held file open's (added within v1; older asks said "connect"), "mutation" a
@@ -89,12 +118,8 @@ func (p *pendingApprovals) add(e *record.Event) error {
 	if hold != "connect" && hold != "first_write" && hold != "request" && hold != "open" && hold != "mutation" {
 		return errors.New("approval hold is unsupported")
 	}
-	if *p == nil {
-		*p = make(pendingApprovals)
+	if p.bookOf().Ask(id, struct{}{}, 0) == askpair.Refused {
+		return fmt.Errorf("approval pending state exceeds %d", maxPendingApprovals)
 	}
-	if _, exists := (*p)[id]; !exists && len(*p) >= 64 {
-		return fmt.Errorf("approval pending state exceeds 64")
-	}
-	(*p)[id] = struct{}{}
 	return nil
 }

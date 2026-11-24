@@ -61,7 +61,17 @@ type preset struct {
 }
 
 type logsData struct {
-	Page ledgerview.Page
+	Now time.Time
+	// NarrowFields are the search's own parameters, the hidden fields of the form the rows' program and process buttons send.
+	NarrowFields []narrowField
+	GroupDetail  *groupView
+	Page         ledgerview.Page
+	FilterPage   bool
+	// Older is an older page of the lines (?before=): it does not follow the record.
+	Older                  bool
+	FilterURL, PeriodLabel string
+	// Window is the time range as absolute times with a link that moves it to now; nil with no time range (timeWindow).
+	Window *timeWindow
 	// F is the form's own fields (the select and checkboxes show them); Where is the query text and Chips its tokens.
 	F         ledgerview.Filter
 	Where     string
@@ -92,6 +102,8 @@ type logsData struct {
 	Rows        []rowView
 	RowsURL     string
 	After, Next string
+	// Tail is the page's append cursor (ledgerview.Tail): logs.js sends it back to ask for what was appended since.
+	Tail string
 	// Group is the grouping shown ("" for lines), GroupTabs the links that switch it, and Grouped its groups.
 	Group     string
 	GroupTabs []preset
@@ -99,12 +111,15 @@ type logsData struct {
 	GroupInfo ledgerview.Grouped
 	// Presets are the built-in views.
 	Presets []preset
-	// Changes are the rule-change rows among the page's rows (changefeed.go).
+	// Changes are the rule-change rows among the page's rows (changefeed.go); Crev is the rule-change journal's
+	// revision they were read at (changeRev), which live.js compares with the live state's to ask for them again.
 	Changes changesAt
+	Crev    string
 }
 
 // groupView is one group row with the address of its lines.
 type groupView struct {
+	DetailURL string
 	ledgerview.GroupRow
 	// LinesURL is the search narrowed to the group's lines, "" when no query names them (lines with no rule, routine lines).
 	LinesURL string
@@ -154,6 +169,9 @@ func readLogsQuery(q url.Values, now time.Time) logsQuery {
 	var wf ledgerview.Filter
 	wf, lq.toks, lq.err = ledgerview.ParseQueryAt(lq.where, now, time.Local)
 	lq.f = lq.form.And(wf)
+	if lq.err != nil {
+		lq.f = lq.f.Nothing() // a query that cannot be read in full lists no lines, rather than those of a part of it
+	}
 	return lq
 }
 
@@ -162,13 +180,16 @@ func readLogsQuery(q url.Values, now time.Time) logsQuery {
 func (lq *logsQuery) with(path string, toks []ledgerview.Token, set map[string]string) string {
 	v := url.Values{}
 	for k, xs := range lq.vals {
-		if k != "before" && k != "t" && k != "flash" {
+		if k != "before" && k != "t" && k != "flash" && k != "narrow" {
 			v[k] = slices.Clone(xs)
 		}
 	}
 	if toks != nil {
 		set = cloneSet(set)
 		set["where"] = ledgerview.FormatQuery(toks)
+		if _, ok := spanOf(v.Get("span"), toks); !ok {
+			v.Del("span") // the window it named is gone or moved
+		}
 	}
 	for k, x := range set {
 		if x == "" {
@@ -248,26 +269,57 @@ func (s *Server) logs(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if to, ok := pinnedAddress(r.URL.Query(), s.cfg.Now()); ok {
+		http.Redirect(w, r, to, http.StatusSeeOther)
+		return
+	}
 	lq := readLogsQuery(r.URL.Query(), s.cfg.Now()).onPage()
+	if terms, ok := r.URL.Query()["narrow"]; ok {
+		// A row's program or process button: the search with that term added (or taken out), at its own address, so a
+		// reload or a shared link does not press the button again.
+		to := "/logs"
+		if len(terms) == 1 {
+			to, ok = lq.narrowAddress(terms[0], s.cfg.Now())
+		} else {
+			ok = false
+		}
+		if !ok {
+			s.fail(w, http.StatusBadRequest, "Not a program or process", "A row narrows the search to its program (prog:) or its process (pid:), one at a time.")
+			return
+		}
+		http.Redirect(w, r, to, http.StatusSeeOther)
+		return
+	}
 	f := lq.f
 	f.Before, f.PageSize, f.Facets = r.URL.Query().Get("before"), logsPage, true
 	vs := map[string]bool{}
 	for _, v := range lq.form.Verdicts {
 		vs[v] = true
 	}
-	d := logsData{F: lq.form, Where: lq.where, Agents: snap.Agents(), Verdicts: vs, HideSys: lq.form.HideSys, ShowNoise: !lq.form.HideNoise,
+	d := logsData{Now: s.cfg.Now(), F: lq.form, Where: lq.where, Agents: snap.Agents(), Verdicts: vs, HideSys: lq.form.HideSys, ShowNoise: !lq.form.HideNoise,
 		Filtered: lq.form.Run != "" || lq.form.Agent != "" || lq.form.Kind != "" || lq.form.Text != "" ||
 			len(lq.form.Verdicts) > 0 || lq.form.HideSys || len(lq.toks) > 0}
+	d.FilterPage = r.URL.Query().Get("filters") == "1"
+	d.FilterURL = lq.with("/logs", nil, map[string]string{"filters": "1"})
+	d.PeriodLabel = "All time"
+	if w := lq.window(s.cfg.Now()); w != nil {
+		d.Window, d.PeriodLabel = w, "Selected time frame" // the times are in the head, under the counts
+	}
 	d.F.PageSize = f.PageSize
+	d.Older = f.Before != ""
 	if lq.err != nil {
-		d.QueryErr = lq.err.Error()
+		d.QueryErr = queryErrWords(lq.err)
 	}
 	d.Runs, d.RunsMore = runChoices(snap.Runs, lq.form.Run)
 	d.Page = snap.Query(f)
 	d.Rows = s.rowViews(&lq, d.Page.Rows, snap)
+	d.NarrowFields = lq.narrowFields()
 	d.RowsURL, d.Next = lq.rowsURL(), d.Page.Next
 	if len(d.Page.Rows) > 0 && f.Before == "" {
 		d.After = d.Page.Rows[0].Cursor()
+	}
+	if f.Before == "" {
+		d.Tail = snap.TailOf().String()
 	}
 	if d.Page.Next != "" {
 		d.NextURL = lq.with("/logs", nil, map[string]string{"before": d.Page.Next})
@@ -276,6 +328,13 @@ func (s *Server) logs(w http.ResponseWriter, r *http.Request) {
 		d.Group = g
 		d.GroupInfo = snap.Group(lq.f, g, groupLimit, s.signals(snap.Runs).sensitive)
 		d.Grouped = groupViews(&lq, d.GroupInfo.Rows, snap)
+		for i := range d.Grouped {
+			g := &d.Grouped[i]
+			g.DetailURL = lq.with("/logs", nil, map[string]string{"group_detail": "g:" + g.Key})
+			if r.URL.Query().Get("group_detail") == "g:"+g.Key {
+				d.GroupDetail = g
+			}
+		}
 	}
 	d.GroupTabs = groupTabs(&lq, d.Group)
 	d.Presets = logsPresets(&lq)
@@ -294,7 +353,8 @@ func (s *Server) logs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	d.ExportMore, d.ExportLines = d.Page.NoiseHidden, d.Page.Matched+d.Page.NoiseHidden
-	d.Changes = placed(d.Page.Rows, logsChanges(s.feed(), f, snap), f.Before == "", d.Page.Next == "")
+	d.Crev = s.changeRev()
+	d.Changes = placed(d.Page.Rows, logsChanges(s.feed(r.Context()), f, snap), f.Before == "", d.Page.Next == "")
 	c := s.chromeOf(snap, "Logs", "logs")
 	c.Query = lq.form.Text
 	s.render(w, http.StatusOK, "logs", c, d)
@@ -359,7 +419,12 @@ func facetGroups(lq *logsQuery, fs *ledgerview.Facets, snap *ledgerview.Snapshot
 		group("Kind", "kind", fs.Kind, words(kindWords, "kind")),
 		group("Program", "prog", fs.Program, func(v string) (string, string) { return v, "prog:" + v }),
 		group("Host", "host", fs.Host, func(v string) (string, string) { return v, "host:" + v }),
-		group("Rule", "rule", fs.Rule, func(v string) (string, string) { return facetRule(v, fs.WatchedRules[v]) }),
+		group("Rule", "rule", fs.Rule, func(v string) (string, string) {
+			if fs.MixedRules[v] {
+				return "Watched and enforced · " + ruleName(v), "rule:" + v + " · includes watched lines that no rule decided"
+			}
+			return facetRule(v, fs.WatchedRules[v])
+		}),
 		group("Run", "run", fs.Run, func(v string) (string, string) {
 			if r := snap.Find(v); r != nil && r.Agent != "" {
 				return r.Agent + " · " + shortRun(v), "run:" + v
@@ -394,6 +459,9 @@ func timePresets(lq *logsQuery, snap *ledgerview.Snapshot) []preset {
 		case "until":
 			timed = true
 		}
+	}
+	if span, ok := spanOf(lq.vals.Get("span"), lq.toks); ok {
+		since = span // the window was set as "the last <span>" and pinned to times (pinnedAddress)
 	}
 	out := []preset{}
 	for _, p := range []struct{ label, d, title string }{
@@ -442,7 +510,7 @@ func groupTabs(lq *logsQuery, cur string) []preset {
 
 // groupViews gives each group the address of its lines: a process by its run, pid and program, a rule by its key (with
 // verdict:observed for the lines it only names, and -verdict:observed for the lines it decided when those are not the
-// rule's only group), a target by its text (a literal search, so it may also match lines that name a longer target).
+// rule's only group), a target by target:<its name>, which holds the lines of every spelling of it and no others.
 func groupViews(lq *logsQuery, rows []ledgerview.GroupRow, snap *ledgerview.Snapshot) []groupView {
 	out := make([]groupView, len(rows))
 	for i, g := range rows {
@@ -489,12 +557,8 @@ func groupViews(lq *logsQuery, rows []ledgerview.GroupRow, snap *ledgerview.Snap
 				toks = append(toks, ledgerview.Token{Key: "verdict", Value: "observed", Neg: true})
 			}
 		case g.Target != "":
-			set["q"] = g.Target
-			if lq.form.Text != "" && lq.form.Text != g.Target {
-				// The search already has a literal text: the target joins the query as a quoted word instead.
-				delete(set, "q")
-				toks = append(slices.Clone(lq.toks), ledgerview.Token{Value: g.Target})
-			}
+			// target: is the group's own name (TargetKey), so its lines are exactly the group's, whatever spelling each wrote.
+			toks = narrowedTo(lq.toks, ledgerview.Token{Key: "target", Value: g.Target})
 		default:
 			out[i] = v
 			continue
@@ -566,4 +630,9 @@ func logsKindOf(k string) string {
 		return "ask"
 	}
 	return k
+}
+
+// queryErrWords is the problems of a query that could not be read in full, one sentence each.
+func queryErrWords(err error) string {
+	return strings.ReplaceAll(err.Error(), "\n", ". ")
 }

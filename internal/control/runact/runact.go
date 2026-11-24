@@ -13,6 +13,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/askclient"
 	"github.com/attention-span-ai/tego/internal/check/livestatus"
+	"github.com/attention-span-ai/tego/internal/control/pathcheck"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/liveblock"
 	"github.com/attention-span-ai/tego/internal/runlock"
@@ -221,6 +222,35 @@ type Blocked struct {
 	File    string
 	Names   uint64
 	Renamed bool
+	// Fresh is an add that put the block in force: the overlay held no block of that key in force before it (none, or
+	// one that had ended or was dormant under an unblock for a while, which the add re-arms). False for an add that
+	// found the block in force (a person's, or an earlier change's), whatever the add changed of its end. A caller that
+	// records who made a block records only a Fresh one as its own, with Own().
+	Fresh bool
+	// Epoch and At are, with Serial, the identity of the add that made a Fresh block (liveblock.Own): the overlay file's
+	// Epoch (made by the add, for a block from BlockFromContract) and the instant the add was recorded at. Empty on any
+	// other change.
+	Epoch string
+	At    time.Time
+}
+
+// Own is the identity of the add that made the block a Fresh BlockFromContract placed, to bind a later removal to it
+// (Owned). It is not Known unless the add made the block and the overlay has an Epoch.
+func (b Blocked) Own() liveblock.Own {
+	if !b.Fresh {
+		return liveblock.Own{}
+	}
+	return liveblock.Own{Epoch: b.Epoch, Serial: b.Serial, At: b.At}
+}
+
+// Owned binds a removal to the add that made the block: with Set, the removal is made only while the overlay lists
+// that add, by Own (liveblock.Overlay.AddIdentity: the file's Epoch, the serial and the instant), as the block's newest
+// change. A block a person removed and placed again since has another identity, and so has one in a file removed and
+// written again, whose serials start over; each is left as it is (ErrOverlayMoved). The check and the removal are one
+// step under the overlay's lock.
+type Owned struct {
+	Set bool
+	Own liveblock.Own
 }
 
 // Block adds (add true) or removes a live block of kind on value on run under root (internal/liveblock), as
@@ -241,7 +271,15 @@ func Block(ctx context.Context, root, run, kind, value string, add bool) (Blocke
 // and ignore every later change), a read or write block it does not know (ErrOldLauncher), and a read block on a run
 // whose reads are not seen (ErrReadsUnseen).
 func BlockUntil(ctx context.Context, root, run, kind, value string, add bool, until time.Time, via string) (Blocked, error) {
-	return blockUntil(ctx, root, run, kind, value, add, until, via, false)
+	return blockUntil(ctx, root, run, kind, value, add, until, via, false, Owned{})
+}
+
+// UnblockOwned removes the live block of kind on value from run, by the dashboard, only while it is the block the add
+// of own made (Owned): the removal an Undo makes of a block its change placed. A block placed again by hand since,
+// or already gone, is ErrOverlayMoved and nothing is changed. It is refused to a caller inside a run, as every
+// removal is.
+func UnblockOwned(ctx context.Context, root, run, kind, value string, own liveblock.Own) (Blocked, error) {
+	return blockUntil(ctx, root, run, kind, value, false, time.Time{}, "dashboard", false, Owned{Set: true, Own: own})
 }
 
 // BlockFromContract adds the live block the rules editor derives from a narrowing of run's contract ("Also apply now",
@@ -252,11 +290,19 @@ func BlockUntil(ctx context.Context, root, run, kind, value string, add bool, un
 // run started by an older tego gets the whole-file block Block places, which refuses more, never less, and never a
 // block it would drop. Every other block is Block's.
 func BlockFromContract(ctx context.Context, root, run, kind, value string) (Blocked, error) {
-	return blockUntil(ctx, root, run, kind, value, true, time.Time{}, "dashboard", true)
+	return blockUntil(ctx, root, run, kind, value, true, time.Time{}, "dashboard", true, Owned{})
 }
 
 // blockUntil is BlockUntil; link asks an add for a block that matches by link where the run's launcher reads one.
-func blockUntil(ctx context.Context, root, run, kind, value string, add bool, until time.Time, via string, link bool) (Blocked, error) {
+func blockUntil(ctx context.Context, root, run, kind, value string, add bool, until time.Time, via string, link bool, own Owned) (Blocked, error) {
+	if !pathcheck.InHelper() {
+		// Preserve the caller refusal before reexec as well as the worker check below.
+		// Both read only fixed kernel paths, never the recorded location.
+		if !add && !SelfGoverned().Outside() {
+			return Blocked{}, fmt.Errorf("%w (run %s)", ErrGoverned, run)
+		}
+		return blockRemote(ctx, blockRequest{Root: root, Run: run, Kind: kind, Value: value, Via: via, Add: add, Link: link, Until: until, Own: own})
+	}
 	dir, err := runDir(root, run)
 	if err != nil {
 		return Blocked{}, err
@@ -269,7 +315,7 @@ func blockUntil(ctx context.Context, root, run, kind, value string, add bool, un
 	if err != nil {
 		return Blocked{}, err
 	}
-	if in, _ := SelfGoverned(); !add && in { // fails closed: a cgroup it cannot judge refuses too
+	if !add && !SelfGoverned().Outside() { // inside a run, and whatever cannot be shown to be outside one
 		return Blocked{}, fmt.Errorf("%w (run %s)", ErrGoverned, run)
 	}
 	held, _, err := runlock.ProbeLock(dir)
@@ -278,7 +324,7 @@ func blockUntil(ctx context.Context, root, run, kind, value string, add bool, un
 	}
 	out := Blocked{Run: run, Rule: liveblock.Rule(k, v), Until: until}
 	f := StartFacts(dir)
-	out.Observe, out.ReadsSeen = f.Observe, f.ReadsSeen
+	out.Observe, out.ReadsSeen = f.Observe, f.ReadsDecided()
 	if err := liveblock.CheckBlock(liveTarget(run, held, f), k, add, until); err != nil {
 		return out, err
 	}
@@ -295,15 +341,31 @@ func blockUntil(ctx context.Context, root, run, kind, value string, add bool, un
 			// An add only narrows (AddUntil): the block it leaves ends at the later of its own end and until, and a
 			// block already held to no sooner is left as it is ("already blocked"). out.Until is that block's end. A
 			// link block is written only where the launcher reads it; it never narrows a held whole-file block.
+			held := o.InForce(k, v, liveblock.ReadClock())
+			if link {
+				o.EnsureEpoch() // the placement a rules change makes keeps its add's identity, so its Undo can tell it
+			}
+			var c liveblock.Change
 			if link && until.IsZero() && liveblock.TakesLink(dir) {
-				_, ok, err = o.AddLink(k, v, liveblock.By(via), time.Now())
+				c, ok, err = o.AddLink(k, v, liveblock.By(via), time.Now())
 			} else {
-				_, ok, err = o.AddUntil(k, v, liveblock.By(via), time.Now(), until)
+				c, ok, err = o.AddUntil(k, v, liveblock.By(via), time.Now(), until)
 			}
 			if e, found := o.Find(k, v); found && err == nil {
 				out.Until, placed = e.Until, e
 			}
+			if out.Fresh = ok && err == nil && !held; out.Fresh {
+				out.Epoch, out.At = o.Epoch, c.At
+			}
 		} else {
+			if own.Set {
+				// The removal of a block its caller made: only while the overlay still lists that add as the block's
+				// newest change. Anything else (the block lifted and put back by a person, a dormant block, an add the
+				// overlay no longer lists) is not provably the caller's, so it stays.
+				if id, mine := o.AddIdentity(k, v); !mine || !id.Is(own.Own) {
+					return false, ErrOverlayMoved
+				}
+			}
 			_, ok, err = o.RemoveUntil(k, v, liveblock.By(via), time.Now(), until)
 		}
 		out.Word = liveblock.BlockWord(add, ok)
@@ -332,7 +394,7 @@ func blockUntil(ctx context.Context, root, run, kind, value string, add bool, un
 // liveTarget is liveblock's Target of run, held or not by a launcher, from the facts its run_start gives: what
 // liveblock.CheckBlock and liveblock.CheckFence decide on.
 func liveTarget(run string, held bool, f livestatus.Facts) liveblock.Target {
-	return liveblock.Target{Run: run, Running: held, Timed: f.Timed, NarrowKinds: f.NarrowKinds(), ReadsSeen: f.ReadsSeen,
+	return liveblock.Target{Run: run, Running: held, Timed: f.Timed, NarrowKinds: f.NarrowKinds(), ReadsSeen: f.ReadsDecided(),
 		Adjustable: f.Adjustable, Starting: !f.Started, StartUnreadable: f.StartUnreadable}
 }
 
@@ -357,7 +419,9 @@ func StartFacts(dir string) livestatus.Facts {
 		if err != nil || e.Kind != record.KindRunStart {
 			return livestatus.Facts{StartUnreadable: true}
 		}
-		return livestatus.FromStartJSON(e.Payload)
+		f := livestatus.FromStartJSON(e.Payload)
+		f.PlaneBlocks = liveblock.TakesPlane(dir)
+		return f
 	}
 	return livestatus.Facts{}
 }
@@ -413,6 +477,33 @@ func liveOf(o *liveblock.Overlay) LiveBlocks {
 	return lb
 }
 
+// LiveAdds is, for each live block run holds now (by its key, Entry.Key), the identity of the add that made it
+// (liveblock.Overlay.AddIdentity), or the zero Own when the overlay no longer lists that add, has no Epoch or the block
+// is dormant: a caller that placed a block with identity p owns the block now only when the map says p for its key
+// (Own.Is). None when the run has no overlay.
+func LiveAdds(root, run string) (map[string]liveblock.Own, error) {
+	dir, err := runDir(root, run)
+	if err != nil {
+		return nil, err
+	}
+	o, err := liveblock.Read(dir, run)
+	if errors.Is(err, os.ErrNotExist) {
+		return map[string]liveblock.Own{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]liveblock.Own, len(o.Blocks))
+	for _, b := range o.Blocks {
+		id, mine := o.AddIdentity(b.Kind, b.Value)
+		if !mine {
+			id = liveblock.Own{}
+		}
+		out[b.Key()] = id
+	}
+	return out, nil
+}
+
 // Blocks is run's live blocks now; none when the run has no overlay.
 func Blocks(root, run string) ([]liveblock.Entry, error) {
 	dir, err := runDir(root, run)
@@ -445,3 +536,8 @@ var (
 	// recorded): it would refuse nothing there.
 	ErrReadsUnseen = liveblock.ErrReadsUnseen
 )
+
+// ErrOverlayMoved is a change asked on the strength of one state of a run's live overlay (its serial at a preview, the
+// serial of the add that made a block) that found the overlay in another: some other writer changed it between the
+// check and the write. Nothing was written; the caller looks again. It is never a go-ahead (fail closed).
+var ErrOverlayMoved = errors.New("the run's live rules changed since they were read, so nothing was changed")

@@ -82,13 +82,13 @@ func TestPlaneModificationsShareOneDecision(t *testing.T) {
 		if hook == "path_mknod" {
 			// The names argument (1: a file at a covered name is refused too, ADR 0043 D1) is
 			// TestNameCheckCallersAreTheListedHooks'.
-			floor := regexp.MustCompile(`__u8 floor = tego_modify_hook\(dentry, dir->mnt, run, hdr, [01], TEGO_HOOK_PATH_MKNOD, \(__u64\)dentry,\s*` + reason + `\);`)
+			floor := regexp.MustCompile(`__u8 floor = tego_modify_hook\(dentry, dir->mnt, run, hdr, [01], TEGO_HOOK_PATH_MKNOD, \(__u64\)dentry,\s*` + reason + `, TEGO_BLOCK_WRITE \| TEGO_BLOCK_CREATE\);`)
 			if !floor.MatchString(bodies[hook]) || !strings.Contains(bodies[hook], "return floor ? -EACCES : 0;") {
 				t.Error("path_mknod lost its shared filesystem mutation floor")
 			}
 			continue
 		}
-		re := regexp.MustCompile(`tego_modify_hook\([^;]*TEGO_HOOK_` + strings.ToUpper(hook) + `,[^;]*` + reason + `\)\)\s*return -EACCES;`)
+		re := regexp.MustCompile(`tego_modify_hook\([^;]*TEGO_HOOK_` + strings.ToUpper(hook) + `,[^;]*` + reason + `, [A-Z_ |]+\)\)\s*return -EACCES;`)
 		if !re.MatchString(bodies[hook]) {
 			t.Errorf("%s does not decide through tego_modify_hook, refused %s", hook, reason)
 		}

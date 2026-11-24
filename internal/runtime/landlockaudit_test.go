@@ -83,6 +83,7 @@ func TestLandlockAuditOptIn(t *testing.T) {
 				deps: Deps{Config: m, Enforce: &fakeBackend{}, Cwd: "/"},
 			}
 			spec, err := r.childSpec()
+			// rootskips:ignore skips only as root without the SUDO_UID and SUDO_GID the root run's harness sets (a root tego run drops to the sudo caller); not a skip for want of root
 			if err != nil && os.Geteuid() == 0 {
 				t.Skipf("childSpec as root needs sudo's identity to drop to: %v", err)
 			}

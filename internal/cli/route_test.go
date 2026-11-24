@@ -58,9 +58,9 @@ func lockedRoutedRun(t *testing.T) (dir, id string) {
 	if err := os.WriteFile(filepath.Join(dir, "contract.yaml"), []byte(routeCLIContract), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	old := selfInRun
-	selfInRun = func() (bool, error) { return false, nil }
-	t.Cleanup(func() { selfInRun = old })
+	old := selfAnswer
+	selfAnswer = answerOutside
+	t.Cleanup(func() { selfAnswer = old })
 	return dir, id
 }
 
@@ -135,7 +135,7 @@ func TestRouteSetRefusals(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, modelroutes.FileName)); !os.IsNotExist(err) {
 		t.Fatalf("an overlay was written: %v", err)
 	}
-	selfInRun = func() (bool, error) { return true, nil }
+	selfAnswer = answerGoverned
 	for _, args := range [][]string{{"route", "set", "--yes", id, "anthropic", "corp"}, {"route", "clear", id, "anthropic"}} {
 		if code, _, errs := run(t, args...); code != identity.ExitFinding || !strings.Contains(errs, "a governed agent cannot change its own governance") {
 			t.Fatalf("%v from inside a run: exit %d stderr %q", args, code, errs)

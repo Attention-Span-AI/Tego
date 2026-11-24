@@ -22,4 +22,14 @@ if [ "$owner/$name" != "$want" ]; then
 	echo "check-installer-repo: install.sh installs from and verifies ${owner}/${name}, but this release is built in ${want}; a release signed here is refused by the installer. Move the repository or change install.sh's repo_owner/repo_name (and install_test.sh) first." >&2
 	exit 1
 fi
-echo "check-installer-repo: install.sh names ${want}"
+# The Windows asset must select the identical repository and signer too. The
+# INSTALLER override is the Linux fixture used by this script's existing tests.
+if [ -z "${INSTALLER:-}" ]; then
+ # shellcheck disable=SC2016 # PowerShell variable name is literal input to sed.
+ windows_repository=$(sed -n 's/^$TegoRepository = '\''\(.*\)'\''$/\1/p' "$here/install.ps1")
+ [ "$windows_repository" = "$want" ] || {
+  echo "check-installer-repo: install.ps1 names ${windows_repository}, expected ${want}" >&2
+  exit 1
+ }
+fi
+echo "check-installer-repo: installers name ${want}"

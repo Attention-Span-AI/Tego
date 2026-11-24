@@ -160,3 +160,34 @@ var _ runtime.ContinuedNetNamer = (*Recorder)(nil)
 type discardSink struct{}
 
 func (discardSink) Emit(*record.Event) {}
+
+// TestRecorderLineOpTellsADatagramFromAConnect (GAPS C172): the kernel record's sample of an unconnected datagram
+// (KindSendmsg) is a UDP send and its net line says so (op send), as the supervisor's line for the same call does; a
+// connect of a UDP socket, which sends nothing, keeps no op, and a TCP sample never carries one.
+func TestRecorderLineOpTellsADatagramFromAConnect(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		kind  Kind
+		proto uint8
+		want  string
+	}{
+		{"udp datagram", KindSendmsg, unix.IPPROTO_UDP, record.NetOpSend},
+		{"udp connect", KindConnect, unix.IPPROTO_UDP, ""},
+		{"tcp connect", KindConnect, unix.IPPROTO_TCP, ""},
+		{"tcp sendmsg", KindSendmsg, unix.IPPROTO_TCP, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.rules = &agent.RuleTable{Contract: &agent.Contract{}, Record: agent.RecordSummary, Tier: "cgroup"}
+			_, sink := runRecorder(t, f, Options{FlushInterval: time.Hour},
+				netSample(sample{Kind: c.kind, PID: 50, MonoNS: 1}, unix.AF_INET, c.proto, 53, addr4(203, 0, 113, 9)))
+			nets := sink.byKind(record.KindNet)
+			if len(nets) != 1 {
+				t.Fatalf("%d net lines, want 1", len(nets))
+			}
+			if op := payload[record.NetPayload](t, nets[0]).Op; op != c.want {
+				t.Errorf("op %q, want %q", op, c.want)
+			}
+		})
+	}
+}

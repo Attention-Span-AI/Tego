@@ -23,7 +23,7 @@ import (
 
 func init() { register(cmdEvents) }
 
-// cmdEvents is `tego events <run> [--json] [--kind K] ... ` (R29): the run's record, as a table or as the
+// cmdEvents is `tego events <run> [--json | --cells] [--kind K] ... ` (R29): the run's record, as a table or as the
 // stored lines byte for byte. It is the escape hatch for when a derived view looks wrong, so it never
 // re-encodes what it prints. `--verify` instead checks the record itself:
 // every line against its id, the seq and prev links, and the head against chain.log. `--follow` prints the
@@ -31,6 +31,7 @@ func init() { register(cmdEvents) }
 func cmdEvents() Command {
 	var (
 		asJSON   bool
+		cells    bool
 		limit    int
 		last     bool
 		verify   bool
@@ -47,6 +48,7 @@ func cmdEvents() Command {
 		Usage:   "<run> [--json] [--kind K] [--source S] [--verdict V] [--rule R] [--step N] [--limit N] [--last | --follow] | <run> --verify [--json]",
 		Flags: func(fs *flag.FlagSet) {
 			fs.BoolVar(&asJSON, "json", false, "print the stored lines byte for byte, one per line (with --verify: one JSON object)")
+			fs.BoolVar(&cells, "cells", false, "print each event as one line of four tab-separated cells (seq, verdict, rule, detail) as the table writes them, for a script")
 			fs.IntVar(&limit, "limit", 0, "stop after this many events")
 			fs.BoolVar(&last, "last", false, "only the last refusal, gap or limit (what went wrong); read from the end, so damage before it is left to --verify")
 			fs.BoolVar(&verify, "verify", false, "check the hash chain and the chain.log anchor instead of printing events")
@@ -55,11 +57,15 @@ func cmdEvents() Command {
 			fs.Var(&sources, "source", "producer to keep; repeatable")
 			fs.Var(&verdicts, "verdict", "allow, ask, refused or observed; repeatable")
 			fs.Var(&rules, "rule", "declared entry to keep, or \"unmatched\"; repeatable")
-			fs.Var(&steps, "step", "model step to keep; repeatable")
+			fs.Var(&steps, "step", "model step to keep (-1: lines tied to no step); repeatable")
 		},
 		Run: func(ctx context.Context, fs *flag.FlagSet, stdout, stderr io.Writer) int {
 			if fs.NArg() != 1 {
 				message(stderr, "", 0, 0, "tego events: give one run id or run directory; tego status --all lists the ids, then tego events <run> shows its record", codeUsage)
+				return identity.ExitUsage // R25: usage error
+			}
+			if cells && (asJSON || verify || follow) {
+				message(stderr, "", 0, 0, "tego events: --cells cannot be combined with --json, --verify or --follow", codeUsage)
 				return identity.ExitUsage // R25: usage error
 			}
 			if verify {
@@ -96,7 +102,7 @@ func cmdEvents() Command {
 			if follow {
 				return runFollow(ctx, fs.Arg(0), f, asJSON, stdout, stderr)
 			}
-			return runEvents(ctx, fs.Arg(0), f, last, asJSON, stdout, stderr)
+			return runEvents(ctx, fs.Arg(0), f, last, asJSON, cells, stdout, stderr)
 		},
 	}
 }
@@ -109,7 +115,7 @@ func (r *repeatable) Set(v string) error { *r = append(*r, v); return nil }
 
 // runEvents resolves the run, opens it read-only (never taking the lock, so a live run can be watched)
 // and renders it.
-func runEvents(ctx context.Context, ref string, f events.Filter, last, asJSON bool, stdout, stderr io.Writer) int {
+func runEvents(ctx context.Context, ref string, f events.Filter, last, asJSON, cells bool, stdout, stderr io.Writer) int {
 	dir, err := resolveRunDir("events", ref, true, &machineOnce{stderr: stderr})
 	if err != nil {
 		return runRefFailed(stderr, "events", err)
@@ -151,6 +157,9 @@ func runEvents(ctx context.Context, ref string, f events.Filter, last, asJSON bo
 	render := events.TableOf
 	if asJSON {
 		render = events.JSONOf
+	}
+	if cells {
+		render = events.CellsOf
 	}
 	n, err := render(ctx, stdout, r, entries, f)
 	if err != nil {

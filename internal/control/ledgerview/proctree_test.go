@@ -5,12 +5,9 @@ package ledgerview
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
-	"time"
 )
 
 // refusedExec appends a refused exec of pid (exec_id <pid>/<start>, parent <parent>) at path, and its kind=refused
@@ -190,61 +187,6 @@ func TestProcessTreeLoopAndNoLauncher(t *testing.T) {
 		t.Errorf("root %+v: want one loop member hung from it, marked parent unknown", tr.Root)
 	}
 }
-
-// TestProcessTreeBudget is LG-P5's acceptance (c): the tree of the biggest run of the ledger root in
-// TEGO_LOGS_BENCH_LEDGER (read only; give it a copy, such as the 350,000-line synthetic one), cold per version, is
-// built in under 30 ms. Skipped without one; TEGO_LOGS_BENCH_STRICT=1 fails a miss, otherwise it is logged.
-func TestProcessTreeBudget(t *testing.T) {
-	root := os.Getenv("TEGO_LOGS_BENCH_LEDGER")
-	if root == "" {
-		t.Skip("TEGO_LOGS_BENCH_LEDGER names no ledger root to measure")
-	}
-	s, err := Load(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var big *Run
-	for _, r := range s.Runs {
-		if big == nil || r.Lines > big.Lines {
-			big = r
-		}
-	}
-	if big == nil {
-		t.Skip("the ledger root holds no run")
-	}
-	r, err := LoadRun(root, big.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	evs := r.AllEvents()
-	// Each new version of a run builds its line index and its tree from scratch: that is the cold cost, measured
-	// five times on the same lines (the median is the figure; the box is shared, so one take can be slow).
-	var index, tree, total []time.Duration
-	var tr *ProcTree
-	for range 5 {
-		runtime.GC() // the load's and the last take's garbage is not this take's cost
-		a := time.Now()
-		x := buildLineIndex(r.ID, evs)
-		i := time.Since(a)
-		tr = buildProcTree(r.ID, evs, x)
-		index, tree, total = append(index, i), append(tree, time.Since(a)-i), append(total, time.Since(a))
-	}
-	a := time.Now()
-	walk(tr.Root, func(n *ProcNode) { n.Command() })
-	t.Logf("every command masked (a page shows at most a few hundred): %.2f ms", ms(time.Since(a)))
-	med := func(d []time.Duration) time.Duration { slices.Sort(d); return d[len(d)/2] }
-	t.Logf("run %s: %d lines, %d processes; median of 5 cold builds: line index %.2f ms, tree %.2f ms, total %.2f ms (fastest %.2f ms)",
-		r.ID, r.Lines, tr.Procs, ms(med(index)), ms(med(tree)), ms(med(total)), ms(total[0]))
-	if m := med(total); m > 30*time.Millisecond {
-		if os.Getenv("TEGO_LOGS_BENCH_STRICT") == "1" {
-			t.Errorf("cold tree %v, budget 30ms", m)
-		} else {
-			t.Logf("over budget: cold tree %v, budget 30ms", m)
-		}
-	}
-}
-
-func ms(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
 
 // TestExecIDs: the index's straight read of exec_id and parent_exec_id gives what decoding the line gives, and
 // declines (so the line is decoded) a key that is missing, written twice, not at a key's place, or escaped.

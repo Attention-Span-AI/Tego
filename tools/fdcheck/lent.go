@@ -82,9 +82,12 @@ func sigOf(params, results *types.Tuple) *types.Signature {
 	return types.NewSignatureType(nil, nil, nil, params, results, false)
 }
 
-// rootFuncLenders are the module's lending functions: sys.FileDo, and internal/bpf's leased cilium borrows.
+// rootFuncLenders are the module's lending functions: sys.FileDo, sys.LendAll (several owners' numbers to one
+// callback, as a []int: the slice and every number in it are held to a Borrow callback's uses), and internal/bpf's
+// leased cilium borrows.
 var rootFuncLenders = map[string]lender{
 	pathSys + ".FileDo":                    {1: {0}},
+	pathSys + ".LendAll":                   {1: {0}},
 	modulePath + "/internal/bpf.ProgramFD": {1: {0}},
 	modulePath + "/internal/bpf.MapFD":     {1: {0}},
 }
@@ -109,6 +112,7 @@ var lentSinks = map[string]map[int]bool{
 	pathUnix + ".Openat2":          {1: true},
 	pathUnix + ".Stat":             {0: true},
 	pathUnix + ".Lstat":            {0: true},
+	pathUnix + ".Getxattr":         {0: true}, // resolves the inode now; neither path nor attribute name is retained
 	pathUnix + ".Fstatat":          {1: true},
 	pathUnix + ".Statx":            {1: true},
 	pathUnix + ".Access":           {0: true},
@@ -120,6 +124,15 @@ var lentSinks = map[string]map[int]bool{
 	"strconv.Itoa":                 nil, // encoders: their result holds the number
 	"strconv.FormatInt":            nil,
 	"strconv.FormatUint":           nil,
+	// The plane's live-block fill pass (ADR 0023 amendment 2026-11-22): the kernel's fill reads this process's
+	// descriptor table and finds each row's template by its descriptor's number, so the numbers sys.LendAll lends
+	// are encoded as the templates' keys, written, read and deleted inside the one lease. PlaneFillBlockKeys is an
+	// encoder; the three wants-map calls take its keys and keep none past the callback, which deletes them before
+	// it returns (cgroup's fillBlocks).
+	modulePath + "/internal/bpf.PlaneFillBlockKeys":              nil,
+	modulePath + "/internal/runtime/enforce/cgroup.putWantsRoom": {1: true},
+	modulePath + "/internal/runtime/enforce/cgroup.readWants":    {1: true},
+	modulePath + "/internal/runtime/enforce/cgroup.deleteWants":  {1: true},
 }
 
 func newLentState(w *typedWorld) *lentState {

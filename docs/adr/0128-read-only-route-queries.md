@@ -119,12 +119,12 @@ There is no contract key to turn the read off, because it would be a promise the
   addressed attempts at a change, not every attempt; musl's dumps leave no line at all.
 - **A socket the run did not make** (inherited, or received over a unix socket from something outside) is not bound by
   decision 3: its unaddressed sends reach the kernel as that protocol. Decision 4 still applies to its sender.
-- **`net.assurance: kernel`** answers `recvmsg` `ENOSYS` (its connected-socket import rule), and glibc reads a netlink
-  reply with `recvmsg`, so its interface lists keep failing in that mode: `if_nameindex` and `getifaddrs` fail `ENOSYS`, and
-  Node's `os.networkInterfaces()` throws. `AI_ADDRCONFIG` takes the failure as "both families" and `getaddrinfo` goes on.
-  What reads with `recvfrom` works: `recv(2)`, and Go's `net.Interfaces`. Not changed here: the filter cannot read a
-  `msghdr`, so it cannot tell a route socket's reply from a unix socket's `SCM_RIGHTS`, and a supervisor's `CONTINUE`
-  leaves the descriptor number a sibling can `dup2` over. See the implementation note of 2026-11-01 below.
+- **`net.assurance: kernel`** answered `recvmsg` `ENOSYS` (its connected-socket import rule), and glibc reads a netlink
+  reply with `recvmsg`, so its interface lists failed in that mode: `if_nameindex` and `getifaddrs` failed `ENOSYS`, and
+  Node's `os.networkInterfaces()` threw. This ADR did not change that (the filter cannot read a `msghdr`, so it cannot
+  tell a route socket's reply from a unix socket's `SCM_RIGHTS`, and a supervisor's `CONTINUE` leaves the descriptor
+  number a sibling can `dup2` over); the amendment of 2026-11-20 below does, where the decision plane runs the run.
+  What reads with `recvfrom` always worked: `recv(2)`, and Go's `net.Interfaces`.
 - **`io_uring: true`** sends are not notified, so they are in the unaddressed row above. At a tier where it is admitted
   the plane's `socket_create` holds decision 3.
 - **A daemon can change the network for an agent** (NetworkManager over the system bus, `tailscaled`, Docker). That is
@@ -138,6 +138,85 @@ There is no contract key to turn the read off, because it would be a promise the
   Under a listener policy so does a relayed bind with `nl_pid` 0. glibc, Go and iproute2 read the port id back with
   `getsockname`; a program comparing `nlmsg_pid` with `getpid()` would notice.
 - `sendmmsg` on a route socket stays refused under a `net:` section; no caller uses it.
+
+## Amendment, 2026-11-20: the descriptor-import guard moves to the plane
+
+Under `net.assurance: kernel`, where the run's decision plane attached `socket_recvmsg` (lsm or fmod_ret mode),
+the strict filter no longer answers `recvmsg` ENOSYS. The plane refuses, with `EACCES`, and records (rule
+`socket-import`) every receive on an `AF_UNIX` socket whose kernel-copied `msghdr` carries a control buffer
+(`msg_controllen != 0`), before the protocol's receive can install a descriptor. A control receive on any other family
+(`IP_PKTINFO`, a timestamp, a TOS or GRO size, `IP_RECVERR`) can import nothing and passes with no ledger line. A receive with no control buffer proceeds as `recvfrom` and `read`
+already do, and the kernel drops any passed files (`MSG_CTRUNC`). `recvmmsg` and `pidfd_getfd` stay ENOSYS in the
+filter. `socket_imports_denied` is satisfied by either mechanism, and a run with neither is refused before its agent
+starts. glibc's `if_nameindex` and `getifaddrs` and Node's `os.networkInterfaces()` then work under kernel assurance
+at every plane tier. A run with no plane keeps the filter's refusal and its interface-list residual.
+
+Basis: the hook runs in `sock_recvmsg` before the protocol's receive, on the kernel's own copy of the `msghdr`
+(`copy_msghdr_from_user` ran first), so no sibling thread can change `msg_controllen` between the test and the
+receive. `SCM_RIGHTS` and `SCM_PIDFD` exist only on `AF_UNIX` and only through a control buffer: `scm_recv` installs
+neither without one. `MSG_PEEK` with a control buffer is refused like any other, since a peek duplicates the passed
+files into the receiver. Nothing new is reachable: the only receives newly admitted are those `recvfrom(2)` and
+`read(2)` already make, on a socket the run holds, and the assurance never covered ingress. The errno for a refused
+control-bearing `recvmsg` changes from ENOSYS to EACCES (ADR 0024 (7) lets the plane answer only 0 and EACCES), and the
+refusal is now a ledger line where the filter's ENOSYS left none. `compat` `recvmsg` meets the filter's arch guard, and
+`io_uring` is refused under strict assurance.
+
+Where the guarantee sits: the plane, in the kernel, for a run whose slot header carries `TEGO_SLOT_IMPORTS_DENIED`
+(its `net.assurance` is kernel and the hook is attached). The filter leaves `recvmsg` out of its client list only for
+such a run (`landlock.Handle.PlaneImportsFilter`), from the first filter the child takes, not only after the runtime
+uses the plane's fs answers. `cgroup.Handle.NetworkGuarantees` reports `SocketImportsDenied` for it only with the hook
+attached and the slot flagged, so a drift between the two refuses the run before it starts.
+
+What the guarantee covers: `SCM_RIGHTS` and `SCM_PIDFD` receives, and nothing else a socket can hand over.
+`getsockopt(SO_PEERPIDFD)` (Linux 6.5 and later) gives the caller a pidfd for its socket's peer with no control buffer
+and never went through `recvmsg`, so neither the old filter nor this hook covers it. It gives no more than
+`pidfd_open` of the pid `SO_PEERCRED` reports, except across pid namespaces, and `pidfd_getfd` stays ENOSYS, so it
+opens no descriptor of another process. It is out of scope here and stays open; closing it would take a `getsockopt` hook decided per run.
+
+Where it depends: the old guard was the filter, which stays on each task whatever it does. This one is the run-set row
+and the cgroup membership: it holds while the task is in a run's cgroup and the run's row, with the slot header, exists
+(`bpf_get_current_cgroup_id` keys the hook). That stays sound for the reasons the rest of the plane rests on: the agent
+cannot move itself out of the run's cgroup, the row and header are pinned and outlive a launcher that dies, and the
+reaper removes them (purge of the dead slot) only after the run's cgroup is gone, that is after `cgroup.kill` and with
+no task left in it; a row that cannot be removed keeps deciding for its tasks and keeps its slot allocated. A task whose
+cgroup has no row meets the hook with no run, which is a pass, but such a task is not any run's agent. The filter and the
+slot flag are chosen together at one place per side (`landlock.Handle.recvmsgInPlane`, cgroup's `fillPlane`), and
+`NetworkGuarantees` reports `SocketImportsDenied` only when they and the attached hook agree.
+
+Residuals:
+- A run with no plane (tier cgroup on the fanotify fallback) keeps the filter's `ENOSYS` and the interface-list failure
+  above; having the supervisor complete `recvmsg` on a route socket remains the follow-up only if such a host needs it.
+- A run that holds its opens no longer keeps the filter's `ENOSYS` (amendment 2026-11-21, below).
+
+### Amendment 2026-11-21: the open deputy is exempt by its identity
+
+A run that holds its opens (`fs.reads: held`, or `gate.completion: held` with an fs gate) starts the open deputy, which
+runs in the run's cgroup and takes each request socket and dirfd with `recvmsg` and a control buffer. Until now such a
+run kept the filter's `ENOSYS` and its slot was not flagged, so its interface lists failed at every tier (found in
+review, 2026-11-20). Now its slot is flagged like any other kernel-assurance run, its filter leaves `recvmsg` to the
+plane, and `socket_recvmsg` passes the deputy alone: the launcher writes the deputy's thread-group id, its start time
+(clock ticks since boot, as `/proc/<pid>/stat` field 22 gives it) and the launcher's pid namespace into the run's slot
+header after the deputy's hello and before the run is armed, and the hook passes a control-bearing receive only when
+the receiving task's thread-group id in that pid namespace (`bpf_get_ns_current_pid_tgid`) and its thread-group
+leader's `start_boottime`, in the same ticks, are that pair. Every other task of the run is decided as before.
+
+Why it cannot be forged from inside the run:
+- *Another process*, a child the agent forks or a process that execs the deputy's image (`tego __open-deputy`), has
+  its own thread-group id. A thread-group id is the identity, not the image.
+- *A reused pid.* The launcher keeps the deputy's zombie unreaped for the whole run (`launch.Child.KeepUnreaped`), so no
+  process of the run can be given its pid; a pid reused after the run, or in another pid namespace, carries another
+  start time.
+- *The deputy itself.* It is non-dumpable, so the agent can neither trace it nor reach its memory or descriptors
+  through `/proc`; its seccomp allowlist kills it on `execve`, `execveat` and any `clone` without `CLONE_THREAD`, and
+  answers `clone3` `ENOSYS` (`deputy.Filter`), so its identity never runs another image and never passes to a child.
+  Its threads share its thread-group id and run its own code.
+- *The write.* The pair is written before Arm inserts the run-set row, so no hook decides for the run while it is
+  written; a pair that cannot be written (the deputy's start time unreadable) refuses the run before it starts, since
+  the filter has already left `recvmsg` to the plane.
+
+Residual: a launcher in a time namespace with a boot-time offset reads the deputy's start time shifted from the kernel's,
+so it cannot name the deputy; such a run that holds its opens under kernel assurance is refused before it starts
+(`cgroup.ErrDeputyNotExempt`), as any failure to write the pair is.
 
 ## Implementation notes
 

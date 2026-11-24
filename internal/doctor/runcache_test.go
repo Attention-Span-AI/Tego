@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
@@ -641,5 +643,37 @@ func TestFailedBTFIsNotCachedAndIsProbedAgain(t *testing.T) {
 	}
 	if _, ok := c.load(k); ok {
 		t.Error("an entry holding a failed D2 was read")
+	}
+}
+
+// The walk to the cache needs search permission on the components above it, never read: one the user may search
+// but not list is passed, and its owner and mode are still checked.
+func TestRunCacheNeedsOnlySearchAboveTheCache(t *testing.T) {
+	base := t.TempDir()
+	if err := os.Chmod(base, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run := filepath.Join(base, "run")
+	if err := os.Mkdir(run, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(run, 0o311); err != nil { // write and search, no read
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(run, 0o755) })
+	c := &runCache{base: base, dir: []string{"run", "tego"}, owner: os.Getuid(), key: func(string, int) (runCacheKey, bool) {
+		return testKey(), true
+	}}
+	fd, err := c.openDir(true)
+	if err != nil {
+		t.Fatalf("the cache beneath a 0311 directory: %v; want it opened, a walk needs only search there", err)
+	}
+	_ = unix.Close(fd)
+	if err := os.Chmod(run, 0o333); err != nil { // others may write: refused, as before
+		t.Fatal(err)
+	}
+	if fd, err := c.openDir(false); err == nil {
+		_ = unix.Close(fd)
+		t.Fatal("a component others may write was accepted")
 	}
 }

@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/attention-span-ai/tego/internal/handoff"
 )
 
 func TestDashboardLiteralDollars(t *testing.T) {
@@ -55,17 +57,24 @@ func TestDashboardLiteralDollars(t *testing.T) {
 				t.Fatal(err)
 			}
 			argsFile := filepath.Join(dir, "args")
-			for k, v := range map[string]string{"DASH_TEST_BINARY": self, "DASH_HELPER_ARGS": argsFile, "DASH_HELPER_LINK": server.URL + "/?t=0123abcd", "USER": "expanded"} {
+			for k, v := range map[string]string{"DASH_TEST_BINARY": self, "DASH_HELPER_ARGS": argsFile, "DASH_HELPER_LINK": server.URL + "/?t=0123abcd", "USER": "expanded", "DASH_MAINPID": fmt.Sprint(os.Getpid())} {
 				t.Setenv(k, v)
 			}
-			for name, text := range map[string]string{"systemctl": "exit 0\n", "systemd-run": "exec \"$DASH_TEST_BINARY\" -test.run=^TestDashboardSystemdHelper$ -- \"$@\"\n"} {
+			for name, text := range map[string]string{"systemctl": "echo \"$DASH_MAINPID\"\n", "systemd-run": "exec \"$DASH_TEST_BINARY\" -test.run=^TestDashboardSystemdHelper$ -- \"$@\"\n"} {
 				if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"+text), 0700); err != nil {
 					t.Fatal(err)
 				}
 			}
 			t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
-			if got := guideDashboard(context.Background(), f.Home); got == "" {
+			got := guideDashboard(context.Background(), f.Home)
+			if got == "" {
 				t.Fatal("dashboard did not start")
+			}
+			// The dashboard records the program it runs itself (the stand-in prints the line tego serve does): a later
+			// tego that would start the same program reuses it (dashboardAt).
+			if again := runningDashboard(f.Home); again != got {
+				log, _ := os.ReadFile(dashboardLog(f.Home))
+				t.Fatalf("the dashboard just started is not reused (%q): its log does not record this program:\n%s", again, log)
 			}
 			args, err := os.ReadFile(argsFile)
 			if err != nil {
@@ -111,4 +120,7 @@ func TestDashboardSystemdHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	fmt.Println(os.Getenv("DASH_HELPER_LINK"))
+	// What tego serve prints on stderr, into the same log: the sum of the program it runs (here the program a new
+	// dashboard would start, testProgram).
+	fmt.Fprint(os.Stderr, handoff.ProgramLine(testProgram))
 }

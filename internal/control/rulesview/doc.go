@@ -5,6 +5,22 @@
 // compiles to today, printed by agent.PrintRuleTable as `tego compile` prints it (Load), and the same contract as
 // Rules in force (InForce).
 //
+// Compiled policy objects remain helper-local; replies carry the rendered table, source text, diagnostics and
+// Rules in force projection. Text/table env.set redaction runs before the compiled policy is omitted.
+// No partial policy object is reconstructed in the service.
+//
+// Production view/source checks and compilation run in the bounded own-image filesystem helper. A failed check
+// keeps recorded chooser entries, reports the cannot-tell reason, and enables no change or trust action. Helpers may
+// retain caches during a page request; the service does no recorded-path stat to validate a cache. Initial selected
+// ledger and anchor reads remain service inputs. Explicit in-memory profile implementations are test seams.
+// SourceUnavailable carries a source or extended profile's failed read independently of the readable recorded copy;
+// every loader diagnostic is checked, even after another error. InForce receives a copy-only projection before
+// checking the source, in two exchanges on one worker within one overall deadline. A blocked source check keeps
+// the received recorded rules, redacted text and hits at copy positions, with source trust disabled.
+// The ledger and recorded copy must themselves answer. The fallback makes no fresh compilation or enforcement
+// claim. Answering metadata alone does not establish availability. The Rules chooser keeps guarded catalogue refusals for
+// contracts that already ran as well as for contracts awaiting their first run.
+//
 // It recompiles the copy as `tego drift` does: with its extends sealed when the copy's hash is the run's (the copy is
 // self-contained), against the run's own working directory and run-command grant from run_start, offline (no name
 // is resolved), at the tier the run recorded. It reads files read-only and writes nothing.
@@ -33,7 +49,7 @@
 // extends then fails to load), where drift resolves today's profiles; the compile names the run's tier as the only
 // tier this build has, so an auto contract shows the table of the tier the run got.
 //
-// Imports: the standard library, internal/check/drift, internal/check/inforce, internal/check/learn,
+// Imports: internal/control/pathcheck, internal/profilesrc, the standard library, internal/check/drift, internal/check/inforce, internal/check/learn,
 // internal/check/livestatus, internal/control/ledgerview, internal/ledger, internal/liveblock, internal/nextrun,
 // internal/rulefile, pkg/policy/execmatch, pkg/spec/agent, pkg/spec/backend, pkg/spec/config, pkg/spec/record,
 // gopkg.in/yaml.v3.

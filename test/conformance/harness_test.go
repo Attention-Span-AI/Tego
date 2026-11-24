@@ -630,6 +630,9 @@ var noCompileAction = map[string]string{
 	OpPtraceAttach: "compile --test has no process-control action", OpPtraceTraceme: "compile --test has no process-control action",
 	OpKeyctl: "compile --test has no keyring action", OpAddKey: "compile --test has no keyring action",
 	OpRequestKey: "compile --test has no keyring action", OpBPF: "compile --test has no bpf(2) action",
+	// The descriptor-import guard is a receive on the agent's own socketpair, no destination or path a row can name
+	// (ADR 0128, amended).
+	OpRecvFD: "compile --test has no recvmsg action: a receive on the agent's own socketpair names no destination or path",
 }
 
 // TestEveryCellHasACompileAction is plans/adr0017 C9 (ADR 0019: compile --test answers every action a run can take):
@@ -825,22 +828,6 @@ func answersOf(table string, report []byte) (map[string]compileCell, error) {
 
 // compileJSON is `tego compile agent.yaml --json --offline` in the project: the compiled table, with its per-entry
 // markers (capability.go). A contract compile refuses has no table, and fails the test.
-// compileReach is the reach compile --json reports (agent.RuleTable.Reach), as a set.
-func compileReach(t *testing.T, table []byte) map[Tier]bool {
-	t.Helper()
-	var tbl struct {
-		Reach []string `json:"reach"`
-	}
-	if err := json.Unmarshal(table, &tbl); err != nil {
-		t.Fatalf("compile --json: %v", err)
-	}
-	reach := map[Tier]bool{}
-	for _, r := range tbl.Reach {
-		reach[Tier(r)] = true
-	}
-	return reach
-}
-
 func compileJSON(t *testing.T, bin string, e *env, environ []string) []byte {
 	t.Helper()
 	cmd := exec.Command(bin, "compile", "agent.yaml", "--json", "--offline")
@@ -936,13 +923,8 @@ func compileOverGrants(fx *Fixture, got map[string]compileCell) []string {
 // answer is not the cell's, keyed for the baseline. A generated cell has no answer of its own to be held to: its
 // compile answers are held to the invariants instead (compileOverGrants), whose violations are returned apart.
 //
-// reach is the tiers compile's table can land at for this process (compile --json's reach). A table compiles its
-// name entries only where it may land at tier cgroup or bpflsm (ADR 0043 Consequence 11), and an auto contract
-// compiled by a process that is not root lands at tier landlock alone (doctor.AutoTiers), so compile --test answers
-// such a process's root columns as if no name entry existed. A cell a name entry decides (its want names a name
-// entry's rule, `/**/`) is compared there only at the tiers in reach; the kernel runner, which compiles as root,
-// compares its root columns.
-func compileFailures(t *testing.T, bin string, e *env, environ []string, fx *Fixture, reach map[Tier]bool) (fails map[string]string, overGrants []string) {
+// Every requested tier is judged, including root columns predicted by a normal user (ADR 0043, 2026-11-18).
+func compileFailures(t *testing.T, bin string, e *env, environ []string, fx *Fixture) (fails map[string]string, overGrants []string) {
 	t.Helper()
 	got := compileAnswers(t, bin, e, environ, compileTable(e, fx))
 	fails = map[string]string{}
@@ -956,9 +938,6 @@ func compileFailures(t *testing.T, bin string, e *env, environ []string, fx *Fix
 		}
 		for _, tier := range c.Tiers() {
 			w := wantOf(c, tier)
-			if len(fx.Model.Names) > 0 && !reach[tier] && strings.Contains(w.Rule, "/**/") {
-				continue
-			}
 			a := got[rowName(fx.ID(c), tier)] // answersOf: every row the table asks is answered
 			rule := e.subst(w.Rule)
 			if a.Verdict != w.Verdict || (rule != "" && a.Rule != rule) {
@@ -985,4 +964,58 @@ func TestAxisRequired(t *testing.T) {
 			t.Errorf("AxisRequired(%q, %q) = %v, want %v", c.list, c.axis, got, c.want)
 		}
 	}
+}
+
+// forCompileFixtures gives each comparison an independent tree. No fixture state
+// is used after visit returns.
+func forCompileFixtures(t *testing.T, fixtures []Fixture, actor string, visit func(*testing.T, *Fixture, *env)) {
+	t.Helper()
+	for i := range fixtures {
+		fx := &fixtures[i]
+		if !hasCompileRow(fx) {
+			continue
+		}
+		// Subtest cleanup releases the tree, listeners and host helpers before
+		// the next fixture. Keeping them on the parent filled guest tmpfs.
+		t.Run(fx.Name, func(t *testing.T) {
+			// Keep pathname host sockets short enough beneath an isolated TMPDIR.
+			dir, err := os.MkdirTemp("", "eyconf")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.RemoveAll(dir) })
+			visit(t, fx, materialize(t, dir, fx, actor))
+		})
+	}
+}
+
+// pathLines are the verdict lines of kind whose key is the cell's canonical value or, but for a net line, the path as
+// the cell spelled it. Every cell is assumed to own its path, and two cells that reach one file by two names
+// (mounts-bindwrite: walias/locked and w/locked, canon w/locked) break that: the by-the-other-name cell matched the
+// own-name cell's line through the shared canonical path and counted two lines for one action (the Ubuntu 25.10
+// guest, every tier). A path line whose path is exactly the spelling of another cell's own path, never this cell's,
+// is that cell's. It still counts there, which matches every line at its path, so a second line written for either
+// action is seen by the cell it names.
+func pathLines(e *env, fx *Fixture, c *Cell, kind, key, val, spelled string, events []map[string]any) (out []map[string]any) {
+	owned := map[string]bool{}
+	if fx != nil && (kind == "fs" || kind == "exec") {
+		for i := range fx.Cells {
+			if d := &fx.Cells[i]; d != c && d.Path != "" && e.path(d.Path) != spelled {
+				owned[e.path(d.Path)] = true
+			}
+		}
+	}
+	for _, ev := range events {
+		if ev["kind"] != kind || ev["verdict"] == nil || ev["verdict"] == "" {
+			continue
+		}
+		got := fmt.Sprint(ev[key])
+		if got == val || (kind != "net" && got == spelled) {
+			if got != spelled && owned[got] {
+				continue
+			}
+			out = append(out, ev)
+		}
+	}
+	return out
 }

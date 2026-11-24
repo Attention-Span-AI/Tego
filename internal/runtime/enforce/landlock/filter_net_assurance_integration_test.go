@@ -20,6 +20,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/platform/sys"
+	"github.com/attention-span-ai/tego/internal/testutil"
 )
 
 const strictClientHelperEnv = "TEGO_STRICT_CLIENT_FILTER_HELPER"
@@ -32,6 +33,7 @@ func TestStrictClientFilterOnRealKernel(t *testing.T) {
 	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestStrictClientFilterHelper$")
 	cmd.Env = append(os.Environ(), strictClientHelperEnv+"=1")
 	out, err := cmd.CombinedOutput()
+	out = testutil.WithoutCoverageDiagnostics(out)
 	if err != nil {
 		t.Fatalf("strict filter child: %v: %s", err, out)
 	}
@@ -130,6 +132,7 @@ func TestStrictFilterInterfaceLists(t *testing.T) {
 	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestStrictRouteHelper$")
 	cmd.Env = append(os.Environ(), strictRouteHelperEnv+"=filter")
 	out, err := cmd.CombinedOutput()
+	out = testutil.WithoutCoverageDiagnostics(out)
 	if err != nil {
 		t.Fatalf("helper: %v: %s", err, out)
 	}

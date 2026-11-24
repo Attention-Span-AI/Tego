@@ -17,6 +17,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -27,12 +28,27 @@ import (
 	"time"
 )
 
+// chromeOutput is read while Chrome can still write diagnostics.
+// A plain bytes.Buffer races with exec.Cmd's stderr copier.
+type chromeOutput struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *chromeOutput) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+func (b *chromeOutput) String() string { b.mu.Lock(); defer b.mu.Unlock(); return b.buf.String() }
+
 // cdp is a DevTools protocol connection over Chrome's debugging pipe.
 type cdp struct {
-	w    *os.File
-	mu   sync.Mutex
-	id   int
-	wait map[int]chan json.RawMessage
+	prepared bool
+	w        *os.File
+	mu       sync.Mutex
+	id       int
+	wait     map[int]chan json.RawMessage
 	// seen is, for each session watch was given, the page errors the reader has met since its tab's problems
 	// last took them.
 	seen map[string][]string
@@ -89,6 +105,33 @@ func transientCDP(err error) bool {
 	m := err.Error()
 	return strings.Contains(m, "Cannot find default execution context") || strings.Contains(m, "Execution context was destroyed") ||
 		strings.Contains(m, "Cannot find context with specified id")
+}
+
+// pageNotReady is the exception a waiting expression gives while the document is being replaced: after a click that
+// navigates, the new document has no body for a moment (document.body is null) and an element of the next page is not
+// there yet, so `document.body.innerText` or `document.querySelector(...).x` throws "Cannot read properties of null".
+// until takes that as "not yet" and asks again inside its one deadline, and names the last such answer if the deadline
+// passes; eval, which asks once, still fails on it. Gate 35 failed on exactly this in TestAgentsForgetInChrome on a
+// loaded machine (twelve repeats on a quiet one passed).
+func pageNotReady(err error) bool {
+	m := err.Error()
+	return strings.HasPrefix(m, "page evaluation:") && strings.Contains(m, "Cannot read properties of null")
+}
+
+// TestPageNotReadyIsOnlyTheNullRead holds pageNotReady to the one exception: any other page error still fails a wait at once.
+func TestPageNotReadyIsOnlyTheNullRead(t *testing.T) {
+	for msg, want := range map[string]bool{
+		"page evaluation: Uncaught: TypeError: Cannot read properties of null (reading 'innerText')": true,
+		"page evaluation: Uncaught: TypeError: Cannot read properties of null (reading 'open')":      true,
+		"page evaluation: Uncaught: ReferenceError: nosuch is not defined":                           false,
+		"page evaluation: Uncaught: SyntaxError: Unexpected token ')'":                               false,
+		"page evaluation: Uncaught: TypeError: Cannot read properties of undefined (reading 'x')":    false,
+		"Runtime.evaluate: no answer": false,
+	} {
+		if got := pageNotReady(errors.New(msg)); got != want {
+			t.Errorf("pageNotReady(%q) = %v, want %v", msg, got, want)
+		}
+	}
 }
 
 // read hands each answer to the call waiting for it and keeps each page error of a watched session (watch).
@@ -242,8 +285,9 @@ func (tb *tab) clean(t *testing.T, when string) {
 // keys are the keys press knows, as the DevTools protocol takes them; Enter's text is the keypress a button's
 // activation needs (a link's comes on its key down).
 var keys = map[string]map[string]any{
-	"Tab":   {"key": "Tab", "code": "Tab", "windowsVirtualKeyCode": 9},
-	"Enter": {"key": "Enter", "code": "Enter", "windowsVirtualKeyCode": 13, "text": "\r", "unmodifiedText": "\r"},
+	"Escape": {"key": "Escape", "code": "Escape", "windowsVirtualKeyCode": 27},
+	"Tab":    {"key": "Tab", "code": "Tab", "windowsVirtualKeyCode": 9},
+	"Enter":  {"key": "Enter", "code": "Enter", "windowsVirtualKeyCode": 13, "text": "\r", "unmodifiedText": "\r"},
 }
 
 // press presses key on tb's page and lets it go, as a keyboard does: the browser's own handling follows (Tab moves
@@ -277,13 +321,73 @@ type tab struct {
 	target  string
 }
 
+// closeTarget waits for the target registry as well as the close acknowledgement.
+// Chrome can acknowledge the request before the page has left that registry.
+func (c *cdp) closeTarget(t *testing.T, target string) {
+	t.Helper()
+	listed := func() bool {
+		var pages struct{ TargetInfos []struct{ TargetID string } }
+		_ = json.Unmarshal(c.call(t, "", "Target.getTargets", map[string]any{}), &pages)
+		for _, p := range pages.TargetInfos {
+			if p.TargetID == target {
+				return true
+			}
+		}
+		return false
+	}
+	if !listed() {
+		return
+	}
+	if _, err := c.try("", "Target.closeTarget", map[string]any{"targetId": target}); err != nil {
+		if strings.Contains(err.Error(), "No target with given id") {
+			return
+		}
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(3 * time.Second); listed(); {
+		if time.Now().After(deadline) {
+			t.Fatal("closed browser page remained in the target registry")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 // open loads url in a new window: a second tab in one window would be hidden behind the first, and a hidden tab
 // follows no stream.
 func (c *cdp) open(t *testing.T, name, url string) *tab {
+	t.Helper()
+	// Close the browser's unused startup page, then enforce the shared-host cap.
+	var pages struct {
+		TargetInfos []struct{ TargetID, Type string }
+	}
+	_ = json.Unmarshal(c.call(t, "", "Target.getTargets", map[string]any{}), &pages)
+	count := 0
+	for _, p := range pages.TargetInfos {
+		if p.Type != "page" {
+			continue
+		}
+		if !c.prepared {
+			c.call(t, "", "Target.closeTarget", map[string]any{"targetId": p.TargetID})
+		} else {
+			count++
+		}
+	}
+	c.prepared = true
+	if count >= 4 {
+		t.Fatal("browser page cap: close a page before opening another")
+	}
 	var target struct{ TargetID string }
-	_ = json.Unmarshal(c.call(t, "", "Target.createTarget", map[string]any{"url": url, "newWindow": true}), &target)
+	if err := json.Unmarshal(c.call(t, "", "Target.createTarget", map[string]any{"url": url, "newWindow": true}), &target); err != nil || target.TargetID == "" {
+		t.Fatalf("create browser target: id %q, decode error %v", target.TargetID, err)
+	}
+	// Register before attaching: a fatal error there or in a subtest must not leave
+	// its renderer open for the remaining matrix. Explicit earlier closes are fine.
+	t.Cleanup(func() {
+		_, _ = c.try("", "Target.closeTarget", map[string]any{"targetId": target.TargetID})
+	})
 	var att struct{ SessionID string }
 	_ = json.Unmarshal(c.call(t, "", "Target.attachToTarget", map[string]any{"targetId": target.TargetID, "flatten": true}), &att)
+	t.Cleanup(func() { c.closeTarget(t, target.TargetID) })
 	return &tab{c, att.SessionID, name, target.TargetID}
 }
 
@@ -303,12 +407,21 @@ func (tb *tab) tryEval(expr string) (string, error) {
 		Result struct {
 			Value json.RawMessage
 		}
+		ExceptionDetails *struct {
+			Text      string
+			Exception struct{ Description string }
+		}
 	}
 	raw, err := tb.c.try(tb.session, "Runtime.evaluate", map[string]any{"expression": expr, "returnByValue": true})
 	if err != nil {
 		return "", err
 	}
-	_ = json.Unmarshal(raw, &r)
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return "", err
+	}
+	if r.ExceptionDetails != nil {
+		return "", fmt.Errorf("page evaluation: %s: %s", r.ExceptionDetails.Text, r.ExceptionDetails.Exception.Description)
+	}
 	return string(r.Result.Value), nil
 }
 
@@ -332,10 +445,14 @@ func (tb *tab) shot(t *testing.T, name string) {
 func (tb *tab) until(t *testing.T, what, expr string) {
 	t.Helper()
 	deadline := time.Now().Add(15 * time.Second)
+	var notReady error
 	for time.Now().Before(deadline) {
 		v, err := tb.tryEval(expr)
-		if err != nil && !transientCDP(err) {
+		if err != nil && !transientCDP(err) && !pageNotReady(err) {
 			t.Fatalf("%s: %s: %v", tb.name, what, err)
+		}
+		if err != nil && pageNotReady(err) {
+			notReady = err
 		}
 		if v == "true" {
 			return
@@ -343,7 +460,7 @@ func (tb *tab) until(t *testing.T, what, expr string) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	text, err := tb.tryEval("document.body.innerText.slice(0, 3000)")
-	t.Fatalf("%s: %s never held (%v); page text:\n%s", tb.name, what, err, text)
+	t.Fatalf("%s: %s never held (%v; last not-ready answer: %v); page text:\n%s", tb.name, what, err, notReady, text)
 }
 
 func TestLiveInChrome(t *testing.T) {
@@ -370,7 +487,7 @@ func TestLiveInChrome(t *testing.T) {
 		"--no-default-browser-check", "--disable-gpu", "--disable-extensions", "--disable-sync",
 		"--disable-background-networking", "--disable-component-update", "about:blank")
 	cmd.ExtraFiles = []*os.File{cmdR, outW} // fd 3: commands to Chrome, fd 4: its answers
-	var stderr bytes.Buffer
+	var stderr chromeOutput
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -415,26 +532,32 @@ func TestLiveInChrome(t *testing.T) {
 	now := time.Now()
 	appendLine(t, root, harmRun, line(harmRun, "demo-harm", 7, now, "exec", `"verdict":"allow","op":"exec","path":"/bin/echo"`))
 	appendLine(t, root, harmRun, line(harmRun, "demo-harm", 8, now, "refused", `"rule":"unmatched","reason":"write-outside-contract","op":"open","target":"/p/live-refusal-1"`))
-	run.until(t, "the new rows at the top of the timeline", `!!document.getElementById("l8") && document.getElementById("tl-rows").firstElementChild.id === "l8"`)
+	// The new lines carry no model step, so they sit in the "not tied" group: a header, then the newest row (a line of the
+	// timeline's top is the first row, with at most its group's header above it).
+	run.until(t, "the new rows at the top of the timeline", `!!document.getElementById("l8") && (function () {
+		var top = document.querySelector("#tl-rows > .tl"), head = top.previousElementSibling;
+		return top.id === "l8" && top.nextElementSibling.id === "l7" && !!head && head.classList.contains("tl-step") &&
+			head.textContent.indexOf("Not tied to a model step") === 0 && head === document.getElementById("tl-rows").firstElementChild;
+	})()`)
 	ov.until(t, "the new refusal in Recent refusals", `document.querySelector("[data-live=r-ov-refusals]").textContent.includes("/p/live-refusal-1")`)
 	kept("while the run wrote lines")
 
-	// 2. An ask comes: the banner and the nav count on the Overview, the ask card on the run page.
+	// 2. An ask comes: both pages update the shared band and the navigation count.
 	appendLine(t, root, harmRun, line(harmRun, "demo-harm", 9, now, "fs", `"verdict":"ask","rule":"fs.ask[/p/]","op":"write","path":"/p/held.txt"`))
 	appendLine(t, root, harmRun, line(harmRun, "demo-harm", 10, now, "ask", `"ask_id":"ask-9","hold":"fs"`))
 	ov.until(t, "two asks in the banner", `document.getElementById("ask-banner").textContent.includes("2 requests are waiting") && document.querySelector(".nav .count").textContent.startsWith("2")`)
 	ov.until(t, "the tab title count", `document.title.startsWith("(2) ")`)
-	run.until(t, "the ask card", `!!document.getElementById("ask-9")`)
+	run.until(t, "the additional waiting request", `document.querySelector(".nav").dataset.askKeys.includes("ask-9") && document.querySelector("#ask-banner .ab-act a").getAttribute("aria-label").includes("2 waiting")`)
 	kept("when an ask came")
 
-	// 3. It is answered (in a terminal): the banner and the card go.
+	// 3. It is answered (in a terminal): the precise request leaves both bands.
 	appendLine(t, root, harmRun, line(harmRun, "demo-harm", 11, now, "answer", `"ask_id":"ask-9","verdict":"allow"`))
 	ov.until(t, "one ask left", `document.getElementById("ask-banner").textContent.includes("demo-harm is waiting for you") && document.title.startsWith("(1) ")`)
-	run.until(t, "the card gone", `!document.getElementById("ask-9") && !!document.getElementById("ask-7")`)
+	run.until(t, "the answered request gone", `!document.querySelector(".nav").dataset.askKeys.includes("ask-9") && document.querySelector("#ask-banner [name=ask]").value==="ask-7"`)
 	kept("when an ask was answered")
 
 	// 4. Deny on the run page posts in the background; with no broker the answer fails, and a toast says so.
-	run.eval(t, `document.querySelector('#ask-7 button[value="deny"]').click()`)
+	run.eval(t, `document.querySelector('#ask-banner button[value="deny"]').click()`)
 	run.until(t, "a toast", `!!document.querySelector(".toast-err") && document.querySelector(".toast-err").textContent.includes("Not done")`)
 	kept("after Deny")
 	run.shot(t, "run-toast")
@@ -445,9 +568,9 @@ func TestLiveInChrome(t *testing.T) {
 	if err := os.Remove(filepath.Join(root, ".live", harmRun)); err != nil {
 		t.Fatal(err)
 	}
-	run.until(t, "the run ended", `document.querySelector("[data-live=r-run-top] .sub-h1").textContent.includes("Exit 0") && !document.querySelector('a[href$="/stop"]')`)
+	run.until(t, "the run ended", `document.querySelector("#run-details .sub-h1").textContent.includes("Exit 0") && !document.querySelector('a[href$="/stop"]')`)
 	run.until(t, "the timeline stopped following", `!document.getElementById("tl-rows").hasAttribute("data-rows")`)
-	ov.until(t, "nothing running", `document.querySelector("[data-live=r-top]").textContent.includes("Nothing running")`)
+	ov.until(t, "nothing running", `document.querySelector("[data-live=r-ov-head]").textContent.includes("Nothing needs you") && !document.querySelector(".ov-running .phone-row")`)
 	kept("when the run ended")
 	run.shot(t, "run-ended")
 
@@ -467,24 +590,64 @@ func TestLiveInChrome(t *testing.T) {
 	ov.eval(t, `delete document.hidden; document.dispatchEvent(new Event("visibilitychange"))`)
 	waitStreams("a shown tab opens it again", func(n int32) bool { return n == 2 })
 
-	// 7. Seven tabs on one address: a browser opens 6 connections to it and each stream holds one, so the streams are
-	// held to maxStreams (the rest poll) and a fetch, a page's region request or a form post, still completes.
-	tabs := []*tab{ov, run}
-	for i := 0; i < 5; i++ {
-		tb := c.open(t, fmt.Sprintf("tab %d", i+3), base+"/runs?t=tok123")
-		tb.until(t, "loaded", `document.readyState === "complete" && !!document.body.dataset.sig`)
-		tabs = append(tabs, tb)
+	// 7. Exercise five more pages in batches of two. Together with the live
+	// Overview and Run this keeps at most four pages open on the shared host.
+	for first := 0; first < 5; first += 2 {
+		tabs := []*tab{ov, run}
+		for i := first; i < first+2 && i < 5; i++ {
+			tb := c.open(t, fmt.Sprintf("tab %d", i+3), base+"/runs?t=tok123")
+			tb.until(t, "loaded", `document.readyState === "complete" && !!document.body.dataset.sig`)
+			tabs = append(tabs, tb)
+		}
+		time.Sleep(time.Second)
+		if n := srv.streams.Load(); n > maxStreams {
+			t.Fatalf("%d streams open, more than %d", n, maxStreams)
+		}
+		for _, tb := range tabs {
+			tb.eval(t, `window.__tegoFetch = ""; fetch("/status.json", {cache: "no-store"}).then(function (r) { window.__tegoFetch = String(r.status); })`)
+		}
+		for _, tb := range tabs {
+			tb.until(t, "a fetch with four or fewer pages open", `window.__tegoFetch === "200"`)
+		}
+		kept("with bounded page batches")
+		for _, tb := range tabs[2:] {
+			c.closeTarget(t, tb.target)
+		}
 	}
-	time.Sleep(time.Second)
-	if n := srv.streams.Load(); n > maxStreams {
-		t.Fatalf("%d streams open, more than %d", n, maxStreams)
+
+	// Reserve capacity without opening more browser pages. A rejected stream
+	// must fall back to repeated status polling and still merge ledger changes.
+	t.Run("saturated-stream-polls", func(t *testing.T) {
+		pollRoot := fixture(t)
+		ps, pa, _ := liveServer(t, pollRoot, 10*time.Second, 30*time.Second)
+		ps.streams.Store(maxStreams)
+		defer ps.streams.Store(0)
+		tb := c.open(t, "saturated stream", "http://"+pa+"/?t=tok123")
+		defer c.closeTarget(t, tb.target)
+		tb.until(t, "polling after stream rejection", `performance.getEntriesByType('resource').filter(e=>new URL(e.name).pathname==='/status.json').length>=2`)
+		tb.eval(t, `window.__pollPageMark='kept'`)
+		appendLine(t, pollRoot, harmRun, line(harmRun, "demo-harm", 7, time.Now(), "refused", `"rule":"unmatched","reason":"write-outside-contract","op":"open","target":"/p/poll-fallback-refusal"`))
+		tb.until(t, "polling merges new records", `document.querySelector('[data-live=r-ov-refusals]').textContent.includes('/p/poll-fallback-refusal')`)
+		if tb.eval(t, `window.__pollPageMark`) != `"kept"` {
+			t.Fatal("poll fallback reloaded the page")
+		}
+		if ps.streams.Load() != maxStreams {
+			t.Fatal("a rejected stream changed reserved capacity")
+		}
+	})
+
+	fmt.Println("live in chrome: no reload; rows, an ask, its answer, a toast and the run's end all shown in place; five additional pages still fetch in bounded batches")
+}
+
+// Shared authenticated URL and page cleanup helpers also serve public browser guards.
+func a1URL(addr, path string) string {
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
 	}
-	for _, tb := range tabs {
-		tb.eval(t, `window.__tegoFetch = ""; fetch("/status.json", {cache: "no-store"}).then(function (r) { window.__tegoFetch = String(r.status); })`)
-	}
-	for _, tb := range tabs {
-		tb.until(t, "a fetch with seven tabs open", `window.__tegoFetch === "200"`)
-	}
-	kept("with seven tabs open")
-	fmt.Println("live in chrome: no reload; rows, an ask, its answer, a toast and the run's end all shown in place; seven tabs still fetch")
+	return "http://" + addr + path + sep + "t=tok123"
+}
+
+func a1Close(t *testing.T, tb *tab) {
+	tb.c.closeTarget(t, tb.target)
 }

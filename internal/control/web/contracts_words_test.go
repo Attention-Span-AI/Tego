@@ -151,7 +151,7 @@ func TestOverviewChartsSayRefused(t *testing.T) {
 		[2]string{"refused", `"rule":"unmatched","reason":"net-not-allowed","op":"net","target":"203.0.113.9:443"`})
 	s := newServer(t, root)
 	page := get(t, s, login(t, s), "/")
-	for _, want := range []string{`<section class="ch-row" aria-label="Refused and secrets">`, `<caption class="sr">Refused actions by severity and channel</caption>`} {
+	for _, want := range []string{`<section class="ch-row desktop-only" aria-label="Refused and secrets">`, `<caption class="sr">Refused actions by severity and channel</caption>`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the Overview lacks %q", want)
 		}

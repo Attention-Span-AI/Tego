@@ -4,6 +4,7 @@ package web
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"net"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/ledger"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
 var regionRe = regexp.MustCompile(`data-live="([^"]+)" data-h="([0-9a-f]{16})"`)
@@ -47,6 +49,8 @@ func doRegions(s *Server, target, host string, c *http.Cookie, have string) *htt
 	r.Header.Set(regionHeader, have)
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, r)
+	// The regions are read as words, like do's pages (unmarked).
+	w.Body = bytes.NewBufferString(unmarked(w.Body.String()))
 	return w
 }
 
@@ -154,10 +158,10 @@ func TestRegionRequest(t *testing.T) {
 		want map[string][]string // region → what its fresh HTML holds
 		same []string            // regions that did not change
 	}{
-		{"/", map[string][]string{"r-nav": {`<span class="count" aria-live="polite">2`}, "r-banner": {"2 requests are waiting for you", `value="` + s.csrf + `"`}, "r-ov-head": {"2 need you"}, "r-ov-refusals": {"&lt;img src=x onerror=alert(2)&gt;"}, "r-ov-asks": {"ask-9"}}, []string{"r-top", "r-ov-recent"}},
-		{"/approvals", map[string][]string{"content": {`id="ask-9"`, "tego approve " + harmRun + " ask-9", `name="csrf" value="` + s.csrf + `"`}}, []string{"r-top", "r-banner"}},
+		{"/", map[string][]string{"r-nav": {`aria-label="2 waiting">2`}, "r-banner": {"2 requests are waiting for you", `value="` + s.csrf + `"`}, "r-ov-head": {"2 requests need you"}, "r-ov-refusals": {"&lt;img src=x onerror=alert(2)&gt;"}, "r-ov-asks": {"ask-9"}}, []string{"r-top", "r-ov-recent"}},
+		{"/approvals", map[string][]string{"content": {`ask=ask-9#ask-9`, `name="csrf" value="` + s.csrf + `"`}}, []string{"r-top", "r-banner"}},
 		{"/runs", map[string][]string{"r-runs-live": {`data-k="` + harmRun + `"`}}, []string{"r-top", "r-runs-head", "r-runs-table", "r-runs-foot"}},
-		{"/runs/" + harmRun, map[string][]string{"r-run-top": {`id="ask-9"`}, "r-run-hl": {"Timeline <span class=\"n\">9</span>"}, "r-tl-foot": {"9 rows"}}, []string{"r-top"}},
+		{"/runs/" + harmRun, map[string][]string{"r-banner": {`name="ask" value="ask-7"`}, "r-run-hl": {"Timeline <span class=\"n\">9</span>"}, "r-tl-foot": {"9 rows"}}, []string{"r-top"}},
 		{"/runs/" + harmRun + "/refusals", map[string][]string{"r-run-tab": {"&lt;img src=x onerror=alert(2)&gt;"}}, []string{"r-top"}},
 		{"/runs/" + harmRun + "/receipt", map[string][]string{"r-run-tab": {"Refused actions", "&lt;img src=x onerror=alert(2)&gt;"}}, nil},
 		{"/logs", map[string][]string{"r-logs-head": {"13 lines", "4 asked"}, "r-logs-rows": {"&lt;img src=x onerror=alert(2)&gt;", `data-k="` + harmRun + `-7"`}}, nil},
@@ -197,15 +201,29 @@ func TestRegionRequest(t *testing.T) {
 // timeouts given, and returns its address.
 func liveServer(t *testing.T, root string, read, write time.Duration) (*Server, string, *http.Cookie) {
 	t.Helper()
+	return liveServerConfig(t, Config{Ledger: root, Machine: config.Builtin()}, read, write)
+}
+
+// liveServerConfig selects explicit prerequisites before the server accepts requests.
+// The ordinary liveServer serves the built-in machine snapshot, as newServer does, so no page opens with the
+// baseline notice the dashboard shows when the snapshot is absent (the first-screen measurements of the browser
+// matrices are taken without it); a test of the notice or of a missing snapshot selects its own here.
+func liveServerConfig(t *testing.T, cfg Config, read, write time.Duration) (*Server, string, *http.Cookie) {
+	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
-	s, err := New(Config{Ledger: root, Port: port, Token: "tok123", EventTick: 20 * time.Millisecond})
+	cfg.Port, cfg.Token, cfg.EventTick = port, "tok123", 20*time.Millisecond
+	s, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if os.Getenv("FINISH_CAPTURES") != "" {
+		machineNames(t, s)
+	}
+	s.host = "demo-workstation"
 	srv := &http.Server{Handler: s, ReadHeaderTimeout: read, ReadTimeout: read, WriteTimeout: write}
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() { _ = srv.Close() })

@@ -55,6 +55,12 @@ func TestClientLineReachesTheServerAsOneLine(t *testing.T) {
 			}
 			sent, _, ok := readCalls(f.ToServer)
 			decided, _, _ := readCalls([]byte(c.line))
+			// What is decided is the message's meaning; its raw bytes are the form it travels in.
+			for _, cs := range [][]call{sent, decided} {
+				for i := range cs {
+					cs[i].raw = nil
+				}
+			}
 			if !ok || !reflect.DeepEqual(sent, decided) {
 				t.Fatalf("the server gets %+v, the relay decided %+v", sent, decided)
 			}

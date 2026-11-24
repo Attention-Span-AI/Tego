@@ -71,9 +71,10 @@ func AgentOwn(agent, p string) bool {
 }
 
 // CommandAgent says which coding agent a command starts (agentNames), "" for any other: its program, past env's
-// assignments and flags and past the runtime that starts it.
-func CommandAgent(command string) string {
-	for _, w := range strings.Fields(command) {
+// assignments and flags and past the runtime that starts it. argv is the command as recorded, one element per
+// argument, so a program whose path holds a space is still one word (a run reads its own through Run.CommandAgent).
+func CommandAgent(argv []string) string {
+	for _, w := range argv {
 		switch path.Base(w) {
 		case "env", "node", "npx", "bun":
 			continue

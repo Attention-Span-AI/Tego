@@ -68,9 +68,10 @@ func TestLogsProcessColumn(t *testing.T) {
 	b := do(s, "GET", "/logs", "127.0.0.1:8484", c).Body.String()
 	for _, want := range []string{
 		`<th scope="col" role="columnheader" class="c-proc">Process</th>`,
-		`<a class="lq-prog" href="/logs?where=prog%3Acurl" title="Only lines of curl">curl</a>`,
-		`<a class="lq-pid mono" href="/logs?where=pid%3A10"`,
-		`<h2 class="lq-fh">Program</h2>`, `<span class="lq-l">curl</span><span class="lq-n">152</span>`,
+		`<button class="lq-prog" type="submit" form="lq-narrow" name="narrow" value="prog:curl" title="Only lines of curl">curl</button>`,
+		`<button class="lq-pid mono" type="submit" form="lq-narrow" name="narrow" value="pid:10"`,
+		`<form id="lq-narrow" class="lq-narrow" action="/logs" method="get" hidden>`,
+		`<h2 class="lq-fh">Program</h2>`, `<span class="lq-l" title="curl · prog:curl">curl</span><span class="lq-n">152</span>`,
 		`src="/static/logs.js" defer`, `id="lq-rows" data-rows="/logs/rows"`,
 	} {
 		if !strings.Contains(b, want) {
@@ -138,7 +139,7 @@ func TestLogsRowsFragments(t *testing.T) {
 	// A refusal like line 2 comes: the tail carries its group with the whole count and the group's key.
 	appendLine(t, root, progRun, line(progRun, "codex", 155, progT0.Add(155*time.Second), "net", `"verdict":"refused","rule":"net.deny[evil.example]","reason":"net-not-allowed","proto":"tcp","dst":"203.0.113.9:443","host":"evil.example"`))
 	tail = do(s, "GET", "/logs/rows?after="+url.QueryEscape(tail.Header().Get("X-Tego-After")), "127.0.0.1:8484", c)
-	if b := tail.Body.String(); len(rowSeqs(b)) != 1 || !strings.Contains(b, `data-f="`) || !strings.Contains(b, ">×2<") || tail.Header().Get("X-Tego-Rows") != "155" {
+	if b := tail.Body.String(); len(rowSeqs(b)) != 1 || !strings.Contains(b, `data-f="`) || !strings.Contains(b, "Refused ×2</span>") || tail.Header().Get("X-Tego-Rows") != "155" {
 		t.Errorf("folded tail: %v rows %q:\n%.300s", rowSeqs(b), tail.Header().Get("X-Tego-Rows"), b)
 	}
 	// A filter applies to the tail too: of the three new lines only the refusal (line 155) is refused.
@@ -247,7 +248,7 @@ func TestLogsGroups(t *testing.T) {
 	for _, by := range []string{"process", "target", "rule"} {
 		w := do(s, "GET", "/logs?group="+by+"&where=-kind:run", "127.0.0.1:8484", c)
 		b := w.Body.String()
-		if w.Code != http.StatusOK || !strings.Contains(b, `class="t t-grp"`) || !strings.Contains(b, `aria-current="page">By `+by+`<`) {
+		if w.Code != http.StatusOK || !strings.Contains(b, `class="t t-grp summary-table"`) || !strings.Contains(b, `aria-current="page">By `+by+`<`) {
 			t.Errorf("%s: %d, no groups table or switch", by, w.Code)
 			continue
 		}
@@ -291,5 +292,69 @@ func TestLogsFragmentsAccess(t *testing.T) {
 		if w := do(s, "GET", p, "127.0.0.1:8484", c); w.Code != http.StatusOK || w.Header().Get("Cache-Control") != "no-store" {
 			t.Errorf("%s: %d, Cache-Control %q", p, w.Code, w.Header().Get("Cache-Control"))
 		}
+	}
+}
+
+// TestLogsTailSeesALineThatSortsBeforeTheNewestRow: Live Logs followed the newest row's sort key (time, run, seq), so a
+// line appended to a run whose recorder lags another's, stamped earlier than the newest row on the page, never came
+// in until the page was loaded again. The page now carries an append cursor (data-tail), which names what was read,
+// not where it sorts.
+func TestLogsTailSeesALineThatSortsBeforeTheNewestRow(t *testing.T) {
+	root, _ := progFixture(t)
+	if err := os.MkdirAll(filepath.Join(root, otherRun), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, otherRun, "events.jsonl"), []byte(otherRunLine()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := newServer(t, root)
+	c := login(t, s)
+	page := do(s, "GET", "/logs", "127.0.0.1:8484", c).Body.String()
+	m := regexp.MustCompile(`data-after="([^"]+)" data-next="([^"]*)" data-tail="([^"]+)"`).FindStringSubmatch(page)
+	if m == nil {
+		t.Fatal("the rows carry no append cursor (data-tail)")
+	}
+	after, tail := m[1], m[3]
+	tailURL := func(tok string) string {
+		return "/logs/rows?after=" + url.QueryEscape(after) + "&tail=" + url.QueryEscape(tok)
+	}
+	if w := do(s, "GET", tailURL(tail), "127.0.0.1:8484", c); len(rowSeqs(w.Body.String())) != 0 || w.Header().Get("X-Tego-Tail") == "" {
+		t.Errorf("nothing was appended, yet: %q tail %q", w.Body.String(), w.Header().Get("X-Tego-Tail"))
+	}
+	// The other run's recorder lags: its next line is stamped ten seconds into progRun's story, far before the newest row.
+	appendLine(t, root, otherRun, line(otherRun, "claude", 1, progT0.Add(10*time.Second), "net", `"verdict":"allow","rule":"net[late.example:443]","proto":"tcp","dst":"198.51.100.7:443","host":"late.example"`))
+	w := do(s, "GET", tailURL(tail), "127.0.0.1:8484", c)
+	body := w.Body.String()
+	if !strings.Contains(body, `data-k="`+otherRun+`-1"`) {
+		t.Fatalf("the tail missed a line appended to a run, stamped before the newest row:\n%.400s", body)
+	}
+	if n := w.Header().Get("X-Tego-Rows"); n != "155" {
+		t.Errorf("the search has %s rows, want 155", n)
+	}
+	// The cursor moved: asking again with the new one brings nothing, and one more late line brings only itself.
+	tail = w.Header().Get("X-Tego-Tail")
+	if tail == "" {
+		t.Fatal("no new append cursor")
+	}
+	if again := do(s, "GET", tailURL(tail), "127.0.0.1:8484", c).Body.String(); strings.Contains(again, `data-k=`) {
+		t.Errorf("the same line came twice:\n%.300s", again)
+	}
+	appendLine(t, root, otherRun, line(otherRun, "claude", 2, progT0.Add(5*time.Second), "net", `"verdict":"allow","rule":"net[late.example:443]","proto":"tcp","dst":"198.51.100.7:443","host":"late.example"`))
+	if got := do(s, "GET", tailURL(tail), "127.0.0.1:8484", c).Body.String(); !strings.Contains(got, `data-k="`+otherRun+`-2"`) || strings.Contains(got, `data-k="`+otherRun+`-1"`) {
+		t.Errorf("the next late line, alone, was not brought:\n%.400s", got)
+	}
+	// A run created after the page, stamped before its newest row, is new whole.
+	const lateRun = "r-aaaaaaaa-0000000000005-latexx"
+	if err := os.MkdirAll(filepath.Join(root, lateRun), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, lateRun, "events.jsonl"), []byte(line(lateRun, "claude", 0, progT0.Add(time.Second), "net", `"verdict":"allow","rule":"net[x.example:443]","proto":"tcp","dst":"198.51.100.8:443","host":"x.example"`)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := do(s, "GET", tailURL(tail), "127.0.0.1:8484", c).Body.String(); !strings.Contains(got, `data-k="`+lateRun+`-0"`) {
+		t.Errorf("a run that began after the page was not brought:\n%.400s", got)
+	}
+	if w := do(s, "GET", "/logs/rows?tail=x", "127.0.0.1:8484", c); w.Code != http.StatusBadRequest {
+		t.Errorf("a bad append cursor: %d", w.Code)
 	}
 }

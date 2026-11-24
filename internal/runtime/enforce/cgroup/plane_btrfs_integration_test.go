@@ -17,7 +17,9 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 	"unsafe"
@@ -126,7 +128,8 @@ func btrfsImageBytes() ([]byte, error) {
 // subvolume's own anonymous device number; comparing that with the kernel superblock's s_dev would also make
 // Prepare fail. The compile columns, independent model, actual maps, kernel results and ledger must all agree.
 // The loop device and mount belong only to this fixture, normally in the disposable root-suite KVM guest.
-// root-skips.txt allows its skip in the plain build only, so every root run of the tegobpf suite runs it.
+// The tagged suite runs it wherever btrfs is available. A boot that requires btrfs must fail if it is absent;
+// other boots may skip only after the mount fails and /proc/filesystems confirms that no driver is registered.
 func TestPlaneRunBtrfsSubvolumeInodeIdentity(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("the btrfs plane fixture needs a privileged disposable VM")
@@ -262,8 +265,12 @@ func btrfsPlaneFixture(t *testing.T, p *planeProject, uid, gid int) {
 	defer cancel()
 	mount := filepath.Join(p.project, "tree")
 	if out, err := exec.CommandContext(ctx, "mount", "-t", "btrfs", "-o", "loop,nosuid,nodev", image, mount).CombinedOutput(); err != nil {
-		if fs, _ := os.ReadFile("/proc/filesystems"); !bytes.Contains(fs, []byte("\tbtrfs\n")) {
-			t.Skipf("the kernel has no btrfs (root-suites.sh's guests load it, VM_MODULES): mount: %v\n%s", err, out)
+		fs, readErr := os.ReadFile("/proc/filesystems")
+		if readErr != nil {
+			t.Fatalf("probe btrfs after mount failed (%v): %v", err, readErr)
+		}
+		if !bytes.Contains(fs, []byte("\tbtrfs\n")) && !slices.Contains(strings.Fields(os.Getenv("TEGO_CONFORMANCE_FS_REQUIRE")), "btrfs") {
+			t.Skipf("btrfs capability absent: mount failed and /proc/filesystems has no btrfs; this boot does not require that driver: %v\n%s", err, out)
 		}
 		t.Fatalf("mount the private btrfs fixture: %v\n%s", err, out)
 	}

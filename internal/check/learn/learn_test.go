@@ -356,9 +356,8 @@ func TestDangerousSocketsAreNeverAllowed(t *testing.T) {
 		{"podman", "/run/podman/podman.sock"},
 		{"containerd", "/run/containerd/containerd.sock"},
 		{"docker anywhere", "/opt/engine/docker.sock"},
-		// ADR 0113's built-in refusals refuse these in every enforcing run, so compile refuses an entry for one as a
-		// contradiction: a socket under the runtime directory (the run's own runtime directory is a new one each run),
-		// a multiplexer's or editor server's, and tego's own.
+		// These shapes may overlap the enforcing machine's built-ins. With no captured context,
+		// withhold conservatively and explain how to check there.
 		{"an unrelated socket under the runtime directory", "/run/user/1000/some-service/sock"},
 		{"a run's own runtime directory", "/run/user/1000/tego/r-1/codex/app.sock"},
 		{"tmux", "/tmp/tmux-1000/default"},
@@ -633,5 +632,38 @@ func TestRanIsOnTheMonotonicClock(t *testing.T) {
 		if p.Limits == nil || p.Limits.Wall != "1m" {
 			t.Errorf("wall clock stepped %s: limits %+v, want a wall of 1m", step, p.Limits)
 		}
+	}
+}
+
+func TestUnknownBuiltinSocketContextUsesConditionalAdvice(t *testing.T) {
+	for _, sock := range []string{"/run/user/999999/service.sock", "/elsewhere/tmux-999999/default", "/elsewhere/.screen/server", "/elsewhere/.tego/api.sock"} {
+		r := newRun(t, ws)
+		r.net("unix", "unix:"+sock)
+		p := r.propose(Options{})
+		got := p.Contract()
+		if len(entries(got, "net")) != 0 {
+			t.Fatalf("suspicious socket allowed: %s", got)
+		}
+		for _, want := range []string{"may be refused by a built-in rule", "machine where the agent runs", "tego rules check <agent.yaml>"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("missing %q: %s", want, got)
+			}
+		}
+		for _, bad := range []string{"refuses in every enforcing run", "a built-in refuses it"} {
+			if strings.Contains(got, bad) {
+				t.Errorf("uncaptured builtin context asserted: %s", got)
+			}
+		}
+	}
+}
+
+func TestRecordedBuiltinSocketRefusalRemainsAFact(t *testing.T) {
+	r := newRun(t, ws)
+	e := r.add(record.KindNet, record.VerdictRefused, record.NetPayload{Proto: "unix", Dst: "unix:/run/user/999999/service.sock"})
+	e.Rule = "builtin.host_ipc"
+	p := r.propose(Options{})
+	got := p.Contract()
+	if p.Refused != 1 || len(entries(got, "net")) != 0 || !strings.Contains(got, "1 actions the record shows refused") || strings.Contains(got, "may be refused") {
+		t.Fatalf("recorded refusal was weakened or proposed: %s", got)
 	}
 }

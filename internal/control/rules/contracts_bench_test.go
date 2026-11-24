@@ -47,7 +47,7 @@ func benchRoot(tb testing.TB, runs, contracts int) *Service {
 	for i := range runs {
 		run := fmt.Sprintf("r-%05d-bench", i)
 		p := record.RunStartPayload{Tier: "landlock", Capture: "off", ContractHash: strings.Repeat("0", 64),
-			Command: []string{"sh"}, Cwd: proj, Kernel: "6", StopGrace: "1s", RecordMinor: record.Minor}
+			Command: []string{"sh"}, Cwd: proj, Kernel: "6", StopGrace: "1s", RecordMinor: record.MinorLearn}
 		if i%10 != 9 {
 			p.ContractSource = &record.ContractSource{Path: paths[i%contracts]}
 		}

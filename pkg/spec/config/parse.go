@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"path"
 	"regexp"
 	"slices"
 	"strconv"
@@ -28,6 +29,8 @@ type field[T any] struct {
 
 // layerData is the typed content of one layer file, before merging.
 type layerData struct {
+	localRoles       field[string]
+	baseline         []baselineValue
 	servePort        field[int]
 	version          field[int]
 	tier             field[string]
@@ -50,6 +53,7 @@ type layerData struct {
 	bpfLinger        field[time.Duration]
 	ringBudget       field[ByteSize]
 	bpfPlane         field[string]
+	tomoyoFactsDir   field[string]
 	resolver         field[ResolverMode]
 	deniedResolved   field[[]netip.Prefix]
 	users            field[map[string]UserPolicy]
@@ -182,6 +186,14 @@ func (p *parser) mapping(n *yaml.Node) []keyed {
 
 func (p *parser) topLevel(d *layerData, key, v *yaml.Node) {
 	switch key.Value {
+	case "local_roles":
+		d.localRoles = p.localRoles(v)
+	case "baseline":
+		if key.Kind != yaml.ScalarNode || key.Tag != "!!str" {
+			p.errorf(key, "baseline: expected a string key")
+			return
+		}
+		p.baseline(d, v)
 	case "serve":
 		for _, kv := range p.mapping(v) {
 			if kv.name == "port" {
@@ -215,6 +227,8 @@ func (p *parser) topLevel(d *layerData, key, v *yaml.Node) {
 		p.record(d, v)
 	case "bpf":
 		p.bpf(d, v)
+	case "tomoyo":
+		p.tomoyo(d, v)
 	case "resolver":
 		d.resolver = p.resolver(v)
 	case "denied_resolved_addresses":
@@ -396,6 +410,39 @@ func (p *parser) bpf(d *layerData, v *yaml.Node) {
 			p.errorf(kv.key, "unknown key bpf.%s", kv.name)
 		}
 	}
+}
+
+// tomoyo parses tomoyo.facts_dir: a clean absolute path, never "/" and never relative (ValidFactsDir). It is read from
+// /etc/tego/config.yaml only (merge.go).
+func (p *parser) tomoyo(d *layerData, v *yaml.Node) {
+	for _, kv := range p.mapping(v) {
+		switch kv.name {
+		case "facts_dir":
+			d.tomoyoFactsDir = p.str(kv.value, "tomoyo.facts_dir")
+			if d.tomoyoFactsDir.set {
+				if why := ValidFactsDir(d.tomoyoFactsDir.value); why != "" {
+					p.errorf(kv.value, "tomoyo.facts_dir: %s", why)
+					d.tomoyoFactsDir.set = false
+				}
+			}
+		default:
+			p.errorf(kv.key, "unknown key tomoyo.%s", kv.name)
+		}
+	}
+}
+
+// ValidFactsDir says why dir cannot name TOMOYO's facts directory, or "" when it can: a clean absolute path that is not
+// the root.
+func ValidFactsDir(dir string) string {
+	switch {
+	case dir == "" || !strings.HasPrefix(dir, "/"):
+		return "must be an absolute path"
+	case dir == "/" || path.Clean(dir) != dir:
+		return "must be a clean absolute path other than /"
+	case strings.ContainsRune(dir, 0):
+		return "must not contain a NUL byte"
+	}
+	return ""
 }
 
 func (p *parser) forwarder(d *layerData, v *yaml.Node) {
@@ -609,6 +656,17 @@ func (p *parser) ranked(v *yaml.Node, key string, rank map[string]int) field[str
 	names := slices.SortedFunc(maps.Keys(rank), func(a, b string) int { return rank[a] - rank[b] })
 	p.errorf(v, "%s: %q is not %s or %s", key, f.value, Auto, strings.Join(names, ", "))
 	f.set = false
+	return f
+}
+
+// localRoles is a closed authority selector, not an automatically resolved ceiling.
+func (p *parser) localRoles(v *yaml.Node) field[string] {
+	f := field[string]{line: v.Line, col: v.Column}
+	if v.Kind != yaml.ScalarNode || v.Tag != "!!str" || (v.Value != "off" && v.Value != LocalRolesOwnerOnly) {
+		p.errorf(v, "local_roles: expected exactly the string off or owner_only")
+		return f
+	}
+	f.value, f.set = v.Value, true
 	return f
 }
 

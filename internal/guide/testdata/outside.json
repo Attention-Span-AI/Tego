@@ -21,7 +21,7 @@
       "id": "check",
       "title": "Check this machine",
       "state": "blocked",
-      "fact": "tego starts no run from a shell outside your user manager's cgroup, not even tego watch, checked 2026-11-11 09:30 UTC; a shell inside it can start one",
+      "fact": "this shell is outside your user manager's cgroup, checked 2026-11-11 09:30 UTC; run, watch and test can try a user scope",
       "source": "<root>/home/.tego/state/check.json"
     },
     {
@@ -54,15 +54,16 @@
     }
   ],
   "next": {
-    "step": "check",
-    "rule": "check-outside",
-    "text": "open a shell in your user manager's cgroup, then run tego setup there:",
-    "command": "systemd-run --user --scope bash",
+    "step": "record",
+    "rule": "record-todo",
+    "text": "record your own agent. From its folder, start it as you always do:",
+    "command": "tego watch -- \u003cthe command you start it with\u003e",
     "needs_root": false,
-    "placeholder": false
+    "placeholder": true
   },
   "not_known": [
-    "agents Tego never recorded: nothing here looks for them yet",
+    "No saved scan. Run tego scan from your project folder.",
+    "agents outside a scan's rules and sources, or activity between scans",
     "a contract in no registry (a file given by its path) that no run used"
   ]
 }

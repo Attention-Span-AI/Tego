@@ -132,12 +132,17 @@ jobs:
         run: ./scripts/install_test.sh
       - name: install.sh macOS path
         run: ./scripts/install_mac_test.sh
+      # Skips with a line where PowerShell is absent; the windows-install workflow runs it with PowerShell and the Pester suite.
+      - name: Windows installer's script tests and Python tests
+        run: ./scripts/install_windows_test.sh
       - name: coverage.sh arguments and guest harvest
         run: ./scripts/coverage_test.sh
       - name: bench-gate.sh's decision and runs (stand-ins for go and benchstat)
         run: ./scripts/bench-gate_test.sh
       - name: timing-budgets.sh's runs and decision (a stand-in for go)
         run: ./scripts/timing-budgets_test.sh
+      - name: gate-cost.sh's measurement and budget decision (a stand-in gate)
+        run: ./scripts/gate-cost_test.sh
       - name: check-spdx.sh's enumeration and header refusals, check-licenses.sh's empty listing, per-package notices and archive
         run: ./scripts/check-spdx_test.sh && ./scripts/check-licenses_test.sh
       - name: scrub-capture.sh removes the home, uid, user, host and e-mail it plants
@@ -162,7 +167,7 @@ jobs:
       - name: the kill tests' (kill test 2's request pairing included), overhead harness's and kernel matrix's own tests (kt_run's bound, kill test 4's timing, kill test 5's budget and contracts, kill test 3's cache, run.sh's ledgers and rows, matrix.sh, root-suites.sh's copy)
         run: >
           ./test/e2e/lib_test.sh && ./test/e2e/pydeps_test.sh && ./test/e2e/kt4_test.sh && ./test/e2e/kt5_test.sh && ./test/e2e/kt2_pairs_test.sh && ./test/e2e/m0_demo_test.sh && ./test/e2e/overhead/kt3_test.sh && ./test/e2e/overhead/bench_test.sh &&
-          ./test/e2e/overhead/run_test.sh && ./test/vm/matrix_test.sh && ./test/vm/root-suites_test.sh
+          ./test/e2e/overhead/run_test.sh && ./test/vm/matrix_test.sh && ./test/vm/capture-stack_test.sh && ./test/vm/root-suites_test.sh && ./test/vm/host-facts_test.sh
       # The suites that put a process in a run cgroup run inside the runner user's systemd user manager, where an
       # unprivileged tego run can place its agent. A step runs in the runner's own service, outside that subtree,
       # and from there the kernel refuses every placement, so those tests would
@@ -194,7 +199,7 @@ jobs:
       # this tag, so no other step runs them. In the runner user's systemd manager, as the unit step: run tests
       # need its delegated cgroup subtree, and a step's own shell leaves descriptors open past the standard three.
       - name: unit (-tags tegotesthooks)
-        run: ./scripts/in-user-manager.sh go test -count=1 -tags tegotesthooks ./internal/bpf/ ./internal/cli/ ./internal/platform/sys/ ./internal/runtime/enforce/ ./internal/runtime/enforce/landlock/
+        run: ./scripts/in-user-manager.sh go test -count=1 -tags tegotesthooks ./cmd/tego/ ./internal/bpf/ ./internal/cli/ ./internal/platform/peer/ ./internal/platform/sys/ ./internal/runtime/ ./internal/runtime/enforce/ ./internal/runtime/enforce/landlock/ ./internal/selftest/
       - name: p0 example compiles clean
         run: go build -o /tmp/tego-ci ./cmd/tego && dir=$(mktemp -d) && mkdir -p "$dir/config" "$dir/out" && cp spec/agent/v0/example.p0.retriever.yaml "$dir/agent.yaml" && (cd "$dir" && /tmp/tego-ci compile agent.yaml --offline)
       # Every package's integration tests, unprivileged: this step named four trees by hand (pkg, enforce,
@@ -743,7 +748,7 @@ jobs:
     #
     # One job took 91 minutes (run 41706261848), the whole run's wall clock, 48 of them enforce/cgroup's
     # tegobpf suite. So the suites run as the shards of test/vm/suites.sh's ROOT_SHARDS, one runner each (VM_SHARD):
-    # enforce/cgroup's two suites in four parts of their tests, internal/runtime's, test/conformance's, and every other
+    # enforce/cgroup's two suites in six parts of their tests (ROOT_SPLITS), internal/runtime's, test/conformance's, and every other
     # package's in the last; the matrix lists the plan's names, in its order, as root-suites_test.sh checks. The job
     # named root-suites, below, is the one the main ruleset requires: it holds every shard to have passed and runs
     # the must-pass gate over all their logs.
@@ -754,15 +759,15 @@ jobs:
     # first-time contributor. root-suites, below, runs on the same events.
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    # enforce/cgroup has 50 minutes (VM_SUITE_TIMEOUT below) in each of its two builds: a quarter of its tests took
-    # 12.4-14 minutes of both builds together on that run, and its whole tegobpf suite took 2517-3765 s in KVM guests on a
+    # enforce/cgroup has 50 minutes (VM_SUITE_TIMEOUT below) in each of its two builds: a part of its tests (a sixth)
+    # takes at most 22 minutes of both builds together on the guest numbers of 2026-11-19, and its whole tegobpf suite took 2517-3765 s in KVM guests on a
     # loaded host. The other shards' suites have 25 minutes each, as before, so a suite that runs to its own bound
     # is reported by root-suites.sh with its log, never cut off by the job's.
     timeout-minutes: 120
     strategy:
       fail-fast: false # every shard's verdict, as the one job gave every suite's
       matrix:
-        shard: [cgroup-1, cgroup-2, cgroup-3, cgroup-4, runtime, conformance, rest]
+        shard: [cgroup-1, cgroup-2, cgroup-3, cgroup-4, cgroup-5, cgroup-6, runtime, conformance, rest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1037,3 +1042,33 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
           path: ${{ runner.temp }}/deadcode/
+
+  chrome-tests:
+    # The dashboard in a real browser (go test -tags chrome): nothing else compiles those tests. scripts/chrome-tests.sh
+    # selects them, fails on any skip, and fails when there is no browser: a runner image without google-chrome is a red
+    # job here, never a green one that tested nothing. The eleven matrix tests it leaves out by default (about 40 minutes
+    # between them on the development box) run with --full (TEGO_PRECOMMIT_CHROME=full in the private gate), not in this job.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      # The module downloads first, retried: a stream error from proxy.golang.org once failed a job mid-build
+      # (bpf-gen); every later go command then reads the module cache.
+      - name: download the modules, retried
+        shell: bash
+        run: for i in 1 2 3; do go mod download && exit 0; echo "go mod download failed (try $i), retrying" >&2; sleep $((i * 15)); done; exit 1
+      # Ubuntu 24.04 stops an unprivileged process from making the user namespace that Chrome's sandbox needs, unless the
+      # browser has an AppArmor profile of its own. The browser's sandbox is left on (the tests do not pass --no-sandbox):
+      # the setting is lifted for this job's machine only, and the version is printed so a log shows which browser ran.
+      - name: google-chrome, with its sandbox
+        shell: bash
+        run: |
+          google-chrome --version
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: browser tests (-tags chrome)
+        run: ./scripts/chrome-tests.sh

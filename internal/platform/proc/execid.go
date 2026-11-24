@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+//go:build !windows
+
 package proc
 
 import "github.com/attention-span-ai/tego/pkg/spec/identity"

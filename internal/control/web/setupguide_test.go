@@ -25,7 +25,7 @@ func guideServer(t *testing.T, f *guidetest.Fixture) *Server {
 	t.Helper()
 	s, err := New(Config{Ledger: f.Ledger, Anchor: f.Anchor, Machine: f.Machine(t), Port: port, Token: "tok123",
 		Now: func() time.Time { return guidetest.CheckTime.Add(time.Hour) },
-		Guide: func() guide.Inputs {
+		Guide: func(context.Context) guide.Inputs {
 			in := f.Inputs(t)
 			in.Dir = ""
 			return in
@@ -56,7 +56,7 @@ func readGuide(t *testing.T, page string) pageGuide {
 	var root *html.Node
 	walk(parseHTML(t, "overview", page), func(n *html.Node) {
 		if c, _ := attr(n, "class"); root == nil && (n.Data == "section" || n.Data == "details") && hasClass(c, "gd") {
-			root, g.Found, g.Folded = n, true, n.Data == "details"
+			root, g.Found, g.Folded = n, true, hasClass(c, "gd-fold")
 		}
 	})
 	if root == nil {
@@ -133,7 +133,7 @@ func TestOverviewGuideParityWithSetup(t *testing.T) {
 			}
 			ww := want.Words(f.Home)
 			s := guideServer(t, f)
-			page := get(t, s, login(t, s), "/")
+			page := get(t, s, login(t, s), "/overview")
 			got := readGuide(t, page)
 			if !got.Found {
 				t.Fatalf("the Overview shows no guide:\n%s", page)
@@ -190,7 +190,7 @@ func TestOverviewGuideNotCheckedSinceBoot(t *testing.T) {
 				}
 			}
 			s := guideServer(t, f)
-			page := get(t, s, login(t, s), "/")
+			page := get(t, s, login(t, s), "/overview")
 			g := readGuide(t, page)
 			if len(g.Steps) != 6 || g.Steps[1].State != guide.Todo || !strings.HasPrefix(g.Steps[1].Fact, "not checked since this machine started") {
 				t.Fatalf("the check step is %+v", g.Steps)
@@ -221,7 +221,7 @@ func TestOverviewGuideEscapesAHostileFact(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := guideServer(t, f)
-	page := get(t, s, login(t, s), "/")
+	page := get(t, s, login(t, s), "/overview")
 	for _, bad := range []string{"<script>alert(1)", "<img src=x", `onerror=alert(2)>`} {
 		if strings.Contains(page, bad) {
 			t.Errorf("the page carries %q unescaped", bad)
@@ -259,11 +259,9 @@ func TestOverviewGuideCopiesOnlyACommandTheGuideBuilt(t *testing.T) {
 	}
 }
 
-// TestOverviewGuideOutlivesACancelledRequest: the guide is shared by every viewer for guideTTL, so a request that ends
-// before its page is written (the viewer leaves, the live refresh is cut short) must not decide what the next viewer
-// sees. Before the fix, one cancelled GET / left the finished machine's guide saying the contract "does not compile:
-// context canceled" and the record not known, for every viewer, for 15 s.
-func TestOverviewGuideOutlivesACancelledRequest(t *testing.T) {
+// TestOverviewGuideDoesNotCacheACancelledRequest: a cancelled viewer leaves no
+// partial guide in the memo for later viewers.
+func TestOverviewGuideDoesNotCacheACancelledRequest(t *testing.T) {
 	f := guidetest.Make(t, guidetest.Finished)
 	if err := guide.StoreCheck(f.Home, f.Probe); err != nil {
 		t.Fatal(err)
@@ -277,7 +275,7 @@ func TestOverviewGuideOutlivesACancelledRequest(t *testing.T) {
 	r.AddCookie(c)
 	s.ServeHTTP(httptest.NewRecorder(), r)
 	for _, who := range []string{"the next viewer", "the one after"} {
-		g := readGuide(t, get(t, s, c, "/"))
+		g := readGuide(t, get(t, s, c, "/overview"))
 		if g.Rule != guide.RuleEnforceDone || !g.Folded {
 			t.Errorf("%s sees next rule %q (folded %t), want %q: %+v", who, g.Rule, g.Folded, guide.RuleEnforceDone, g.Steps)
 		}
@@ -295,18 +293,18 @@ func TestOverviewGuideKeepsNoGuideThatRanOut(t *testing.T) {
 	c := login(t, s)
 	was := guideCompute
 	guideCompute = time.Nanosecond
-	short := readGuide(t, get(t, s, c, "/"))
+	short := readGuide(t, get(t, s, c, "/overview"))
 	guideCompute = was
 	if short.Rule == guide.RuleEnforceDone {
 		t.Fatal("a guide computed with no time left still finished: this test shows nothing")
 	}
-	if g := readGuide(t, get(t, s, c, "/")); g.Rule != guide.RuleEnforceDone {
+	if g := readGuide(t, get(t, s, c, "/overview")); g.Rule != guide.RuleEnforceDone {
 		t.Errorf("after a guide that ran out, the next viewer sees next rule %q, want %q", g.Rule, guide.RuleEnforceDone)
 	}
 }
 
 // TestEmptyOverviewKeepsTheAnyAgentStep: the empty Overview tego-control serves (with its guide) shows the stored
-// verdict and the one next step, and also, unfolded, the first step for any agent (tego watch, which records and
+// verdict and the one next step, and also the recoverable first step for any agent (tego watch, which records and
 // refuses nothing), as the design's first dashboard item asks. When the guide's own next step is that step
 // (record-todo), it is not shown twice.
 func TestEmptyOverviewKeepsTheAnyAgentStep(t *testing.T) {
@@ -328,7 +326,7 @@ func TestEmptyOverviewKeepsTheAnyAgentStep(t *testing.T) {
 				}
 			}
 			s := guideServer(t, f)
-			body := get(t, s, login(t, s), "/")
+			body := get(t, s, login(t, s), "/overview")
 			if g := readGuide(t, body); g.Rule != c.rule || g.Folded {
 				t.Fatalf("the guide's next rule is %q (folded %t), want %q unfolded", g.Rule, g.Folded, c.rule)
 			}
@@ -365,7 +363,7 @@ func TestOverviewGuideSeesAReinstalledTegoAtOnce(t *testing.T) {
 	build := ""
 	s, err := New(Config{Ledger: f.Ledger, Anchor: f.Anchor, Machine: f.Machine(t), Port: port, Token: "tok123",
 		Now: func() time.Time { return guidetest.CheckTime.Add(time.Hour) },
-		Guide: func() guide.Inputs {
+		Guide: func(context.Context) guide.Inputs {
 			in := f.Inputs(t)
 			in.Dir = ""
 			if build != "" {
@@ -378,11 +376,11 @@ func TestOverviewGuideSeesAReinstalledTegoAtOnce(t *testing.T) {
 	}
 	trustPeer(s)
 	c := login(t, s)
-	if g := readGuide(t, get(t, s, c, "/")); g.Rule != guide.RuleEnforceDone {
+	if g := readGuide(t, get(t, s, c, "/overview")); g.Rule != guide.RuleEnforceDone {
 		t.Fatalf("before the reinstall the next rule is %q, want %q", g.Rule, guide.RuleEnforceDone)
 	}
 	build = "tego=v0.0.0-fixture commit=f1x7ure exe=1:2:3:4.000000005"
-	g := readGuide(t, get(t, s, c, "/"))
+	g := readGuide(t, get(t, s, c, "/overview"))
 	if g.Rule != guide.RuleCheckTodo || len(g.Steps) < 2 || g.Steps[1].State != guide.Todo {
 		t.Errorf("after the reinstall the next rule is %q, check step %+v: want %q, not the other build's check",
 			g.Rule, g.Steps, guide.RuleCheckTodo)

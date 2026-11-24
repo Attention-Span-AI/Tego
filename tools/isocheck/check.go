@@ -44,10 +44,6 @@ var shellExempt = []string{
 	"test/vm/",
 	// this tool's own fixtures.
 	"tools/isocheck/",
-	// the demo kit's demo.sh is a presenter's script: it runs the presenter's own tego on purpose, with their
-	// own ~/.tego and XDG_RUNTIME_DIR. Its test (examples/demo/demo_test.go) runs it under an isolated config
-	// and a tegotesthooks build.
-	"examples/demo/",
 	// the supply-chain demo's demo.sh is the same kind of script, for the same reason: the presenter's own tego, with
 	// their ~/.tego chain log, on purpose. Its tests (examples/supply-chain-demo/demo_test.go) run it under a
 	// tegotesthooks build, a config, a ledger, a HOME and an XDG_RUNTIME_DIR of their own.
@@ -60,6 +56,67 @@ var shellExempt = []string{
 	// sudo for run, lift, restore and proof (Adjustable needs tier cgroup), with a config and ledger of its own but the
 	// presenter's chain log and runtime directory, on purpose. No test runs it; its rehearsal is in its README.
 	"examples/live-modes-demo/",
+}
+
+// shellExemptFiles are single scripts the shell rules leave alone, and why. The CI receipt action's entry scripts
+// (ADR 0143) run on a CI runner as the job's user and start the release binary the action downloaded ($DIR/bin/tego)
+// with the job's own ~/.tego, on purpose, as the container entrypoint does. Only these reviewed files are exempt: any
+// other script under action/ is read by every shell rule.
+var shellExemptFiles = map[string]bool{
+	"action/scripts/agent.sh":   true,
+	"action/scripts/collect.sh": true,
+	"action/scripts/prepare.sh": true,
+	"action/scripts/verify.sh":  true,
+	"action/scripts/launch.py":  true,
+	// Product, not a harness: Tego's Windows entry runs inside Tego's own WSL distribution and starts the person's
+	// installed tego for them (scripts/install.sh is the same kind of file).
+	"scripts/windows-entry.py": true,
+	// A release-shaped fixture for the Windows guests: it builds the Windows tego.exe and the Linux assets that only
+	// run inside a guest, never on the build host (its header says so); test/vm/service-install-mirror.sh, which it
+	// calls, is itself checked.
+	"scripts/windows-release-fixture.sh": true,
+}
+
+// shellAllowedLines are exact physical lines of otherwise checked scripts to omit before searching for findings (each
+// line its own reviewed entry).
+// action/test/security-tests.py hands this TEGO_CONFIG value to stub scripts only, to show the caller's value does
+// not win; nothing in that test runs Tego. Modified lines and other config assignments are still checked.
+var shellAllowedLines = map[string][]string{
+	// The demo kit (examples/demo) is read by every rule like any other script, but for the exact lines below. Its
+	// demo.sh is a presenter's script: these lines start the presenter's own tego, or name the user manager's runtime
+	// directory for systemd, on purpose, with their own ~/.tego and XDG_RUNTIME_DIR (C233; the whole folder
+	// was exempt before). Its tests (examples/demo) run it under an isolated config and a tegotesthooks build. A new
+	// line of that kind is a finding until someone reviews it and adds it here.
+	"examples/demo/demo.sh": {
+		"  command -v \"$CONTROL\" >/dev/null 2>&1 || die \"tego-control is not on PATH. Build it (go build -o bin/tego-control ./cmd/tego-control) and put bin/ on PATH\"",
+		"  piped \"cd '$PROJECT' && '$TEGO' run agent.yaml </dev/null 2>&1\" \"tee '$STAGE/run.out' | grep -v -E '^(warning|note|  fix:)|no price table'\" ||",
+		"    die \"the run failed (tego run exited $?): see its message above\"",
+		"    show \"cd '$STAGE/claude-code' && '$TEGO' run '$STAGE/claude-code.yaml' -- claude$(qargs \"$@\")\"",
+		"    show \"cd '$STAGE/claude-code' && '$TEGO' run '$STAGE/claude-code.yaml'\"",
+		"    show \"cd '$STAGE/codex' && '$TEGO' run '$STAGE/codex.yaml' -- codex --no-daemon$(qargs \"$@\")\"",
+		"    show \"cd '$STAGE/codex' && '$TEGO' run '$STAGE/codex.yaml'\"",
+	},
+	"examples/demo/scenes/features.sh": {
+		"  show \"cd '$PROJECT' && '$TEGO' run '$STAGE/c/$1.yaml' </dev/null 2>&1 | grep -v -E '^(warning|note|  fix:)|no price table'\" || true",
+		"  [ -n \"$run\" ] && id=$(\"$TEGO\" ask \"$run\" 2>/dev/null | grep -oE 'q-[0-9a-f]{32}' | head -n 1 || true)",
+		"    '$TEGO' run '$cc/agent.yaml' -- claude -p --permission-mode bypassPermissions --script '$cc/script.json' --result '$ws/work/result.json' 'Tidy up my shell profile.' 2>&1 | grep -v -E '^(warning|note|  fix:)|no price table'\" || true",
+		"  show \"cd '$PROJECT' && '$TEGO' compile agent.yaml 2>&1 | grep -E '^(tier|record|fs|exec|net) ' | cut -c1-160\"",
+		"  show \"cd '$PROJECT' && '$TEGO' run agent.yaml </dev/null 2>&1 | grep -v -E '^(warning|note|  fix:)|no price table'\" || true",
+	},
+	"examples/demo/scenes/network.sh": {
+		"  show \"cd '$PROJECT' && '$TEGO' run network.yaml </dev/null 2>&1 | grep -v -E '^(warning|note|  fix:)|no price table'\"",
+	},
+	"examples/demo/scenes/tiers.sh": {
+		"  say \"Tiers: what this machine can enforce (tego doctor, short)\"",
+		"  if piped \"cd '$PROJECT' && '$TEGO' run --tier landlock agent.yaml </dev/null 2>&1\" \"$filter\"; then",
+	},
+	"action/test/security-tests.py": {"                   GITHUB_RUN_ID='42', GITHUB_RUN_ATTEMPT='1', TEGO_CONFIG='caller-config-must-not-win',"},
+	// scripts/windows_entry_test.py replaces os.execv and subprocess.run and points Path.home at a temporary folder:
+	// this line compares the argv a stub recorded and runs nothing.
+	"scripts/windows_entry_test.py": {
+		"                        execute.assert_called_once_with(str(home/'.local/bin/tego'), ['tego', 'dashboard-relay', want])",
+		"                    self.assertEqual(seen['argv'], ['tego', 'dashboard'])",
+	},
 }
 
 // shellChecked are the scripts under a shellExempt prefix that the shell rules still read: root-suites.sh, whose
@@ -124,6 +181,9 @@ func check(root string) ([]finding, error) {
 					return err
 				}
 				out = append(out, fnd...)
+			}
+			if shellExemptFiles[rel] {
+				return nil
 			}
 			for _, p := range shellExempt {
 				if strings.HasPrefix(rel, p) && !shellChecked[rel] {
@@ -707,7 +767,10 @@ var (
 	// `test` starts tego runs of its own; `route` writes a running run's model-routes.json under ledger_root.
 	// `rules` reads a run's ledger, anchor and contract for the terminal rules view. `setup` reads the ledger and the
 	// chain anchor to verify the runs it names, reads the agent registries, and writes ~/.tego/state/check.json.
-	subcommands = `(?:run|watch|gc|stop|events|status|ask|approve|deny|alternate|doctor|drift|learn|adopt|agents|measure|receipt|detect|compile|rule|rules|block|unblock|pause|resume|lift|grant|restore|test|dns|init|serve|control|inbox|people|role|access|whoami|alert|mcp|vault|route|setup|start|dashboard|session|machine)`
+	// `scan` reads live run records and writes ~/.tego/scan/last.json.
+	// `uninstall` removes the invoking user's own ~/.tego (records, chain anchor, own log) and ~/.config/tego when told to, and
+	// stops that user's units, so a harness that runs the real one removes what it must never touch.
+	subcommands = `(?:run|watch|gc|stop|events|status|ask|approve|deny|alternate|doctor|drift|learn|adopt|agents|measure|receipt|detect|compile|contracts|rule|rules|block|unblock|pause|resume|lift|grant|restore|test|dns|init|serve|control|inbox|people|role|access|whoami|alert|mcp|vault|route|setup|scan|start|dashboard|dashboard-relay|session|machine|uninstall)`
 	// launches are the subcommands that start a run (agents with --adopt): each launch makes <XDG_RUNTIME_DIR>/tego
 	// and first removes the directories there whose launcher's lock is free (SH-7).
 	launches = `(?:run|watch|adopt|agents)`
@@ -1017,16 +1080,21 @@ func inheritedRuntimeDirLine(lines []string, py bool) int {
 // sh5ExemptLine permits only the reviewed logical lines that run the product in the VM or inspect printed
 // installer output. Exact text keeps an appended command, or any later host invocation, subject to SH-5.
 func sh5ExemptLine(rel, line string) bool {
-	var allowed string
+	var allowed []string
 	switch rel {
 	case "scripts/install.sh":
-		allowed = `limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet env TEGO_ON_MAC=1 "\$HOME/.local/bin/tego" dashboard' || exit \$?`
+		allowed = []string{`limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet env TEGO_ON_MAC=1 "\$HOME/.local/bin/tego" dashboard' || exit \$?`}
 	case "scripts/install_mac_test.sh":
-		allowed = `check "second run: nothing to redo" 0 "✓ Lima 2.3.0" "✓ Tego's VM is running" "✓ tego command is up to date" "tego start"`
+		allowed = []string{
+			`check "second run: nothing to redo" 0 "✓ Lima 2.3.0" "✓ Tego's VM is running" "✓ tego command is up to date" "tego start"`,
+			// The generated Mac command's uninstall, run with env -i against stand-ins for limactl and ssh in a home of its own:
+			// the shell script it is never reaches a tego binary.
+			`sh "$ue_cmd" uninstall $un_args </dev/null >"$tmp/out" 2>&1 || code=$?`,
+		}
 	default:
 		return false
 	}
-	return strings.TrimSpace(line) == allowed
+	return slices.Contains(allowed, strings.TrimSpace(line))
 }
 
 // checkScript applies SH-1 to SH-7 to one shell or Python script.
@@ -1035,10 +1103,12 @@ func checkScript(path, rel string) ([]finding, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Comment lines carry neither an assignment nor an isolation: they are removed, keeping the line numbers.
+	// Blank comments and the exact reviewed line before searching, so an exempt first assignment cannot hide a
+	// later unsafe assignment. Keep every physical line slot for diagnostics.
 	lines := strings.Split(string(raw), "\n")
+	allowed := shellAllowedLines[rel]
 	for i, l := range lines {
-		if strings.HasPrefix(strings.TrimSpace(l), "#") {
+		if strings.HasPrefix(strings.TrimSpace(l), "#") || slices.Contains(allowed, l) {
 			lines[i] = ""
 		}
 	}

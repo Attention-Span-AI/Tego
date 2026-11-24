@@ -3,96 +3,126 @@
 package receipt
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
 	"strings"
+	"sync"
 
 	"github.com/attention-span-ai/tego/internal/buildinfo"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// BindingVersion is binding.v, the shape of the binding block this tego writes and reads. A check cannot check a
-// binding of a version it does not read.
-const BindingVersion = 1
-
-// MadeBy names the tego that made a receipt (binding.receipt_by) or checked one (checked_by), by its version and commit
-// as `tego version` prints them.
-type MadeBy struct {
-	TegoVersion string `json:"tego_version"`
-	Commit      string `json:"commit"`
-}
-
 // Exact reports whether m names one build: a version and a commit, neither unknown nor marked "+dirty" (a tree no
 // commit names). Two builds that are not exact cannot be told apart, so a check never takes one for the other.
-func (m MadeBy) Exact() bool {
+func Exact(m MadeBy) bool {
 	unknown := func(s string) bool { return s == "" || s == buildinfo.None }
 	return !unknown(m.TegoVersion) && !unknown(m.Commit) && !strings.Contains(m.TegoVersion, "+dirty")
 }
 
-// Binding ties a receipt to the record it was computed from, so a copy of the receipt can be checked against a copy of
-// the record on any machine (`tego receipt --check`). It binds; it vouches for nothing: Limits says what it rests on.
-// Only `tego receipt --json` sets it (Options.Bind).
-type Binding struct {
-	V int `json:"v"`
-	// Chain is the record as the receipt's own pass read it; nil when the chain did not hold, with Error saying why.
-	Chain *BoundChain `json:"chain,omitempty"`
-	// ReceiptBy is the tego that computed the receipt: a check compares numbers only when it is the same build.
-	ReceiptBy MadeBy `json:"receipt_by"`
-	// Limits is a fixed list of codes (the Limit constants), each with its words.
-	Limits []Limit `json:"limits"`
-	// Error is why no chain is bound: a line that breaks the chain or fails validation, with its number.
-	Error string `json:"error,omitempty"`
+// ExecutableSHA256 hashes the running Linux image, including after its pathname was replaced.
+// It never resolves a workspace executable through PATH.
+func ExecutableSHA256() (string, error) { return executableSHA256() }
+
+var executableSHA256 = sync.OnceValues(func() (string, error) {
+	f, err := os.Open("/proc/self/exe")
+	if err != nil {
+		return "", fmt.Errorf("receipt producer image: %w", err)
+	}
+	defer func() { _ = f.Close() }() // read-only descriptor
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", fmt.Errorf("receipt producer image: %w", err)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+})
+
+// payloadDigest uses sorted JSON object keys, preserves array order and number spellings,
+// escapes strings as encoding/json.Marshal does, and adds no whitespace or newline.
+func payloadDigest(m map[string]any) (string, error) {
+	b, ok := m["binding"].(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("binding: expected an object")
+	}
+	old, present := b["receipt_sha256"]
+	delete(b, "receipt_sha256")
+	defer func() {
+		if present {
+			b["receipt_sha256"] = old
+		}
+	}()
+	data, err := json.Marshal(m)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
 }
 
-// BoundChain is the record a receipt was computed from: the run every line names, how many complete lines chained,
-// the last one's id (head) and whether it is run_end, as `tego events --verify` counts them; and the size and sha256
-// of every byte read (each complete line with its "\n" when it has one, then a torn tail), so for a record at rest
-// sha256 is what sha256sum prints for events.jsonl.
-type BoundChain struct {
-	Run        string `json:"run"`
-	Lines      uint64 `json:"lines"`
-	Head       string `json:"head"`
-	Ended      bool   `json:"ended"`
-	Bytes      int64  `json:"bytes"`
-	SHA256     string `json:"sha256"`
-	TornBytes  int    `json:"torn_bytes"`
-	NewerLines int    `json:"newer_lines"`
+func (rc *Receipt) seal() error {
+	if rc.Binding == nil || rc.Binding.V == 1 {
+		return nil
+	}
+	data, err := json.Marshal(rc)
+	if err != nil {
+		return err
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	var m map[string]any
+	if err := dec.Decode(&m); err != nil {
+		return err
+	}
+	rc.Binding.ReceiptSHA256, err = payloadDigest(m)
+	return err
 }
 
-// Limit is one thing a bound receipt and its check rest on, as a code a program can match and words a person reads.
-type Limit struct {
-	Code string `json:"code"`
-	Why  string `json:"why"`
+func lowerSHA256(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
 }
-
-// The limit codes. A code never changes; its words may.
-const (
-	// LimitLaunchingUser: the user who started the run can rewrite the record and the receipt together (always).
-	LimitLaunchingUser = "launching-user-can-rewrite"
-	// LimitRecordOnly: the run was watched (tier observe), so the agent itself could rewrite the record.
-	LimitRecordOnly = "record-only"
-	// LimitTailNotSynced: lines are not synced to disk during the run (always).
-	LimitTailNotSynced = "tail-not-synced"
-	// LimitNoSignature: no key vouches for the receipt or the record (always, until one does).
-	LimitNoSignature = "no-signature"
-)
 
 // limitsFor is the limits of a run at tier: the three that hold for every run, and record-only for a watched one.
 func limitsFor(tier string) []Limit {
-	l := []Limit{{LimitLaunchingUser, "the user who started the run can rewrite this record and its receipt together, " +
+	l := []Limit{{Code: LimitLaunchingUser, Why: "the user who started the run can rewrite this record and its receipt together, " +
 		"so a pair that matches can still have been made up"}}
 	if tier == string(backend.TierObserve) {
-		l = append(l, Limit{LimitRecordOnly, "the run was watched, not enforced: the agent itself could rewrite this record"})
+		l = append(l, Limit{Code: LimitRecordOnly, Why: "the run was watched, not enforced: the agent itself could rewrite this record"})
 	}
 	return append(l,
-		Limit{LimitTailNotSynced, "lines are not synced to disk during the run, so a crash can lose the last ones and " +
+		Limit{Code: LimitTailNotSynced, Why: "lines are not synced to disk during the run, so a crash can lose the last ones and " +
 			"nothing counts them"},
-		Limit{LimitNoSignature, "no key vouches for this receipt or its record: the binding says which record the " +
+		Limit{Code: LimitNoSignature, Why: "no key vouches for this receipt or its record: the binding says which record the " +
 			"receipt was computed from, not who made either"})
+}
+
+func limitsForBinding(tier string, version int) []Limit {
+	l := limitsFor(tier)
+	if version >= 2 {
+		for i := range l {
+			if l[i].Code == LimitNoSignature {
+				l[i].Why = "This JSON carries no signature. A CI signature is a detached bundle checked separately."
+			}
+		}
+	}
+	return l
 }
 
 // bindingOf is the binding of a receipt computed by by over the pass bd bound.
 func bindingOf(bd ledger.Bound, by MadeBy, tier string) *Binding {
-	b := &Binding{V: BindingVersion, ReceiptBy: by, Limits: limitsFor(tier)}
+	b := &Binding{V: BindingVersion, ReceiptBy: by, Limits: limitsForBinding(tier, BindingVersion)}
 	if bd.Err != nil {
 		b.Error = bd.Err.Error()
 		return b

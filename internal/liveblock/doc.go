@@ -5,6 +5,9 @@
 // top of the contract. It holds the overlay file's format and its one writer (Update, under a lock file, by an atomic
 // rename in the run directory), the engine's reader (Read, Signature), and the compiled form the supervisor matches
 // at decision time (Set).
+// Update checks cancellation before path work, after its callback and before the final rename. A request which
+// expires during a read or callback cannot later commit a new overlay. A kernel rename already submitted can still
+// have an uncertain outcome; cancellation cannot roll it back.
 //
 // Live blocks only tighten. An entry refuses what it names; removing it removes only what it added, so nothing a
 // contract refuses is ever allowed by this package. At tier landlock a running process's Landlock domain can be made
@@ -23,7 +26,9 @@
 // The overlay also carries the run's pause and resume (OpPause, OpResume, Overlay.Paused), which the launcher applies
 // to the run's cgroup. A block or an unblock may carry a time limit (ADR 0125 decision 4, clock.go): it ends by itself
 // at that instant, judged on the wall clock and on CLOCK_BOOTTIME, so a clock step never lengthens a loosening or
-// shortens a narrowing. An Adjustable run's overlay also carries lift and restore requests for its fence entries
+// shortens a narrowing. The write that sets a block's limit keeps its BOOTTIME pin and the boot it was read in with
+// the entry (Entry.Boot, Entry.UntilBoot), so the launcher and every later writer end the block by the same two
+// readings (Update, dropEnded; ADR 0125 amendment 2026-11-18). An Adjustable run's overlay also carries lift and restore requests for its fence entries
 // (lift.go); a lift is MAC'ed under the run's own key, and the launcher alone decides what takes effect. Encode writes
 // the lowest version that holds the content, so an overlay with neither is byte for byte the version 1 file. A
 // launcher marks in the run directory what it reads beyond version 1 (MarkControl: a pause; MarkReal: a real path;

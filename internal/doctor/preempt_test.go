@@ -293,13 +293,7 @@ func TestFmodRetAdmittedNowReadsAfresh(t *testing.T) {
 	if env, why := fmodRetAdmittedNow("", lsm); why != "" || !env.PreemptWaived {
 		t.Errorf("full under the waiver: %+v, %q", env, why)
 	}
-	if why := FmodRetRefusedNow(); why != "" {
-		t.Errorf("FmodRetRefusedNow under the waiver: %q", why)
-	}
-	planePreemptWaived = false
-	if why := FmodRetRefusedNow(); !strings.Contains(why, "preemption full") {
-		t.Errorf("FmodRetRefusedNow: %q", why)
-	}
+
 }
 
 // TestReadPreemptLiveNeedsUname: the live reading takes a fixed build's config only with uname -v beside it, which
@@ -324,5 +318,25 @@ func TestReadPreemptLiveNeedsUname(t *testing.T) {
 	unameVersion = func() (string, error) { return "", errors.New("uname: operation not permitted") }
 	if m, src := readPreemptLive("r"); m != "" || !strings.Contains(src, "uname -v could not be read") {
 		t.Errorf("a voluntary config with uname failing: %q from %q, want no model", m, src)
+	}
+}
+
+// A prepared selection keeps its mode but never its earlier live admission
+// answer. Full or unreadable preemption refuses even if selection was voluntary.
+func TestPreparedPlaneAdmissionReadsLivePreemption(t *testing.T) {
+	noPreemptWaiver(t)
+	stubPreempt(t, preemptVoluntary, "selected fixture")
+	r := &Report{Kernel: "fixture", LSM: LSMState{Source: LSMSourceNone}}
+	check := r.planeAdmission(bpfobj.PlaneFmodRet)
+	if err := check(); err != nil {
+		t.Fatalf("voluntary selection: %v", err)
+	}
+	for _, model := range []string{preemptFull, ""} {
+		t.Run(model, func(t *testing.T) {
+			readPreempt = func(string) (string, string) { return model, "changed fixture" }
+			if err := check(); err == nil || !strings.Contains(err.Error(), "changed fixture") {
+				t.Fatalf("prepared mode trusted old admission for %q: %v", model, err)
+			}
+		})
 	}
 }

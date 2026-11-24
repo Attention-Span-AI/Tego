@@ -1,0 +1,18 @@
+[Unit]
+Description=Spice guest session agent
+Documentation=man:spice-vdagent(1)
+
+# Only run whenever the system daemon is running, since this
+# service isn't useful on its own
+ConditionPathExists=/run/spice-vdagentd/spice-vdagent-sock
+
+# Ensure display server is already running
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/spice-vdagent -x
+
+# spice-vdagent logs via syslog() and to stderr, causing duplicated
+# logs. Instead of sending stderr to the journal, disconnect it
+StandardError=null

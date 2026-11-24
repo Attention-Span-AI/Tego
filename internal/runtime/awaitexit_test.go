@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -166,4 +167,79 @@ func TestAwaitExitEndsWhatTheMainProcessLeftRunning(t *testing.T) {
 			t.Errorf("%d kills within 3 x stop_grace under keep_descendants, want none", kills)
 		}
 	})
+}
+
+// vanishingCgroups is the race of a run whose stop path escalated: the stop's own cgroup.kill is written as the
+// stop_grace of the signal handler ends, a few milliseconds before the grace endWithMain times from the main
+// process's exit does, so the tree empties while endWithMain's wait still sees it populated and is read again only
+// after its deadline. WaitEmpty here waits out its ctx, empties the procs file the moment the ctx ends, and
+// answers the ctx error, as cgroup.FS.WaitEmpty does when the deadline wins by that little.
+type vanishingCgroups struct {
+	*emptyingCgroups
+	procs string
+	waits atomic.Int32
+}
+
+func (c *vanishingCgroups) WaitEmpty(ctx context.Context, _ cgroup.Cgroup) error {
+	if c.waits.Add(1) > 1 {
+		return nil // the wait after the kill: the tree is empty
+	}
+	<-ctx.Done()
+	if err := os.WriteFile(c.procs, nil, 0o600); err != nil {
+		return err
+	}
+	return ctx.Err()
+}
+
+// TestRunEndDetailDoesNotDenyProcessesThatEnded: the processes a main process left running were in the cgroup
+// when it exited and gone when endWithMain read the cgroup for the kill, because the stop's own kill (or their own
+// exit) emptied it in between. The detail said "the kill ended no process it could name" for a run whose proof saw
+// two processes alive 2 s after Ctrl-C and gone at exit. It must name what the cgroup held at the main process's exit
+// and say plainly what Tego cannot tell, and never claim no process ended.
+func TestRunEndDetailDoesNotDenyProcessesThatEnded(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		escalated bool
+		left      bool
+		want      []string
+	}{
+		{"the stop's kill was written first", true, true, []string{"sleep", "stop", "cannot tell"}},
+		{"no kill but the end's", false, true, []string{"sleep", "cannot tell"}},
+		{"nothing was ever left to name", false, false, []string{"no process was left"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, pid := sleepingChild(t)
+			cg := &vanishingCgroups{emptyingCgroups: newEmptyingCgroups(t, 0)}
+			cg.procs = filepath.Join(cg.root, "cgroup.procs")
+			content := ""
+			if tc.left {
+				content = strconv.Itoa(pid) + "\n"
+			}
+			if err := os.WriteFile(cg.procs, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			r := &runner{log: slog.New(slog.DiscardHandler), cgm: cg, cg: cgroup.Cgroup{Path: cg.root},
+				queue: NewQueue(8), child: startTrue(t), rt: &agent.RuleTable{Contract: &agent.Contract{}},
+				stopGrace: 100 * time.Millisecond}
+			if tc.escalated {
+				h, _ := graceHandler(t, time.Hour, false)
+				h.Escalate()
+				r.signals = h
+			}
+			r.awaitExit(context.Background())
+			for _, bad := range []string{"no process it could name", "ended no process"} {
+				if strings.Contains(r.detail, bad) {
+					t.Errorf("run_end detail %q claims %q", r.detail, bad)
+				}
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(r.detail, want) {
+					t.Errorf("run_end detail %q lacks %q", r.detail, want)
+				}
+			}
+			if tc.left && !strings.Contains(r.detail, strconv.Itoa(pid)) {
+				t.Errorf("run_end detail %q does not name pid %d", r.detail, pid)
+			}
+		})
+	}
 }

@@ -328,3 +328,22 @@ func TestGateRowReadsTheRowsDefaultProtocol(t *testing.T) {
 		t.Errorf("unix row = %+v, want refused gate.rules[1], completion unsupported", got)
 	}
 }
+
+// A root-tier answer compile could not give (ADR 0043, amendment 2026-11-18) is no floor for a gate to score: scored as
+// an allow, the gate's own refusal replaced it, and the row read as answered where the prediction is unknown.
+func TestGateRowLeavesAnUnknownFloor(t *testing.T) {
+	c := gateContract(t, "rules:\n - net to undeclared host: 70\n")
+	p, e := CompileGateConfig(c)
+	if e != nil {
+		t.Fatal(e)
+	}
+	rt := &RuleTable{Contract: &Contract{Name: "gate-unknown"}, Gate: p, Workdir: "/work"}
+	floor := EvalResult{Verdict: "cannot tell without root", Rule: "root-required"}
+	got := EvaluateGateRow(rt, Action{Kind: ActionNetConnect, Path: "unix:/tmp/x.sock"}, floor)
+	if got.Verdict != floor.Verdict || got.Rule != floor.Rule || got.Score != nil || got.GateRule != "" {
+		t.Errorf("unknown floor = %+v, want it left as it is", got)
+	}
+	if floor.Verdict != VerdictRootRequired || floor.Rule != RootRequiredRule {
+		t.Errorf("the unknown answer is %q via %q", VerdictRootRequired, RootRequiredRule)
+	}
+}

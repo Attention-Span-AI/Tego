@@ -81,8 +81,13 @@ func TestRulesPagePendingApplyNow(t *testing.T) {
 	if err != nil || len(refs) != 1 {
 		t.Fatalf("contracts %+v %v", refs, err)
 	}
-	a, err := svc.ApplyChange(context.Background(), rules.ChangeReq{Ref: refs[0].Ref, Base: refs[0].Base,
-		Edits: []rules.Edit{{Op: "remove", Key: "exec.allow", Entry: "git"}}})
+	req := rules.ChangeReq{Ref: refs[0].Ref, Base: refs[0].Base, Edits: []rules.Edit{{Op: "remove", Key: "exec.allow", Entry: "git"}}}
+	plan, err := svc.PlanChange(t.Context(), req)
+	if err != nil || plan.Err != "" {
+		t.Fatalf("review: %+v %v", plan, err)
+	}
+	req.Ack = plan.Ack
+	a, err := svc.ApplyChange(context.Background(), req)
 	if err != nil || a.ID == "" {
 		t.Fatalf("apply %+v %v", a, err)
 	}

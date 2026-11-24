@@ -12,6 +12,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
 	"github.com/attention-span-ai/tego/internal/control/runact"
+	"github.com/attention-span-ai/tego/internal/liveblock"
 )
 
 // The run page's Pause and Resume (record.MinorLiveControl). The button posts to /runs/<id>/pause or /resume, which
@@ -91,7 +92,7 @@ type pauseAsk struct {
 // pauseAskOf compares the overlay's request with the launcher's last line: a request newer than that line's serial
 // that asks the other state is waiting.
 func pauseAskOf(a runact.PauseAsk, f ledgerview.LiveFacts) pauseAsk {
-	return pauseAsk{Takes: a.Takes, Waiting: a.Serial > f.PauseSerial && a.Paused != f.Paused, Paused: a.Paused, At: a.At}
+	return pauseAsk{Takes: a.Takes, Waiting: liveblock.PauseWaiting(a.Serial, a.Paused, f.PauseSerial, f.Paused), Paused: a.Paused, At: a.At}
 }
 
 // pause is POST /runs/<run>/pause and /runs/<run>/resume: runact.Pause. It returns to the page the form was on (the
@@ -130,11 +131,11 @@ func (s *Server) pause(w http.ResponseWriter, r *http.Request, run string, on bo
 	f := flash{OK: true}
 	switch p.Word {
 	case runact.WordPaused:
-		f.Text = "Pause asked of " + name + ". It says Paused here once the run confirms it, usually within a second."
+		f.Text = "Pause asked of " + name + ". It keeps running until the run confirms the pause; this page says Paused then, usually within a second."
 	case runact.WordAlreadyPaused:
 		f.Text = capFirst(name) + " was already paused."
 	case runact.WordResumed:
-		f.Text = "Resume asked of " + name + ". The run confirms it here, usually within a second."
+		f.Text = "Resume asked of " + name + ". It stays frozen until the run confirms it here, usually within a second."
 	default:
 		f.Text = capFirst(name) + " was not paused."
 	}

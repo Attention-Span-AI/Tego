@@ -243,6 +243,11 @@ func guidePTYFiles(t *testing.T, home string) map[string]string {
 	return files
 }
 
+// guidePromptHangGuard ends a run in which a prompt never comes: the helper dying is its own case just above, so this
+// is a hang. It is not a speed estimate: the helper is a second copy of this test binary, which a host with its disk
+// busy took more than the 15 s this used to be to start and reach its first prompt (the gate's handoff-secret route).
+const guidePromptHangGuard = 5 * time.Minute
+
 func runGuidePTY(t *testing.T, route guidePTYRoute, target int, how string, ahead bool) {
 	t.Helper()
 	fd, err := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC|unix.O_NONBLOCK, 0)
@@ -378,8 +383,8 @@ func runGuidePTY(t *testing.T, route guidePTYRoute, target int, how string, ahea
 			}
 		case <-done:
 			t.Fatalf("helper ended before %s: %v\n%s", step.prompt, childErr, snapshot())
-		case <-time.After(15 * time.Second):
-			t.Fatalf("no %s prompt:\n%s", step.prompt, snapshot())
+		case <-time.After(guidePromptHangGuard):
+			t.Fatalf("no %s prompt within the %s hang guard:\n%s", step.prompt, guidePromptHangGuard, snapshot())
 		}
 		if i == target {
 			if route.name == "dumb" && strings.HasPrefix(step.prompt, "Paste ") {

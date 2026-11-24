@@ -7,6 +7,7 @@ package e2e
 import (
 	"bufio"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -84,7 +85,7 @@ func TestDemoNeverAllow(t *testing.T) {
 	cmd.Env = w.env
 	run := start(t, cmd)
 	var id string
-	until(t, "the run's run_start line", 30*time.Second, func() bool {
+	until(t, "the run's run_start line", hangGuard(t), func() bool {
 		if run.over() {
 			t.Fatalf("tego run ended first: %v\n%s", run.err, run.out.String())
 		}
@@ -93,7 +94,12 @@ func TestDemoNeverAllow(t *testing.T) {
 	})
 	b := serveDashboard(t, w)
 	b.signIn()
-	until(t, "the token read's ask", 30*time.Second, func() bool { return b.status().Pending == 1 })
+	until(t, "the token read's ask", hangGuard(t), func() bool {
+		if run.over() {
+			t.Fatalf("tego run ended before the token read's ask: %v\n%s", run.err, run.out.String())
+		}
+		return b.status().Pending == 1
+	})
 	cards := b.cards()
 	if len(cards) != 1 || cards[0].target != w.secret {
 		t.Fatalf("Approvals shows %+v, want the token %s", cards, w.secret)
@@ -119,11 +125,11 @@ func TestDemoNeverAllow(t *testing.T) {
 		return code == http.StatusOK && strings.Contains(preview, "Confirm: never allow")
 	})
 	// The sentences name the folder as the page writes paths: under the home as ~/…, under the run's folder as ./….
-	// A long path breaks only between its folders (a <wbr> after each "/", a hyphenated folder kept whole), so the
-	// words are read without those marks.
-	said := regexp.MustCompile(`<wbr>|<span class="nb">([^<]*)</span>`).ReplaceAllString(preview, "$1")
-	if !regexp.MustCompile(`Asks you before it reads [^<]*/vault/</span>.*Can never read [^<]*/vault/</strong>`).MatchString(said) {
-		t.Error("the preview does not say the change as Asks you before it reads …/vault/ → Can never read …/vault/")
+	// The page cuts a long path into pieces (a <wbr> after each "/", a span for each folder), so the words are read the
+	// way a person reads them: the page's text, without its markup.
+	said := html.UnescapeString(regexp.MustCompile(`\s+`).ReplaceAllString(regexp.MustCompile(`<wbr>|<[^>]*>`).ReplaceAllString(preview, ""), " "))
+	if !regexp.MustCompile(`Asks you before it reads (?:files in )?\S*/vault/.{0,400}?becomes Can never read \S*/vault/`).MatchString(said) {
+		t.Errorf("the preview does not say the change as Asks you before it reads …/vault/ → Can never read …/vault/")
 	}
 	for _, want := range []string{
 		"b b-narrows", "Also apply now",
@@ -168,7 +174,14 @@ func TestDemoNeverAllow(t *testing.T) {
 	goAt := time.Now()
 	here := resp.Header.Get("Location")
 	if resp.StatusCode != http.StatusSeeOther || !strings.Contains(here, "?saved=") {
-		t.Fatalf("confirm: %d to %q", resp.StatusCode, here)
+		// The redirect's page holds the dashboard's own line on why nothing was saved.
+		_, why := b.get(here)
+		if i := strings.Index(why, "Not "); i >= 0 {
+			why = why[i:min(len(why), i+400)]
+		} else {
+			why = "(no \"Not saved\" or \"Not done\" line on the page)"
+		}
+		t.Fatalf("confirm: %d to %q: %s", resp.StatusCode, here, why)
 	}
 	code, saved := b.get(here)
 	// The saved panel says the block is being put in force on this run until the launcher's confirming line
@@ -246,7 +259,7 @@ func TestDemoNeverAllow(t *testing.T) {
 	write(t, filepath.Join(w.proj, "out", "end"), "", 0o644)
 	select {
 	case <-run.done:
-	case <-time.After(30 * time.Second):
+	case <-time.After(hangGuard(t)):
 		t.Fatalf("tego run did not end\n%s", run.out.String())
 	}
 	again := exec.Command(w.tego, "run", contract, "--", "/bin/sh", "-c", `cat "$0" > out/got3.txt 2> out/err3.txt; echo $? > out/rc3`, w.secret)
@@ -305,7 +318,7 @@ func serveDashboard(t *testing.T, w *world) *browser {
 		return newBrowser(t, u)
 	case <-srv.done:
 		t.Fatalf("tego-control serve ended first: %v\n%s", srv.err, srv.out.String())
-	case <-time.After(30 * time.Second):
+	case <-time.After(hangGuard(t)):
 		t.Fatal("tego-control serve printed no URL")
 	}
 	return nil

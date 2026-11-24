@@ -1,0 +1,81 @@
+{
+  "id": "m12-yen-over",
+  "group": "money",
+  "pins": [
+    "B020",
+    "B025"
+  ],
+  "why": "B020: 101 yen exceeds the 100-yen cap without conversion.",
+  "bundle": {
+    "version": 1,
+    "adapter": "square.refund.v1",
+    "server": "square",
+    "rules": [
+      {
+        "id": "cap",
+        "kind": "per_call",
+        "currency": "JPY",
+        "limit": "100"
+      }
+    ]
+  },
+  "bundle_wire_hex": null,
+  "request": {
+    "adapter": "square.refund.v1",
+    "call_hex": "7b226964223a312c226a736f6e727063223a22322e30222c226d6574686f64223a22746f6f6c732f63616c6c222c22706172616d73223a7b22617267756d656e7473223a7b226d6574686f64223a227061796d656e74222c2272657175657374223a7b22616d6f756e745f6d6f6e6579223a7b22616d6f756e74223a3130312c2263757272656e6379223a224a5059227d2c226964656d706f74656e63795f6b6579223a226b31222c227061796d656e745f6964223a227031227d2c2273657276696365223a22726566756e6473227d2c226e616d65223a226d616b655f6170695f72657175657374227d7d",
+    "contract_bundle_digest": "8acbe2e5413a61620eef4410b09870b0ed869a284641b36843c984ace656181f",
+    "contract_verdict": "allow",
+    "evaluator_status": "ready",
+    "request_id": "1",
+    "run_id": "run1",
+    "server": "square",
+    "state": {
+      "bundle_digest": "8acbe2e5413a61620eef4410b09870b0ed869a284641b36843c984ace656181f",
+      "epoch": "e1",
+      "revision": "0",
+      "run_id": "run1",
+      "seen_keys": [],
+      "server": "square",
+      "status": "ready",
+      "totals": []
+    },
+    "tool_source": "contract",
+    "topology": "exclusive",
+    "version": 1
+  },
+  "request_wire_hex": null,
+  "expected": {
+    "adapter": "square.refund.v1",
+    "bundle_digest": "8acbe2e5413a61620eef4410b09870b0ed869a284641b36843c984ace656181f",
+    "business": {
+      "verdict": "deny",
+      "rule_id": "cap",
+      "condition": "per_call.exceeded"
+    },
+    "asks": [],
+    "call_digest": "e35d6633d2831ced19a01a77b08163958395055764cafdf5e03716c87adde511",
+    "facts": {
+      "amount_minor": "101",
+      "currency": "JPY",
+      "exponent": 0,
+      "source": "submitted-call"
+    },
+    "final": {
+      "verdict": "deny",
+      "source": "business",
+      "condition": "per_call.exceeded"
+    },
+    "record": {
+      "coverage": "mediated",
+      "delivery": "not_attempted",
+      "remote_outcome": "unknown",
+      "required": true,
+      "stage": "evaluated"
+    },
+    "request_id": "1",
+    "reservation": null,
+    "run_id": "run1",
+    "server": "square",
+    "version": 1
+  }
+}

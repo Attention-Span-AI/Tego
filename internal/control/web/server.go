@@ -24,6 +24,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/contracts"
+	"github.com/attention-span-ai/tego/internal/contractsrc"
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
 	"github.com/attention-span-ai/tego/internal/guide"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
@@ -39,6 +41,8 @@ const cookiePrefix = "tego_dash_"
 
 // Config is what a Server needs: the ledger root it reads and the loopback address and port it is reached on.
 type Config struct {
+	// Agents reads the saved scan and identity facts; nil uses Guide inputs.
+	Agents AgentsService
 	Ledger string
 	// Anchor is the chain anchor (chain.log) runs are verified against, the one `tego events --verify` reads;
 	// empty leaves every chain unchecked.
@@ -51,7 +55,8 @@ type Config struct {
 	Token string
 	// Now is the clock; nil is time.Now.
 	Now func() time.Time
-	// Machine is the machine config the Rules page compiles contracts against; nil shows each contract uncompiled.
+	// Machine is the machine config the Rules page compiles contracts against. An unknown baseline or nil
+	// snapshot keeps read pages and Stop/Pause/Deny available but refuses every other POST.
 	Machine *config.Machine
 	// StopWait bounds how long a Stop waits for the run to end before the page answers; 0 is 2 s. A run that takes
 	// longer shows Stopping until its run_end, and the launcher's own stop_grace still ends it.
@@ -73,7 +78,7 @@ type Config struct {
 	// and no shell (ADR 0142). It is called on every Overview request, and the guide is computed again when the build
 	// it names changes, so a tego reinstalled while the dashboard runs shows at once. nil shows no guide: the empty
 	// Overview keeps its one first step for any agent.
-	Guide func() guide.Inputs
+	Guide func(context.Context) guide.Inputs
 	// Preview lists the preview pages (MCP tools and Model routes, empty unless the run's contract uses capture or mcp,
 	// and each layer's) in the nav; false leaves them out. Their addresses answer either way.
 	Preview bool
@@ -93,9 +98,11 @@ type Server struct {
 	peer    func(*http.Request) error // who may connect: the serving user only (peer.go)
 	// governed refuses a change (a POST, the ?t= sign-in) whose connection was made inside a tego run (governed.go).
 	governed func(*http.Request) error
-	tick     time.Duration // Config.EventTick, defaulted
-	live     liveCache     // the live state the streams and /status.json share
-	streams  atomic.Int32  // open /events streams
+	// readGeneral keeps source selection hermetic in handler tests; production always uses ReadGeneral.
+	readGeneral func(context.Context, *config.Machine, int) contractsrc.General
+	tick        time.Duration // Config.EventTick, defaulted
+	live        liveCache     // the live state the streams and /status.json share
+	streams     atomic.Int32  // open /events streams
 	// cookie is this server's session cookie name: cookiePrefix and the port.
 	cookie string
 	// flashes are the one-line results actions leave for the next page (flash.go).
@@ -114,7 +121,7 @@ type Server struct {
 	sevErr   string
 	// memos are the run pages' last region answers, for the 204 of an unchanged one (runkey.go).
 	memos regionMemos
-	// regionCache is each address's region render of the last second, shared by every viewer (regioncache.go).
+	// regionCache is each address's region render of the last second, shared by known persons on eligible pages (regioncache.go).
 	regionCache regionCache
 	// guide is the Overview's last guide (setupguide.go).
 	guide guideMemo
@@ -122,7 +129,8 @@ type Server struct {
 
 // New builds a Server.
 func New(cfg Config) (*Server, error) {
-	s := &Server{cfg: cfg, token: cfg.Token, peer: procPeer().owns, governed: procGoverned().refuse}
+	ledgerview.Open(cfg.Ledger).SetAnchor(cfg.Anchor)
+	s := &Server{cfg: cfg, token: cfg.Token, peer: procPeer().owns, governed: procGoverned().refuse, readGeneral: contractsrc.ReadGeneral}
 	if s.cfg.Now == nil {
 		s.cfg.Now = time.Now
 	}
@@ -172,6 +180,8 @@ func New(cfg Config) (*Server, error) {
 // being checked. It reports nothing: a page that reads the ledger says what went wrong. It returns when the chain
 // checks are done or ctx ends.
 func (s *Server) Prewarm(ctx context.Context) {
+	ctx, closeHelpers := contracts.WithHelperSession(ctx)
+	defer closeHelpers()
 	snap, err := ledgerview.Load(s.cfg.Ledger)
 	if err != nil || ctx.Err() != nil {
 		return
@@ -221,13 +231,28 @@ func randomHex(n int) string {
 	return hex.EncodeToString(b)
 }
 
+// writeTimeout is the server's write deadline, which wraps a page's whole computation (guideCompute, a draft compile's
+// budget, an answer's exchange): 30 s, times raceScale in a race build.
+const writeTimeout = 30 * time.Second * raceScale
+
+// writeMargin is the time a page keeps, at the least, between the end of its checks and the server's write deadline: to
+// render what the checks found and write it. Five seconds, times raceScale in a race build, as a location check
+// (contracts.CheckTimeout) is.
+const writeMargin = 5 * time.Second * raceScale
+
+// requestBound is how long one request's helper checks may take together (contracts.WithRequestScope): the server's
+// own write deadline less the margin, so a page whose checks wait for a helper slot, a start or a mount still has
+// its answer written before the connection is closed with none. It is derived from writeTimeout, so the two cannot
+// drift apart.
+const requestBound = writeTimeout - writeMargin
+
 // Serve serves ln until ctx ends, then shuts down within a few seconds.
 //
 // Every request's context ends with ctx, so a page's open /events stream (live.go) ends at shutdown instead of holding
 // it for its whole grace. The stream lifts the read and write timeouts for its own connection only.
 func Serve(ctx context.Context, ln net.Listener, h http.Handler) error {
 	srv := &http.Server{Handler: h, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,
-		WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10,
+		WriteTimeout: writeTimeout, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10,
 		BaseContext: func(net.Listener) context.Context { return ctx }, ConnContext: withConnPeer}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
@@ -250,6 +275,18 @@ const csp = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 's
 
 // ServeHTTP applies the security checks, then routes.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx, closeHelpers := contracts.WithHelperSession(r.Context())
+	defer closeHelpers()
+	// One request is one scope: whatever checks its page makes share one start-up budget and one location budget
+	// (contracts.WithBudget), so a busy machine or a stuck mount costs a page that time once, not once per check.
+	// A page is bounded by the server's write deadline as well (requestBound); a live stream, which lifts it for its own
+	// connection (live.go), only shares the budgets.
+	if r.URL.Path == "/events" {
+		ctx = contracts.WithScope(ctx)
+	} else {
+		ctx = contracts.WithRequestScope(ctx, requestBound)
+	}
+	r = r.WithContext(ctx)
 	h := w.Header()
 	h.Set("Content-Security-Policy", csp)
 	h.Set("X-Content-Type-Options", "nosniff")
@@ -281,6 +318,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.governedRefused(w, err)
 			return
 		}
+	}
+	if post && r.URL.Path == openCodePath {
+		s.mintOpenCode(w, r) // after the Host, peer and governed checks (opencode.go)
+		return
 	}
 	if (t != "" || o != "") && !post {
 		// The token (?t=, reusable) or the opener's one-time code (?o=, opencode.go). A used or expired code from a
@@ -327,16 +368,26 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.unauthorized(w, r)
 		return
 	}
+	// A helper check a request makes asks, when it first needs a helper slot, whether its connection comes from
+	// inside a run; one that does, or that cannot be shown outside every run, never takes the slots kept for the
+	// person's own checks (contracts.WithGovernedCaller), so a governed program cannot use them up.
+	asked := r
+	r = r.WithContext(contracts.WithGovernedCaller(r.Context(), func() bool { return s.governed(asked) != nil }))
 	if strings.HasPrefix(r.URL.Path, "/static/") {
 		// no-cache, not max-age: after an upgrade the page must not keep the old stylesheets for minutes; on loopback
 		// fetching them again costs nothing.
 		h.Set("Cache-Control", "private, no-cache")
+		if strings.HasSuffix(r.URL.Path, ".woff2") {
+			// The headline font (static/fonts): Go's own type table has no .woff2, and a host's mime.types may name
+			// it otherwise or not at all, so the type is set here; nosniff above makes a browser hold to it.
+			h.Set("Content-Type", "font/woff2")
+		}
 		s.static.ServeHTTP(w, r)
 		return
 	}
 	h.Set("Cache-Control", "no-store")
 	if post {
-		if s.postAllowed(w, r) {
+		if s.postAllowed(w, r) && s.baselinePostAllowed(w, r) {
 			// A change can move what a page shows without moving the ledger: no region render from before it (or
 			// begun while it ran) answers after it.
 			s.regionCache.bump()
@@ -364,14 +415,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w = &flashWriter{w, f}
 		}
 	}
-	if s.mcpGet(w, r) || s.routesGet(w, r) { // the MCP tools page (mcp_tools.go), the Model routes page (model_routes.go)
-		return
-	}
-	s.route(w, r)
+	s.serveGet(w, r) // the MCP tools page (mcp_tools.go), the Model routes page (model_routes.go), then the route table
 }
 
 // maxForm bounds a POST body: the forms carry a run id, an ask id, a word and the CSRF token (POST /rules/change
-// takes maxRawForm, POST /rules/new maxNewForm).
+// and POST /rules/new take maxRawForm).
 const maxForm = 4 << 10
 
 // postAllowed is the check every state-changing request passes after the Host and cookie checks: the request comes
@@ -402,7 +450,7 @@ func (s *Server) postAllowed(w http.ResponseWriter, r *http.Request) bool {
 	case "/rules/change":
 		limit = maxRawForm // the advanced editor posts a whole contract (rules_change.go)
 	case "/rules/new":
-		limit = maxNewForm // Create posts the new agent's whole form back (rules_new.go)
+		limit = maxRawForm // Full carries the same bounded contract text as Change rules
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	if err := r.ParseForm(); err != nil {
@@ -468,27 +516,25 @@ const codeUsedWords = "This one-time open link was used or expired; run tego das
 
 // signedOutStyle is the sign-in page's only style, inline so the page needs no file the missing session would
 // refuse. Its colours are tokens.css's (light, and dark under prefers-color-scheme).
-const signedOutStyle = `:root{color-scheme:light dark;--bg:#FAFAF9;--fg:#2D3142;--soft:#4F5767;--card:#FFFFFF;--line:#E7E5E0;--code:#F4F3F0;--warn:#865700;--warn-soft:#FBF4E4}` +
-	`@media (prefers-color-scheme:dark){:root{--bg:#0E131C;--fg:#E9EBEF;--soft:#B3BAC6;--card:#151B26;--line:#283143;--code:#1B2230;--warn:#E5B54E;--warn-soft:#29231A}}` +
-	`body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--fg);` +
-	`font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,"Ubuntu Sans","Noto Sans",sans-serif;padding:16px;box-sizing:border-box}` +
-	`main{width:min(100%,480px);background:var(--card);border:1px solid var(--line);border-radius:12px;padding:28px 24px;box-sizing:border-box}` +
-	`.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:20px;margin-bottom:18px}.brand img{width:30px;height:30px}` +
-	`h1{font-size:18px;line-height:1.35;margin:0 0 10px}p{margin:0 0 12px;color:var(--soft)}` +
-	`.note{color:var(--fg);background:var(--warn-soft);border-left:3px solid var(--warn);border-radius:6px;padding:8px 12px;overflow-wrap:anywhere}` +
-	`.lbl{display:block;font-size:13px;color:var(--soft);margin:0 0 4px}` +
-	`code{display:block;font:13px/1.6 ui-monospace,"SF Mono","Ubuntu Sans Mono","DejaVu Sans Mono",Menlo,monospace;background:var(--code);` +
-	`border:1px solid var(--line);border-radius:8px;padding:10px 12px;color:var(--fg);overflow-wrap:anywhere;margin:0 0 12px;` +
-	`user-select:all;-webkit-user-select:all;cursor:text}`
+const signedOutStyle = `:root{color-scheme:light dark;--bg:#FBFAF8;--fg:#2D3142;--soft:#565B6E;--card:#FFFFFF;--line:#767D91;--code:#F3F2EF}` +
+	`@media (prefers-color-scheme:dark){:root{--bg:#0F121F;--fg:#F2F3F8;--soft:#ACB0C1;--card:#1A1E2D;--line:#9299B0;--code:#151927}}` +
+	`*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:grid;align-content:center;justify-items:center;background:var(--bg);color:var(--fg);font:16px/24px system-ui,-apple-system,"Segoe UI",Roboto,"Ubuntu Sans","Noto Sans",sans-serif;padding:16px}` +
+	`main{width:min(100%,520px);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:24px;overflow-wrap:anywhere}` +
+	`.brand{display:flex;align-items:center;gap:12px;font-weight:600;font-size:16px;margin-bottom:24px}.brand .mark{display:block;flex:0 0 32px;width:32px;height:32px;background:var(--fg);mask:url(/static/favicon.svg) center/contain no-repeat}` +
+	`h1{font-size:28px;line-height:36px;margin:0 0 16px;font-weight:600;text-wrap:balance}p{margin:0 0 16px;color:var(--soft)}` +
+	`.note{color:var(--fg);background:var(--code);border-left:3px solid var(--line);padding:12px;overflow-wrap:anywhere}` +
+	`.lbl{display:block;font-size:16px;color:var(--soft);margin:0 0 8px}` +
+	`code{display:block;font:16px/24px ui-monospace,"SF Mono","Ubuntu Sans Mono","DejaVu Sans Mono",Menlo,monospace;background:var(--code);border:1px solid var(--line);border-radius:4px;padding:12px;color:var(--fg);overflow-wrap:anywhere;white-space:pre-wrap;margin:0 0 16px;user-select:all;-webkit-user-select:all;cursor:text}` +
+	`@media(max-width:600px){main{padding:16px}}@media(forced-colors:active){main,code,.note{border-color:CanvasText}.brand .mark{background:CanvasText}}`
 
 // signedOutHead and signedOutTail frame the sign-in page; signedOutLead is its usual first paragraph.
 const (
 	signedOutHead = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark"><title>Sign in · Tego</title>
+<meta name="color-scheme" content="light dark"><meta name="theme-color" content="#FBFAF8" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0F121F" media="(prefers-color-scheme: dark)"><title>Sign in · Tego</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml"><style>` + signedOutStyle + `</style></head>
-<body><main role="main"><div class="brand"><img src="/static/favicon.svg" alt="">tego</div>
-<h1>Open the dashboard from your terminal</h1>
+<body><main role="main" id="signed-out"><div class="brand"><span class="mark" aria-hidden="true"></span>Tego</div>
+<h1>Open your dashboard safely</h1>
 `
 	signedOutLead = `<p>This browser isn't signed in to this dashboard. The link the dashboard printed when it started (with <b>?t=</b>) signs it in. ` +
 		`If the dashboard was restarted, only its new link works.</p>

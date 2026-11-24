@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -27,10 +28,10 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// A new user's first walk (ADR 0142's amendment), as tests: a guest's
-// SSH and console logins run beside the user manager's cgroup, where tego starts no run; a systemd-run --user --scope
-// shell runs inside it. The next: lines looped there (tego setup -> tego doctor -> tego doctor) and sent the SSH shell
-// to tego watch and tego run, which exit 125 from it.
+// The new user's walk of acceptance B (2026-11-11, ADR 0142's amendment), as fixtures: SSH and console logins are
+// beside the user manager's cgroup; a systemd-run --user --scope shell is inside it. The guide now names run-starting
+// commands directly because they open their own scope before run state. These fixtures hold the next-step wording;
+// real SSH and distribution behaviour is owed in a guest.
 
 // place is where a person types: the guest's SSH login, its console login (both beside the user manager's cgroup),
 // or a systemd-run --user --scope shell inside it.
@@ -44,11 +45,9 @@ type place struct {
 
 var places = []place{{"ssh", true, false}, {"console", false, false}, {"scope", false, true}}
 
-// canRun is the predicate the commands refuse by, as the place gives it: from a shell beside the user manager's cgroup
-// every command that starts a run (guide.RunCommands: tego run, watch and test) exits 125, through FS.CanPlace's
-// cgroup.ErrBesideSubtree or doctor's D3, which asks the same (TestEveryRunCommandRefusesBesideTheUserManager holds the
-// commands to it).
-func (p place) canRun(command string) bool { return p.inside || !guide.StartsRun(command) }
+// canRun is true from each place: run, watch and test open their own scope when the login shell is beside the user
+// manager's cgroup. TestEveryRunCommandKeepsThePlacementFallback checks the advice when automatic entry fails.
+func (p place) canRun(_ string) bool { return true }
 
 // onPlace makes the fixture's tego setup run from p: its probe and its shell. scopeChecked stores, first, the check a
 // systemd-run --user --scope tego setup made on this boot (the walk's later steps).
@@ -132,7 +131,7 @@ func TestTheNextLinesNeverLoopFromAnyPlace(t *testing.T) {
 					hintsAt(t, false, "on")
 					_, _, errs := run(t, "setup")
 					outs := []struct{ printed, stderr string }{{"tego setup", errs}, {"tego machine check", doctorAt(p)}}
-					// The hop after setup's step, typed where setup printed it: tego learn --save named tego run from
+					// The hop after setup's step, typed where setup printed it: tego rules learn --save named tego run from
 					// SSH, which exits 125 there.
 					if cmd, _ := nextCommand(errs); followable(cmd) {
 						_, _, hop := run(t, strings.Fields(cmd)[1:]...)
@@ -201,8 +200,8 @@ func sidePaths(t *testing.T) {
 				t.Errorf("the next: command is itself:\n%s", b.String())
 			case c.inside && strings.HasPrefix(got, "systemd-run --user --scope"):
 				t.Errorf("a shell inside the user manager's cgroup is sent to open one again:\n%s", b.String())
-			case !c.inside && guide.StartsRun(got):
-				t.Errorf("%q exits 125 from %s:\n%s", got, c.from, b.String())
+			case !guide.StartsRun(got):
+				t.Errorf("run should open its own scope: %q", got)
 			}
 		})
 	}
@@ -257,10 +256,11 @@ func sidePaths(t *testing.T) {
 			_, _, errs := run(t, "setup")
 			var b bytes.Buffer
 			writeDoctorVerdict(&b, outsideReport())
-			for printed, stderr := range map[string]string{"tego setup": errs, "tego machine check": b.String()} {
-				if cmd, ok := nextCommand(stderr); !ok || cmd != viaLogind {
-					t.Errorf("%s's next: command is %q, not the one that opens the scope through the logind folder:\n%s", printed, cmd, stderr)
-				}
+			if cmd, ok := nextCommand(errs); !ok || !strings.HasPrefix(cmd, "tego ") || strings.Contains(cmd, "systemd-run") {
+				t.Errorf("setup should name the next step: %s", errs)
+			}
+			if cmd, ok := nextCommand(b.String()); !ok || cmd != viaLogind {
+				t.Errorf("doctor should keep the shell check: %s", b.String())
 			}
 		})
 	}
@@ -270,12 +270,13 @@ func sidePaths(t *testing.T) {
 //   - after linger, tego setup started as the service account from an administrator's shell (sudo -u svc): the next:
 //     command was XDG_RUNTIME_DIR=/run/user/1002 systemd-run --user --scope bash, which the administrator typed in their
 //     own shell, where it opened their own scope (Ubuntu 24.04, AlmaLinux 9.8; tego setup there said ready for the
-//     wrong user) or failed (Fedora 44). It is now the command that works from that shell, sudo -u svc in front
-//     (measured on all three), and the words say to type it in your own shell and whose shell it opens;
+//     wrong user) or failed (Fedora 44). Doctor's manual scope line carries sudo -u svc and says whose shell it
+//     opens. Setup names the account's next command directly; run-starting commands open their own scope;
 //   - a user whose name systemd refuses (4242, digits only, on Ubuntu 24.04): enable-linger exits 0, no user manager
 //     starts, and tego setup named the same linger command again. Neither tego setup nor tego doctor now names a
 //     command, and both say why.
 func sidePathsAcc3(t *testing.T) {
+	guidetest.SelfAs(t, guidetest.SelfWord, "")
 	const asSvc = "sudo -u svc XDG_RUNTIME_DIR=/run/user/1002 systemd-run --user --scope bash"
 	for _, state := range []string{guidetest.Fresh, guidetest.HalfDone, guidetest.Finished} {
 		t.Run("after linger, from another user's shell/"+state, func(t *testing.T) {
@@ -303,19 +304,17 @@ func sidePathsAcc3(t *testing.T) {
 			}
 			var b bytes.Buffer
 			writeDoctorVerdict(&b, rep)
-			for printed, stderr := range map[string]string{"tego setup": errs, "tego machine check": b.String()} {
-				if cmd, ok := nextCommand(stderr); !ok || cmd != asSvc {
-					t.Errorf("%s's next: command is %q, not the one that opens the user's shell from the administrator's:\n%s", printed, cmd, stderr)
-				}
-				if !strings.Contains(stderr, "next: from your own shell, open a shell as this user; run tego setup in it:") {
-					t.Errorf("%s's next: line does not say whose shell to open, or where to type it:\n%s", printed, stderr)
-				}
+			if cmd, ok := nextCommand(errs); !ok || !strings.Contains(cmd, "sudo -u svc "+guidetest.SelfWord+" ") || strings.Contains(cmd, "systemd-run") {
+				t.Errorf("setup must name the account's next step, which opens its own scope: %s", errs)
+			}
+			if cmd, ok := nextCommand(b.String()); !ok || cmd != asSvc {
+				t.Errorf("doctor still checks the original shell: %s", b.String())
 			}
 			if !strings.Contains(b.String(), "it opens a shell as svc, in svc's user manager's cgroup, not in yours") ||
-				!strings.Contains(b.String(), "in your own login shell, not in one sudo or su opened") {
-				t.Errorf("tego machine check does not say whose shell the command opens, or which shell to type it in:\n%s", b.String())
+				!strings.Contains(b.String(), "in your own login shell, not in one sudo or su opened (if you are in one, type exit first)") {
+				t.Errorf("tego doctor does not say whose shell the command opens, or which shell to type it in:\n%s", b.String())
 			}
-			if !strings.Contains(out, "it opens a shell as svc in svc's user manager's cgroup, not in yours") {
+			if !strings.Contains(out, "it runs as svc (sudo -u), not as you") {
 				t.Errorf("step 2 does not say whose shell the command opens:\n%s", out)
 			}
 		})
@@ -473,12 +472,11 @@ func TestFirstRunGolden(t *testing.T) {
 	}
 }
 
-// TestEveryRunCommandRefusesBesideTheUserManager: each command guide.RunCommands names exits 125 from a shell beside
-// the user manager's cgroup, and then ends with the next: block that opens a shell inside it (never itself, never a
-// command that starts a run), not with "Nothing got through": tego run when its probe finds tier landlock missing only
-// for that (doctor.Report.OutsideUserManager), tego watch when its run's cgroup cannot be placed
-// (cgroup.ErrBesideSubtree), tego test when no run under it started and the probe says the same. A run pinned above tier landlock gets no such line: that shell would not cure it.
-func TestEveryRunCommandRefusesBesideTheUserManager(t *testing.T) {
+// TestEveryRunCommandKeepsThePlacementFallback: when automatic entry cannot complete, each run command keeps the
+// manual scope advice on ErrBesideSubtree. It ends with the next: block that opens a shell inside the user manager's
+// cgroup, without claiming a run started. A run pinned above tier landlock gets no such line: that shell would not
+// cure its missing tier.
+func TestEveryRunCommandKeepsThePlacementFallback(t *testing.T) {
 	prevOpener := scopeOpener
 	scopeOpener = func() guide.Opening { return guide.Opening{Command: guide.DefaultScope} }
 	t.Cleanup(func() { scopeOpener = prevOpener })
@@ -586,7 +584,7 @@ func leakRun(t *testing.T, root, project string) string {
 }
 
 // TestTheLearnStepNeverNamesAHostASecretMayHaveGoneTo: for a run whose secrets may have gone to the addresses it
-// reached, tego watch's next: line, tego learn's own and tego setup's guide all name the plain learn step, never
+// reached, tego watch's next: line, tego rules learn's own and tego setup's guide all name the plain learn step, never
 // --allow-host <host>, which learn refuses for a host it withheld; and learn's refusal of such a host ends with that
 // plain step. For a run with no leak, all three name --allow-host alike.
 func TestTheLearnStepNeverNamesAHostASecretMayHaveGoneTo(t *testing.T) {
@@ -664,7 +662,11 @@ func TestLearnsWarningForAWithheldHostNamesOnlyWhatWorks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(text), `- "tcp://104.20.23.154:443"`) {
+	learned, _, loadErr := agent.LoadBytes(saved, text, nil)
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if learned.Net == nil || slices.Contains(learned.Net.Allow, "tcp://104.20.23.154:443") || slices.Contains(learned.Net.Allow, "104.20.23.154:443") {
 		t.Fatalf("the withheld destination is allowed:\n%s", text)
 	}
 	// What the warning names, typed: a run under the saved contract refused the connect, and tego rule on its line
@@ -695,8 +697,15 @@ func TestLearnsWarningForAWithheldHostNamesOnlyWhatWorks(t *testing.T) {
 	if code != identity.ExitOK {
 		t.Fatalf("tego rule <run> 1 --allow: exit %d\n%s%s", code, out, errs)
 	}
-	if b, _ := os.ReadFile(saved); !strings.Contains(string(b), "104.20.23.154:443") {
-		t.Errorf("tego rule did not write the entry:\n%s", b)
+	updated, _, loadErr := agent.Load(saved, nil)
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if updated.Net == nil || (!slices.Contains(updated.Net.Allow, "104.20.23.154:443") && !slices.Contains(updated.Net.Allow, "tcp://104.20.23.154:443")) {
+		t.Errorf("tego rule did not add the destination to net.allow: %+v", updated.Net)
+	}
+	if learned.Learn == nil || updated.Learn == nil || learned.Learn.Run != updated.Learn.Run || !slices.Equal(learned.Learn.Withheld, updated.Learn.Withheld) {
+		t.Errorf("tego rule changed the saved learn history: before %+v, after %+v", learned.Learn, updated.Learn)
 	}
 }
 
@@ -748,11 +757,9 @@ func TestAfterARebootSetupSaysWhatIsNotChecked(t *testing.T) {
 	}
 }
 
-// TestARunHintFromBesideTheUserManagerOpensTheShell: a next: step whose command starts a run (tego learn --save's tego
-// run, tego agents' tego watch) is said in a guidance line from a shell beside the user manager's cgroup, and the
-// block opens a shell inside it instead, never the command that exits 125 there. A step that starts
-// no run, and any step from inside, is the step itself. Root asks for the invoking user (rootBeside).
-func TestARunHintFromBesideTheUserManagerOpensTheShell(t *testing.T) {
+// TestARunHintFromBesideTheUserManagerNamesTheRun keeps the run command in the next block both inside and beside
+// the user manager's cgroup. The command attempts entry itself; a known unavailable opener keeps the manual fallback.
+func TestARunHintFromBesideTheUserManagerNamesTheRun(t *testing.T) {
 	prevOpener, prevBeside := scopeOpener, besideUserManager
 	scopeOpener = func() guide.Opening { return guide.Opening{Command: guide.DefaultScope} }
 	t.Cleanup(func() { scopeOpener, besideUserManager = prevOpener, prevBeside })
@@ -763,12 +770,8 @@ func TestARunHintFromBesideTheUserManagerOpensTheShell(t *testing.T) {
 		var b bytes.Buffer
 		runHint(&b, text, command)
 		got, _ := nextCommand(b.String())
-		switch {
-		case !beside && got != command:
-			t.Errorf("inside: %q", b.String())
-		case beside && (got != guide.DefaultScope || !strings.Contains(b.String(), "In a shell inside it, "+text+" "+command+"\n") ||
-			strings.Contains(b.String(), "next: "+text)):
-			t.Errorf("beside: %q", b.String())
+		if got != command {
+			t.Errorf("run hint must name the run: %q", b.String())
 		}
 		for _, line := range strings.Split(b.String(), "\n") {
 			if strings.HasPrefix(line, "next: ") && len([]rune(line)) > 80 {
@@ -840,4 +843,174 @@ func readFileT(t *testing.T, path string) []byte {
 		t.Fatal(err)
 	}
 	return b
+}
+
+// TestAnAdministratorsNextCommandCarriesSudo: after the service account was set up, sudo -u svc tego setup from the
+// administrator's own shell ended with "next: tego session show <id>", which that shell cannot run: it reads the
+// administrator's record, and failed with "no such run" (acceptance 4, 2026-11-11, stumble 2). The next: command of
+// tego setup, and of every other hint, is written with sudo -u svc in front when another user reads it, and is bare
+// for the user's own shell.
+func TestAnAdministratorsNextCommandCarriesSudo(t *testing.T) {
+	guidetest.SelfAs(t, guidetest.SelfWord, "")
+	prevReader := readerAccount
+	t.Cleanup(func() { readerAccount = prevReader })
+	for _, state := range []string{guidetest.Finished, guidetest.HalfDone, guidetest.ContractMade} {
+		t.Run("tego setup/"+state, func(t *testing.T) {
+			onPlace(t, state, places[0], true) // the account's check was stored from its scope; this shell is beside it
+			prev := setupInputs
+			setupInputs = func(in *guide.Inputs) {
+				prev(in)
+				in.As.ScopeAs, in.As.Scope = "svc", "sudo -u svc XDG_RUNTIME_DIR=/run/user/1002 systemd-run --user --scope bash"
+			}
+			t.Cleanup(func() { setupInputs = prev })
+			hintsAt(t, false, "on")
+			_, out, errs := run(t, "setup")
+			cmd, ok := nextCommand(errs)
+			if !ok {
+				t.Fatalf("no next: block:\n%s", errs)
+			}
+			if !strings.Contains(cmd, "sudo -u svc ") {
+				t.Errorf("tego setup's next: command %q carries no sudo -u svc:\n%s\n%s", cmd, errs, out)
+			}
+			if strings.HasPrefix(cmd, "tego ") || strings.Contains(cmd, "&& tego ") {
+				t.Errorf("tego setup's next: command %q is bare:\n%s", cmd, errs)
+			}
+		})
+	}
+	hintsAt(t, false, "on")
+	for _, tc := range []struct{ reader, command, want string }{
+		{"svc", "tego session show abc", "sudo -u svc " + guidetest.SelfWord + " session show abc"},
+		{"svc", "tego rules learn abc --save bot", "sudo -u svc " + guidetest.SelfWord + " rules learn abc --save bot"},
+		{"svc", "cd /home/svc/bot && tego run bot", "sudo -u svc sh -c 'cd /home/svc/bot && exec " + guidetest.SelfWord + " run bot'"},
+		{"svc", "sudo loginctl enable-linger svc", "sudo loginctl enable-linger svc"},
+		{"", "tego session show abc", "tego session show abc"},
+	} {
+		readerAccount = func() string { return tc.reader }
+		var b bytes.Buffer
+		writeHint(&b, "see it:", tc.command)
+		if got, _ := nextCommand(b.String()); got != tc.want {
+			t.Errorf("reader %q: writeHint(%q) printed %q, want %q", tc.reader, tc.command, got, tc.want)
+		}
+	}
+	// tego doctor's check-again step is typed by the same reader.
+	readerAccount = func() string { return "svc" }
+	rep := &doctor.Report{Tier: backend.TierLandlock}
+	var b bytes.Buffer
+	writeDoctorVerdict(&b, rep)
+	if got, _ := nextCommand(b.String()); got != "sudo -u svc "+guidetest.SelfWord+" machine test" {
+		t.Errorf("tego doctor's next: command is %q, want sudo -u svc %s test:\n%s", got, guidetest.SelfWord, b.String())
+	}
+	// A tego whose path cannot be named gives no command, and the text says why (it must not send the reader into a
+	// command that cannot work).
+	for _, why := range []string{guide.ReaderNoPathText, guide.ReaderNoExecText} {
+		guidetest.SelfAs(t, "", why)
+		var nb bytes.Buffer
+		writeHint(&nb, "see it:", "tego session show abc")
+		if cmd, ok := nextCommand(nb.String()); !ok || cmd != "" || !strings.Contains(nb.String(), "next: "+why+"\n") ||
+			strings.Contains(nb.String(), "see it:") {
+			t.Errorf("no usable tego (%s):\n%s", why, nb.String())
+		}
+	}
+}
+
+// TestEveryRunCommandNamesTheLingerFixWhenNoUserManagerRuns: tego run, watch and test exit 125 for a user with no user
+// manager running (a service account before loginctl enable-linger), with the fix: text at the end of the error line
+// and no next: block at all; tego setup and tego doctor named the linger command (acceptance 4, 2026-11-11, stumble
+// 5). Each now ends with the same block doctor prints. For a name systemd refuses the block names no command. A run
+// pinned above tier landlock gets none: starting a user manager would not cure it.
+func TestEveryRunCommandNamesTheLingerFixWhenNoUserManagerRuns(t *testing.T) {
+	const linger = "sudo loginctl enable-linger svc"
+	prevLinger, prevRefused := lingerCommand, managerRefused
+	lingerCommand = func(int) string { return linger }
+	managerRefused = func(int) string { return "" }
+	t.Cleanup(func() { lingerCommand, managerRefused = prevLinger, prevRefused })
+	hintsAt(t, false, "on")
+	want := "\nnext: " + guide.NoManagerText + "\n  " + linger + "\n"
+	seen := map[string]bool{}
+
+	t.Run("run", func(t *testing.T) {
+		seen["run"] = true
+		sandboxedLaunch(t)
+		prev := probeMachine
+		probeMachine = func(context.Context, *config.Machine, backend.Tier) (*doctor.Report, error) {
+			return noManagerReport(), nil
+		}
+		t.Cleanup(func() { probeMachine = prev })
+		code, _, errs := run(t, "run", filepath.Join("testdata", "minimal.yaml"), "--offline", "--", "true")
+		if code != identity.ExitLauncher || !strings.HasSuffix(errs, want) {
+			t.Errorf("exit %d:\n%s", code, errs)
+		}
+		code, _, errs = run(t, "run", filepath.Join("testdata", "minimal.yaml"), "--offline", "--tier", "cgroup", "--", "true")
+		if code != identity.ExitLauncher || strings.Contains(errs, "next:") {
+			t.Errorf("--tier cgroup: exit %d:\n%s", code, errs)
+		}
+		managerRefused = func(int) string { return "systemd starts no user manager for this account" }
+		defer func() { managerRefused = func(int) string { return "" } }()
+		code, _, errs = run(t, "run", filepath.Join("testdata", "minimal.yaml"), "--offline", "--", "true")
+		if cmd, ok := nextCommand(errs); code != identity.ExitLauncher || !ok || cmd != "" {
+			t.Errorf("a name systemd refuses: exit %d:\n%s", code, errs)
+		}
+	})
+	t.Run("watch", func(t *testing.T) {
+		seen["watch"] = true
+		sandboxedLaunch(t)
+		prev := startRun
+		startRun = func(context.Context, *agent.RuleTable, []string, tegoruntime.Deps) (tegoruntime.Result, error) {
+			return tegoruntime.Result{ExitCode: identity.ExitLauncher}, fmt.Errorf("runtime: cgroup: %w: %w", rtcgroup.ErrNotDelegated,
+				rtcgroup.ErrNoUserManager)
+		}
+		t.Cleanup(func() { startRun = prev })
+		code, _, errs := run(t, "watch", "--offline", "--", "python3")
+		if code != identity.ExitLauncher || !strings.HasSuffix(errs, want) {
+			t.Errorf("exit %d:\n%s", code, errs)
+		}
+	})
+	t.Run("test", func(t *testing.T) {
+		seen["test"] = true
+		prevRun, prevProbe := selftestRun, testProbe
+		selftestRun = func(context.Context, selftest.Options) (selftest.Report, error) {
+			return selftest.Report{Tier: "", Verdict: selftest.VerdictInconclusive, Actions: 4,
+				Checks: []selftest.Row{{Name: "x", Baseline: selftest.Outcome{Result: selftest.ResultSucceeded},
+					UnderTego: selftest.Outcome{Result: selftest.ResultError}}}}, nil
+		}
+		testProbe = func(context.Context, *config.Machine) (probeAnswer, error) { return probeAnswer{noManager: true}, nil }
+		t.Cleanup(func() { selftestRun, testProbe = prevRun, prevProbe })
+		code, _, errs := run(t, "test")
+		if code != identity.ExitError || !strings.HasSuffix(errs, want) {
+			t.Errorf("exit %d:\n%s", code, errs)
+		}
+	})
+	for _, c := range guide.RunCommands {
+		if !seen[c] {
+			t.Errorf("guide.RunCommands names %q, which this test does not hold to the refusal", c)
+		}
+	}
+}
+
+// TestTheGuidanceNamesWhoseManagerWhenNoCommandOpensItForAnotherReader: tego run, watch and test, and tego setup, read
+// by an administrator (sudo -u svc ...) where the user manager runs but keeps no socket under /run/user/<uid>: the
+// next: block has no command, as the fix: line has none (cgroup.placementRemedy), and its words name svc's manager, not
+// "your user manager", which the administrator reads as their own (integration pass 5, 2026-11-11).
+func TestTheGuidanceNamesWhoseManagerWhenNoCommandOpensItForAnotherReader(t *testing.T) {
+	const missing = "the user manager of uid 1002 keeps no socket under /run/user/1002, so systemd-run --user cannot reach it from another user's shell"
+	prevOpener := scopeOpener
+	t.Cleanup(func() { scopeOpener = prevOpener })
+	hintsAt(t, false, "on")
+	scopeOpener = func() guide.Opening { return guide.Opening{Missing: missing, As: "svc"} }
+	var b bytes.Buffer
+	outsideHint(&b, "run this again there")
+	got := b.String()
+	if cmd, ok := nextCommand(got); !ok || cmd != "" ||
+		!strings.Contains(got, "next: open a shell in svc's user manager's cgroup, then run this again there.") ||
+		!strings.Contains(got, "cannot open a shell in svc's user manager's cgroup from here: "+missing) ||
+		strings.Contains(got, "your user manager") {
+		t.Errorf("another reader:\n%s", got)
+	}
+	scopeOpener = func() guide.Opening { return guide.Opening{Missing: missing} }
+	b.Reset()
+	outsideHint(&b, "run this again there")
+	if got := b.String(); !strings.Contains(got, "next: open a shell in your user manager's cgroup, then run this again there.") ||
+		!strings.Contains(got, "a terminal on your desktop is in it") {
+		t.Errorf("the user's own shell:\n%s", got)
+	}
 }

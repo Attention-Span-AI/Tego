@@ -6,6 +6,7 @@ package bpf
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -82,27 +83,55 @@ func unixConnectAttachType(t *testing.T) bool {
 	return true
 }
 
-// unpin clears the pin-by-name declaration so a load test needs no bpffs directory; the pin protocol itself
-// is exercised by internal/runtime/enforce/cgroup's own integration tests.
-// dropOptionalWhereAbsent leaves out of spec each OptionalTracePrograms program whose kernel function this kernel's BTF
-// lacks (security_file_truncate below 6.2), as the backend does (enforce/cgroup kernel.go dropTraceWhereAbsent): the
-// loader resolves an fexit target when it loads the program, so trace_proc does not load whole on such a kernel.
+// dropOptionalWhereAbsent selects the backend's optional trace programs by kernel BTF. Missing io_bind and
+// io_listen are allowed only below their 6.11 introduction; on newer kernels they fail this capability check.
+// The loader resolves an fexit target at load, so trace_proc cannot load whole on a kernel without it.
 func dropOptionalWhereAbsent(t *testing.T, spec *ebpf.CollectionSpec) (dropped []string) {
 	t.Helper()
 	kspec, err := btf.LoadKernelSpec()
 	if err != nil {
-		return nil
+		t.Fatalf("probe optional trace functions in kernel BTF: %v", err)
 	}
-	for name, fn := range OptionalTracePrograms {
-		var f *btf.Func
-		if _, ok := spec.Programs[name]; ok && kspec.TypeByName(fn, &f) != nil {
-			delete(spec.Programs, name)
-			dropped = append(dropped, name)
-		}
+	var uts unix.Utsname
+	if err := unix.Uname(&uts); err != nil {
+		t.Fatalf("probe optional trace functions' kernel release: %v", err)
+	}
+	dropped, err = dropOptionalTracePrograms(spec, unix.ByteSliceToString(uts.Release[:]), kspec.TypeByName)
+	if err != nil {
+		t.Fatal(err)
 	}
 	return dropped
 }
 
+func dropOptionalTracePrograms(spec *ebpf.CollectionSpec, release string, typeByName func(string, any) error) (dropped []string, err error) {
+	for name, fn := range OptionalTracePrograms {
+		var f *btf.Func
+		if _, ok := spec.Programs[name]; !ok {
+			continue
+		}
+		if err := typeByName(fn, &f); errors.Is(err, btf.ErrNotFound) {
+			if name == ProgURingBindResult || name == ProgURingListenResult {
+				// Both hooks arrived in 6.11: torvalds/linux commits 7481fd93fa0a (bind) and ff140cc8628a
+				// (listen), merged by 3a56e2417329. BTF absence cannot excuse losing either on a newer row.
+				var major, minor int
+				if n, err := fmt.Sscanf(release, "%d.%d", &major, &minor); err != nil || n != 2 || major < 1 || minor < 0 {
+					return dropped, fmt.Errorf("cannot establish %s introduction floor from kernel release %q", fn, release)
+				}
+				if major > 6 || major == 6 && minor >= 11 {
+					return dropped, fmt.Errorf("kernel %s BTF lacks %s; this io_uring hook arrived in Linux 6.11", release, fn)
+				}
+			}
+			delete(spec.Programs, name)
+			dropped = append(dropped, name)
+		} else if err != nil {
+			return dropped, fmt.Errorf("probe optional trace function %s in kernel BTF: %w", fn, err)
+		}
+	}
+	return dropped, nil
+}
+
+// unpin clears the pin-by-name declaration so a load test needs no bpffs directory; the pin protocol itself
+// is exercised by internal/runtime/enforce/cgroup's own integration tests.
 func unpin(spec *ebpf.CollectionSpec) {
 	for _, m := range spec.Maps {
 		m.Pinning = ebpf.PinNone
@@ -207,6 +236,9 @@ func TestObjectsLoadOnThisKernel(t *testing.T) {
 						t.Skip("this kernel predates the unix sockaddr attach types (6.7); the backend does not load it here")
 					}
 					if slices.Contains(absent, name) {
+						if name == ProgURingBindResult || name == ProgURingListenResult {
+							t.Skipf("this kernel predates Linux 6.11 and BTF has no %s; the backend does not load it here", OptionalTracePrograms[name])
+						}
 						t.Skipf("this kernel has no %s; the backend does not load it here", OptionalTracePrograms[name])
 					}
 					if slices.Contains(absentMulti, name) {

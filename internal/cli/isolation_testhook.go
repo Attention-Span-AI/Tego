@@ -14,6 +14,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/realtego"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
+	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
 // ErrTestLedgerRoot is what a binary built with tegotesthooks answers when its machine config puts the ledger
@@ -64,11 +65,21 @@ func testIsolationError(m *config.Machine, dirs []string, anchor, ownLogHome str
 			"its own (ledger_root: <dir>/ledger in the file TEGO_CONFIG names)", ErrTestLedgerRoot, root, d)
 	}
 	if d := hit(anchor); anchor != "" && d != "" {
-		return fmt.Errorf("%w: %s=%s is inside %s", ErrTestLedgerRoot, EnvTestChainAnchor, anchor, d)
+		return fmt.Errorf("%w: %s is inside %s", ErrTestLedgerRoot, testPathSetting(EnvTestChainAnchor, anchor), d)
 	}
 	// The own log is <home>/.tego/tego.log.
 	if d := hit(filepath.Join(ownLogHome, ".tego")); ownLogHome != "" && d != "" {
-		return fmt.Errorf("%w: %s=%s keeps tego.log inside %s", ErrTestLedgerRoot, EnvTestOwnLogHome, ownLogHome, d)
+		return fmt.Errorf("%w: %s keeps tego.log inside %s", ErrTestLedgerRoot, testPathSetting(EnvTestOwnLogHome, ownLogHome), d)
 	}
 	return nil
+}
+
+// testPathSetting names a test path setting in a message: NAME=<path> when its value is a place (an absolute clean
+// path), and the variable alone, with how to print it, when the value is anything else (identity envtext.go, rules
+// (b) and (c)).
+func testPathSetting(name, value string) string {
+	if identity.EnvPlace(value) {
+		return name + "=" + value
+	}
+	return "the " + name + " value (not an absolute clean path; " + identity.EnvInspect(name) + ")"
 }

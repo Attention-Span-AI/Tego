@@ -597,7 +597,7 @@ func TestPlaneRenamesAndLinksKeepTheirRows(t *testing.T) {
 		t.Errorf("tego_modify_hook does not decide a modification at the object:\n%s", modify)
 	}
 	for _, hook := range []string{"path_unlink", "path_rmdir"} {
-		if !strings.Contains(bodies[hook], "TEGO_R_DELETE_OUTSIDE_CONTRACT)") {
+		if !strings.Contains(bodies[hook], "TEGO_R_DELETE_OUTSIDE_CONTRACT, TEGO_BLOCK_WRITE | TEGO_BLOCK_GUARD)") {
 			t.Errorf("%s does not refuse a removal as TEGO_R_DELETE_OUTSIDE_CONTRACT", hook)
 		}
 	}
@@ -866,8 +866,9 @@ func TestPlaneStepBCreatesAreModifications(t *testing.T) {
 		"path_symlink": "TEGO_R_WRITE_OUTSIDE_CONTRACT",
 	} {
 		// hdr and the names argument are ADR 0043's (TestNameCheckCallersAreTheListedHooks holds which hooks set it).
+		// The last argument is the live blocks' classes (ADR 0124, amendment 2026-11-21): a creation asks the name rows.
 		call := regexp.MustCompile(`tego_modify_hook\(dentry, dir->mnt, run, hdr, [01], TEGO_HOOK_` + strings.ToUpper(hook) +
-			`, \(__u64\)dentry,\s*` + reason + `\)`)
+			`, \(__u64\)dentry,\s*` + reason + `, TEGO_BLOCK_WRITE \| TEGO_BLOCK_CREATE\)`)
 		if !call.MatchString(bodies[hook]) {
 			t.Errorf("%s does not decide its new name as a modification refused %s", hook, reason)
 		}
@@ -957,6 +958,29 @@ func TestPlaneStepBRefusalsWriteTheirSample(t *testing.T) {
 	for _, want := range []string{"tego_unix_listen_marker(sock,run,reason,rule)", "tego_listen_refuse(run,sock,reason)"} {
 		if !strings.Contains(bodies["socket_listen"], want) {
 			t.Errorf("listen lost terminal Unix / sampled IP ownership: %q", want)
+		}
+	}
+	// ADR 0024's 2026-11-23 amendment (D28): with no listener policy in the header, a net: section's listen on an inet
+	// socket other than UDP (TCP, MPTCP, SCTP: the supervisor counts all but UDP as TCP or raw and refuses them) is
+	// refused before the listener checks and any other listen is left undecided, so a ring's IORING_OP_LISTEN meets
+	// the rule the supervisor applies to listen(2). The refusal must come from the net flag and an inet family, with
+	// UDP the one protocol passed, ahead of the LISTEN_DECIDES return that used to pass every listen. A test of
+	// "protocol is not TCP" is the hole this pins shut: an MPTCP socket (262) autobinds as a TCP one does.
+	listenBody := bodies["socket_listen"]
+	if gate := strings.Index(listenBody, "if (!(slot->flags & TEGO_SLOT_LISTEN_DECIDES))"); gate < 0 {
+		t.Error("socket_listen no longer tests the header's listener flag")
+	} else {
+		arm := listenBody[gate:]
+		if end := strings.Index(arm, "if (sk->__sk_common.skc_family == TEGO_AF_UNIX)"); end > 0 {
+			arm = arm[:end]
+		}
+		for _, want := range []string{"TEGO_SLOT_NET_DECIDES", "sk->sk_protocol == IPPROTO_UDP", "TEGO_AF_INET", "TEGO_AF_INET6", "goto decided;", "return 0;"} {
+			if !strings.Contains(arm, want) {
+				t.Errorf("socket_listen's no-listener-policy arm lacks %q:\n%s", want, arm)
+			}
+		}
+		if strings.Contains(arm, "IPPROTO_TCP") {
+			t.Errorf("socket_listen's no-listener-policy arm names TCP, so an MPTCP or SCTP listen would slip past it:\n%s", arm)
 		}
 	}
 	sample := functionBody(t, path, "tego_plane_own_sample")
@@ -1166,5 +1190,48 @@ func TestPlaneFallbackOnEveryFexitHookRefusal(t *testing.T) {
 	i := strings.Index(maps, "} tego_plane_recorded SEC")
 	if i < 0 || !strings.Contains(maps[strings.LastIndex(maps[:i], "struct {"):i], "LIBBPF_PIN_BY_NAME") {
 		t.Error("tego_plane_recorded is not a map pinned by name, which every launcher of the build writes and adopts")
+	}
+}
+
+// TestPlaneSocketRecvmsgRefusesOnlyControlBearingReceives is ADR 0128's descriptor-import guard in the plane: the hook
+// looks at the kernel's own copy of the msghdr, admits a receive with no control buffer before it reads the slot (so
+// recvfrom(2), read(2) and an interface list's recvmsg pay one load) and a control receive of any family but AF_UNIX
+// too (SCM_RIGHTS and SCM_PIDFD exist only there), decides only a slot whose header carries
+// TEGO_SLOT_IMPORTS_DENIED, refuses a slot with no header, and writes one sample of its own (rule
+// TEGO_PLANE_RULE_SOCKET_IMPORT) for every refusal, where no recorder fexit wraps the hook.
+func TestPlaneSocketRecvmsgRefusesOnlyControlBearingReceives(t *testing.T) {
+	t.Parallel()
+	body := planeBodies(t)["socket_recvmsg"]
+	if body == "" {
+		t.Fatal("no socket_recvmsg hook")
+	}
+	ctl, slot := strings.Index(body, "if (!msg->msg_controllen)\n        return 0;"), strings.Index(body, "tego_plane_slot_of(run)")
+	if ctl < 0 || slot < ctl {
+		t.Error("socket_recvmsg does not admit a receive with no control buffer before it reads the slot header")
+	}
+	// Only AF_UNIX has SCM_RIGHTS and SCM_PIDFD: another family's control receive passes, before the slot is read.
+	fam := strings.Index(body, "if (sk && sk->__sk_common.skc_family != TEGO_AF_UNIX)\n        return 0;")
+	if fam < ctl || fam > slot {
+		t.Error("socket_recvmsg does not pass a control receive of a non-AF_UNIX socket between the control test and the slot read")
+	}
+	flag := strings.Index(body, "if (!(hdr->flags & TEGO_SLOT_IMPORTS_DENIED))\n        return 0;")
+	if flag < slot {
+		t.Error("socket_recvmsg does not decide only a slot flagged TEGO_SLOT_IMPORTS_DENIED, after its header is read")
+	}
+	if !strings.Contains(body, "if (!hdr) {") || !strings.Contains(body, "tego_plane_unslotted(TEGO_HOOK_SOCKET_RECVMSG") {
+		t.Error("socket_recvmsg does not fail closed on a slot with no header")
+	}
+	refusals, samples := strings.Count(body, "return -EACCES;"), strings.Count(body, "tego_plane_own_sample(run, &a);")
+	if refusals != 3 || samples != refusals {
+		t.Errorf("socket_recvmsg refuses %d times and writes its sample %d times, want 3 and one each", refusals, samples)
+	}
+	for _, want := range []string{"a.rule = TEGO_PLANE_RULE_SOCKET_IMPORT;", "a.kind = TEGO_EV_PLANE_SOCKET;",
+		"tego_plane_record(sc, TEGO_HOOK_SOCKET_RECVMSG, (__u64)sock, TEGO_PLANE_RULE_SOCKET_IMPORT, TEGO_R_NET_NOT_ALLOWED);"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("socket_recvmsg lacks %q", want)
+		}
+	}
+	if strings.Contains(body, "msg->msg_control)") || strings.Contains(body, "msg_iter") || strings.Contains(body, "int size") {
+		t.Error("socket_recvmsg reads more of the receive than the control buffer's length: it decides on nothing else")
 	}
 }

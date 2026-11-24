@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/handoff"
 	"github.com/attention-span-ai/tego/internal/setup"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
@@ -27,7 +28,10 @@ func init() { register(cmdDashboard) }
 
 // cmdDashboard is `tego dashboard`: the one dashboard, a user unit that tego start starts too. One already running is
 // offered first (open it, or start a new one, which signs out its tabs); with no terminal it is reused. On a Mac
-// (TEGO_ON_MAC) the tego command on the Mac opens the link in the Mac's browser; elsewhere the link is printed.
+// (including legacy TEGO_ON_MAC), the host command opens its link. On Windows the link is never printed: from
+// Windows its 127.0.0.1 address reaches WSL's own forwarding, which the dashboard refuses; the Windows tego command
+// opens the dashboard through its relay instead (docs/adr/0123-dashboard-threat-model.md, "A browser on Windows"),
+// and a shell inside Tego's Linux is told to run it there. On Linux the link is printed.
 // shortcut: no browser is opened on Linux; tego serve --open does that for a dashboard of its own.
 func cmdDashboard() Command {
 	return Command{
@@ -40,6 +44,7 @@ func cmdDashboard() Command {
 				message(stderr, "", 0, 0, "tego dashboard: takes no arguments", codeUsage)
 				return identity.ExitUsage
 			}
+			host := setupHost()
 			m, cds, err := loadMachine(config.TrustWarn)
 			writeConfigDiagnostics(stderr, cds)
 			if err != nil {
@@ -48,10 +53,24 @@ func cmdDashboard() Command {
 			}
 			g := newWalk(os.Stdin, stdout, guideInteractive(stdout))
 			g.col = colTop
+			// shown is how a link is printed here: on Windows not at all (see above).
+			shown := func(u string) string {
+				if host == hostWindows {
+					return ""
+				}
+				return ": " + u
+			}
 			u, current := dashboardAt(m.Home)
+			// A dashboard that answers needs no start; one that has to be started needs the user's manager and its bus.
+			if !(u != "" && current) {
+				if p := classifyUserBus(userBusProbe()); p.found() {
+					writeUserBusProblem(g, p)
+					return identity.ExitError
+				}
+			}
 			switch {
 			case u != "" && current:
-				g.ok("The dashboard is already running: " + u)
+				g.ok("The dashboard is already running" + shown(u))
 				if !g.tty {
 					break
 				}
@@ -66,26 +85,38 @@ func cmdDashboard() Command {
 					if u = restartDashboard(ctx, m.Home); u == "" {
 						return dashboardFailed(g, m.Home)
 					}
-					g.ok("Started a new dashboard: " + u)
+					g.ok("Started a new dashboard" + shown(u))
 				}
 			case u != "":
 				if u = restartDashboard(ctx, m.Home); u == "" {
 					return dashboardFailed(g, m.Home)
 				}
-				g.ok("Started the dashboard again, on the updated tego: " + u)
+				if why := unreadableProgram(); why != "" {
+					g.ok("Started the dashboard again: " + why + shown(u))
+				} else {
+					g.ok("Started the dashboard again, on the updated tego" + shown(u))
+				}
 			default:
 				if u = guideDashboard(ctx, m.Home); u == "" {
 					return dashboardFailed(g, m.Home)
 				}
-				g.ok("Started the dashboard: " + u)
+				g.ok("Started the dashboard" + shown(u))
 			}
-			if os.Getenv("TEGO_ON_MAC") != "1" {
+			switch {
+			case host == hostLinux:
 				g.line("%s  %sOpen the link above in your browser.%s", colTop, g.dim, g.offEsc)
+			case host == hostWindows && !windowsNative():
+				// A shell inside Tego's Linux cannot start a Windows browser.
+				g.line("%s  %sTo open it in your browser, type exit, then run: tego dashboard%s", colTop, g.dim, g.offEsc)
 			}
 			return identity.ExitOK
 		},
 	}
 }
+
+// windowsNative reports whether the Windows tego command ran this command (the guest entry says so), which opens
+// the dashboard in the person's browser when it returns.
+func windowsNative() bool { return os.Getenv("TEGO_WINDOWS_NATIVE") == "1" }
 
 // restartDashboard stops the running dashboard and starts a new one: with its log emptied, guideDashboard finds no
 // dashboard to reuse.
@@ -116,14 +147,18 @@ func runningDashboard(home string) string {
 }
 
 // dashboardAt is the link of the dashboard tego start left running, "" when none answers at its address, and whether
-// it runs this tego: false when tego was updated after it started (its log is older than this program).
-// The listener must prove possession of the private sign-in token before a link is reused or printed.
-func dashboardAt(home string) (string, bool) {
-	log := dashboardLog(home)
-	fi, err := os.Lstat(log)
-	if err != nil {
-		return "", false
-	}
+// it runs the program a dashboard started now would run. That is decided by content: the log carries the SHA-256 of
+// the bytes the dashboard runs (written by the dashboard itself from /proc/self/exe, handoff.ProgramLine), and the
+// program tego would start is tego-control with the hash this build pinned. The same bytes are the same program
+// whatever the inode, the memfd the handoff copied them into or the modification time; the file attributes the earlier
+// identity compared (device, inode, size, times) named another memfd on every launch, so it never matched. A log with no such
+// line is from a tego before it, so not this one. The listener must prove possession of the private sign-in token
+// before a link is reused or printed.
+func dashboardAt(home string) (string, bool) { return dashboardWithin(home, 300*time.Millisecond) }
+
+// dashboardWithin is dashboardAt with the identity probe's time limit: the Windows relay's Linux end, which checks
+// a dashboard already serving pages, allows it longer (dashboard_relay.go).
+func dashboardWithin(home string, limit time.Duration) (string, bool) {
 	b, err := readGuideFile(home, ".tego/dashboard.log")
 	if err != nil {
 		return "", false
@@ -132,20 +167,33 @@ func dashboardAt(home string) (string, bool) {
 	if m == nil {
 		return "", false
 	}
-	if !probeDashboard(string(m[0])) {
+	if !probeDashboardWithin(string(m[0]), limit) {
 		return "", false
 	}
-	current := true
-	if self, err := os.Executable(); err == nil {
-		if si, err := os.Stat(self); err == nil && si.ModTime().After(fi.ModTime()) {
-			current = false
-		}
-	}
-	return string(m[0]), current
+	// A program that cannot be named is no proof: the dashboard is not reused unchecked.
+	want, ok := thisProgram()
+	started, recorded := handoff.RecordedProgram(b)
+	return string(m[0]), ok && recorded && started == want
 }
 
+// unreadableProgram says why a dashboard that answers is not reused when the program a new one would run cannot be
+// named, else "".
+func unreadableProgram() string {
+	if _, ok := thisProgram(); ok {
+		return ""
+	}
+	return "this tego has no pinned tego-control to compare the running dashboard with"
+}
+
+// thisProgram is the SHA-256 of the program a dashboard started now would run: tego-control, whose bytes the handoff
+// verifies against the hash this build pinned before it runs anything. When this build pins none (it hands off
+// nothing) the dashboard is not reused (unreadableProgram says why). A variable so a test names another program.
+var thisProgram = handoff.PinnedSum
+
 // probeDashboard sends a fresh challenge, never the sign-in token, to a listener that has not yet been trusted.
-func probeDashboard(link string) bool {
+func probeDashboard(link string) bool { return probeDashboardWithin(link, 300*time.Millisecond) }
+
+func probeDashboardWithin(link string, limit time.Duration) bool {
 	_, _, scope, err := dashboardConfiguration()
 	if err != nil {
 		return false
@@ -164,7 +212,7 @@ func probeDashboard(link string) bool {
 	}
 	challenge := hex.EncodeToString(nonce[:])
 	u.Path, u.RawQuery = "/_tego/identity", "challenge="+challenge
-	client := &http.Client{Timeout: 300 * time.Millisecond, Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("dashboard probe redirects are refused") }}
+	client := &http.Client{Timeout: limit, Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("dashboard probe redirects are refused") }}
 	defer client.CloseIdleConnections()
 	resp, err := client.Get(u.String())
 	if err != nil {
@@ -190,6 +238,9 @@ func dashboardConfiguration() (root, file, scope string, err error) {
 	m, _, err := loadMachine(config.TrustWarn)
 	if err != nil {
 		return "", "", "", err
+	}
+	if !m.BaselineKnown() {
+		return "", "", "", errors.New("cannot authenticate dashboard configuration: a machine configuration layer is unknown; fix the configuration before opening its link")
 	}
 	root, err = ledgerRootOf(m)
 	if err != nil {

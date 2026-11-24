@@ -16,7 +16,6 @@ package web
 // With TEGO_CHROME_SHOTS set it saves screenshots of the open row and the pill at 1440 and 390, light and dark.
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -60,7 +59,7 @@ func TestLogsInChrome(t *testing.T) {
 		"--no-default-browser-check", "--disable-gpu", "--disable-extensions", "--disable-sync",
 		"--disable-background-networking", "--disable-component-update", "about:blank")
 	cmd.ExtraFiles = []*os.File{cmdR, outW}
-	var stderr bytes.Buffer
+	var stderr chromeOutput
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -105,7 +104,7 @@ func TestLogsInChrome(t *testing.T) {
 	lg.until(t, "the new line at the top", rows+`[0].dataset.k === "`+progRun+`-153"`)
 	// It is the same refusal as line 2: one folded row of two lines, the older row gone, and the counts agree.
 	lg.until(t, "the counts after it", `document.querySelector(".lq-shown").textContent === "154" && document.querySelector(".lq-total").textContent === "154"`)
-	if lg.eval(t, `!!document.querySelector('tr[data-k="`+progRun+`-2"]') || !document.querySelector("#lq-rows tr.lq-r .xn")`) != "false" {
+	if lg.eval(t, `!!document.querySelector('tr[data-k="`+progRun+`-2"]') || !document.querySelector("#lq-rows tr.lq-r .c-verdict .b").textContent.includes("×2")`) != "false" {
 		t.Error("the folded refusal's older row stayed, or the new row lacks its ×2")
 	}
 	if lg.eval(t, `!!document.querySelector('tr[data-k="`+otherRun+`-0"]')`) != "true" {

@@ -17,7 +17,7 @@ here is undefined and must be added here before it is coded.
 | no `deny_read:` | the built-in list applies: `~/.ssh`, `~/.aws`, `~/.netrc`, `~/.gnupg`, `~/.npmrc`, `~/.git-credentials`, `~/.config/gh`, `~/.docker/config.json`, `~/.kube/config`, `~/.config/gcloud` (a file where the credential is the file, a directory where it is one of several files in it), the agents' own token stores `~/.claude/.credentials.json`, `~/.claude.json`, `~/.claude/backups` (Claude Code's copies of `~/.claude.json`), `~/.codex/auth.json`, `~/.gemini/oauth_creds.json`, `~/.gemini/.env`, `~/.gemini/mcp-oauth-tokens.json`, `~/.copilot/config.json`, `~/.copilot/mcp-oauth-config` and `~/.copilot/mcp-secrets`, and the stores of the tools an agent runs beside, `~/.azure`, `~/.config/op`, `~/.password-store`, `~/.pypirc`, `~/.cargo/credentials`, `~/.cargo/credentials.toml`, `~/.terraform.d/credentials.tfrc.json`, `~/.vault-token` and `~/.pgpass` (*amended 2026-10-25*, [ADR 0067](../../docs/adr/0067-agent-token-stores-and-credential-rows.md): the harness's own store is denied too, and a harness gets its credential from a variable its profile passes; a row absent at compile compiles no rule, but the Landlock ruleset, at tier landlock and in the tiers that compose it, enumerates the directory it would appear in, so a file created at it during the run is refused, as is anything else created directly in that directory; [the row list](../../docs/spec/builtin-deny-read.md) cites the vendor document that names each location), the long tail of credential stores, `~/.local/share/keyrings`, `~/.local/share/kwalletd`, `~/.my.cnf`, `~/.mylogin.cnf`, `~/.s3cfg`, `~/.boto`, `~/.config/rclone/rclone.conf`, `~/.rclone.conf`, `~/.gem/credentials`, `~/.local/share/gem/credentials`, `~/.config/composer/auth.json`, `~/.composer/auth.json`, `~/.m2/settings-security.xml`, `~/.config/doctl/config.yaml`, `~/.config/hub`, `~/.config/glab-cli/config.yml`, `~/.fly/config.yml`, `~/.supabase/access-token` and `~/.oci` (*amended 2026-11-02*, under the same rule and in the same row list; `~/.m2/settings.xml` and `~/.gradle/gradle.properties` stay readable, since each configures every build of its tool), browser profile directories (Firefox, Chrome and its beta and unstable channels, Chromium, Brave, Edge and its beta and dev channels, Vivaldi, Opera, at their usual paths under `~/.config`, the snap paths `~/snap/firefox/common/.mozilla` and `~/snap/chromium/common/chromium`, and the flatpak directories `~/.var/app/<id>` of the same browsers; a browser installed elsewhere is not covered, name it in `deny_read:`), and `.env` files under the project root — the contract file's directory — and under the directory the run starts in, resolved at compile time; at tiers `cgroup` and `bpflsm` one created later beneath them is refused as well, by the built-in name entries (amended 2026-10-27, ADR 0043; tier `landlock` keeps the files resolved at compile time unless the run holds its reads, ADR 0069) (amended 2026-09-29: the snap, flatpak and beta/unstable channel browser paths were not in the compiler's list, so a snap Firefox profile stayed readable; the credential rows from `~/.npmrc` to `~/.config/gcloud` were applied by the compiler but not written here; amended 2026-09-24: the scan was rooted at the working directory alone, so a run started in a subdirectory left the project root's `.env` readable); `deny_read: []` disables it and `compile` warns |
 | no `fs.deny_write:`, or `fs.deny_write: []` (*added 2026-10-25*, [ADR 0071](../../docs/adr/0071-user-deny-write.md)) | no declared entry: only the built-in `deny_write` set (§2) refuses writes inside a write entry; `[]` adds nothing and never removes the built-in set, across `extends` either (a union) |
 | no `env:` | the launcher's environment plus the identity set; `env.pass` narrows it. Under a root launcher, a `HOME`, `USER` or `LOGNAME` naming root is the invoking user's |
-| no `limits:` | the machine config's ceilings (spec/config/v0) |
+| no `limits:` | the machine config's ceilings (spec/config/v0). What holds is in the record: a launch's `run_start.applied_limits` is each limit file the launcher wrote, read back from the scope (GAPS C221); for memory, pids and cpu the value is the lowest ceiling along the cgroup chain above the scope, read once at the start, and a member whose ancestors could not be read is left out, as is every one of them when the mount is a private cgroup namespace's root, whose cgroups above are not visible (GAPS N85) |
 | no `record:` | `summary` |
 | no `tier:` / `capture:` | `auto`: the highest at or below the machine config's ceiling |
 
@@ -116,9 +116,10 @@ or who bound a name, and say `allow` there; whether the run had the scope is on 
 `net.unix_abstract_scope` (added 2026-09-23). *Amended 2026-09-22:* the ruleset used to handle `RESOLVE_UNIX` at ABI ≥ 9 here too,
 refusing a pathname socket outside a write entry that this row allows; it is the pathname-socket half of `net:`
 and is no longer handled without one, save in the unix-only state above. One address form is refused even here, in the unprivileged tier: an
-`AF_UNSPEC` address in a send, which a UDP or raw socket sends to as the `sockaddr_in` behind the family word
-and which that tier cannot place — a `NULL` address or `AF_INET` spells the same send;
-it refuses a spelling, not a destination. An exec is still a read of the program (§4), so an undeclared binary under a
+`AF_UNSPEC` address in a send, whose interpretation depends on the socket's domain: IPv4 UDP or raw sockets can use
+the `sockaddr_in` behind the family word, while IPv6 UDP can use its existing peer. That tier cannot place the
+destination or establish the result of a continued attempt. A `NULL` address spells a connected send, or `AF_INET`
+spells an IPv4 destination (`docs/p0/supervisor.md` R4, R7); it refuses a spelling, not a destination. An exec is still a read of the program (§4), so an undeclared binary under a
 `deny_read` the tier enforces is refused as `read-denied`. Tier 2's fanotify exec check reads the same absent-exec
 policy through `decide.ListenerExec`: an undeclared binary is not refused merely because no `exec:` section
 was declared (`internal/runtime/enforce/cgroup`, `decideExec`).
@@ -469,6 +470,10 @@ Kernel decision first, gate second, gate only escalates.
    tables local, main and default) is this host as well: an address of an AnyIP range counts as one of the host's own,
    and a datagram to a broadcast address set by hand or to an IPv6 anycast address the host joined as a broadcast or
    group datagram.
+   *Amended 2026-11-22 (D30):* the tables read are local, main and default and any other table a policy rule the run's
+   own traffic can match leads to (`ip rule`: no `fwmark` the mask covers, `iif` absent or `lo`, a `uidrange` holding
+   the run's user; an `oif` or `l3mdev` rule counts, since an agent can bind a socket to an interface or a VRF device with
+   `SO_BINDTODEVICE`); a table only a mark leads to is not read, and `tego doctor` names it.
    *Amended 2026-10-06 (ADR 0048 (1)):* exec command rules are lists and decide before the gate, after the image
    floor: any `exec.deny` match refuses, any `exec.ask` match refuses (reserved), and a constrained tool's unlisted
    invocation is refused; specificity never changes the order, and no exception syntax exists.
@@ -723,20 +728,28 @@ through the filesystem as the kernel does before it matches (*amended 2026-09-29
 granted binary is allowed as the run allows it; it still cannot see inodes, so a hard link under another name is
 refused, as the run refuses it.
 
-**The race this walk does not close.** The decision reads the task's descriptor table and filesystem, and the
-kernel resolves the exec again after the supervisor answers `CONTINUE`. Two things can change between the two
-lookups. A **descriptor** the walk read can be swapped for another by any thread of the process or any `CLONE_FILES`
-child, which share the descriptor table. A **filesystem path** — a symlink on the way to the image — can be
-repointed by *any* concurrent process that can write that directory, not only a thread of the agent: another
-process in the run, or one outside it with access to the path. So a racing peer can have the kernel load another
-image than the one decided on — a memfd included, which Landlock then allows. Only a run with no concurrency at all
-on the descriptor and no writable path on the way to the image is free of it. So the direct-loader refusal and the
-supervisor's own anonymous-image refusal (the residual sources below) are **best-effort in tiers 1 and 2, not
-closures**: a raced exec's line reads `allow` for the file the walk reached, never `refused` for one that ran, but
-the image that ran is not the one recorded. The race-free enforcement is tier 3's `bprm_check_security`, which
-decides on the file the kernel is loading; its condition is BPF LSM in the boot `lsm=` list (`docs/GAPS.md` B1,
-C30). The main anonymous vector, `memfd_create`, is closed race-free in tiers 1 and 2 on every supported kernel
-without waiting for tier 3 (below), because it is refused at creation, not by a second lookup.
+**The race this walk does not close (words corrected 2026-11-22, D18).** The decision reads the task's descriptor table
+and filesystem, and the kernel resolves the exec again after the supervisor answers `CONTINUE`. Two things can change
+between the two lookups. A **descriptor** the walk read can be swapped for another by any thread of the process or any
+`CLONE_FILES` child, which share the descriptor table. A **filesystem path**, a symlink on the way to the image, can be
+repointed by *any* concurrent process that can write that directory, not only a thread of the agent: another process in
+the run, or one outside it with access to the path. What the swap can reach is bounded by the kernel. At tier landlock
+and on tier 2's fanotify fallback Landlock grants `EXECUTE` only on the files the contract's `exec.allow` entries grant
+(each file, each directory's files, their loaders), and checks the real path of the file the kernel opens, so no
+spelling (`/proc/self/fd/N`, `/dev/fd/N`, a dirfd), descriptor or race runs a file outside that set as the exec's
+image (what a granted loader or interpreter maps or reads is GAPS C31 and A2)
+(`TestIntegrationExecRaceStaysInsideTheGrantedSet`). Inside it the supervisor makes further decisions on its own
+lookup: `exec.deny`, `exec.ask`, command rules, live blocks, the MCP gate, a fence entry and the multicall names. A
+racing peer can have the kernel run another granted file than the one decided on, and the raced line reads `allow` for
+the file the walk reached. One image lies outside the bound: a memfd received from outside the run (`SCM_RIGHTS`, or
+inherited at launch), since Landlock allows a memfd outright; the run's own `memfd_create` is refused at creation
+(below). So the direct-loader refusal and the supervisor's own anonymous-image refusal (the residual sources below) are
+**best-effort in tiers 1 and 2, not closures**, for exactly those two things: a finer decision inside the granted set
+and a received memfd. Both are race-free only where a decision plane decides the run's execs: `bprm_check_security`
+decides on the file the kernel is loading (tier cgroup in a plane mode, tier bpflsm); its condition is BPF LSM in the
+boot `lsm=` list (`docs/GAPS.md` B1, C30). The main anonymous vector, `memfd_create`, is closed race-free in tiers 1 and
+2 on every supported kernel without waiting for tier 3 (below), because it is refused at creation, not by a second
+lookup.
 
 **Anonymous images (memfd / fexecve), tiers 1 and 2 (amended 2026-09-23).** `exec.allow` bounds which binary
 *on disk* runs. An anonymous image — a `memfd_create(2)` region, another `anon_inode:`, or a file unlinked since it
@@ -859,6 +872,7 @@ destination from a snapshot of the host's addresses, and `compile`, which does n
 *Amended 2026-11-02:* the host's own addresses take in every address of a `local` route in the routing tables its
 default rules look up, an AnyIP range's, as a live block, a `net to` rule and the `models[]` guard read this host
 (agent-contract R18).
+*Amended 2026-11-22 (D30):* and in any other table a policy rule the run's own traffic can match leads to; GAPS C46.
 A name whose compile-time answer held only public addresses is also refused a private one (`10/8`,
 `172.16/12`, `192.168/16`, `100.64/10`, `fc00::/7`) that a refresh brings in — DNS rebinding towards the host's own
 network — while a name that first resolved to a private address (split-horizon DNS) keeps them. A literal address or
@@ -893,7 +907,7 @@ return only `0` or `1` (enforce-cgroup-observe I3), and a `CGROUP_SOCK_ADDR` pro
 an unconnected datagram to a destination the contract does not admit, and for a connect only where the kernel's rows
 and the supervisor disagree. *Amended 2026-10-05:* the supervisor answers such a datagram itself,
 with the program's errno (`EPERM`, or `EACCES` where the decision plane decides unix names below 6.7), so the agent's
-errno is unchanged and the datagram's one ledger line is that refusal. *Amended
+errno is unchanged and the datagram's one ledger line is that refusal (it carries `op: send`, which a UDP socket's connect(2) line does not: GAPS C172). *Amended
 2026-10-16 (R13b):* a refused datagram of a shape the supervisor leaves to the kernel's own
 checks — an IPv4 or v4-mapped destination on an `AF_INET6` socket, UDP port 0, a datagram that is not UDP (an ICMP
 ping socket's), a relative unix name — is no longer continued to the program, which refused it with `EPERM` (or
@@ -946,10 +960,10 @@ Explicit listener declarations and their distinct per-tier address/port guarante
 They supersede the original assumption that the schema declared no listen ports.
 An omitted listener list adds no new listener restriction, and a `net:` section alone admits no TCP listener: an
 explicit bind fails on the withheld `BIND_TCP` and, *amended 2026-11-01*, a `listen()` with no bind, which that right
-never sees, is refused by the supervisor and recorded. *Amended 2026-11-02:* a ring's `IORING_OP_LISTEN` under
-`io_uring: true`, where a root tier's plane admits io_uring, reaches no supervisor, and the plane decides a listen only
-against an explicit list, so nothing refuses its autobind (GAPS C44): `compile` warns `io-uring` wherever such a run may
-land at tier `cgroup` or `bpflsm`, and an explicit list closes it. An explicit empty list refuses new binds/listens,
+never sees, is refused by the supervisor and recorded. *Amended 2026-11-02, closed 2026-11-23 (D28, ADR 0024 amended):* a ring's `IORING_OP_LISTEN` under
+`io_uring: true` reaches no supervisor, so the decision plane's `socket_listen` refuses a TCP listen of a run with a `net:`
+section and no `net.listen` (`EACCES`, `net-not-allowed`), as the supervisor refuses `listen(2)`; unix listens are
+unchanged (GAPS C44). `compile` no longer warns `io-uring` for it. An explicit empty list refuses new binds/listens,
 and a nonempty list grants its declared endpoints subject to the tier's capabilities and requested assurance.
 DNS tunnelling through the allowed resolver is a stated limit shared with every host-based tool.
 
@@ -1115,7 +1129,13 @@ strict client filter. The runtime refuses the contract before starting its agent
 Strict mode rejects `io_uring: true`, `setuid: true`, unsafe inherited standard descriptors and unsupported
 destinations; extra inherited descriptors are closed. Its filter refuses `recvmsg`, `recvmmsg`, `pidfd_getfd`,
 `listen`, `accept` and `accept4` with ENOSYS when no listener policy is declared, to close descriptor-import and
-accepted-socket paths. An explicit listener policy instead requires its actual listener enforcement mechanisms
+accepted-socket paths; where the decision plane runs the run, the plane's `socket_recvmsg` takes `recvmsg` instead and
+refuses (EACCES, rule `socket-import`) only a receive on an `AF_UNIX` socket that carries a control buffer, so interface
+lists work, and a run with neither mechanism is refused before it starts. A run that holds its opens is no exception
+(*amended 2026-11-21*, ADR 0128): the open deputy receives its request sockets with a control buffer, and the plane
+passes that task alone, by the thread-group id and start time the launcher writes into the run's slot before the run
+is armed; every other task's control receive is refused. The guarantee is `SCM_RIGHTS` and `SCM_PIDFD` receives;
+`getsockopt(SO_PEERPIDFD)` is outside it. An explicit listener policy instead requires its actual listener enforcement mechanisms
 before release; a missing mechanism never silently widens access. These restrictions can break applications
 that use the blocked calls for otherwise ordinary work.
 
@@ -1435,7 +1455,19 @@ included, may lower a ceiling, never raise it; `compile` prints each effective v
 
 *Added 2026-10-16:* `limits.stall_after` ends a run that has done nothing the run sees for
 that long: what it records, every notification the supervisor answers under `record: off`, model traffic in flight,
-and the wait of a published ask. At tier `landlock` under `record: summary` or `off` a read-open never reaches the
+and the wait of a published ask.
+
+*Added 2026-11-21 (fix26):* a request of the agent's that Tego itself holds is not the agent's silence. From the moment
+the forwarder has read a model request until its connection to the model is ready (its approval, route and credential
+decisions, its connect and its TLS handshake, including loading the trust roots on the first one), the run counts as
+held, as it does while an ask waits or the run is paused (`limits.WithHeld`, `Manager.HoldingRequest`): `stall_after`
+does not run, and starts again from the moment the connection is ready. Found when a disk busy with other work made that
+first load take over two seconds and a run with `stall_after: 2s` was ended as stalled before its request had left Tego
+(`TestIntegrationATegoSideDelayBeforeTheRequestIsSentIsNotAStall`). Unchanged: nothing is sent on unrecorded, a failure
+to connect fails closed (the hold ends with the exchange, and net/http's 10 s connect and handshake bounds still end a
+connect that never completes), and a model that answers its headers and then sends nothing stalls the run
+(`TestIntegrationASilentModelStalls`: the hold ends when the request is sent, not when the response ends). A request
+held in a tunnel (CONNECT, websocket) is not covered: only the model request path is. At tier `landlock` under `record: summary` or `off` a read-open never reaches the
 supervisor (§7), so a read is neither a line nor activity there, and an agent busy only reading is ended as stalled
 (in one test 14 s of reads ended at 6 s of `stall_after: 5s`; under `record: full` the same agent ran to its own end).
 `compile` warns of it (`stall-reads-unseen`) when the contract sets `stall_after`, the record mode is not `full` and the
@@ -1567,6 +1599,12 @@ with no permission event. The filter now also notifies `unshare(2)` and `clone(2
 user namespace, and every `setns(2)`; the supervisor refuses each with `-EPERM` (what a host without unprivileged user
 namespaces answers) and records it like a mount, `refused reason=landlock-topology op=unshare|clone|setns`, the target
 naming the namespace flags. A thread's or a process's ordinary `clone` is left alone; `clone3` is ENOSYS already.
+*Amended 2026-11-18:* the same arm also notifies a new cgroup namespace (`CLONE_NEWCGROUP`) and a new process-id
+namespace (`CLONE_NEWPID`), refused and recorded the same way. Both need `CAP_SYS_ADMIN`, so the unprivileged tier was
+already refused them by the kernel; what changes is a root-level run whose agent holds that capability (`setuid: true`,
+then `sudo`). Before, such an agent could make a cgroup namespace rooted at its own run's scope, where a process reads
+its cgroup as `0::/` and the run's name no longer shows in any path, and a process-id namespace whose own procfs shows
+another process as pid 1. A new network, UTS or IPC namespace alone is still left to the kernel.
 Rootless/container contracts and Docker-proxy/daemon adoption are future product work: nonempty `containers`
 and `docker` fields are rejected by this binary. The proposed design would omit filesystem rights from the
 root-tier Landlock domain, retain network/scope rights, and use BPF ancestry with a pre-created daemon parent.
@@ -1631,3 +1669,51 @@ ADR 0043 D10 remains the contract directory and launch cwd. The rejected coverag
 Landlock directory-move floor are reverted. Root-tier pip moves into an uncovered `target` remain an
 explicit limit; OPERATIONS gives the tested staging/target declarations plus target-cwd arrangement.
 Landlock future-name aliases, including declared held patterns moved out of scope, remain GAPS A11.
+
+
+## 11. Machine baseline compilation
+
+ADR 0144 adds four additive machine lists: fs.deny_read, fs.deny_write, exec.deny and env.deny.
+The compiler prepends their trusted union once after profile merging. A contract cannot remove or
+reopen a baseline refusal. Existing contract entries, including duplicates, remain in order. An
+empty baseline adds no rules and leaves source/effective bytes equal. An exec insertion preserves
+the original image mode, including null/empty allow sections.
+
+The original contract bytes/hash keep their existing meaning. Separate effective bytes/hash cover
+owner-home-expanded insertion before ceilings and live/runtime transforms. Compile JSON emits
+effective_hash only for a nonempty applied baseline; absent and empty baselines retain its prior shape.
+Conflicts compare final compiled grants with baseline targets and known aliases in both directions,
+using their placed paths and identities rather than reinterpreting grant spellings. Conflicts name both
+sources and refuse compile; an already-invalid entry keeps its earlier ordinary refusal. A different
+filesystem instance showing the same data remains outside alias recognition. Unproved placement
+or mechanism support refuses decisions. Selected
+mechanisms recheck identities and coverage before preparation. Environment rules cover final exec
+delivery, and command refusals retain their copied/interpreted-code limits. Historical reconstruction
+uses a validated recorded snapshot for slice 6 records, without consulting today's union. Older
+records keep an UNKNOWN baseline. Recorded reconstruction cannot authorize a launch or adoption.
+
+Slice 6 supplies bounded record evidence, shared receipts and validated replay. Nonempty
+applied-baseline launches remain refused pending per-tier guest proof in slice 9. No launch exception is provided. The ADR's coverage table and residuals remain the
+authority for each mechanism; this compiler work does not accept the ADR.
+
+Automatic adoption guards reload and compile the current owner context and rerun backend
+selection before each adoption, even with an empty baseline. Final admission after the host-wide
+migration-lock wait reloads the selected layers and compares their identities, exact bytes and baseline
+digest with the prepared snapshot, including emptiness. Changed or unreadable facts refuse, clean up
+and move no process. The selected plane mode rechecks live admission before arming and inside final
+admission. Already adopted runs retain their snapshots. Recording-only adoption uses an
+observed handle predicate. Record evidence validation and the effective contract copy are named
+snapshot checks prepared before adoption movement. Final admission retains those facts while
+rechecking current configuration. Adoption run_start emits neither FSReads nor ReadsNotified metadata.
+Guard startup records resolved ledger/anchor directory placement and device/inode; a change
+observed during final admission requires restart.
+Supported absence pins an existing ancestor and missing suffix, then retains newly observed
+directory identities. These are adoption-boundary checks, without continuous directory custody.
+
+For the same contract and modeled context, a refusal remains refused, an ask remains ask or
+tightens to refusal, and an allow may remain allow or tighten. A changed refusal reason must
+be the applied baseline entry's own reason for that action. Decision comparisons, retained
+refusals, asks retained or tightened and environment-filter checks are counted separately.
+The property uses a finite corpus, fixed baseline choices and synthetic mount topology. It does not
+generate arbitrary baseline combinations, successive nonempty-baseline changes, system-only absent
+targets or mutations during admission.

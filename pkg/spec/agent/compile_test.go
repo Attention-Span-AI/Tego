@@ -310,6 +310,9 @@ func newFixtureIn(t testing.TB, dir string) *fixture {
 		"api.anthropic.com": {netip.MustParseAddr("160.79.104.10"), netip.MustParseAddr("::ffff:160.79.104.10"), netip.MustParseAddr("2607:6bc0::10")},
 	}}
 	f.machine = machineWith(f.ledger, 8, 32<<30, 4096, 10_000_000, 200, 24*time.Hour, time.Hour, 20)
+	// This fixture's machine belongs to the same home WithHome supplies. Tests
+	// modeling another owner's adoption set that context explicitly (ADR 0144 R10).
+	f.machine.Home = f.home
 	return f
 }
 
@@ -369,9 +372,10 @@ func (f *fixture) profiles() ProfileSource {
 
 func (f *fixture) opts(extra ...CompileOption) []CompileOption {
 	// The host-socket probe (R19) is rooted in the fixture, where no daemon socket exists unless a test
-	// makes one, so no fixture's diagnostics depend on what runs on the machine the tests run on.
+	// makes one, and the machine is not WSL unless a test says so (withWSLFacts), so no fixture's diagnostics depend
+	// on what runs on the machine the tests run on.
 	base := []CompileOption{WithResolver(f.resolver), WithPATH(f.bin), WithCwd(f.project), WithHome(f.home), WithClock(func() time.Time { return time.Unix(1_700_000_000, 0) }),
-		withHostSocketProbe(f.root, 4242), withInstallDirs(filepath.Join(f.home, ".local", "bin"))}
+		withHostSocketProbe(f.root, 4242), withInstallDirs(filepath.Join(f.home, ".local", "bin")), withWSLFacts(false)}
 	return append(base, extra...)
 }
 
@@ -832,6 +836,9 @@ func TestCompileNet(t *testing.T) {
 	}
 	if len(rt.Net[0].IPs) != 0 || rt.Net[0].TTL != MinDNSTTL || len(rt.Net[1].IPs) != 1 {
 		t.Errorf("offline rules: %+v", rt.Net)
+	}
+	if !rt.Net[0].ResolvedAt.IsZero() || rt.Net[1].ResolvedAt.IsZero() {
+		t.Errorf("resolution timestamps must describe successful DNS evidence only: %+v", rt.Net)
 	}
 	// Model bypass is a Load warning; the forwarder hosts still resolve.
 	c = f.load("version: 0\nname: a\ncommand: [python]\nmodels: [{provider: anthropic, host: api.anthropic.com, port: 443}]\nnet:\n  allow: [\"api.anthropic.com:443\"]\n")

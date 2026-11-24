@@ -158,7 +158,7 @@ hard link from an ungranted source. Mount comparisons follow the [compile-time m
   Tego keeps its own places out of every run's reach and each contract out of its own run's; it does not make a
   project read-only to the agents the user lets write it. Protecting every working directory's contracts from every
   run is R26's rejected option (above). The name such a run could add is refused where the user registry holds it.
-- **A recording is not a cage.** `tego watch` with no contract (observe mode, OPERATIONS), `tego run --observe`
+- **A recording sets no boundary.** `tego watch` with no contract (observe mode, OPERATIONS), `tego run --observe`
   with a contract given by its name or its path ("record only: no enforcement"), and `tego adopt` with no
   `--boundary` refuse nothing, so the recorded process can write any of these files, the user registry's
   `agents/`, a layer of the machine config and the contract it was given included, though that contract compiled
@@ -431,7 +431,7 @@ the same contract with each name removed ran (exit 0), at both tiers.
 
 ## Amendment 2026-11-11 (second): kernel control filesystems by what they are, not where they usually are
 
-*Status: accepted 2026-11-11 (review round 1 of r14/pausecompile); built (compile).*
+*Status: accepted 2026-11-11 (review round 1); built (compile).*
 
 **Context.** R10 kept every write grant off `/sys/fs/cgroup` and `/sys/fs/bpf` (agent-contract R9's kernel implicits)
 and off `/run/tego` by their paths. Landlock grants a write through every mount beneath a granted directory, so a
@@ -839,3 +839,68 @@ in a protected-side ambiguity refusal. `TestMountStackUsesParentsBeforeRowOrder`
 `TestCompileNamesAmbiguousProtectedMount` and `TestMountVisibilityKeepsUnrelatedOmittedParentsUnknown` pin these
 cases. The shared bounded parser is also used by `MountTable.Of`; namespace-handle roots retain their kernel type but
 supply no filesystem-relative place. These unit checks do not establish privileged mount execution.
+
+## Amendment, 2026-11-19 (round 4, X3): no rules file on a file system whose owner tego cannot rely on
+
+Measured: in a Windows 11 guest with WSL (row `W-N3-DRIVE`, run 2), `tego run agent.yaml` started a run from a rules
+file on the Windows drive (`/mnt/c`, 9p with `aname=drvfs`), where every file shows the user as owner and mode 0777.
+Nothing on such a file says who may change it, and any Windows program can, between runs: the one-name rule above and
+every owner check rest on bits that file system makes up.
+
+Decision. A rules file (the contract, each profile it extends from a profile directory, a test table) is refused when it
+lies on a file system whose owner and permission bits come from the mount or from another system
+(`agent.ownerFSKind`, from the file's statfs magic and, for 9p and FUSE, its mount row): WSL's Windows drives (9p or
+virtiofs with drvfs's options, WSL 1's drvfs), every other 9p and virtiofs share, FAT, exFAT and NTFS disks (ntfs,
+ntfs3, fuseblk), and SMB shares (cifs, smb3). Not refused: ordinary Linux file systems, NFS, tmpfs, overlay, and FUSE
+file systems run by the user's own daemon. A file whose file system cannot be read is refused. The refusal is a load
+error (`config-untrusted`), before anything is compiled or started, and says: the rules file and where it is, that the
+file system's owner and permissions cannot be relied on, that any Windows program (or anything that writes that disk
+outside Linux) can change the rules between runs, and to keep the rules file and every file it extends in the Linux
+home, where the project may stay as it is. A project on such a file system whose rules file lies in the Linux home is
+not refused. Unit-tested with injected file-system facts (`TestOwnerFSKind` and round 4's drive test, since round 5 `TestReadRulesFileRefusesUnreliableFileSystems`,
+which failed first against the earlier loader). Guest row: `W-N3-DRIVE`.
+
+## Amendment, 2026-11-19 (round 5, Y3, Y7): one function reads every rules file
+
+The adversarial review of round 4 found the check above bypassed by name (F3): `tego run <name>` resolves the name
+through the registries (the project's `agent.yaml` that `tego init` writes, `.tego/agents/<name>.yaml`, the user
+registry) and compiled the bytes `registry.readEntry` read with no file-system check, so a rules file refused by its
+path ran by its name (with drvfs's `metadata` or `umask=022` options, where the files show 0644). It also found a FUSE
+file whose mount row cannot be read passed (F8), as did a file whose `Stat` failed.
+
+Decision. Every read of a rules file goes through ONE function, `config.ReadRulesFile(ctx, f, name, limit)`
+(`pkg/spec/config/rulesfile.go`; it moved from `pkg/spec/agent` so the general policy layers, which `pkg/spec/config`
+reads, can use it too). It checks the file system of the descriptor it reads (fstatfs on that open file and, for 9p
+and FUSE, the mount row of the file's own mount id; never a second lookup of the name) and then reads under the
+caller's cap. The readers that use it: `agent.Load` and test tables (`readCapped`), standard input of `tego compile -`,
+profile directories (`profilesrc.Dir`), registry entries and their rewrite (`registry.readEntry`,
+`registry.ReadIdentityAt`), the dashboard's contract list and `tego rule` (`rulefile.Read`) and its journal's blobs, a
+run's recorded copy (`internal/cli` and the dashboard's rules view), the general policy layers
+(`config.ReadPolicySource`), and the commands that read a person's rules file to show, edit or save it (`tego rules
+edit`, `tego start`'s own-rules step, the run's terminal line: `readRulesPath`). `agent.ReadCapped` and
+`agent.CheckRulesFileFS` are gone, so no reader outside can read a rules file without the check.
+`TestRulesFilesAreReadThroughOneFunction` holds the tree to it by its source: every place that hands rules text to the
+loader (`agent.Load`, `LoadBytes`, `LoadBytesBounded`, `LoadTestTable`, `LoadTestTableBytes`) and every profile source
+is listed with the functions its bytes are read by, each of which calls `ReadRulesFile`, or with why its bytes come from
+no file (a dashboard request, a contract `tego start` composes); a new loader fails the test until it is listed, and no
+function reads under the rules file cap (`MaxContractSize+1`) itself.
+
+Also (Y7, fail closed): a FUSE file system whose mount row cannot be read is refused (FUSE alone does not say whether
+it is a share of another system's files), and so is a file the reader cannot look at. Tests: `TestOwnerFSKind`,
+`TestReadRulesFileRefusesUnreliableFileSystems` (`pkg/spec/config`, injected file-system facts) and
+`TestRunByNameRefusesAnEntryOnTheWindowsDrive` (`internal/cli`: `tego run <name>` through the project's `agent.yaml`,
+`.tego/agents/<name>.yaml` and the user registry, `tego compile <name>`, and `tego compile <path>`, each on a drvfs, 9p
+and FAT stand-in, through a test build's `config.SetRulesFileFSForTest`).
+
+## Amendment, 2026-11-19 (round 6, Z2): the source test cannot be passed by a second read or a loader taken as a value
+
+The adversarial review of round 5 built two bypasses that passed `TestRulesFilesAreReadThroughOneFunction`: `readEntry`
+given a branch that reads the file with `io.ReadAll`, and a function that reads with `io.ReadAll` and calls the loader
+through a function value (`load := agent.LoadBytes`). The byte-level loaders take a plain `[]byte` (several hundred
+callers, tests included), so the bypass is not made impossible by type; the source check is kept and strengthened. In
+a listed reader, and in a loader site that is not its own reader, any call that reads content another way fails the
+test: `os.ReadFile`, `io.ReadAll`, `io.ReadFull`, `io.Copy`, a `bufio` reader, any method named `Read...`. Any reference
+to a loader (`agent.Load`, `LoadBytes`, `LoadBytesBounded`, `LoadTestTable`, `LoadTestTableBytes`), called or not, in a
+body or at package level, makes the place a loader site that must be listed; a dot import of the agent package fails.
+The one exception is the presets, embedded in the binary. Both reviewer copies fail it (they passed the old test).
+

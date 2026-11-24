@@ -314,3 +314,66 @@ configured entry is a symlink. Its old inode remains pinned and both the
 configured alias and an outside replacement of the resolved target remain
 protected. These are runtime plane rows; the compiled entry keeps its configured
 name. The native 107-byte replacement-directory regression uses such an alias.
+
+### Amendment, 2026-11-11: a `net.ask` entry on a socket a built-in refuses is a contradiction, and the dashboard offers no Allow for it
+
+`tego compile` already refused a `net.allow` `unix:` entry that `builtin.host_ipc` or `builtin.tego_surface` always
+refuses (a `contradiction`: the Decision's rule that no contract entry lifts a built-in refusal). A `net.ask` entry
+is as dead:
+the built-in is decided before the ask list too, so the person is never asked and the socket is refused outright, and
+it still compiled with no word. The ADR's rule is that
+no contract key lifts a built-in, so the author who wrote an ask entry believes something the engine will not do: the
+same error, not a warning. The message names the entry as a `net.ask` entry and says it never asks anyone; the fix names
+a helper on a socket no built-in covers, and says to ask about that one. Only an exact container-daemon socket is lifted
+(by a `net.allow` entry only), so an ask entry for one is refused too. A record-only run has no built-ins and says
+nothing. A shipped contract that carried such an entry would now fail to compile (none in `examples/` or the golden
+set does).
+
+The dashboard's "Act on this" panel offered "Allow next time" for a refused line of such a socket, and picking it
+wrote a contract that did not compile. `rules.Service.ActOn` now compiles each Allow and Ask choice for a `unix:` line
+with the real compiler, so such a choice is not possible and says why in the pages' words ("Built in (Host IPC refused):
+this socket is refused in every run, so no contract line can allow it or ask about it"). The event page leads with
+"Already refused by: Host IPC refused" and, when nothing is possible, shows that reason in the open rather than under a
+closed fold. Block stays. No script is needed and the page's CSP is unchanged.
+
+
+## Amendment, 2026-11-18: WSL host servers
+
+The fixed `builtin.host_ipc` inventory also includes sockets beneath `/run/WSL`, WSLg's X11 directory
+`/mnt/wslg/.X11-unix`, its Wayland/runtime directory `/mnt/wslg/runtime-dir`, and `/mnt/wslg/PulseServer`.
+Existing canonical-name and held device/inode checks cover their aliases. The same entries are immutable write
+refusals, and neither `host_sockets: true` nor another Unix allow removes them. The whole `/mnt/wslg` tree is not
+recursively inventoried as an IPC directory: its `distro` mount is a second name for the distribution root.
+GUI directories and the audio socket are named individually instead.
+
+Every enforcing tier removes all `WSL_INTEROP` entries from the final agent environment after pass/set handling.
+The invoking shell and record-only runs retain their own environment. Omitting the variable is not a proof that
+Windows execution is closed below the socket layer. Compiler and environment unit tables cover these changes;
+actual Windows launches by name and absolute drive path, direct interop connects, GUI/audio connects and bound
+identity aliases still require guest positive controls and all three contract variants. No WSL support claim is
+made by this inventory amendment.
+
+
+## Amendment, 2026-11-19: a contract cannot give a run WSL's launcher
+
+On WSL (the kernel release names Microsoft or WSL, or `/run/WSL` or a `WSLInterop` binfmt entry is there; what
+cannot be read counts as WSL), compile refuses a contract entry that would give a run WSL's Windows launcher, with the
+words "a run cannot be given WSL's Windows launcher: a program started through it runs outside the run and its rules",
+naming the entry: a `net.allow` or `net.ask` `unix:` entry, or an `fs.write` or `fs.ask` grant, that names
+`/run/WSL`, a path beneath it, or one of its sockets by another name (a link, a hard link: by identity); and
+`host_sockets: true` where a launcher socket lies outside every built-in refusal (none does while `/run/WSL` is in
+`builtin.host_ipc`, so today that clause refuses nothing and `host_sockets: true` compiles; the run still refuses the
+sockets). Such a `unix:` entry is refused once, with these words, not also as a built-in contradiction. A
+record-only run refuses nothing and is not checked. Off WSL nothing changes. The check is a compile error, not a new
+refusal in the run: the built-in refusal of `/run/WSL` already refused these entries' reach there. Unit-tested with
+WSL's facts injected (`TestWSLLauncherCannotBeGiven`); its guest row (`W-N2-CONTRACT`) is owed.
+
+*Amended 2026-11-19 (round 4):* "On WSL" above is now two of three independent marks (the release suffix,
+`/run/WSL`, one of the `WSLInterop` binfmt entries), as for the gate of ADR 0100 (amendment of the same day): a refused
+look at `/run/WSL` alone no longer makes an ordinary machine WSL. The built-in refusal of `/run/WSL` itself does not
+depend on this test and stands on every machine (round 4's two-mark test, replaced in round 5).
+
+*Amended 2026-11-19 (round 5):* detection is asymmetric (ADR 0100, amendment of the same day). Refusing WSL's
+launcher is a restriction, so compile applies it on any ONE of the three marks: a distribution with interop off shows
+its kernel release alone and is restricted as WSL is; only a machine with none of the marks is not
+(`TestWSLRestrictionOnOneMark`, which replaces round 4's two-mark test). A relaxation needs two marks.

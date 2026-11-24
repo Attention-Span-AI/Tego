@@ -4,7 +4,6 @@ package web
 
 import (
 	"context"
-	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -28,6 +27,8 @@ import (
 type setupGuide struct {
 	Words guide.Words
 	Next  guide.Next
+	// CanCopy is computed beside Next inside the trusted helper, before display transport omits its private marker.
+	CanCopy bool
 	// Done is every step done: the guide's last rule, enforce-done. The Overview then folds the guide to one line.
 	Done bool
 	// AnyAgent is whether the empty Overview also shows the first step for any agent (tego watch) under the guide:
@@ -36,14 +37,18 @@ type setupGuide struct {
 }
 
 // guideTTL bounds how long the Overview reuses a guide it computed while the runs' shape (guideKey) is unchanged: a
-// contract saved to a registry, or a check `tego setup` stored, shows within it. A live run's lines move the
+// contract saved to a registry shows within it. A bounded helper checks stored check and scan keys on each request,
+// so replacement or scan freshness changes invalidate the memo immediately. A live run's lines move the
 // Overview every second; the guide reads up to 2000 run_starts, verifies up to two runs and compiles up to 20
 // contracts, so it is not computed again for each of them.
 const guideTTL = 15 * time.Second
 
-// guideCompute bounds one computation of the guide, apart from the request that asked for it (setupGuide). A var
+// guideCompute bounds one computation of the guide, within the request that asked for it (setupGuide). A var
 // only so a test can make it run out.
-var guideCompute = 20 * time.Second
+var guideCompute = 20 * time.Second * raceScale
+
+// computeGuide is the bounded compute operation; tests can hold it until cancellation.
+var computeGuide = checkedGuide
 
 // guideMemo is the last guide computed, by its key.
 type guideMemo struct {
@@ -54,10 +59,9 @@ type guideMemo struct {
 }
 
 // guideKey is what changes the steps the record decides: how many runs there are, how many have ended or are live,
-// and the newest; the stored check's file (its size and modification time); and the build of the tego a person types,
-// so a tego reinstalled while the dashboard runs shows at once.
-func guideKey(snap *ledgerview.Snapshot, in guide.Inputs) string {
-	home := in.Home
+// and the newest; the build of the tego a person types; the serving identity; and the stored check/scan keys read
+// in the bounded helper. This function inspects no filesystem path in the service.
+func guideKey(snap *ledgerview.Snapshot, in guide.Inputs, files guideFileKeys) string {
 	var ended, live int
 	for _, r := range snap.Runs {
 		if r.Ended {
@@ -71,10 +75,8 @@ func guideKey(snap *ledgerview.Snapshot, in guide.Inputs) string {
 	if len(snap.Runs) > 0 {
 		k += "/" + snap.Runs[0].ID
 	}
-	if fi, err := os.Lstat(guide.CheckPath(home)); err == nil {
-		k += "/" + strconv.FormatInt(fi.Size(), 10) + "@" + strconv.FormatInt(fi.ModTime().UnixNano(), 10)
-	}
-	return k + "/" + in.Build
+
+	return k + "/" + in.Build + "/" + in.Host.BootID + "/" + in.Home + "/" + strconv.Itoa(in.UID) + "/" + files.Check + "/" + files.Scan
 }
 
 // setupGuide is the Overview's guide, nil when the server has no guide inputs (Config.Guide).
@@ -82,25 +84,49 @@ func (s *Server) setupGuide(ctx context.Context, snap *ledgerview.Snapshot) *set
 	if s.cfg.Guide == nil {
 		return nil
 	}
-	in := s.cfg.Guide()
-	key := guideKey(snap, in)
+	in := s.cfg.Guide(ctx)
+	files, keyErr := checkedGuideKeys(ctx, in)
+	key := guideKey(snap, in, files)
 	m := &s.guide
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.last != nil && m.key == key && time.Since(m.at) < guideTTL {
-		return m.last
+	if keyErr == nil && m.last != nil && m.key == key && time.Since(m.at) < guideTTL {
+		last := m.last
+		m.mu.Unlock()
+		return last
 	}
-	// The guide is shared by every viewer, so it is not computed under one viewer's request: a request that ends (the
-	// viewer leaves, a live refresh is cut short) would make a contract "not compile" and a record "not known", and
-	// that would be shown to the next viewer. It gets its own bound instead, and a guide whose bound ran out is shown
-	// to this request only, never kept.
-	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), guideCompute)
+	// A failed refresh must not leave an older key's known result available
+	// if a later request returns to that key before its TTL expires.
+	m.last = nil
+	m.mu.Unlock()
+	// Cancellation belongs to this viewer. A partial guide is never kept, so a
+	// later viewer recomputes it without continuing this request's checks.
+	cctx, cancel := context.WithTimeout(ctx, guideCompute)
 	defer cancel()
-	st := guide.Compute(cctx, in)
-	g := &setupGuide{Words: st.Words(in.Home), Next: st.Next, Done: st.Next.Rule == guide.RuleEnforceDone,
+	var st guide.State
+	var canCopy bool
+	err := keyErr
+	if err == nil {
+		st, canCopy, err = computeGuide(cctx, in)
+	}
+	if err != nil {
+		st = guide.State{NotKnown: []string{err.Error()}}
+	}
+	g := &setupGuide{Words: st.Words(in.Home), Next: st.Next, CanCopy: canCopy, Done: st.Next.Rule == guide.RuleEnforceDone,
 		AnyAgent: st.Next.Rule != guide.RuleRecordTodo}
-	if cctx.Err() == nil {
+	// run_end can precede the first anchor's publication. Show uncertainty
+	// now, but let the next refresh verify again instead of holding it for
+	// guideTTL. The same rule applies to any other unreadable step source.
+	known := true
+	for _, step := range st.Steps {
+		if step.State == guide.NotKnown {
+			known = false
+			break
+		}
+	}
+	if cctx.Err() == nil && err == nil && known {
+		m.mu.Lock()
 		m.key, m.at, m.last = key, time.Now(), g
+		m.mu.Unlock()
 	}
 	return g
 }
@@ -128,11 +154,24 @@ func stepBadge(state string) [2]string {
 	case guide.Done:
 		return [2]string{"b-verified", "i-check"}
 	case guide.Waiting:
-		return [2]string{"b-waiting", "i-activity"}
+		return [2]string{"b-neutral", "i-activity"}
 	case guide.Blocked:
 		return [2]string{"b-broken", "i-triangle-alert"}
 	case guide.NotKnown:
-		return [2]string{"b-asked", "i-search"}
+		return [2]string{"b-neutral", "i-search"}
 	}
 	return [2]string{"b-outline", "i-square"}
+}
+
+// A browser preference must not conceal an uncertain machine fact.
+func guideNeedsAttention(g *setupGuide) bool {
+	if g == nil {
+		return false
+	}
+	for _, step := range g.Words.Steps {
+		if step.State == guide.Blocked || step.State == guide.NotKnown || (step.ID == guide.StepCheck && step.State != guide.Done) {
+			return true
+		}
+	}
+	return false
 }

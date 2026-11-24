@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 // labels is the label of each payload key, by its dotted path (resources.memory_peak). A nested key with no entry
@@ -49,7 +51,7 @@ var labels = map[string]string{
 	"what": "What is missing", "why": "Why", "binary": "Program", "which": "Limit", "value": "Value",
 	"ceiling": "Ceiling", "live_block": "Live block", "live_block.op": "Change", "live_block.kind": "Block kind",
 	"live_block.value": "Blocked", "live_block.rule": "Rule", "live_block.by": "By", "live_block.serial": "Change number",
-	"live_block.at": "Made at", "live_control": "Pause or resume", "live_control.op": "Change",
+	"live_block.at": "Made at", "live_block.note": "Note given with the lift", "live_control": "Pause or resume", "live_control.op": "Change",
 	"live_control.by": "By", "live_control.serial": "Change number", "live_control.at": "Made at",
 	"credential": "Credential", "credential.name": "Credential", "credential.version": "Credential version",
 	"mcp_tool": "MCP tool switch", "mcp_tool.server": "MCP server", "mcp_tool.tool": "MCP tool",
@@ -72,7 +74,9 @@ var labels = map[string]string{
 	"fs_reads.reads": "Reads", "fs_reads.why": "Why", "fs_reads.nested": "Secret files inside writable folders",
 	"reads_notified": "Reads seen by Tego", "reads_notified.notified": "Every read seen",
 	"reads_notified.why": "Why", "deny_read_frozen": "Folders deny_read froze at launch",
-	"deny_read_frozen.dirs": "Folders", "deny_read_frozen.omitted": "More not named", "harness": "Agent harness", "harness.name": "Harness",
+	"deny_read_frozen.dirs": "Folders", "deny_read_frozen.omitted": "More not named", "applied_limits": "Limits the run's scope holds", "applied_limits.cpu_max": "CPU limit", "applied_limits.cpu_weight": "CPU share", "applied_limits.pids_max": "Process limit", "applied_limits.memory_max": "Memory limit", "applied_limits.memory_high": "Memory soft limit", "local_approval_authority.mode": "Approval authority", "local_approval_authority.sha256": "System setting hash", "local_approval_authority.agent_uid": "Agent user id",
+	"actor.uid": "Answered by user id", "actor.pid": "Answered by process id", "actor.start_boot_ns": "Answering process start (ns since boot)", "actor.user_namespace": "Answering user namespace",
+	"harness": "Agent harness", "harness.name": "Harness",
 	"harness.provisioned": "Set up by Tego", "harness.why": "Why", "harness.reason_file": "Refusal note file",
 	"harness.files": "Files Tego wrote", "harness.state_dir": "Hook state folder", "harness.hook": "Hook",
 	"harness.hook.argv": "Hook command", "harness.hook.granted": "Hook allowed", "stdio": "Standard streams",
@@ -300,35 +304,35 @@ func lookup(m map[string]string, s string) (string, bool) {
 }
 
 var reasons = map[string]string{
-	"write-outside-contract":  "a write outside the folders the agent may change",
-	"delete-outside-contract": "a delete outside the folders the agent may change",
-	"rename-outside-contract": "a rename outside the folders the agent may change",
-	"mkdir-outside-contract":  "a new folder outside the folders the agent may change",
-	"read-denied":             "a read the rules refuse",
-	"path-unresolved":         "a path Tego could not resolve, so it refused",
-	"exec-not-allowed":        "a program the rules do not allow",
-	"fs-gate":                 "a file gate refused it",
-	"exec-gate":               "a program gate refused it",
-	"net-not-allowed":         "a destination the rules do not allow",
-	"net-gate":                "a network gate refused it",
-	"net-http":                "an HTTP request the rules do not allow",
-	"ask-denied":              "a person said no",
-	"ask-timeout":             "nobody answered in time",
-	"ask-unavailable":         "the question could not be asked",
-	"ask-unreadable":          "the answer could not be read",
-	"landlock-topology":       "a file layout the kernel's rules cannot hold, refused to be safe",
-	"limit-tokens":            "the run used its token budget",
-	"limit-cost":              "the run used its cost budget",
-	"limit-wall":              "the run reached its time limit",
-	"limit-stall":             "the agent stalled past its limit",
-	"limit-repeats":           "the agent repeated the same thing too often",
-	"oom":                     "the run ran out of memory",
-	"pids":                    "the run reached its process limit",
-	"credential-not-allowed":  "a key Tego would not send there",
-	"credential-revoked":      "a revoked key",
-	"credential-unavailable":  "a key the vault does not hold",
-	"mcp-tool-denied":         "an MCP tool the rules do not allow",
-	"model-route-changed":     "a model request whose route a person changed while it was held",
+	"write-outside-contract":               "a write outside the folders the agent may change",
+	"delete-outside-contract":              "a delete outside the folders the agent may change",
+	"rename-outside-contract":              "a rename outside the folders the agent may change",
+	"mkdir-outside-contract":               "a new folder outside the folders the agent may change",
+	"read-denied":                          "a read the rules refuse",
+	"path-unresolved":                      "a path Tego could not resolve, so it refused",
+	"exec-not-allowed":                     "a program the rules do not allow",
+	"fs-gate":                              "a file gate refused it",
+	"exec-gate":                            "a program gate refused it",
+	"net-not-allowed":                      "a destination the rules do not allow",
+	"net-gate":                             "a network gate refused it",
+	"net-http":                             "an HTTP request the rules do not allow",
+	"ask-denied":                           "a person said no",
+	"ask-timeout":                          "nobody answered in time",
+	"ask-unavailable":                      "the question could not be asked",
+	"ask-unreadable":                       "the answer could not be read",
+	"landlock-topology":                    "a file layout the kernel's rules cannot hold, refused to be safe",
+	"limit-tokens":                         "the run used its token budget",
+	"limit-cost":                           "the run used its cost budget",
+	"limit-wall":                           "the run reached its time limit",
+	"limit-stall":                          "the agent stalled past its limit",
+	"limit-repeats":                        "the agent repeated the same thing too often",
+	"oom":                                  "the run ran out of memory",
+	"pids":                                 "the run reached its process limit",
+	"credential-not-allowed":               "a key Tego would not send there",
+	"credential-revoked":                   "a revoked key",
+	"credential-unavailable":               "a key the vault does not hold",
+	"mcp-tool-denied":                      "an MCP tool the rules do not allow",
+	string(record.ReasonModelRouteChanged): "a model request whose route a person changed while it was held",
 	// run_end reasons.
 	"exit":    "the agent exited",
 	"signal":  "the agent was ended by a signal",
@@ -395,6 +399,12 @@ func Op(op string) (string, bool) {
 	}, op)
 }
 
+// AskOp is the operation a held request asks about, as the op word every page and sentence shares. A file open the
+// contract's fs.ask entry holds is a write (that entry asks before a change), and one an fs.ask_read entry holds is a
+// read, so neither is worded "open": the word names what the person is asked to allow. Any other op is returned as
+// it is.
+func AskOp(op, rule string) string { return record.AskOpWord(op, rule) }
+
 // Mechanism is the kernel mechanism a refusal names (mechanism) in words.
 func Mechanism(m string) (string, bool) {
 	return lookup(map[string]string{
@@ -442,36 +452,37 @@ var gapWhys = map[string]string{
 	"bpf-tracking-skip/shared-build":     "the rules may not have held: the kernel skipped the shared program that adds a run's child cgroups to it; the skips may belong to other runs or ungoverned tasks",
 	"bpf-skip-counter-unavailable":       "the rules may not have held: the skip counters of the programs the run's rules rely on could not be read",
 	"bpf-skip-counter-restored":          "the skip counters of the programs the run's rules rely on could be read again after failed readings; the rules may not have held while they could not",
-	"no-price-table":                     "no price table for this model, so cost is not counted",
 	"no-models":                          "no model capture for this agent",
 	"argv-truncated":                     "a command line too long to record whole",
 	"path-truncated":                     "a path too long to record whole",
 	"ringbuf-full":                       "some kernel events were dropped (the buffer was full)",
 	"memory-swap-uncapped":               "the memory cap does not cover swap on this machine",
+	"ledger-ceiling-overshoot":           "the record grew past its size limit before the run stopped; the count is the bytes over",
 	"plane-identity-mismatch":            "the kernel plane refused files that changed identity while checked",
 	"plane-path-unresolved":              "the kernel plane refused paths it could not resolve",
 	"plane-walk-bound":                   "the kernel plane refused paths too deep to walk",
 	"plane-no-rows":                      "the kernel plane refused actions it had no rules for",
 	"plane-counters-unread":              "the kernel plane's counters could not be read at the end",
-	"live-block-added":                   "a live block was added",
-	"live-block-removed":                 "a live block was removed",
 	"live-block-unreadable":              "the live blocks could not be read; the last ones read stay in force",
 	"live-block-lost":                    "some live changes were lost from the record",
-	"run-paused":                         "the run was paused",
-	"mcp-tool-changed":                   "an MCP tool's rule was changed live",
-	"run-resumed":                        "the run was resumed",
-	"pause-failed":                       "a pause could not be put in force; the run kept running",
-	"resume-failed":                      "a resume could not be put in force; the run stays paused",
-	"live-block-expired":                 "a live block's time ran out; it no longer refuses",
-	"live-unblock-expired":               "a live block's time off ran out; it refuses again",
-	"live-rule-lifted":                   "a rule in the fence was allowed for now",
-	"live-rule-restored":                 "a rule in the fence refuses again",
-	"live-lift-expired":                  "an allowed rule's time ran out; it refuses again",
-	"live-lift-refused":                  "a request to allow a rule was refused; nothing was loosened",
-	"model-route-changed":                "a model endpoint's requests were sent to another approved backend",
+	"live-block-partial":                 "a live block covers every name of its file the mount table listed, but the table could not list them all",
+	"model-route-unreadable":             "the model routes could not be read; the routes read last stay in force and a change made meanwhile is not applied",
+	"mcp-response-oversize":              "an MCP server's answer was too large for the relay and was dropped; the line gives the server, the size and the limit",
+	"mcp-stream-oversize":                "a message of an MCP server's event stream was too large for the relay and was dropped; the line gives the server, the size and the limit",
 	"launcher-lost":                      "the run's supervisor was gone before the run ended, so the record's last lines may be missing",
 	"own-state-mode-restored":            "the mode of one of tego's own files had been taken from its owner, and tego restored it",
 	"torn-tail":                          "the supervisor died in the middle of a line, so that line is lost",
+}
+
+func init() {
+	// The sentences the receipt and tego status say for a live change and for a price gap are the record's: one table
+	// (record.LiveChangeWords, record.PriceGapWords), not a copy kept equal by a test.
+	for _, why := range record.LiveChangeWhys() {
+		gapWhys[why], _ = record.LiveChangeWords(why)
+	}
+	for _, why := range []string{record.GapNoPriceTable, record.GapPriceTableVersion, record.GapUnpricedModel} {
+		gapWhys[why], _ = record.PriceGapWords(why)
+	}
 }
 
 // GapWhy is a gap's why in words.
@@ -664,6 +675,8 @@ func Who(by string, name func(uid string) string) string {
 		return who
 	case "dashboard":
 		return who + ", from the dashboard"
+	case "dashboard relay":
+		return who + ", from the dashboard in a browser on another system (through its relay)"
 	case "cli":
 		return who + ", from the command line"
 	default:

@@ -10,7 +10,8 @@ Run every command in a plain terminal, as yourself, not inside another `tego run
 
 The output below comes from a fresh Ubuntu 24.04 cloud image, as a new user, `dana`, over SSH in a
 `systemd-run --user --scope bash` shell. Your paths, ids and kernel lines will differ, and a value in angle brackets is
-your own build's.
+your own build's. These recorded examples use the checked manual path. Automatic scope entry is built for run, watch and test;
+its SSH and console behavior is **owed in a guest**.
 
 ## Install
 
@@ -22,7 +23,8 @@ curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/in
 
 The installer does not change your `PATH`. If `~/.local/bin` is not on it yet, its next steps start with
 `export PATH="/home/<you>/.local/bin:$PATH"`, with your own home folder: run that line, or log in again, or `tego`
-below answers `command not found`.
+below answers `command not found`. The installer's own last line, the next command, names `tego` by its full path in that
+case, so it runs in the shell you are in.
 
 On **macOS**, the installer sets up Lima, verifies the VM template and adds the Mac `tego` command. Follow its
 printed shell restart line if needed, then use `tego start` for the guide, or `tego shell` to do the steps below inside
@@ -37,7 +39,10 @@ No Mac folders are shared with the VM by default, including your home and `/tmp/
 VM; [explicit sharing](INSTALL.md#macos) lets an agent read files in a mount, including secrets, and change them if
 the mount is writable and its contract permits it.
 
-On **Windows**, run `wsl --install -d Ubuntu-24.04` in PowerShell, then the Linux line inside Ubuntu.
+**Windows/WSL is not fully qualified.** The measured WSL 3.0.5 ordinary shell refused setup and automatic first-run
+entry until the run-membership rule was switched on for WSL; its four containment rows then passed in the guest, and
+the ordinary build passed the six beginner steps there (install, `tego start`, a supervised run, the dashboard, an
+approval in the browser, uninstall). A signed executable, a real HTTPS release, ARM64 and Windows 10 are not tested. See [the installation limits](INSTALL.md#windows) before trying these steps.
 
 The second way is to [build from source](INSTALL.md#build-from-source). [INSTALL.md](INSTALL.md) says what each way
 was tested on.
@@ -78,8 +83,8 @@ ok   cgroupv2: /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service deleg
 ok   landlock: ABI 4
 ok   seccomp: NEW_LISTENER + ADDFD(SEND) round trip on syscall 319 returned fd 7; yama ptrace_scope=1 (the supervisor is the agent's parent, which Yama exempts)
 off  lsm: lockdown,capability,landlock,yama,apparmor via lsm_list_modules(2); bpf is not active: tier 3 (bpflsm) is unavailable, tiers 1 and 2 are not affected; fix: add lsm=lockdown,capability,landlock,yama,apparmor,bpf to the kernel command line (GRUB_CMDLINE_LINUX_DEFAULT in /etc/default/grub, then update-grub) and reboot
-skip programs: requires root to test (bpf(BPF_PROG_LOAD) needs CAP_BPF; this kernel disables unprivileged BPF); decision plane: requires root to test; fix: re-run as root: sudo /home/dana/.local/bin/tego machine check
-skip fanotify: requires root to test (fanotify_init needs CAP_SYS_ADMIN); fix: re-run as root: sudo /home/dana/.local/bin/tego machine check
+skip programs: requires root to test (bpf(BPF_PROG_LOAD) needs CAP_BPF; this kernel disables unprivileged BPF); decision plane: requires root to test; fix: re-run as root: <checked absolute path of the running binary, after sudo> doctor
+skip fanotify: requires root to test (fanotify_init needs CAP_SYS_ADMIN); fix: re-run as root: <checked absolute path of the running binary, after sudo> doctor
 ok   swap: memory.swap.max present: a run's memory cap holds swap too
 
 summary: tier landlock; cgroup needs root; bpflsm needs root, lsm
@@ -95,7 +100,7 @@ deny network by host:port                          yes  yes, supervisor-complete
 tier: landlock
 missing for cgroup: root: tier cgroup needs CAP_BPF, CAP_NET_ADMIN and CAP_SYS_ADMIN; fanotify: requires root to test (fanotify_init needs CAP_SYS_ADMIN)
 missing for bpflsm: root: tier bpflsm needs CAP_BPF, CAP_NET_ADMIN and CAP_SYS_ADMIN; fanotify: requires root to test (fanotify_init needs CAP_SYS_ADMIN); lsm: bpf is not in the active LSM list (lockdown,capability,landlock,yama,apparmor)
-fix: re-run as root for the tier-2 and tier-3 probes: sudo /home/dana/.local/bin/tego machine check
+fix: re-run as root for the tier-2 and tier-3 probes: <checked absolute path of the running binary, after sudo> doctor
 
 ok   dashboard: the dashboard can tell which run a connection comes from
 ```
@@ -108,10 +113,18 @@ Without root, `machine check` cannot check everything, and it says what it could
 rows above; yours prints in full. On a stock Ubuntu you will see that tier 3 is unavailable, because `bpf` is not in the boot
 LSM list ([TIERS.md](TIERS.md)). That is a fact about the machine, not a fault. The last line warns only if the kernel
 cannot load the `inet_diag` and `tcp_diag` modules, which the dashboard needs.
-`sudo "$(command -v tego)" doctor` shows what tiers 2 and 3 would get. Over SSH or on a console login, start a shell in
-your user's cgroup first, or no run starts at all, not even one that only records: `systemd-run --user --scope bash`
-([INSTALL.md](INSTALL.md#check-the-machine)). From such a login, `machine check` says `Not ready: this shell is outside your
-user manager's cgroup, ...` and its `next:` line is that command. `tego setup -v` shows where you are in all six steps
+`sudo "$(command -v tego)" doctor` shows what tiers 2 and 3 would get. Automatic scope entry is built for
+`tego run`, `tego watch` and `tego machine test`. SSH and console validation is **owed in a guest** on Ubuntu 24.04,
+AlmaLinux 9.8 and Fedora 44. These examples keep the previously checked manual step:
+
+```sh
+systemd-run --user --scope bash
+tego setup
+```
+
+The built handoff prints `tego: opened a user scope for this run` on success. Setup and doctor still check the
+shell they started in. A failed handoff exits 125 before run state and retains manual `next:` advice. Tego never
+enables lingering. `tego setup` shows all six steps
 ([user/setup.md](user/setup.md)).
 
 ## 3. Watch Tego refuse something
@@ -136,8 +149,9 @@ The actions ran on decoys in a temporary folder, removed now, and the four runs'
 Four harmless actions, run on decoy files in a temporary folder: read a fake SSH key, write outside the writable folder,
 run a program the contract does not list, connect to a port it does not allow. Each works without Tego and is refused with
 it, and each refusal is recorded. Nothing of yours is touched. It exits 0 when all four are refused, 1 if one was not, and
-125 if it could not tell, which is what you get over SSH outside your user's cgroup (step 2): then no run under Tego
-started, the report says nothing was judged, and its `next:` line opens a shell in your user's cgroup.
+125 if it could not tell. Automatic scope entry is built; its SSH behavior is **owed in a guest**.
+Use the manual scope line above for the previously checked path. A failed handoff starts no check and the
+existing `next:` line names the manual fallback. A user without a manager keeps the advice for starting one.
 [user/self-check.md](user/self-check.md) has the details.
 
 ## 4. Write a contract
@@ -202,7 +216,7 @@ exec      exec unrestricted (no exec: section); 1 entries
 net       IP unrestricted, unix sockets the run's own only (no net: section); 0 entries
   RULE  PROTO  TARGET  ADDRESSES  TTL  VERDICT
 env       pass=PATH,HOME,USER,LOGNAME,SHELL,LANG,LANGUAGE,LC_ALL,LC_CTYPE,LC_MESSAGES,TERM,COLORTERM,TZ,NO_COLOR,GOPATH,GOROOT,GOCACHE,GOMODCACHE,CARGO_HOME,RUSTUP_HOME,JAVA_HOME,NVM_DIR,PYENV_ROOT,VIRTUAL_ENV,CONDA_PREFIX deny=- set=TMPDIR=/home/dana/demo/.tego/tmp
-path      /home/dana/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/usr/local/go/bin
+path      PATH, inherited from the caller's environment
 [... 34 more lines: the machine config in force, each value with the file it came from ...]
 ```
 

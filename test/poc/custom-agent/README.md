@@ -37,7 +37,7 @@ written (`run.sh` lists it before and after).
 `run.sh i` does every step on this agent and prints what each shows.
 
 1. **Find what it needs: run it with no boundary.** `tego watch -- <your agent and its arguments>`. It only records,
-   in a scratch copy of the project with no credential in reach: a record-only run is not a cage, and the agent can do
+   in a scratch copy of the project with no credential in reach: a record-only run sets no boundary, and the agent can do
    everything you can. Read it with `tego status|events|drift <run>`. Default `record: full` (reads included) is what
    you want here.
 2. **Let tego draft the boundary: `tego learn <run> --out ../contract/agent.yaml`.** It proposes `fs.write` (the

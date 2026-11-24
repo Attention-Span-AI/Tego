@@ -13,6 +13,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/liveblock"
+	"github.com/attention-span-ai/tego/internal/runscope"
 )
 
 // lockHere flocks dir's run lock from this process, as a launcher holds it: flock is per open file description, so
@@ -32,8 +33,8 @@ func lockHere(t *testing.T, dir string) {
 // TestPause: a pause and a resume of a live run land in its overlay with the dashboard as their by, asking twice
 // changes nothing, and an ended run or a caller inside a run is refused.
 func TestPause(t *testing.T) {
-	defer func(f func() (bool, error)) { selfInRun = f }(selfInRun)
-	selfInRun = func() (bool, error) { return false, nil }
+	defer func(f func() runscope.Answer) { selfAnswer = f }(selfAnswer)
+	selfAnswer = answerOutside
 	root, dir := liveDir(t, `"tier":"landlock","command":["sh"]`)
 	if err := liveblock.MarkControl(dir); err != nil {
 		t.Fatal(err)
@@ -63,11 +64,8 @@ func TestPause(t *testing.T) {
 	if err != nil || len(o.Changes) != 2 || !strings.HasSuffix(o.Changes[0].By, " dashboard") {
 		t.Fatalf("overlay %+v, %v", o, err)
 	}
-	for _, f := range []func() (bool, error){
-		func() (bool, error) { return true, nil },
-		func() (bool, error) { return true, errors.New("cgroup namespace") },
-	} {
-		selfInRun = f
+	for _, f := range []func() runscope.Answer{answerGoverned, answerUnknown, func() runscope.Answer { return runscope.Answer{} }} {
+		selfAnswer = f
 		for _, on := range []bool{true, false} {
 			if _, err := Pause(ctx, root, liveRun, on); !errors.Is(err, ErrGoverned) {
 				t.Fatalf("Pause(%v) from inside a run: %v, want ErrGoverned", on, err)
@@ -80,8 +78,8 @@ func TestPause(t *testing.T) {
 // cgroup of its own) is refused a pause and a resume alike, nothing reaches its overlay, whose later live blocks an
 // older launcher could then not read, and PauseRequest says it takes none. A mark that is a symlink does not count.
 func TestPauseOlderLauncher(t *testing.T) {
-	defer func(f func() (bool, error)) { selfInRun = f }(selfInRun)
-	selfInRun = func() (bool, error) { return false, nil }
+	defer func(f func() runscope.Answer) { selfAnswer = f }(selfAnswer)
+	selfAnswer = answerOutside
 	root, dir := liveDir(t, `"tier":"landlock","command":["sh"],"record_minor":24`)
 	lockHere(t, dir)
 	target := filepath.Join(t.TempDir(), "mark")

@@ -5,49 +5,108 @@ package rules
 import (
 	"context"
 	"errors"
+	"fmt"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/attention-span-ai/tego/internal/control/runact"
+	"github.com/attention-span-ai/tego/internal/liveblock"
 	"github.com/attention-span-ai/tego/internal/rulefile"
 )
 
-// liftFixture is newFixture with an overlay per run that placing and lifting change, and the lifts it was asked.
+// liftFixture is newFixture with an overlay per run that placing and lifting change, and the lifts it was asked. The
+// overlay keeps, as the real one does, the identity of the newest add of each key (its file's epoch, the serial and the
+// instant); each write moves the serial on by one. A run's file can be "recreated" (recreate), which starts its serials
+// again under a new epoch.
 type liftFixture struct {
 	*fixture
-	overlay map[string][]string
+	overlay map[string]map[string]liveblock.Own // run -> key -> the identity of the key's add
+	serial  map[string]uint64                   // run -> the overlay's serial
+	epoch   map[string]int                      // run -> how many files it has had
 	lifts   []string
 	liftErr error
 }
 
+// newOwn is the identity of the next add to run's overlay: the serial moves on and the instant follows it.
+func (lf *liftFixture) newOwn(run string) liveblock.Own {
+	lf.serial[run]++
+	return liveblock.Own{Epoch: fmt.Sprintf("%016x%016x", lf.epoch[run]+1, 1), Serial: lf.serial[run],
+		At: time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC).Add(time.Duration(lf.serial[run]) * time.Second)}
+}
+
+// recreate is the run's overlay file removed (the tool tells a person to, when it cannot read it): no blocks, serials
+// from 1 again, and a file of its own.
+func (lf *liftFixture) recreate(run string) {
+	lf.overlay[run] = nil
+	lf.serial[run] = 0
+	lf.epoch[run]++
+}
+
 func newLiftFixture(t *testing.T) *liftFixture {
 	t.Helper()
-	lf := &liftFixture{fixture: newFixture(t), overlay: map[string][]string{}}
-	lf.s.block = func(_ context.Context, run, kind, value string) error {
+	lf := &liftFixture{fixture: newFixture(t), overlay: map[string]map[string]liveblock.Own{}, serial: map[string]uint64{},
+		epoch: map[string]int{}}
+	lf.s.block = func(_ context.Context, run, kind, value string) (runact.Blocked, error) {
 		lf.blocks = append(lf.blocks, run+" "+kind+":"+value)
-		if k := kind + ":" + value; !slices.Contains(lf.overlay[run], k) {
-			lf.overlay[run] = append(lf.overlay[run], k)
+		k := kind + ":" + value
+		if _, held := lf.overlay[run][k]; held {
+			return runact.Blocked{Run: run, Serial: lf.serial[run]}, nil
 		}
-		return nil
+		if lf.overlay[run] == nil {
+			lf.overlay[run] = map[string]liveblock.Own{}
+		}
+		id := lf.newOwn(run)
+		lf.overlay[run][k] = id
+		return runact.Blocked{Run: run, Serial: id.Serial, Fresh: true, Epoch: id.Epoch, At: id.At}, nil
 	}
-	lf.s.unblock = func(_ context.Context, run, kind, value string) error {
+	lf.s.unblock = func(_ context.Context, run, kind, value string, own liveblock.Own) error {
 		lf.lifts = append(lf.lifts, run+" "+kind+":"+value)
 		if lf.liftErr != nil {
 			return lf.liftErr
 		}
-		lf.overlay[run] = slices.DeleteFunc(lf.overlay[run], func(k string) bool { return k == kind+":"+value })
+		k := kind + ":" + value
+		if got, held := lf.overlay[run][k]; !held || !got.Is(own) {
+			return runact.ErrOverlayMoved
+		}
+		delete(lf.overlay[run], k)
+		lf.serial[run]++
 		return nil
 	}
-	lf.s.overlay = func(run string) []string { return lf.overlay[run] }
+	lf.s.overlay = func(run string) map[string]liveblock.Own { return lf.overlay[run] }
 	return lf
+}
+
+// keys is the keys of run's overlay, sorted.
+func (lf *liftFixture) keys(run string) []string { return slices.Sorted(maps.Keys(lf.overlay[run])) }
+
+// manualBlock is a block the person made by hand on run: in the overlay with an add of its own, in no journal line.
+func (lf *liftFixture) manualBlock(run, key string) {
+	if _, held := lf.overlay[run][key]; held {
+		return
+	}
+	if lf.overlay[run] == nil {
+		lf.overlay[run] = map[string]liveblock.Own{}
+	}
+	id := lf.newOwn(run)
+	id.Epoch = "" // a person's `tego block` asks for no identity: the file need have no epoch
+	lf.overlay[run][key] = id
+}
+
+// manualLift is the person lifting key from run on the run's page.
+func (lf *liftFixture) manualLift(run, key string) {
+	delete(lf.overlay[run], key)
+	lf.serial[run]++
 }
 
 // narrowNow saves "remove exec.allow <prog>" with Also apply now on runA2 and returns its journal id.
 func (lf *liftFixture) narrowNow(t *testing.T, prog string) string {
 	t.Helper()
 	c := lf.ref(t, lf.contract)
-	a, err := lf.s.ApplyChange(context.Background(), ChangeReq{Ref: c.Ref, Base: c.Base,
+	a, err := lf.applyReviewed(t, context.Background(), ChangeReq{Ref: c.Ref, Base: c.Base,
 		Edits: []Edit{{"remove", "exec.allow", prog}}, AlsoNow: []string{runA2}})
 	if err != nil || a.ID == "" || len(a.Live) != 1 || !a.Live[0].OK {
 		t.Fatalf("apply: %+v %v", a, err)
@@ -92,7 +151,7 @@ func TestUndoLiftsLiveBlocks(t *testing.T) {
 		t.Fatalf("revert: %+v %v", r, err)
 	}
 	if !slices.Equal(lf.lifts, []string{runA2 + " exec:cat"}) || len(lf.overlay[runA2]) != 0 {
-		t.Errorf("lifts %v, overlay %v", lf.lifts, lf.overlay[runA2])
+		t.Errorf("lifts %v, overlay %v", lf.lifts, lf.keys(runA2))
 	}
 	if len(r.Lifted) != 1 || !r.Lifted[0].OK || !r.Lifted[0].Lift || r.Lifted[0].Block != "exec:cat" || len(r.Kept) != 0 {
 		t.Errorf("reverted: %+v", r)
@@ -125,13 +184,13 @@ func TestUndoLiftsNarrowKinds(t *testing.T) {
 	lf.held = true // the run's reads reach its supervisor, so a read block refuses something
 	ctx := context.Background()
 	c := lf.ref(t, lf.contract)
-	a, err := lf.s.ApplyChange(ctx, ChangeReq{Ref: c.Ref, Base: c.Base,
+	a, err := lf.applyReviewed(t, ctx, ChangeReq{Ref: c.Ref, Base: c.Base,
 		Edits: []Edit{{"remove", "fs.write", "./out/"}, {"add", "fs.deny_read", "./vault/"}}, AlsoNow: []string{runA2}})
 	if err != nil || len(a.Live) != 2 || !a.Live[0].OK || !a.Live[1].OK {
 		t.Fatalf("apply: %+v %v", a, err)
 	}
 	write, read := "write:"+filepath.Join(lf.proj, "out"), "read:"+filepath.Join(lf.proj, "vault")
-	if got := slices.Sorted(slices.Values(lf.overlay[runA2])); !slices.Equal(got, []string{read, write}) {
+	if got := lf.keys(runA2); !slices.Equal(got, []string{read, write}) {
 		t.Fatalf("placed %q, want %q and %q", got, read, write)
 	}
 	c, h := lf.current(t)
@@ -150,7 +209,7 @@ func TestUndoLiftsNarrowKinds(t *testing.T) {
 		t.Errorf("lifts %q", got)
 	}
 	if len(lf.overlay[runA2]) != 0 {
-		t.Errorf("left on the run: %q", lf.overlay[runA2])
+		t.Errorf("left on the run: %q", lf.keys(runA2))
 	}
 }
 
@@ -166,8 +225,8 @@ func TestUndoKeepsLiveBlocks(t *testing.T) {
 	if err != nil || len(lf.lifts) != 0 || len(r.Lifted) != 0 || len(r.Kept) != 1 || r.Kept[0].Block != "exec:cat" {
 		t.Fatalf("undo without lift: %+v %v, lifts %v", r, err, lf.lifts)
 	}
-	if !slices.Equal(lf.overlay[runA2], []string{"exec:cat"}) {
-		t.Errorf("overlay %v", lf.overlay[runA2])
+	if !slices.Equal(lf.keys(runA2), []string{"exec:cat"}) {
+		t.Errorf("overlay %v", lf.keys(runA2))
 	}
 
 	cases := []struct {
@@ -181,8 +240,9 @@ func TestUndoKeepsLiveBlocks(t *testing.T) {
 		}},
 		{"removed by hand", func(t *testing.T) string {
 			lf.live[runA2] = true
+			lf.manualLift(runA2, "exec:cat") // the block the first change left in force is gone
 			id := lf.narrowNow(t, "cat")
-			lf.overlay[runA2] = nil
+			lf.manualLift(runA2, "exec:cat")
 			return id
 		}},
 	}
@@ -261,5 +321,56 @@ func TestUndoOfWideningNeedsNoAckToLiftNothing(t *testing.T) {
 	r, err := lf.s.Revert(ctx, RevertReq{ID: a.ID, Base: c.Base, Lift: true})
 	if err != nil || r.Direction != "narrows" || len(r.Lifted) != 0 || len(lf.lifts) != 0 {
 		t.Fatalf("revert: %+v %v", r, err)
+	}
+}
+
+// TestUndoKeepsTheBlockAPersonMadeAfterward: the change placed exec:cat; the person then lifted it on the run's
+// page and put the same block back by hand. That block is the person's: the change's Undo must neither offer to lift
+// it nor lift it, whatever its key says.
+func TestUndoKeepsTheBlockAPersonMadeAfterward(t *testing.T) {
+	lf := newLiftFixture(t)
+	lf.live[runA2] = true
+	ctx := context.Background()
+	id := lf.narrowNow(t, "cat")
+	lf.overlay[runA2] = nil           // lifted by hand
+	lf.manualBlock(runA2, "exec:cat") // and blocked by hand again
+	c, h := lf.current(t)
+	if h.ID != id || len(h.Lift) != 0 {
+		t.Fatalf("the person's block is offered for the Undo's lift: %+v", h.Lift)
+	}
+	r, err := lf.s.Revert(ctx, RevertReq{ID: id, Base: c.Base, Ack: h.Ack, Lift: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lf.lifts) != 0 || !slices.Equal(lf.keys(runA2), []string{"exec:cat"}) {
+		t.Errorf("the Undo lifted a block it did not make: lifts %v, overlay %v", lf.lifts, lf.keys(runA2))
+	}
+	if len(r.Lifted) != 0 || len(r.Kept) != 1 {
+		t.Errorf("reverted: lifted %+v kept %+v", r.Lifted, r.Kept)
+	}
+}
+
+// TestUndoKeepsABlockTheChangeFoundHeld: the person had blocked exec:cat before the change asked for it, so
+// the change placed nothing (the overlay already held it). Its Undo must not lift the person's block.
+func TestUndoKeepsABlockTheChangeFoundHeld(t *testing.T) {
+	lf := newLiftFixture(t)
+	lf.live[runA2] = true
+	ctx := context.Background()
+	lf.manualBlock(runA2, "exec:cat")
+	c := lf.ref(t, lf.contract)
+	a, err := lf.applyReviewed(t, ctx, ChangeReq{Ref: c.Ref, Base: c.Base,
+		Edits: []Edit{{"remove", "exec.allow", "cat"}}, AlsoNow: []string{runA2}})
+	if err != nil || a.ID == "" {
+		t.Fatalf("apply: %+v %v", a, err)
+	}
+	c, h := lf.current(t)
+	if len(h.Lift) != 0 {
+		t.Fatalf("the person's block is offered for the Undo's lift: %+v", h.Lift)
+	}
+	if _, err := lf.s.Revert(ctx, RevertReq{ID: a.ID, Base: c.Base, Ack: h.Ack, Lift: true}); err != nil {
+		t.Fatal(err)
+	}
+	if len(lf.lifts) != 0 || !slices.Equal(lf.keys(runA2), []string{"exec:cat"}) {
+		t.Errorf("the Undo lifted the person's block: lifts %v, overlay %v", lf.lifts, lf.keys(runA2))
 	}
 }

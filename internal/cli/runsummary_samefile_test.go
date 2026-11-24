@@ -3,12 +3,15 @@
 package cli
 
 import (
+	"context"
 	"crypto/rand"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/check/receipt"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -72,4 +75,16 @@ func TestRunSummarySaysASameFileRefusal(t *testing.T) {
 	if strings.Contains(text, "/bin/ls: refused") {
 		t.Errorf("the refusal of /bin/ls itself is said as a same-file one:\n%s", text)
 	}
+}
+
+// receiptOf computes the receipt of the run in dir. No prices: the summary prints no cost, so it never reads the
+// price table (or warns about one).
+func receiptOf(ctx context.Context, dir string) (*receipt.Receipt, error) {
+	r, err := ledger.OpenReader(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = r.Close() }()
+	r.SkipNewerVersions()
+	return receipt.Compute(ctx, r, receipt.Options{Home: os.Getenv("HOME")})
 }

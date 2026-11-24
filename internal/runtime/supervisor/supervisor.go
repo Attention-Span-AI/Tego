@@ -502,6 +502,8 @@ type Loop struct {
 	// tgids caches each notifying thread's process, so a line's pid is the process and its tid the thread
 	// (tgidOf).
 	tgids tgidCache
+	// lineages caches each refused process's lineage (lineageOf).
+	lineages lineageCache
 	// groups is the last /proc scan of the host's process groups, which a group signal below Landlock ABI
 	// 6 is decided on (groupMembers).
 	groups groupCache

@@ -32,8 +32,8 @@ func referenceRun(t *testing.T, root, id string) *Run {
 		if !strings.HasSuffix(l, "\n") || len(l) == 1 {
 			continue
 		}
-		ev, _, ok := decodeLine([]byte(l[:len(l)-1]))
-		if !ok {
+		ev, _, err := decodeLine([]byte(l[:len(l)-1]))
+		if err != nil {
 			t.Fatalf("%s: a line of the fixture does not decode: %q", id, l)
 		}
 		markSecret(&ev)

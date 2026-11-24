@@ -707,3 +707,38 @@ func mustRead(t *testing.T, path string) []byte {
 	}
 	return b
 }
+
+// TestTheReasonFileCarriesTheLineagePostedWithARefusal: a refused event's in-process lineage (record.Event.Lineage)
+// is the entry's owners in last-refusal.json, one entry's and no other's, and it is not a field of the ledger line:
+// the line the ledger holds has the same bytes with or without it (no record minor carries ownership).
+func TestTheReasonFileCarriesTheLineagePostedWithARefusal(t *testing.T) {
+	w, dir, _ := openTestWriter(t)
+	startRun(t, w, 0)
+	owned := refusedEvent("/t/owned")
+	owned.Lineage = "300:30,200:20,100:10"
+	if err := w.Append(owned); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Append(refusedEvent("/t/unowned")); err != nil {
+		t.Fatal(err)
+	}
+	f, _ := waitReason(t, dir, func(f *reason.File) bool { return f.Refusals == 2 })
+	if err := w.Close(record.RunEndPayload{Reason: record.RunEndExit}); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Recent) != 2 || f.Recent[0].Owners != "300:30,200:20,100:10" || f.Recent[1].Owners != "" {
+		t.Fatalf("owners %+v, want the lineage on the first entry only", f.Recent)
+	}
+	if f.Recent[0].Nearest([]string{"100:10"}) != "100:10" || f.Recent[0].Nearest([]string{"100:11"}) != "" || f.Recent[1].Nearest([]string{"100:10"}) != "" {
+		t.Error("Nearest does not follow the owners string")
+	}
+	for _, line := range refusedLines(t, dir) {
+		b, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(b, []byte("300:30")) || bytes.Contains(b, []byte("lineage")) || line.Lineage != "" {
+			t.Fatalf("the ledger holds the lineage: %s", b)
+		}
+	}
+}

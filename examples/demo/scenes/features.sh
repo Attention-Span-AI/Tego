@@ -111,7 +111,7 @@ fs:
 exec:
   allow: ["sh", "curl"]
 net:
-  allow: ["tcp://127.0.0.1:$PORT", "unix:/var/run/nscd/socket"]
+  allow: ["tcp://127.0.0.1:$PORT", $(lookup_allow)]
 EOF
   mini_with net
 }
@@ -148,9 +148,9 @@ sockd_up() {
   mkdir -p "$STAGE/s"
   DOCKER_HOST_SOCK="$STAGE/s/docker.sock"; SSH_AUTH_SOCK="$STAGE/s/agent.sock"
   export DOCKER_HOST_SOCK SSH_AUTH_SOCK
-  if [ -f "$STAGE/sockd.pid" ] && kill -0 "$(cat "$STAGE/sockd.pid")" 2>/dev/null; then return 0; fi
+  if proc_ours sockd "$HERE/sockd.py"; then return 0; fi
   python3 "$HERE/sockd.py" "$DOCKER_HOST_SOCK" "$SSH_AUTH_SOCK" >>"$STAGE/sockd.log" 2>&1 &
-  echo $! >"$STAGE/sockd.pid"
+  proc_note sockd $!
   i=0
   while [ ! -S "$SSH_AUTH_SOCK" ]; do
     i=$((i + 1)); [ "$i" -lt 30 ] || die "the stand-in daemons did not start; see $STAGE/sockd.log"
@@ -279,13 +279,13 @@ cmd_reason_hook() {
   printf '{"prompt": "Tidy up my shell profile.", "turns": [\n {"calls": [{"write": "%s/work/warmup.txt", "content": "warm-up\\n"}]},\n {"calls": [{"write": "%s/.bashrc", "content": "# installed by the agent\\n"}]}\n]}\n' "$ws" "$HOMEISH" >"$cc/script.json"
   python3 -I "$repo/test/workloads/model-stub/server.py" --cert "$cc/stub/cert.pem" --key "$cc/stub/key.pem" \
     --ready "$cc/stub/port" --script "$cc/stub-script.json" --log "$cc/stub/stub.log" --log-content >"$cc/stub/stderr" 2>&1 &
-  echo $! >"$STAGE/stub.pid"
+  proc_note stub $!
   i=0
   while [ ! -s "$cc/stub/port" ]; do
     i=$((i + 1)); [ "$i" -lt 100 ] || die "the model stub did not start; see $cc/stub/stderr"
     sleep 0.1
   done
-  sed -e "s|\"@@PORT@@\"|$(cat "$cc/stub/port")|" -e "s|@@CC@@|$cc|g" "$HERE/contracts/claude-standin.yaml" >"$cc/agent.yaml"
+  sed -e "s|\"unix:/var/run/nscd/socket\"|$(lookup_allow)|" -e "s|\"@@PORT@@\"|$(cat "$cc/stub/port")|" -e "s|@@CC@@|$cc|g" "$HERE/contracts/claude-standin.yaml" >"$cc/agent.yaml"
   say "The contract: writes only in ./work/; tego gives Claude Code its hook (harness: claude-code)"
   show "grep -E '^(name|harness|  write|    -)' '$cc/agent.yaml'"
   say "Run the stand-in Claude Code under Tego. Turn 2 writes ~/.bashrc, which the contract refuses"
@@ -296,7 +296,7 @@ cmd_reason_hook() {
   say "What the model received in its next request, written by tego's hook (from the model stub's log)"
   show "python3 -I '$HERE/modelsaw.py' '$cc/stub/stub.log'" || true
   show "'$TEGO' events '$run' --kind refused 2>&1 | cut -c1-200"
-  kill "$(cat "$STAGE/stub.pid")" 2>/dev/null || true
+  proc_stop stub "$repo/test/workloads/model-stub/server.py"
 }
 
 cmd_receipt() {
@@ -349,7 +349,7 @@ cmd_doctor() {
   need_tego
   say "Which tiers this machine has. Tier 1 (landlock) needs nothing; tiers 2 and 3 need root, tier 3 also the BPF LSM"
   show "'$TEGO' doctor 2>&1 | grep -E '^(ok|off|FAIL|skip) +(kernel|landlock|seccomp|cgroupv2|lsm|fanotify)' | fold -s -w 150 || true"
-  echo "(a 'skip ... requires root' line is honest: run 'sudo tego doctor' to test the root tiers; this kit uses tier landlock)"
+  echo "(a 'skip ... requires root' line is honest: run the same doctor command as root using this binary's absolute path to test the root tiers; this kit uses tier landlock)"
 }
 
 cmd_features() {

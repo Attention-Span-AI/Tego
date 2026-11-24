@@ -29,9 +29,9 @@ def check(ok, message):
 
 
 def all_exited(owner):
-    deadline = time.monotonic() + .5
+    deadline = time.monotonic() + owned.HANG_GUARD
     while time.monotonic() < deadline and not all(owner.exited(pid) for pid in owner.refs):
-        time.sleep(.01)
+        time.sleep(.01)  # ends when the last process has; the deadline only guards a hang
     return all(owner.exited(pid) for pid in owner.refs)
 
 
@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix='tego-guarded-test.', dir='/tmp') as nam
                                     str(console), str(status)],
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
-            out, _ = owner.proc.communicate(timeout=5)
+            out, _ = owner.proc.communicate(timeout=owned.HANG_GUARD)
             check(owner.proc.returncode == 0 and out.strip() == b'hello', 'command output reaches stdout')
             check(console.read_text().strip() == 'hello' and status.read_text().strip() == '7',
                   'actual console and status files preserve command output and exit 7')
@@ -83,10 +83,10 @@ with tempfile.TemporaryDirectory(prefix='tego-guarded-test.', dir='/tmp') as nam
                     raise RuntimeError('unrelated child was admitted for fixture cleanup')
                 check(not unrelated.exited(unrelated.proc.pid), 'unrelated matching sleep remains live')
                 owner.send(sig)
-                owner.proc.communicate(timeout=5)
+                owner.proc.communicate(timeout=owned.HANG_GUARD)
                 check(owner.proc.returncode == 143, sig.name + ': script exits 143')
                 check(all_exited(owner), sig.name + ': timeout, guarded step and child actually exited')
-                result = subprocess.run(['flock', '-n', str(lock), 'true'], timeout=2)
+                result = subprocess.run(['flock', '-n', str(lock), 'true'], timeout=owned.HANG_GUARD)
                 check(result.returncode == 0, sig.name + ': inherited lock released')
             finally:
                 owner.close()

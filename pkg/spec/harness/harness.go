@@ -169,7 +169,13 @@ func CheckName(name string) error {
 func CheckEnv(kv string) error {
 	name, _, ok := strings.Cut(kv, "=")
 	if !ok || !strings.HasPrefix(name, EnvPrefix) || len(name) == len(EnvPrefix) {
-		return fmt.Errorf("harness environment entry %q is not %sNAME=value", kv, EnvPrefix)
+		// A message names the variable and never its value; an entry whose name cannot be told from a value is not
+		// shown at all (EnvEntryName).
+		shown, named := EnvEntryName(kv)
+		if !named {
+			return fmt.Errorf("a harness environment entry is not %sNAME=value (the entry is not shown)", EnvPrefix)
+		}
+		return fmt.Errorf("harness environment variable %q must have a %sNAME=value entry (value hidden)", shown, EnvPrefix)
 	}
 	for _, c := range name {
 		if (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '_' {
@@ -177,6 +183,29 @@ func CheckEnv(kv string) error {
 		}
 	}
 	return nil
+}
+
+// EnvEntryName is the variable an environment entry names, for a message: the text before its first "=" (the whole
+// entry when it has none), when that text is a variable name. ok is false when it is not: the entry's name cannot
+// be told from its value, so the message echoes nothing of it. It restates pkg/spec/identity's EnvEntryName, which
+// this standard-library-only package may not import; internal/adapters' TestEnvEntryNameParity holds the two to the
+// same answers.
+func EnvEntryName(entry string) (name string, ok bool) {
+	name, _, _ = strings.Cut(entry, "=")
+	if !envName(name) {
+		return "", false
+	}
+	return name, true
+}
+
+// envName reports whether s is a variable name: a letter or "_", then letters, digits and "_".
+func envName(s string) bool {
+	for i, c := range s {
+		if c != '_' && (c < 'A' || c > 'Z') && (c < 'a' || c > 'z') && (i == 0 || c < '0' || c > '9') {
+			return false
+		}
+	}
+	return s != ""
 }
 
 // Check refuses a provision the launcher must not make for run: a file name that is not one path element or that

@@ -50,7 +50,7 @@ func Pause(ctx context.Context, root, run string, on bool) (Paused, error) {
 	if err != nil {
 		return Paused{}, err
 	}
-	if in, _ := SelfGoverned(); in { // fails closed: a cgroup it cannot judge refuses too
+	if !SelfGoverned().Outside() { // inside a run, and whatever cannot be shown to be outside one
 		return Paused{}, fmt.Errorf("%w (run %s)", ErrGoverned, run)
 	}
 	// The launcher must be there to apply it: a free lock, or one held by a process that is not the run's launcher
@@ -107,10 +107,8 @@ func PauseRequest(root, run string) PauseAsk {
 		return a
 	}
 	a.Paused = o.Paused
-	for _, c := range o.Changes {
-		if c.Control() {
-			a.Serial, a.At = c.Serial, c.At
-		}
+	if c, ok := o.LastControl(); ok {
+		a.Serial, a.At = c.Serial, c.At
 	}
 	return a
 }

@@ -34,6 +34,9 @@ const (
 	ExitFinding = 1
 	// ExitUsage is a usage error.
 	ExitUsage = 2
+	// ExitScanUnreadable is scan --check with unreadable own program files and
+	// no outside match or other process gap. Those programs may be agents.
+	ExitScanUnreadable = 3
 	// ExitError is Tego's own error in any subcommand.
 	ExitError = 125
 	// ExitRequire is doctor --require's code when the machine is below the required tier; never tego run's.

@@ -23,7 +23,8 @@ type Value struct {
 // unboundedText renders a ceiling no layer set.
 const unboundedText = "unbounded"
 
-// Effective lists every value of m with its provenance, in a fixed order. Pure.
+// Effective lists ordinary settings and ceilings with their provenance, in a fixed order.
+// Baseline entries and their many-source membership are available separately through Baseline.Entries. Pure.
 func (m *Machine) Effective() []Value {
 	var out []Value
 	ceiling := func(key, value string, src Provenance, bounded bool) {
@@ -41,6 +42,9 @@ func (m *Machine) Effective() []Value {
 			value = Auto
 		}
 		out = append(out, Value{Key: key, Value: value, Source: src, Ceiling: true, Unbounded: !bounded})
+	}
+	if m.LocalRoles.Value == LocalRolesOwnerOnly {
+		settingRow("local_roles", m.LocalRoles.Value, m.LocalRoles.Source)
 	}
 	named("tier", m.Tier.Value.String(), m.Tier.Source, m.Tier.Bounded)
 	named("capture", m.Capture.Value.String(), m.Capture.Source, m.Capture.Bounded)
@@ -67,6 +71,7 @@ func (m *Machine) Effective() []Value {
 	settingRow("bpf.linger", FormatDuration(m.BPF.Linger.Value), m.BPF.Linger.Source)
 	settingRow("bpf.ring_budget", m.BPF.RingBudget.Value.String(), m.BPF.RingBudget.Source)
 	settingRow("bpf.plane", m.BPF.Plane.Value, m.BPF.Plane.Source)
+	settingRow("tomoyo.facts_dir", m.TOMOYO.FactsDir.Value, m.TOMOYO.FactsDir.Source)
 	settingRow("resolver", m.Resolver.Value.String(), m.Resolver.Source)
 	settingRow("denied_resolved_addresses", formatPrefixes(m.DeniedResolved.Value), m.DeniedResolved.Source)
 	settingRow("forwarder.listen", m.Forwarder.Listen.Value, m.Forwarder.Listen.Source)

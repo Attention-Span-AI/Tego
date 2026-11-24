@@ -68,21 +68,48 @@ func planeReleaseKey(key int) {
 	_, _ = unix.KeyctlInt(unix.KEYCTL_REVOKE, key, 0, 0, 0)
 }
 
+// planeKeyBetween is called between planePrivateKey's syscalls, nil outside a test: the test moves the goroutine to
+// another thread there, which a busy scheduler does only now and then.
+var planeKeyBetween func()
+
+// planePrivateKey makes the one-byte user key in this process's keyring, owner-usable from any thread.
+//
+// Kernel keyrings are per thread: install_process_keyring puts the ring in the credentials of the thread that asked
+// for it, and a thread whose credentials were made before that (a Go thread started earlier) does not possess it.
+// The sequence below needs possession three times: the ring id found by the lookup is written by add_key (the ring
+// gives its owner view only, so a thread that does not possess it gets EACCES), and setperm needs possession of
+// the new key (its owner has view only until setperm). A goroutine that moves to another thread between two of
+// them fails with EACCES, which planeOutcome reads as "refused" and the probe then blames the key_permission
+// hook (seen once: one probe in a boot of dozens, in a 4-vCPU guest; 35 of 30,000 sequences in a plain Go loop
+// under CPU contention, none pinned). So the sequence stays on one thread. The unlock is right: the thread keeps
+// the ring for as long as the process lives (Go ends a thread only when its locked goroutine exits), and
+// nothing else in doctor reads keys, so a pooled thread with a process keyring differs from the others in
+// nothing that matters (a forked child starts without one).
 func planePrivateKey() (int, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	// Only the helper's process keyring holds this freshly named key. add_key
 	// requires an actual destination: zero cannot create an unlinked keyring.
 	processRing, err := unix.KeyctlGetKeyringID(unix.KEY_SPEC_PROCESS_KEYRING, true)
 	if err != nil {
 		return -1, err
 	}
+	if planeKeyBetween != nil {
+		planeKeyBetween()
+	}
 	name := "tego-doctor-" + strconv.Itoa(os.Getpid()) + "-" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	key, err := unix.AddKey("user", name, []byte{1}, processRing)
 	if err != nil {
 		return -1, err
 	}
+	if planeKeyBetween != nil {
+		planeKeyBetween()
+	}
 	// Go threads can have credentials created before the process keyring was
 	// installed. Owner rights let the same helper UID use its own key even
-	// when that thread does not possess the newly installed ring. Keep all
+	// when that thread does not possess the newly installed ring: the update
+	// (and the revoke) that follow, from whichever thread the goroutine is on,
+	// need only them, which is why only this sequence is pinned. Keep all
 	// possessor rights, owner view/read/write, and no group/other rights (key.h).
 	if _, err := unix.KeyctlInt(unix.KEYCTL_SETPERM, key, (0x3f<<24)|(0x07<<16), 0, 0); err != nil {
 		planeReleaseKey(key)
@@ -124,6 +151,11 @@ func planeControlAction(hook string, p planePre) error {
 			if p.keyErr != nil {
 				return p.keyErr
 			}
+			// Make, update and release on the thread that owns the ring: the release's unlink needs the ring
+			// in this thread's credentials (planePrivateKey). Its failure would only leave a revoked key linked
+			// until the keys' garbage collection, so this is tidiness; the verdict needs planePrivateKey's pin.
+			runtime.LockOSThread()
+			defer runtime.UnlockOSThread()
 			var err error
 			key, err = planePrivateKey()
 			if err != nil {

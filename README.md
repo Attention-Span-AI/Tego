@@ -77,14 +77,19 @@ Anthropic Python SDK and an agent of your own.
 
 | System | Run | Then |
 |---|---|---|
-| **Linux** (amd64 or arm64) | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | If `tego` isn't found, run the `export PATH=…` line it prints, or log in again. |
+| **Linux** (amd64 or arm64) | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | If `tego` isn't found, run the `export PATH=…` line it prints, or log in again; the next command it prints names `tego` by its full path until then. |
 | **macOS** 13.5 or later | the same line | Open a new terminal window. Tego runs in a small Linux VM ([Lima](https://lima-vm.io)), and the `tego` command on your Mac runs it there. |
-| **Windows** | `wsl --install -d Ubuntu-24.04` in PowerShell | Open Ubuntu and run the Linux line there. Not run on Windows yet ([details](docs/INSTALL.md#windows)). |
+| **Windows** | From the next release: `irm https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.ps1 \| iex` in PowerShell. The latest release, v0.1.3, has no Windows installer: run `wsl --install -d Ubuntu-24.04` and then the Linux line in Ubuntu. | **Not fully qualified.** Tego runs in its own `tego` WSL2 distribution; rerun after a requested Windows restart, and `tego dashboard` opens the dashboard in your Windows browser. A Windows 11 guest with WSL 3.0.5 refused setup until the run-membership rule was switched on for WSL ([what was and was not measured](docs/INSTALL.md#windows)). |
 | **From source** | `git clone https://github.com/Attention-Span-AI/Tego && cd Tego && make build` | Then put both binaries on your `PATH`: [Build from source](docs/INSTALL.md#build-from-source). |
 
 Run the same line again to update. On a Mac, that also updates Tego inside the VM.
-[docs/INSTALL.md](docs/INSTALL.md) has the details, what each system was tested on, and how to check the installer
+[docs/INSTALL.md](docs/INSTALL.md) has the details, what each system was tested on (the measurements are below), and how to check the installer
 before it runs.
+
+What each was tested on: the installer put the published v0.1.1 on AlmaLinux 9.8, Ubuntu 24.04, Debian 13, Fedora 44,
+Amazon Linux 2023 and Ubuntu 26.04.1, and a new user's `tego machine check`, `tego machine test` and a governed run reached tier
+landlock on each
+([docs/TIERS.md](docs/TIERS.md#the-published-release-as-a-new-user)). On a Mac it was walked through by hand on Apple silicon and is checked in CI on GitHub's hosted macOS runners ([details](docs/INSTALL.md#macos)). Windows was measured in a Windows 11 Enterprise evaluation guest, build 26300.9457 under KVM, WSL 3.0.5.0; the guide was blocked there until the rule was switched on for WSL, and the ordinary build then passed the six beginner steps there from the one-line installer served by a local mirror, with the browser dashboard opened from Windows PowerShell 5.1, PowerShell 7 and cmd. These guest measurements establish installation, the containment rows, the home alias, Windows-drive and GUI/audio checks among them, and the browser relay on that guest; they do not cover a signed executable, a real HTTPS release, a real keyboard and mouse, ARM64, Windows 10, or what the setup guide lists as unproven.
 
 ### 2. Set up
 
@@ -150,6 +155,20 @@ and explains the output.
   ([sharing one](docs/INSTALL.md#macos)). `tego shell` opens a shell in the VM.
 - **Over SSH on Linux:** a run exits with code 125 until you start a shell in your user's cgroup:
   `systemd-run --user --scope bash` ([why](docs/INSTALL.md#check-the-machine)).
+
+### Remove Tego
+
+`tego uninstall` is in the repository and comes with the next release: the latest release, v0.1.3, does not have it.
+
+Linux: `tego uninstall`. It lists what it will remove (the units `tego start` and `tego dashboard` made, the installed
+`tego` and `tego-control`, the line `tego start` added to `~/.bashrc`), asks once, and keeps your records (`~/.tego`) and
+contracts (`~/.config/tego`) unless you answer yes to a second question (default no). `tego uninstall --yes` skips the
+first question for scripts. Anything a system-wide install put in `/etc` or `/usr` it names with the exact `sudo` lines.
+
+macOS: run `tego uninstall` in your Mac terminal. It removes the Mac command, the `PATH` line the installer added (with a
+backup) and the dashboard's tunnel, removes Tego inside its VM, and deletes the VM, with your records, only if you say yes.
+Lima stays. Windows: run `tego uninstall` in PowerShell; it removes Tego's Linux and everything in it, records included.
+[docs/INSTALL.md](docs/INSTALL.md#uninstall) has the details and what was tested.
 
 ## How it works
 
@@ -242,7 +261,7 @@ The full list, with what to do about each, is in **[docs/GAPS.md](docs/GAPS.md)*
   the server socket, bypassing tool decisions and their ledger lines. It also recognises only the declared command
   spelling. Keep a forbidden capability out of any server the run can reach. See GAPS C50/C51 and the
   [proposed ADR 0126 amendment](docs/adr/0126-mcp-tool-rules.md#proposed-amendment-2026-11-03-preview-or-security-boundary).
-- Linux only. On macOS and Windows, run it inside a Linux VM.
+- The engine runs on Linux: a separate VM on macOS, or a dedicated WSL2 distribution on Windows.
 
 ## Documentation
 

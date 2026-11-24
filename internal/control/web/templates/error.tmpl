@@ -1,9 +1,5 @@
 {{/* SPDX-License-Identifier: Apache-2.0 */}}
-{{define "content"}}{{with .Data}}
-<section class="panel"><div class="empty" role="alert">
-  <div class="glyph glyph-danger">{{template "i" "i-triangle-alert"}}</div>
-  <h3>{{.Heading}}</h3>
-  <p>{{.Text}}</p>
-  <a class="btn" href="/">Back to the overview</a>
-</div></section>
+{{define "content"}}<link rel="stylesheet" href="/static/support.css">{{with .Data}}
+<div class="page-interior recovery-page"><div class="head"><div><h1>{{.Heading}}</h1></div></div>
+<section class="panel"><div class="panel-body stack" role="alert">{{if .Technical}}<p>{{if eq .Heading "The ledger could not be read"}}Check that the ledger folder exists and that the dashboard can read it, then open the overview again.{{else}}Open the overview and try the action again. If it still fails, check the details below.{{end}}</p><details class="detail-disclosure"><summary>Technical details</summary><div class="panel-body"><p class="detail-value" data-number-exclude="shared.error-text">{{.Text}}</p></div></details>{{else}}<p class="detail-value" data-number-exclude="shared.validation-error">{{.Text}}</p>{{if not .Visible}}<p>Open the overview to choose a current run or page.</p>{{end}}{{end}}<a class="btn btn-primary" href="/">Back to the overview</a></div></section></div>
 {{end}}{{end}}

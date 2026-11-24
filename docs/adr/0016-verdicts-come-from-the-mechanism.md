@@ -193,6 +193,71 @@ Other hooks' skips cannot excuse file-open loss;
 duplicates, unexplained loss, ring/queue loss and missing metering still fail. Runs with no recorded misses retain
 the exact-count assertion. Deciding and cgroup-tracking program misses and per-run loss attribution remain open C53 work.
 
+### Receipt amendment, 2026-11-11: learn's withheld destinations
+
+A receipt may join a recorded default-deny network connect refusal to the run's own
+`contract_source.learn` history. It matches the protocol, IP address and port,
+normalizing equivalent IP spellings. A missing network operation means connect;
+bind, listen, sendmsg and accept do not qualify. It never re-runs learn or assumes
+that two watched runs withhold the same destinations. A live block, another
+refusal reason, a host name without an address, or a sparse refusal with no
+protocol supplies no such match. The verdict, reason and counts still come only
+from the mechanism.
+
+Learn writes optional top-level `learn: {run, withheld}` in agent v0. `withheld`
+is the sorted distinct list of exact TCP/UDP endpoints its secret-read-near-send
+rule actually withheld. The rule's comments and warnings stay. This key is
+refused in profiles, preserved by Canonical and covered by contract_hash: an edit
+to history alone changes that hash. It adds no allow or deny rule. This is an
+additive contract schema change under VERSIONING section 3; binaries predating
+the key refuse such a contract as an unknown field. It is absent when learn
+withholds no exact endpoint.
+
+The CLI copies this metadata from the compiled contract into
+`run_start.contract_source.learn` at record minor 31, without reopening the source
+file. A receipt reads that line alone; it need not have the learned run, the
+original proposal or today's contract file. Contracts read from standard input
+record no source and get no such sentence; generated contracts, including
+`tego watch -- cmd` without `--boundary`, also record no source and get no such
+sentence. The shared receipt builder supplies one sentence on the terminal and
+the dashboard's Receipt tab. It says "This run's contract says tego learn withheld
+this destination", names the source run and
+`tego rule <run> <seq> --allow`, conditional on recognizing the agent's own service.
+The command changes a future run only and still passes rulefile's compile guards.
+
+This is editable history, not authenticated provenance. Someone can edit the
+proposal before launching, remove the history, add it, or allow a destination
+again while leaving it in place. The receipt cannot know whether learn wrote the
+metadata, whether the contract stayed as proposed, whether a secret leaked, or
+whether withholding caused the current refusal. The sentence attributes the
+claim to this run's contract and does not assert any of those facts. Edits after
+launch do not change the saved line. Older records and contracts without the key
+get no explanation, even when today's contract has a similar comment. Invalid
+history is refused at contract load, record write and record verification;
+receipts ignore history that fails note validation. It never becomes permission.
+At contract load, an invalid run id or endpoint list names its file and line at `learn.run`,
+`learn.withheld` or `learn.withheld[N]` (zero-based), with a fix. Keep 1 to 100000
+endpoints in byte order, distinct, with canonical IP spelling and nonzero ports;
+a syntactically valid edit can still invent or leave stale claims. Such edits
+grant and refuse nothing.
+
+`ValidateAt` now strict-decodes a present `contract_source` at every record minor,
+including minors before 13, when writers first added the key. This also tightens
+Verify on older ledgers: null, case variants of `contract_source` or learn-history
+keys, wrong types for known fields, repeated members and unpaired surrogates inside that object are refused. Raw
+invalid UTF-8 still receives the scanner's existing U+FFFD repair before this
+decoding. A valid older source without `learn` remains accepted; the older-minor
+fixture pins that case.
+
+Proof on this branch: targeted regression tests and baseline overlays for the
+contract, record, learner, CLI source and both receipt surfaces.
+`TestLearnContractTextTwiceOverOneRecordAgrees` compares complete contract bytes
+from repeated reads of one record. When a host name and address share a leak
+destination, the first contact owns that address, so map order cannot change the
+warning text; different recordings can still produce different proposals.
+A live watched then enforced walk is owed in a guest; no kernel behavior is
+changed here.
+
 *Note 2026-11-11 (a third party's refusal and the chain's return, measured rather than read off the version):* the
 [documented] line above ("v6.12's security_file_open returns fsnotify_open_perm(file) after call_int_hook; v6.13's is
 call_int_hook alone") holds for the upstream tags, not for every kernel that calls itself 6.12. Debian 13's 6.12.107

@@ -331,7 +331,10 @@ table:
     "$HOME/.screen",
     "/tmp/emacs4242",
     "/tmp/nvim.4242",
-    "/tmp/.X11-unix"
+    "/tmp/.X11-unix",
+    "/run/WSL",
+    "/mnt/wslg/.X11-unix",
+    "/mnt/wslg/runtime-dir"
    ],
    "Ledger": "$HOME/.tego/runs",
    "LedgerResolved": "$HOME/.tego/runs",
@@ -379,6 +382,24 @@ table:
      "Target": "/tmp/.X11-unix"
     },
     {
+     "Name": "WSL",
+     "Parent": "/run",
+     "Path": "builtin:/run/WSL",
+     "Target": "/run/WSL"
+    },
+    {
+     "Name": ".X11-unix",
+     "Parent": "/mnt/wslg",
+     "Path": "builtin:/mnt/wslg/.X11-unix",
+     "Target": "/mnt/wslg/.X11-unix"
+    },
+    {
+     "Name": "runtime-dir",
+     "Parent": "/mnt/wslg",
+     "Path": "builtin:/mnt/wslg/runtime-dir",
+     "Target": "/mnt/wslg/runtime-dir"
+    },
+    {
      "Name": ".tego",
      "Parent": "$HOME",
      "Path": "builtin:$HOME/.tego",
@@ -389,6 +410,12 @@ table:
      "Parent": "/run/user/4242",
      "Path": "builtin:/run/user/4242/tego",
      "Target": "/run/user/4242/tego"
+    },
+    {
+     "Name": "PulseServer",
+     "Parent": "/mnt/wslg",
+     "Path": "builtin:/mnt/wslg/PulseServer",
+     "Target": "/mnt/wslg/PulseServer"
     },
     {
      "Name": "system_bus_socket",
@@ -428,6 +455,7 @@ table:
     }
    ],
    "Nodes": [
+    "/mnt/wslg/PulseServer",
     "/run/dbus/system_bus_socket",
     "/var/run/dbus/system_bus_socket",
     "/run/docker.sock",
@@ -1062,6 +1090,69 @@ table:
     "Access": 0,
     "AskRead": false,
     "BuiltIn": true,
+    "BuiltinRule": "builtin.host_ipc",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "/run/WSL",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/run/WSL",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.host_ipc",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "/mnt/wslg/.X11-unix",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/mnt/wslg/.X11-unix",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.host_ipc",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "/mnt/wslg/runtime-dir",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/mnt/wslg/runtime-dir",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
     "BuiltinRule": "builtin.tego_surface",
     "Kind": "deny_write",
     "Missing": false,
@@ -1095,6 +1186,27 @@ table:
     "Raw": "",
     "Regular": false,
     "Resolved": "/run/user/4242/tego",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.host_ipc",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "/mnt/wslg/PulseServer",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/mnt/wslg/PulseServer",
     "Runtime": "",
     "RuntimeDev": 0,
     "RuntimeIno": 0,

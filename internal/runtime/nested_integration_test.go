@@ -22,25 +22,24 @@ import (
 // run's supervisor goes on deciding the outer agent's syscalls as before — a write inside fs.write, an exec
 // the contract allows, and a write outside it refused and recorded — to the outer run's own exit 0.
 //
-// The kernel allows one seccomp listener per filter chain, so a nested run can never install its own. Where
-// the nested launcher meets that depends on how it is started, and each case is a subtest:
-//
-//   - enforced (tier auto or pinned): its selection probes tier 1 first, and doctor's seccomp self-test's
-//     NEW_LISTENER fails EBUSY, so the nested run is refused as tier-unavailable, naming EBUSY;
-//   - --observe inside an --observe run: no probe runs, and the nested launcher stops at the first step the
-//     outer run's placement or filter refuses: as the user, its clone3, which the outer filter refuses (the
-//     clone3 arm) before its child could ask for a listener; as a root run's dropped agent, placing its scope,
-//     since the agent runs outside its user's delegated subtree.
+// A run cannot start inside a run: the kernel allows one seccomp listener per filter chain, so a nested run can never
+// install its own. The launcher says so before anything else (cli.refuseNestedRun): its cgroup path shows the outer
+// run, it names that run and exits 125 without holding itself undumpable, loading anything or starting a process. Until
+// the hold came (C209) the nested launcher went on to its tier probe, whose NEW_LISTENER the kernel refuses (EBUSY: the
+// enforced case) or to the clone3 the outer filter refuses (--observe inside --observe); an undumpable launcher there
+// is refused its first file operation by the outer supervisor, which cannot read it, so the person would read
+// "permission denied" (gate 20). Those later refusals stay behind the first for a nested launcher whose cgroup path
+// does not show a run.
 //
 // Either way no process of the nested run exists and nothing of it reaches the outer run's Loop.
 func TestIntegrationANestedRunFailsAtStartAndLeavesTheOuterRunAlone(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
 		outer, inner []string
-		want         string // what the nested launcher's refusal names; "" when that depends on the host
+		want         string // what the nested launcher's refusal names
 	}{
-		{"enforced", nil, nil, "device or resource busy"},
-		{"observe in observe", []string{"--observe"}, []string{"--observe"}, ""},
+		{"enforced", nil, nil, "a run cannot start inside a run"},
+		{"observe in observe", []string{"--observe"}, []string{"--observe"}, "a run cannot start inside a run"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			nestedRun(t, tc.outer, tc.inner, tc.want)

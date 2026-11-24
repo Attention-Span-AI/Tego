@@ -47,19 +47,18 @@ cells:
       all: refused fs.deny_read[./secret/]
     no_compile: compile --test answers names and sees no mount; the alias is the deny_read's inode only in the run's namespace
     source: 'ADR 0025 (identity is the inode); enforce-landlock E32 (b); enforce-plane R8'
-  # Beneath a granted sibling the alias is readable at tier landlock through that name alone (E32 (ii), a recorded
-  # limitation); the plane refuses it by inode. Where the listener would decide the run, Prepare refuses to start
+  # Beneath a granted sibling the alias was readable at tier landlock through that name alone (E32 (ii)) until compile
+  # applied the entry to it (below); the plane refuses it by inode. Where the listener would decide the run, Prepare refuses to start
   # because the denied tree has another name (ADR 0011).
   - name: read-bind-alias-nested
     op: read
     path: pub/alias/key
     canon: secret/key
+    # ADR 0011, amended 2026-11-19 (round 4): compile applies the deny entry to this other name the mount table gives
+    # its file, so tier landlock refuses it too (was E32 (ii)'s recorded limitation). Root-guest run of this cell owed.
     want:
-      landlock: allow
-      root: refused fs.deny_read[./secret/]
+      all: refused fs.deny_read[./secret/]
     no_compile: compile --test answers names and sees no mount; the alias is the deny_read's inode only in the run's namespace
-    exception: 'enforce-landlock E32 (ii): a deny_read target''s content reached through a bind mount beneath a granted sibling is readable through that name at tier landlock (recorded limitation; compile warns on mount points)'
-    exception_at: landlock
     source: 'ADR 0025 (identity is the inode); ADR 0011 (2026-11-11 amendment); enforce-landlock E32 (ii); enforce-cgroup-observe R8, §6 item 24; enforce-plane R8'
   # A bind alias of a write entry is the entry's inode: Landlock keys the entry's rights by inode, and so does the
   # plane. Tier cgroup's listener refuses it by the name (fail closed) and the supervisor's line at tier landlock says

@@ -21,7 +21,7 @@ body:
     id: doctor
     attributes:
       label: tego doctor
-      description: The output of `tego doctor`. Run it as root too (`sudo tego doctor`) if the problem is at tier 2 or 3.
+      description: The output of `tego doctor`. Run it as root too (`sudo "$(command -v tego)" doctor`) if the problem is at tier 2 or 3.
       render: text
     validations:
       required: true

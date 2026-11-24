@@ -56,6 +56,8 @@ type mountTable struct {
 	// changing while it was read): R10's checks by mount identity then cannot show a write entry stays off what
 	// they protect.
 	err error
+	// unlinked memoizes unlinkedOn by device, for compile's alias pass alone.
+	unlinked map[string]string
 	// probed says a mount table was asked for, where a disabled probe (WithMountInfo("")) has no mount facts by the
 	// caller's choice. A probed table that holds no mount of a path, one that could not be read among them, cannot
 	// say where the path lies in its filesystem.
@@ -650,22 +652,7 @@ func (t *mountTable) fileMount(p string) FileMount {
 	}
 	fm.Layers, fm.Unmapped = stackLayers(m.fstype, m.super)
 	place := filepath.Join(m.root, strings.TrimPrefix(p, m.point))
-	byRoot := t.roots[m.dev]
-	var rows []int
-	for a := place; ; a = filepath.Dir(a) {
-		rows = append(rows, byRoot[a]...)
-		if a == "/" || a == "." {
-			break
-		}
-	}
-	roots := t.sorted[m.dev]
-	prefix := strings.TrimSuffix(place, "/") + "/"
-	start, _ := slices.BinarySearch(roots, prefix)
-	for i := start; i < len(roots) && strings.HasPrefix(roots[i], prefix); i++ {
-		rows = append(rows, byRoot[roots[i]]...)
-	}
-	slices.Sort(rows)
-	for _, i := range slices.Compact(rows) {
+	for _, i := range t.placeRows(m.dev, place) {
 		n := t.mounts[i]
 		if n.point == m.point && n.root == m.root {
 			continue
@@ -680,6 +667,27 @@ func (t *mountTable) fileMount(p string) FileMount {
 		}
 	}
 	return fm
+}
+
+// placeRows is the rows of device dev whose root lies at, above or beneath place (a path within that filesystem), in
+// table order, each once: one lookup per directory of the place, and one run of the device's sorted roots.
+func (t *mountTable) placeRows(dev, place string) []int {
+	byRoot := t.roots[dev]
+	var rows []int
+	for a := place; ; a = filepath.Dir(a) {
+		rows = append(rows, byRoot[a]...)
+		if a == "/" || a == "." {
+			break
+		}
+	}
+	roots := t.sorted[dev]
+	prefix := strings.TrimSuffix(place, "/") + "/"
+	start, _ := slices.BinarySearch(roots, prefix)
+	for i := start; i < len(roots) && strings.HasPrefix(roots[i], prefix); i++ {
+		rows = append(rows, byRoot[roots[i]]...)
+	}
+	slices.Sort(rows)
+	return slices.Compact(rows)
 }
 
 // MountTable is a mount table read and parsed once (ReadMountSnapshot, ParseMountTableStrict) for asking many
@@ -812,8 +820,8 @@ func (mt *MountTable) aliasUncertainty(own FileMount, p string) string {
 		return fmt.Sprintf("the mount holding folder %q cannot be placed", p)
 	}
 	for _, m := range mt.t.mounts {
-		if m.dev != own.Device || !m.unlinkedRoot() {
-			continue
+		if m.dev != own.Device || !m.unlinkedRoot() || !mt.t.visible(m) {
+			continue // a hidden mount shows nothing under any name (unlinkedOn)
 		}
 		// An unlinked regular file retains the single-file rule. A directory
 		// or unreadable root can expose an unknown part of this device's tree.
@@ -1133,4 +1141,87 @@ func (k *compiler) mountTable() (*mountTable, error) {
 		k.mt, _ = loadMountTable(k.o.mountInfo)
 	}
 	return k.mt, k.mt.err
+}
+
+// aliasName is another name a mount table gives a file or a tree (otherNames): alias shows, on the same filesystem
+// instance, what original names beneath the path asked about.
+type aliasName struct{ alias, original string }
+
+// otherNames lists every other name the table gives p's file or tree on the same filesystem instance, each paired with
+// the name under p it shows: a row whose root lies at or above p's place shows p itself below its own point (a bind
+// of p, of a directory above it or of its whole filesystem elsewhere, as WSLg's /mnt/wslg/distro shows the whole root
+// filesystem), and a row whose root lies strictly beneath it shows that part of p's tree at its point. Rows of the
+// device count whatever their visibility; a caller checks each name against the file it should show. uncertain says why
+// the list may be incomplete ("" when it is not): p's mount cannot be placed, or an unlinked directory root (or one of
+// unknown type) on the device may show part of the tree under a name no row gives.
+func (t *mountTable) otherNames(p string) (names []aliasName, uncertain string) {
+	m, _, ok := t.lookup(p)
+	if !ok || m.dev == "" || !filepath.IsAbs(m.root) {
+		return nil, fmt.Sprintf("the mount holding %q cannot be placed", p)
+	}
+	if m.unlinkedRoot() {
+		return nil, fmt.Sprintf("the mount holding %q has an unlinked root", p)
+	}
+	if why := t.unlinkedOn(m.dev); why != "" {
+		return nil, why
+	}
+	place := filepath.Join(m.root, strings.TrimPrefix(p, m.point))
+	seen := map[string]bool{p: true}
+	add := func(alias, original string) {
+		if !seen[alias] {
+			seen[alias] = true
+			names = append(names, aliasName{alias: alias, original: original})
+		}
+	}
+	for _, i := range t.placeRows(m.dev, place) {
+		n := t.mounts[i]
+		if n.unlinkedRoot() || !filepath.IsAbs(n.root) || n.point == m.point && n.root == m.root {
+			continue
+		}
+		switch {
+		case isAncestorOrSelf(n.root, place):
+			add(filepath.Join(n.point, strings.TrimPrefix(place, n.root)), p)
+		case isAncestorOrSelf(place, n.root):
+			add(n.point, filepath.Join(p, strings.TrimPrefix(n.root, place)))
+		}
+	}
+	return names, ""
+}
+
+// unlinkedOn is why an unlinked root on device dev may show part of its tree under a name no row gives: a directory
+// root, or one whose type cannot be established ("" when there is none; an unlinked regular file shows one file, which
+// compile checks by identity). Asked once per device: compile asks it of every deny entry (otherNames), and only compile
+// asks it.
+func (t *mountTable) unlinkedOn(dev string) string {
+	if why, ok := t.unlinked[dev]; ok {
+		return why
+	}
+	why := ""
+	for _, n := range t.mounts {
+		// A mount hidden under another shows nothing under any name (its point answers for the mount on top), so
+		// its unknown type never puts the filesystem it sits on in doubt (systemd-nspawn's boot_id bind under
+		// /proc/sys).
+		if n.dev != dev || !n.unlinkedRoot() || !t.visible(n) {
+			continue
+		}
+		switch typ := unlinkedMountType(n); {
+		case typ == unix.S_IFREG:
+			continue
+		case typ == unix.S_IFDIR:
+			why = fmt.Sprintf("mount %q has an unlinked directory root", n.point)
+		case !t.live:
+			// A supplied table (not this process's own) cannot be checked by statx, so no unlinked root's type is
+			// ever known there: the captured container tables' unlinked rows are the runtimes' single-file binds
+			// (nspawn's boot_id). A run compiles against its own table, where the type is established.
+			continue
+		default:
+			why = fmt.Sprintf("mount %q has an unlinked root whose type cannot be established", n.point)
+		}
+		break
+	}
+	if t.unlinked == nil {
+		t.unlinked = map[string]string{}
+	}
+	t.unlinked[dev] = why
+	return why
 }

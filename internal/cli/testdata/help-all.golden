@@ -50,6 +50,8 @@ supervise other programs
    watch            Run a command and record program starts, file opens, creates, removals, renames and connections
    adopt            (root) Supervise an agent that is already running
    agents           (root) List the agent processes running here (observes only)
+   scan             Look for your running agents, installed candidates and settings metadata
+   contracts        Find contracts and check today's files without running an agent
 
 tools for agents
    mcp              Set the MCP tool rules of a running session
@@ -72,6 +74,7 @@ about Tego
    serve            (tego-control) Start the dashboard server
    version          Print the build's versions
    licenses         Print the licence texts and third-party notices
+   uninstall        Remove Tego from this machine (keeps your records unless you say so)
 
 See 'tego help <command>' to read about a specific command.
 Manual: https://github.com/Attention-Span-AI/Tego/blob/main/docs/user/commands.md

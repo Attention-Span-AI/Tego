@@ -52,6 +52,11 @@ func (st probeState) missingFor(t backend.Tier) []string {
 // missingAs is missingFor(t) for the section of tier asked, which inherits t's list: a line that names the
 // tier it is about names asked, so tier bpflsm's root line says bpflsm, not cgroup.
 func (st probeState) missingAs(t, asked backend.Tier) []string {
+	if st.rootTierWhy != "" && (t == backend.TierCgroup || t == backend.TierBPFLSM) {
+		// This precondition is read even when the run's reach skips the root
+		// probes. No plane mode or cached answer can repair PID identities.
+		return append(st.missingAs(backend.TierLandlock, asked), st.rootTierWhy)
+	}
 	if st.unprobed(t) {
 		// Its own checks were never run, so it is not offered: a check not run has established nothing
 		// (Result.Skipped). The one line says so rather than listing each check as failed.
@@ -116,11 +121,14 @@ func (st probeState) missingAs(t, asked backend.Tier) []string {
 // take tier landlock once it starts inside that cgroup. As root D3 never fails so: uid 0 places anywhere.
 func (st probeState) outsideUserManager(ceiling backend.Tier) bool {
 	d3, ok := st.byID[CheckCgroupV2]
-	if !ok || d3.OK || !d3.beside || st.root || st.unprobed(backend.TierLandlock) {
+	if !ok || !d3.beside || st.root || st.unprobed(backend.TierLandlock) {
 		return false
 	}
 	if ceiling != "" && ceiling != backend.TierLandlock {
 		return false
+	}
+	if d3.OK {
+		return d3.throughUserScope && len(st.missingFor(backend.TierLandlock)) == 0
 	}
 	return len(st.missingFor(backend.TierLandlock)) == 1
 }
@@ -296,6 +304,9 @@ func (st probeState) fixFor(next backend.Tier) string {
 			return nb.Fix
 		}
 		return ""
+	}
+	if st.rootTierWhy != "" {
+		return rootTierNamespaceFix
 	}
 	if !st.root {
 		return "re-run as root for the tier-2 and tier-3 probes: " + sudoDoctor()

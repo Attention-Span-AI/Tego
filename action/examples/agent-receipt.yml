@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+# Local-action example for offline lint. The public interface is the reusable job
+# documented in docs/user/ci-receipt.md. Version/digest variables must be pinned.
+name: receipt implementation example
+on:
+  workflow_dispatch:
+permissions: {}
+jobs:
+  agent:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: ./action
+        with:
+          contract: agent.yaml
+          run: ./agent/run.sh
+          tego-version: ${{ vars.TEGO_CI_VERSION }}
+          tego-sha256: ${{ vars.TEGO_CI_SHA256_AMD64 }}
+          on-refusal: warn

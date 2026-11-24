@@ -5,6 +5,7 @@ package agent
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -139,7 +140,11 @@ func (k *compiler) hostSocketsReachable() {
 func (k *compiler) hostSocketsFound() []string {
 	uid := k.o.socketUID
 	if uid < 0 {
-		uid, _ = config.InvokingUID()
+		if k.o.caller != nil {
+			uid = k.o.caller.UID
+		} else {
+			uid, _ = config.InvokingUID()
+		}
 	}
 	runtimeDir := filepath.Join("/run/user", strconv.Itoa(uid))
 	var found []string
@@ -192,7 +197,9 @@ func (k *compiler) containerSocketWarning() {
 
 // builtinRefusedAllows is ADR 0113 seen at compile: a net.allow unix: entry that builtin.host_ipc or
 // builtin.tego_surface refuses, at its declared path or at the place it resolves to (NetRule.UnixResolved, the run's
-// own resolution), admits nothing in any enforcing run. Every layer decides the built-ins before net.allow
+// own resolution), admits nothing in any enforcing run. A net.ask entry is as dead: the built-in is decided before the
+// ask list too, so the person is never asked and the socket is refused outright (the review of that change; ADR 0113
+// amendment of 2026-11-11). Every layer decides the built-ins before net.allow
 // (decide.evalNet, the supervisor's builtinNet and builtinFile, the root tiers' rows, which overwrite such an entry's
 // row with the refusal), and the ADR gives them no contract opt-out besides the exact container-daemon sockets
 // (BuiltinUnixRule already counts those). Such an entry contradicts the boundary, as an fs.ask_read inside a deny_read
@@ -201,18 +208,15 @@ func (k *compiler) containerSocketWarning() {
 //
 // It runs after builtinContainerAliases, whose aliases BuiltinUnixRule reads. A record-only run (--observe, tego watch
 // with no --boundary) has no built-ins and so no contradiction. A socket reached through a hard link or a link made
-// after compile is not seen here; the run still refuses it by identity.
-func (k *compiler) builtinRefusedAllows() {
+// after compile is not seen here; the run still refuses it by identity. An entry wslLauncherRefused already refused
+// (skip, by position) is not refused a second time.
+func (k *compiler) builtinRefusedAllows(skip map[Pos]bool) {
 	b := k.rt.Builtins
 	if b == nil {
 		return
 	}
-	runtimeDir := "/run/user/<uid>"
-	if len(b.Runtime) > 0 {
-		runtimeDir = b.Runtime[0]
-	}
-	for _, r := range k.rt.Net {
-		if r.Runtime != "" || r.Proto != ProtoUnix || r.Abstract || r.Verdict != VerdictAllow {
+	for _, r := range append(slices.Clone(k.rt.Net), k.rt.NetAsk...) {
+		if r.Runtime != "" || r.Proto != ProtoUnix || r.Abstract || (r.Verdict != VerdictAllow && r.Verdict != VerdictAsk) || skip[r.Pos] {
 			continue
 		}
 		at, rule := r.UnixPath, k.rt.BuiltinUnixRule(r.UnixPath)
@@ -222,19 +226,34 @@ func (k *compiler) builtinRefusedAllows() {
 		if rule == "" {
 			continue
 		}
+		runtimeDir := "/run/user/<uid>"
+		if len(b.Runtime) > 0 {
+			runtimeDir = b.Runtime[0]
+		}
+		for _, dir := range b.Runtime {
+			if Covers(dir, at) {
+				runtimeDir = dir
+				break
+			}
+		}
 		what := ""
 		if w := HostSocketWhat(at, runtimeDir); w != "" {
 			what = "; the socket is " + w
 		}
-		d := k.ds.errorf(r.Pos, CodeContradiction, "%s%s is refused by %s in every enforcing run, before net.allow is read: "+
-			"no contract entry lifts a built-in refusal (ADR 0113), so this entry admits nothing%s",
-			r.RuleName(), resolvedNote(r.UnixPath, at), rule, what)
+		name, before, does := r.RuleName(), "net.allow", "admits nothing"
+		if r.Verdict == VerdictAsk {
+			name, before, does = r.RuleName()+" (a net.ask entry)", "net.ask", "never asks anyone, and the socket is refused outright"
+		}
+		d := k.ds.errorf(r.Pos, CodeContradiction, "%s%s is refused by %s in every enforcing run, before %s is read: "+
+			"no contract entry lifts a built-in refusal (ADR 0113), so this entry %s%s",
+			name, resolvedNote(r.UnixPath, at), rule, before, does, what)
 		if rule == BuiltinTegoSurface {
 			d.fix("remove the entry: no run reaches Tego's own sockets (docs/user/built-in-refusals.md)")
 			continue
 		}
 		d.fix("remove the entry; to let the agent cause one operation through that socket, such as restarting one "+
 			"service, run a helper outside the run that does that one operation and nothing else, listening on a socket "+
-			"at a path no built-in refuses (outside %s), and allow that socket instead (docs/user/built-in-refusals.md)", runtimeDir)
+			"at a path no built-in refuses (outside %s), and %s that socket instead (docs/user/built-in-refusals.md)", runtimeDir,
+			map[Verdict]string{VerdictAllow: "allow", VerdictAsk: "ask about"}[r.Verdict])
 	}
 }

@@ -3,33 +3,37 @@
 package receipt
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
+	"net"
+	"net/netip"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/check/askpair"
 	"github.com/attention-span-ai/tego/internal/check/gaps"
-	"github.com/attention-span-ai/tego/internal/check/internal/mirror"
 	"github.com/attention-span-ai/tego/internal/check/measure"
+	"github.com/attention-span-ai/tego/internal/check/mirror"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/liveblock"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
+	receiptspec "github.com/attention-span-ai/tego/pkg/spec/receipt"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
-
-// Version is the receipt's JSON version (receipt_v). Keys only grow within it.
-const Version = 1
 
 // The caps that bound the receipt's memory whatever the run's size.
 const (
 	// MaxPaths is the most paths each file list holds; past it the list says truncated.
 	MaxPaths = 1000
-	// MaxRefusals is the most refused actions the list holds, oldest first; the counts keep counting.
+	// MaxRefusals is the most refused actions the list holds, oldest first (in the order the calls were received, see
+	// builder.refusalMono); the counts keep counting. A run past it keeps the first MaxRefusals lines the ledger holds.
 	MaxRefusals = 1000
 	// MaxAsks is the most asks the list holds.
 	MaxAsks = 1000
@@ -41,8 +45,8 @@ const (
 	MaxBuckets = 10080
 	// DefaultStallThreshold is the quiet span from which a window counts as stalled.
 	DefaultStallThreshold = 5 * time.Minute
-	// MaxTop is how many destinations and programs the receipt names; the rest are counted (ConnectionsMore,
-	// ProgramsMore).
+	// MaxTop is how many destinations and programs the receipt names. Other retained identities
+	// and attempts beyond the identity budget are counted separately.
 	MaxTop = 10
 )
 
@@ -51,6 +55,9 @@ const ctxEvery = 1024
 
 // Options tune Compute.
 type Options struct {
+	// SensitivePath optionally adds paths protected by the caller's contract context.
+	// It receives names only. Nil keeps the ledger-only name and deciding-rule checks.
+	SensitivePath func(string) bool
 	// NowMonoNS is the caller's monotonic clock reading (the ledger's clock). A run with no run_end measures its
 	// time taken and its last quiet window to it; 0, or a reading before the last event, is ignored.
 	NowMonoNS uint64
@@ -59,159 +66,24 @@ type Options struct {
 	// Prices estimates each model response's cost, as `tego measure` does (the same interface, filled by the CLI
 	// from the machine's price table). Nil prices nothing: the receipt then counts every response unpriced.
 	Prices measure.Prices
-	// Home is the home directory "~" stands for in the text layout (Text): a path under it prints as ~/... . The
-	// ledger does not record the run's HOME, so the caller passes the one it knows (tego run its own, tego receipt
-	// its reader's); "" prints every path outside the run's folder whole. JSON always keeps the full paths.
+	// Home is the home directory "~" stands for in the text layout (Text): a path under it prints as ~/... . Only the
+	// run's own home may be passed: tego run passes its own for the run it just ran, never a reader's, since a home
+	// the record does not name is not the reader's (a receipt read later, by another user or on another machine, would
+	// fold the wrong folder). With "", the home the run recorded is used (its baseline evidence's owner home, when the
+	// owner context was known); a record with none prints every path outside the run's folder whole. JSON always
+	// keeps the full paths.
 	Home string
+	// SayNoHome makes the text layout say, in one line, that the record names no home when none is known, so a person
+	// does not read the whole paths as a rendering fault (`tego receipt`, which reads a run some time after it ended).
+	SayNoHome bool
 	// Bind binds the receipt to the record it reads (Receipt.Binding), by the tego named here: the one pass that
 	// computes the receipt also checks every line as Verify does and hashes the bytes it read. Only `tego receipt
 	// --json` sets it; nil leaves Binding out, so the dashboard's receipt and tego run's end summary are unchanged.
 	Bind *MadeBy
-}
-
-// Receipt is one run's V1 receipt. Every field that cannot be read off the ledger has Recorded false and a Note.
-type Receipt struct {
-	V         int        `json:"receipt_v"`
-	Run       string     `json:"run"`
-	Agent     string     `json:"agent"`
-	Tier      string     `json:"tier,omitempty"`
-	Capture   string     `json:"capture,omitempty"`
-	Command   []string   `json:"command,omitempty"`
-	Cwd       string     `json:"cwd,omitempty"`
-	Started   *time.Time `json:"started,omitempty"`
-	Finished  *time.Time `json:"finished,omitempty"`
-	Ended     bool       `json:"ended"`
-	EndReason string     `json:"end_reason,omitempty"`
-	ExitCode  *int       `json:"exit_code,omitempty"`
-	Signal    int        `json:"signal,omitempty"`
-	Time      TimeTaken  `json:"time_taken"`
-	Files     Files      `json:"files"`
-	Refusals  Refusals   `json:"refusals"`
-	OverTime  OverTime   `json:"refusals_over_time"`
-	Stall     Stall      `json:"stall"`
-	Tests     Tests      `json:"tests"`
-	Asks      Asks       `json:"asks"`
-	Tokens    Tokens     `json:"tokens"`
-	// Connections is where the run connected, most often first: the top MaxTop destinations with their verdicts;
-	// ConnectionsMore is how many other destinations there were and ConnectionTries how many connections in all,
-	// listed or not. A routine system lookup (syslookup.Routine: nscd, systemd's userdb and resolved, the D-Bus buses,
-	// a DNS lookup) is not a place the run sent its data: it is counted in SystemLookups, never here, as the
-	// dashboard's verdict folds it, so "most:" can never name the nscd socket. A socket call that names no place
-	// (syslookup.NoPlace: an AF_UNSPEC connect, the kernel's netlink socket) is never here either: one that was not
-	// refused is counted in RoutineSockets, and a refused one (such as a send to an AF_UNSPEC address, which the
-	// supervisor refuses) only in Refusals, as the dashboard's verdict counts it.
-	Connections     []Connection `json:"connections"`
-	ConnectionsMore int          `json:"connections_more,omitempty"`
-	ConnectionTries int          `json:"connection_tries"`
-	SystemLookups   int          `json:"system_lookups,omitempty"`
-	RoutineSockets  int          `json:"routine_sockets,omitempty"`
-	// ConnectionsNote says what the list cannot hold (a tier that records refused connections only).
-	ConnectionsNote string `json:"connections_note,omitempty"`
-	// Programs is the programs the run started, most often first: the top MaxTop; ProgramsMore is how many other
-	// programs there were. A refused exec is not here (it never ran); Refusals lists it.
-	Programs     []Program `json:"programs"`
-	ProgramsMore int       `json:"programs_more,omitempty"`
-	// SensitiveReads is every file the run opened, or tried to, that looks like a secret by its name
-	// (secretpath.Is) or that an fs.deny_read or fs.ask_read rule guards, in the order first seen, with what
-	// happened to the tries.
-	SensitiveReads          []SensitiveRead `json:"sensitive_reads"`
-	SensitiveReadsTruncated bool            `json:"sensitive_reads_truncated,omitempty"`
-	// SensitiveReadsNote says what the list cannot hold (a run that did not record allowed reads).
-	SensitiveReadsNote string `json:"sensitive_reads_note,omitempty"`
-	// SensitiveReadsUnknown says the run did not record every read, or its ledger does not say whether it did, so an
-	// empty list means nothing: a file may have been read all the same.
-	SensitiveReadsUnknown bool `json:"sensitive_reads_unknown,omitempty"`
-	// ReadsNotified is run_start.reads_notified as the run wrote it: whether every read open reached the supervisor,
-	// so that a read the contract refused has a line, and why. nil for a record written before the field (record_minor
-	// 23), which does not say.
-	ReadsNotified *record.ReadsNotified `json:"reads_notified,omitempty"`
-	// Coverage says which fields this run's ledger could not support in full, and why.
-	Coverage Coverage `json:"coverage"`
-	// Lines is how many ledger lines the receipt read.
-	Lines int `json:"lines"`
-	// Notes are what the pass met that neither the counts nor the coverage say: anomalies (a second run_end, lines of a
-	// newer version skipped), and the modes tego gave back to the owner of its own files (restoredNote), which lost no
-	// action.
-	Notes []string `json:"notes,omitempty"`
-	// Binding ties the receipt to the record it was computed from (Options.Bind); nil when unbound.
-	Binding *Binding `json:"binding,omitempty"`
-
-	// home is Options.Home, for the text layout only.
-	home string
-	// ulpTLS and ulpOther count the refusals Refusals.ByRule holds under unmatched and net-not-allowed that are tego's
-	// built-in refusal of setsockopt(TCP_ULP) (builtInULP): kernel TLS, and any other name. Only the words read them
-	// (RefusalGroups); every count a script reads keeps them as the record does.
-	ulpTLS, ulpOther int
-	// sameFile is each refused exec a live block refused as another name of its program's file
-	// (liveblock.SameFileNote), with its count, in the order first seen, at most MaxTop: only the words read it
-	// (SameFile).
-	sameFile []SameFileRefusal
-	// price is where the cost sits in Coverage (reprice); startMono and lastMono are the run_start line's clock reading
-	// and the largest one of any line, which a live receipt's time taken counts from and must pass (Check).
-	price               pricing
-	startMono, lastMono uint64
-}
-
-// TimeTaken is the run's wall clock: run_start to run_end on the ledger's monotonic clock.
-type TimeTaken struct {
-	Seconds float64 `json:"seconds"`
-	// SoFar is set for a run still running (measured to the caller's clock) or one with no run_end (measured to
-	// its last line, with Note saying so).
-	SoFar bool   `json:"so_far,omitempty"`
-	Note  string `json:"note,omitempty"`
-}
-
-// Files is what the run changed on disk, as its allowed fs lines record it. A refused operation is not a change, nor
-// is one whose line records that it failed (an errno, or a negative syscall_ret); a read is not one either, and neither
-// is a write to a device that holds no file (device: /dev/null, the terminal). Only the tier-2 kernel record, and the
-// opens and mutations the supervisor makes itself, record a result: at tier landlock the supervisor continues every
-// other allowed call, whose line carries none, so a call the kernel then failed is listed all the same (an unlink of a
-// name that is not there; GNU mv's renameat2 with RENAME_NOREPLACE, retried as renameat where the filesystem refuses
-// the flag, lists one rename twice). No line at that tier says that an open created its file, so a file an open made
-// is listed as written only; a mkdir, symlink or link is listed as created.
-type Files struct {
-	Recorded  bool     `json:"recorded"`
-	Note      string   `json:"note,omitempty"`
-	Written   []string `json:"written"`
-	Created   []string `json:"created"`
-	Deleted   []string `json:"deleted"`
-	Renamed   []Rename `json:"renamed"`
-	Truncated bool     `json:"truncated,omitempty"`
-}
-
-// Rename is one rename, from its old name to its new one.
-type Rename struct {
-	From string `json:"from"`
-	To   string `json:"to"`
-}
-
-// Refusals is every refused action: the count, the count by rule, and the list.
-type Refusals struct {
-	Total         int         `json:"total"`
-	ByRule        []RuleCount `json:"by_rule"`
-	List          []Refusal   `json:"list"`
-	ListTruncated bool        `json:"list_truncated,omitempty"`
-}
-
-// RuleCount is how many refusals one rule made, with the reason code the agent got.
-type RuleCount struct {
-	Rule   string `json:"rule"`
-	Reason string `json:"reason"`
-	Count  int    `json:"count"`
-}
-
-// Refusal is one refused action. Target is a path, a destination or a program path; an exec's argv is never
-// copied (it can hold a secret).
-type Refusal struct {
-	Seq    uint64    `json:"seq"`
-	TS     time.Time `json:"ts"`
-	Kind   string    `json:"kind"`
-	Op     string    `json:"op"`
-	Target string    `json:"target"`
-	Rule   string    `json:"rule"`
-	Reason string    `json:"reason"`
-	// Minute is the refusal's minute from run_start (0 is the first).
-	Minute int `json:"minute"`
+	// BindVersion selects a historical binding during comparison; zero writes the current version.
+	BindVersion int
+	// BinarySHA256 is the producer image hash. Empty hashes the running executable.
+	BinarySHA256 string
 }
 
 // SameFileRefusal is a program path a live block refused because it is another name of the program file the block's
@@ -244,143 +116,95 @@ func (b *builder) sameFileRefusal(rule, path string) {
 	}
 }
 
-// OverTime is the refusals per minute from run_start: Counts[i] is minute i.
-type OverTime struct {
-	BucketSeconds int   `json:"bucket_s"`
-	Counts        []int `json:"counts"`
-	Truncated     bool  `json:"truncated,omitempty"`
+// NameBlock is a live network block, or a restored fence entry, put in force by a host name, and what the record says
+// of the addresses it was enforced on (record minor 41): Addrs as the line names them (an IPv6 zone kept), More the
+// ones past its cap, none of either when the record does not say (an older ledger, or a lookup that answered none).
+type NameBlock struct {
+	Name  string
+	Addrs []string
+	More  int
 }
 
-// Stall is the time the run sat quiet: whole windows with no ledger line at or above the threshold, excluding
-// windows that touch a gap line or sit inside an open model exchange.
-type Stall struct {
-	Recorded         bool    `json:"recorded"`
-	Note             string  `json:"note,omitempty"`
-	ThresholdSeconds float64 `json:"threshold_s"`
-	Minutes          float64 `json:"minutes"`
-	Windows          int     `json:"windows"`
-	EndedByStall     bool    `json:"ended_by_stall,omitempty"`
-}
-
-// Tests is the run's tests result. No ledger line records one yet, so it is always not recorded for now.
-type Tests struct {
-	Recorded bool   `json:"recorded"`
-	Note     string `json:"note,omitempty"`
-}
-
-// Asks is the times the run asked a person, and their answers.
-type Asks struct {
-	Asked      int     `json:"asked"`
-	Approved   int     `json:"approved"`
-	Denied     int     `json:"denied"`
-	TimedOut   int     `json:"timed_out"`
-	Alternates int     `json:"alternates"`
-	Unanswered int     `json:"unanswered"`
-	WaitS      float64 `json:"wait_s"`
-	List       []Ask   `json:"list"`
-	Truncated  bool    `json:"truncated,omitempty"`
-}
-
-// Ask is one ask and its answer ("" while unanswered).
-type Ask struct {
-	AskID  string    `json:"ask_id"`
-	TS     time.Time `json:"ts"`
-	Op     string    `json:"op"`
-	Target string    `json:"target"`
-	Rule   string    `json:"rule"`
-	Answer string    `json:"answer"` // approved | denied | timed-out | alternate | unavailable | ""
-	By     string    `json:"by,omitempty"`
-	AfterS float64   `json:"after_s,omitempty"`
-}
-
-// Tokens is the model calls and tokens the capture recorded.
-type Tokens struct {
-	Recorded   bool   `json:"recorded"`
-	Note       string `json:"note,omitempty"`
-	ModelCalls int    `json:"model_calls"`
-	Metered    int    `json:"metered"`
-	In         uint64 `json:"in"`
-	Out        uint64 `json:"out"`
-	CacheRead  uint64 `json:"cache_read"`
-	CacheWrite uint64 `json:"cache_write"`
-	// EstCostUSD is the summed per-response estimate from Options.Prices, the figure `tego measure` prints;
-	// Unpriced is the metered responses no price covered. CostText renders it with "est." (R20).
-	EstCostUSD float64 `json:"est_cost_usd"`
-	Unpriced   int     `json:"unpriced_responses"`
-	CostText   string  `json:"est_cost,omitempty"`
-}
-
-// Coverage is the receipt's honesty line: Complete when every field was read off a ledger that records it, else
-// one Gap per field that is missing or partial.
-type Coverage struct {
-	Complete bool          `json:"complete"`
-	Gaps     []CoverageGap `json:"gaps"`
-	// DenyReadFrozen is run_start's deny_read_frozen: the directories the run's Landlock ruleset listed once at launch,
-	// in which a name made during the run was unreadable to it (GAPS A12). It is what the run's rules were, not what
-	// the record missed, so it is no gap and leaves Complete as it is. Absent when run_start has none.
-	DenyReadFrozen *record.DenyReadFrozen `json:"deny_read_frozen,omitempty"`
-}
-
-// FrozenText is the sentence the receipt's Coverage prints for DenyReadFrozen, the same in `tego receipt` and on the
-// dashboard's Receipt tab, with the paths escaped by record.Printable; "" when there is none.
-func (c Coverage) FrozenText() string {
-	f := c.DenyReadFrozen
-	if f == nil {
-		return ""
+// words is the receipt's sentence about the block: the addresses it was enforced on, or that the record does not say.
+func (n NameBlock) words() string {
+	if len(n.Addrs) == 0 {
+		return "A live block on " + n.Name + " refuses the addresses that name resolved to; the record does not say which."
 	}
-	list := strings.Join(f.Dirs, ", ")
-	switch {
-	case f.Omitted > 0 && len(f.Dirs) > 0:
-		list += fmt.Sprintf(" and %d more", f.Omitted)
-	case f.Omitted > 0:
-		list = fmt.Sprintf("%d directories", f.Omitted)
+	s := "A live block on " + n.Name + " was enforced on " + strings.Join(n.Addrs, ", ")
+	if n.More > 0 {
+		s += fmt.Sprintf(" and %d more not listed", n.More)
 	}
-	return "Frozen at launch: deny_read listed " + record.Printable(list) + " once; a file or directory made directly " +
-		"in one of them during the run could not be read."
+	return s + "."
 }
 
-// CoverageGap is one field the ledger could not support in full: its JSON key, why as a code a program can match (one
-// of the Code constants) and why in words. Why's words may change; a code never does, and a new reason gets a new
-// one.
-type CoverageGap struct {
-	Field string `json:"field"`
-	Code  string `json:"code"`
-	Why   string `json:"why"`
+// NameBlocks is the live blocks and restored fence entries by name, in the order the record shows them, at most
+// MaxTop, each once with every address its lines named: the words the receipt adds, since a block by name refuses by
+// the addresses its name resolved to and the refusals under it name the address, not the block.
+func (rc *Receipt) NameBlocks() []NameBlock { return rc.nameBlocks }
+
+// nameBlock notes the live_block of a gap line that put a net block or fence entry in force.
+func (b *builder) nameBlock(c *record.LiveBlockChange) {
+	if c.Kind != record.LiveKindNet {
+		return
+	}
+	host := c.Value
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	if _, err := netip.ParseAddr(host); err == nil || host == "" || strings.HasPrefix(host, "/") || strings.HasPrefix(host, "@") {
+		return // an address or a unix socket: nothing was resolved
+	}
+	nb := &b.rc.nameBlocks
+	i := slices.IndexFunc(*nb, func(n NameBlock) bool { return n.Name == c.Value })
+	if i < 0 {
+		if len(*nb) >= MaxTop {
+			return
+		}
+		*nb = append(*nb, NameBlock{Name: c.Value})
+		i = len(*nb) - 1
+	}
+	n := &(*nb)[i]
+	for _, a := range c.Addrs {
+		if !slices.Contains(n.Addrs, a) {
+			n.Addrs = append(n.Addrs, a)
+		}
+	}
+	slices.SortFunc(n.Addrs, func(x, y string) int {
+		ax, errx := netip.ParseAddr(x)
+		ay, erry := netip.ParseAddr(y)
+		if errx != nil || erry != nil {
+			return strings.Compare(x, y)
+		}
+		return ax.Compare(ay)
+	})
+	n.More = max(n.More, c.AddrsMore)
 }
 
-// The coverage codes, each with the field it is given on. The first six are the receipt design's why codes; the
-// others name the gaps this receipt reports beyond them.
-const (
-	// CodeNoCapabilities: the ledger has no capabilities line, so whether it records allowed writes is not known (files).
-	CodeNoCapabilities = "no-capabilities-line"
-	// CodeRecordOff: the run's tier records refused writes only (files).
-	CodeRecordOff = "record-off"
-	// CodeCaptureOff: model traffic capture was off (tokens).
-	CodeCaptureOff = "capture-off"
-	// CodeCaptureGap: capture gap lines say tego could not read some model traffic, so the token counts are a floor
-	// (tokens.capture).
-	CodeCaptureGap = "capture-gap"
-	// CodeUnmetered: some model responses carried no token counts (tokens).
-	CodeUnmetered = "unmetered-responses"
-	// CodeModelTimeUnseen: model traffic was not captured, so time spent waiting on the model counts as quiet (stall).
-	CodeModelTimeUnseen = "model-time-unseen"
-	// CodeTruncated: a list stops at its cap; the counts beside it are complete (files, refusals.list).
-	CodeTruncated = "truncated"
-	// CodeUnpriced: some metered responses had no price (tokens.est_cost_usd).
-	CodeUnpriced = "unpriced-responses"
-	// CodeNoPriceTable: the run had no usable price table and the reader gave none, so the cost is not estimated
-	// (tokens.est_cost_usd).
-	CodeNoPriceTable = "no-price-table"
-	// CodeMissedActions: gap lines say tego missed some actions, so the counts are a floor (record).
-	CodeMissedActions = "missed-actions"
-	// CodeRecordUncertain: shared tracing counters cannot establish this run's recording coverage (record).
-	CodeRecordUncertain = "recording-uncertain"
-	// CodeRulesUncertain: the kernel skipped a shared program the run's rules rely on, or its counters could not be
-	// read, so the receipt cannot say every rule held (refusals; ADR 0148).
-	CodeRulesUncertain = "rules-uncertain"
-	// CodeNoRunEnd: the run has no run_end line yet (time_taken).
-	CodeNoRunEnd = "no-run-end"
-)
+// LiftNote is a lift or a grant of a fence entry the launcher put in force, with the note the person gave with it
+// (record minor 41, live_block.note): Rule is live.fence[<kind>:<value>] and Note is record.LiveNoteShown's text, the
+// words the terminal and the dashboard show. Only a lift with a note is listed.
+type LiftNote struct {
+	Rule string
+	Note string
+}
+
+// words is the receipt's sentence about the lift.
+func (l LiftNote) words() string {
+	return "Lifted " + l.Rule + " with the note: " + l.Note
+}
+
+// LiftNotes is the lifts and grants that carry a note, in the order the record shows them, at most MaxTop: the words
+// the receipt adds, since the refusals and allows under a lifted entry name the entry, not the person's reason.
+func (rc *Receipt) LiftNotes() []LiftNote { return rc.liftNotes }
+
+// liftNote notes the live_block of a live-rule-lifted line that carries a note.
+func (b *builder) liftNote(c *record.LiveBlockChange) {
+	if c.Note == "" || len(b.rc.liftNotes) >= MaxTop {
+		return
+	}
+	b.rc.liftNotes = append(b.rc.liftNotes, LiftNote{Rule: c.Rule, Note: record.LiveNoteShown(c.Note)})
+}
 
 // ErrNoRun is a ledger whose first line is not run_start.
 var ErrNoRun = errors.New("no run record")
@@ -391,6 +215,7 @@ var ErrAskLimit = errors.New("pending ask limit exceeded")
 
 // payload is the union of the payload keys the receipt reads.
 type payload struct {
+	record.AnswerAuthority
 	Op           string   `json:"op"`
 	Path         string   `json:"path"`
 	Path2        string   `json:"path2"`
@@ -399,6 +224,7 @@ type payload struct {
 	Errno        int      `json:"errno"`
 	SyscallRet   int64    `json:"syscall_ret"`
 	Dst          string   `json:"dst"`
+	Proto        string   `json:"proto"`
 	Host         string   `json:"host"`
 	Target       string   `json:"target"`
 	AskID        string   `json:"ask_id"`
@@ -412,6 +238,7 @@ type payload struct {
 	Reason       string   `json:"reason"`
 	ExitCode     int      `json:"exit_code"`
 	Signal       int      `json:"signal"`
+	Escalated    bool     `json:"escalated"`
 	Which        string   `json:"which"`
 	Command      []string `json:"command"`
 	Mechanism    string   `json:"mechanism"`
@@ -429,13 +256,17 @@ const (
 
 // builder holds one pass's state.
 type builder struct {
+	learned   *record.LearnNote
 	rc        *Receipt
 	startMono uint64
 	lastMono  uint64
 	rules     map[[2]string]int
-	seen      map[string]bool // path+category already listed
-	asks      map[string]int  // pending ask_id -> display index, -1 beyond the display cap
-	askBytes  int64           // estimated pending identity storage, independent of the display list
+	// refusalMono is the mono_ns of each line of Refusals.List, in the list's order: the time the supervisor received
+	// the refused call (R23a). finish puts the list in that order, so the list does not depend on which of two calls a
+	// worker wrote first (byReceipt).
+	refusalMono []uint64
+	seen        map[string]bool    // path+category already listed
+	asks        *askpair.Book[int] // open asks: ask_id -> display index, -1 beyond the display cap; bounded independently of the display list
 	// stall
 	prevMono   uint64
 	prevGap    bool
@@ -443,19 +274,22 @@ type builder struct {
 	windows    []time.Duration
 	stallAfter time.Duration
 	// the lines before, for counting a refused line that mirrors a refused action once
-	pairs       mirror.Pairs
-	lastAsk     *payload
-	lastAskRule string
-	runStart    record.RunStartPayload
-	prices      measure.Prices
-	gapLines    int        // gap lines that may have lost actions: the record's counts are a floor
-	sharedGaps  gaps.Tally // shared tracing uncertainty, with its own count semantics
-	ruleGaps    gaps.Tally // skips of shared programs the run's rules rely on (gaps.RulesUncertain)
-	captureGaps int        // gap what=capture lines: model traffic tego could not read
-	restored    int        // gap lines of a mode tego gave back to the owner of one of its own files: no action lost
-	noPrice     bool       // a gap said the run had no usable price table
-	devWrite    bool       // an allowed write reached a device, which Files does not list (device)
-	act         activity
+	pairs         mirror.Pairs
+	held          askpair.Held // the last action line with verdict ask: what an ask line that names nothing asks about
+	runStart      record.RunStartPayload
+	prices        measure.Prices
+	gapLines      int             // gap lines that may have lost actions: the record's counts are a floor
+	gapLost       int             // the events those lines say their producers dropped (the lines' counts, as gaps.Tally sums them)
+	sharedGaps    gaps.Tally      // shared tracing uncertainty, with its own count semantics
+	ruleGaps      gaps.Tally      // skips of shared programs the run's rules rely on (gaps.RulesUncertain)
+	captureGaps   int             // gap what=capture lines: model traffic tego could not read
+	dropped       droppedMessages // MCP messages the relay dropped for their size (gaps.Dropped)
+	routesKept    int             // gap lines of an unreadable model-route overlay (gaps.RoutesKept): no action lost
+	restored      int             // gap lines of a mode tego gave back to the owner of one of its own files: no action lost
+	noPrice       bool            // a gap said the run had no usable price table
+	devWrite      bool            // an allowed write reached a device, which Files does not list (device)
+	act           activity
+	sensitivePath func(string) bool
 }
 
 // Compute builds one run's receipt from its ledger in one streaming pass. Pending ask identities are bounded
@@ -464,10 +298,10 @@ func Compute(ctx context.Context, r *ledger.Reader, opt Options) (*Receipt, erro
 	if r == nil {
 		return nil, fmt.Errorf("receipt: no ledger reader")
 	}
-	b := &builder{rc: &Receipt{V: Version}, rules: map[[2]string]int{}, seen: map[string]bool{}, asks: map[string]int{},
-		openSSL: map[uint64]bool{}, prevGap: true, prices: opt.Prices, act: newActivity()}
+	b := &builder{rc: &Receipt{V: Version}, rules: map[[2]string]int{}, seen: map[string]bool{}, asks: askpair.NewBook[int](MaxPendingAsks, MaxPendingAskBytes),
+		openSSL: map[uint64]bool{}, prevGap: true, prices: opt.Prices, act: newActivity(), sensitivePath: opt.SensitivePath}
 	rc := b.rc
-	rc.home = opt.Home
+	rc.home, rc.sayNoHome = opt.Home, opt.SayNoHome
 	rc.Connections, rc.Programs, rc.SensitiveReads = []Connection{}, []Program{}, []SensitiveRead{}
 	rc.Files.Written, rc.Files.Created, rc.Files.Deleted, rc.Files.Renamed = []string{}, []string{}, []string{}, []Rename{}
 	rc.Refusals.ByRule, rc.Refusals.List, rc.Asks.List = []RuleCount{}, []Refusal{}, []Ask{}
@@ -499,8 +333,39 @@ func Compute(ctx context.Context, r *ledger.Reader, opt Options) (*Receipt, erro
 		return nil, fmt.Errorf("%w: the ledger holds no line", ErrNoRun)
 	}
 	b.finish(opt)
+	rc.finishBaseline()
+	if binder != nil && rc.Baseline != nil && opt.BindVersion != 0 && opt.BindVersion != BaselineBindingVersion {
+		return nil, fmt.Errorf("receipt: baseline records require binding 3")
+	}
 	if binder != nil {
 		rc.Binding = bindingOf(binder.Bound(), *opt.Bind, rc.Tier)
+		if opt.BindVersion == 1 {
+			rc.Binding.V = 1
+			rc.Binding.Limits = limitsForBinding(rc.Tier, 1)
+		} else {
+			if rc.Baseline != nil && (opt.BindVersion == 0 || opt.BindVersion == BaselineBindingVersion) {
+				rc.Binding.V = BaselineBindingVersion
+				rc.Binding.EffectiveHash = b.runStart.EffectiveHash
+				rc.Binding.BaselineSHA256 = b.runStart.Baseline.SHA256
+				rc.Binding.BaselineEvidenceSHA256 = b.runStart.Baseline.EvidenceSHA256
+			}
+			rc.Binding.ContractHash = b.runStart.ContractHash
+			rc.Binding.Capabilities = b.runStart.Capabilities
+			rc.Binding.BinarySHA256 = opt.BinarySHA256
+			if rc.Binding.BinarySHA256 == "" {
+				var err error
+				rc.Binding.BinarySHA256, err = ExecutableSHA256()
+				if err != nil {
+					return nil, err
+				}
+			}
+			if !lowerSHA256(rc.Binding.BinarySHA256) {
+				return nil, fmt.Errorf("receipt: producer binary_sha256 must be 64 lowercase hex digits")
+			}
+			if err := rc.seal(); err != nil {
+				return nil, fmt.Errorf("receipt binding: %w", err)
+			}
+		}
 	}
 	return rc, nil
 }
@@ -525,7 +390,28 @@ func (b *builder) line(e *record.Event) error {
 			b.startMono = e.MonoNS
 			ts := e.TS
 			rc.Started = &ts
-			_ = e.DecodePayload(&b.runStart)
+			if err := e.DecodePayload(&b.runStart); err != nil {
+				return fmt.Errorf("receipt run_start: %w", err)
+			}
+			b.runStart.RecordMinor, _ = e.RunStartMinor() // malformed or folded revision grants no attribution
+			if src := b.runStart.ContractSource; b.runStart.RecordMinor >= record.MinorLearn && src != nil && src.Learn != nil && src.Learn.Validate() == nil {
+				b.learned = src.Learn
+			}
+			rc.LocalApprovalAuthority = record.ValidatedLocalApprovalAuthority(e.Payload)
+			if err := b.runStart.ValidateBaseline(); err != nil {
+				return err
+			}
+			rc.Baseline = baselineSummary(b.runStart)
+			// The home the run recorded: run_start.home (record minor 41, every new run), else the machine baseline's
+			// owner home, else none, and the text says so.
+			if rc.home == "" {
+				switch bl := b.runStart.Baseline; {
+				case b.runStart.RecordMinor >= record.MinorEveryLaunch && filepath.IsAbs(b.runStart.Home):
+					rc.home = filepath.Clean(b.runStart.Home)
+				case b.runStart.BaselineRecorded() && bl.OwnerKnown && filepath.IsAbs(bl.Home):
+					rc.home = filepath.Clean(bl.Home)
+				}
+			}
 			rc.Tier, rc.Capture, rc.Command, rc.Cwd = b.runStart.Tier, b.runStart.Capture, b.runStart.Command, b.runStart.Cwd
 			if l := b.runStart.Limits; l != nil && l.StallAfter != "" {
 				if d, err := time.ParseDuration(l.StallAfter); err == nil && d > 0 {
@@ -538,7 +424,7 @@ func (b *builder) line(e *record.Event) error {
 			rc.Notes = append(rc.Notes, fmt.Sprintf("a second run_end line at seq %d is ignored", e.Seq))
 			break
 		}
-		rc.Ended, rc.EndReason, rc.Signal = true, p.Reason, p.Signal
+		rc.Ended, rc.EndReason, rc.Signal, rc.Escalated = true, p.Reason, p.Signal, p.Escalated
 		ts := e.TS
 		rc.Finished = &ts
 		if p.Reason == "exit" {
@@ -557,6 +443,7 @@ func (b *builder) line(e *record.Event) error {
 			return err
 		}
 	case record.KindAnswer:
+		p.AnswerAuthority = record.AnswerAuthorityOf(e.Payload, b.runStart.RecordMinor, b.rc.LocalApprovalAuthority != nil)
 		b.answer(&p)
 	case record.KindSSLResponse:
 		rc.Tokens.ModelCalls++
@@ -585,7 +472,7 @@ func (b *builder) line(e *record.Event) error {
 	}
 
 	// A refused action counts once: the action line, or a refused line written on its own; a refused line that
-	// mirrors a refused action before it is that action again (measure R19, internal/check/internal/mirror).
+	// mirrors a refused action before it is that action again (measure R19, internal/check/mirror).
 	mirrored := b.pairs.Take(e)
 	if (e.Kind.IsAction() && e.Verdict == record.VerdictRefused) || (e.Kind == record.KindRefused && !mirrored) {
 		b.refusal(e, &p)
@@ -594,8 +481,7 @@ func (b *builder) line(e *record.Event) error {
 		}
 	}
 	if e.Verdict == record.VerdictAsk {
-		cp := p
-		b.lastAsk, b.lastAskRule = &cp, e.Rule
+		b.held.Note(opOf(e, &p), target(e, &p), e.Rule)
 	}
 	return nil
 }
@@ -670,7 +556,34 @@ func (b *builder) refusal(e *record.Event, p *payload) {
 		return
 	}
 	rf.List = append(rf.List, Refusal{Seq: e.Seq, TS: e.TS, Kind: string(e.Kind), Op: opOf(e, p), Target: target(e, p),
-		Rule: e.Rule, Reason: reason, Minute: m})
+		Rule: e.Rule, Reason: reason, Minute: m, LearnWithheldRun: b.learnWithheld(e, p)})
+	b.refusalMono = append(b.refusalMono, e.MonoNS)
+}
+
+// byReceipt puts a refusal list in the order the refused calls were received: by mono_ns, which the supervisor takes
+// when a notification arrives (R23a), then by ledger position for lines of one instant. The ledger's own order is not
+// that order across threads: the supervisor answers a call and then writes its line (R23), and it keeps the order of
+// one thread's lines only. An agent whose child is refused an exec, then reads a secret itself, has the child's line and
+// its own on two threads, and either may be written first; the receipt of that run listed the read before the exec in
+// gate 35 (TestIntegrationReceiptOfAScriptedRunAtTierLandlock). Received order is the order the agent made the calls
+// in, whenever one call's answer led to the next (a child that reported its failure, a thread that waited for another),
+// and the same for every reading of one ledger. A line a writer stamped itself (another source of lines, or an old
+// ledger) keeps the clock it was stamped with, which is the same CLOCK_MONOTONIC. mono[i] is list[i]'s mono_ns; both
+// come back in the new order, the same slices when they were in it already.
+func byReceipt(list []Refusal, mono []uint64) ([]Refusal, []uint64) {
+	if len(list) != len(mono) || slices.IsSorted(mono) {
+		return list, mono
+	}
+	idx := make([]int, len(list))
+	for i := range idx {
+		idx[i] = i
+	}
+	slices.SortStableFunc(idx, func(x, y int) int { return cmp.Compare(mono[x], mono[y]) })
+	sorted, sortedMono := make([]Refusal, len(list)), make([]uint64, len(list))
+	for i, j := range idx {
+		sorted[i], sortedMono[i] = list[j], mono[j]
+	}
+	return sorted, sortedMono
 }
 
 func (b *builder) add(list *[]string, cat, path string) {
@@ -745,43 +658,42 @@ func device(path string) bool { return devices[path] || strings.HasPrefix(path, 
 func pendingAskBytes(id string) int64 { return 128 + int64(len(id)) }
 
 func (b *builder) ask(e *record.Event, p *payload) error {
-	if _, pending := b.asks[p.AskID]; !pending {
-		bytes := pendingAskBytes(p.AskID)
-		if len(b.asks) >= MaxPendingAsks || b.askBytes+bytes > MaxPendingAskBytes {
-			return fmt.Errorf("%w (maximum %d unanswered IDs or %d estimated bytes)", ErrAskLimit, MaxPendingAsks, MaxPendingAskBytes)
-		}
-		b.askBytes += bytes
-	}
 	a := &b.rc.Asks
+	// The display index this ask takes, -1 beyond the display cap.
+	idx := -1
+	if len(a.List) < MaxAsks {
+		idx = len(a.List)
+	}
+	switch b.asks.Ask(p.AskID, idx, pendingAskBytes(p.AskID)) {
+	case askpair.Refused:
+		return fmt.Errorf("%w (maximum %d unanswered IDs or %d estimated bytes)", ErrAskLimit, MaxPendingAsks, MaxPendingAskBytes)
+	case askpair.Repeated:
+		return nil // the first ask line of the id opened the question; this one is malformed and said so (askGaps)
+	case askpair.Opened:
+	}
 	a.Asked++
 	a.Unanswered++
-	b.asks[p.AskID] = -1
-	if len(a.List) >= MaxAsks {
+	if idx < 0 {
 		a.Truncated = true
 		return nil
 	}
 	item := Ask{AskID: p.AskID, TS: e.TS, Op: p.Op, Target: p.Target, Rule: p.AskRule}
-	if b.lastAsk != nil {
-		if item.Op == "" {
-			item.Op = opOf(e, b.lastAsk)
-		}
-		if item.Target == "" {
-			item.Target = b.lastAsk.Path
-		}
-		if item.Rule == "" {
-			item.Rule = b.lastAskRule
-		}
-	}
+	b.held.Fill(&item.Op, &item.Target, &item.Rule)
 	if item.Rule == "" {
 		item.Rule = e.Rule
 	}
-	b.asks[p.AskID] = len(a.List)
 	a.List = append(a.List, item)
 	return nil
 }
 
 func (b *builder) answer(p *payload) {
 	a := &b.rc.Asks
+	// An answer counts only when it pairs with its ask (askpair): one that came before it, names an id never asked or
+	// answers an ask already answered is malformed and never counts as an answer (askGaps).
+	i, paired := b.asks.Answer(p.AskID)
+	if paired == askpair.Unpaired {
+		return
+	}
 	word := "denied"
 	switch {
 	case p.Alternate != "":
@@ -801,13 +713,23 @@ func (b *builder) answer(p *payload) {
 	}
 	a.WaitS += p.AfterS
 	// Answer totals include asks beyond the presentation cap.
-	if i, pending := b.asks[p.AskID]; pending {
-		a.Unanswered--
-		b.askBytes -= pendingAskBytes(p.AskID)
-		if i >= 0 && a.List[i].Answer == "" {
-			a.List[i].Answer, a.List[i].By, a.List[i].AfterS = word, p.By, p.AfterS
+	a.Unanswered--
+	if paired == askpair.Paired && i >= 0 && a.List[i].Answer == "" {
+		a.List[i].Answer, a.List[i].By, a.List[i].AfterS = word, p.By, p.AfterS
+		a.List[i].AnswerAuthority = p.AnswerAuthority
+		if word == "approved" && p.Actor != nil {
+			a.List[i].DeliveryNote = "Approval records selection only; read the action and refusal lines for delivery and operation completion."
 		}
-		delete(b.asks, p.AskID)
+	}
+}
+
+// askGaps are the coverage notes for the malformed ask and answer lines the run's record holds, in askpair's words.
+func (b *builder) askGaps(add func(field, code, why string)) {
+	if n := b.asks.Repeated(); n > 0 {
+		add("asks", CodeAskRepeated, fmt.Sprintf("%s (%d %s): only the first line of an ask id counts", askpair.RepeatedWords, n, plural(n, "line", "lines")))
+	}
+	if n := b.asks.Unpaired(); n > 0 {
+		add("asks", CodeAnswerUnpaired, fmt.Sprintf("%s (%d %s): it is not counted as an answer", askpair.UnpairedWords, n, plural(n, "line", "lines")))
 	}
 }
 
@@ -862,6 +784,7 @@ func (b *builder) finish(opt Options) {
 		b.windows = append(b.windows, time.Duration(end-b.prevMono)) // a live run's current quiet tail
 	}
 
+	rc.Refusals.List, b.refusalMono = byReceipt(rc.Refusals.List, b.refusalMono)
 	// refusals by rule: most first, then by rule
 	for k, n := range b.rules {
 		rc.Refusals.ByRule = append(rc.Refusals.ByRule, RuleCount{Rule: k[0], Reason: k[1], Count: n})
@@ -939,21 +862,12 @@ func (b *builder) finish(opt Options) {
 			t.Note = fmt.Sprintf("%d of %d model responses carried no token counts", t.ModelCalls-t.Metered, t.ModelCalls)
 		}
 	}
-	t.price()
+	priceTokens(t)
 	if b.restored > 0 {
 		rc.Notes = append(rc.Notes, restoredNote(b.restored))
 	}
 	b.coverage()
 }
-
-// The why of a gap what=record that internal/runtime/limits writes when the run has no usable price table (its
-// GapNoPriceTable and GapVersionMismatch), and once per model its table does not price (GapUnpricedModel). Named
-// here because internal/check must not import internal/runtime.
-const (
-	gapNoPriceTable  = "no-price-table"
-	gapPriceVersion  = "price-table-version-mismatch"
-	gapUnpricedModel = "unpriced-model"
-)
 
 // gap sorts one gap line by what it means (gaps.Classify, tego status's reading too). Only a gap that may have lost
 // actions makes the record's counts a floor: a person's own pause, resume or live block (the timeline shows each)
@@ -966,6 +880,12 @@ func (b *builder) gap(e *record.Event) {
 		b.gapLines++
 		return
 	}
+	if g.LiveBlock != nil && g.What == record.GapEnforce && (g.Why == record.GapLiveBlockAdded || g.Why == record.GapLiveRuleRestored) {
+		b.nameBlock(g.LiveBlock)
+	}
+	if g.LiveBlock != nil && g.What == record.GapEnforce && g.Why == record.GapLiveRuleLifted {
+		b.liftNote(g.LiveBlock)
+	}
 	switch gaps.Classify(g.What, g.Why) {
 	case gaps.Uncertain:
 		b.sharedGaps.Add(e)
@@ -975,14 +895,69 @@ func (b *builder) gap(e *record.Event) {
 	case gaps.Price:
 		// An unpriced model is no missing table: the receipt prices each response itself, and its
 		// tokens.est_cost_usd entry counts the unpriced ones.
-		b.noPrice = b.noPrice || g.Why != gapUnpricedModel
+		b.noPrice = b.noPrice || g.Why != record.GapUnpricedModel
 	case gaps.Capture:
 		b.captureGaps++
 	case gaps.Restored:
 		b.restored++
+	case gaps.Dropped:
+		b.dropped.add(&g)
+	case gaps.RoutesKept:
+		b.routesKept++
 	case gaps.Missed:
 		b.gapLines++
+		if g.Binary == "" && g.Count > 0 {
+			b.gapLost = min(b.gapLost+g.Count, math.MaxInt32)
+		}
 	}
+}
+
+// droppedMessages is what the receipt knows of the MCP messages the relay dropped for their size: how many, the largest
+// whose size the record gives (and its server), whether any size was not learned, and the limit.
+type droppedMessages struct {
+	n       int
+	largest int64
+	server  string
+	unsized int
+	limit   int64
+}
+
+// add counts one gap line of the oversize whys: a line naming a message, or the counted line a run writes for the
+// messages past its lines (count, no binary).
+func (d *droppedMessages) add(g *record.GapPayload) {
+	if g.Binary == "" {
+		d.n += max(g.Count, 0)
+		return
+	}
+	d.n++
+	server, size, limit, ok := record.ParseOversizeNote(g.Binary)
+	if !ok {
+		d.unsized++
+		return
+	}
+	d.limit = max(d.limit, limit)
+	if size == 0 {
+		d.unsized++
+	} else if size > d.largest {
+		d.largest, d.server = size, server
+	}
+}
+
+// words is the receipt's sentence for them.
+func (d *droppedMessages) words() string {
+	var s string
+	if d.n == 1 {
+		s = "1 MCP message was too large for the relay and was dropped"
+	} else {
+		s = fmt.Sprintf("%d MCP messages were too large for the relay and were dropped", d.n)
+	}
+	switch {
+	case d.largest > 0 && d.limit > 0:
+		s += fmt.Sprintf(" (the largest, %d bytes from %q, against a limit of %d bytes)", d.largest, record.Printable(d.server), d.limit)
+	case d.limit > 0:
+		s += fmt.Sprintf(" (the size is not known; the limit is %d bytes)", d.limit)
+	}
+	return s + "; no action went unrecorded"
 }
 
 // restoredNote is the receipt's note for n modes tego gave back to the owner of its own files: something, an agent
@@ -996,7 +971,9 @@ func restoredNote(n int) string {
 func (b *builder) coverage() {
 	rc := b.rc
 	g := []CoverageGap{}
-	add := func(field, code, why string) { g = append(g, CoverageGap{Field: field, Code: code, Why: why}) }
+	add := func(field, code, why string) {
+		g = append(g, CoverageGap{Field: field, Code: code, Level: receiptspec.LevelOf(code), Why: why})
+	}
 	if cs := b.ruleGaps.Counts(); len(cs) > 0 {
 		// First: the refusals the receipt lists may not be every refusal the rules called for.
 		add("refusals", CodeRulesUncertain, gaps.Words(cs, false))
@@ -1026,16 +1003,20 @@ func (b *builder) coverage() {
 		g = append(g, pg)
 	}
 	if b.captureGaps > 0 && rc.Tokens.Recorded {
-		add("tokens.capture", CodeCaptureGap, fmt.Sprintf(
-			"%d capture gap %s: model traffic tego could not read, so the token counts are a floor",
-			b.captureGaps, plural(b.captureGaps, "line", "lines")))
+		add("tokens.capture", CodeCaptureGap, gaps.CaptureWords(b.captureGaps))
 	}
+	b.askGaps(add)
 	if rc.Stall.Note != "" {
 		add("stall", CodeModelTimeUnseen, rc.Stall.Note) // finish notes the stall only when capture was off
 	}
+	if b.dropped.n > 0 {
+		add("record.mcp", CodeMessagesDropped, b.dropped.words())
+	}
+	if b.routesKept > 0 {
+		add("record.routes", CodeModelRoutesKept, gaps.RoutesKeptWords(b.routesKept))
+	}
 	if b.gapLines > 0 {
-		add("record", CodeMissedActions, fmt.Sprintf("%d gap %s: tego knows it missed some actions, so the counts are a floor",
-			b.gapLines, plural(b.gapLines, "line", "lines")))
+		add("record", CodeMissedActions, gaps.MissedWords(b.gapLines, b.gapLost))
 	}
 	if cs := b.sharedGaps.Counts(); len(cs) > 0 {
 		add("record", CodeRecordUncertain, gaps.Words(cs, false))
@@ -1048,7 +1029,7 @@ func (b *builder) coverage() {
 
 // price writes the cost's text from the estimate and the unpriced count, for a run with a metered response: the
 // estimate rounded to a micro-dollar, as measure's --json keeps it, then "est." and how many went unpriced.
-func (t *Tokens) price() {
+func priceTokens(t *Tokens) {
 	if t.Metered == 0 {
 		return
 	}
@@ -1068,11 +1049,11 @@ func (t *Tokens) price() {
 func priceGap(t Tokens, noTable bool) (CoverageGap, bool) {
 	switch {
 	case t.Metered > 0 && t.Unpriced > 0:
-		return CoverageGap{Field: "tokens.est_cost_usd", Code: CodeUnpriced,
+		return CoverageGap{Field: "tokens.est_cost_usd", Code: CodeUnpriced, Level: receiptspec.LevelOf(CodeUnpriced),
 			Why: fmt.Sprintf("%d of %d metered responses had no price", t.Unpriced, t.Metered)}, true
 	case t.Metered == 0 && noTable && t.Recorded && t.ModelCalls > 0:
-		return CoverageGap{Field: "tokens.est_cost_usd", Code: CodeNoPriceTable,
-			Why: "no price table: the cost is not estimated"}, true
+		return CoverageGap{Field: "tokens.est_cost_usd", Code: CodeNoPriceTable, Level: receiptspec.LevelOf(CodeNoPriceTable),
+			Why: gaps.PriceWords(true)}, true
 	}
 	return CoverageGap{}, false
 }
@@ -1093,7 +1074,7 @@ type pricing struct {
 func (rc *Receipt) reprice(est float64, unpriced int, table bool) {
 	t := &rc.Tokens
 	t.EstCostUSD, t.Unpriced, t.CostText = est, unpriced, ""
-	t.price()
+	priceTokens(t)
 	before := rc.Coverage.Gaps[:rc.price.at]
 	after := rc.Coverage.Gaps[rc.price.at:]
 	if rc.price.gap {
@@ -1119,20 +1100,6 @@ func (rc *Receipt) Summary() string {
 	parts = append(parts, fmt.Sprintf("%d refused", rc.Refusals.Total))
 	parts = append(parts, fmt.Sprintf("asked you %d %s", rc.Asks.Asked, plural(rc.Asks.Asked, "time", "times")))
 	return strings.Join(parts, ", ")
-}
-
-// Changed is how many distinct paths the run wrote, created, deleted or renamed.
-func (f *Files) Changed() int {
-	set := map[string]bool{}
-	for _, l := range [][]string{f.Written, f.Created, f.Deleted} {
-		for _, p := range l {
-			set[p] = true
-		}
-	}
-	for _, r := range f.Renamed {
-		set[r.To] = true
-	}
-	return len(set)
 }
 
 func plural(n int, one, many string) string {

@@ -27,6 +27,7 @@ const UserDenyWriteLabel = "blocked for ordinary commands; not race-free at the 
 
 // userDenyWrite is one fs.deny_write entry as declared and as placed.
 type userDenyWrite struct {
+	baseline       bool
 	raw            string
 	pos            Pos
 	path, resolved string
@@ -61,7 +62,10 @@ func (b *fsBuilder) resolveDenyWrite(entries []string) []userDenyWrite {
 			continue
 		}
 		p := b.k.abs(raw)
-		u := userDenyWrite{raw: raw, pos: b.k.pos("fs.deny_write." + strconv.Itoa(i)), path: p,
+		if e := b.k.baselineMember(baselineIndex("fs.deny_write", i)); e != nil {
+			p, _ = WalkedPath(e.Expanded)
+		}
+		u := userDenyWrite{baseline: b.k.baselineMember("fs.deny_write."+strconv.Itoa(i)) != nil, raw: raw, pos: b.k.pos("fs.deny_write." + strconv.Itoa(i)), path: p,
 			resolved: filepath.Clean(b.k.resolve(p))}
 		u.name = u.resolved
 		if dir := filepath.Dir(p); dir != p {
@@ -105,7 +109,7 @@ func (b *fsBuilder) compileDenyWrite(writes []writePath) {
 	}
 	var kept []placed
 	for _, u := range b.userDW {
-		top := u.pos.File == k.top
+		top := u.pos.File == k.top && !u.baseline
 		if w, ok := writeAt(writes, u.resolved); ok {
 			pos, raw := b.writeEntry(w.declared)
 			k.ds.errorf(u.pos, CodeContradiction, "fs.deny_write %q%s names the place of write entry %q (line %d): one refuses "+
@@ -174,7 +178,7 @@ func (b *fsBuilder) compileDenyWrite(writes []writePath) {
 		// the covering entry was dropped, and the link left replaceable).
 		covered := !slices.ContainsFunc(p.u.places(), func(at string) bool { return matters(at) && !coveredBy(i, at) })
 		if covered {
-			if p.u.pos.File == k.top {
+			if p.u.pos.File == k.top && !p.u.baseline {
 				k.ds.warnf(p.u.pos, CodeRedundantRule, "fs.deny_write %q%s lies beneath another fs.deny_write entry with no "+
 					"write entry between, which refuses every modification there already", p.u.raw, resolvedNote(p.u.path, p.u.resolved)).
 					fix("remove the narrower entry")
@@ -297,7 +301,7 @@ func (b *fsBuilder) searchDenyWriteLinked(writes []writePath) {
 		return
 	}
 	s := &linkSearch{left: maxDenyWriteLinkEntries, end: time.Now().Add(maxDenyWriteLinkTime), writes: writes,
-		seen: map[string]bool{}, files: map[fileKey]int{}}
+		seen: map[string]bool{}, files: map[fileKey]int{}, cutShort: k.namePredictionUnavailable}
 	for i := range k.rt.DenyWrite {
 		// A built-in directory target is searched too: the same alias reaches a hook. No write entry reopens one, so
 		// its search skips none.
@@ -376,6 +380,11 @@ func (k *compiler) linkSearchCut(r *FSRule, pos Pos, why string) {
 		"other name at every tier"
 	const fix = "remove the other hard links of the files beneath it (find %s -type f -links +1), or name such a file in " +
 		"fs.deny_write, which the plane keys at its own inode"
+	if k.baselineDenyWriteRow(r) {
+		k.ds.errorf(pos, CodeBaselinePlacement, "%s; a baseline link inventory must be complete before launch", what).
+			fix(fix+", or narrow/remove the baseline entry in its contributing layers", r.Resolved)
+		return
+	}
 	if k.rt.FilesystemAssurance() == FSAssuranceKernel {
 		k.ds.errorf(pos, CodeUnenforced, "%s; fs.assurance: kernel needs a kernel decision plane to refuse every name of "+
 			"every file beneath it, so the contract does not compile", what).
@@ -491,6 +500,8 @@ type linkSearch struct {
 	files   map[fileKey]int // found's index of each file
 	found   []linkedFile
 	why     string // the bound that cut the walk of the current target, "" while none has
+	// cutShort is compiler.namePredictionUnavailable: a listing a permission failure stopped is one root finishes.
+	cutShort func(path string, err error)
 }
 
 func (s *linkSearch) walk(dir string, depth int) {
@@ -513,6 +524,9 @@ func (s *linkSearch) walk(dir string, depth int) {
 		s.why = "its bound of " + strconv.Itoa(maxDenyWriteLinkEntries) + " directory entries read"
 		return
 	case err != nil || more:
+		if err != nil && s.cutShort != nil {
+			s.cutShort(dir, err)
+		}
 		s.why = "a directory it could not list whole, " + dir
 		return
 	}

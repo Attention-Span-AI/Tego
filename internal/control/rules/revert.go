@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/check/rule"
@@ -26,6 +27,9 @@ type RevertReq struct {
 	// Lift also lifts the live blocks the entry placed on runs that still run and hold them (lift.go): it lets those
 	// runs do more at once, so it wants Ack whatever the revert's direction.
 	Lift bool
+	// Via is the writer the journal records for the revert: "" is the dashboard's (Via), ViaCLI the terminal's
+	// (`tego rules undo`). Any other word is refused, so a caller cannot put a name of its choosing in the journal.
+	Via string
 }
 
 // Reverted is a revert written.
@@ -41,7 +45,34 @@ type Reverted struct {
 	// blocks it placed that still hold on running runs because the Undo did not lift them.
 	Lifted []LiveResult
 	Kept   []LiftOption
+	// Restored is what a Redo (this revert undoes an Undo) did to put back the live blocks that Undo lifted, each by
+	// the Redo, with Serial set to the add that made it (restorable, restore).
+	Restored []LiveResult
 }
+
+// What is the entry in one plain line: a revert's Words, else a change's Sentences joined by "; ", else its Summary, else
+// "a change". It is the one wording of an entry: the dashboard's history list and `tego rules history` both print it.
+func (h HistoryEntry) What() string {
+	switch {
+	case h.Words != "":
+		return h.Words
+	case len(h.Sentences) > 0:
+		return strings.Join(h.Sentences, "; ")
+	case h.Summary != "":
+		return h.Summary
+	}
+	return "a change"
+}
+
+// Undoable says whether an Undo of the entry is offered for a contract whose text now has the sha256 base: the entry's
+// text is the contract's text now (Current), it is not undone already, and the reader knows the contract's text (base
+// is not empty). It is the rule the dashboard's Undo button and `tego rules undo` share; Revert still checks the text
+// itself under the writers' lock.
+func (h HistoryEntry) Undoable(base string) bool { return h.Current && h.UndoneBy == "" && base != "" }
+
+// UndoDirection is the direction undoing the entry moves the contract: the opposite of the entry's own (inverse), and
+// "mixed" for a free edit or an entry with no direction. Only "narrows" needs no acknowledgement.
+func (h HistoryEntry) UndoDirection() string { return inverse(h.Direction) }
 
 // HistoryEntry is one journal entry of a contract, newest first (History).
 type HistoryEntry struct {
@@ -72,6 +103,10 @@ type HistoryEntry struct {
 
 // History is the changes and reverts of the contract ref names, newest first.
 func (s *Service) History(ref string) ([]HistoryEntry, error) {
+	if s.remote() {
+		return remoteService[[]HistoryEntry](s, unclassified(), "History", struct{ Ref string }{ref})
+	}
+
 	c, err := s.contract(ref)
 	if err != nil {
 		return nil, err
@@ -94,10 +129,10 @@ func (s *Service) History(ref string) ([]HistoryEntry, error) {
 		}
 		if h.Current {
 			h.Ack = s.ack(revertRef(e.ID), e.NewSHA256, e.OldSHA256)
-			h.Lift = s.liftable(e, es)
+			h.Lift = mine(s.liftable(e, es))
 		}
 		for _, l := range e.Live {
-			h.Live = append(h.Live, LiveResult{Run: l.Run, Block: l.Block, OK: l.OK, Err: l.Err, Lift: l.Lift})
+			h.Live = append(h.Live, liveResult(l))
 		}
 		out = append(out, h)
 	}
@@ -109,6 +144,10 @@ func (s *Service) History(ref string) ([]HistoryEntry, error) {
 // holds other text than req.Base or than the entry wrote (ErrStale: a later change would be lost), and, for a revert
 // that is not a narrowing, without the Ack the Undo was offered with (ErrNeedsAck).
 func (s *Service) Revert(ctx context.Context, req RevertReq) (*Reverted, error) {
+	if s.remote() {
+		return remoteService[*Reverted](s, ctx, "Revert", struct{ Req RevertReq }{req})
+	}
+
 	es, err := rulefile.ReadJournal(s.Ledger)
 	if err != nil {
 		return nil, err
@@ -121,7 +160,7 @@ func (s *Service) Revert(ctx context.Context, req RevertReq) (*Reverted, error) 
 		}
 	}
 	if e == nil {
-		return nil, fmt.Errorf("%w: the journal holds no change %q", ErrRefused, req.ID)
+		return nil, fmt.Errorf("%w: %w: the journal holds no change %q", ErrRefused, rulefile.ErrNoChange, req.ID)
 	}
 	c, err := s.contractOfPath(e.Contract)
 	if err != nil {
@@ -136,44 +175,97 @@ func (s *Service) Revert(ctx context.Context, req RevertReq) (*Reverted, error) 
 			ErrStale, c.Path, e.ID)
 	}
 	// The blocks the entry placed that still hold: the journal folded for the contract has its later live outcomes.
-	var lift []LiftOption
-	if hist, herr := rulefile.History(s.Ledger, e.Contract); herr == nil {
+	// Only its own blocks are lifted (liftable): the rest stay in force.
+	var all []LiftOption
+	var hist []rulefile.Entry
+	if h, herr := rulefile.History(s.Ledger, e.Contract); herr == nil {
+		hist = h
 		if i := slices.IndexFunc(hist, func(h rulefile.Entry) bool { return h.ID == e.ID }); i >= 0 {
-			lift = s.liftable(hist[i], hist)
+			all = s.liftable(hist[i], hist)
 		}
+	}
+	lift := mine(all)
+	via := Via
+	switch req.Via {
+	case "":
+	case ViaCLI:
+		via = ViaCLI
+	default:
+		return nil, fmt.Errorf("%w: %q is not a writer a revert may be journaled under", ErrRefused, req.Via)
 	}
 	dir := inverse(e.Direction)
 	ackOK := s.ackOK(req.Ack, revertRef(e.ID), e.NewSHA256, e.OldSHA256)
 	if (dir != string(rule.Narrows) || req.Lift && len(lift) > 0) && !ackOK {
 		return nil, ackErr(req.Ack)
 	}
-	r, err := s.writer().Revert(ctx, e.ID, rulefile.RevertOptions{Check: s.check(ctx, c.context(s)),
-		Change: rulefile.Change{Via: Via, Direction: dir}})
+	// What an undo of a revert (a Redo) puts back, taken before the write while the journal is read: the blocks that
+	// revert's Undo lifted, and each it will not put back with why (what the person is told it skipped).
+	var back []LiftOption
+	var skipped []LiveResult
+	if e.Op == rulefile.OpRevert {
+		i := slices.IndexFunc(hist, func(h rulefile.Entry) bool { return h.ID == e.ID })
+		if i >= 0 {
+			back, skipped = s.restorable(hist[i])
+		} else {
+			skipped = []LiveResult{{By: rulefile.LiveByRedo, Err: "not put back: the journal could not be read, so which live blocks the Undo had lifted is not known"}}
+		}
+	}
+	chk := s.check(ctx, c.context(s))
+	r, err := s.writer().Revert(ctx, e.ID, rulefile.RevertOptions{
+		// The older text that the compiler no longer accepts is a refusal (ErrNotCompiled, nothing written), not a
+		// failure of the write.
+		Check: func(text []byte) error {
+			if err := chk(text); err != nil {
+				return fmt.Errorf("%w: %w", ErrNotCompiled, err)
+			}
+			return nil
+		},
+		Change: rulefile.Change{Via: via, Direction: dir}})
 	switch {
 	case errors.Is(err, rulefile.ErrStale):
 		return nil, fmt.Errorf("%w: %v", ErrStale, err)
 	case err != nil && !errors.Is(err, rulefile.ErrJournal):
-		return nil, fmt.Errorf("%w: %v", ErrRefused, err)
+		// Still ErrRefused (the dashboard says "Nothing was written"), with the cause kept in the chain so a caller can
+		// tell the older text that no longer compiles (ErrNotCompiled) from a write that failed (a permission, a guard,
+		// a cancelled context).
+		return nil, fmt.Errorf("%w: %w", ErrRefused, err)
 	}
 	out := &Reverted{Of: e.ID, Ref: c.Ref, Contract: c.Path, Direction: dir}
 	if r != nil {
 		out.ID, out.Bak = r.ID, r.Bak
 	}
 	if err != nil {
-		out.ID = "" // written, not journaled (ErrJournal): no journal line holds the ID, so nothing offers to undo it
+		// Written, not journaled (ErrJournal): no journal line holds the ID, so nothing offers to undo it, and no
+		// live block is lifted or put back: what is in force must be what the journal shows. The blocks stay.
+		out.ID = ""
+		out.Kept = all
+		out.Restored = skipped
+		for _, o := range back {
+			out.Restored = append(out.Restored, LiveResult{Run: o.Run, Block: o.Block, By: rulefile.LiveByRedo,
+				Err: "not put back: the journal does not hold this undo"})
+		}
+		return out, fmt.Errorf("%w; no live block was lifted or put back, since the journal does not hold this undo", err)
 	}
 	if !req.Lift {
-		out.Kept = lift
-		return out, err
-	}
-	// The file holds its old text now; the blocks follow it. A lift that fails is reported, never a reason to take
-	// the Undo back, and is journaled on the revert so its history says what was lifted.
-	out.Lifted = s.lift(ctx, lift)
-	if len(out.Lifted) > 0 && out.ID != "" {
-		if jerr := s.writer().AppendLive(ctx, out.ID, journalLive(out.Lifted)); jerr != nil && err == nil {
-			err = fmt.Errorf("the live blocks were lifted but not journaled: %w", jerr)
+		out.Kept = all
+	} else {
+		// The file holds its old text now; the blocks follow it. A lift that fails is reported, never a reason to take
+		// the Undo back, and is journaled (begun, then done) so its history says what was lifted.
+		var jerr error
+		out.Lifted, jerr = s.journaled(ctx, out.ID, lift, true, s.lift)
+		out.Kept = theirs(all)
+		if jerr != nil {
+			err = jerr
 		}
 	}
+	if len(back) > 0 {
+		var jerr error
+		out.Restored, jerr = s.journaled(ctx, out.ID, back, false, s.restore)
+		if jerr != nil && err == nil {
+			err = jerr
+		}
+	}
+	out.Restored = append(out.Restored, skipped...)
 	return out, err
 }
 

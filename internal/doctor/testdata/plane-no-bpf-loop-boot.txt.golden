@@ -14,3 +14,5 @@ summary: tier cgroup; bpflsm needs plane
 tier: cgroup
 missing for bpflsm: plane: LSM mode: no build of decide.bpf.c loads here: this kernel's BTF has no bpf_loop (5.17+ or a backport), which the plane's walk needs
 fix: boot a kernel >= 5.17, or one that backports bpf_loop
+
+business rules: business rules unavailable: the root-owned trusted worker, exclusive route and durable admission owner are not implemented; this build refuses business-bearing runs on every tier

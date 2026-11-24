@@ -28,8 +28,15 @@ const (
 	MapSSLSeq = "tego_ssl_seq"
 )
 
+// MapSSLOwnStack and MapSSLOwnStackMulti are empty program arrays, one per
+// expected attach type. A failed live tail call keeps capture off private stacks.
+const (
+	MapSSLOwnStack      = "tego_ssl_ownstk"
+	MapSSLOwnStackMulti = "tego_ssl_ownstkm"
+)
+
 // CaptureMaps lists the maps only ObjectUprobeSSL defines, in pin order.
-var CaptureMaps = []string{MapSSLScratch, MapSSLCurrent, MapSSLSeq}
+var CaptureMaps = []string{MapSSLScratch, MapSSLCurrent, MapSSLSeq, MapSSLOwnStack, MapSSLOwnStackMulti}
 
 // Program names in ObjectUprobeSSL. Which symbol each attaches to is userspace's choice (R1, R2): the
 // object only says what runs once it is there.

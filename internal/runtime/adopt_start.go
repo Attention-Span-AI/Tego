@@ -15,8 +15,8 @@ import (
 
 // writeRunStart is an adoption's run_start: the run's first line, as `tego run` writes it, with what an adoption
 // is: launcher_pid the adopter, command and cwd the adopted agent's own (as /proc read them), no limits block (it
-// carries budgets, which nothing meters on an adoption; the cpu, cpu_weight and pids a boundary writes into its scope
-// have no key there, for a launched run either), capture off (the agent's environment cannot be changed, so no forwarder reaches it), and a
+// carries budgets, which nothing meters on an adoption), applied_limits for the cpu, cpu_weight and pids a boundary wrote
+// into its scope (appliedLimits; record_minor 40), capture off (the agent's environment cannot be changed, so no forwarder reaches it), and a
 // capability line that says what an adopted process can be given and nothing more (adoptionCapabilities).
 func (a *adoption) writeRunStart() error {
 	r := a.r
@@ -36,7 +36,7 @@ func (a *adoption) writeRunStart() error {
 		Tier: string(tier), Capture: string(agent.CaptureOff), Kernel: r.deps.Build.Kernel,
 		ContractHash: hex.EncodeToString(r.rt.Hash[:]), Parsers: r.runParsers(string(agent.CaptureOff)),
 		StopGrace: r.stopGrace.String(), Command: command, Cwd: cwd,
-		Capabilities: a.capabilityLine(), RecordMinor: record.Minor, DecisionPlane: plane,
+		Capabilities: a.capabilityLine(), RecordMinor: launchMinor, DecisionPlane: plane,
 		ContractSource: r.deps.ContractSource, Profiles: runProfiles(r.rt.Profiles),
 	}
 	if a.spec.Boundary {
@@ -44,6 +44,22 @@ func (a *adoption) writeRunStart() error {
 	}
 	// Who adopted the process, on which host (ADR 0073); an adoption calls no Started hook.
 	r.fillRunIdentity(&start)
+	if start.RecordMinor >= record.MinorEveryLaunch {
+		start.Home = r.runHome(true)
+	}
+	// Admission prepared these refusing record steps before migration. Publishing
+	// run_start uses that snapshot without re-reading configuration or rewriting the copy.
+	if a.baselineStart.Baseline != nil {
+		start.RecordMinor = a.baselineStart.RecordMinor
+		start.EffectiveHash = a.baselineStart.EffectiveHash
+		start.Baseline = a.baselineStart.Baseline
+	}
+	if applied := a.appliedLimits(); applied != nil {
+		start.AppliedLimits = applied
+		if start.RecordMinor < record.MinorAppliedLimits {
+			start.RecordMinor = record.MinorAppliedLimits
+		}
+	}
 	if err := r.writer.WriteRunStartIn(start, r.cg.ID); err != nil {
 		return fmt.Errorf("runtime: write run_start: %w", err)
 	}
@@ -102,4 +118,26 @@ func (a *adoption) capabilityLine() map[string]bool {
 		out[string(c)] = set.Has(c)
 	}
 	return out
+}
+
+// appliedLimits is run_start.applied_limits: the kernel limits this adoption wrote into its scope, as written, by the
+// writer a launched run's limits go through (createScope's SetLimits, which returned before this line is written).
+// Nil when it wrote none: a record-only adoption (ADR 0055 (5)) and a boundary one whose table had no cpu, cpu_weight
+// or pids. The contract's and the machine config's requested limits are not this: a ceiling the machine config
+// holds is in force here only because the adoption wrote it, and this is what it wrote.
+func (a *adoption) appliedLimits() *record.AppliedLimits {
+	l := a.limits
+	out := record.AppliedLimits{CPUMax: l.CPUMax}
+	if l.CPUWeight > 0 {
+		w := l.CPUWeight
+		out.CPUWeight = &w
+	}
+	if l.PidsMax > 0 {
+		n := l.PidsMax
+		out.PidsMax = &n
+	}
+	if out == (record.AppliedLimits{}) {
+		return nil
+	}
+	return &out
 }

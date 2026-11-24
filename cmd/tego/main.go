@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+//go:debug containermaxprocs=0
+
 // Command tego is the single binary: the runtime, the checks and the page.
 package main
 
@@ -8,6 +10,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/adapters/claudecode"
 	"github.com/attention-span-ai/tego/internal/cli"
+	"github.com/attention-span-ai/tego/internal/contracts"
 	"github.com/attention-span-ai/tego/internal/doctor"
 	"github.com/attention-span-ai/tego/internal/runtime"
 	"github.com/attention-span-ai/tego/internal/runtime/capture/uprobe"
@@ -25,6 +28,10 @@ func main() {
 	// launcher starts has real uid 0, and a tier-1 stage holds no capabilities, so neither is touched.
 	if code, ok := cli.GuardPrivilege(os.Args, os.Stderr); !ok {
 		os.Exit(code)
+	}
+	// The catalog's filesystem worker runs before CLI config, logging or setup.
+	if len(os.Args) > 1 && os.Args[1] == contracts.HelperCommand {
+		os.Exit(contracts.HelperMain(os.Args[2:]))
 	}
 	// The child stage is dispatched before anything else so no CLI setup runs inside the run's process.
 	if len(os.Args) > 1 && os.Args[1] == childCommand {

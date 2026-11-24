@@ -60,6 +60,8 @@ type lift struct {
 	pinned bool
 	by     string
 	serial uint64
+	// note is the lift's note as its writer signed it (liveblock.Change.Note); it is written on the lift's line only.
+	note string
 }
 
 // newLiveFence is the fence of an Adjustable table with every entry refused and nothing lifted. Each value, and each
@@ -155,16 +157,27 @@ func (f *liveFence) lift(c liveblock.Change, now liveblock.Clock) bool {
 		f.line(record.GapLiveLiftRefused, record.LiveOpLift, c.Kind, c.Value, c.By, c.Serial, c.At, c.Until, refused)
 		return false
 	}
-	l := lift{until: c.Until.UTC(), by: c.By, serial: c.Serial}
+	l := lift{until: c.Until.UTC(), by: c.By, serial: c.Serial, note: c.Note}
 	if !l.until.IsZero() {
 		l.pin, l.pinned = now.Pin(l.until), true
 	}
-	if old, ok := f.lifts[k]; ok && old.until.Equal(l.until) {
+	if old, ok := f.lifts[k]; ok && old.until.Equal(l.until) && old.note == l.note {
 		return false // the same lift is in force: nothing changes, and its line was written when it took effect
 	}
-	f.line(record.GapLiveRuleLifted, record.LiveOpLift, c.Kind, c.Value, c.By, c.Serial, c.At, c.Until, "")
+	// A lift with another note is written again, though nothing it allows changes: a person's note is never dropped
+	// because an earlier lift of the same entry was already in force.
+	f.liftLine(c.Kind, c.Value, c.By, c.Note, c.Serial, c.At, c.Until)
 	f.lifts[k] = l
 	return true
+}
+
+// liftLine queues the line of a lift that took effect: live-rule-lifted, with the note its writer signed.
+func (f *liveFence) liftLine(kind liveblock.Kind, value, by, note string, serial uint64, at, until time.Time) {
+	if f.emit == nil {
+		return
+	}
+	f.emit(record.GapLiveRuleLifted, 0, &record.LiveBlockChange{Op: record.LiveOpLift, Kind: string(kind), Value: value,
+		Rule: f.RefusedRule(kind, value), By: by, Serial: serial, At: at.UTC().Round(time.Millisecond), Until: until, Note: note})
 }
 
 // Tick is fenceHook.Tick: every lift whose limit has come on either clock ends, with its live-lift-expired line. The

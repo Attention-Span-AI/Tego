@@ -108,6 +108,12 @@ type Pruned struct {
 // and Prune, having pruned the rest, says which (ErrNotLooked). A journal holding a line this tego does not read, or
 // two lines of one id, is left whole, and so is one another user owns (ErrOtherOwner). No journal is nothing to do.
 //
+// The context is a cooperative budget, checked between stages and cleanup entries and before taking journal.lock.
+// Once that lock is held, reading, filtering and rewriting the journal finish as one operation, even after expiry.
+// Another filesystem operation already in progress is not interrupted either. Cancellation returns completed
+// counts and leaves a consistent journal; unreferenced blobs and locks can remain for the next pass. A filesystem
+// operation blocked in the kernel can delay return indefinitely.
+//
 // Everything Prune touches it touches with the credentials of the thread that called it, so a root pass that runs it
 // on a thread holding the user's (sys.RunAs) does there only what that user could.
 func Prune(ctx context.Context, root string, o PruneOptions) (Pruned, error) {
@@ -135,7 +141,7 @@ func Prune(ctx context.Context, root string, o PruneOptions) (Pruned, error) {
 	}
 	// Which contracts' files decide anything is read from the journal as it stands, with no lock: a contract first
 	// written after this read is not looked at and counts as there.
-	pre, err := j.lines()
+	pre, err := j.lines(ctx)
 	if err != nil {
 		return p, err
 	}
@@ -148,6 +154,9 @@ func Prune(ctx context.Context, root string, o PruneOptions) (Pruned, error) {
 		unlock, err := j.flock(ctx, pruneLock, unix.LOCK_EX,
 			"a contract change is being written, or another pass is pruning; the next pass prunes")
 		if err != nil {
+			if cause := ctx.Err(); cause != nil {
+				return p, fmt.Errorf("%w: %w", err, cause)
+			}
 			return p, err
 		}
 		defer unlock()
@@ -157,10 +166,13 @@ func Prune(ctx context.Context, root string, o PruneOptions) (Pruned, error) {
 		err = ctx.Err()
 	}
 	if err == nil {
-		err = j.pruneBlobs(o, named, &p)
+		err = j.pruneBlobs(ctx, o, named, &p)
 	}
 	if err == nil {
-		err = j.pruneLocks(o, kept, &p)
+		err = j.pruneLocks(ctx, o, kept, &p)
+	}
+	if err == nil {
+		err = ctx.Err()
 	}
 	if err == nil && len(unknown) > 0 {
 		err = notLooked(unknown, why)
@@ -183,16 +195,37 @@ func notLooked(unknown []string, why error) error {
 
 // pruneLines rewrites the journal without the lines that go, under journal.lock, and returns the blobs the lines left
 // name and the lock files of the contracts they write. A Prune that crashed mid-rewrite left its new file behind; it
-// goes here, since prune.lock keeps any other Prune from writing one meanwhile.
+// goes before journal.lock, since prune.lock keeps any other Prune from writing one meanwhile. The budget is checked
+// before journal.lock is taken; once held, the read, filter and rewrite finish so a short pass still makes progress.
 func (j *journal) pruneLines(ctx context.Context, o PruneOptions, r keepRule, p *Pruned) (named, kept map[string]bool, err error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	if !o.DryRun {
+		if err := j.removeTemps(ctx); err != nil {
+			return nil, nil, err
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
 	if !o.DryRun {
 		unlock, err := j.flock(ctx, "journal.lock", unix.LOCK_EX, "a line is being appended; the next pass prunes")
 		if err != nil {
+			if cause := ctx.Err(); cause != nil {
+				return nil, nil, fmt.Errorf("%w: %w", err, cause)
+			}
 			return nil, nil, err
 		}
 		defer unlock()
 	}
-	ls, err := j.lines()
+	// A discarded partial read or filter would restart from zero on every short-budget pass (ADR 0149).
+	// A dry run takes no lock and can still stop while reading.
+	readCtx := ctx
+	if !o.DryRun {
+		readCtx = context.WithoutCancel(ctx)
+	}
+	ls, err := j.lines(readCtx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -214,10 +247,9 @@ func (j *journal) pruneLines(ctx context.Context, o PruneOptions, r keepRule, p 
 	}
 	delete(named, "")
 	if !o.DryRun {
-		if err := j.removeTemps(); err != nil {
-			return nil, nil, err
-		}
 		if dropped > 0 {
+			// Complete the locked operation with write, sync, rename and directory sync.
+			// Prune checks cancellation after it, before any blob can be removed.
 			if err := writeFile(j.dir, journalTemp, JournalFile, out.Bytes()); err != nil {
 				return nil, nil, fmt.Errorf("rewrite %s: %w", JournalFile, err)
 			}
@@ -231,12 +263,18 @@ func (j *journal) pruneLines(ctx context.Context, o PruneOptions, r keepRule, p 
 const journalTemp = "." + JournalFile + "."
 
 // removeTemps removes the new journal files a Prune that crashed between its write and its rename left.
-func (j *journal) removeTemps() error {
+func (j *journal) removeTemps(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	ns, err := dirNames(j.dir, JournalDirName)
 	if err != nil {
 		return err
 	}
 	for _, n := range ns {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if rest, ok := strings.CutPrefix(n, journalTemp); ok && len(rest) == 16 && strings.Trim(rest, "0123456789abcdef") == "" {
 			if err := j.dir.Borrow(func(d int) error { return unix.Unlinkat(d, n, 0) }); err != nil && !errors.Is(err, unix.ENOENT) {
 				return fmt.Errorf("remove %s: %w", n, err)
@@ -257,7 +295,10 @@ type jline struct {
 // Prune: a newer tego's line may name blobs or lines in ways this one cannot see. So do two write lines of one id,
 // which no write of this tego makes: a revert names one of them, and the readers fold such a journal in ways a Prune
 // could not keep as they were.
-func (j *journal) lines() ([]jline, error) {
+func (j *journal) lines(ctx context.Context) ([]jline, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	f, err := j.openFile(JournalFile, unix.O_RDONLY)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -269,7 +310,13 @@ func (j *journal) lines() ([]jline, error) {
 	var ls []jline
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64<<10), maxLine)
-	for n := 1; sc.Scan(); n++ {
+	for n := 1; ; n++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if !sc.Scan() {
+			break
+		}
 		l := jline{raw: bytes.Clone(sc.Bytes())}
 		switch {
 		case !json.Valid(l.raw):
@@ -639,12 +686,18 @@ func (j *journal) runStart(name string) (time.Time, bool) {
 // tego holds prune.lock from its first blob to its line, so none is in between now; the time only spares a write of a
 // tego from before Prune, which takes no prune.lock, the blob it has just made (one it found there already, older,
 // is not spared: such a tego is to be restarted once the new one is installed).
-func (j *journal) pruneBlobs(o PruneOptions, named map[string]bool, p *Pruned) error {
+func (j *journal) pruneBlobs(ctx context.Context, o PruneOptions, named map[string]bool, p *Pruned) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	ns, err := dirNames(j.blobs, BlobsDir)
 	if err != nil {
 		return err
 	}
 	for _, n := range ns {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if sum, ok := strings.CutSuffix(n, ".yaml"); ok && named[sum] {
 			continue
 		}
@@ -662,12 +715,18 @@ func (j *journal) pruneBlobs(o PruneOptions, named map[string]bool, p *Pruned) e
 
 // pruneLocks removes the lock files of contracts with no line left (kept names the others); journal.lock and
 // prune.lock are no contract's and stay.
-func (j *journal) pruneLocks(o PruneOptions, kept map[string]bool, p *Pruned) error {
+func (j *journal) pruneLocks(ctx context.Context, o PruneOptions, kept map[string]bool, p *Pruned) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	ns, err := dirNames(j.locks, LocksDir)
 	if err != nil {
 		return err
 	}
 	for _, n := range ns {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if sum, ok := strings.CutSuffix(n, ".lock"); !ok || !hexSum(sum) || kept[n] {
 			continue
 		}

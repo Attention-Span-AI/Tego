@@ -9,12 +9,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/contracts"
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/nextrun"
@@ -27,6 +28,9 @@ import (
 // Options is what a compile needs beside the run: the machine config tego compiles against (nil: the contract is
 // shown and not compiled) and the chain anchor `tego run` guards.
 type Options struct {
+	// Caller is frozen by the request before entering the helper.
+	Caller  *config.CallerContext
+	PATH    string
 	Machine *config.Machine
 	Anchor  string
 	// Profiles resolves the extends of a run's rules file when InForce checks that file against the run (the
@@ -49,18 +53,21 @@ type Contract struct {
 	// Missing is a run that left no contract.yaml (it ended before writing one).
 	Missing bool
 	// Hash is run_start's contract_hash; HashMatches is the copy's sha256 being it.
-	Hash        string
-	HashMatches bool
-	Tier        string
-	Cwd         string
+	EffectiveHash string
+	Baseline      *record.Baseline
+	Hash          string
+	HashMatches   bool
+	Tier          string
+	Cwd           string
 	// Table is agent.PrintRuleTable's text, empty when the contract did not compile.
 	Table string
 	// Diagnostics is each load or compile diagnostic, as `tego compile` writes them.
 	Diagnostics string
 	// Err is why the contract was not compiled, empty when it was.
 	Err string
-	// Compiled is the rule table the contract compiles to, nil when it did not; drift reads it.
-	Compiled *agent.RuleTable
+	// Compiled is the complete rule table inside the filesystem helper, nil when compilation failed.
+	// Rendered replies omit it: Table, diagnostics and InForce.View carry display facts, never a partial policy object.
+	Compiled *agent.RuleTable `json:"-"`
 }
 
 // sealed resolves every extends name to an empty profile: the copy already holds what each profile contributed
@@ -74,6 +81,17 @@ func (sealed) Resolve(name string) (string, []byte, error) {
 
 // Load reads the contract of run under the ledger root root and compiles it.
 func Load(ctx context.Context, root, run string, o Options) Contract {
+	if remoteView(o) {
+		reply, err := viewCall(ctx, "load", root, run, "", "", o)
+		if err != nil {
+			return Contract{Run: run, Err: err.Error()}
+		}
+		return reply.Contract
+	}
+	return load(ctx, root, run, o)
+}
+
+func load(ctx context.Context, root, run string, o Options) Contract {
 	c := Contract{Run: run}
 	if !ledger.IsRunID(run) {
 		c.Err = "not a run id"
@@ -83,6 +101,7 @@ func Load(ctx context.Context, root, run string, o Options) Contract {
 	start, err := runStart(dir)
 	if err != nil {
 		c.Err = "run_start: " + err.Error()
+		return c
 	}
 	loadCopy(ctx, &c, dir, start, o, nil, func(path string) string { return execDirs(dir, path) })
 	return c
@@ -94,26 +113,27 @@ func Load(ctx context.Context, root, run string, o Options) Contract {
 // are not on path, read only when a compile with the dashboard's PATH fails.
 func loadCopy(ctx context.Context, c *Contract, dir string, start record.RunStartPayload, o Options, alt *agent.Contract,
 	moreDirs func(path string) string) {
-	c.Path = filepath.Join(dir, ledger.ContractFile)
-	c.Hash, c.Tier, c.Cwd = start.ContractHash, start.Tier, start.Cwd
-	data, _, err := readNoFollow(c.Path)
-	if errors.Is(err, os.ErrNotExist) {
-		c.Missing, c.Err = true, "the run left no contract.yaml"
+	data := readRecordedContract(c, dir, start)
+	if data == nil {
 		return
 	}
-	if err != nil {
-		c.Err = err.Error()
-		return
-	}
-	c.Text = string(data)
-	sum := sha256.Sum256(data)
-	c.HashMatches = c.Hash != "" && hex.EncodeToString(sum[:]) == c.Hash
+	var err error
 	profiles := &agent.ProfileChain{}
 	if c.HashMatches {
 		profiles = profiles.WithBuiltin(sealed{}).WithDir(sealed{})
 	}
 	if o.Machine == nil {
 		c.Err = "the machine config could not be read, so the contract is not compiled"
+		return
+	}
+	if !o.Machine.BaselineKnown() {
+		var reasons []string
+		for _, layer := range o.Machine.LayerSources() {
+			if layer.State == config.LayerUnknown {
+				reasons = append(reasons, layer.File+": "+layer.Reason)
+			}
+		}
+		c.Err = "baseline UNKNOWN: rule compilation requires complete current configuration: " + strings.Join(reasons, "; ")
 		return
 	}
 	var diag bytes.Buffer
@@ -130,7 +150,11 @@ func loadCopy(ctx context.Context, c *Contract, dir string, start record.RunStar
 			return
 		}
 	}
-	opts := []agent.CompileOption{agent.WithContext(ctx), agent.WithClock(time.Now), agent.Offline(), agent.WithOwnBinaries("")}
+	caller := o.Caller
+	if caller == nil {
+		caller = contracts.CallerContext(ctx)
+	}
+	opts := []agent.CompileOption{agent.WithCallerContext(*caller), agent.WithRuntimeDir(caller.RuntimeDirs...), agent.WithContext(ctx), agent.WithClock(func() time.Time { return caller.CheckedAt }), agent.Offline(), agent.WithOwnBinaries("")}
 	if o.Machine.Home != "" {
 		opts = append(opts, agent.WithHome(o.Machine.Home))
 	}
@@ -149,11 +173,19 @@ func loadCopy(ctx context.Context, c *Contract, dir string, start record.RunStar
 	// The run's own PATH is not recorded and the dashboard's differs (a service's PATH lacks ~/.local/bin), so a
 	// command the contract names by basename is "not on the PATH" here though the run found it. Compile with the
 	// dashboard's PATH first; only when that fails, add the directories of the programs the run did exec.
-	path := os.Getenv("PATH")
-	rt, ds, err := agent.Compile(contract, o.Machine, append(opts, agent.WithPATH(path))...)
+	path := o.PATH
+	if o.Caller == nil {
+		path = caller.PATH
+	}
+	replay, err := agent.ReplayRecordedBaseline(contract, start)
+	if err != nil {
+		c.Err = "baseline replay refused: " + err.Error()
+		return
+	}
+	rt, ds, err := replay.Compile(contract, o.Machine, append(opts, agent.WithPATH(path))...)
 	if err != nil && moreDirs != nil {
 		if more := moreDirs(path); more != "" {
-			rt, ds, err = agent.Compile(contract, o.Machine, append(opts, agent.WithPATH(path+":"+more))...)
+			rt, ds, err = replay.Compile(contract, o.Machine, append(opts, agent.WithPATH(path+":"+more))...)
 		}
 	}
 	_ = agent.WriteDiagnostics(&diag, ds)
@@ -168,6 +200,9 @@ func loadCopy(ctx context.Context, c *Contract, dir string, start record.RunStar
 		return
 	}
 	c.Table, c.Compiled = table.String(), rt
+	if !start.BaselineRecorded() {
+		c.Table += "baseline UNKNOWN: this record has no verified baseline snapshot\n"
+	}
 }
 
 // placeOf is the path the copy at copyPath is compiled at: the rules file the run named (contract_source), else the
@@ -218,9 +253,39 @@ func readCopy(path string) ([]byte, error) {
 	return data, err
 }
 
+// RecordedCopy is the bytes of the contract copy run kept (contract.yaml), read as Load reads it: no link followed at
+// its name, a regular file, under the loader's size cap. It is the text the run ran, which a comparison with the rules
+// file as it is now starts from. Its env.set values are in it: the caller never shows them.
+func RecordedCopy(root, run string) ([]byte, error) {
+	return readCopy(filepath.Join(root, run, ledger.ContractFile))
+}
+
+// readRecordedContract touches only the run's recorded copy, never source paths
+// or compiler inputs. The first display projection must survive their failure.
+func readRecordedContract(c *Contract, dir string, start record.RunStartPayload) []byte {
+	c.Path = filepath.Join(dir, ledger.ContractFile)
+	c.Hash, c.Tier, c.Cwd = start.ContractHash, start.Tier, start.Cwd
+	c.EffectiveHash, c.Baseline = start.EffectiveHash, start.Baseline
+	data, _, err := readNoFollow(c.Path)
+	if errors.Is(err, os.ErrNotExist) {
+		c.Missing, c.Err = true, "the run left no contract.yaml"
+		return nil
+	}
+	if err != nil {
+		c.Err = err.Error()
+		return nil
+	}
+	c.Text = string(data)
+	sum := sha256.Sum256(data)
+	c.HashMatches = c.Hash != "" && hex.EncodeToString(sum[:]) == c.Hash
+	return data
+}
+
 // readNoFollow reads the file at path without following a link at its last name, as a regular file, under the
 // loader's size cap, and returns what fstat said of the descriptor it read (its mtime is the file's last change).
-func readNoFollow(path string) ([]byte, os.FileInfo, error) {
+var readNoFollow = readRegularNoFollow
+
+func readRegularNoFollow(path string) ([]byte, os.FileInfo, error) {
 	f, err := os.OpenFile(filepath.Clean(path), agent.OpenFlags|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		return nil, nil, err
@@ -233,7 +298,7 @@ func readNoFollow(path string) ([]byte, os.FileInfo, error) {
 	if !st.Mode().IsRegular() {
 		return nil, nil, fmt.Errorf("%s: %w", path, agent.ErrNotAFile)
 	}
-	data, err := io.ReadAll(io.LimitReader(f, agent.MaxContractSize+1))
+	data, err := config.ReadRulesFile(context.Background(), f, path, agent.MaxContractSize+1)
 	if err != nil {
 		return nil, nil, err
 	}

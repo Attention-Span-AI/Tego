@@ -133,6 +133,18 @@ func PeerPidfdFD(conn syscall.RawConn) (*FD, error) {
 	return p, err
 }
 
+// PeerPidfd is PeerPidfdFD for a socket that is an owned descriptor itself: SO_PEERPIDFD of a connected unix socket
+// (Linux 6.5), born an owner, a pidfd of the process SO_PEERCRED names, close-on-exec by the kernel. Below 6.5 the
+// error is ENOPROTOOPT. From Linux 6.16 the kernel hands one out for a process that has been reaped too
+// (PIDFD_STALE), so a caller proves liveness itself.
+func (f *FD) PeerPidfd() (*FD, error) {
+	if f == nil || !f.acquire() {
+		return nil, ErrClosed
+	}
+	defer f.unlease()
+	return Own(unix.GetsockoptInt(int(f.num), unix.SOL_SOCKET, unix.SO_PEERPIDFD))
+}
+
 // PollPidfdFD is PollPidfd on an owned pidfd, borrowed for the wait.
 func PollPidfdFD(pidfd *FD, timeoutMS int) (exited bool, err error) {
 	err = pidfd.Borrow(func(n int) error {

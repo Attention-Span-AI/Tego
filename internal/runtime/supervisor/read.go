@@ -115,6 +115,12 @@ const (
 	// ruleUnspec marks connect(fd, {AF_UNSPEC}, len), the defined request to dissolve a socket's
 	// association: it names no destination, so there is nothing for R7 to match (R4).
 	ruleUnspec = "net.unspec"
+	// ruleUnspecSend marks the line of a send whose address is AF_UNSPEC in an observe run (R30, GAPS C61): the call
+	// was continued: an attempted send whose destination and result were not established. IPv4 UDP or raw sockets can
+	// use the sockaddr_in behind the family word; IPv6 UDP can use its existing peer. Outside connect(2) that family is
+	// no disconnect (ruleUnspec is connect(2)'s alone), and
+	// an enforcing tier refuses the send under ruleUnmatched, which is not changed.
+	ruleUnspecSend = "net.unspec-send"
 	// ruleRelayLimit marks an allowed connect or Fast-Open send refused because relayCeiling relayed
 	// syscalls were already outstanding, each holding a duplicate of a target socket (R21, E28).
 	ruleRelayLimit = "relay-limit"

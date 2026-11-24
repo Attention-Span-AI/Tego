@@ -39,10 +39,10 @@ var advancedGroups = []helpGroup{
 	{"answer what a session asks", []string{"ask", "approve", "deny", "alternate"}},
 	{"change a running session's rules", []string{"block", "unblock", "grant", "lift", "restore", "rule", "rules <session>"}},
 	{"read the record", []string{"events", "drift", "measure", "status", "gc"}},
-	{"supervise other programs", []string{"watch", "adopt", "agents"}},
+	{"supervise other programs", []string{"watch", "adopt", "agents", "scan", "contracts"}},
 	{"tools for agents", []string{"mcp", "route", "dns"}},
 	{"older names", []string{"init", "compile", "learn", "receipt", "doctor", "test", "stop", "pause", "resume"}},
-	{"about Tego", []string{"setup", "serve", "version", "licenses"}},
+	{"about Tego", []string{"setup", "serve", "version", "licenses", "uninstall"}},
 }
 
 // commonSummaries are the help pages' summaries of the one-word commands: verb first, in a person's words. A
@@ -77,6 +77,7 @@ var commonSummaries = map[string]string{
 	"serve":           "(tego-control) Start the dashboard server",
 	"version":         "Print the build's versions",
 	"licenses":        "Print the licence texts and third-party notices",
+	"uninstall":       "Remove Tego from this machine (keeps your records unless you say so)",
 }
 
 // helpLine is one command line of a help page.

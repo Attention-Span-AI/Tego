@@ -3,7 +3,6 @@
 package rulesview
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -30,6 +29,9 @@ type runScan struct {
 	// unmatched counts, by line kind, the lines whose rule is unmatched (the defaults decided them), so each counts
 	// on the default of the group that decided it (inforce's CountDefault).
 	unmatched map[string]int
+	// commands counts the allowed exec lines by the exec.allow entry with command words that admitted them
+	// (command_rule, command_list allow): every such line, not only the first maxExecScan.
+	commands map[string]int
 	// execDirs is the directories of the programs the run exec'd, first seen first, from at most maxExecScan lines.
 	execDirs []string
 }
@@ -37,17 +39,17 @@ type runScan struct {
 // maxExecScan bounds the exec lines a scan decodes for their programs' directories.
 const maxExecScan = 5000
 
-// scanRun reads the run's ledger in dir once. The first line is decoded in full (run_start); every other line's
-// kind and rule are read from its common fields, which a ledger line holds before its first nested object (record's
-// MarshalLine writes the common fields first and the payload after), so only exec lines are decoded. A 55k-line
-// run so takes a few tens of milliseconds where decoding every line took several times that.
+// scanRun reads the run's ledger in dir once. The first line is decoded in full (run_start); every other line's kind,
+// rule and, for an exec line, its command entry are read as data by record.Strings, which takes the members of a
+// line's top level whatever their order or spelling (no search of the line's text), without decoding the payload;
+// only exec lines' programs are decoded, and only the first maxExecScan of them.
 func scanRun(ctx context.Context, dir string) (*runScan, error) {
 	r, err := ledger.OpenReader(dir)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = r.Close() }() // read-only
-	sc := &runScan{rules: map[string]int{}, unmatched: map[string]int{}}
+	sc := &runScan{rules: map[string]int{}, unmatched: map[string]int{}, commands: map[string]int{}}
 	execs := 0
 	seenDir := map[string]bool{}
 	for line, err := range r.Lines() {
@@ -66,24 +68,24 @@ func scanRun(ctx context.Context, dir string) (*runScan, error) {
 			}
 			continue
 		}
-		kind, rule, ok := commonFields(line)
-		if !ok {
-			e, err := record.Decode(line)
-			if err != nil {
-				continue // a newer writer's line, or one this binary cannot read: it names no rule shown here
-			}
-			kind, rule = []byte(e.Kind), []byte(e.Rule)
+		// The line is read as data (record.Strings), whatever the order of its keys or the spelling of its tokens; a
+		// line the decoder refuses (a newer writer's, or one this binary cannot read) names no rule shown here.
+		f, err := record.Strings(line, keyKind, keyRule, keyVerdict, keyCommandRule, keyCommandList)
+		if err != nil {
+			continue
 		}
-		if len(rule) > 0 {
-			sc.rules[string(rule)]++ // the conversion in a map index does not allocate
-			if string(rule) == agent.UnmatchedRule {
-				sc.unmatched[string(kind)]++
+		kind, rule := f[0], f[1]
+		if rule != "" {
+			sc.rules[rule]++
+			if rule == agent.UnmatchedRule {
+				sc.unmatched[kind]++
 			}
 		}
 		switch record.Kind(kind) {
 		case record.KindRunEnd:
 			sc.ended = true
 		case record.KindExec:
+			sc.addCommand(f[2], f[4], f[3])
 			if execs < maxExecScan {
 				execs++
 				sc.addExec(line, seenDir)
@@ -107,7 +109,7 @@ func cachedScan(dir string, r *ledgerview.Run) (*runScan, error) {
 		return nil, err
 	}
 	defer func() { _ = rd.Close() }() // read-only
-	sc := &runScan{lines: r.Lines, ended: r.Ended, rules: ledgerview.RuleHits(r)}
+	sc := &runScan{lines: r.Lines, ended: r.Ended, rules: ledgerview.RuleHits(r), commands: map[string]int{}}
 	next, stop := iter.Pull2(rd.Lines())
 	defer stop()
 	line, err, ok := next()
@@ -128,6 +130,15 @@ func cachedScan(dir string, r *ledgerview.Run) (*runScan, error) {
 		if evs[i].Rule == agent.UnmatchedRule && !evs[i].Mirror {
 			sc.unmatched[evs[i].Kind]++
 		}
+		if evs[i].Kind == string(record.KindExec) && strings.Contains(evs[i].Raw, `"command_rule":"`) {
+			var c struct {
+				CommandRule string `json:"command_rule"`
+				CommandList string `json:"command_list"`
+			}
+			if json.Unmarshal([]byte(evs[i].Raw), &c) == nil {
+				sc.addCommand(evs[i].Verdict, c.CommandList, c.CommandRule)
+			}
+		}
 		if evs[i].Kind != string(record.KindExec) || execs >= maxExecScan {
 			continue
 		}
@@ -142,6 +153,15 @@ func cachedScan(dir string, r *ledgerview.Run) (*runScan, error) {
 		}
 	}
 	return sc, nil
+}
+
+// addCommand counts an exec line the exec.allow entry rule admitted: allowed, with the entry's list allow. A line
+// that names a command rule under another list (a refusal's deny entry, a constrained tool's unlisted invocation) is
+// no entry's use.
+func (sc *runScan) addCommand(verdict, list, rule string) {
+	if verdict == string(record.VerdictAllow) && list == "allow" && rule != "" {
+		sc.commands[rule]++
+	}
 }
 
 // first reads the run_start line.
@@ -191,44 +211,11 @@ func (sc *runScan) moreDirs(path string) string {
 	return strings.Join(out, ":")
 }
 
-var (
-	keyKind = []byte(`"kind":"`)
-	keyRule = []byte(`"rule":"`)
+// The members of a line the scan reads (record.Strings).
+const (
+	keyKind        = "kind"
+	keyRule        = "rule"
+	keyVerdict     = "verdict"
+	keyCommandRule = "command_rule"
+	keyCommandList = "command_list"
 )
-
-// commonFields reads a ledger line's kind and rule from the part before its first nested object, where the common
-// fields sit. ok is false when the kind is not there or a value holds an escape: the caller then decodes the line. A
-// quoted key cannot occur inside a JSON string (its quotes would be escaped), so a match is the key itself. The
-// slices alias line.
-func commonFields(line []byte) (kind, rule []byte, ok bool) {
-	head := line
-	if i := bytes.IndexByte(line[min(1, len(line)):], '{'); i >= 0 {
-		head = line[:i+1]
-	}
-	kind, ok = stringAt(head, keyKind)
-	if !ok || len(kind) == 0 {
-		return nil, nil, false
-	}
-	if !bytes.Contains(head, keyRule) {
-		return kind, nil, true // an omitted rule is ""
-	}
-	rule, ok = stringAt(head, keyRule)
-	if !ok {
-		return nil, nil, false
-	}
-	return kind, rule, true
-}
-
-// stringAt is the string value after key in b, when b holds key and the value has no escape and ends within b.
-func stringAt(b, key []byte) ([]byte, bool) {
-	i := bytes.Index(b, key)
-	if i < 0 {
-		return nil, false
-	}
-	v := b[i+len(key):]
-	j := bytes.IndexByte(v, '"')
-	if j < 0 || bytes.IndexByte(v[:j], '\\') >= 0 {
-		return nil, false
-	}
-	return v[:j], true
-}

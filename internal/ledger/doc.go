@@ -23,6 +23,11 @@
 // Reopening a run directory that a dead process left behind resumes the chain, discarding a torn tail and
 // recording a gap for it, so gc's orphan sweep can end the run.
 //
+// Required local approvals use AppendSync and an initial Sync (ADR 0154): bounded
+// validated lines, blobs then events and both placement directories, every sync
+// error refusing. A failed required append/sync poisons further appends. Personal
+// records keep Append and Close as above.
+//
 // RedactStage and SplitBlobsStage are the pipeline stages internal/runtime composes ahead of Append: the header
 // allow-list that keeps credentials off disk (R9) and the 4 KiB blob split (R10), which stores a request body's
 // conversation by the hash of its elements' groups rather than whole (R11, messages.go). Append itself trusts

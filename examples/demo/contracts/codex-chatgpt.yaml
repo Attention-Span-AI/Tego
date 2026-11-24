@@ -13,7 +13,7 @@
 #    carry its model calls: the connections are allowed by host and recorded, the request bodies are not.
 #    (The API-key contract, codex.yaml, records every model call through the proxy.)
 #  - The Codex home is writable because Codex refreshes its sign-in there; ~/.codex stays unreadable.
-#  - Codex's own sandbox is off in that home's config.toml: Tego is the cage. `codex --no-daemon` keeps commands
+#  - Codex's own sandbox is off in that home's config.toml: Tego enforces the contract. `codex --no-daemon` keeps commands
 #    inside the boundary.
 #  - Only ./work/ is writable (plus /dev/ptmx and /dev/pts/: Codex runs every command in a pseudo-terminal, and
 #    without them every command fails with "out of pty devices"); a write under ./held/ pauses Codex until you

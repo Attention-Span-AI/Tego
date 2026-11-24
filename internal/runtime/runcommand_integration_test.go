@@ -52,8 +52,8 @@ func runCommandGrant(t *testing.T, root string) string {
 		t.Fatal(err)
 	}
 	// The absence of the field is meaningful only at this revision: an older ledger's reader falls back.
-	if start.RecordMinor != record.Minor {
-		t.Errorf("run_start.record_minor = %d, want %d", start.RecordMinor, record.Minor)
+	if start.RecordMinor != launchMinor {
+		t.Errorf("run_start.record_minor = %d, want %d", start.RecordMinor, launchMinor)
 	}
 	return start.RunCommandGrant
 }

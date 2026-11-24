@@ -20,6 +20,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/liveblock"
 	"github.com/attention-span-ai/tego/internal/runlock"
+	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
@@ -216,8 +217,7 @@ func applyBlock(ctx context.Context, name string, add bool, ref string, kind liv
 	}
 	held, _, err := runlock.ProbeLock(dir)
 	if err != nil {
-		message(stderr, "", 0, 0, "tego "+name+": "+err.Error(), codeIO)
-		return identity.ExitError
+		return liveRunFailed(name, dir, err, stderr)
 	}
 	facts := startFacts(dir)
 	// The run's refusals are liveblock's, which runact makes for the dashboard too: a run that has ended is refused a
@@ -270,8 +270,16 @@ func applyBlock(ctx context.Context, name string, add bool, ref string, kind liv
 		// A watched run's supervisor continues every refusal (tego watch records only), so the block refuses nothing.
 		fmt.Fprintf(stdout, "recorded, not enforced: run %s is a tego watch run, so matching actions are recorded and go on.\n", run)
 	case word == liveblock.WordBlocked:
-		fmt.Fprintf(stdout, "The run's launcher puts it in force within about a second; check with: tego block --list %s\n", run)
-		if kind == liveblock.KindPath && !facts.ReadsSeen {
+		partly := facts.KernelDecidesChanges && !facts.PlaneBlocks && (kind == liveblock.KindPath || kind == liveblock.KindWrite)
+		if partly {
+			// The kernel plane answers this run's write opens and file changes without asking the supervisor, which is
+			// the only part that applies a live block: say so rather than "in force".
+			fmt.Fprintf(stdout, "The run's launcher puts it partly in force within about a second; check with: tego block --list %s\n", run)
+			fmt.Fprintln(stdout, partlyKernelWords)
+		} else {
+			fmt.Fprintf(stdout, "The run's launcher puts it in force within about a second; check with: tego block --list %s\n", run)
+		}
+		if kind == liveblock.KindPath && !facts.ReadsDecided() {
 			fmt.Fprintln(stdout, "This run's reads are not seen, so the block refuses changes to it; reading it still works.")
 		}
 		if kind == liveblock.KindWrite {
@@ -288,7 +296,44 @@ func applyBlock(ctx context.Context, name string, add bool, ref string, kind liv
 	if line := realWords(run, kind, value, link); line != "" {
 		fmt.Fprintln(stdout, line)
 	}
+	if add && word == liveblock.WordBlocked && !facts.Observe {
+		for _, line := range otherNamesWords(kind, value, link.Real) {
+			fmt.Fprintln(stdout, line)
+		}
+	}
 	return identity.ExitOK
+}
+
+// partlyKernelWords is what a write or path block says on a run whose kernel decision plane decides file changes
+// (livestatus.Facts.KernelDecidesChanges): the plane answers write opens, creates, deletes, renames and truncates in
+// the kernel without asking the supervisor, and only the supervisor applies a live block.
+const partlyKernelWords = "Partly in force: the kernel decides file changes in this run, so this block refuses only what still " +
+	"reaches tego's supervisor. The writes, creates, deletes, renames and truncates the kernel answers are not covered; " +
+	"the contract's own rules still apply to them."
+
+// blockOtherNames is the mount table's list of the other names of a blocked file (agent.OtherNames, the computation the
+// run's launcher makes when it puts the block in force); replaced in tests.
+var blockOtherNames = agent.OtherNames
+
+// otherNamesWords says, for a path, read or write block, that the mount table could not list every other name of the
+// file (the value's, and the real path's when it leads elsewhere), when that is so: the block then refuses the file under
+// the names that were listed and its own, and no more (ADR 0011, amended 2026-11-19, round 6). Nothing when the list
+// is whole, and for a block of another kind.
+func otherNamesWords(kind liveblock.Kind, value, real string) []string {
+	if kind != liveblock.KindPath && kind != liveblock.KindRead && kind != liveblock.KindWrite || !strings.HasPrefix(value, "/") {
+		return nil
+	}
+	var out []string
+	for _, v := range []string{value, real} {
+		if v == "" {
+			continue
+		}
+		if _, err := blockOtherNames(v); err != nil {
+			out = append(out, fmt.Sprintf("The mount table could not list every name of %s (%s): the block refuses the names it listed "+
+				"and that one, and no more. A name made by a mount that is not in the table stays open.", record.Printable(v), record.Printable(err.Error())))
+		}
+	}
+	return out
 }
 
 // blockRefused writes the refusal of a block or an unblock (liveblock.CheckBlock), in its words naming the run, with
@@ -321,7 +366,7 @@ func liveCode(err error) string {
 	switch {
 	case errors.Is(err, liveblock.ErrNotRunning):
 		return codeNotRunning
-	case errors.Is(err, liveblock.ErrNoTimeLimits), errors.Is(err, liveblock.ErrOldLauncher):
+	case errors.Is(err, liveblock.ErrNoTimeLimits), errors.Is(err, liveblock.ErrOldLauncher), errors.Is(err, liveblock.ErrNoNote):
 		return codeOldLauncher
 	case errors.Is(err, liveblock.ErrReadsUnseen):
 		return codeReadsUnseen
@@ -342,7 +387,7 @@ func liveCode(err error) string {
 // liveTarget is liveblock's Target of run, held or not by a launcher, from the facts its run_start gives: what
 // liveblock.CheckBlock and liveblock.CheckFence decide on, as runact's own does for the dashboard.
 func liveTarget(run string, held bool, f livestatus.Facts) liveblock.Target {
-	return liveblock.Target{Run: run, Running: held, Timed: f.Timed, NarrowKinds: f.NarrowKinds(), ReadsSeen: f.ReadsSeen,
+	return liveblock.Target{Run: run, Running: held, Timed: f.Timed, NarrowKinds: f.NarrowKinds(), ReadsSeen: f.ReadsDecided(),
 		Adjustable: f.Adjustable, Starting: !f.Started, StartUnreadable: f.StartUnreadable}
 }
 
@@ -442,10 +487,20 @@ func limitWords(add bool, word string, until time.Time, after liveblock.Entry) s
 // blockRun resolves ref to a run directory and the run id it is under (resolveRunDir: a whole run id, an
 // abbreviation of one, or a run directory). A malformed, unknown or ambiguous run is a usage error.
 func blockRun(name, ref string, stderr io.Writer) (dir, run string, code int) {
-	mc := &machineOnce{stderr: stderr}
-	dir, err := resolveRunDir(name, ref, true, mc)
+	strict := name != "block list" && name != "route list" && name != "mcp tools" && name != "pause"
+	mc := &machineOnce{stderr: stderr, strict: strict}
+	if strict {
+		if _, err := mc.get(); err != nil {
+			return "", "", identity.ExitError
+		}
+	}
+	label := name
+	if label == "block list" {
+		label = "block"
+	}
+	dir, err := resolveRunDir(label, ref, true, mc)
 	if err != nil {
-		return "", "", runRefFailed(stderr, name, err)
+		return "", "", runRefFailed(stderr, label, err)
 	}
 	return dir, filepath.Base(dir), identity.ExitOK
 }
@@ -468,7 +523,7 @@ type blockEntryJSON struct {
 }
 
 func runBlockList(ref string, asJSON bool, stdout, stderr io.Writer) int {
-	dir, run, code := blockRun("block", ref, stderr)
+	dir, run, code := blockRun("block list", ref, stderr)
 	if code != identity.ExitOK {
 		return code
 	}
@@ -477,22 +532,21 @@ func runBlockList(ref string, asJSON bool, stdout, stderr io.Writer) int {
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 	case err != nil:
-		message(stderr, "", 0, 0, "tego block: "+err.Error(), codeIO)
-		return identity.ExitError
+		return liveRunFailed("block", dir, err, stderr)
 	default:
 		blocks = o.Blocks
 	}
 	held, _, err := runlock.ProbeLock(dir)
 	if err != nil {
-		message(stderr, "", 0, 0, "tego block: "+err.Error(), codeIO)
-		return identity.ExitError
+		return liveRunFailed("block", dir, err, stderr)
 	}
 	// Each block's state now (internal/check/livestatus): the run's facts and the serials its launcher confirmed, read
 	// from its ledger, against the serial of the block's own add.
 	var facts livestatus.Facts
 	var confirmed uint64
+	var limits livestatus.Limits
 	if len(blocks) > 0 {
-		facts, confirmed = liveFacts(dir, true)
+		facts, confirmed, limits = liveFacts(dir, true)
 		facts.Ended = !held
 	}
 	now := time.Now()
@@ -503,7 +557,7 @@ func runBlockList(ref string, asJSON bool, stdout, stderr io.Writer) int {
 				s = c.Serial
 			}
 		}
-		return livestatus.StatusAt(string(b.Kind), facts, s, confirmed, now, b.From, b.Until)
+		return livestatus.StatusRecorded(string(b.Kind), b.Value, facts, s, confirmed, now, b.From, b.Until, limits)
 	}
 	if asJSON {
 		out := struct {
@@ -552,34 +606,37 @@ func runBlockList(ref string, asJSON bool, stdout, stderr io.Writer) int {
 	return identity.ExitOK
 }
 
-// timeCaveat follows a list holding a time limit: the states above are this machine's wall clock, while the launcher
-// ends a block only once its wall clock and CLOCK_BOOTTIME have both passed the limit, and an unblock once either has
-// (ADR 0125 decision 4). So after a clock change the run may refuse longer than the list says, never less.
-const timeCaveat = "  (Times are this computer's clock. After a clock change the run may refuse a little longer than this says, never less.)"
+// timeCaveat follows a list holding a time limit: the times above are this machine's clock, while the launcher ends a
+// block only once its wall clock and CLOCK_BOOTTIME have both passed the limit, and an unblock once either has (ADR 0125
+// decision 4). The states are the launcher's own word: a limit shows as passed once the run's ledger records it
+// (live-block-expired, live-unblock-expired), so a changed clock moves nothing here.
+const timeCaveat = "  (Times are this computer's clock. A time limit shows as passed once the run records it, so a changed clock does not end one here.)"
 
 // startFacts is liveFacts without the confirmed serial: run_start's facts only.
 func startFacts(dir string) livestatus.Facts {
-	f, _ := liveFacts(dir, false)
+	f, _, _ := liveFacts(dir, false)
 	return f
 }
 
 // liveFacts reads the run's ledger in dir for what livestatus needs: run_start's facts (watched or not, reads seen or
 // not) and, with confirmed, the highest overlay serial a launcher's gap line live-block-added or live-block-removed
-// carries. Only lines naming a live block are decoded past the first. A ledger that cannot be read gives no facts and
+// carries, and the time limits its gap lines live-block-expired and live-unblock-expired record. Only lines naming a live
+// block are decoded past the first. A ledger that cannot be read gives no facts and
 // nothing confirmed, which every view reads as "waiting"; the facts say StartUnreadable unless that is only because
 // no first line is there yet (no events file, an empty one, or a first line still being written), which is a run
 // still starting (livestatus.Facts.StartUnreadable).
-func liveFacts(dir string, confirmed bool) (livestatus.Facts, uint64) {
+func liveFacts(dir string, confirmed bool) (livestatus.Facts, uint64, livestatus.Limits) {
 	rd, err := ledger.OpenReader(dir)
 	if errors.Is(err, os.ErrNotExist) {
-		return livestatus.Facts{}, 0
+		return livestatus.Facts{}, 0, livestatus.Limits{}
 	}
 	if err != nil {
-		return livestatus.Facts{StartUnreadable: true}, 0
+		return livestatus.Facts{StartUnreadable: true}, 0, livestatus.Limits{}
 	}
 	defer func() { _ = rd.Close() }() // read-only
 	var f livestatus.Facts
 	var top uint64
+	var limits livestatus.Limits
 	first := true
 	for line, err := range rd.Lines() {
 		if err != nil {
@@ -594,12 +651,14 @@ func liveFacts(dir string, confirmed bool) (livestatus.Facts, uint64) {
 				break
 			}
 			f = livestatus.FromStartJSON(e.Payload)
+			f.PlaneBlocks = liveblock.TakesPlane(dir)
 			if !confirmed {
 				break
 			}
 			continue
 		}
-		if !bytes.Contains(line, []byte(record.GapLiveBlockAdded)) && !bytes.Contains(line, []byte(record.GapLiveBlockRemoved)) {
+		if !bytes.Contains(line, []byte(record.GapLiveBlockAdded)) && !bytes.Contains(line, []byte(record.GapLiveBlockRemoved)) &&
+			!bytes.Contains(line, []byte(record.GapLiveBlockExpired)) && !bytes.Contains(line, []byte(record.GapLiveUnblockExpired)) {
 			continue
 		}
 		e, err := record.Decode(line)
@@ -607,11 +666,17 @@ func liveFacts(dir string, confirmed bool) (livestatus.Facts, uint64) {
 			continue
 		}
 		var p record.GapPayload
-		if e.DecodePayload(&p) != nil || p.What != record.GapEnforce || p.LiveBlock == nil ||
-			(p.Why != record.GapLiveBlockAdded && p.Why != record.GapLiveBlockRemoved) {
+		if e.DecodePayload(&p) != nil || p.What != record.GapEnforce || p.LiveBlock == nil {
 			continue
 		}
-		top = max(top, p.LiveBlock.Serial)
+		switch p.Why {
+		case record.GapLiveBlockAdded, record.GapLiveBlockRemoved:
+			top = max(top, p.LiveBlock.Serial)
+		case record.GapLiveBlockExpired, record.GapLiveUnblockExpired:
+			if !p.LiveBlock.Until.IsZero() {
+				limits.Record(p.Why, p.LiveBlock.Kind, p.LiveBlock.Value, p.LiveBlock.Until)
+			}
+		}
 	}
-	return f, top
+	return f, top, limits
 }

@@ -21,9 +21,9 @@ import (
 
 var update = flag.Bool("update", false, "rewrite testdata/golden")
 
-// TestEachEventGolden is acceptance (1): over every documented payload, SessionStart prints the run's facts and
-// counts the session; the four delivery events claim the refusals no hook has shown (the cursor becomes their
-// highest seq) and print them once, and print nothing the second time. The goldens are testdata/golden/<payload>.
+// TestEachEventGolden is acceptance (1): over every documented payload, SessionStart prints the run's facts,
+// reports and claims pending refusals on the first start and counts starts. Delivery events claim each refusal once;
+// later starts preview anything still pending. The goldens are testdata/golden/<payload>.
 func TestEachEventGolden(t *testing.T) {
 	names := make([]string, 0, len(payloadNames))
 	for n := range payloadNames {
@@ -42,7 +42,7 @@ func TestEachEventGolden(t *testing.T) {
 			}
 			if quietPayloads[name] {
 				golden(t, name, r.stdout)
-				if r.stdout != "" || f.state(t) != (State{}) {
+				if r.stdout != "" || !sameState(f.state(t), State{}) {
 					t.Errorf("stdout %q, state %+v; want nothing and no claim", r.stdout, f.state(t))
 				}
 				return
@@ -51,24 +51,24 @@ func TestEachEventGolden(t *testing.T) {
 			golden(t, name, strings.ReplaceAll(r.stdout, f.reasonFile, "$REASON"))
 			s := f.state(t)
 			if event == EventSessionStart {
-				if ctx != reason.HookInstructions(f.reasonFile) {
-					t.Errorf("SessionStart context:\n%s\nwant reason.HookInstructions", ctx)
+				if want := reason.RenderSessionStart(f.reasonFile, []reason.Entry{entry(t, 0), entry(t, 1), entry(t, 2)}, 0); ctx != want {
+					t.Errorf("SessionStart context:\n%s\nwant\n%s", ctx, want)
 				}
-				if s != (State{V: StateVersion, Run: testRun, Sessions: 1}) {
+				if !sameState(s, State{V: StateVersion, Run: testRun, Sessions: 1, Cursor: refusalAt(2).Seq, Deliveries: 1, RefusalsDelivered: 3}) {
 					t.Errorf("state after SessionStart: %+v", s)
 				}
-				if again := f.hook(t, p); context(t, again.stdout, event) != ctx || f.state(t).Sessions != 2 {
+				if again := f.hook(t, p); context(t, again.stdout, event) != reason.HookInstructions(f.reasonFile) || f.state(t).Sessions != 2 {
 					t.Errorf("a second SessionStart: %q, sessions %d", again.stdout, f.state(t).Sessions)
 				}
 				return
 			}
-			if want := (State{V: StateVersion, Run: testRun, Cursor: refusalAt(2).Seq, Deliveries: 1, RefusalsDelivered: 3}); s != want {
+			if want := (State{V: StateVersion, Run: testRun, Cursor: refusalAt(2).Seq, Deliveries: 1, RefusalsDelivered: 3}); !sameState(s, want) {
 				t.Errorf("state %+v, want %+v", s, want)
 			}
 			if again := f.hook(t, p); again != (result{}) {
 				t.Errorf("nothing new, yet the hook answered %+v", again)
 			}
-			if f.state(t) != s {
+			if !sameState(f.state(t), s) {
 				t.Errorf("nothing new changed the state: %+v", f.state(t))
 			}
 		})
@@ -103,7 +103,7 @@ func TestNoRefusalYet(t *testing.T) {
 			t.Errorf("%s: %+v", name, r)
 		}
 	}
-	if s := f.state(t); s != (State{}) {
+	if s := f.state(t); !sameState(s, State{}) {
 		t.Errorf("state %+v, want none", s)
 	}
 	r := f.hook(t, payload(t, "session-start"))
@@ -199,7 +199,7 @@ func TestStopHookActiveClaimsNothing(t *testing.T) {
 				if r := f.hook(t, payload(t, "stop-repeat"), "--mode", mode); r != (result{}) {
 					t.Fatalf("round %d: a Stop with stop_hook_active kept the turn going: %+v", round, r)
 				}
-				if s := f.state(t); s != before {
+				if s := f.state(t); !sameState(s, before) {
 					t.Fatalf("round %d: a Stop with stop_hook_active claimed: %+v, was %+v", round, s, before)
 				}
 			}
@@ -230,7 +230,7 @@ func TestStderrMode(t *testing.T) {
 				if r != (result{}) {
 					t.Errorf("%+v, want nothing", r)
 				}
-				if s := f.state(t); s != (State{}) {
+				if s := f.state(t); !sameState(s, State{}) {
 					t.Errorf("state %+v, want none", s)
 				}
 			default:
@@ -336,7 +336,7 @@ func TestFailOpen(t *testing.T) {
 		}},
 		{"state file over its bound", func(t *testing.T, f *fixture) ([]byte, []string) {
 			f.refusals(t, 1)
-			big := `{"v":1,"run":"` + testRun + `","pad":"` + strings.Repeat("x", MaxStateBytes) + `"}`
+			big := `{"v":2,"run":"` + testRun + `","pad":"` + strings.Repeat("x", MaxStateBytes) + `"}`
 			if err := os.WriteFile(filepath.Join(f.dir, StateDirName, StateFileName), []byte(big), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -351,7 +351,7 @@ func TestFailOpen(t *testing.T) {
 		}},
 		{"state file of another run", func(t *testing.T, f *fixture) ([]byte, []string) {
 			f.refusals(t, 1)
-			if err := os.WriteFile(filepath.Join(f.dir, StateDirName, StateFileName), []byte(`{"v":1,"run":"r-other"}`), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(f.dir, StateDirName, StateFileName), []byte(`{"v":2,"run":"r-other"}`), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			return payload(t, "post-tool-use-bash"), nil
@@ -445,7 +445,7 @@ func TestOutputBound(t *testing.T) {
 	}))
 	for _, mode := range []string{ModeJSON, ModeStderr} {
 		// Each mode starts from a state that has shown nothing.
-		if err := os.WriteFile(filepath.Join(f.dir, StateDirName, StateFileName), []byte(`{"v":1,"run":"`+testRun+`"}`), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(f.dir, StateDirName, StateFileName), []byte(`{"v":2,"run":"`+testRun+`"}`), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		r := f.hook(t, payload(t, "post-tool-use-write"), "--mode", mode)

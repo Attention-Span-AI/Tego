@@ -38,7 +38,7 @@ func (k *agreeKiller) Kill(cgroup.Cgroup) error { k.kills++; return nil }
 // negative count (clamped to 0 by the one decode both share, ledger.Usage).
 func TestMeasureAndTheWatcherAgreeOnSpend(t *testing.T) {
 	const runID = "r-3f9c2a1b-0dllq06ts7400-k7m2pq"
-	prices, err := limits.Load(filepath.Join("..", "runtime", "limits", "testdata", "prices.yaml"))
+	prices, err := limits.Load(filepath.Join("..", "pricetable", "testdata", "prices.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

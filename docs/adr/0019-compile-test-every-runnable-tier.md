@@ -451,3 +451,11 @@ changed. Pinned by `TestCompileTestHeaderNamesWhatAutoLeftOut`, `TestCompileTest
   regression name and now holds that ownership distinction in every mode,
   without a preemption-waiver exception. Native terminal results without a
   supervisor owner still require their own kernel evidence (ADR 0024).
+
+*Amended 2026-11-18 (PID-namespace exclusion):* `AutoTiers` excludes built root tiers outside the kernel's
+initial process-id namespace. The CLI passes that same usable set to compile and the run-start compiler, then
+replaces their generic missing-build warning for those excluded pins with the namespace precondition. The
+contract's pin and the refusal remain unchanged, and no additional probe is performed. A tier the binary
+actually lacks retains the build warning. `TestPIDNamespacePinWarningsNameThePrecondition` exercises both
+CLI paths for cgroup and bpflsm, with namespace exclusion and actual build absence. The private-PID Ubuntu
+guest first exposed the incorrect warning while its auto run used landlock and both root pins refused 125.

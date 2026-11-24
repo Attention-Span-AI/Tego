@@ -42,6 +42,7 @@ func Words(ruleKey string) string {
 		{"fs.watch", "Watched: "}, {"exec.deny", "Never-run program: "},
 		{"exec.ask", "Never-run program (asking first is not supported yet): "},
 		{"exec.allow", "Allowed command: "}, {"exec.args", "Command not in the rules for: "},
+		{"exec.harness-hook", "Hook command: "},
 	} {
 		if v, ok := inner(m.key); ok {
 			return m.label + v

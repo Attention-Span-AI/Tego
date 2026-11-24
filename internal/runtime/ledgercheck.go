@@ -11,6 +11,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 // LedgerCheck is what `tego doctor` reports about a ledger root: the runs no sweep on this host finishes, said
@@ -29,15 +30,24 @@ type LedgerCheck struct {
 	// sweep since has kept the entry because it could not finish them — the anchor repair failed on the anchor
 	// (chain.log unreadable or not writable), or the ended run's scope could not be removed.
 	Unfinished []string `json:"unfinished,omitempty"`
+	// LiveWithoutFloor are this host's runs that are still running and whose run_start does not carry the root-only
+	// approval floor, filled only when the system `local_roles: owner_only` is set (CheckLedgerWithFloor): the floor
+	// binds the runs launched after it was set, so these keep same-user approvals until they end (ADR 0154).
+	LiveWithoutFloor []string `json:"live_without_root_floor,omitempty"`
 }
 
 // Empty reports whether the check found nothing to say.
-func (c LedgerCheck) Empty() bool { return len(c.Foreign) == 0 && len(c.Unfinished) == 0 }
+func (c LedgerCheck) Empty() bool {
+	return len(c.Foreign) == 0 && len(c.Unfinished) == 0 && len(c.LiveWithoutFloor) == 0
+}
 
 // CheckLedger checks the ledger root at root without writing to it or taking any run's lock: its directory
 // names, the live index's names, and, for each entry of this host's, the tail of its ledger and its lock line.
 // A root that does not exist is nothing to report.
-func CheckLedger(root string) (LedgerCheck, error) {
+//
+// With floor set (the system local_roles is owner_only) it also lists this host's running runs whose run_start
+// carries no root-only floor (LedgerCheck.LiveWithoutFloor).
+func CheckLedger(root string, floor bool) (LedgerCheck, error) {
 	c := LedgerCheck{Root: root, Host: localHost8()}
 	ents, err := os.ReadDir(root)
 	if err != nil {
@@ -65,7 +75,40 @@ func CheckLedger(root string) (LedgerCheck, error) {
 		}
 	}
 	slices.Sort(c.Unfinished)
+	if floor {
+		for _, id := range ids {
+			if !foreignRun(id) && runningWithoutFloor(filepath.Join(root, id)) {
+				c.LiveWithoutFloor = append(c.LiveWithoutFloor, id)
+			}
+		}
+		slices.Sort(c.LiveWithoutFloor)
+	}
 	return c, nil
+}
+
+// runningWithoutFloor reports whether the run in dir is running and its run_start does not carry the root-only
+// approval floor. A running run whose first line cannot be read or decoded is reported too: nothing shows it holds the
+// floor. An ended or lost run is not reported; it takes no answers.
+func runningWithoutFloor(dir string) bool {
+	rd, err := ledger.OpenReader(dir)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = rd.Close() }() // read-only
+	if state, err := rd.State(); err != nil || state != ledger.StateRunning {
+		return false
+	}
+	for line, err := range rd.Lines() {
+		if err != nil {
+			return true
+		}
+		e, err := record.Decode(line)
+		if err != nil || e.Kind != record.KindRunStart {
+			return true
+		}
+		return record.ValidatedLocalApprovalAuthority(e.Payload) == nil
+	}
+	return true
 }
 
 // endedUnfinished reports whether the run in dir has ended and the launcher its lock line names is gone: a live

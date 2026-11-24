@@ -1,22 +1,22 @@
 {{/* SPDX-License-Identifier: Apache-2.0 */}}
 {{/* rules-saved: a change written or undone (rules_change.go, GET /rules/change/saved), shown with what it changed, the live outcomes, the .bak and Undo; the whole page is its live region. */}}
-{{define "content"}}<link rel="stylesheet" href="/static/rules.css"><link rel="stylesheet" href="/static/rules-change.css">{{$csrf := $.CSRF}}{{with .Data}}{{$d := .}}
+{{define "content"}}<link rel="stylesheet" href="/static/rules.css"><link rel="stylesheet" href="/static/rules-change.css">{{$csrf := $.CSRF}}{{with .Data}}<div class="page-interior contracts-page">{{$d := .}}
 <div class="head"><div><nav class="crumbs" aria-label="Breadcrumb"><a class="link" href="/rules">Contracts</a><span aria-hidden="true">/</span>{{if .Ref}}<a class="link" href="/rules/change?c={{queryEsc .Ref}}">Change rules</a><span aria-hidden="true">/</span>{{end}}<span>{{if .Reverted}}Undone{{else}}Saved{{end}}</span></nav>
-<h1>{{if .Reverted}}Undone{{else}}Saved{{end}}{{if .Agent}} · {{.Agent}}{{end}}</h1>
-{{if .Contract}}<p class="lede rules-ctx">In <span class="code-i" title="{{.Contract}}">{{tail .Contract 60}}</span>.</p>{{end}}</div>
-<div class="head-actions">{{if .Ref}}<a class="btn" href="/rules/change?c={{queryEsc .Ref}}">{{template "i" "i-scroll-text"}}Change more</a>{{end}}</div></div>
+{{if $.Tour}}<h2>{{else}}<h1>{{end}}{{if .Reverted}}Change undone{{else}}Change saved{{end}}{{if $.Tour}}</h2>{{else}}</h1>{{end}}{{with .Agent}}<p class="page-intro">For {{.}}</p>{{end}}
+{{if .Contract}}<p class="lede rules-ctx">In <span class="detail-value mono" title="{{.Contract}}">{{.Contract}}</span>.</p>{{end}}</div>
+<details class="head-more"><summary>Actions</summary><div class="head-actions">{{if .Ref}}<a class="btn" href="/rules/change?c={{queryEsc .Ref}}">{{template "i" "i-scroll-text"}}Change more</a>{{end}}</div></details></div>
 
 {{with .Warn}}<section class="banner banner-warn" role="status">{{template "i" "i-triangle-alert"}}<div class="grow">Written, but: {{.}}</div></section>{{end}}
 
 {{with .Applied}}{{$p := .Plan}}
 <section class="banner banner-ok rc-saved" role="status" aria-labelledby="h-saved">{{template "i" "i-check"}}<div class="grow stack-sm"><h2 class="rp-h" id="h-saved">{{$d.Headline}}</h2>
-{{if $p.Raw}}<p>Whole file replaced</p>{{else}}<ul class="rp-list">{{range $p.Sentences}}<li>{{if .Before}}{{.Before}}{{else}}(nothing){{end}} → <strong>{{.After}}</strong> {{template "dir" .Direction}}</li>{{end}}</ul>{{end}}
-{{with .Bak}}<p class="soft">The old file is kept as <span class="mono">{{.}}</span>.</p>{{end}}</div></section>
+{{if $p.Raw}}<p>Whole file replaced</p>{{template "families" $p.Families}}{{else}}<ul class="rp-list">{{range $p.Sentences}}<li>{{if .Before}}{{.Before}}{{else}}<span data-number="editor.entries-zero">(nothing)</span>{{end}} → <strong>{{.After}}</strong> {{template "dir" .Direction}}</li>{{end}}</ul>{{end}}
+{{with .Bak}}<details class="detail-disclosure"><summary>Previous file backup</summary><div class="panel-body"><p class="detail-value mono">{{.}}</p></div></details>{{end}}</div></section>
 {{if or $d.Live $d.Next}}<section class="panel" aria-labelledby="h-live"><div class="panel-head"><h2 id="h-live">{{template "i" "i-activity"}}Running now</h2></div><ul class="panel-body rc-blocks rc-outs">{{range $d.Live}}
-<li class="rc-out"{{with .State}} data-state="{{.}}"{{end}}{{with .Title}} title="{{.}}"{{end}}>{{if .OK}}<span class="b {{.Class}} rc-chip">{{.Chip}}</span> <span title="{{.Block}}">{{.Words}}</span> <span class="soft">·</span> <span class="rc-outrun">{{.Before}}<a class="link mono" href="/rules?run={{queryEsc .Run}}" title="{{.Run}}">{{rid .Run}}</a>{{.After}}</span>{{else}}{{template "i" "i-triangle-alert"}} Not placed on run <span class="mono" title="{{.Run}}">{{rid .Run}}</span>{{with .Words}} (<span class="mono">{{.}}</span>){{end}}{{with .Err}}: {{.}}{{end}}; it applies from the next run.{{end}}</li>{{end}}{{range $d.Next}}
-<li class="rc-out" data-state="next"><span class="b b-neutral rc-chip">Next run</span> <span class="mono" title="{{.Run}}">{{rid .Run}}</span>{{with .Change}} <span class="soft">·</span> <span class="mono">{{.}}</span>{{end}}: {{if .FenceLift}}<span class="soft"><span title="Inside the run's fence: a lift gives it now (Tego's live layer, not the kernel)">liftable now</span></span> <a class="link" href="/rules?run={{queryEsc .Run}}#live-fence">Lift it on the Rules page</a>{{else}}<span class="soft">{{.Why}}</span>{{end}}</li>{{end}}
+<li class="rc-out"{{with .State}} data-state="{{.}}"{{end}}{{with .Title}} title="{{.}}"{{end}}>{{if .OK}}<span class="b {{.Class}} rc-chip">{{.Chip}}</span> <span title="{{.Block}}">{{.Words}}</span> <span class="soft">·</span> <span class="rc-outrun">{{.Before}}<a class="link mono" href="/rules?run={{queryEsc .Run}}" title="{{.Run}}">{{.Run}}</a>{{.After}}</span>{{else}}{{template "i" "i-triangle-alert"}} Not placed on run <span class="mono" title="{{.Run}}">{{.Run}}</span>{{with .Words}} (<span class="mono">{{.}}</span>){{end}}{{with .Err}}: {{.}}{{end}}; it applies from the next run.{{with .Restart}} The run keeps its old rules until the agent is started again: <span class="cli"><code>{{cmd .}}</code></span>{{end}}{{end}}</li>{{end}}{{range $d.Next}}
+<li class="rc-out" data-state="next"><span class="b b-neutral rc-chip">Next run</span> <span class="mono" title="{{.Run}}">{{.Run}}</span>{{with .Change}} <span class="soft">·</span> <span class="mono">{{.}}</span>{{end}}: {{if .FenceLift}}<span class="soft"><span title="Inside the run's fence: a lift gives it now (Tego's live layer, not the kernel)">liftable now</span></span> <a class="link" href="/rules?run={{queryEsc .Run}}#live-fence">Lift it on the Rules page</a>{{else}}<span class="soft">{{.Why}}{{with .Restart}}. {{nextRunWords}}: <span class="cli"><code>{{cmd .}}</code></span>{{else}}. {{nextRunWords}}.{{end}}</span>{{end}}</li>{{end}}
 </ul></section>{{end}}
-<details class="panel rules-raw"{{if $p.Raw}} open{{end}}><summary class="panel-head"><h2>The change in the YAML</h2><span class="soft">{{$p.Summary}}</span></summary><div class="panel-body"><pre class="raw rc-diff" tabindex="0" aria-label="The file's change">{{$p.Diff}}</pre></div></details>
+<details class="panel rules-raw"{{if $p.Raw}} open{{end}}><summary class="panel-head"><h2>The change in the YAML</h2><span class="soft">{{$p.Summary}}</span></summary><div class="panel-body"><pre class="raw rc-diff detail-value" tabindex="0" aria-label="The file's change">{{$p.Diff}}</pre></div></details>
 {{end}}
 {{with .Reverted}}<section class="banner banner-ok rc-saved" role="status">{{template "i" "i-check"}}<div class="grow stack-sm"><h2 class="rp-h">Undone · previous text restored</h2><p>The next run gets the old rules again {{template "dir" .Direction}}.{{with $d.UndoLive}} {{.}}{{end}}</p>{{with .Bak}}<p class="soft">Kept as <span class="mono">{{.}}</span>.</p>{{end}}</div></section>{{end}}
 
@@ -26,5 +26,5 @@
 <div class="frow"><button class="btn" type="submit" data-page>{{template "i" "i-rotate-cw"}}Undo {{if .Reverted}}the undo{{else}}this change{{end}}</button></div></div></form>{{end}}
 
 {{if .Hist.Rows}}<section class="panel rc-history" aria-labelledby="h-hist"><div class="panel-head"><h2 id="h-hist">{{template "i" "i-scroll-text"}}History <span class="soft">newest first</span></h2></div><div class="panel-body">{{template "history" .Hist}}</div></section>{{end}}
-{{if .CLI}}<div class="cli-pair"><span class="lbl">{{template "i" "i-terminal"}}The same in a terminal</span>{{range .CLI}}<div class="cli"><code>{{.}}</code></div>{{end}}</div>{{end}}
-{{end}}{{end}}
+{{if .CLI}}<div class="cli-pair"><span class="lbl">{{template "i" "i-terminal"}}The same in a terminal</span>{{range .CLI}}<div class="cli"><code>{{cmd .}}</code></div>{{end}}</div>{{end}}
+</div>{{end}}{{end}}

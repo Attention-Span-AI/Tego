@@ -51,7 +51,7 @@ func (k *compiler) ownState() {
 	}
 	// The machine config's layer files, R10 targets wherever they are (ADR 0059): one outside ~/.tego is not
 	// read-denied, and no held write's alternate reaches it either.
-	k.rt.OwnReadable = k.spellings(k.rt.OwnReadable, k.m.Layers)
+	k.rt.OwnReadable = k.spellings(k.rt.OwnReadable, k.machineLayerPaths())
 }
 
 // spellings appends to list each of paths as written and resolved, once each, leaving out "/"; a relative path is

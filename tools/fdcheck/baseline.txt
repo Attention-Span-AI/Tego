@@ -8,7 +8,7 @@ internal/askclient newfile=1 producer=1
 internal/bpf opaque=1
 internal/doctor close=34 dup=4 fd=1 newfile=6 producer=28
 internal/platform/sys api=9 ioctl=1 producer=2
-internal/runtime close=21 newfile=6 producer=8
+internal/runtime close=21 newfile=5 producer=7
 internal/runtime/ask api=1 close=8 dup=2 fd=1 newfile=2 producer=2 rights=5
 internal/runtime/capture/forwarder close=1 producer=1
 internal/runtime/capture/uprobe close=6 fd=15 producer=2
@@ -18,7 +18,6 @@ internal/runtime/enforce/api api=1
 internal/runtime/enforce/cgroup api=2 close=9 dup=2 fd=21 fromfd=1 producer=6
 internal/runtime/enforce/landlock close=11 dup=1 newfile=1 producer=4
 internal/runtime/launch close=1 dup=1 newfile=1 producer=1
-internal/runtime/observe close=1 producer=1
 internal/runtime/supervisor close=76 dup=3 producer=45
 internal/watch/adopt close=1 producer=1
 internal/watch/procconn close=4 producer=2

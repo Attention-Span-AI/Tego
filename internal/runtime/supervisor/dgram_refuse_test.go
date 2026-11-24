@@ -121,3 +121,33 @@ func TestSystemDNSAdmitsEveryLookupForm(t *testing.T) {
 		})
 	}
 }
+
+// TestNetLineOpTellsADatagramFromAConnect (GAPS C172): a UDP socket's connect(2) sends nothing, and a datagram does, but
+// both were a net line with no op, so a receipt counted them as one kind of attempt. A datagram's line carries op send
+// whether the supervisor refused it or admitted it; the connect keeps no op, so its bytes are as they were.
+func TestNetLineOpTellsADatagramFromAConnect(t *testing.T) {
+	resolvers := []netip.AddrPort{netip.MustParseAddrPort("127.0.0.53:53")}
+	for _, c := range []struct {
+		name      string
+		resolvers []netip.AddrPort
+	}{{"refused", []netip.AddrPort{}}, {"admitted", resolvers}} {
+		for _, form := range lookupForms() {
+			t.Run(c.name+"/"+form.name, func(t *testing.T) {
+				f := newFake()
+				l, sink := newTestLoop(t, f, testPolicy(nil, nil, c.resolvers))
+				form.run(l, f)
+				var p netPayload
+				if err := sink.one(t).DecodePayload(&p); err != nil {
+					t.Fatal(err)
+				}
+				want := record.NetOpSend
+				if form.name == "connect" {
+					want = ""
+				}
+				if p.Op != want || p.Proto != protoUDP {
+					t.Fatalf("%s line: op %q proto %q, want op %q", form.name, p.Op, p.Proto, want)
+				}
+			})
+		}
+	}
+}

@@ -4,6 +4,8 @@ package ledgerview
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -112,6 +114,10 @@ func TestFoldInterleavedPairs(t *testing.T) {
 // it, and a live run's open ask is pending.
 func TestLostRunAskNotPending(t *testing.T) {
 	root := t.TempDir()
+	// An empty readable index establishes that no run is listed as live.
+	if err := os.Mkdir(filepath.Join(root, ".live"), 0700); err != nil {
+		t.Fatal(err)
+	}
 	const lost = "r-aaaa-0004-lostxx"
 	writeRun(t, root, lost,
 		pairLine(lost, 0, 1, 1, "run_start", `"tier":"landlock","command":["sh"]`),

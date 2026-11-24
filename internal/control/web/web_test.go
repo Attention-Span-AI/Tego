@@ -3,6 +3,7 @@
 package web
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
 const port = 8484
@@ -47,14 +50,14 @@ func fixture(t *testing.T) string {
 	}
 	write(cleanRun,
 		line(cleanRun, "demo-clean", 0, t0, "run_start", `"tier":"landlock","command":["sh","-c","echo hi"]`),
-		line(cleanRun, "demo-clean", 1, t0.Add(time.Second), "fs", `"verdict":"allow","op":"open","path":"out/hello.txt","flags":577`),
+		line(cleanRun, "demo-clean", 1, t0.Add(time.Second), "fs", `"verdict":"allow","op":"open","path":"out/hello.txt","flags":577,"attribution":{"confidence":"likely","method":"time","step":1}`),
 		line(cleanRun, "demo-clean", 2, t0.Add(2*time.Second), "run_end", `"reason":"exit","exit_code":0`))
 	write(harmRun,
 		line(harmRun, "demo-harm", 0, t0.Add(time.Minute), "run_start", `"tier":"landlock","command":["sh","agent.sh"]`),
 		line(harmRun, "demo-harm", 1, t0.Add(time.Minute+1), "refused", `"rule":"unmatched","reason":"write-outside-contract","op":"open","target":"/p/stolen.txt"`),
 		line(harmRun, "demo-harm", 2, t0.Add(time.Minute+2), "refused", `"rule":"unmatched","reason":"net-not-allowed","op":"connect","target":"unix:/var/run/nscd/socket"`),
 		line(harmRun, "demo-harm", 3, t0.Add(time.Minute+3), "refused", `"rule":"unmatched","reason":"net-not-allowed","op":"connect","target":"unix:/var/run/nscd/socket"`),
-		line(harmRun, "demo-harm", 4, t0.Add(time.Minute+4), "net", `"verdict":"ask","rule":"net.ask[example.com]","proto":"tcp","dst":"93.184.216.34:443","host":"example.com"`),
+		line(harmRun, "demo-harm", 4, t0.Add(time.Minute+4), "net", `"verdict":"ask","rule":"net.ask[example.com]","proto":"tcp","dst":"93.184.216.34:443","host":"example.com","attribution":{"confidence":"likely","method":"tool_id","step":2,"tool_use_id":"toolu_1"}`),
 		line(harmRun, "demo-harm", 5, t0.Add(time.Minute+5), "ask", `"ask_id":"ask-7","hold":"net"`),
 		line(harmRun, "demo-harm", 6, t0.Add(time.Minute+6), "refused", `"rule":"unmatched","reason":"net-not-allowed","op":"net","target":"<script>alert(1)</script>"`))
 	markLive(t, root, harmRun)
@@ -107,16 +110,29 @@ func letGo(dir string) {
 
 func newServer(t *testing.T, root string) *Server {
 	t.Helper()
-	s, err := New(Config{Ledger: root, Port: port, Token: "tok123",
+	s, err := New(Config{Ledger: root, Port: port, Token: "tok123", Machine: config.Builtin(),
 		Now: func() time.Time { return time.Date(2026, 10, 25, 12, 5, 0, 0, time.UTC) }})
 	if err != nil {
 		t.Fatal(err)
 	}
 	trustPeer(s)
+	// A fixed host name longer than the header's 20-character cut, so every page renders the same on every machine:
+	// a short real host name (a guest's) hides the "Whole name" control and its marked element.
+	s.host = "fixture-workstation-01.example.internal"
 	return s
 }
 
+// do serves one request. An HTML answer is read as words tests read it: each bare number marker is replaced by
+// its words, which keep any "at least" or "could not read" (unmarked, signal_test.go). doRaw keeps the markers.
 func do(s *Server, method, target, host string, cookie *http.Cookie) *httptest.ResponseRecorder {
+	w := doRaw(s, method, target, host, cookie)
+	if strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
+		w.Body = bytes.NewBufferString(unmarked(w.Body.String()))
+	}
+	return w
+}
+
+func doRaw(s *Server, method, target, host string, cookie *http.Cookie) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, target, nil)
 	r.Host = host
 	if cookie != nil {
@@ -147,7 +163,7 @@ func TestPagesRender(t *testing.T) {
 	s := newServer(t, fixture(t))
 	c := login(t, s)
 	for path, want := range map[string][]string{
-		"/":                              {"1 needs you", "demo-harm", "demo-clean", "Newest High and Medium", "system lookup"},
+		"/":                              {"1 request needs you", "demo-harm", "demo-clean", "Latest High and Medium", "system lookup"},
 		"/runs":                          {"2 runs", "demo-harm", "Running", "Exit 0"},
 		"/runs/" + harmRun:               {"Timeline", "/p/stolen.txt", "×2", "system lookup", "Stop run", `action="/approvals/answer"`},
 		"/runs/" + harmRun + "/refusals": {"Grouped", "Not in contract", "Highlights"},
@@ -158,7 +174,8 @@ func TestPagesRender(t *testing.T) {
 		"/logs?verdict=refused&sys=hide":            {"system lines hidden"},
 		"/logs?q=nomatch":                           {"No matching lines"},
 		"/approvals":                                {"tego approve " + harmRun + " ask-7", "tego deny " + harmRun + " ask-7", "example.com", `action="/approvals/answer"`, `value="approve"`, `value="deny"`},
-		"/rules":                                    {"Contract", "demo-harm", "the run left no contract.yaml"},
+		"/rules":                                    {"Contracts", "No contracts yet", "tego rules learn"},
+		"/rules?run=" + harmRun:                     {"Contract", "demo-harm", "the run left no contract.yaml"},
 	} {
 		w := do(s, "GET", path, "127.0.0.1:8484", c)
 		if w.Code != http.StatusOK {
@@ -258,14 +275,17 @@ func TestLinksNameTheAddressListenedOn(t *testing.T) {
 	}
 }
 
-func TestLiveRunRefreshes(t *testing.T) {
+func TestLiveRunManualRefresh(t *testing.T) {
 	s := newServer(t, fixture(t))
 	c := login(t, s)
-	if b := do(s, "GET", "/runs/"+harmRun, "127.0.0.1:8484", c).Body.String(); !strings.Contains(b, `http-equiv="refresh"`) {
-		t.Error("live run page does not refresh")
-	}
-	if b := do(s, "GET", "/runs/"+cleanRun, "127.0.0.1:8484", c).Body.String(); strings.Contains(b, `http-equiv="refresh"`) {
-		t.Error("ended run page refreshes")
+	for _, path := range []string{"/runs/" + harmRun, "/runs/" + cleanRun, "/approvals"} {
+		b := do(s, "GET", path, "127.0.0.1:8484", c).Body.String()
+		if strings.Contains(b, `http-equiv="refresh"`) {
+			t.Errorf("%s reloads the document and discards focus", path)
+		}
+		if path != "/runs/"+cleanRun && !strings.Contains(b, `<noscript class="manual-refresh">`) {
+			t.Errorf("%s lacks explicit native refresh", path)
+		}
 	}
 }
 
@@ -299,7 +319,7 @@ func TestLogsRefusalsNameTheList(t *testing.T) {
 	}
 }
 
-var navHref = regexp.MustCompile(`<nav class="side"[\s\S]*?</nav>`)
+var navHref = regexp.MustCompile(`<nav class="side phone-nav"[\s\S]*?</nav>`)
 
 // TestShellWording: no page calls the dashboard an MVP or unreviewed; every link of the main nav answers 200, and
 // the Preview pages are left out of it by default. The commands the empty states give are

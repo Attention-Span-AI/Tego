@@ -28,6 +28,9 @@ check.
 | Page | It answers |
 | ---- | ---------- |
 | [built-in-refusals.md](built-in-refusals.md) | Which host, Tego and terminal surfaces does every enforcing run refuse? |
+| [contracts.md](contracts.md) | Which contracts did Tego find, do they compile now, and where did their rules come from? |
+| [agents.md](agents.md) | Where does the found list come from, what do run stages mean, and how do I repair unreadable scan state? |
+| [scan.md](scan.md) | What can a basic snapshot find, what stays private, and what does CI learn? |
 | [commands.md](commands.md) | Which command does what? Agents, sessions, approvals, presets and the dashboard, and the older commands. |
 | [setup.md](setup.md) | Which step is this machine on, and what do I type next? (`tego setup`) |
 | [self-check.md](self-check.md) | Does Tego refuse what it should on this machine? (`tego machine test`) |
@@ -35,5 +38,10 @@ check.
 | [mcp-tools.md](mcp-tools.md) | How do I allow, hold for approval or deny single tools of an MCP server, and change that live? |
 | [container.md](container.md) | How do I run an agent under Tego in a container on a server, which tiers work there, and where do the record and its anchor live? |
 | [model-routes.md](model-routes.md) | How do I send a running agent's model calls to another approved backend, and back, without stopping it? |
+| [ci-verification.md](ci-verification.md) | How do I check exact CI bundles, identities and retained record bytes? |
+| [ci-receipt.md](ci-receipt.md) | How do I run an AI agent in CI, retain a record and explicitly consent to optional signing? |
 | [presets.md](presets.md) | Which ready-made rules can my contract start from, how do I combine and pin them, and what does each not cover? (a draft) |
 | [live-modes.md](live-modes.md) | Can I change a running agent's rules, both ways and for a while, and what does Locked or Adjustable promise? (a draft) |
+| [business-rules.md](business-rules.md) | What submitted-refund declaration is checked, and why do business-bearing runs refuse to start? |
+| [local-approvals.md](local-approvals.md) | How can an administrator require a separate root terminal for each approval? |
+| [baseline.md](baseline.md) | What baseline configuration is parsed today, and why does it add no enforced rule yet? |

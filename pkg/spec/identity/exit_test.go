@@ -107,12 +107,18 @@ func TestExitCodesLeaveTheLSBBand(t *testing.T) {
 	}
 	for name, code := range map[string]int{"ExitOK": ExitOK, "ExitLimit": ExitLimit, "ExitLauncher": ExitLauncher,
 		"ExitNoExec": ExitNoExec, "ExitNotFound": ExitNotFound, "ExitStoppedKill": ExitStoppedKill,
-		"ExitStoppedTerm": ExitStoppedTerm, "ExitConfig": ExitConfig, "ExitError": ExitError} {
+		"ExitStoppedTerm": ExitStoppedTerm, "ExitConfig": ExitConfig, "ExitError": ExitError, "ExitScanUnreadable": ExitScanUnreadable} {
 		if code >= 200 && code <= 254 {
 			t.Errorf("%s=%d is in the LSB band 200-254; only ExitRequire (211) may be", name, code)
 		}
 	}
 	if CodeContradiction != "contradiction" {
 		t.Errorf("CodeContradiction=%q, want the R10 diagnostic code", CodeContradiction)
+	}
+}
+
+func TestScanUnreadableExitCode(t *testing.T) {
+	if ExitScanUnreadable != 3 {
+		t.Fatalf("scan unreadable exit = %d, want 3", ExitScanUnreadable)
 	}
 }

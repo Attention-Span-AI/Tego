@@ -298,128 +298,288 @@ BEGIN { print compare(left, right) }'
 			cat >"$shim" <<EOF
 #!/bin/sh
 # tego on a Mac, written by Tego's installer: runs tego inside Tego's Linux VM (the Lima instance "${vm}").
-# "tego shell" opens a shell in the VM, in the project tego start set up last. To remove: delete this file.
+# "tego shell" opens a shell in the VM, in the project tego start set up last. "tego uninstall" removes Tego from the Mac.
 vm=${vm}
-if [ "\${1:-}" = shell ] && [ \$# -ne 1 ]; then
+install_line='${install_line}'
+EOF
+			cat >>"$shim" <<'EOF'
+# tego uninstall runs here on the Mac, before the VM is asked: the Mac's side (this command, the PATH line the installer
+# added, the dashboard's tunnel) goes after one question; Tego inside the VM is removed with it, and the VM itself, which
+# holds your records and contracts, only after a second question whose answer is no unless you say yes.
+if [ "${1:-}" = uninstall ]; then
+	shift
+	assume_yes=0 stop_agents=0 delete_records=0
+	for arg in "$@"; do
+		case "$arg" in
+			--yes|-yes) assume_yes=1 ;;
+			--stop-agents|-stop-agents) stop_agents=1 ;;
+			--delete-records|-delete-records) delete_records=1 ;;
+			*) echo "usage: tego uninstall [--yes] [--stop-agents] [--delete-records]" >&2; exit 2 ;;
+		esac
+	done
+	bin="$HOME/.local/bin"
+	path_line='export PATH="$HOME/.local/bin:$PATH" # added by the Tego installer'
+	fish_line='fish_add_path "$HOME/.local/bin" # added by the Tego installer'
+	fish_file="${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/tego.fish"
+	vm_state=$(limactl list --format '{{.Status}}' "$vm" 2>/dev/null) || vm_state=""
+	vm_dir=""
+	[ -z "$vm_state" ] || vm_dir=$(limactl list --format '{{.Dir}}' "$vm" 2>/dev/null) || vm_dir=""
+	# The VM is Tego's only when the instance's own template says so: this installer creates it from the release's Lima
+	# template, which carries the marker. Without it the VM is named, never deleted.
+	vm_is_tego=0
+	[ -z "$vm_dir" ] || ! grep -qxF '# tego-mac-provisioning: 1' "$vm_dir/lima.yaml" 2>/dev/null || vm_is_tego=1
+	uninstall_ask() { # QUESTION CHOICES: 0 yes, 1 no or nobody to ask
+		(: </dev/tty) 2>/dev/null || return 1
+		printf '  ? %s %s ' "$1" "$2" >/dev/tty
+		read -r answer </dev/tty || return 1
+		case "$answer" in
+			"") [ "$2" = '[Y/n]' ] ;;
+			[Yy]*) return 0 ;;
+			*) return 1 ;;
+		esac
+	}
+	# FILE LINE KIND: removes that one exact line, after a backup beside the file; a fish file of Tego's own that holds
+	# nothing else afterwards goes too.
+	remove_line() {
+		rl_file=$1 rl_line=$2
+		[ -f "$rl_file" ] && grep -qFx -- "$rl_line" "$rl_file" 2>/dev/null || return 0
+		rl_backup="$rl_file.tego-backup" rl_n=0
+		while [ -e "$rl_backup" ]; do rl_n=$((rl_n + 1)); rl_backup="$rl_file.tego-backup-$rl_n"; done
+		cp -p "$rl_file" "$rl_backup" || { echo "tego: could not write a backup of $rl_file; it is unchanged" >&2; return 1; }
+		rl_tmp=$(mktemp "${TMPDIR:-/tmp}/tego-rc.XXXXXX") || return 1
+		grep -vFx -- "$rl_line" "$rl_file" >"$rl_tmp" || :
+		if [ "${3:-}" = fish ] && [ -z "$(tr -d ' \t\r\n' <"$rl_tmp")" ]; then rm -f "$rl_file"; else cat "$rl_tmp" >"$rl_file"; fi
+		rm -f "$rl_tmp"
+	}
+	others=0
+	for entry in "$bin"/* "$bin"/.[!.]*; do
+		{ [ -e "$entry" ] || [ -L "$entry" ]; } || continue
+		[ "${entry##*/}" = tego ] || others=$((others + 1))
+	done
+	has_line=""
+	for f in "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
+		if [ -f "$f" ] && grep -qFx -- "$path_line" "$f" 2>/dev/null; then has_line="$has_line $f"; fi
+	done
+	if [ -f "$fish_file" ] && grep -qFx -- "$fish_line" "$fish_file" 2>/dev/null; then has_line="$has_line $fish_file"; fi
+	echo ""
+	echo "  Remove Tego from this Mac"
+	echo ""
+	echo "  Tego will remove"
+	echo "    - the tego command ($bin/tego)"
+	[ -z "$has_line" ] || [ "$others" -gt 0 ] || echo "    - the PATH line the installer added (only that line; a backup is kept beside the file):$has_line"
+	[ -z "$vm_state" ] || echo "    - Tego inside its VM: the dashboard and its units, the program and the lines it added (your records and contracts stay)"
+	[ -z "$vm_state" ] || echo "    - the dashboard's tunnel to the VM"
+	if [ -n "$vm_state" ]; then
+		echo ""
+		if [ "$vm_is_tego" = 1 ]; then
+			echo "  Your records and contracts live in the VM \"$vm\" and stay unless you say so:"
+			echo "    - delete the VM \"$vm\" and everything in it, including your records and contracts (cannot be undone; frees about 5 GB)"
+		else
+			echo "  The Lima instance \"$vm\" is not marked as made by Tego's installer, so it is left alone. To delete it yourself: limactl delete -f $vm"
+		fi
+	fi
+	if [ -n "$has_line" ] && [ "$others" -gt 0 ]; then
+		echo ""
+		echo "  Left the PATH line: $bin still holds $others other file(s) that may need it."
+	fi
+	echo ""
+	if [ "$assume_yes" != 1 ]; then
+		if ! (: </dev/tty) 2>/dev/null; then
+			echo "tego uninstall asks before it removes anything, so it runs in a terminal; for a script: tego uninstall --yes (the VM, with your records and contracts, stays unless you add --delete-records)" >&2
+			exit 2
+		fi
+		uninstall_ask 'Remove what is listed under "Tego will remove"?' '[Y/n]' || { echo "  Nothing was changed."; exit 0; }
+	fi
+	with_vm=0
+	if [ "$vm_is_tego" = 1 ]; then
+		if [ "$delete_records" = 1 ]; then
+			with_vm=1
+		elif [ "$assume_yes" != 1 ] && uninstall_ask "Also delete the VM and your records and contracts in it? They are the proof of what your agents did. This cannot be undone." '[y/N]'; then
+			with_vm=1
+		else
+			echo "  Kept: the VM \"$vm\", with your records and contracts. Add --delete-records to delete it."
+		fi
+	fi
+	failed=0
+	# Tego inside the VM first (its own question is answered here), while the VM still runs: not needed when the VM is deleted.
+	if [ -n "$vm_state" ] && [ "$with_vm" != 1 ]; then
+		if [ "$vm_state" = Stopped ]; then limactl start "$vm" >/dev/null 2>&1 || vm_state=unreachable; fi
+		if [ "$vm_state" != unreachable ]; then
+			guest_flags="--yes"
+			[ "$stop_agents" != 1 ] || guest_flags="--yes --stop-agents"
+			# shellcheck disable=SC2086 # the two flags are fixed words above
+			if limactl shell --workdir / "$vm" sh -c 'cd "$HOME" && if test -x "$HOME/.local/bin/tego"; then export PATH="$HOME/.local/bin:$PATH" && exec systemd-run --user --scope --quiet "$(command -v tego)" uninstall "$@"; fi' tego $guest_flags; then
+				echo "  ✓ Removed Tego inside the VM"
+			else
+				echo "  ✗ Tego inside the VM was not removed completely; run: limactl shell $vm, then tego uninstall" >&2
+				failed=1
+			fi
+		else
+			echo "  ✗ The VM did not start, so Tego inside it was not removed: limactl start $vm" >&2
+			failed=1
+		fi
+	fi
+	# The dashboard's tunnel: the SSH master this command started, ended by its own control socket.
+	if [ -n "$vm_dir" ]; then
+		for sock in "$vm_dir"/tego-dashboard.sock "$vm_dir"/tego-dashboard-*.sock; do
+			[ -S "$sock" ] || [ -f "$sock" ] || continue
+			ssh -F "$vm_dir/ssh.config" -S "$sock" -O exit "lima-$vm" >/dev/null 2>&1 || :
+			echo "  ✓ Closed the dashboard's tunnel"
+		done
+	fi
+	if [ "$with_vm" = 1 ]; then
+		limactl stop "$vm" >/dev/null 2>&1 || :
+		if limactl delete -f "$vm" >/dev/null 2>&1; then
+			echo "  ✓ Deleted the VM \"$vm\", with your records and contracts"
+		else
+			echo "  ✗ The VM was not deleted; run: limactl delete -f $vm" >&2
+			failed=1
+		fi
+	fi
+	if [ "$others" -eq 0 ]; then
+		for f in "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
+			case "$has_line" in *" $f"*) remove_line "$f" "$path_line" && echo "  ✓ Removed the PATH line from $f (backup: $f.tego-backup)" || failed=1 ;; esac
+		done
+		case "$has_line" in *" $fish_file"*) remove_line "$fish_file" "$fish_line" fish && echo "  ✓ Removed the PATH line from $fish_file" || failed=1 ;; esac
+	fi
+	# This command goes last: the shell has read it, and a removed file stays readable to a running shell.
+	if grep -q "Tego's installer" "$bin/tego" 2>/dev/null; then
+		rm -f "$bin/tego" && echo "  ✓ Removed the tego command ($bin/tego)" || failed=1
+	fi
+	echo ""
+	if [ "$failed" != 0 ]; then
+		echo "  ✗ Some steps did not finish; what is left is listed above. Run tego uninstall again, or remove it yourself." >&2
+		exit 125
+	fi
+	if [ "$with_vm" = 1 ]; then
+		echo "  ✓ Tego is removed, with the VM and your records. Lima (brew uninstall lima) and Homebrew stay."
+	elif [ -n "$vm_state" ]; then
+		echo "  ✓ Tego is removed. The VM \"$vm\" and your records stay; run the installer again to use Tego, or limactl delete -f $vm to free the space."
+	else
+		echo "  ✓ Tego is removed."
+	fi
+	exit 0
+fi
+if [ "${1:-}" = shell ] && [ $# -ne 1 ]; then
 	echo "usage: tego shell (no arguments)" >&2
 	exit 2
 fi
-case "\$(limactl list --format '{{.Status}}' "\$vm" 2>/dev/null)" in
+case "$(limactl list --format '{{.Status}}' "$vm" 2>/dev/null)" in
 	Running) ;;
 	Stopped)
 		echo "Starting Tego's VM..." >&2
-		limactl start "\$vm" >/dev/null 2>&1 || { echo "tego: the VM didn't start. Try: limactl start \$vm" >&2; exit 125; }
+		limactl start "$vm" >/dev/null 2>&1 || { echo "tego: the VM didn't start. Try: limactl start $vm" >&2; exit 125; }
 		;;
 	*)
 		echo "tego: Tego's VM is missing. Set it up again with:" >&2
-		echo "  ${install_line}" >&2
+		echo "  $install_line" >&2
 		exit 125
 		;;
 esac
-if [ "\${1:-}" = shell ]; then
+if [ "${1:-}" = shell ]; then
 	echo "In Tego's Linux VM. Type exit to go back to your Mac." >&2
-	exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME"; d=\$(cat "\$HOME/.config/tego/last-project" 2>/dev/null); [ -d "\$d" ] && cd "\$d"; exec systemd-run --user --scope --quiet bash -l'
+	exec limactl shell --workdir / "$vm" sh -c 'cd "$HOME"; d=$(cat "$HOME/.config/tego/last-project" 2>/dev/null); [ -d "$d" ] && cd "$d"; exec systemd-run --user --scope --quiet bash -l'
 fi
 # The dedicated SSH control socket belongs to this VM. Reuse requires its master's PID to own the
 # only listener on the dashboard port, bound to loopback. A process merely named ssh is not proof of our tunnel.
 control_dir_private() {
-	[ "\$(stat -f '%u' "\${control%/*}" 2>/dev/null)" = "\$caller_uid" ] || return 1
-	dir_mode=\$(stat -f '%Lp' "\${control%/*}" 2>/dev/null) || return 1
-	case "\$dir_mode" in ''|*[!0-7]*) return 1 ;; esac
-	[ \$((0\$dir_mode & 0022)) -eq 0 ]
+	[ "$(stat -f '%u' "${control%/*}" 2>/dev/null)" = "$caller_uid" ] || return 1
+	dir_mode=$(stat -f '%Lp' "${control%/*}" 2>/dev/null) || return 1
+	case "$dir_mode" in ''|*[!0-7]*) return 1 ;; esac
+	[ $((0$dir_mode & 0022)) -eq 0 ]
 }
 control_private() {
-	[ ! -L "\$control" ] || return 1
-	control_dir_private && [ "\$(stat -f '%u' "\$control" 2>/dev/null)" = "\$caller_uid" ]
+	[ ! -L "$control" ] || return 1
+	control_dir_private && [ "$(stat -f '%u' "$control" 2>/dev/null)" = "$caller_uid" ]
 }
 tunnel_ready() {
 	control_private || return 1
-	master=\$(ssh -F "\$ssh_config" -S "\$control" -O check "lima-\$vm" 2>&1) || return 1
-	master_pid=\$(printf '%s\n' "\$master" | sed -n 's/^Master running (pid=\([0-9][0-9]*\))\r\{0,1\}\$/\1/p')
-	[ -n "\$master_pid" ] || return 1
-	listeners=\$(lsof -nP -iTCP:\$port -sTCP:LISTEN -Fp 2>/dev/null | sed -n 's/^p//p')
-	[ "\$listeners" = "\$master_pid" ] || return 1
-	process_uid=\$(ps -o uid= -p "\$master_pid" 2>/dev/null | awk '{\$1=\$1; print}')
-	[ "\$process_uid" = "\$caller_uid" ] || return 1
-	bound=\$(lsof -nP -a -p "\$master_pid" -iTCP:\$port -sTCP:LISTEN -Fn 2>/dev/null | sed -n 's/^n//p')
-	[ "\$bound" = 127.0.0.1:\$port ]
+	master=$(ssh -F "$ssh_config" -S "$control" -O check "lima-$vm" 2>&1) || return 1
+	master_pid=$(printf '%s\n' "$master" | sed -n 's/^Master running (pid=\([0-9][0-9]*\))\r\{0,1\}$/\1/p')
+	[ -n "$master_pid" ] || return 1
+	listeners=$(lsof -nP -iTCP:$port -sTCP:LISTEN -Fp 2>/dev/null | sed -n 's/^p//p')
+	[ "$listeners" = "$master_pid" ] || return 1
+	process_uid=$(ps -o uid= -p "$master_pid" 2>/dev/null | awk '{$1=$1; print}')
+	[ "$process_uid" = "$caller_uid" ] || return 1
+	bound=$(lsof -nP -a -p "$master_pid" -iTCP:$port -sTCP:LISTEN -Fn 2>/dev/null | sed -n 's/^n//p')
+	[ "$bound" = 127.0.0.1:$port ]
 }
 open_dashboard() {
-	port=\$(printf '%s\n' "\$1" | sed -n 's#^http://127[.]0[.]0[.]1:\([0-9][0-9]*\)/.*#\1#p')
-	port=\${port:-8484}
-	if ! { [ "\$port" -ge 1 ] && [ "\$port" -le 65535 ]; } 2>/dev/null; then
-		echo "tego: invalid dashboard port in \$1. Run tego dashboard to try again." >&2
+	port=$(printf '%s\n' "$1" | sed -n 's#^http://127[.]0[.]0[.]1:\([0-9][0-9]*\)/.*#\1#p')
+	port=${port:-8484}
+	if ! { [ "$port" -ge 1 ] && [ "$port" -le 65535 ]; } 2>/dev/null; then
+		echo "tego: invalid dashboard port in $1. Run tego dashboard to try again." >&2
 		return 1
 	fi
-	caller_uid=\$(id -u)
-	vm_dir=\$(limactl list --format '{{.Dir}}' "\$vm") || {
+	caller_uid=$(id -u)
+	vm_dir=$(limactl list --format '{{.Dir}}' "$vm") || {
 		echo "tego: the dashboard tunnel is not up. Could not find this VM's SSH configuration." >&2
 		return 1
 	}
-	ssh_config="\$vm_dir/ssh.config"
-	control="\$vm_dir/tego-dashboard.sock"
-	[ "\$port" = 8484 ] || control="\$vm_dir/tego-dashboard-\$port.sock"
+	ssh_config="$vm_dir/ssh.config"
+	control="$vm_dir/tego-dashboard.sock"
+	[ "$port" = 8484 ] || control="$vm_dir/tego-dashboard-$port.sock"
 	if ! control_dir_private; then
-		echo "tego: the dashboard tunnel is not up. Unsafe socket folder \$vm_dir; it must belong to you and other users must not be allowed to write to it. Fix its ownership and write permissions, then run tego dashboard." >&2
+		echo "tego: the dashboard tunnel is not up. Unsafe socket folder $vm_dir; it must belong to you and other users must not be allowed to write to it. Fix its ownership and write permissions, then run tego dashboard." >&2
 		return 1
 	fi
-	if { [ -e "\$control" ] || [ -L "\$control" ]; } && ! control_private; then
-		echo "tego: the dashboard tunnel is not up. Socket \$control is linked or not owned by you; move it away yourself, then try again." >&2
+	if { [ -e "$control" ] || [ -L "$control" ]; } && ! control_private; then
+		echo "tego: the dashboard tunnel is not up. Socket $control is linked or not owned by you; move it away yourself, then try again." >&2
 		return 1
 	fi
 	if ! tunnel_ready; then
 		# Never open the URL when some other listener holds the port, or forwarding fails.
-		listeners=\$(lsof -nP -iTCP:\$port -sTCP:LISTEN -Fp 2>/dev/null)
+		listeners=$(lsof -nP -iTCP:$port -sTCP:LISTEN -Fp 2>/dev/null)
 		# Only an owned, non-answering socket in our private folder is a leftover.
 		# Keep the stable path so the next invocation can find and reuse the new master.
-		if [ -z "\$listeners" ] && [ -e "\$control" ] &&
-			! ssh -F "\$ssh_config" -S "\$control" -O check "lima-\$vm" >/dev/null 2>&1; then
-			rm -f "\$control" 2>/dev/null
+		if [ -z "$listeners" ] && [ -e "$control" ] &&
+			! ssh -F "$ssh_config" -S "$control" -O check "lima-$vm" >/dev/null 2>&1; then
+			rm -f "$control" 2>/dev/null
 		fi
-		if [ -n "\$listeners" ] || [ -e "\$control" ] || ! ssh -F "\$ssh_config" -S "\$control" -M -f -N \
+		if [ -n "$listeners" ] || [ -e "$control" ] || ! ssh -F "$ssh_config" -S "$control" -M -f -N \
 			-o ExitOnForwardFailure=yes -o ClearAllForwardings=no \
-			-L 127.0.0.1:\$port:127.0.0.1:\$port "lima-\$vm" >/dev/null 2>&1 || ! tunnel_ready; then
-			if [ "\$port" != 8484 ] && [ -n "\$listeners" ]; then
-				echo "tego: port \$port is in use. Lima forwards the VM's ports to the Mac itself; Tego's own tunnel is set up for 8484." >&2
-				echo "Put the dashboard back on 8484, or run limactl stop \$vm, then limactl edit \$vm and add under portForwards:" >&2
-				printf '  - guestPort: %s\n    ignore: true\n' "\$port" >&2
-				echo "Then run limactl start \$vm and tego dashboard. Other dashboard ports have not yet been verified on a Mac." >&2
+			-L 127.0.0.1:$port:127.0.0.1:$port "lima-$vm" >/dev/null 2>&1 || ! tunnel_ready; then
+			if [ "$port" != 8484 ] && [ -n "$listeners" ]; then
+				echo "tego: port $port is in use. Lima forwards the VM's ports to the Mac itself; Tego's own tunnel is set up for 8484." >&2
+				echo "Put the dashboard back on 8484, or run limactl stop $vm, then limactl edit $vm and add under portForwards:" >&2
+				printf '  - guestPort: %s\n    ignore: true\n' "$port" >&2
+				echo "Then run limactl start $vm and tego dashboard. Other dashboard ports have not yet been verified on a Mac." >&2
 			else
-			echo "tego: the dashboard tunnel is not up. Port \$port must be free or held by this VM's dashboard tunnel; try again." >&2
+			echo "tego: the dashboard tunnel is not up. Port $port must be free or held by this VM's dashboard tunnel; try again." >&2
 			fi
 			return 1
 		fi
 	fi
-	open "\$1" 2>/dev/null || { echo "tego: could not open the dashboard in your browser." >&2; return 1; }
+	open "$1" 2>/dev/null || { echo "tego: could not open the dashboard in your browser." >&2; return 1; }
 }
 # tego start (and tego setup) runs the guide in the VM, which starts the dashboard there; then the dashboard opens in the
 # Mac's browser, and the person is left in the VM, in the project, where the commands the guide printed work. When the
 # guide fails or is stopped, the person is back on the Mac with its error, never in a shell with no next step.
-if { [ "\${1:-}" = start ] || [ "\${1:-}" = setup ]; } && [ \$# -eq 1 ]; then
-	sub=\$1 # start or setup: a fixed word, put into the VM's command line here
-	limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet env TEGO_ON_MAC=1 "\$HOME/.local/bin/tego" '"\$sub" || exit \$?
-	url=\$(limactl shell --workdir / "\$vm" sh -c 'grep -o "http://127[.]0[.]0[.]1:[0-9][0-9]*/[^ ]*" "\$HOME/.tego/dashboard.log" 2>/dev/null | head -n 1')
-	if [ -z "\$url" ]; then
+if { [ "${1:-}" = start ] || [ "${1:-}" = setup ]; } && [ $# -eq 1 ]; then
+	sub=$1 # start or setup: a fixed word, put into the VM's command line here
+	limactl shell --workdir / "$vm" sh -c 'cd "$HOME" && test -x "$HOME/.local/bin/tego" && export PATH="$HOME/.local/bin:$PATH" && exec systemd-run --user --scope --quiet env TEGO_ON_MAC=1 "$(command -v tego)" '"$sub" || exit $?
+	url=$(limactl shell --workdir / "$vm" sh -c 'grep -o "http://127[.]0[.]0[.]1:[0-9][0-9]*/[^ ]*" "$HOME/.tego/dashboard.log" 2>/dev/null | head -n 1')
+	if [ -z "$url" ]; then
 		echo "tego: the dashboard is not running. Run tego dashboard to start it." >&2
-	elif ! open_dashboard "\$url" 2>/dev/null; then
-		echo "tego: could not open the dashboard at \$url. Run tego dashboard to try again." >&2
+	elif ! open_dashboard "$url" 2>/dev/null; then
+		echo "tego: could not open the dashboard at $url. Run tego dashboard to try again." >&2
 	fi
-	exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME"; d=\$(cat "\$HOME/.config/tego/last-project" 2>/dev/null); [ -d "\$d" ] && cd "\$d"; exec systemd-run --user --scope --quiet bash -l'
+	exec limactl shell --workdir / "$vm" sh -c 'cd "$HOME"; d=$(cat "$HOME/.config/tego/last-project" 2>/dev/null); [ -d "$d" ] && cd "$d"; exec systemd-run --user --scope --quiet bash -l'
 fi
 # tego dashboard (and tego serve --open): the one dashboard runs in the VM and opens in the Mac's browser.
-if { [ "\${1:-}" = dashboard ] && [ \$# -eq 1 ]; } || { [ "\${1:-}" = serve ] && [ "\${2:-}" = --open ] && [ \$# -eq 2 ]; }; then
+if { [ "${1:-}" = dashboard ] && [ $# -eq 1 ]; } || { [ "${1:-}" = serve ] && [ "${2:-}" = --open ] && [ $# -eq 2 ]; }; then
 	# the VM's tego dashboard says whether one is running and asks before starting a new one; the Mac opens its link
-	limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet env TEGO_ON_MAC=1 "\$HOME/.local/bin/tego" dashboard' || exit \$?
-	url=\$(limactl shell --workdir / "\$vm" sh -c 'grep -o "http://127[.]0[.]0[.]1:[0-9][0-9]*/[^ ]*" "\$HOME/.tego/dashboard.log" 2>/dev/null | head -n 1')
-	if [ -z "\$url" ]; then
+	limactl shell --workdir / "$vm" sh -c 'cd "$HOME" && test -x "$HOME/.local/bin/tego" && export PATH="$HOME/.local/bin:$PATH" && exec systemd-run --user --scope --quiet env TEGO_ON_MAC=1 "$(command -v tego)" dashboard' || exit $?
+	url=$(limactl shell --workdir / "$vm" sh -c 'grep -o "http://127[.]0[.]0[.]1:[0-9][0-9]*/[^ ]*" "$HOME/.tego/dashboard.log" 2>/dev/null | head -n 1')
+	if [ -z "$url" ]; then
 		echo "The dashboard did not start. Run tego dashboard to try again. For details, run tego shell, then cat ~/.tego/dashboard.log" >&2
 		exit 1
 	fi
-	open_dashboard "\$url" || exit 1
+	open_dashboard "$url" || exit 1
 	echo "  ✓ Opened it in your browser"
 	exit 0
 fi
-exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet "\$HOME/.local/bin/tego" "\$@"' tego "\$@"
+exec limactl shell --workdir / "$vm" sh -c 'cd "$HOME" && test -x "$HOME/.local/bin/tego" && export PATH="$HOME/.local/bin:$PATH" && exec systemd-run --user --scope --quiet "$(command -v tego)" "$@"' tego "$@"
 EOF
 			chmod 0755 "$shim"
 			case ":${PATH}:" in
@@ -514,6 +674,17 @@ TEGO_VERSION="$1" TEGO_BASE_URL="$2" TEGO_CHECKSUMS_SHA256="$4" sh "$work/instal
 	fi
 	echo ""
 	exit 0
+}
+
+# shell_word prints $1 as one shell word a person can paste: as it is when it holds only characters no shell treats
+# specially, else in double quotes with the four characters that stay special there escaped.
+shell_word() {
+	case "$1" in
+		*[!A-Za-z0-9_./:@%+=,~-]* | "")
+			printf '"%s"\n' "$(printf '%s' "$1" | sed 's/[\\"$`]/\\&/g')"
+			;;
+		*) printf '%s\n' "$1" ;;
+	esac
 }
 
 # Everything below runs from main, called on the script's last line. Piped into sh (`curl -fsSL .../install.sh | sh`,
@@ -624,7 +795,11 @@ main() {
 	fetch() {
 		set +e
 		# --proto keeps a redirect (or a base URL) from leaving https; file is for the tests' local mirror.
-		fetched_status=$(curl -fsSL --proto '=https,file' --proto-redir '=https' --connect-timeout 10 --max-time "$max_time" -o "$2" -w '%{http_code}' "$1")
+		protocols='=https,file'
+        if [ "${TEGO_HOST_KIND:-}" = windows ] && [ "${TEGO_TEST_HTTP:-}" = 1 ] && [ -n "${TEGO_CHECKSUMS_SHA256:-}" ]; then
+            protocols='=https,file,http'
+        fi
+        fetched_status=$(curl -fsSL --proto "$protocols" --proto-redir '=https' --connect-timeout 10 --max-time "$max_time" -o "$2" -w '%{http_code}' "$1")
 		fetched_rc=$?
 		set -e
 		echo "${fetched_rc}:${fetched_status}"
@@ -867,14 +1042,20 @@ main() {
 	# one; docs/INSTALL.md "Check the machine"), then the one next command in tego's own hint format (a line starting
 	# "next: ", the command on the line after it, indented two spaces).
 	echo "Quickstart: https://github.com/${repo_owner}/${repo_name}/blob/main/docs/QUICKSTART.md"
+	# tego_cmd is how the next command names tego: by its bare name when this shell finds it there, and by the full path
+	# where it does not. The installer cannot change the PATH of the shell that started it, so a bare name printed right
+	# after the install was "command not found" for a person who had not yet typed the export line (acceptance 4).
+	tego_cmd=tego
 	case ":${PATH}:" in
 		*":${prefix}:"*) ;;
 		*)
+			tego_cmd=$(shell_word "$installed")
 			echo ""
 			case "${SHELL:-}" in
 				*/fish)
 					echo "${prefix} is not on your PATH. Run this line; fish keeps it for later shells too:"
 					echo "  fish_add_path \"${prefix}\""
+					echo "Until you do, the command below names tego by its full path."
 					;;
 				*)
 					# shellcheck disable=SC2088 # the profile is named for a person to read, not expanded
@@ -885,30 +1066,43 @@ main() {
 					esac
 					echo "${prefix} is not on your PATH. Run this line, and add it to ${profile} too:"
 					echo "  export PATH=\"${prefix}:\$PATH\""
+					echo "Until you do, the command below names tego by its full path."
 					;;
 			esac
 			;;
 	esac
+	# A tego that opens a user scope itself makes a shell outside the user manager's cgroup no blocker: tego setup
+	# rehearses that entry from this shell and says whether it works; the manual line is the one fix when it does not
+	# (ADR 0142, amended 2026-11-19, round 4). An older tego needs the manual shell first.
+	installed_help=$("$installed" help -a </dev/null 2>/dev/null || :)
 	if [ -n "${SSH_CONNECTION:-}" ]; then
 		echo ""
-		echo "over SSH, tego starts no run, not even tego watch, until you open a shell in your user manager's cgroup:"
-		echo "  systemd-run --user --scope bash"
+		if printf '%s\n' "$installed_help" | grep -Eq '^ {2,3}run .*opens a user scope'; then
+			echo "this shell is outside your user manager's cgroup: run, watch and test open a user scope for each run; the setup command below checks that this works from here, and if it does not, the one fix is a shell inside it:"
+			echo "  systemd-run --user --scope bash"
+		else
+			echo "over SSH, this release needs a shell in your user manager's cgroup before a run:"
+			echo "  systemd-run --user --scope bash"
+		fi
 	fi
+	# sudo replaces PATH with its own secure_path, which has no ~/.local/bin (and on AlmaLinux no /usr/local/bin):
+	# A bare Tego program name after sudo does not find this copy, and a copy in this home is closed to an account that cannot
+	# enter it. One line, before the next step, which stays last.
+	echo "to run tego as another account (sudo -u <account>), install both binaries in that account's ~/.local/bin, or in a root-owned shared directory and adjust the service units; type its absolute path after sudo, which does not search ~/.local/bin (docs/INSTALL.md, \"A service account\")."
 	echo ""
 	# tego start walks a new user through the rest; tego setup, before it, says which step this machine is on (ADR 0142). A
 	# release made before them lacks both, and this script installs any tag, so the installed tego's own
 	# command list decides: the line never names a command that tego lacks. Its stdin is not the script's (see the
 	# version check above).
-	commands=$("$installed" help -a </dev/null 2>/dev/null || true)
-	if printf '%s\n' "$commands" | grep -Eq '^ {2,3}start '; then
+	if printf '%s\n' "$installed_help" | grep -Eq '^ {2,3}start '; then
 		echo "next: set up Tego and connect your first agent:"
-		echo "  tego start"
-	elif printf '%s\n' "$commands" | grep -Eq '^ {2,3}setup '; then
+		echo "  ${tego_cmd} start"
+	elif printf '%s\n' "$installed_help" | grep -Eq '^ {2,3}setup '; then
 		echo "next: see where this machine is, step by step, and what to type next:"
-		echo "  tego setup"
+		echo "  ${tego_cmd} setup"
 	else
 		echo "next: check this machine:"
-		echo "  tego doctor"
+		echo "  ${tego_cmd} doctor"
 	fi
 }
 

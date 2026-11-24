@@ -1,32 +1,45 @@
 // SPDX-License-Identifier: Apache-2.0
-// place.js: keeping the reader's place, on top of live.js (it merges with window.tegoLive) and of a page that works
-// without either: every view is a plain link or GET form, and every action a plain form.
 (function () {
   'use strict';
-  // A filter chip, a facet, a tab, a pager or a GET form changes the view of the page it is on (the same address with
-  // another query, or a run page's tab). Loading that page anew put the reader back at the top. Instead a plain
-  // left-click on such a link, or the form's submit, inside <main> fetches the view's page and merges its <main> into
-  // this one node by node, as live.js merges a live region (with no "new" mark, and the forms taking the new page's
-  // values), and the layout's live regions outside <main> with it. The address goes in history (pushState), so the
-  // view is still a link to share and Back brings the earlier one back at its own scroll (popstate). The control stays
-  // where it stood in the window (when what is above it changed height, the page scrolls by the difference), keeps
-  // the focus, and a polite live region says the new count. A link with a modifier key, another button, a target, a
-  // download (CSV, JSONL), a #place or another page's address keeps the browser's own behaviour; a fetch that fails or
-  // stalls, a redirect or an answer that is not a dashboard page loads the page as a plain link would. Without
-  // JavaScript the links and forms load their page as they always did. A page live.js follows nothing on (MCP tools,
-  // Model routes: no live regions) changes its view in place the same way.
   var L = window.tegoLive, body = document.body;
   if (!L) return; // no live.js on this page: nothing to build on
+  function strips() {
+    document.querySelectorAll('.tabs').forEach(function (t) {
+      var cur = t.querySelector('[aria-current="page"]'), end = function () { t.classList.toggle('at-end', t.scrollLeft + t.clientWidth >= t.scrollWidth - 4); };
+      if (cur && (cur.offsetLeft + cur.offsetWidth > t.scrollLeft + t.clientWidth || cur.offsetLeft < t.scrollLeft)) t.scrollLeft = cur.offsetLeft - 16;
+      if (!t.tegoStrip) { t.tegoStrip = true; t.addEventListener('scroll', end, { passive: true }); }
+      end();
+    });
+  }
+  var liveAfter = L.after;
+  L.after = function () { liveAfter(); strips(); };
+  strips();
+  var seenAsks = Object.create(null);
+  (L.initialAskKeys || '').split(' ').forEach(function (k) { if (k) seenAsks[k] = true; });
+  function askSay() {
+    var nav = document.querySelector('.nav[data-ask-keys]'), say = document.getElementById('ask-say'), fresh = false;
+    if (!nav) return; // a missing navigation strip is not an empty set of pending requests
+    var pending = Object.create(null);
+    nav.dataset.askKeys.split(' ').forEach(function (k) {
+      if (!k) return;
+      pending[k] = true;
+      if (!seenAsks[k]) fresh = true;
+    });
+    seenAsks = pending; // retain only pending keys; a request that leaves and returns is a new arrival
+    if (fresh && say) { say.textContent = ''; setTimeout(function () { say.textContent = 'A new request is waiting for you on Approvals.'; }, 60); }
+  }
+  askSay(); // catch arrivals while this script was loading, without announcing the first-painted requests
+  document.addEventListener('tego:merged', askSay);
+  document.addEventListener('tego:enter', askSay);
   var navGen = 0, navCtl = null, view = location.pathname + location.search, navT = 0, manual = false, STALL = 10000;
-  // spot is the history state of this view: the page's scroll, so Back and Forward can bring it back.
   function spot() { return { tego: 1, y: Math.round(window.scrollY) }; }
   function keepSpot() { try { history.replaceState(spot(), ''); } catch (x) { /* too many calls: the next one keeps it */ } }
-  // A link that changes this page's view: the same path (a chip, a facet, a pager), or a tab of the page's tab strip. A
-  // data-page link or form (a Revoke whose confirmation opens at the top) loads its page as a link does.
   function viewLink(e) {
     if (e.defaultPrevented || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return null;
     var a = e.target instanceof Element ? e.target.closest('a[href]') : null;
     if (!(a instanceof HTMLAnchorElement) || !a.closest('main')) return null;
+    var filter = a.hasAttribute('data-filter-open') && document.querySelector('dialog.filter-sheet');
+    if (filter && typeof filter.showModal === 'function') return null;
     if (a.hasAttribute('download') || a.hasAttribute('data-page') || (a.target && a.target !== '_self') || a.getAttribute('href').charAt(0) === '#') return null;
     var u = new URL(a.href, location.href), page = function (p) { return p.split('/').slice(0, 3).join('/'); };
     if (u.origin !== location.origin) return null;
@@ -51,11 +64,8 @@
     u.hash = '';
     e.preventDefault();
     var a = document.activeElement, mine = a && a !== body && f.contains(a);
-    // typed: the text of the field being typed in as sent, so what is typed while the view loads is kept (put).
     go(u, { ctrl: mine ? a : (sub || f), typed: mine && /^(INPUT|TEXTAREA)$/.test(a.tagName) ? { el: a, val: a.value } : null });
   }
-  // where is el's place in <main>: its id, or the child indexes from <main> down, with its tag and text, so a view
-  // change that rebuilt it finds its twin.
   function where(el) {
     var m = document.querySelector('main'), path = [], n = el;
     for (; n && n !== m && n.parentElement; n = n.parentElement) path.unshift(Array.prototype.indexOf.call(n.parentElement.children, n));
@@ -71,8 +81,6 @@
     for (var j = 0; j < all.length; j++) if ((all[j].textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80) === w.text) return all[j];
     return null;
   }
-  // sheets loads the new view's stylesheets (a run page's Receipt tab has its own) before it is merged, so it never
-  // shows unstyled.
   function sheets(doc) {
     var have = {}, wait = [];
     document.querySelectorAll('link[rel="stylesheet"]').forEach(function (l) { have[l.href] = true; });
@@ -88,7 +96,6 @@
     });
     return Promise.all(wait);
   }
-  // pending shows that a view is on its way: after a moment, a thin bar at the top and the control dimmed.
   function pending(on, ctrl) {
     clearTimeout(navT);
     document.querySelectorAll('.nav-on').forEach(function (n) { n.classList.remove('nav-on'); });
@@ -100,16 +107,11 @@
   function go(u, o) {
     if (navCtl) navCtl.abort();
     var ctl = navCtl = window.AbortController ? new AbortController() : null, gen = ++navGen, stalled = false;
-    // From the first view change on, this document's history entries keep their scroll in their state: the browser's
-    // own restore would scroll a popstate's old content before its view is fetched. A page load keeps the browser's
-    // (leave() sets it back), which restores from the first paint, before this file runs.
     if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
     manual = true;
     if (!o.pop) keepSpot(); // this view's scroll, for Back
     L.hold(true);
     pending(true, o.ctrl);
-    // A dashboard that stops answering would leave the busy bar on and the live updates held: after STALL the fetch is
-    // given up and the page loaded as the link would (the catch below).
     var slow = ctl ? setTimeout(function () { if (gen === navGen) { stalled = true; ctl.abort(); } }, STALL) : 0;
     o.slow = slow;
     fetch(u.pathname + u.search, { credentials: 'same-origin', cache: 'no-store', signal: ctl ? ctl.signal : undefined })
@@ -120,7 +122,6 @@
       .then(function (html) {
         if (gen !== navGen) return;
         var doc = new DOMParser().parseFromString(html, 'text/html');
-        // A page of the same kind: followed live (a signature) as this one is, or not (MCP tools, Model routes).
         if (!doc.querySelector('main') || !doc.body.dataset.sig !== !body.dataset.sig) throw new Error('a page');
         return sheets(doc).then(function () { if (gen === navGen) put(doc, u, o); });
       })
@@ -136,17 +137,12 @@
   function put(doc, u, o) {
     var om = document.querySelector('main'), nm = doc.querySelector('main'), root = document.documentElement;
     var ctrl = o.ctrl && o.ctrl.isConnected ? o.ctrl : null, w = ctrl ? where(ctrl) : null;
-    // A pager's next page is read from its first row: the list it pages stays where it stood, or comes up to the top
-    // of the window when its top was above it. Any other control stays where it stood.
     var pager = ctrl && (ctrl.closest('.runs-pager') || ctrl.id === 'tl-older') ? ctrl.closest('section, .panel') : null;
     var pw = pager ? where(pager) : null, ptop = pager ? pager.getBoundingClientRect().top : 0;
     var before = ctrl ? ctrl.getBoundingClientRect().top : null, focused = ctrl && document.activeElement === ctrl;
     var same = u.pathname + u.search === view, anc = [], n, typing = document.activeElement, typed = null;
     clearTimeout(o.slow);
-    // The control's ancestors in <main>, nearest first, with their place: when the control goes with the view (the
-    // last query chip's ×, Clear filters), the nearest one the merge kept holds the place and the focus instead.
     for (n = ctrl && ctrl.parentElement; n && n !== om && om.contains(n); n = n.parentElement) anc.push({ el: n, top: n.getBoundingClientRect().top });
-    // Text typed in the search field while the view was on its way is the reader's, not the server's older value.
     if (o.typed && typing === o.typed.el && typing.value !== o.typed.val) typed = typing.value;
     document.dispatchEvent(new CustomEvent('tego:leave')); // a page's own script (logs.js) lets go of the old view
     root.style.overflowAnchor = 'none'; // the place is kept here, not by the browser's scroll anchoring as well
@@ -178,9 +174,6 @@
     keepSpot();
     requestAnimationFrame(function () { root.style.overflowAnchor = ''; });
     if (!o.pop) {
-      // A pager's focus goes to the list it paged, which shows from its first row (its link's twin can stand thousands
-      // of pixels below, where the next Tab or Enter would act out of sight); a control the view removed hands it to
-      // the first field or link of the nearest part the merge kept, when that is in the window, or to <main>.
       if (list) { list.setAttribute('tabindex', '-1'); list.focus({ preventScroll: true }); }
       else if (el && (focused || el !== document.activeElement)) el.focus({ preventScroll: true });
       else if (!el && ctrl) near(kept && kept.el).focus({ preventScroll: true });
@@ -192,9 +185,6 @@
     document.dispatchEvent(new CustomEvent('tego:enter')); // and takes the new one
     L.hold(false);
   }
-  // softKeys keys, for one merge, each <details> whose class names it alone in both views (Logs' Filters panel), so the
-  // merge keeps the open one even when a sibling before it came or went (the query chips' row); returns the keyed old
-  // ones, whose key is taken off after (the server's pages carry none).
   function softKeys(om, nm) {
     var out = [];
     om.querySelectorAll('details[class]:not([id]):not([data-k])').forEach(function (d) {
@@ -208,7 +198,6 @@
     });
     return out;
   }
-  // near is the first field, button or link in part that is in the window, or <main>.
   function near(part) {
     var m = document.querySelector('main'), c = part ? part.querySelectorAll('input:not([type="hidden"]), select, textarea, button, a[href]') : [];
     for (var i = 0; i < c.length; i++) {
@@ -217,7 +206,6 @@
     }
     return m;
   }
-  // say tells a screen reader the new view: the chosen item of the control's group and the page's count line.
   function say(el) {
     var box = document.getElementById('nav-say'), parts = [], g, cur, c;
     if (!box) {
@@ -250,46 +238,17 @@
     go(new URL(location.href), { pop: true, y: s.y });
   });
   (function () { // a reload, or Back to this page from another, comes back at its scroll: the browser's own restore
-    // does it at the first paint; this one is for an entry it did not (one a view change pushed, loaded anew), and
-    // leaves a page the reader has already moved alone.
     var nt = window.performance && performance.getEntriesByType ? performance.getEntriesByType('navigation')[0] : null, s = history.state;
     if (s && s.tego && !location.hash && nt && (nt.type === 'reload' || nt.type === 'back_forward') && window.scrollY < 1) window.scrollTo(0, s.y || 0);
   })();
-  // room: the floating ask banner (mvp.css) takes no space, so it lay over the top of the page for as long as an ask
-  // waited. While it is up the page holds as much room above its content (--ask-room) and the window scrolls by the
-  // same amount: nothing moves on the screen, and scrolling up shows what the banner covers. A page that loads with the
-  // banner up gets the same room and the same scroll, so it opens as if the ask had come while it was open; a scroll
-  // the browser restored holds the room already. Room the reader is looking at when the banner leaves cannot be scrolled
-  // away, so it stays (spare) until the window has passed it. window.tegoRoom is the room, for the scripts that ask
-  // whether the reader is at the top.
-  var held = 0, spare = false;
-  function room(e) {
-    var b = document.getElementById('ask-banner'), up = b && !b.classList.contains('ab-leave') && getComputedStyle(b).position === 'fixed';
-    var h = up ? Math.ceil(b.getBoundingClientRect().height) + 8 : 0, y = window.scrollY;
-    spare = h < held && y < held - h;
-    if (h === held || spare) return;
-    document.documentElement.style.setProperty('--ask-room', h + 'px');
-    window.scrollTo(0, e === true ? Math.max(y, h) : y + h - held);
-    held = window.tegoRoom = h;
-  }
-  document.addEventListener('tego:merged', room);
-  document.addEventListener('tego:enter', room);
-  window.addEventListener('resize', room);
-  window.addEventListener('scroll', function () { if (spare) room(); }, { passive: true });
-  room(true);
   keepSpot();
   var spotT = 0;
   window.addEventListener('scroll', function () { clearTimeout(spotT); spotT = setTimeout(keepSpot, 250); }, { passive: true });
-  // Leaving the page (a reload, a link, a form's post): the entry's scroll goes in its state and the browser restores
-  // it itself on the way back, from the first paint (with 'manual' the top showed first, then a jump). Back to a page
-  // kept whole (the back/forward cache) takes up 'manual' again for its own views.
   function leave() { keepSpot(); if ('scrollRestoration' in history) history.scrollRestoration = 'auto'; }
   window.addEventListener('beforeunload', leave); // before a reload takes the entry's state (pagehide is too late)
   window.addEventListener('pagehide', leave);
   window.addEventListener('pageshow', function (e) { if (e.persisted && manual && 'scrollRestoration' in history) history.scrollRestoration = 'manual'; });
 
-  // A GET form changes the view; a form posted as a plain form keeps its place. live.js answers the forms it posts in
-  // the background first (Allow once, Deny, Block now, the rule forms): those are defaultPrevented here.
   document.addEventListener('submit', function (e) {
     var f = e.target, sub = e.submitter;
     if (!(f instanceof HTMLFormElement) || e.defaultPrevented || !window.URLSearchParams) return;
@@ -298,10 +257,6 @@
   });
   document.addEventListener('tego:here', function () { view = location.pathname + location.search; keepSpot(); }); // an answer's page
 
-  // keepPlace: a form posted as a plain form (Pause, Resume, Lift, MCP tools' and Model routes' forms)
-  // answers 303 back to its page, which loaded at the top. Its place goes in this tab's sessionStorage first, and the
-  // page it comes back to (the same path, within a few seconds) scrolls the form back to where it stood; the line the
-  // action left is said in a toast when its banner is out of sight above.
   function keepPlace(f, sub) {
     if ((f.target && f.target !== '_self') || !f.closest('main')) return;
     var el = sub || f;
@@ -323,9 +278,6 @@
     }
   })();
 
-  // steady keeps the Overview's two lists, which grow at the top, from moving a row as it is reached for: live.js leaves
-  // such a list alone while the pointer or the keyboard's focus is in it, for STEADY at most, so a pointer left resting
-  // there does not stop the page following its runs.
   var STEADY = 5000;
   L.steady = function (el) {
     if (!/^r-ov-(recent|refusals)$/.test(el.dataset.live) || !(el.matches(':hover') || el.contains(document.activeElement))) { el.tegoWait = 0; return false; }
@@ -333,3 +285,38 @@
     return Date.now() - el.tegoWait < STEADY;
   };
 })();
+
+(function () {
+  'use strict';
+  var opener = null;
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest('[data-filter-open]');
+    var sheet = document.querySelector('dialog.filter-sheet');
+    if (a && sheet && typeof sheet.showModal === 'function' && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.button === 0) {
+      e.preventDefault(); opener = a; sheet.showModal();
+    }
+    if (e.target.closest('[data-filter-close]') && sheet) sheet.close();
+  });
+  document.addEventListener('close', function (e) {
+    if (e.target.matches('dialog.filter-sheet') && opener && opener.isConnected) opener.focus();
+  }, true);
+  document.addEventListener('tego:leave', function () {
+    var sheet = document.querySelector('dialog.filter-sheet[open]');
+    if (sheet) sheet.close();
+  });
+})();
+
+document.addEventListener('keydown', function (e) {
+  var sheet = document.querySelector('dialog.filter-sheet[open]');
+  if (!sheet || e.key !== 'Tab') return;
+  var stops = Array.from(sheet.querySelectorAll('a[href],button,input,select,textarea,summary,[tabindex]')).filter(function (el) {
+    if (el.disabled || el.tabIndex < 0 || !el.getClientRects().length) return false;
+    for (var d = el.parentElement; d && d !== sheet; d = d.parentElement) {
+      if (d.tagName === 'DETAILS' && !d.open && !d.querySelector('summary').contains(el)) return false;
+    }
+    return true;
+  });
+  var first = stops[0], last = stops[stops.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});

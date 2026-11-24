@@ -1,0 +1,81 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* The optional frame contains evidence and navigation, never a second page. */
+.gf { display: grid; gap: var(--space-5); min-width: 0; }
+.gf-rail { background: var(--c-surface); border: var(--line) solid var(--c-border); border-radius: var(--radius-lg); padding: var(--space-4); }
+.gf-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.gf a, .gf summary, .gf-product > summary { touch-action: manipulation; }
+.gf-leave, .gf-record a, .gf-bar noscript a { display: inline-flex; align-items: center; min-height: var(--target); min-width: var(--target); }
+.gf-history > summary, .gf-options > summary, .gf-evidence > summary, .gf-record > summary, .gf-product > summary { cursor: pointer; padding: var(--space-2) 0; min-height: var(--target); }
+.gf-history form { margin-top: var(--space-3); }
+.gf-steps { list-style: none; display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: var(--space-3); padding: 0; margin: var(--space-3) 0; }
+.gf-steps li { min-width: 0; border-top: var(--meter-h) solid var(--c-border); }
+.gf-steps li.done { border-top-color: var(--c-text3); }
+.gf-steps li.now { border-top-color: var(--c-current); }
+.gf-steps a { display: grid; gap: var(--space-2); color: var(--c-text); text-decoration: none; padding: var(--space-3) 0; min-height: var(--target); }
+.gf-steps a:hover .gs-t { text-decoration: underline; }
+.gs-t { display: flex; align-items: center; gap: var(--space-1); font-weight: var(--weight-semibold); }
+.gs-f { color: var(--c-text2); font-size: var(--text-sm); overflow-wrap: anywhere; }
+.gf-evidence li { margin-bottom: var(--space-4); }
+.gf-evidence p { margin: var(--space-2) 0; }
+.gf-question { display: grid; gap: var(--space-4); max-width: var(--measure); min-width: 0; }
+.gf-question h1, .gf-question p { margin: 0; }
+.gf-question h1 { text-wrap: balance; }
+.gf-question .cli { margin: 0; min-width: 0; }
+.gf-question .cli code { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+.gf-status { border-left: var(--meter-h) solid var(--c-control); padding: var(--space-2) var(--space-3); color: var(--c-text2); }
+.gf-status[data-state="blocked"], .gf-status[data-state="not-known"] { border-color: var(--c-danger); }
+.gf-bar { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; padding: var(--space-3) 0; border-top: var(--line) solid var(--c-border); }
+.gf-bar noscript { flex-basis: 100%; }
+.gf-record { padding: var(--space-4); background: var(--c-surface); border: var(--line) solid var(--c-border); border-radius: var(--radius); }
+/* Three recorded facts use the same compact label/value rhythm as phone detail rows. */
+.gf-facts { display: grid; grid-template-columns: auto minmax(0,1fr); gap: var(--space-3); margin: 0; }
+.gf-facts dt { font-weight: var(--weight-semibold); }
+.gf-facts dd { margin: 0; overflow-wrap: anywhere; }
+.gf-question .gf-facts + .soft { font-size: var(--text-sm); }
+.gf-record code { white-space: pre-wrap; overflow-wrap: anywhere; }
+.gf-record p { margin: var(--space-3) 0; }
+.gf-refusal { padding: var(--space-3) 0; border-top: var(--line) solid var(--c-border); overflow-wrap: anywhere; }
+.gf-product { min-width: 0; }
+.gf-product-body { display: grid; min-width: 0; gap: var(--space-5); }
+.gf-offer { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+/* The offer to start the guide never takes the first screen from a request that needs a person (the dashboard's first-screen
+   rule for phones): at 600 px and below the page lists it after its own content. */
+@media screen and (max-width: 600px) { .page > .lr:has(> .gf-offer) { order: 99; } }
+/* An empty guide region takes no row of the page's flex gap, so a page without a guide sits where it did without the region. */
+.page > .lr[data-live="r-guide"]:empty { display: none; }
+@supports selector(::details-content) {
+  @media screen and (min-width: 601px) {
+    .gf-history > summary, .gf-product > summary { display: none; }
+    .gf-history::details-content, .gf-product::details-content { display: contents; content-visibility: visible; }
+  }
+}
+@media (max-width: 1100px) { .gf-steps { grid-template-columns: repeat(3,minmax(0,1fr)); } }
+@media screen and (max-width: 600px) {
+  .gf { gap: var(--space-4); }
+  .gf-rail { padding: var(--space-3) var(--space-4); }
+  .gf-top { gap: var(--space-2); }
+  .gf-history > summary { font-size: var(--text-sm); }
+  .gf-steps { grid-template-columns: minmax(0,1fr); }
+  .gf-steps li { border-top: 0; border-left: var(--meter-h) solid var(--c-border); padding-left: var(--space-3); }
+  .gf-steps li.done { border-left-color: var(--c-text3); }
+  .gf-steps li.now { border-left-color: var(--c-current); }
+  .gf-question h1 { font-size: var(--text-2xl); }
+  .gf-question .cli { display: flex; flex-wrap: wrap; }
+  .gf-question .cli code { flex-basis: 100%; font-size: var(--text-sm); }
+  .gf-facts { font-size: var(--text-sm); gap: var(--space-2) var(--space-3); }
+  .gf-status { font-size: var(--text-sm); line-height: var(--leading); }
+  .gf-bar { position: static; }
+  .gf-bar > .btn { width: 100%; }
+  .gf-evidence a, .gf-record a { min-height: var(--target); }
+  .gf-product > summary { border-top: var(--line) solid var(--c-border); font-weight: var(--weight-semibold); }
+}
+@media (max-height: 30em) { .gf-bar { position: static; } }
+@media (forced-colors: active) {
+  .gf-rail, .gf-record, .gf-status, .gf-steps li { border-color: CanvasText; }
+  .gf-steps li.now { border-color: Highlight; }
+  .gf-refusal { border-top: var(--line) dashed CanvasText; }
+}
+@media print {
+  .gf-bar, .gf-leave, .gf-history form { display: none; }
+  .gf-history::details-content, .gf-product::details-content, .gf-record::details-content, .gf-evidence::details-content { display: contents; content-visibility: visible; }
+}

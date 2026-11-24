@@ -2,7 +2,7 @@
 # mounts-bindfile: ADR 0017 space 5, a bind mount of a part of a deny_read directory outside it (ADR 0025: identity is
 # the inode, not a name; ADR 0011's amendment of 2026-11-11). One file and one directory of the denied directory are
 # bound beneath a granted sibling (pub/keyfile from secret/key, pub/part from secret/deep) in the run's own mount namespace, made by the root runner before the
-# run starts (Fixture.Mounts). Landlock reaches the file through the granted sibling (enforce-landlock E32 (ii)). The
+# run starts (Fixture.Mounts). Landlock reached the file through the granted sibling (E32 (ii)) until 2026-11-19. The
 # decision plane's walk cannot hold the detached parts, so bpflsm refuses to start. Tier cgroup falls back to the
 # listener, which also refuses to start because a denied tree is visible elsewhere. compile --test sees names and
 # makes no mounts, so the cells have no compile row.
@@ -42,21 +42,19 @@ cells:
     op: read
     path: pub/keyfile
     canon: secret/key
+    # ADR 0011, amended 2026-11-19 (round 4): compile applies the deny entry to this other name the mount table gives
+    # its file, so tier landlock refuses it too (was E32 (ii)'s recorded limitation). Root-guest run of this cell owed.
     want:
-      landlock: allow
-      root: refused fs.deny_read[./secret/]
+      all: refused fs.deny_read[./secret/]
     no_compile: compile --test answers names and sees no mount; the alias is the deny_read's inode only in the run's namespace
-    exception: 'enforce-landlock E32 (ii): a deny_read target''s content reached through a bind mount beneath a granted sibling is readable through that name at tier landlock (recorded limitation; compile warns on mount points)'
-    exception_at: landlock
     source: 'ADR 0025 (identity is the inode); ADR 0011 (2026-11-11 amendment); enforce-landlock E32 (ii); enforce-cgroup-observe §6 item 24; enforce/cgroup ErrPlaneDetachedPart'
   - name: read-bind-alias-dir
     op: read
     path: pub/part/key2
     canon: secret/deep/key2
+    # ADR 0011, amended 2026-11-19 (round 4): compile applies the deny entry to this other name the mount table gives
+    # its file, so tier landlock refuses it too (was E32 (ii)'s recorded limitation). Root-guest run of this cell owed.
     want:
-      landlock: allow
-      root: refused fs.deny_read[./secret/]
+      all: refused fs.deny_read[./secret/]
     no_compile: compile --test answers names and sees no mount; the alias is the deny_read's inode only in the run's namespace
-    exception: 'enforce-landlock E32 (ii): a deny_read target''s content reached through a bind mount beneath a granted sibling is readable through that name at tier landlock (recorded limitation; compile warns on mount points)'
-    exception_at: landlock
     source: 'ADR 0025 (identity is the inode); ADR 0011 (2026-11-11 amendment); enforce-landlock E32 (ii); enforce/cgroup ErrPlaneDetachedPart'

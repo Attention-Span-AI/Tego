@@ -73,3 +73,21 @@ func Invisible(r rune) bool {
 	}
 	return unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r) || r >= 0xe0000 && r <= 0xe007f
 }
+
+// AskOpWord is the operation a held request asks about, as the word every page, sentence and terminal line shares. A
+// file open the contract's fs.ask entry holds is a write (that entry asks before a change), and one an
+// fs.ask_read entry holds is a read, so neither is worded "open": the word names what the person is asked to allow.
+// Any other op is returned as it is. The dashboard's linewords.AskOp is this function; the terminal commands, which
+// may not link the dashboard's packages, call it here.
+func AskOpWord(op, rule string) string {
+	if op != "open" {
+		return op
+	}
+	switch {
+	case strings.HasPrefix(rule, "fs.ask_read["):
+		return "read"
+	case strings.HasPrefix(rule, "fs.ask["):
+		return "write"
+	}
+	return op
+}

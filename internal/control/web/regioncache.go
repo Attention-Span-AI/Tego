@@ -20,7 +20,8 @@ import (
 // live block written but not yet confirmed, a rules file, a kept panel) is at most regionTTL old, and every POST
 // through this dashboard drops the cache before and after it acts (regionCache.bump), so a page refreshing after
 // its own Block now or Save never gets an answer rendered before it. Region answers carry the session's form
-// token, like the page: the cache is this server's, and a server has one session.
+// token, like the page: the cache is this server's, and a server has one session. Only known persons use it;
+// governed and uncertain peers and both builder preview routes bypass it before lookup (runkey.go, ADR 0123).
 
 // regionTTL is how long a region render answers other asks at the same live state.
 const regionTTL = time.Second
@@ -54,7 +55,7 @@ func cacheKey(path, rawQuery string, have map[string]string, st liveState) strin
 		names = append(names, n)
 	}
 	slices.Sort(names)
-	return path + "?" + rawQuery + "\x00" + strings.Join(names, ",") + "\x00" + st.Rev + "\x00" + st.Sig
+	return path + "?" + rawQuery + "\x00" + strings.Join(names, ",") + "\x00" + st.Rev + "\x00" + st.Sig + "\x00" + st.Crev
 }
 
 // get is the entry under key kept less than regionTTL before now in this generation, and the generation a render
@@ -97,5 +98,5 @@ func (s *Server) liveStateOf() (*ledgerview.Snapshot, liveState, bool) {
 	if err != nil {
 		return nil, liveState{}, false
 	}
-	return snap, stateOf(snap), true
+	return snap, s.stateWithChanges(snap), true
 }

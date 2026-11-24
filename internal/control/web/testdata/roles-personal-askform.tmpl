@@ -1,0 +1,20 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{define "askform"}}<div class="ask-d"><form class="stack-sm" method="post" action="/approvals/answer"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="run" value="{{.Run}}"><input type="hidden" name="ask" value="{{.AskID}}">
+      <button class="btn btn-block ask-btn" type="submit" name="decision" value="approve">{{template "i" "i-check"}}<span data-number="shared.policy">Allow once</span></button>
+      <button class="btn btn-block ask-btn" type="submit" name="decision" value="deny">{{template "i" "i-ban"}}Deny</button></form>
+      <details class="ask-more"><summary>More choices</summary><div class="stack-lg ask-more-in">
+      <form class="stack-sm" method="post" action="/approvals/answer"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="run" value="{{.Run}}"><input type="hidden" name="ask" value="{{.AskID}}"><input type="hidden" name="always" value="yes">
+      <button class="btn btn-block" type="submit" name="decision" value="approve">{{template "i" "i-check"}}Allow for this run</button>
+      <button class="btn btn-block" type="submit" name="decision" value="deny">{{template "i" "i-ban"}}Deny for this run</button>
+      <p class="soft ask-note"><span data-number="shared.policy">For this run: the same answer also goes to every later request to </span>{{.Verb}} the same target, until this run ends. It does not change the contract.</p></form>
+      {{if .Alternate}}<form class="stack-sm" method="post" action="/approvals/answer"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="run" value="{{.Run}}"><input type="hidden" name="ask" value="{{.AskID}}">
+      <label class="lbl" for="alt-{{.AskID}}">Give a stand-in file instead (an absolute path on this computer)</label><input class="input" id="alt-{{.AskID}}" type="text" name="file" required placeholder="/home/you/stand-in.txt" autocomplete="off" spellcheck="false">
+      <label class="check-inline"><input type="checkbox" name="always" value="yes"> also for later requests for the same file in this run</label>
+      <button class="btn btn-block" type="submit" name="decision" value="alternate">{{template "i" "i-eye"}}Give this file instead</button></form>{{end}}
+      <div class="cli-pair"><span class="lbl">Same in a terminal</span>
+      <span class="cli-k"><span data-number="shared.policy">Allow once</span></span><div class="cli cli-wrap"><code data-number-exclude="layout.fact-6">{{cmd (askline "approve" .Run .AskID "")}}</code></div>
+      <span class="cli-k">Deny</span><div class="cli cli-wrap"><code data-number-exclude="layout.fact-7">{{cmd (askline "deny" .Run .AskID "")}}</code></div>
+      <span class="cli-k">Allow for this run</span><div class="cli cli-wrap"><code data-number-exclude="layout.fact-8">{{cmd (askline "approve" .Run .AskID " --always")}}</code></div>
+      <span class="cli-k">Deny for this run</span><div class="cli cli-wrap"><code data-number-exclude="layout.fact-9">{{cmd (askline "deny" .Run .AskID " --always")}}</code></div>{{if .Alternate}}
+      <span class="cli-k">Stand-in file</span><div class="cli cli-wrap"><code>{{cmd (askline "alternate" .Run .AskID " --file <path>")}}</code></div>{{end}}</div>
+      </div></details></div>{{end}}

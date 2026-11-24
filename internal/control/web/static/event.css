@@ -20,7 +20,7 @@
 .ev-cut { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .ev-t { font-size: var(--text-xs); }
 .ev-search { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
-.ev-search .input { flex: 1 1 220px; min-width: 0; }
+.ev-search .input { flex: 1 1 220px; min-width: 0; text-overflow: ellipsis; }
 .ev-only { display: inline-flex; gap: 6px; align-items: center; font-size: var(--text-sm); color: var(--c-text2); }
 .ev-step { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); font-weight: var(--weight-semibold, 600); margin: 0; }
 .ev-n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: var(--radius-full); border: 1px solid var(--c-control); font-size: var(--text-xs); }
@@ -72,7 +72,7 @@
 .ev-live-out[data-state="recorded_only"] > .i { color: var(--c-info); }
 .ev-live-out[data-state="ended"] { color: var(--c-text3); }
 .ev-live-blk { color: var(--c-text2); }
-/* In force, "Live now on this run" is a green chip like Narrows above it (the colour of a change that took), and the
+/* In force, "Live now on this run" is a neutral chip like Narrows above it, and the
    line it came in force at follows it; the live update swaps the waiting line for it in place. */
 .ev-live-out:has(> .ev-live-chip) { flex-wrap: wrap; align-items: center; row-gap: 4px; }
 .ev-live-chip { flex: none; font-weight: var(--weight-medium); }
@@ -132,7 +132,7 @@
 .ev-undo-btn { white-space: normal; text-align: left; height: auto; min-height: 32px; max-width: 100%; }
 .ev-undo-what { overflow-wrap: anywhere; }
 .ev-cli code { white-space: pre-wrap; overflow-wrap: anywhere; }
-@media (max-width: 1000px) {
+@media (max-width: 1099px) {
   .ev-grid { grid-template-columns: minmax(0, 1fr); }
   .ev-side { grid-column: 1; grid-row: auto; position: static; max-height: none; overflow: visible; }
 }
@@ -187,3 +187,61 @@
    fig/"); a single name wider than the card still breaks rather than widen it. */
 .ev-act .ev-says li, .ev-act .ev-says-one, .ev-act .ev-scope-says, .ev-act .ev-eff, .ev-act .ev-ack, .ev-act .ev-now-row,
 .ev-act .ev-live-out, .ev-act .ev-btn-path, .ev-act .mono, .ev-act .banner .grow { overflow-wrap: break-word; }
+/* Rebuilt Event interior: full security values, quieter native technical detail. */
+.event-page { display: grid; gap: 24px; }
+.event-page .ev-headline h1 { font: 400 var(--text-2xl)/var(--leading-display) var(--font-display); letter-spacing: var(--tracking-display); }
+.event-page .ev-grid { gap: 16px; }
+.event-page .ev-grid > details { grid-column: 1; min-width: 0; }
+.event-page .event-details-body { display: grid; gap: 16px; padding: 16px; }
+.event-page .event-details > summary, .event-page .ev-technical > summary { cursor: pointer; padding: 12px 16px; min-height: 44px; font-size: 16px; font-weight: 600; }
+.event-page .ev-cut { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+.event-page .ev-ctx-row { padding: 12px 16px; }
+.event-page .ev-side { grid-row: 1 / span 5; }
+@media screen and (max-width: 1099px) {
+ .event-page .ev-side { grid-row: auto; }
+}
+.event-page .ev-technical .panel { border: 0; }
+.event-page .ev-wrap { overflow-wrap: anywhere; }
+@media screen and (max-width: 600px) {
+ .event-page { gap: 16px; }
+ .event-page .head { padding-bottom: 0; }
+ .event-page .head h1 { font-size: 28px; }
+ .event-page .ev-side { grid-row: auto; }
+ .event-page .ev-grid { display: flex; flex-direction: column; }
+ .event-page .ev-grid > * { width: 100%; }
+ .event-page .ev-side { order: 4; }
+ .event-page .ev-technical { order: 2; }
+ .event-page .event-details { order: 3; }
+ .event-page .kv { display: grid; grid-template-columns: minmax(0,1fr); gap: 8px; }
+ .event-page .kv dt { font-size: 13px; }
+ .event-page .kv dd { font-size: 16px; margin-bottom: 8px; line-height: 24px; }
+ .event-page .kv dd .mono { font-size: 16px; }
+ .event-page .ev-note, .event-page .ev-scope-says, .event-page .ev-eff, .event-page .ev-off, .event-page .ev-n, .event-page .ev-why summary, .event-page .ev-file summary { font-size: 13px; }
+ .event-page .ev-act .btn { min-height: 44px; }
+ .event-page a.link, .event-page a.n-link, .event-page .ev-chain a { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; }
+ .event-page .ev-lede { margin-top: 0; }
+ .event-page .ev-search .ev-only { min-height: 44px; }
+ .event-page .ev-ctx-row { grid-template-columns: 48px minmax(0,1fr); }
+ .event-page .ev-ctx-row .b { grid-column: 2; justify-self: start; }
+ .event-page .ev-ctx-row .ut { overflow-wrap: anywhere; }
+ .event-page .t .mono, .event-page .ev-t, .event-page .ev-hash, .event-page .ev-fkey, .event-page .ev-show code, .event-page .ev-show summary, .event-page .ev-chain-h, .event-page .ev-long { font-size: 13px; }
+ .event-page .ev-says .nb, .event-page .ev-act .nb { white-space: normal; overflow-wrap: anywhere; }
+ .event-page .ev-fields tbody th { font-size: 13px; }
+ .event-page .ev-fields td { font-size: 16px; }
+ .event-page .ev-fields td::before { display: none; }
+ .event-page .ev-scopes .chip { max-width: 100%; white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+ .event-page .ev-act .mono, .event-page .ev-act .ev-scope-says, .event-page .ev-act .ev-eff { overflow-wrap: anywhere; }
+}
+@media screen and (max-width: 600px) {
+ .event-page .panel-head h2 { font-size: 16px; }
+ .event-page .ev-run-meta { display: none; }
+ .event-page .ev-action-text { padding-bottom: 0; font-size: 16px; }
+ .event-page .ev-headline h1 { font-family: var(--font-display); font-weight: 400; }
+}
+@media print {
+ .event-page details::details-content { display: contents; content-visibility: visible; }
+}
+@media screen and (max-width: 600px) {
+ .event-page .raw { font-size: 13px; }
+ .event-page .cli .copy-btn { min-height: 44px; min-width: 44px; }
+}

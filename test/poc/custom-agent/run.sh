@@ -31,7 +31,8 @@ if [ -n "${DEMO_ROOT:-}" ]; then
 	root=$DEMO_ROOT
 	# The demo changes its root's mode and writes and removes files under it, so it takes only a directory that is
 	# new or empty: never one that holds anything of anyone's (DEMO_ROOT=$HOME, say).
-	if [ -n "$(ls -A -- "$root" 2>/dev/null)" ]; then
+	# find prints one x per entry: a captured ls -A would trim a name made only of newlines to nothing.
+	if [ -n "$(cd -- "$root" 2>/dev/null && find . -mindepth 1 -maxdepth 1 -printf x 2>/dev/null)" ]; then
 		echo "run.sh: DEMO_ROOT=$root is not empty; give a new or empty directory" >&2
 		exit 2
 	fi

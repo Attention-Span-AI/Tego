@@ -1,0 +1,43 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{define "r-guide"}}{{with .Tour}}
+<section class="gf" aria-labelledby="gf-title" data-step="{{.Step}}"{{if .Move}} data-guide-move="{{.Move}}"{{end}}>
+<div class="gf-rail">
+<div class="gf-top"><strong>Step {{.N}} of 6</strong><a data-page class="gf-leave" href="{{.Leave}}">Leave the guide</a></div>
+<details class="gf-history"><summary>All steps</summary><nav aria-label="Setup guide"><ol class="gf-steps">
+{{range .Steps}}<li data-step="{{.ID}}" data-state="{{.State}}" class="{{if eq .State "done"}}done{{end}} {{if eq .Key $.Tour.Step}}now{{end}}"><a data-page href="/guide?step={{.Key}}"{{if eq .Key $.Tour.Step}} aria-current="step"{{end}}><span class="gs-t">{{if eq .State "done"}}{{template "i" "i-check"}}{{end}}{{.N}}. {{.Label}}</span><span class="gs-f">{{stepWord .State}}: {{.Fact}}</span></a></li>{{end}}
+</ol></nav><p>Watch and Recorded share the same ended, verified run fact. Pick completes when the first run is recorded.</p><details class="gf-options"><summary>Guide details</summary><details class="gf-evidence"><summary>Where the facts came from</summary><ol>{{range .Words.Steps}}<li data-fact="{{.ID}}" data-state="{{.State}}"><strong>{{tourFactTitle .ID}}: {{stepWord .State}}</strong><p>{{.Fact}}</p><p class="soft">Read from {{.Source}}. {{.Link}}</p></li>{{end}}</ol>{{if .Words.NotKnown}}<h2>Not known</h2><ul>{{range .Words.NotKnown}}<li>{{.}}</li>{{end}}</ul>{{end}}</details>
+<p class="gf-next" data-rule="{{.Next.Rule}}">{{.Next.Text}}</p>{{if and .Pending .CanCopy}}<div class="cli"><code translate="no">{{.Next.Command}}</code></div>{{end}}
+{{template "guide-show" $}}<form method="post" action="/guide/preference" data-page><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn" name="show" value="no">Hide for good</button></form></details>
+</details></div>
+<div class="gf-question"><h1 id="gf-title">{{.Title}}</h1>{{if .Pending}}<p><span class="b b-waiting">{{template "i" "i-hand"}}{{.Pending}} {{plural .Pending "request" "requests"}} waiting for you</span></p>{{end}}<p id="gf-instruction">{{.Instruction}}</p>
+{{if .Form}}<div class="cli"><code id="gf-command" translate="no">{{.Form}}</code><p class="soft">Replace each part in angle brackets with the value it names before running this form in a terminal.</p></div>{{end}}
+{{if .Command}}<div class="cli"><code id="gf-command" translate="no">{{.Command}}</code><button class="copy-btn" type="button" data-copy="gf-command">{{template "i" "i-copy"}}<span class="copy-lbl" aria-live="polite">Copy</span></button></div>{{end}}
+{{if and .Receipt (or (eq .Step "recorded") (eq .Step "review"))}}{{with .Receipt}}{{if not .Err}}{{with .R}}
+<dl class="gf-facts">
+<dt>{{if .Programs}}Programs{{else}}Command{{end}}</dt><dd>{{if .Programs}}{{with index .Programs 0}}Started {{cut .Path 80}}{{end}}{{else if .Command}}{{cut (join .Command " ") 80}}{{else}}No starting command recorded{{end}}</dd>
+<dt>Files</dt><dd>{{if .Files.Written}}Recorded a write to {{cut (index .Files.Written 0) 64}}{{else if .Files.Created}}Recorded a new file at {{cut (index .Files.Created 0) 64}}{{else if .Files.Deleted}}Recorded removal of {{cut (index .Files.Deleted 0) 64}}{{else if .Files.Renamed}}{{with index .Files.Renamed 0}}Recorded a rename from {{cut .From 40}} to {{cut .To 40}}{{end}}{{else if .SensitiveReads}}{{with index .SensitiveReads 0}}Recorded {{.Verdicts.Total}} {{plural .Verdicts.Total "attempt" "attempts"}} to read {{cut .Path 64}}{{end}}{{else}}No file changes recorded{{end}}</dd>
+<dt>Connections</dt><dd>{{if .Connections}}{{with index .Connections 0}}{{.Count}} recorded {{plural .Count "attempt" "attempts"}} to {{cut .Destination 80}}{{end}}{{else}}No connection destinations recorded{{end}}</dd>
+</dl><p class="soft">Full values and limits: What the run recorded.</p>
+{{end}}{{end}}{{end}}{{end}}
+<div class="gf-bar" role="group" aria-label="This step"><a data-page class="btn btn-primary" id="gf-action" href="{{.Href}}">{{.Action}}</a><noscript><p>Scripts are off. <a href="/guide?step={{.Step}}">Reload to check for the run</a>.</p></noscript></div>
+<div id="gf-status" role="status" aria-live="polite" aria-atomic="true" class="gf-status" data-state="{{.State}}"><p>{{.Fact}}</p>{{if .Move}}<p id="gf-move-message">The run ended. Step 4 is ready.</p>{{end}}{{if .Waiting}}<p>This page moves on when the run ends if scripts are on.</p>{{end}}</div>
+</div>
+{{if eq .Step "enforce"}}<details class="gf-record"><summary>It runs as a service</summary><p>Use the shipped tego-agent@.service unit. It sets Delegate=yes and KillMode=mixed, and starts tego run --service %i.</p><p>Save its contract in ~/.config/tego/agents/. Record the service with the same environment it will use: the unit starts in your home, reads your user manager’s environment and sets no additional variables. If you add Environment= entries, use them for the recording too.</p><p>Copy the shipped unit to ~/.config/systemd/user/, reload your user manager, then enable its named instance. See the service instructions shipped with Tego.</p></details>{{end}}
+{{if .Receipt}}{{template "guide-receipt" .}}{{end}}
+</section>{{end}}{{if .TourOffer}}<section class="gf-offer" aria-label="Setup tour"><a class="btn btn-primary" href="/guide">Start the guide</a><p>Check this machine, record your agent, then enforce its rules.</p></section>{{end}}{{end}}
+
+{{define "guide-receipt"}}<details class="gf-record"{{if .RecordOpen}} open{{end}}><summary>What the run recorded</summary>{{with .Receipt}}{{if .Err}}<p>{{.Err}}</p>{{else}}{{with .R}}
+<p>{{.Summary}}.</p>{{if .Command}}<p>Starting command: <code>{{join .Command " "}}</code>.</p>{{end}}{{if .Files.Note}}<p>{{.Files.Note}}</p>{{end}}
+<p>{{.RefusedWords}}</p>
+{{if .SensitiveReadsNote}}<p>{{.SensitiveReadsNote}}</p>{{end}}
+{{range .Programs}}<p>Started {{.Path}}.</p>{{end}}
+{{range .Connections}}<p>Recorded {{.Count}} connection {{plural .Count "attempt" "attempts"}} to {{.Destination}}.</p>{{end}}
+{{if .ConnectionsNote}}<p>{{.ConnectionsNote}}</p>{{end}}
+{{range .Refusals.List}}<article class="gf-refusal"><p><span class="b b-refused">{{template "i" "i-ban"}}Refused</span> {{.Op}} {{.Target}}</p><p>{{ruleName .Rule}}.</p><p class="soft">{{$.Receipt.R.RuleWords .Rule}} {{.Reason}}</p><a data-page href="/runs/{{pathEsc $.Receipt.R.Run}}/lines/{{.Seq}}">Record line {{.Seq}}</a></article>{{end}}
+{{range .Files.Written}}<p>Recorded a write to {{.}}.</p>{{end}}{{range .Files.Created}}<p>Recorded a new file at {{.}}.</p>{{end}}{{range .Files.Deleted}}<p>Recorded removal of {{.}}.</p>{{end}}{{range .Files.Renamed}}<p>Recorded a rename from {{.From}} to {{.To}}.</p>{{end}}
+{{range .SensitiveReads}}<p>Recorded {{.Verdicts.Total}} {{plural .Verdicts.Total "attempt" "attempts"}} to read {{.Path}}.</p>{{end}}
+{{if .Files.Truncated}}<p>The file list is bounded; open the run receipt for its coverage limits.</p>{{end}}
+{{if .Refusals.ListTruncated}}<p>The list is bounded. Open the run for the remaining record lines.</p>{{end}}
+{{end}}{{end}}{{end}}</details>{{end}}
+
+{{define "guide-show"}}<form method="post" action="/guide/preference" data-page><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="btn" type="submit" name="show" value="yes">Show the guide again</button></form>{{end}}

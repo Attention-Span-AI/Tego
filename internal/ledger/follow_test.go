@@ -1037,6 +1037,12 @@ func unterminatedCursor(t *testing.T) (string, followed) {
 	return dir, all
 }
 
+// writerFollowHangGuard bounds a follow that waits on a Writer the test runs itself. The Writer's open, append and
+// close sync to disk, which on a loaded host takes tens of seconds, and the follow's clock runs meanwhile: so this is
+// only a guard against a follow that never ends, far above any time the work needs, and a pass or a failure never
+// depends on how fast the machine is.
+const writerFollowHangGuard = 5 * time.Minute
+
 // resumeWriter opens a Writer on dir that takes the lock the instant hold lets it go, as a launcher resuming
 // the run does; its resume terminates the unterminated last line. It appends a gap line and ends the run.
 func resumeWriter(t *testing.T, dir string, hold *os.File) {
@@ -1063,7 +1069,7 @@ func resumeWriter(t *testing.T, dir string, hold *os.File) {
 func TestFollowerResumeWaitsWhileTheLockIsHeld(t *testing.T) {
 	dir, all := unterminatedCursor(t)
 	hold := holdLock(t, dir)
-	_, ch := startFollow(t, dir, all.cursors[len(all.cursors)-1], 20*time.Second)
+	_, ch := startFollow(t, dir, all.cursors[len(all.cursors)-1], writerFollowHangGuard)
 	select {
 	case got := <-ch:
 		t.Fatalf("the follow from the cursor ended while the lock was held: %d lines, %v", len(got.lines), got.err)
@@ -1099,7 +1105,7 @@ func TestFollowerResumeLockSeenFreeMeansTheReadWasFinal(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = fl.Close() }()
-	got := followAll(t, fl, 20*time.Second)
+	got := followAll(t, fl, writerFollowHangGuard)
 	if !ran {
 		t.Fatal("the probe hook never ran")
 	}

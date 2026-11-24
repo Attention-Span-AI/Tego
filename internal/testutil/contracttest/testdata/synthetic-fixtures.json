@@ -16,6 +16,10 @@
     }
   },
   "internal/runtime/observe/continuednet_test.go": {
+    "TestRecorderLineOpTellsADatagramFromAConnect": {
+      "count": 1,
+      "why": "Synthetic kernel record/rule-index oracle: explicit attribution, missing metadata and chain outcomes, not an executable contract."
+    },
     "TestRecorderNamesAContinuedConnectAsTheSupervisor": {
       "count": 1,
       "why": "Synthetic kernel record/rule-index oracle: explicit attribution, missing metadata and chain outcomes, not an executable contract."
@@ -313,6 +317,10 @@
       "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
     },
     "TestNetworkListenAutobindOnRealKernel": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestNetworkListenWithoutNetListenOnRealKernel": {
       "count": 1,
       "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
     },

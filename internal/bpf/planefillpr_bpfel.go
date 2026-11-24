@@ -115,22 +115,29 @@ type planefillprTegoPlaneFillCfg struct {
 }
 
 type planefillprTegoPlaneFillRow struct {
-	_         structs.HostLayout
-	What      uint8
-	Kind      uint8
-	RuleIdx   uint16
-	NameLen   uint8
-	Scope     uint8
-	ExecRule  uint16
-	Status    uint32
-	OtherRule uint16
-	Pad2      uint16
-	Err       int32
-	Gen       uint32
-	MntId     uint64
-	Ino       uint64
-	ParentIno uint64
-	Name      [256]int8
+	_            structs.HostLayout
+	What         uint8
+	Kind         uint8
+	RuleIdx      uint16
+	NameLen      uint8
+	Scope        uint8
+	ExecRule     uint16
+	Status       uint32
+	OtherRule    uint16
+	Pad2         uint16
+	Err          int32
+	Gen          uint32
+	MntId        uint64
+	Ino          uint64
+	ParentIno    uint64
+	Name         [256]int8
+	BlockFrom    uint64
+	BlockNameKey uint64
+	BlockRead    uint16
+	BlockWrite   uint16
+	BlockGuard   uint16
+	BlockFlags   uint8
+	Pad3         uint8
 }
 
 type planefillprTegoReason struct {
@@ -173,6 +180,7 @@ const (
 	planefillprMapTegoLost             = "tego_lost"
 	planefillprMapTegoNetCidr          = "tego_net_cidr"
 	planefillprMapTegoNetExact         = "tego_net_exact"
+	planefillprMapTegoPlaneBlocks      = "tego_plane_blocks"
 	planefillprMapTegoPlaneCounters    = "tego_plane_counters"
 	planefillprMapTegoPlaneExecRows    = "tego_plane_exec_rows"
 	planefillprMapTegoPlaneFillConfig  = "tego_plane_fill_config"
@@ -185,8 +193,10 @@ const (
 	planefillprMapTegoTrackingFailed   = "tego_tracking_failed"
 	planefillprProgTegoPlaneClear      = "tego_plane_clear"
 	planefillprProgTegoPlaneFill       = "tego_plane_fill"
+	planefillprVarTegoBtfBlockMapRow   = "tego_btf_block_map_row"
 	planefillprVarTegoBtfListenMapKey  = "tego_btf_listen_map_key"
 	planefillprVarTegoBtfListenMapRow  = "tego_btf_listen_map_row"
+	planefillprVarTegoBtfPlaneBlockRow = "tego_btf_plane_block_row"
 	planefillprVarTegoBtfPlaneClearCtx = "tego_btf_plane_clear_ctx"
 	planefillprVarTegoBtfPlaneFill     = "tego_btf_plane_fill"
 	planefillprVarTegoBtfPlaneFillCfg  = "tego_btf_plane_fill_cfg"
@@ -250,6 +260,7 @@ type planefillprMapSpecs struct {
 	TegoLost            *ebpf.MapSpec `ebpf:"tego_lost"`
 	TegoNetCidr         *ebpf.MapSpec `ebpf:"tego_net_cidr"`
 	TegoNetExact        *ebpf.MapSpec `ebpf:"tego_net_exact"`
+	TegoPlaneBlocks     *ebpf.MapSpec `ebpf:"tego_plane_blocks"`
 	TegoPlaneCounters   *ebpf.MapSpec `ebpf:"tego_plane_counters"`
 	TegoPlaneExecRows   *ebpf.MapSpec `ebpf:"tego_plane_exec_rows"`
 	TegoPlaneFillConfig *ebpf.MapSpec `ebpf:"tego_plane_fill_config"`
@@ -266,8 +277,10 @@ type planefillprMapSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type planefillprVariableSpecs struct {
+	TegoBtfBlockMapRow   *ebpf.VariableSpec `ebpf:"tego_btf_block_map_row"`
 	TegoBtfListenMapKey  *ebpf.VariableSpec `ebpf:"tego_btf_listen_map_key"`
 	TegoBtfListenMapRow  *ebpf.VariableSpec `ebpf:"tego_btf_listen_map_row"`
+	TegoBtfPlaneBlockRow *ebpf.VariableSpec `ebpf:"tego_btf_plane_block_row"`
 	TegoBtfPlaneClearCtx *ebpf.VariableSpec `ebpf:"tego_btf_plane_clear_ctx"`
 	TegoBtfPlaneFill     *ebpf.VariableSpec `ebpf:"tego_btf_plane_fill"`
 	TegoBtfPlaneFillCfg  *ebpf.VariableSpec `ebpf:"tego_btf_plane_fill_cfg"`
@@ -301,6 +314,7 @@ type planefillprMaps struct {
 	TegoLost            *ebpf.Map `ebpf:"tego_lost"`
 	TegoNetCidr         *ebpf.Map `ebpf:"tego_net_cidr"`
 	TegoNetExact        *ebpf.Map `ebpf:"tego_net_exact"`
+	TegoPlaneBlocks     *ebpf.Map `ebpf:"tego_plane_blocks"`
 	TegoPlaneCounters   *ebpf.Map `ebpf:"tego_plane_counters"`
 	TegoPlaneExecRows   *ebpf.Map `ebpf:"tego_plane_exec_rows"`
 	TegoPlaneFillConfig *ebpf.Map `ebpf:"tego_plane_fill_config"`
@@ -323,6 +337,7 @@ func (m *planefillprMaps) Close() error {
 		m.TegoLost,
 		m.TegoNetCidr,
 		m.TegoNetExact,
+		m.TegoPlaneBlocks,
 		m.TegoPlaneCounters,
 		m.TegoPlaneExecRows,
 		m.TegoPlaneFillConfig,
@@ -340,8 +355,10 @@ func (m *planefillprMaps) Close() error {
 //
 // It can be passed to loadPlanefillprObjects or ebpf.CollectionSpec.LoadAndAssign.
 type planefillprVariables struct {
+	TegoBtfBlockMapRow   *ebpf.Variable `ebpf:"tego_btf_block_map_row"`
 	TegoBtfListenMapKey  *ebpf.Variable `ebpf:"tego_btf_listen_map_key"`
 	TegoBtfListenMapRow  *ebpf.Variable `ebpf:"tego_btf_listen_map_row"`
+	TegoBtfPlaneBlockRow *ebpf.Variable `ebpf:"tego_btf_plane_block_row"`
 	TegoBtfPlaneClearCtx *ebpf.Variable `ebpf:"tego_btf_plane_clear_ctx"`
 	TegoBtfPlaneFill     *ebpf.Variable `ebpf:"tego_btf_plane_fill"`
 	TegoBtfPlaneFillCfg  *ebpf.Variable `ebpf:"tego_btf_plane_fill_cfg"`

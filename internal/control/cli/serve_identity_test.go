@@ -59,7 +59,7 @@ func TestServeIdentityUsesLoadedSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv(config.EnvConfigVar, file)
-	mr := loadMachineReport()
+	mr := loadMachineReport(config.TrustWarn)
 	if mr.err != nil {
 		t.Fatal(mr.err)
 	}

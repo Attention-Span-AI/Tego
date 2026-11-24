@@ -1,0 +1,576 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: localsearch
+Source: https://download.gnome.org/sources/localsearch
+
+Files: *
+Copyright: 2008-2011 Nokia <ivan.frade@nokia.com>
+           2012 2015-2018 2020-2021 2023-2024 Red Hat, Inc.
+           2011-2012, 2015-2016, 2018-2020 Sam Thursfield
+           2021 Codethink Ltd
+           The LocalSearch developers
+           The Tracker developers
+           2008 Sony Music Entertainment Finland Oy
+License: GPL-2+
+
+Files: data/org.freedesktop.Tracker*.gschema.xml
+Copyright: 2011 Nokia <ivan.frade@nokia.com>
+License: LGPL-2.1+
+
+Files: docs/reference/build.py
+Copyright: 2020 Sam Thursfield
+License: LGPL-2.1+
+
+Files: gitlog-to-changelog
+Copyright: 2008 Free Software Foundation, Inc.
+License: GPL-3+
+
+Files: po/*
+Copyright: THE gnome'S COPYRIGHT HOLDER
+           Tracker Authors 2005-2010
+           2006, 2009-2010, 2013, 2016 tracker's COPYRIGHT HOLDER
+           2007 Ihar Hrachyshka
+           2005-2008 The Tracker authors
+           2005-2009-2022, 2024 Free Software Foundation, Inc.
+           2022, 2024 Alexander Shopov
+           2008, 2014 Rosetta Contributors and Canonical Ltd
+           2008, 2009, 2010 the author(s) of tracker
+           2007, 2010 THE PACKAGE'S COPYRIGHT HOLDER
+           Los autores de Tracker 2005-20010
+           2007, 2009-2011 The GNOME Project
+           Tracker Authors 2005-2011
+           Timo Jyrinki
+           2005-2008 The Tracker authors
+           2016 2018, 2023-2024 tracker-miner's COPYRIGHT HOLDER
+           2007, 2011 THE tracker's COPYRIGHT HOLDER
+           Tracker の開発者 2005-2010
+           2023 tracker-miners's authors
+           2007-2024 tracker-miners's COPYRIGHT HOLDER
+           2013-2014, 2016-2022, 2024 Rūdolfs Mazurs
+           2005-2008 De auteurs van Tracker
+           2007-2024 the localsearch authors
+           Autores do Tracker 2005-2010
+           2007, 2008, 2009, 2010, 2014 tracker
+           2012 Swecha, Free Software Organisation
+           2024 LocalSearch's COPYRIGHT HOLDER
+           2016 GNOME i18n Project for Vietnamese
+           2013 tracker's COPYRIGHT HOLDER
+License: GPL-2+
+
+Files: src/miners/*
+Copyright: 2009
+License: GPL-2+
+
+Files: src/miners/fs/*
+Copyright: 2008-2009, 2011 Nokia <ivan.frade@nokia.com>
+License: LGPL-2.1+
+
+Files: src/libtracker-miners-common/*
+       src/libtracker-extract/*
+       src/tracker-extract/*
+Copyright: 2008-2011 Nokia <ivan.frade@nokia.com>
+           2012 2015-2018 2020-2021 2023-2024 Red Hat, Inc.
+           2011-2012, 2015-2016, 2018-2020 Sam Thursfield
+           The LocalSearch developers
+           The Tracker developers
+License: LGPL-2.1+
+
+Files: src/libtracker-miners-common/tracker-term-utils.*
+Copyright: 2020 Red Hat Inc.
+License: GPL-2+
+
+Files: src/libtracker-miners-common/tracker-ioprio.c
+Copyright: 2005 Novell¸ Inc.
+           2006 Jamie McCracken
+           2006 Anders Aagaard
+License: Expat
+Comment: "Based mostly on code by Robert Love"
+
+Files: src/libtracker-miners-common/valgrind.h
+Copyright: 2000-2017 Julian Seward
+License: bzip2-1.0.6
+
+Files: src/libtracker-extract/tracker-encoding-libicu.c
+       src/libtracker-extract/tracker-encoding-libicu.h
+Copyright: 2013 Carlos Garnacho <carlos@lanedo.com>
+License: LGPL-2.1+
+
+Files: src/libtracker-extract/tracker-resource-helpers.*
+Copyright: 2016, 2019, 2020, Sam Thursfield
+License: LGPL-2.1+
+
+Files: src/libtracker-extract/tracker-xmp.c
+Copyright: 2006, Jamie McCracken
+License: LGPL-2.1+
+
+Files: src/libtracker-extract/tracker-xmp.h
+Copyright: 2008-2010, Nokia <ivan.frade@nokia.com>
+ 2006, 2007, Jamie McCracken
+License: LGPL-2.1+
+
+Files: src/miners/rss/tracker-miner-online.c
+Copyright: 2014, Carlos Garnacho <carlosg@gnome.org>
+ 2009-2014, Adrien Bustany <abustany@gnome.org>
+License: LGPL-2.1+
+
+Files: src/miners/rss/tracker-miner-online.h
+Copyright: 2009, Adrien Bustany <abustany@gnome.org>
+License: LGPL-2.1+
+
+Files: src/miners/rss/tracker-miner-proxy.c
+       src/miners/rss/tracker-miner-proxy.h
+Copyright: 2012, 2017, Red Hat, Inc.
+License: LGPL-2.1+
+
+Files: src/libtracker-miners-common/tracker-date-time.c
+       src/libtracker-miners-common/tracker-date-time.h
+       src/libtracker-miners-common/tracker-file-utils.c
+       src/libtracker-miners-common/tracker-language.c
+       src/libtracker-miners-common/tracker-language.h
+       src/libtracker-miners-common/tracker-type-utils.c
+       src/libtracker-miners-common/tracker-type-utils.h
+       src/libtracker-miners-common/tracker-utils.c
+       src/libtracker-miners-common/tracker-utils.h
+Copyright: 2008-2010 Nokia <ivan.frade@nokia.com>
+           2006, 2007 Jamie McCracken
+License: LGPL-2.1+
+
+Files: src/libtracker-miners-common/tracker-debug.c
+       src/libtracker-miners-common/tracker-debug.h
+Copyright: 2016, 2019, 2020 Sam Thursfield
+License: LGPL-2.1+
+
+Files: src/libtracker-miners-common/tracker-domain-ontology.*
+Copyright: 2012, 2017 Red Hat, Inc.
+License: LGPL-2.1+
+
+Files: src/libtracker-miners-common/tracker-error-report.*
+Copyright: 2020 Red Hat Ltd
+License: LGPL-2.1+
+
+Files: src/libtracker-miners-common/tracker-ioprio.h
+Copyright: 2008 Nokia <ivan.frade@nokia.com>
+           2006 Anders Aagaard
+License: LGPL-2.1+
+
+Files: src/libtracker-miners-common/tracker-sched.c
+Copyright: 2020 Sam Thursfield
+           2011 Nokia <ivan.frade@nokia.com>
+License: LGPL-2.1+
+
+Files: src/libtracker-miners-common/tracker-seccomp.c
+ src/libtracker-miners-common/tracker-seccomp.h
+Copyright: 2016, 2018, 2020, 2021 Red Hat Inc.
+License: LGPL-2.1+
+
+Files: src/miners/fs/tracker-extract*
+       src/miners/fs/tracker-lru.*
+       src/miners/fs/tracker-monitor-fanotify.*
+       src/miners/fs/tracker-monitor-glib.h
+       src/miners/fs/tracker-monitor-private.h
+       src/miners/fs/tracker-monitor.c
+Copyright: 2016, 2020-2021 Red Hat, Inc.
+License: LGPL-2.1+
+
+Files: src/miners/fs/tracker-main.c
+       src/miners/fs/tracker-miner-files.*
+Copyright: 2008, 2009 Nokia <ivan.frade@nokia.com>
+License: GPL-2+
+
+Files: src/miners/fs/tracker-miner-files-methods.*
+Copyright: 2008 Nokia <ivan.frade@nokia.com>
+           2021 Red Hat Inc.
+License: GPL-2+
+
+Files: src/miners/fs/tracker-files-interface.*
+       src/tracker-extract/tracker-extract-raw.c
+Copyright: 2017-2018, 2023 Red Hat Inc.
+License: GPL-2+
+
+Files: src/miners/fs/tracker-config.h
+       src/libtracker-miners-common/tracker-fts-config.c
+       src/tracker/tracker-daemon.c
+       src/tracker/tracker-dbus.c
+       src/tracker/tracker-process.*
+Copyright: 2008-2010 Nokia <ivan.frade@nokia.com>
+           2014 Lanedo <martyn@lanedo.com>
+License: GPL-2+
+
+Files: src/miners/fs/tracker-config.c
+Copyright: 2014 Lanedo <martyn@lanedo.com>
+           2008-2010 Nokia <ivan.frade@nokia.com>
+License: GPL-2+
+
+Files: src/miners/fs/tracker-extract-watchdog.c
+       src/miners/fs/tracker-extract-watchdog.h
+Copyright: 2016, 2018, 2020, 2021, Red Hat Inc.
+License: LGPL-2.1+
+
+Files: src/miners/fs/tracker-power-hal.c
+       src/miners/fs/tracker-power-upower.c
+Copyright: 2008-2010, Nokia <ivan.frade@nokia.com>
+ 2006, 2007, Jamie McCracken
+License: LGPL-2.1+
+
+Files: src/miners/rss/tracker-main.c
+       src/miners/rss/tracker-miner-rss.h
+Copyright: 2009-2010 Roberto Guido
+           2009-2010 Michele Tameni
+License: GPL-2+
+
+Files: src/tracker/tracker-cli-utils.*
+Copyright: 2021 Nishit Patel
+License: LGPL-2.1+
+
+Files: src/tracker/tracker-status.c
+Copyright: 2006 Jamie McCracken
+           2008 Nokia <ivan.frade@nokia.com>
+           2014 Lanedo <martyn@lanedo.com>
+License: LGPL-2.1+
+
+Files: src/tracker/tracker-reset.c
+       src/tracker/tracker-index.c
+Copyright: 2014 Lanedo <martyn@lanedo.com>
+License: GPL-2+
+
+Files: src/tracker-control/*
+Copyright: 2015, Carlos Garnacho
+License: GPL-2+
+
+Files: src/tracker-control/tracker-main.c
+Copyright: 2020, Red Hat Inc
+License: GPL-2+
+
+Files: src/tracker-control/tracker-miner-files-index.*
+Copyright: 2008-2011 Nokia <ivan.frade@nokia.com>
+License: GPL-2+
+
+Files: src/tracker-extract/tracker-config.c
+Copyright: 2014 Lanedo <martyn@lanedo.com>
+           2009 Nokia <ivan.frade@nokia.com>
+License: LGPL-2.1+
+
+Files: src/tracker-extract/tracker-extract-controller.h
+Copyright: 2014 Collabora Ltd
+License: GPL-2+
+
+Files: src/tracker-extract/tracker-config.h
+       src/tracker-extract/tracker-extract-icon.c
+       src/tracker-extract/tracker-extract-msoffice-xml.c
+       src/tracker-extract/tracker-extract-text.c
+       src/tracker-extract/tracker-extract.c
+       src/tracker-extract/tracker-extract.h
+       src/tracker-extract/tracker-gsf.c
+       src/tracker-extract/tracker-gsf.h
+       src/tracker-extract/tracker-read.c
+       src/tracker-extract/tracker-read.h
+Copyright: 2008-2011 Nokia <ivan.frade@nokia.com>
+License: LGPL-2.1+
+
+Files: src/tracker-extract/tracker-cue-sheet.*
+Copyright: 2011, ARQ Media
+License: LGPL-2.1+
+
+Files: src/tracker-extract/tracker-extract-bmp.c
+       src/tracker-extract/tracker-extract-dummy.c
+       src/tracker-extract/tracker-extract-libav.c
+Copyright: 2013-2014 Jolla Ltd.
+License: LGPL-2.1+
+
+Files: src/tracker-extract/tracker-extract-controller.*
+Copyright: 2014 Collabora Ltd.
+License: LGPL-2.1+
+
+Files: src/tracker-extract/tracker-extract-decorator.c
+       src/tracker-extract/tracker-extract-decorator.h
+       src/tracker-extract/tracker-extract-persistence.c
+       src/tracker-extract/tracker-extract-persistence.h
+Copyright: 2014 Carlos Garnacho <carlosg@gnome.org>
+License: LGPL-2.1+
+
+Files: src/tracker-extract/tracker-extract-desktop.c
+       src/tracker-extract/tracker-extract-disc-generic.c
+Copyright: 2016, 2018, 2020, 2021, Red Hat Inc.
+License: LGPL-2.1+
+
+Files: src/tracker-extract/tracker-extract-gstreamer.c
+Copyright: 2016 Sam Thursfield
+           2008 Nokia <ivan.frade@nokia.com>
+           2007 Jamie McCracken
+           2006 Laurent Aguerreche
+License: LGPL-2.1+
+
+Files: src/tracker-extract/tracker-extract-html.c
+Copyright: 2008, 2009, Nokia <ivan.frade@nokia.com>
+ 2007, Jason Kivlighn <jkivlighn@gmail.com>
+License: LGPL-2.1+
+
+Files: src/tracker-extract/tracker-extract-iso.c
+Copyright: 2011, 2014, Red Hat, Inc
+License: LGPL-2.1+
+
+Files: src/tracker-extract/tracker-extract-msoffice.c
+Copyright: 2008 Nokia <ivan.frade@nokia.com>
+           2006 Laurent
+           2006 Edward Duffy
+License: LGPL-2.1+
+
+Files: src/tracker-extract/tracker-extract-pdf.c
+Copyright: 2010 Amit Aggarwal
+           2008-2011 Nokia <ivan.frade@nokia.com>
+           2006 Jamie McCracken
+License: LGPL-2.1+
+
+Files: src/tracker-extract/tracker-extract-xps.c
+Copyright: 2012, 2017 Red Hat, Inc.
+License: LGPL-2.1+
+
+Files: src/tracker-writeback/*
+Copyright: 2008-2011 Nokia <ivan.frade@nokia.com>
+License: GPL-2+
+
+Files: src/tracker/*
+Copyright: 2014 Lanedo <martyn@lanedo.com>
+License: GPL-2+
+
+Files: src/tracker/tracker-extract.c
+Copyright: 2015, 2016, 2018-2020 Sam Thursfield
+License: GPL-2+
+
+Files: src/tracker/tracker-info.c
+Copyright: 2014 SoftAtHome
+           2014 Lanedo <martyn@lanedo.com>
+           2008-2010 Nokia <ivan.frade@nokia.com>
+           2006 Jamie McCracken
+License: LGPL-2+
+
+Files: src/tracker/tracker-miner-manager.c
+Copyright: 2015 Red Hat, Inc.
+           2009 Nokia <ivan.frade@nokia.com>
+License: LGPL-2.1+
+
+Files: src/tracker/tracker-miner-manager.h
+Copyright: 2008-2011 Nokia <ivan.frade@nokia.com>
+License: LGPL-2.1+
+
+Files: src/tracker/tracker-search.c
+Copyright: 2014 SoftAtHome
+           2014 Lanedo <martyn@lanedo.com>
+           2009 Nokia <ivan.frade@nokia.com>
+License: LGPL-2+
+
+Files: src/tracker/tracker-tag.c
+Copyright: 2014, Lanedo <martyn@lanedo.com>
+ 2009, Nokia <ivan.frade@nokia.com>
+License: LGPL-2+
+
+Files: src/tracker-writeback/tracker-writeback-gstreamer.c
+Copyright: 2019 Saiful B. Khan
+License: GPL-2+
+
+Files: tests/functional-tests/test_extractor_decorator.py
+       tests/functional-tests/test_extractor_flac_cuesheet.py
+       tests/functional-tests/test_writeback_audio.py
+Copyright: 2016, 2019, 2020, Sam Thursfield
+License: LGPL-2.1+
+
+Files: tests/functional-tests/test_fts_basic.py
+       tests/functional-tests/test_fts_file_operations.py
+       tests/functional-tests/test_fts_stopwords.py
+       tests/functional-tests/test_miner_basic.py
+       tests/functional-tests/test_miner_resource_removal.py
+       tests/functional-tests/test_writeback_image_details.py
+       tests/functional-tests/test_writeback_images.py
+Copyright: 2019-2020 Sam Thursfield
+           2010 Nokia <ivan.frade@nokia.com>
+License: LGPL-2.1+
+
+Files: tests/functional-tests/test_miner_removable_media.py
+Copyright: 2021 Codethink Ltd
+License: LGPL-2.1+
+
+Files: tests/functional-tests/test_misbehavior_generic.py
+Copyright: 2023 Red Hat Inc.
+License: LGPL-2.1+
+
+Files: tests/libtracker-extract/*
+Copyright: 2008-2011, Nokia <ivan.frade@nokia.com>
+License: LGPL-2.1+
+
+Files: tests/libtracker-extract/tracker-iptc-test.c
+       tests/libtracker-extract/iptc-img.jpg
+Copyright: 2011, Nokia <ivan.frade@nokia.com>
+           1998 Hewlett-Packard Company
+           IptcToolAuthors
+License: LGPL-2.1+
+
+Files: tests/libtracker-extract/tracker-encoding-test.c
+       tests/libtracker-extract/tracker-utils-test.c
+       tests/libtracker-extract/tracker-xmp-test.c
+Copyright: 2008-2011, Nokia <ivan.frade@nokia.com>
+License: GPL-2+
+
+Files: tests/libtracker-extract/tracker-module-manager-test.c
+Copyright: 2016, 2019, 2020, Sam Thursfield
+License: LGPL-2.1+
+
+Files: tests/tracker-miner-fs/tracker-task-pool-test.c
+Copyright: 2008-2011, Nokia <ivan.frade@nokia.com>
+License: LGPL-2.1+
+
+Files: utils/trackertestutils/__main__.py
+Copyright: 2012, 2016, 2019 Sam Thusfield
+           2012-2013 Martyn Russell
+License: GPL-2+
+
+Files: utils/trackertestutils/psutil_mini.py
+Copyright: 2009 Giampaolo Rodola'
+License: BSD-3-clause
+
+Files: utils/trackertestutils/dconf.py
+       utils/trackertestutils/sandbox.py
+       utils/trackertestutils/storehelper.py
+Copyright: 2010 Nokia <jean-luc.lamadon@nokia.com>
+           2019 Sam Thursfield
+License: GPL-2+
+
+License: bzip2-1.0.6
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions
+ are met:
+ .
+ 1. Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+ .
+ 2. The origin of this software must not be misrepresented; you must
+    not claim that you wrote the original software.  If you use this
+    software in a product, an acknowledgment in the product
+    documentation would be appreciated but is not required.
+ .
+ 3. Altered source versions must be plainly marked as such, and must
+    not be misrepresented as being the original software.
+ .
+ 4. The name of the author may not be used to endorse or promote
+    products derived from this software without specific prior written
+    permission.
+ .
+ THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
+ OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+ DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
+ GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+License: BSD-3-clause
+ Redistribution and use in source and binary forms, with or without modification,
+ are permitted provided that the following conditions are met:
+ .
+ * Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+ * Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+ * Neither the name of the psutil authors nor the names of its contributors
+   may be used to endorse or promote products derived from this software without
+   specific prior written permission.
+ .
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+License: Expat
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights
+ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ copies of the Software, and to permit persons to whom the Software is
+ furnished to do so, subject to the following conditions:
+ .
+ The above copyright notice and this permission notice shall be included in
+ all copies or substantial portions of the Software.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ THE SOFTWARE.
+
+License: GPL-2+
+ This package is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; either version 2 of the License, or
+ (at your option) any later version.
+ .
+ This package is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ You should have received a copy of the GNU General Public License
+ along with this program. If not, see <http://www.gnu.org/licenses/>
+ .
+ On Debian systems, the complete text of the GNU General
+ Public License version 2 can be found in "/usr/share/common-licenses/GPL-2".
+
+License: GPL-3+
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ .
+ On Debian systems, the complete text of the GNU General
+ Public License version 3 can be found in "/usr/share/common-licenses/GPL-3".
+
+License: LGPL-2+
+ This library is free software; you can redistribute it and/or
+ modify it under the terms of the GNU Library General Public
+ License as published by the Free Software Foundation; either
+ version 2 of the License, or (at your option) any later version.
+ .
+ This library is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ Lesser General Public License for more details.
+ .
+ On Debian systems, the complete text of the GNU Library General Public
+ License version 2 can be found in "/usr/share/common-licenses/LGPL-2".
+ 
+License: LGPL-2.1+
+ This package is free software; you can redistribute it and/or
+ modify it under the terms of the GNU Lesser General Public
+ License as published by the Free Software Foundation; either
+ version 2.1 of the License, or (at your option) any later version.
+ .
+ This package is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ Lesser General Public License for more details.
+ .
+ You should have received a copy of the GNU General Public License
+ along with this program. If not, see <http://www.gnu.org/licenses/>.
+ .
+ On Debian systems, the complete text of the GNU Lesser General
+ Public License can be found in "/usr/share/common-licenses/LGPL-2.1".
+ 
+ 

@@ -29,7 +29,7 @@ var planeArity = map[string]int{"file_open": 1, "bprm_check": 1, "path_rename": 
 	"path_rmdir": 2, "path_mknod": 4, "path_mkdir": 3, "path_symlink": 3, "path_truncate": 1, "file_truncate": 1,
 	"path_chmod": 2, "path_chown": 3, "inode_setxattr": 6, "inode_removexattr": 3, "inode_set_acl": 4,
 	"inode_remove_acl": 3, "socket_create": 4,
-	"socket_connect": 3, "socket_sendmsg": 3, "unix_may_send": 2, "mmap_file": 4, "file_mprotect": 3,
+	"socket_connect": 3, "socket_sendmsg": 3, "socket_recvmsg": 4, "unix_may_send": 2, "mmap_file": 4, "file_mprotect": 3,
 	"socket_bind": 3, "socket_listen": 2, "ptrace_access_check": 2, "ptrace_traceme": 1, "bpf": 4, "key_permission": 3, "capable": 4}
 
 // planeArityFmodRet is the security_ function's count where it differs from the LSM hook's.
@@ -960,6 +960,26 @@ func TestPlaneForExecPins(t *testing.T) {
 		for _, tier := range []backend.Tier{backend.TierBPFLSM, backend.TierCgroup} {
 			if ch, err := rep.PlaneFor(tier); err != nil || ch.ExecPins != c.want {
 				t.Errorf("%s at %s: %+v %v, want ExecPins %t", c.name, tier, ch, err, c.want)
+			}
+		}
+	}
+}
+
+// TestPlaneGuestGoldensHoldOnlyLinesTheProbeWrites: planeGuestGolden (the guest's integration test) writes one
+// non-empty line per fact and no blank line, so a blank line in plane-guest-*.golden can never match a guest's
+// answer. The merge of 2026-11-04 left one before each unix_may_send row and the 6.17 rows failed on it alone.
+func TestPlaneGuestGoldensHoldOnlyLinesTheProbeWrites(t *testing.T) {
+	for _, name := range []string{"plane-guest-default.golden", "plane-guest-lsm.golden"} {
+		b, err := os.ReadFile(filepath.Join("testdata", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasSuffix(string(b), "\n") {
+			t.Errorf("%s does not end in a newline, as every line the probe writes does", name)
+		}
+		for i, line := range strings.Split(strings.TrimSuffix(string(b), "\n"), "\n") {
+			if strings.TrimSpace(line) == "" {
+				t.Errorf("%s:%d is blank; the probe writes no blank line", name, i+1)
 			}
 		}
 	}

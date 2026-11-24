@@ -6,9 +6,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
-	"syscall"
 
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
@@ -90,62 +88,8 @@ func OutsideNamespace(cgroup string) bool {
 	return cgroup == "/.." || strings.HasPrefix(cgroup, "/../")
 }
 
-// selfCgroup is this process's cgroup file, and selfCgroupNS its cgroup namespace's.
-const (
-	selfCgroup   = "/proc/self/cgroup"
-	selfCgroupNS = "/proc/self/ns/cgroup"
-)
-
 // InitCgroupNS is the inode of the initial cgroup namespace, the one the kernel boots with (PROC_CGROUP_INIT_INO,
 // include/linux/proc_ns.h). It is fixed: a namespace made later gets a dynamic inode, from 0xF0000000 up
 // (PROC_DYNAMIC_FIRST), so no other namespace has it. Only a reader in this namespace is shown cgroup paths from the
 // hierarchy's root.
 const InitCgroupNS uint64 = 0xEFFFFFFB
-
-// InRun reports whether this process is inside a run, or looks it: LooksGoverned of its own cgroup. It fails closed:
-// when the file cannot be read, names no single cgroup v2 path, or names one above this process's own cgroup
-// namespace root, it is true with the error. So it is when this process is not in the initial cgroup namespace, or
-// its namespace cannot be read: the kernel prints the path relative to the namespace's root ("0::/" at the root
-// itself), and nothing above that root, where a run's scope may be, shows in it. A process that unshares a cgroup
-// namespace inside its run's scope reads "0::/", and so does every process of a cgroupns-private container; InRun
-// cannot tell the two apart, so it refuses both (TestInRunInACgroupNamespace).
-func InRun() (bool, error) {
-	b, err := os.ReadFile(selfCgroup)
-	ns, nsErr := cgroupNSInode(selfCgroupNS)
-	return inRun(b, err, ns, nsErr)
-}
-
-// cgroupNSInode is the inode of the cgroup namespace file at path.
-func cgroupNSInode(path string) (uint64, error) {
-	fi, err := os.Stat(path)
-	if err != nil {
-		return 0, err
-	}
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok {
-		return 0, fmt.Errorf("stat %s: no inode", path)
-	}
-	return st.Ino, nil
-}
-
-// inRun is InRun over what the reads returned: the cgroup file, and this process's cgroup namespace inode.
-func inRun(b []byte, readErr error, ns uint64, nsErr error) (bool, error) {
-	if readErr != nil {
-		return true, fmt.Errorf("runscope: read %s: %w", selfCgroup, readErr)
-	}
-	if nsErr != nil {
-		return true, fmt.Errorf("runscope: %s: %w", selfCgroupNS, nsErr)
-	}
-	if ns != InitCgroupNS {
-		return true, fmt.Errorf("runscope: this process is in cgroup namespace %d, not the initial one (%d): its "+
-			"cgroup path starts at that namespace's root, and a run's scope above the root would not show", ns, InitCgroupNS)
-	}
-	cg, err := Unified(b)
-	if err != nil {
-		return true, fmt.Errorf("runscope: %s: %w", selfCgroup, err)
-	}
-	if OutsideNamespace(cg) {
-		return true, fmt.Errorf("runscope: %s: %q lies above this process's cgroup namespace root", selfCgroup, cg)
-	}
-	return LooksGoverned(cg), nil
-}

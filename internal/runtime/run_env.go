@@ -90,6 +90,23 @@ func buildEnv(rt *agent.RuleTable, environ []string) []string {
 	return out
 }
 
+// withoutWindowsInterop removes WSL's launch hint after the contract and
+// identity additions. The immutable socket refusal carries the boundary;
+// env.pass and env.set cannot reintroduce this hint (ADR 0113).
+func withoutWindowsInterop(tier backend.Tier, env []string) []string {
+	if tier == backend.TierObserve {
+		return env
+	}
+	out := make([]string, 0, len(env))
+	for _, entry := range env {
+		name, _, _ := strings.Cut(entry, "=")
+		if name != "WSL_INTEROP" {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
 // agentBaseEnv is the launcher's environment as the agent's account would have it (rootAccountEnv), the base
 // buildEnv applies the contract to. Only a root launcher changes it, and only when passwd names both accounts.
 func (r *runner) agentBaseEnv() []string {

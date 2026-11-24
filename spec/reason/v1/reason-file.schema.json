@@ -43,7 +43,8 @@
         "text": {"type": "string"},
         "mechanism": {"type": "string"},
         "command_rule": {"type": "string"},
-        "command_match": {"type": "string"}
+        "command_match": {"type": "string"},
+        "owners": {"type": "string", "maxLength": 512, "description": "The refused process and its ancestors, pid:start-ticks each, comma-separated, nearest first, when the supervisor knew them; absent otherwise. A harness's hook takes an entry as its own when its harness's identity is listed."}
       }
     }
   }

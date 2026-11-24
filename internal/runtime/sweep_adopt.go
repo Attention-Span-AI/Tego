@@ -13,6 +13,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/runtime/cgroup"
+	"github.com/attention-span-ai/tego/internal/selfbin"
 	"github.com/attention-span-ai/tego/internal/watch/adopt"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -55,8 +56,18 @@ func sweepAdoption(ctx context.Context, o sweepOptions, dir runDir, ref record.R
 		return true, fmt.Errorf("adoption %s: %w: its scope %s is there with no record to release it from; move its "+
 			"processes out and remove it by hand (docs/OPERATIONS.md)", ref.ID, errOrphanAlive, scope)
 	}
-	return true, fmt.Errorf("adoption %s: %w: its scope %s is there and only root can release it: sudo tego gc, or sudo "+
-		"tego adopt --release --pid <pid>", ref.ID, errOrphanAlive, scope)
+	named := func() (string, string) { return selfbin.Named(os.Executable) }
+	gc, why := selfbin.Sudo("gc", named)
+	hint := why
+	if why == "" {
+		release, reason := selfbin.Sudo("adopt --release --pid <pid>", named)
+		if reason != "" {
+			hint = reason
+		} else {
+			hint = gc + ", or " + release
+		}
+	}
+	return true, fmt.Errorf("adoption %s: %w: its scope %s is there and only root can release it: %s", ref.ID, errOrphanAlive, scope, hint)
 }
 
 // sweptAdoptionRecord reads run's adoption record, found false when there is none. The records' directory is never

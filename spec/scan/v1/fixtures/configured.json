@@ -1,0 +1,203 @@
+{
+  "schema": "tego.scan/1",
+  "tego": "dev",
+  "catalog": "c3",
+  "started_at": "2026-11-11T21:00:00Z",
+  "finished_at": "2026-11-11T21:00:01Z",
+  "boot_id": "01234567-89ab-cdef-0123-456789abcdef",
+  "mode": "basic",
+  "as": {
+    "uid": 1000,
+    "recipient_uid": 1000,
+    "root": false
+  },
+  "project": "/home/example/project",
+  "status": "ok",
+  "check": "not-requested",
+  "counts": {
+    "running": 0,
+    "in_run": 0,
+    "outside_run": 0,
+    "membership_unknown": 0,
+    "installed": 0,
+    "settings": 0,
+    "project": 0,
+    "other": 0,
+    "exited_during_scan": 0,
+    "kernel_threads": 0,
+    "unreadable_programs": 0,
+    "mcp_servers": 1,
+    "user_units": 2
+  },
+  "other_listed": false,
+  "rules": [
+    {
+      "id": "mcp-claude",
+      "name": "claude",
+      "origin": "catalog"
+    },
+    {
+      "id": "mcp-codex",
+      "name": "codex",
+      "origin": "catalog"
+    },
+    {
+      "id": "mcp-gemini",
+      "name": "gemini",
+      "origin": "catalog"
+    },
+    {
+      "id": "unit-claude",
+      "name": "claude",
+      "origin": "catalog"
+    },
+    {
+      "id": "unit-codex",
+      "name": "codex",
+      "origin": "catalog"
+    },
+    {
+      "id": "unit-opencode",
+      "name": "opencode",
+      "origin": "catalog"
+    },
+    {
+      "id": "unit-gemini",
+      "name": "gemini",
+      "origin": "catalog"
+    }
+  ],
+  "items": [
+    {
+      "id": "item-1",
+      "kind": "mcp_server",
+      "name": "codex",
+      "evidence": [
+        {
+          "rule_id": "mcp-codex",
+          "source_id": "source-1",
+          "fact": "mcp-key"
+        }
+      ],
+      "detail": {
+        "path": "/home/example/.codex/config.toml",
+        "client": "codex",
+        "scope": "user",
+        "transport": "stdio",
+        "program": "codex-native",
+        "host": null,
+        "server": "local",
+        "arguments": 2
+      },
+      "caveats": [
+        "configured-only"
+      ]
+    },
+    {
+      "id": "item-2",
+      "kind": "user_unit",
+      "name": "codex",
+      "evidence": [
+        {
+          "rule_id": "unit-codex",
+          "source_id": "source-2",
+          "fact": "exec-start"
+        }
+      ],
+      "detail": {
+        "path": "/home/example/.config/systemd/user/agent.service",
+        "uid": 1000,
+        "program": "codex-node",
+        "triggers": null,
+        "enablement_link": true,
+        "unit": "agent.service",
+        "arguments": 2,
+        "specifiers_unexpanded": true
+      },
+      "caveats": [
+        "configured-only",
+        "name-collision"
+      ]
+    },
+    {
+      "id": "item-3",
+      "kind": "timer",
+      "name": "codex",
+      "evidence": [
+        {
+          "rule_id": "unit-codex",
+          "source_id": "source-3",
+          "fact": "timer-unit"
+        }
+      ],
+      "detail": {
+        "path": "/home/example/.config/systemd/user/agent.timer",
+        "uid": 1000,
+        "program": "codex-node",
+        "triggers": "agent.service",
+        "enablement_link": null,
+        "unit": "agent.timer",
+        "arguments": 0,
+        "specifiers_unexpanded": false
+      },
+      "caveats": [
+        "configured-only",
+        "name-collision"
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "id": "source-1",
+      "kind": "D",
+      "locator": "/home/example/.codex/config.toml",
+      "state": "read",
+      "read": 1,
+      "not_read": 0,
+      "reason": "none"
+    },
+    {
+      "id": "source-2",
+      "kind": "E",
+      "locator": "/home/example/.config/systemd/user/agent.service",
+      "state": "read",
+      "read": 1,
+      "not_read": 0,
+      "reason": "none"
+    },
+    {
+      "id": "source-3",
+      "kind": "E",
+      "locator": "/home/example/.config/systemd/user/agent.timer",
+      "state": "read",
+      "read": 1,
+      "not_read": 0,
+      "reason": "none"
+    }
+  ],
+  "not_looked_at": [
+    "other-users",
+    "other-user-settings",
+    "system-units",
+    "containers-unattributed",
+    "unknown-formats",
+    "unresolved-units",
+    "project-parents",
+    "project-children",
+    "project-alternates",
+    "project-includes",
+    "unreadable-processes",
+    "unknown-owners",
+    "unknown-names",
+    "libraries",
+    "remote-agents",
+    "between-scans",
+    "environment",
+    "memory",
+    "source-code",
+    "network"
+  ],
+  "limits": [],
+  "unreadable_program_pids": [],
+  "unreadable_programs_warning": "Tego cannot tell whether these are agents; any program can make itself unreadable."
+}

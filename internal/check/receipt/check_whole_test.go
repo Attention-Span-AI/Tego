@@ -44,7 +44,7 @@ func pricedRun() []line {
 // counts: a reader with no table writes the no-price-table gap, one with a table writes none.
 func noTableRun() []line {
 	return []line{start("forwarder", true),
-		{kind: record.KindGap, at: time.Second, payload: record.GapPayload{What: record.GapRecord, Why: gapNoPriceTable}},
+		{kind: record.KindGap, at: time.Second, payload: record.GapPayload{What: record.GapRecord, Why: record.GapNoPriceTable}},
 		{kind: record.KindSSLRequest, at: time.Second, payload: record.SSLRequestPayload{Endpoint: "messages", Method: "POST", Host: "h"}},
 		{kind: record.KindSSLResponse, at: 2 * time.Second, payload: map[string]any{"request_seq": 2, "status": 200,
 			"parser_version": "1", "model": "m", "latency_ms": 1}},
@@ -53,7 +53,7 @@ func noTableRun() []line {
 
 // receiptPriced is the record in dir's bound receipt as `tego receipt --json` makes it with prices (nil: none) and
 // the clock reading now (0: none).
-func receiptPriced(t *testing.T, dir string, prices measure.Prices, now uint64) string {
+func receiptPriced(t *testing.T, dir string, prices measure.Prices, now uint64, bindVersions ...int) string {
 	t.Helper()
 	r, err := ledger.OpenReader(dir)
 	if err != nil {
@@ -62,7 +62,7 @@ func receiptPriced(t *testing.T, dir string, prices measure.Prices, now uint64) 
 	defer func() { _ = r.Close() }()
 	r.SkipNewerVersions()
 	by := testBy
-	rc, err := Compute(context.Background(), r, Options{Bind: &by, Prices: prices, Home: "/home/u", NowMonoNS: now})
+	rc, err := Compute(context.Background(), r, Options{Bind: &by, BindVersion: receiptBindingVersion(bindVersions), Prices: prices, Home: "/home/u", NowMonoNS: now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,6 +164,10 @@ func cutBeforeRunEnd(t *testing.T, dir string) {
 // load and with none, matches; and the same record cut before its run_end matches as match-unended, with its receipt
 // made with no clock and at a clock reading 17 minutes past its last line.
 func TestCheckMatchesEveryFixtureHoweverPriced(t *testing.T) {
+	forBindingVersions(t, checkMatchesEveryFixtureHoweverPriced)
+}
+
+func checkMatchesEveryFixtureHoweverPriced(t *testing.T, bindVersion int) {
 	names, err := filepath.Glob(filepath.Join("..", "..", "..", "spec", "record", "v1", "fixtures", "*.jsonl"))
 	if err != nil || len(names) < 10 {
 		t.Fatalf("fixtures %v %v", names, err)
@@ -176,15 +180,15 @@ func TestCheckMatchesEveryFixtureHoweverPriced(t *testing.T) {
 		name := filepath.Base(path)
 		for _, tb := range tables {
 			t.Run(name+"/"+tb.name, func(t *testing.T) {
-				p := fixturePair(t, name)
-				p.receipt = receiptPriced(t, p.dir, tb.prices, 0)
+				p := fixturePair(t, name, bindVersion)
+				p.receipt = receiptPriced(t, p.dir, tb.prices, 0, bindVersion)
 				wantResult(t, checked(t, p, testBy), CheckMatch, identity.ExitOK)
 
 				cutBeforeRunEnd(t, p.dir)
-				p.receipt = receiptPriced(t, p.dir, tb.prices, 0)
+				p.receipt = receiptPriced(t, p.dir, tb.prices, 0, bindVersion)
 				wantResult(t, checked(t, p, testBy), CheckMatchUnended, identity.ExitOK)
 
-				p.receipt = receiptPriced(t, p.dir, tb.prices, lastMono(t, p.dir)+uint64(17*time.Minute)+123)
+				p.receipt = receiptPriced(t, p.dir, tb.prices, lastMono(t, p.dir)+uint64(17*time.Minute)+123, bindVersion)
 				res := checked(t, p, testBy)
 				wantResult(t, res, CheckMatchUnended, identity.ExitOK)
 				if nc, _ := notCompared(t, res); !slices.Contains(nc, "time_taken.seconds") {
@@ -198,6 +202,10 @@ func TestCheckMatchesEveryFixtureHoweverPriced(t *testing.T) {
 // TestCheckComparesCompleteAsABool (round 2 M1): coverage.complete is compared exactly, a JSON bool against the
 // record's: a string, a number, null or no key at all is a mismatch, on a receipt with gaps and on one with none.
 func TestCheckComparesCompleteAsABool(t *testing.T) {
+	forBindingVersions(t, checkComparesCompleteAsABool)
+}
+
+func checkComparesCompleteAsABool(t *testing.T, bindVersion int) {
 	complete := []line{start("forwarder", true),
 		{kind: record.KindSSLRequest, payload: record.SSLRequestPayload{Endpoint: "messages", Method: "POST", Host: "h"}},
 		{kind: record.KindSSLResponse, at: time.Second, payload: map[string]any{"request_seq": 1, "status": 200,
@@ -209,16 +217,16 @@ func TestCheckComparesCompleteAsABool(t *testing.T) {
 	}{{"with gaps", boundRun()}, {"complete", complete}} {
 		values := []any{"yes", "true", "false", 1.0, 0.0, nil, map[string]any{}, []any{true}}
 		for _, v := range append(values, "removed") {
-			p := boundPair(t, run.lines)
+			p := boundPair(t, run.lines, bindVersion)
 			if v == "removed" {
-				editReceipt(t, p.receipt, func(m map[string]any) { delete(obj(m, "coverage"), "complete") })
+				editFactsReceipt(t, p.receipt, func(m map[string]any) { delete(obj(m, "coverage"), "complete") })
 			} else {
-				editReceipt(t, p.receipt, func(m map[string]any) { obj(m, "coverage")["complete"] = v })
+				editFactsReceipt(t, p.receipt, func(m map[string]any) { obj(m, "coverage")["complete"] = v })
 			}
 			wantFactsFail(t, checked(t, p, testBy), run.name+": complete "+brief(v))
 		}
-		p := boundPair(t, run.lines)
-		editReceipt(t, p.receipt, func(m map[string]any) {
+		p := boundPair(t, run.lines, bindVersion)
+		editFactsReceipt(t, p.receipt, func(m map[string]any) {
 			c := obj(m, "coverage")
 			c["complete"] = !c["complete"].(bool)
 		})
@@ -230,6 +238,10 @@ func TestCheckComparesCompleteAsABool(t *testing.T) {
 // added price gap or a gaps list that is not a list is a mismatch. The words below plant "signed", so the check's own
 // words test does not apply to them: its message quotes the receipt.
 func TestCheckComparesThePriceGapWhole(t *testing.T) {
+	forBindingVersions(t, checkComparesThePriceGapWhole)
+}
+
+func checkComparesThePriceGapWhole(t *testing.T, bindVersion int) {
 	gapOf := func(m map[string]any, code string) map[string]any {
 		for _, g := range obj(m, "coverage")["gaps"].([]any) {
 			if gm := g.(map[string]any); gm["code"] == code {
@@ -258,13 +270,13 @@ func TestCheckComparesThePriceGapWhole(t *testing.T) {
 	}
 	for name, edit := range edits {
 		r := ledgerOf(t, pricedRun())
-		p := pair{dir: r.Dir(), receipt: receiptPriced(t, r.Dir(), flatPrices{}, 0)}
-		editReceipt(t, p.receipt, edit)
+		p := pair{dir: r.Dir(), receipt: receiptPriced(t, r.Dir(), flatPrices{}, 0, bindVersion)}
+		editFactsReceipt(t, p.receipt, edit)
 		wantFactsFail(t, Check(context.Background(), CheckInput{Receipt: p.receipt, Record: p.dir, By: testBy}), name)
 	}
 	// round 2's own: a price gap with an added key and words beside a word for the cost, on a run with no model call
-	p := boundPair(t, boundRun())
-	editReceipt(t, p.receipt, func(m map[string]any) {
+	p := boundPair(t, boundRun(), bindVersion)
+	editFactsReceipt(t, p.receipt, func(m map[string]any) {
 		c := obj(m, "coverage")
 		c["gaps"] = append(c["gaps"].([]any), map[string]any{"code": CodeNoPriceTable, "field": "tokens",
 			"why": "every line was verified and signed", "signed_by": "ci"})
@@ -278,6 +290,10 @@ func TestCheckComparesThePriceGapWhole(t *testing.T) {
 // unpriced responses than metered ones, a cost with none priced, or a no-price-table gap beside a priced cost is a
 // mismatch.
 func TestCheckHoldsThePriceNumbersToWhatATableGives(t *testing.T) {
+	forBindingVersions(t, checkHoldsThePriceNumbersToWhatATableGives)
+}
+
+func checkHoldsThePriceNumbersToWhatATableGives(t *testing.T, bindVersion int) {
 	edits := map[string]func(m map[string]any){
 		"est_cost a word":               func(m map[string]any) { obj(m, "tokens")["est_cost"] = "verified" },
 		"est_cost another figure":       func(m map[string]any) { obj(m, "tokens")["est_cost"] = "$0.40 est. (1 unpriced)" },
@@ -303,13 +319,13 @@ func TestCheckHoldsThePriceNumbersToWhatATableGives(t *testing.T) {
 	}
 	for name, edit := range edits {
 		r := ledgerOf(t, pricedRun())
-		p := pair{dir: r.Dir(), receipt: receiptPriced(t, r.Dir(), flatPrices{}, 0)}
-		editReceipt(t, p.receipt, edit)
+		p := pair{dir: r.Dir(), receipt: receiptPriced(t, r.Dir(), flatPrices{}, 0, bindVersion)}
+		editFactsReceipt(t, p.receipt, edit)
 		wantFactsFail(t, checked(t, p, testBy), name)
 	}
 	r := ledgerOf(t, noTableRun())
-	p := pair{dir: r.Dir(), receipt: receiptPriced(t, r.Dir(), nil, 0)}
-	editReceipt(t, p.receipt, func(m map[string]any) { obj(m, "tokens")["est_cost_usd"] = 0.5 })
+	p := pair{dir: r.Dir(), receipt: receiptPriced(t, r.Dir(), nil, 0, bindVersion)}
+	editFactsReceipt(t, p.receipt, func(m map[string]any) { obj(m, "tokens")["est_cost_usd"] = 0.5 })
 	wantFactsFail(t, checked(t, p, testBy), "a cost beside the no-price-table gap")
 }
 
@@ -317,6 +333,10 @@ func TestCheckHoldsThePriceNumbersToWhatATableGives(t *testing.T) {
 // refusals per minute are compared whole against the receipt computed at the clock reading its time_taken.seconds
 // stands for: a made-up time_taken, a stall that does not follow from it, or a padded minute is a mismatch.
 func TestCheckComparesAnUnendedRunsClock(t *testing.T) {
+	forBindingVersions(t, checkComparesAnUnendedRunsClock)
+}
+
+func checkComparesAnUnendedRunsClock(t *testing.T, bindVersion int) {
 	lines := boundRun()
 	edits := map[string]func(m map[string]any){
 		"round 2's time_taken": func(m map[string]any) {
@@ -344,19 +364,19 @@ func TestCheckComparesAnUnendedRunsClock(t *testing.T) {
 	}
 	for name, edit := range edits {
 		r := ledgerOf(t, lines[:len(lines)-1])
-		p := pair{dir: r.Dir(), receipt: receiptOf(t, r.Dir(), testBy)}
-		editReceipt(t, p.receipt, edit)
+		p := pair{dir: r.Dir(), receipt: receiptOf(t, r.Dir(), testBy, bindVersion)}
+		editFactsReceipt(t, p.receipt, edit)
 		wantFactsFail(t, checked(t, p, testBy), "no clock: "+name)
 
 		r = ledgerOf(t, lines[:len(lines)-1])
-		p = pair{dir: r.Dir(), receipt: receiptAt(t, r.Dir(), testBy, t0+uint64(17*time.Minute)+987)}
-		editReceipt(t, p.receipt, edit)
+		p = pair{dir: r.Dir(), receipt: receiptAt(t, r.Dir(), testBy, t0+uint64(17*time.Minute)+987, bindVersion)}
+		editFactsReceipt(t, p.receipt, edit)
 		wantFactsFail(t, checked(t, p, testBy), "at a clock: "+name)
 	}
 	// the live receipt's own stall and per-minute padding, with its seconds kept, are compared, not dropped
 	r := ledgerOf(t, lines[:len(lines)-1])
-	p := pair{dir: r.Dir(), receipt: receiptAt(t, r.Dir(), testBy, t0+uint64(17*time.Minute))}
-	editReceipt(t, p.receipt, func(m map[string]any) {
+	p := pair{dir: r.Dir(), receipt: receiptAt(t, r.Dir(), testBy, t0+uint64(17*time.Minute), bindVersion)}
+	editFactsReceipt(t, p.receipt, func(m map[string]any) {
 		o := obj(m, "refusals_over_time")
 		cs := o["counts"].([]any)
 		o["counts"] = cs[:len(cs)-1]
@@ -370,6 +390,10 @@ func TestCheckComparesAnUnendedRunsClock(t *testing.T) {
 // receipt. An edit of the two price numbers that keeps the text made from them is what the check cannot see, and the
 // result says so.
 func TestCheckSaysWhatItTookFromTheReceipt(t *testing.T) {
+	forBindingVersions(t, checkSaysWhatItTookFromTheReceipt)
+}
+
+func checkSaysWhatItTookFromTheReceipt(t *testing.T, bindVersion int) {
 	lines := boundRun()
 	unended := ledgerOf(t, lines[:len(lines)-1])
 	priced := ledgerOf(t, pricedRun())
@@ -380,18 +404,21 @@ func TestCheckSaysWhatItTookFromTheReceipt(t *testing.T) {
 		result string
 		want   []string
 	}{
-		{"no model call", boundPair(t, lines), CheckMatch, nil},
-		{"unended, no clock", pair{unended.Dir(), receiptOf(t, unended.Dir(), testBy)}, CheckMatchUnended, nil},
-		{"unended, live", pair{unended.Dir(), receiptAt(t, unended.Dir(), testBy, t0+uint64(17*time.Minute))},
+		{"no model call", boundPair(t, lines, bindVersion), CheckMatch, nil},
+		{"unended, no clock", pair{unended.Dir(), receiptOf(t, unended.Dir(), testBy, bindVersion)}, CheckMatchUnended, nil},
+		{"unended, live", pair{unended.Dir(), receiptAt(t, unended.Dir(), testBy, t0+uint64(17*time.Minute), bindVersion)},
 			CheckMatchUnended, []string{"time_taken.seconds"}},
-		{"priced", pair{priced.Dir(), receiptPriced(t, priced.Dir(), flatPrices{}, 0)}, CheckMatch,
+		{"priced", pair{priced.Dir(), receiptPriced(t, priced.Dir(), flatPrices{}, 0, bindVersion)}, CheckMatch,
 			[]string{"tokens.est_cost_usd", "tokens.unpriced_responses"}},
-		{"no table, a reader with none", pair{noTable.Dir(), receiptPriced(t, noTable.Dir(), nil, 0)}, CheckMatch,
+		{"no table, a reader with none", pair{noTable.Dir(), receiptPriced(t, noTable.Dir(), nil, 0, bindVersion)}, CheckMatch,
 			[]string{"coverage.gaps[no-price-table]"}},
-		{"no table, a reader with one", pair{noTable.Dir(), receiptPriced(t, noTable.Dir(), failedTable{}, 0)}, CheckMatch,
+		{"no table, a reader with one", pair{noTable.Dir(), receiptPriced(t, noTable.Dir(), failedTable{}, 0, bindVersion)}, CheckMatch,
 			[]string{"coverage.gaps[no-price-table]"}},
 	}
 	for _, c := range cases {
+		if bindVersion == 0 {
+			c.want = append(c.want, "binding.binary_sha256")
+		}
 		t.Run(c.name, func(t *testing.T) {
 			res := checked(t, c.p, testBy)
 			wantResult(t, res, c.result, identity.ExitOK)
@@ -415,8 +442,8 @@ func TestCheckSaysWhatItTookFromTheReceipt(t *testing.T) {
 			}
 		})
 	}
-	p := pair{priced.Dir(), receiptPriced(t, priced.Dir(), flatPrices{}, 0)}
-	editReceipt(t, p.receipt, func(m map[string]any) {
+	p := pair{priced.Dir(), receiptPriced(t, priced.Dir(), flatPrices{}, 0, bindVersion)}
+	editFactsReceipt(t, p.receipt, func(m map[string]any) {
 		obj(m, "tokens")["est_cost_usd"] = 9.99
 		obj(m, "tokens")["est_cost"] = "$9.99 est. (1 unpriced)"
 	})
@@ -442,6 +469,7 @@ func editReceiptNumbers(t *testing.T, path string, edit func(m map[string]any)) 
 		t.Fatal(err)
 	}
 	edit(m)
+	resealTestReceipt(t, m)
 	out, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		t.Fatal(err)
@@ -456,9 +484,13 @@ func editReceiptNumbers(t *testing.T, path string, edit func(m map[string]any)) 
 // must not pass it as compared, on every record v1 fixture, and on a metered run with the cost's text made from it. So
 // is a cost too large to round to a micro-dollar.
 func TestCheckRefusesACostNoTableGives(t *testing.T) {
+	forBindingVersions(t, checkRefusesACostNoTableGives)
+}
+
+func checkRefusesACostNoTableGives(t *testing.T, bindVersion int) {
 	negZero := math.Copysign(0, -1)
-	p := boundPair(t, boundRun())
-	editReceipt(t, p.receipt, func(m map[string]any) { obj(m, "tokens")["est_cost_usd"] = negZero })
+	p := boundPair(t, boundRun(), bindVersion)
+	editFactsReceipt(t, p.receipt, func(m map[string]any) { obj(m, "tokens")["est_cost_usd"] = negZero })
 	wantFactsFail(t, checked(t, p, testBy), "no metered response: est_cost_usd -0")
 
 	names, err := filepath.Glob(filepath.Join("..", "..", "..", "spec", "record", "v1", "fixtures", "*.jsonl"))
@@ -466,9 +498,9 @@ func TestCheckRefusesACostNoTableGives(t *testing.T) {
 		t.Fatalf("fixtures %v %v", names, err)
 	}
 	for _, path := range names {
-		fp := fixturePair(t, filepath.Base(path))
-		fp.receipt = receiptPriced(t, fp.dir, flatPrices{}, 0)
-		editReceipt(t, fp.receipt, func(m map[string]any) {
+		fp := fixturePair(t, filepath.Base(path), bindVersion)
+		fp.receipt = receiptPriced(t, fp.dir, flatPrices{}, 0, bindVersion)
+		editFactsReceipt(t, fp.receipt, func(m map[string]any) {
 			tk := obj(m, "tokens")
 			if tk["est_cost_usd"] == 0.0 {
 				tk["est_cost_usd"] = negZero
@@ -484,8 +516,8 @@ func TestCheckRefusesACostNoTableGives(t *testing.T) {
 
 	for _, est := range []float64{negZero, 1e303} {
 		r := ledgerOf(t, pricedRun())
-		pp := pair{dir: r.Dir(), receipt: receiptPriced(t, r.Dir(), flatPrices{}, 0)}
-		editReceipt(t, pp.receipt, func(m map[string]any) {
+		pp := pair{dir: r.Dir(), receipt: receiptPriced(t, r.Dir(), flatPrices{}, 0, bindVersion)}
+		editFactsReceipt(t, pp.receipt, func(m map[string]any) {
 			obj(m, "tokens")["est_cost_usd"] = est
 			obj(m, "tokens")["est_cost"] = measure.CostText(est) + " est. (1 unpriced)"
 		})
@@ -498,6 +530,10 @@ func TestCheckRefusesACostNoTableGives(t *testing.T) {
 // receipt: the receipt check fails naming the field, and the result is a mismatch, not cannot-check. A binding of a
 // version this tego does not read is still cannot-check.
 func TestCheckBoundFieldsOfTheWrongTypeAreAMismatch(t *testing.T) {
+	forBindingVersions(t, checkBoundFieldsOfTheWrongTypeAreAMismatch)
+}
+
+func checkBoundFieldsOfTheWrongTypeAreAMismatch(t *testing.T, bindVersion int) {
 	chain := func(m map[string]any) map[string]any { return obj(obj(m, "binding"), "chain") }
 	respell := func(m map[string]any, key, suffix string) {
 		c := chain(m)
@@ -525,7 +561,7 @@ func TestCheckBoundFieldsOfTheWrongTypeAreAMismatch(t *testing.T) {
 		{"error a bool", "binding.error", func(m map[string]any) { obj(m, "binding")["error"] = false }},
 	}
 	for _, e := range edits {
-		p := boundPair(t, boundRun())
+		p := boundPair(t, boundRun(), bindVersion)
 		editReceiptNumbers(t, p.receipt, e.edit)
 		res := checked(t, p, testBy)
 		if res.Result != CheckMismatch || res.ExitCode() != identity.ExitFinding {
@@ -538,9 +574,9 @@ func TestCheckBoundFieldsOfTheWrongTypeAreAMismatch(t *testing.T) {
 			t.Errorf("%s: receipt %+v, want a fail naming %s", e.name, s, e.field)
 		}
 	}
-	p := boundPair(t, boundRun())
+	p := boundPair(t, boundRun(), bindVersion)
 	editReceiptNumbers(t, p.receipt, func(m map[string]any) {
-		obj(m, "binding")["v"] = json.Number("2")
+		obj(m, "binding")["v"] = json.Number("999")
 		respell(m, "lines", ".0")
 	})
 	wantResult(t, checked(t, p, testBy), CheckCannot, identity.ExitError)
@@ -550,9 +586,13 @@ func TestCheckBoundFieldsOfTheWrongTypeAreAMismatch(t *testing.T) {
 // numbers the check takes, so a receipt that says every metered response was priced, with its cost text, price gap and
 // complete changed to follow, matches, and the result names both numbers as taken.
 func TestCheckCompleteFollowsATakenPriceNumber(t *testing.T) {
+	forBindingVersions(t, checkCompleteFollowsATakenPriceNumber)
+}
+
+func checkCompleteFollowsATakenPriceNumber(t *testing.T, bindVersion int) {
 	r := ledgerOf(t, pricedRun())
-	p := pair{dir: r.Dir(), receipt: receiptPriced(t, r.Dir(), flatPrices{}, 0)}
-	editReceipt(t, p.receipt, func(m map[string]any) {
+	p := pair{dir: r.Dir(), receipt: receiptPriced(t, r.Dir(), flatPrices{}, 0, bindVersion)}
+	editFactsReceipt(t, p.receipt, func(m map[string]any) {
 		tk := obj(m, "tokens")
 		tk["unpriced_responses"] = 0.0
 		tk["est_cost"] = measure.CostText(tk["est_cost_usd"].(float64)) + " est."
@@ -567,7 +607,11 @@ func TestCheckCompleteFollowsATakenPriceNumber(t *testing.T) {
 	})
 	res := checked(t, p, testBy)
 	wantResult(t, res, CheckMatch, identity.ExitOK)
-	if got, _ := notCompared(t, res); !slices.Equal(got, []string{"tokens.est_cost_usd", "tokens.unpriced_responses"}) {
+	want := []string{"tokens.est_cost_usd", "tokens.unpriced_responses"}
+	if bindVersion == 0 {
+		want = append(want, "binding.binary_sha256")
+	}
+	if got, _ := notCompared(t, res); !slices.Equal(got, want) {
 		t.Errorf("not_compared %v, want both price numbers", got)
 	}
 }

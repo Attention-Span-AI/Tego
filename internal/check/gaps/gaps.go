@@ -99,7 +99,13 @@ func (t *Tally) Add(e *record.Event) {
 	if p.Binary != "" {
 		bins = []string{p.Binary}
 	}
-	t.add(p.What, p.Why, 1, lost, procs, skipped, bins)
+	events := 1
+	if Classify(p.What, p.Why) == Dropped && p.Binary == "" && p.Count > 0 {
+		// The counted line a run writes for the messages past its lines (record.OversizeLines): each of them is in
+		// lost and none is a line of its own, so Events and Lost add up to the messages dropped.
+		events = 0
+	}
+	t.add(p.What, p.Why, events, lost, procs, skipped, bins)
 }
 
 // add folds events gap events of one (what, why) into the tally.
@@ -185,7 +191,7 @@ func Line(cs []Count) string {
 			detail = append(detail, SharedTracingWords(c.SharedSkipped, c.Why == SharedTracingUnavailable))
 		case RulesUncertain:
 			detail = append(detail, skipWordsOf([]Count{c}))
-		case Missed, Live, Capture, Price, Restored:
+		case Missed, Live, Capture, Price, Restored, Dropped, RoutesKept:
 			// no words beyond the counts below
 		}
 		if c.Lost > 0 {
@@ -267,10 +273,16 @@ const (
 	// that decides the run's actions or adds its child cgroups to the run set, or the counters could not be read, so
 	// the run cannot say every rule held. The skip may have been another run's or an ungoverned task's.
 	RulesUncertain
+	// Dropped is a message the MCP relay could not pass on because it was past the size the relay reads
+	// (record.GapMCPResponseOversize, record.GapMCPStreamOversize): the message is lost to its reader and the record
+	// says which, how big and the limit, but no action of the run went unrecorded, so the counts stand. A reader that
+	// does not know these whys reads them as Missed.
+	Dropped
+	// RoutesKept is the forwarder not reading a run's model-route overlay (record.GapModelRouteUnreadable): the routes it
+	// read last stay in force, so no request went by a route no line put in force and no action went unrecorded; only a
+	// route change a person made meanwhile is not applied. A reader that does not know this why reads it as Missed.
+	RoutesKept
 )
-
-// priceWhys are the whys of a gap what=record that leave only the cost unestimated.
-var priceWhys = map[string]bool{"no-price-table": true, "price-table-version-mismatch": true, "unpriced-model": true}
 
 // Classify says what a gap of what and why means for the record.
 func Classify(what, why string) Class {
@@ -284,10 +296,14 @@ func Classify(what, why string) Class {
 		return RulesUncertain
 	case what == record.GapCapture:
 		return Capture
-	case what == record.GapRecord && priceWhys[why]:
+	case what == record.GapRecord && record.IsPriceGapWhy(why):
 		return Price
 	case what == record.GapRecord && why == record.GapOwnStateModeRestored:
 		return Restored
+	case what == record.GapRecord && (why == record.GapMCPResponseOversize || why == record.GapMCPStreamOversize):
+		return Dropped
+	case what == record.GapEnforce && why == record.GapModelRouteUnreadable:
+		return RoutesKept
 	}
 	return Missed
 }
@@ -347,6 +363,48 @@ func skipWordsOf(cs []Count) string {
 	return SkippedProgramWords(deciding, tracking, unavailable)
 }
 
+// MissedWords is the one sentence for gaps that may have lost actions (Missed): n gap lines, and lost events when the
+// lines count any. The receipt's coverage note (record, missed-actions), tego status and the dashboard say it so.
+func MissedWords(n, lost int) string {
+	if lost > 0 {
+		return fmt.Sprintf("%s in the record (counts are a minimum, %d events lost)", plural(n, "gap"), lost)
+	}
+	return plural(n, "gap") + " in the record (counts are a minimum)"
+}
+
+// CaptureWords is the one sentence for n capture gap lines (Capture): model traffic tego could not read.
+func CaptureWords(n int) string {
+	return fmt.Sprintf("token counts may be low (%s)", plural(n, "capture gap"))
+}
+
+// PriceWords is the one sentence for a missing price (Price): noTable when the run or the reader had no usable price
+// table at all, else a model the table does not price.
+func PriceWords(noTable bool) string {
+	if noTable {
+		return "the cost is not estimated (no price table)"
+	}
+	return "the cost is not estimated (no price for a model)"
+}
+
+// DroppedWords says how many MCP messages the relay dropped for their size (Dropped), in the words the receipt and
+// tego status use. The record has a line for each, naming the server, the size and the limit.
+func DroppedWords(n int) string {
+	if n == 1 {
+		return "1 MCP message was too large for the relay and was dropped; no action went unrecorded"
+	}
+	return fmt.Sprintf("%d MCP messages were too large for the relay and were dropped; no action went unrecorded", n)
+}
+
+// RoutesKeptWords says the forwarder could not read the model routes n times (RoutesKept), in the words the receipt and
+// tego status use.
+func RoutesKeptWords(n int) string {
+	s := "the model routes could not be read; the routes read last stayed in force and a change made meanwhile was not applied"
+	if n > 1 {
+		s += fmt.Sprintf(" (%d times)", n)
+	}
+	return s + "; no action went unrecorded"
+}
+
 // RestoredWords says how many of tego's own files had their owner's rights given back (Restored), in the words the
 // receipt and tego status use.
 func RestoredWords(n int) string {
@@ -356,30 +414,8 @@ func RestoredWords(n int) string {
 	return fmt.Sprintf("tego restored the modes of %d of its own files", n)
 }
 
-// liveWords says what each live change did, in the words the dashboard's glossary gives it (linewords.GapWhy; a test
-// there holds the two equal).
-var liveWords = map[string]string{
-	record.GapLiveBlockAdded:     "a live block was added",
-	record.GapLiveBlockRemoved:   "a live block was removed",
-	record.GapLiveBlockExpired:   "a live block's time ran out; it no longer refuses",
-	record.GapLiveUnblockExpired: "a live block's time off ran out; it refuses again",
-	record.GapLiveRuleLifted:     "a rule in the fence was allowed for now",
-	record.GapLiveRuleRestored:   "a rule in the fence refuses again",
-	record.GapLiveLiftExpired:    "an allowed rule's time ran out; it refuses again",
-	record.GapLiveLiftRefused:    "a request to allow a rule was refused; nothing was loosened",
-	record.GapRunPaused:          "the run was paused",
-	record.GapRunResumed:         "the run was resumed",
-	record.GapPauseFailed:        "a pause could not be put in force; the run kept running",
-	record.GapResumeFailed:       "a resume could not be put in force; the run stays paused",
-	record.GapMCPToolChanged:     "an MCP tool's rule was changed live",
-	record.GapModelRouteChanged:  "a model endpoint's requests were sent to another approved backend",
-}
-
 // LiveWords is what a live change's why did, in words; false for a why that is not one.
-func LiveWords(why string) (string, bool) {
-	w, ok := liveWords[why]
-	return w, ok
-}
+func LiveWords(why string) (string, bool) { return record.LiveChangeWords(why) }
 
 // Words says what a run's gaps mean, in the words its receipt and the dashboard use: whether actions may be missing,
 // what is short if not, which of its own files tego gave back their owner's rights (Restored), and what a person
@@ -390,8 +426,8 @@ func Words(cs []Count, cutOff bool) string {
 	if len(cs) == 0 && !cutOff {
 		return ""
 	}
-	var missed, lost, capture, price, restored, skipped int
-	var uncertain, unavailable bool
+	var missed, lost, capture, price, restored, skipped, dropped, kept int
+	var uncertain, unavailable, noTable bool
 	var rules []Count
 	var live []string
 	for _, c := range cs {
@@ -409,10 +445,17 @@ func Words(cs []Count, cutOff bool) string {
 			capture = addCount(capture, c.Events)
 		case Price:
 			price = addCount(price, c.Events)
+			noTable = noTable || c.Why != record.GapUnpricedModel
 		case Restored:
 			restored = addCount(restored, c.Events)
+		case Dropped:
+			// Events are the lines naming a message; Lost the messages past the lines a run writes (Tally.Add).
+			dropped = addCount(dropped, c.Events)
+			dropped = addCount(dropped, c.Lost)
+		case RoutesKept:
+			kept = addCount(kept, c.Events)
 		case Live:
-			w, ok := liveWords[c.Why]
+			w, ok := record.LiveChangeWords(c.Why)
 			if !ok {
 				w = record.Printable(c.Why)
 			}
@@ -428,10 +471,8 @@ func Words(cs []Count, cutOff bool) string {
 		parts = append(parts, skipWordsOf(rules))
 	}
 	switch {
-	case missed > 0 && lost > 0:
-		parts = append(parts, fmt.Sprintf("%s in the record (counts are a minimum, %d events lost)", plural(missed, "gap"), lost))
 	case missed > 0:
-		parts = append(parts, plural(missed, "gap")+" in the record (counts are a minimum)")
+		parts = append(parts, MissedWords(missed, lost))
 	case !cutOff && !uncertain && len(rules) == 0:
 		// A skipped tracking program leaves a child cgroup's tasks unrecorded too, so with rules uncertain nothing
 		// says no action is missing.
@@ -444,13 +485,19 @@ func Words(cs []Count, cutOff bool) string {
 		parts = append(parts, "the record has no end, so it may stop short of what the run did")
 	}
 	if capture > 0 {
-		parts = append(parts, fmt.Sprintf("token counts may be low (%s)", plural(capture, "capture gap")))
+		parts = append(parts, CaptureWords(capture))
 	}
 	if price > 0 {
-		parts = append(parts, "the cost is not estimated (no price for a model)")
+		parts = append(parts, PriceWords(noTable))
 	}
 	if restored > 0 {
 		parts = append(parts, RestoredWords(restored))
+	}
+	if dropped > 0 {
+		parts = append(parts, DroppedWords(dropped))
+	}
+	if kept > 0 {
+		parts = append(parts, RoutesKeptWords(kept))
 	}
 	return strings.Join(append(parts, live...), "; ")
 }

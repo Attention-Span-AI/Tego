@@ -3,17 +3,13 @@
 package runscope
 
 import (
-	"bytes"
 	"errors"
-	"fmt"
 	"go/parser"
 	"go/token"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 )
 
@@ -104,61 +100,6 @@ func TestUnifiedReadsOneV2Line(t *testing.T) {
 	}
 }
 
-// TestInRunFailsClosed: InRun is LooksGoverned of this process's cgroup, and true, with the error, whenever the file
-// cannot be read or does not name one path inside this process's cgroup namespace, and whenever that namespace is
-// not the initial one or cannot be read: there the path starts at the namespace's root, and a root inside a run reads
-// "0::/" (root.cgroup) as the hierarchy's own root does.
-func TestInRunFailsClosed(t *testing.T) {
-	const otherNS = InitCgroupNS + 0x10000001 // a namespace made after boot: its inode is a dynamic one
-	for _, c := range []struct {
-		file    string
-		in, err bool
-	}{
-		{"v2.cgroup", false, false},
-		{"hybrid.cgroup", false, false},
-		{"root.cgroup", false, false},
-		{"run.cgroup", true, false},
-		{"lookalike.cgroup", true, false},
-		{"outside-ns.cgroup", true, true},
-		{"v1only.cgroup", true, true},
-		{"two-unified.cgroup", true, true},
-		{"relative.cgroup", true, true},
-		{"deleted.cgroup", true, true},
-		{"empty.cgroup", true, true},
-	} {
-		in, err := inRun(fixture(t, c.file), nil, InitCgroupNS, nil)
-		if in != c.in || (err != nil) != c.err {
-			t.Errorf("inRun(%s) in the initial cgroup namespace = %v, %v; want %v, error %v", c.file, in, err, c.in, c.err)
-		}
-		if in, err := inRun(fixture(t, c.file), nil, otherNS, nil); !in || err == nil {
-			t.Errorf("inRun(%s) in another cgroup namespace = %v, %v; want true with an error", c.file, in, err)
-		}
-		if in, err := inRun(fixture(t, c.file), nil, 0, os.ErrPermission); !in || !errors.Is(err, os.ErrPermission) {
-			t.Errorf("inRun(%s) with its cgroup namespace unreadable = %v, %v; want true and the stat's error", c.file, in, err)
-		}
-	}
-	if in, err := inRun(nil, os.ErrPermission, InitCgroupNS, nil); !in || !errors.Is(err, os.ErrPermission) {
-		t.Errorf("inRun of an unreadable file = %v, %v; want true and the read's error", in, err)
-	}
-	// This test process is no run's; under `tego run` it is one, and InRun must say so either way without an error,
-	// unless it runs in a cgroup namespace of its own (a container), where it is true with the error.
-	b, err := os.ReadFile(selfCgroup)
-	if err != nil {
-		t.Skipf("no %s here: %v", selfCgroup, err)
-	}
-	ns, nsErr := cgroupNSInode(selfCgroupNS)
-	cg, uerr := Unified(b)
-	in, err := InRun()
-	switch {
-	case nsErr != nil || ns != InitCgroupNS:
-		if !in || err == nil {
-			t.Errorf("InRun() = %v, %v in cgroup namespace %d (%v), not the initial one", in, err, ns, nsErr)
-		}
-	case uerr == nil && (err != nil || in != LooksGoverned(cg)):
-		t.Errorf("InRun() = %v, %v for this process's cgroup %q", in, err, cg)
-	}
-}
-
 // FuzzUnified: the reader never panics, and what it returns is an absolute path on one line.
 func FuzzUnified(f *testing.F) {
 	for _, s := range []string{"0::/a\n", "0::/a\n0::/b\n", "1:name=systemd:/x\n0::/y", "0::", "0::/x (deleted)", ""} {
@@ -212,75 +153,7 @@ func TestImportsOnlyTheLeafSet(t *testing.T) {
 			}
 		}
 	}
-	if checked < 3 {
-		t.Fatalf("checked %d files, want doc.go, governed.go and looks.go", checked)
-	}
-}
-
-// inRunChildEnv makes this test binary TestInRunInACgroupNamespaceHelper's child, which prints what InRun says.
-const inRunChildEnv = "TEGO_RUNSCOPE_INRUN_CHILD"
-
-// TestInRunInACgroupNamespaceHelper is TestInRunInACgroupNamespace's child: it prints InRun's answer and error, and
-// whether it could read its own cgroup namespace's inode.
-func TestInRunInACgroupNamespaceHelper(t *testing.T) {
-	if os.Getenv(inRunChildEnv) != "1" {
-		t.Skip("helper process for TestInRunInACgroupNamespace")
-	}
-	b, _ := os.ReadFile(selfCgroup)
-	_, nsErr := cgroupNSInode(selfCgroupNS)
-	in, err := InRun()
-	fmt.Printf("inrun-report in=%v nsread=%v err=%q cgroup=%q\n", in, nsErr == nil, fmt.Sprint(err), b)
-}
-
-// TestInRunInACgroupNamespace: a process in a cgroup namespace of its own reads its cgroup relative to that
-// namespace's root ("0::/" at the root), so it cannot see whether a run's scope lies above it: an agent that
-// unshares one inside its run's scope reads just that. InRun is true there, with the error, wherever the namespace's
-// root is (here: this test's own cgroup, no run's). The child runs unmapped in its user namespace and as its root:
-// where its own namespace file can be read (as root of it, unless an LSM denies the read), the error is the
-// namespace's inode, and where it cannot, the stat's.
-func TestInRunInACgroupNamespace(t *testing.T) {
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	self := []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getuid(), Size: 1}}
-	selfGID := []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getgid(), Size: 1}}
-	for _, c := range []struct {
-		name string
-		attr *syscall.SysProcAttr
-	}{
-		{"unmapped", &syscall.SysProcAttr{Cloneflags: syscall.CLONE_NEWUSER | syscall.CLONE_NEWCGROUP}},
-		{"root of its user namespace", &syscall.SysProcAttr{Cloneflags: syscall.CLONE_NEWUSER | syscall.CLONE_NEWCGROUP,
-			UidMappings: self, GidMappings: selfGID}},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			cmd := exec.Command(exe, "-test.run=^TestInRunInACgroupNamespaceHelper$", "-test.timeout=30s")
-			cmd.Env = append(os.Environ(), inRunChildEnv+"=1")
-			cmd.SysProcAttr = c.attr
-			var stderr bytes.Buffer
-			cmd.Stderr = &stderr
-			out, err := cmd.Output()
-			var ee *exec.ExitError
-			if err != nil && !errors.As(err, &ee) {
-				// The clone or the id maps were refused: no user namespace here, so the child never ran.
-				t.Skipf("no user and cgroup namespace to start the child in: %v", err)
-			}
-			if err != nil {
-				t.Fatalf("child: %v\n%s%s", err, out, stderr.Bytes())
-			}
-			for line := range strings.SplitSeq(string(out), "\n") {
-				rest, ok := strings.CutPrefix(line, "inrun-report ")
-				if !ok {
-					continue
-				}
-				t.Log(rest)
-				if !strings.HasPrefix(rest, "in=true ") || strings.Contains(rest, `err="<nil>"`) ||
-					strings.Contains(rest, " nsread=true ") && !strings.Contains(rest, "not the initial one") {
-					t.Errorf("InRun in a cgroup namespace of its own: %s; want true with an error, the namespace's when it was read", rest)
-				}
-				return
-			}
-			t.Fatalf("the child printed no report:\n%s%s", out, stderr.Bytes())
-		})
+	if checked < 5 {
+		t.Fatalf("checked %d files, want doc.go, answer.go, governed.go, looks.go and rule.go", checked)
 	}
 }

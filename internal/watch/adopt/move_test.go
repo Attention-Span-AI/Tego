@@ -294,6 +294,83 @@ func TestReleaseFallsBackWhenTheSourceIsGone(t *testing.T) {
 	}
 }
 
+// An agent launched alone in a transient scope (systemd-run --scope claude, a desktop launcher's app scope) leaves
+// that scope empty when it moves, and the service manager removes it. Every ancestor then has controllers on for its
+// children (a systemd slice always does) and refuses a process of its own (EBUSY), so the old release found no place
+// and left the agent in the adoption's scope, where the guard counts it governed for ever (N73). A new empty cgroup
+// under the nearest ancestor is a place that takes it.
+func TestReleaseOfALoneScopeMakesALeafUnderTheNearestAncestor(t *testing.T) {
+	m := terminal()
+	if _, err := Move(m.env(), dest, mustIdentify(m, 200), nil); err != nil {
+		t.Fatal(err)
+	}
+	delete(m.cgroups, session)
+	for _, anc := range []string{"/user.slice/user-1000.slice", "/user.slice"} {
+		m.cgroups[anc] = true
+		m.refuse["/sys/fs/cgroup"+anc] = syscall.EBUSY
+	}
+	res := Release(m.env(), dest, ReleaseTargets(m.mount, session))
+	leaf := "/sys/fs/cgroup/user.slice/user-1000.slice/tego-released-x"
+	if len(res.Left) != 0 || len(res.To[leaf]) != 3 {
+		t.Fatalf("released to %v, left %v, want the three processes in %s", res.To, res.Left, leaf)
+	}
+	for _, pid := range []int{200, 201, 202} {
+		if cg := m.cgroupOf(pid); cg != "/user.slice/user-1000.slice/tego-released-x" {
+			t.Errorf("pid %d is in %s", pid, cg)
+		}
+	}
+	// Another release of the same run finds the leaf there and uses it.
+	m.add(210, 1, destRel, "/usr/bin/node", 1000)
+	res = Release(m.env(), dest, ReleaseTargets(m.mount, session))
+	if len(res.Left) != 0 || len(res.To[leaf]) != 1 {
+		t.Fatalf("a second release: to %v, left %v", res.To, res.Left)
+	}
+}
+
+// The leaf is the last resort, made only where nothing else took the process, and a place that cannot make one
+// leaves the processes in the scope, counted, as before.
+func TestReleaseLeafIsTriedOnlyWhereNothingElseTakesAndFailsClosed(t *testing.T) {
+	m := terminal()
+	if _, err := Move(m.env(), dest, mustIdentify(m, 200), nil); err != nil {
+		t.Fatal(err)
+	}
+	// The origin scope still exists and takes them: no leaf is made anywhere.
+	res := Release(m.env(), dest, ReleaseTargets(m.mount, session))
+	if len(res.Left) != 0 || m.cgroups["/user.slice/user-1000.slice/tego-released-x"] || m.cgroups["/user.slice/tego-released-x"] {
+		t.Fatalf("a taking origin must not cause a leaf: to %v left %v", res.To, res.Left)
+	}
+	// The origin is gone, the nearest ancestor refuses a leaf, the next takes one.
+	m = terminal()
+	if _, err := Move(m.env(), dest, mustIdentify(m, 200), nil); err != nil {
+		t.Fatal(err)
+	}
+	delete(m.cgroups, session)
+	for _, anc := range []string{"/user.slice/user-1000.slice", "/user.slice"} {
+		m.cgroups[anc] = true
+		m.refuse["/sys/fs/cgroup"+anc] = syscall.EBUSY
+	}
+	m.noMake["/sys/fs/cgroup/user.slice/user-1000.slice/tego-released-x"] = syscall.EACCES
+	res = Release(m.env(), dest, ReleaseTargets(m.mount, session))
+	if len(res.Left) != 0 || len(res.To["/sys/fs/cgroup/user.slice/tego-released-x"]) != 3 {
+		t.Fatalf("released to %v, left %v, want the next ancestor's leaf", res.To, res.Left)
+	}
+	// No ancestor can make one: they stay in the adoption's scope, counted.
+	m = terminal()
+	if _, err := Move(m.env(), dest, mustIdentify(m, 200), nil); err != nil {
+		t.Fatal(err)
+	}
+	delete(m.cgroups, session)
+	for _, anc := range []string{"/user.slice/user-1000.slice", "/user.slice"} {
+		m.cgroups[anc] = true
+		m.refuse["/sys/fs/cgroup"+anc] = syscall.EBUSY
+		m.noMake["/sys/fs/cgroup"+anc+"/tego-released-x"] = syscall.EROFS
+	}
+	res = Release(m.env(), dest, ReleaseTargets(m.mount, session))
+	if len(res.Left) != 3 || len(res.To) != 0 {
+		t.Fatalf("with no place at all: to %v left %v, want all three left in the scope", res.To, res.Left)
+	}
+}
+
 // staleProcs lists extra beside the cgroup's own processes: a pid read from cgroup.procs whose member died and whose
 // pid another process took before the write.
 type staleProcs struct {
@@ -520,6 +597,7 @@ func TestReleaseLeavesAProcessWhoseLeaderExitedCounted(t *testing.T) {
 	}
 	for _, target := range ReleaseTargets(m.mount, session) {
 		m.refuse[target] = syscall.EBUSY
+		m.noMake[target+"/tego-released-x"] = syscall.EROFS // and no leaf can be made beside them either
 	}
 	rel := Release(m.env(), dest, ReleaseTargets(m.mount, session))
 	if !slices.Contains(rel.Left, 203) {

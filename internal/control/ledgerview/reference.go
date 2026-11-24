@@ -66,18 +66,9 @@ func sameIdentity(a, b *Run) bool {
 	return SameProgram(a, b) && path.IsAbs(a.Cwd) && a.Cwd == b.Cwd && a.Agent != "" && a.Agent == b.Agent && a.Harness == b.Harness
 }
 
-// SameProgram reports whether two runs ran the same program (the base name of each command's first word).
+// SameProgram reports whether two runs ran the same program (the base name of each command's recorded program).
 func SameProgram(a, b *Run) bool {
-	return a != nil && b != nil && program(a.Command) != "" && program(a.Command) == program(b.Command)
-}
-
-// program is the base name of a command line's first word: "codex" for "/usr/bin/codex --no-daemon".
-func program(cmd string) string {
-	f := strings.Fields(cmd)
-	if len(f) == 0 {
-		return ""
-	}
-	return path.Base(f[0])
+	return a != nil && b != nil && a.program() != "" && a.program() == b.program()
 }
 
 // NewReference is the Reference of enforced run id: its contract's net entries and what its Signal says it allowed.

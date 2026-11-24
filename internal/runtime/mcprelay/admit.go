@@ -17,8 +17,16 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/attention-span-ai/tego/internal/platform/peer"
 	"github.com/attention-span-ai/tego/internal/platform/proc"
 )
+
+// tcpTableOpened, when set, is called with the name of each /proc/net/tcp-shaped table a read opens; a test counts reads
+// with it.
+var tcpTableOpened func(name string)
+
+// socketInfo is the exact socket lookup the relay places a peer with; a test replaces it.
+var socketInfo = peer.TCPSocketInfo
 
 // ErrPeer is a control connection the service does not admit.
 var ErrPeer = errors.New("mcprelay: peer not admitted")
@@ -255,10 +263,25 @@ func tcpInodes(pid int) (map[uint64]bool, bool) {
 	return out, true
 }
 
-// peerSocketInode finds the inode of the socket on the peer's end of this connection: the row of the kernel's TCP
-// table whose local address is the peer and whose remote address is this listener.
+// peerSocketInode finds the inode of the socket on the peer's end of this connection. The exact lookup (sock_diag, one
+// request for the connection's four-tuple) answers it in a time that does not depend on how many sockets the host holds,
+// as the dashboard's peer check does; where the kernel has no TCP socket diagnostics, or answers no socket, it is the
+// row of the kernel's TCP table whose local address is the peer and whose remote address is this listener, which a read
+// of the whole table finds (and which a lookup that failed for any reason falls back to, so an error is never an
+// admission). C206.
 func peerSocketInode(peer, local netip.AddrPort) (uint64, error) {
+	if info, err := socketInfo(peer, local); err == nil && info.Inode != 0 {
+		return info.Inode, nil
+	}
+	return tableSocketInode(peer, local)
+}
+
+// tableSocketInode is peerSocketInode's fallback: the kernel's TCP tables, read whole.
+func tableSocketInode(peer, local netip.AddrPort) (uint64, error) {
 	for _, name := range []string{"/proc/net/tcp", "/proc/net/tcp6"} {
+		if tcpTableOpened != nil {
+			tcpTableOpened(name)
+		}
 		f, err := os.Open(name)
 		if err != nil {
 			continue

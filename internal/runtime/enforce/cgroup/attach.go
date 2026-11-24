@@ -121,6 +121,9 @@ func (h *Handle) Arm() error {
 	if h.armed {
 		return fmt.Errorf("%w: run %s is already armed", ErrNotPrepared, h.run.ID)
 	}
+	if err := h.recheckAdmission(); err != nil {
+		return err
+	}
 	h.armed = true
 	val := h.runRow()
 	if err := h.addCgroup(h.run.CgroupID, val); err != nil {
@@ -138,6 +141,34 @@ func (h *Handle) Arm() error {
 		if err := h.fan.markFor(m, h.policy.masks[m]); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// RecheckAdmission holds the prepared mode to its live admission facts. Adoption
+// calls it again after acquiring the migration lock, since Arm's answer cannot
+// be trusted across that wait. It changes no membership or prepared state.
+func (h *Handle) RecheckAdmission() error {
+	h.netMu.Lock()
+	defer h.netMu.Unlock()
+	if !h.prepared || h.detached || h.kern == nil {
+		return ErrNotPrepared
+	}
+	return h.recheckAdmission()
+}
+
+func (h *Handle) recheckAdmission() error {
+	if h.planeMode == "" {
+		return nil
+	}
+	if h.opts.Plane.RecheckAdmission == nil {
+		if h.planeMode == ebpfbindings.PlaneFmodRet {
+			return fmt.Errorf("cgroup: selected fmod_ret mode is no longer admitted: live admission checker is missing")
+		}
+		return nil
+	}
+	if err := h.opts.Plane.RecheckAdmission(); err != nil {
+		return fmt.Errorf("cgroup: selected %s mode is no longer admitted: %w", h.planeMode, err)
 	}
 	return nil
 }

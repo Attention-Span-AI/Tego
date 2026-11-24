@@ -65,10 +65,10 @@ func TestPauseRefusals(t *testing.T) {
 		t.Errorf("pause with no run: exit %d, want %d", code, identity.ExitUsage)
 	}
 	dir, id, _ := liveRun(t)
-	old := selfInRun
-	selfInRun = func() (bool, error) { return true, nil }
+	old := selfAnswer
+	selfAnswer = answerGoverned
 	code, _, errs := run(t, "resume", id)
-	selfInRun = old
+	selfAnswer = old
 	if code != identity.ExitFinding || !strings.Contains(errs, "a governed agent cannot change its own governance") {
 		t.Fatalf("resume inside a run: exit %d stderr %q", code, errs)
 	}
@@ -111,7 +111,7 @@ func controlLedger(t *testing.T, gaps []record.GapPayload) (dir, id string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := w.WriteRunStart(record.RunStartPayload{Command: []string{"true"}, Cwd: "/", Tier: "landlock", RecordMinor: record.Minor}); err != nil {
+	if err := w.WriteRunStart(record.RunStartPayload{Command: []string{"true"}, Cwd: "/", Tier: "landlock", RecordMinor: record.MinorLearn}); err != nil {
 		t.Fatal(err)
 	}
 	for _, g := range gaps {
@@ -202,5 +202,19 @@ func TestControlScanReadsOnlyAppended(t *testing.T) {
 	sc = controlScan{path: path, off: int64(len(data)) + 1, serial: 1}
 	if why, _ := sc.next(); why != "" {
 		t.Fatalf("a scan from inside a line took it: %q", why)
+	}
+}
+
+// TestPauseDidNotTakeWords (C159): the line for a pause the launcher could not freeze says the agent is still running
+// and what cancels the pause, and never that a resume "withdraws" it: the request the agent waits on is another request.
+func TestPauseDidNotTakeWords(t *testing.T) {
+	got := pauseDidNotTake("r-1", 7)
+	for _, want := range []string{"so the agent is still running", "tego session resume r-1 cancels your pause", "a request the agent waits on stays waiting for your answer", "(line #7)"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the line %q lacks %q", got, want)
+		}
+	}
+	if strings.Contains(got, "withdraws") {
+		t.Errorf("the line still says withdraws: %q", got)
 	}
 }

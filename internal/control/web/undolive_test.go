@@ -70,9 +70,14 @@ func TestUndoLiftsLiveBlockFromEventPage(t *testing.T) {
 		if err != nil || len(es) < 3 {
 			t.Fatalf("journal %+v %v", es, err)
 		}
-		last := es[len(es)-1]
-		if last.Op != rulefile.OpLive || last.Of != es[len(es)-2].ID || es[len(es)-2].Op != rulefile.OpRevert ||
-			len(last.Live) != 1 || !last.Live[0].Lift || !last.Live[0].OK || last.Live[0].Block != "exec:git" {
+		// The lift is journaled twice: begun before it is made, and done after; the revert is the line before.
+		begun, last, revert := es[len(es)-2], es[len(es)-1], es[len(es)-3]
+		if revert.Op != rulefile.OpRevert || begun.Op != rulefile.OpLive || begun.Of != revert.ID || len(begun.Live) != 1 ||
+			!begun.Live[0].Pending || !begun.Live[0].Lift || begun.Live[0].OK {
+			t.Errorf("the journal's begun lift: %+v", begun)
+		}
+		if last.Op != rulefile.OpLive || last.Of != revert.ID || len(last.Live) != 1 || !last.Live[0].Lift || !last.Live[0].OK ||
+			last.Live[0].Block != "exec:git" || last.Live[0].By != rulefile.LiveByUndo || last.Live[0].Serial == 0 {
 			t.Errorf("the journal's lift: %+v", last)
 		}
 	})
@@ -103,8 +108,15 @@ func TestUndoLiveLine(t *testing.T) {
 			{Err: "not lifted: the run is not running", Lift: true}}},
 			"The 2 live blocks it placed are being lifted: within about a second their runs may do that again. " +
 				"A live block it placed was not lifted: the run is not running; remove it on the run's page."},
-		{"kept", rules.Reverted{Kept: []rules.LiftOption{{}, {}}},
+		{"kept", rules.Reverted{Kept: []rules.LiftOption{{Mine: true}, {Mine: true}}},
 			"The 2 live blocks it placed stay on their runs until they end or you remove them on the run's page."},
+		{"kept, not provably its own", rules.Reverted{Kept: []rules.LiftOption{{}}},
+			"A live block on its run was left in place: Tego cannot show this change made it (it may be yours), so remove it on the run's page if you want it gone."},
+		{"redo", rules.Reverted{Restored: []rules.LiveResult{{OK: true}, {OK: true}, {Held: true, Err: "held"}, {Block: "exec:cat", Err: "not put back: the run is not running"}, {Err: "not put back: the journal could not be read"}}},
+			"The 2 live blocks the Undo had lifted are back on their runs, as they were. " +
+				"A live block it would put back was on its run already, so it was left as it was. " +
+				"The live block exec:cat was not put back: the run is not running; place it again on the run's page. " +
+				"A live block the Undo had lifted was not put back: the journal could not be read; place it again on the run's page."},
 	} {
 		if got := undoLiveLine(&tc.rv); got != tc.want {
 			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)

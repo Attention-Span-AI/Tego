@@ -12,6 +12,7 @@ Can change: Files and folders the agent can create, edit or delete.
 Programs: The programs the agent can start.
   - Can run bash  [Enforced by the operating system; line 10; editable]
   - Can run git status  [Best effort: tego checks the words of each command it starts; line 10; editable]
+  - Cannot run git with any other words than the commands allowed above  [Best effort: tego checks the words of each command it starts; line 10]
   - Can never run git push  [Best effort: tego checks the words of each command it starts; line 11]
   - Can never run git commit (asking first is not supported yet)  [Always refused, best effort: asking before a program runs is not supported yet, and tego checks the words of each command it starts; line 12]
   Cannot run any other program.
@@ -41,6 +42,7 @@ Rule keys:
   change fs.write fs.write[./out/] enforced
   programs exec.allow exec[bash] enforced (+1 more)
   programs exec.allow exec[git] best_effort
+  programs exec.args exec.args[git] best_effort
   programs exec.deny exec.deny[git push] best_effort
   programs exec.ask exec.ask[git commit] best_effort
   always-on built-in.deny_read fs.deny_read[$T/home/.ssh] enforced (+1 more)

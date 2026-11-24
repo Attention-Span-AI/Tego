@@ -21,10 +21,9 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/attention-span-ai/tego/internal/doctor"
-	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/platform/sys"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
+	"github.com/attention-span-ai/tego/internal/runtime/admission"
 	"github.com/attention-span-ai/tego/internal/runtime/enforce"
 	"github.com/attention-span-ai/tego/internal/watch/adopt"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
@@ -96,10 +95,11 @@ func cmdAdopt() Command {
 		uids       []int
 	)
 	return Command{
-		Name:       "adopt",
-		Summary:    "(root) govern an agent that is already running: move its process tree into a run and record it from the kernel",
-		Usage:      "--pid <pid> [--uid <uid>]... [--boundary <agent.yaml | name>] [--record <full|summary|off>] | --release --pid <pid>",
-		Supervises: true,
+		Name:         "adopt",
+		Summary:      "(root) govern an agent that is already running: move its process tree into a run and record it from the kernel",
+		Usage:        "--pid <pid> [--uid <uid>]... [--boundary <agent.yaml | name>] [--record <full|summary|off>] | --release --pid <pid>",
+		Supervises:   true,
+		HoldsSecrets: true,
 		Flags: func(fs *flag.FlagSet) {
 			fs.IntVar(&pid, "pid", 0, "the agent's process id (its whole tree is adopted: the process and its descendants in its cgroup)")
 			fs.StringVar(&boundary, "boundary", "", "hold the agent to this contract's file rules and exec allow-list through the kernel decision plane; "+
@@ -142,7 +142,12 @@ func cmdAdopt() Command {
 				}
 			}
 			if !adoptPrivileged() {
-				message(stderr, "", 0, 0, adoptPrivilegeMessage, codePrivilege)
+				command, why := sudoSelf("adopt --pid <pid>")
+				next := "run it as " + command
+				if why != "" {
+					next = why
+				}
+				message(stderr, "", 0, 0, adoptPrivilegeMessage+next, codePrivilege)
 				return identity.ExitLauncher
 			}
 			if release {
@@ -153,9 +158,9 @@ func cmdAdopt() Command {
 	}
 }
 
-// adoptPrivilegeMessage is the one sentence a refusal for want of privilege says.
+// adoptPrivilegeMessage is the explanation before the checked command or its refusal reason.
 const adoptPrivilegeMessage = "tego adopt: needs root of the initial user namespace (it moves another user's process " +
-	"between cgroups and loads kernel programs): run it with sudo"
+	"between cgroups and loads kernel programs): "
 
 // adoptOptions are one adoption's inputs.
 type adoptOptions struct {
@@ -251,12 +256,20 @@ func runAdopt(ctx context.Context, o adoptOptions, stdout, stderr io.Writer) int
 		return identity.ExitLauncher
 	}
 	m, cds, err := loadMachine(config.TrustAbort)
+	if err != nil {
+		writeConfigDiagnostics(stderr, cds)
+		configRefused(stderr, "tego adopt", err)
+		return identity.ExitConfig
+	}
+	makeOwnDirs(m)
+	// First use creates the absent user layer's parent. Pin the snapshot
+	// after our own initialization, so final admission detects outside changes.
+	m, cds, err = loadMachine(config.TrustAbort)
 	writeConfigDiagnostics(stderr, cds)
 	if err != nil {
 		configRefused(stderr, "tego adopt", err)
 		return identity.ExitConfig
 	}
-	makeOwnDirs(m)
 	a, code := adoptPrepare(ctx, m, o, t, t.Owner(), stderr)
 	if a == nil {
 		return code
@@ -303,8 +316,11 @@ type preparedAdoption struct {
 	cleanup  func()
 	boundary bool
 	// owner is the uid the table was compiled for, and home that uid's home it compiled against ("" the machine's).
-	owner int
-	home  string
+	owner         int
+	home          string
+	homeLocation  guardRecordLocation
+	locationCheck func(*config.Machine) error
+	admission     *admission.Table
 	// source is the boundary contract's file, which run_start records; nil with no boundary.
 	source *record.ContractSource
 	// records is the directory the owner's ~/.tego was (followed, as the compile resolves it) when a boundary table
@@ -313,36 +329,19 @@ type preparedAdoption struct {
 	records adopt.FileID
 	// homeMissing says home itself did not exist when a boundary table was compiled (a service user's /nonexistent):
 	// no records of the owner can be there, and tego makes no home, so records is the zero value.
-	homeMissing bool
+	homeMissing  bool
+	ownerUnknown bool
 	// homeNotOwners says tego, as root, made no ~/.tego in a home the owner may not write (makeOwnRecords,
 	// errHomeNotOwners) and none was there: no `tego run` of the owner's can have made records there, so records is
 	// the zero value too.
 	homeNotOwners bool
-	// fmodRet says the backend was selected with the decision plane in fmod_ret mode, which the kernel's preemption
-	// model must still admit before each adoption under it (fmodRetLapsed, ADR 0024 (16)).
-	fmodRet bool
-}
-
-// adoptFmodRetRefused is doctor.FmodRetRefusedNow: why this kernel, read afresh, no longer admits fmod_ret mode, ""
-// when it does. A variable so a test can change the kernel's mode between two adoptions.
-var adoptFmodRetRefused = doctor.FmodRetRefusedNow
-
-// fmodRetLapsed reports a backend selected in fmod_ret mode on a kernel that no longer admits the mode (root changed
-// a PREEMPT_DYNAMIC kernel's mode in debugfs, or debugfs can no longer be read): the guard selects again before it
-// adopts under it (guard.sharedTable), as every `tego run` reads the mode again (ADR 0024 (16)). An adoption already
-// running keeps its mode: a change made while it lives is not watched.
-func (a *preparedAdoption) fmodRetLapsed() string {
-	if !a.fmodRet {
-		return ""
-	}
-	return adoptFmodRetRefused()
 }
 
 // stale reports a boundary table whose owner's ~/.tego is no longer the directory the table denies (records): it was
 // removed, replaced, or is no directory now, and a deny attaches to the directory a compile found, so the records the
 // owner's next `tego run` writes there would be readable to an agent adopted under the old table. The guard compiles
-// such a table again before it adopts under it (guard.sharedTable); an adoption already running keeps its table (ADR
-// 0055 Decision 5). A table compiled while home itself did not exist is stale once it does, and one compiled with no
+// each adoption afresh; this predicate also detects state appearing during compilation (below). An adoption already
+// running keeps its table (ADR 0055 Decision 5). A table compiled while home itself did not exist is stale once it does, and one compiled with no
 // ~/.tego in a home the owner may not write once a ~/.tego is there.
 func (a *preparedAdoption) stale() bool {
 	if !a.boundary || a.home == "" {
@@ -369,21 +368,29 @@ func (a *preparedAdoption) stale() bool {
 // contract's own: a contract that declares it gets no built-in row beside it (tegoOwn), and its row is R6a's deny all
 // the same.
 func (a *preparedAdoption) keyed() []tegoruntime.AdoptKeyed {
-	if !a.boundary || a.home == "" || a.records == (adopt.FileID{}) || a.rt == nil {
+	if !a.boundary || a.rt == nil {
 		return nil
 	}
-	want := ownRecords(a.home)
-	resolved, err := filepath.EvalSymlinks(want)
-	if err != nil {
-		resolved = want
-	}
-	for _, r := range a.rt.FS {
-		if r.Kind == agent.FSDenyRead && (filepath.Clean(r.Path) == want || r.Canonical() == resolved) {
-			return []tegoruntime.AdoptKeyed{{Path: r.Canonical(), Name: want, ID: a.records,
-				What: "the agent owner's own tego records"}}
+	var out []tegoruntime.AdoptKeyed
+	if a.home != "" && a.records != (adopt.FileID{}) {
+		want := ownRecords(a.home)
+		resolved, err := filepath.EvalSymlinks(want)
+		if err != nil {
+			resolved = want
+		}
+		for _, r := range a.rt.FS {
+			if r.Kind == agent.FSDenyRead && (filepath.Clean(r.Path) == want || r.Canonical() == resolved) {
+				out = append(out, tegoruntime.AdoptKeyed{Path: r.Canonical(), Name: want, ID: a.records, What: "the agent owner's own tego records"})
+				break
+			}
 		}
 	}
-	return nil
+	for _, pin := range a.rt.BaselineFiles() {
+		if !slices.ContainsFunc(out, func(p tegoruntime.AdoptKeyed) bool { return p.Path == pin.Path }) {
+			out = append(out, tegoruntime.AdoptKeyed{Path: pin.Path, Name: pin.Path, ID: adopt.FileID{Dev: pin.Device, Ino: pin.Inode}, What: "the machine baseline target"})
+		}
+	}
+	return out
 }
 
 // ownRecords is ~/.tego under home.
@@ -565,14 +572,15 @@ func madeByTego(fd int) error {
 
 func (a *preparedAdoption) deps(identified time.Time, log *slog.Logger) tegoruntime.AdoptDeps {
 	return tegoruntime.AdoptDeps{
-		Config: a.m, Enforce: a.backend, ObserveFactory: recorderFor(a.rt, log), Build: runBuild(),
+		Config: a.m, ReloadConfig: a.reloadConfiguration, Enforce: a.backend, ObserveFactory: recorderFor(a.rt, log), Build: runBuild(),
 		ContractYAML: a.yaml, AnchorPath: a.anchor, Logger: log, StateDir: adoptStateDir, Identified: identified,
-		ContractSource: a.source,
+		ContractSource: a.source, BaselineOwnerUnknown: a.ownerUnknown, Home: a.home, Admission: a.admission,
 	}
 }
 
 // prepareAdoption compiles the adoption's table (the record-only one, or the boundary contract with every rule an
-// adopted process cannot be held to refused), selects its tier-2 backend and checks the chain anchor. A nil result is
+// adopted process cannot be held to refused) and selects its tier-2 backend through the shared admission table.
+// Runtime extends that table with checks needing prepared objects, including the anchor file probe. A nil result is
 // a refusal already printed, with its exit code.
 //
 // The table compiles against the home of owner, the uid the adopted process runs as, from the passwd database: "~"
@@ -583,47 +591,87 @@ func (a *preparedAdoption) deps(identified time.Time, log *slog.Logger) tegorunt
 // built-in lists could not be compiled. Rejected: compiling against the adopter's home (the agent's own credentials
 // stayed readable while run_start claimed fs.deny_read), and refusing every adoption of another user's process.
 func prepareAdoption(ctx context.Context, m *config.Machine, o adoptOptions, t adopt.Process, owner int, stderr io.Writer) (*preparedAdoption, int) {
-	a := &preparedAdoption{m: m, boundary: o.boundary != "", cleanup: func() {}, owner: owner}
-	rt, code := compileAdoptionTable(ctx, m, o, t, a, stderr)
-	if rt == nil {
+	a := &preparedAdoption{m: m, boundary: o.boundary != "", cleanup: func() {}, owner: owner, admission: &admission.Table{}}
+	var rt *agent.RuleTable
+	code := identity.ExitLauncher
+	refuse := func(err error, prefix, diagnostic string) error {
+		message(stderr, "", 0, 0, "tego adopt: "+prefix+err.Error(), diagnostic)
+		return err
+	}
+	if err := a.admission.Add(
+		admission.Check{Name: "compiled contract", SnapshotReason: "The requested contract and compiled choices stay fixed; later source edits apply to a new preparation, and a recording-only target home admits no file boundary or baseline.", Run: func() error {
+			var result int
+			rt, result = compileAdoptionTable(ctx, m, o, t, a, stderr)
+			if rt == nil {
+				code = result
+				return fmt.Errorf("contract compilation refused")
+			}
+			return nil
+		}},
+		admission.Check{Name: "compiled record release gate", SnapshotReason: "This checks the compiled table; the configuration entry independently checks even a newly added baseline before migration.", Run: func() error {
+			if err := tegoruntime.CheckBaselineLaunchRecord(rt); err != nil {
+				return refuse(err, "", codeRun)
+			}
+			return nil
+		}},
+		admission.Check{Name: "selected backend", SnapshotReason: "Functional probes, immutable boot facts and the selected mechanism are preparation inputs; final admission checks that mechanism's live admission without reselecting it.", Run: func() error {
+			if a.boundary {
+				rt.Capture = agent.CaptureOff
+				sel := runOptions{cmd: "tego adopt", tier: string(backend.TierCgroup), adopted: true}
+				b, srt, _, result := selectBackend(ctx, sel, m, rt, stderr)
+				if b == nil {
+					code = result
+					return fmt.Errorf("backend selection refused")
+				}
+				a.backend, a.rt = b, srt
+			} else {
+				b, err := enforce.AdoptionRecorder(m)
+				if err != nil {
+					return refuse(err, "", backend.CodeTierUnavailable)
+				}
+				a.backend, a.rt = b, recordOnly(rt.AtTier(backend.TierCgroup))
+			}
+			return nil
+		}},
+		admission.Check{Name: "prepared contract copy", SnapshotReason: "The record copies the compiled contract snapshot and anchor path selected from the prepared configuration; final admission compares that configuration.", Run: func() error {
+			var err error
+			a.yaml, err = contractCopy(a.rt)
+			if err != nil {
+				return refuse(err, "contract copy: ", codeIO)
+			}
+			a.anchor, err = anchorPath(m)
+			if err != nil {
+				return refuse(err, "chain anchor: ", codeRun)
+			}
+			return nil
+		}},
+		admission.Check{Name: "owner and record placement", Rechecked: true, Run: func() error {
+			preparing := a.locationCheck == nil
+			if preparing {
+				root, err := ledgerRootOf(m)
+				if err != nil {
+					return refuse(err, "record placement: ", codeAdoptRefused)
+				}
+				locations := &guard{recordRoot: root, recordAnchor: a.anchor}
+				if err := locations.captureRecordLocations(); err != nil {
+					return refuse(err, "record placement: ", codeAdoptRefused)
+				}
+				a.locationCheck = locations.sameRecordLocation
+			}
+			_, err := a.recheckOwnerConfiguration(m)
+			if err != nil && preparing {
+				return refuse(err, "", codeAdoptRefused)
+			}
+			return err
+		}},
+	); err != nil {
 		a.cleanup()
 		return nil, code
 	}
-	if a.boundary {
-		rt.Capture = agent.CaptureOff
-		sel := runOptions{cmd: "tego adopt", tier: string(backend.TierCgroup), adopted: true}
-		b, srt, rep, code := selectBackend(ctx, sel, m, rt, stderr)
-		if b == nil {
-			return nil, code
-		}
-		a.backend, a.rt = b, srt
-		a.fmodRet = rep != nil && rep.Plane != nil && rep.Plane.Selected == config.PlaneFmodRet
-	} else {
-		b, err := enforce.AdoptionRecorder(m)
-		if err != nil {
-			a.cleanup()
-			message(stderr, "", 0, 0, "tego adopt: "+err.Error(), backend.CodeTierUnavailable)
-			return nil, identity.ExitLauncher
-		}
-		a.backend, a.rt = b, recordOnly(rt.AtTier(backend.TierCgroup))
-	}
-	yaml, err := contractCopy(a.rt)
-	if err != nil {
+	if err := a.admission.Prepare(); err != nil {
 		a.cleanup()
-		message(stderr, "", 0, 0, "tego adopt: contract copy: "+err.Error(), codeIO)
-		return nil, identity.ExitLauncher
+		return nil, code
 	}
-	a.yaml = yaml
-	anchor, err := anchorPath(m)
-	if err == nil {
-		err = ledger.ProbeAnchor(anchor)
-	}
-	if err != nil {
-		a.cleanup()
-		message(stderr, "", 0, 0, "tego adopt: chain anchor: "+err.Error(), codeRun)
-		return nil, identity.ExitLauncher
-	}
-	a.anchor = anchor
 	return a, identity.ExitOK
 }
 
@@ -637,6 +685,7 @@ func compileAdoptionTable(ctx context.Context, m *config.Machine, o adoptOptions
 		return nil, refuseStdinContract(stderr)
 	}
 	home, err := adoptHomeOf(a.owner)
+	a.ownerUnknown = err != nil || home == ""
 	switch {
 	case err != nil && a.boundary:
 		message(stderr, o.boundary, 0, 0, fmt.Sprintf("tego adopt: a boundary's built-in deny_read and deny_write lists "+
@@ -646,6 +695,14 @@ func compileAdoptionTable(ctx context.Context, m *config.Machine, o adoptOptions
 		home = "" // a record-only table refuses nothing: the machine's home
 	}
 	a.home = home
+	if a.boundary && home != "" {
+		location, err := resolveAdoptionHome(home)
+		if err != nil {
+			message(stderr, o.boundary, 0, 0, "tego adopt: owner home placement: "+err.Error(), codeAdoptRefused)
+			return nil, identity.ExitLauncher
+		}
+		a.homeLocation = location
+	}
 	path := o.boundary
 	if path == "" {
 		if path, a.cleanup, err = writeAdoptContract(t, o.record); err != nil {
@@ -672,6 +729,8 @@ func compileAdoptionTable(ctx context.Context, m *config.Machine, o adoptOptions
 	// ~/.tego was made first, as its first run would, and the refusal came after. The run path's lines (a refused name,
 	// an interrupt, the tier's selection) say tego adopt, as this function's own do.
 	ro := runOptions{cmd: "tego adopt", contract: path, generated: o.boundary == "", record: o.record, home: home, adopted: true}
+	ro.observe = !a.boundary
+	ro.ownerUID, ro.ownerSet = a.owner, true
 	if a.boundary {
 		l, code := loadRunContract(ro, m, diags)
 		if l == nil {
@@ -911,9 +970,16 @@ func budgetCeiling(key string) bool {
 // supervisor's to decide). What remains is held by the decision plane: fs.write (and the refusal of every other
 // write), fs.deny_read (the built-in list included), exec.allow's programs and exec.anonymous, keyring.
 func unenforceableForAdoption(rt *agent.RuleTable) []string {
-	c := rt.Contract
+	c := rt.DecisionContract()
 	var out []string
 	add := func(format string, args ...any) { out = append(out, fmt.Sprintf(format, args...)) }
+	if rt.Baseline != nil && rt.Baseline.Applied {
+		for _, entry := range rt.Baseline.Entries {
+			if entry.Key == config.BaselineDenyRead && entry.State == config.LayerAbsent {
+				add("baseline.%s %q from %v: an absent target requires the launch-time Landlock ancestor/name guard, which cannot attach to a running process", entry.Key, entry.Value, entry.Sources)
+			}
+		}
+	}
 	if t := string(c.Tier); t != "" && t != string(backend.TierAuto) && t != string(backend.TierCgroup) {
 		add("tier: %s: an adoption runs at tier cgroup", t)
 	}

@@ -11,9 +11,14 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
+	"strings"
+	"syscall"
+	"time"
 
 	"github.com/attention-span-ai/tego/internal/buildinfo"
+	"github.com/attention-span-ai/tego/internal/check/cireceipt"
 	"github.com/attention-span-ai/tego/internal/check/receipt"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
@@ -39,28 +44,55 @@ var receiptStamp = func() receipt.MadeBy {
 // (receipt.Check), never reading chain.log: exit 0 when they match, 1 when they do not, 2 for usage, 125 when it could
 // not check. It is a flag, not a subcommand: `tego receipt check` already names the run whose id ends in "check".
 func cmdReceipt() Command {
-	var asJSON, last, verify bool
-	var check string
+	var asJSON, last, verify, requireEnded bool
+	var check, statusFile, verifyCI, expect, checksums, trustedRoot, cosign, cosignHash, bundle string
 	return Command{
 		Name:    "receipt",
 		Summary: "what a run did: time, files, connections, secrets read, refusals, asks, tokens",
-		Usage:   "[<run> | --last] [--json] [--verify] | --check <receipt.json> <run folder> [--json]",
+		Usage:   "[<run> | --last] [--json] [--verify] | --check <receipt.json> <run folder> [--require-ended] [--status-file <path>] [--json] | --verify-ci <evidence> --expect <file> --checksums <file> [--json]",
 		Flags: func(fs *flag.FlagSet) {
 			fs.BoolVar(&asJSON, "json", false, "one JSON object")
 			fs.BoolVar(&verify, "verify", false, "also check the run's hash chain and its chain.log anchor, as events --verify (exit 1 when it fails)")
 			fs.BoolVar(&last, "last", false, "the newest run under the ledger root (the same as giving no run)")
 			fs.StringVar(&check, "check", "", "compare this bound receipt (from receipt --json) with the run folder given, from the two files alone (exit 1 when they differ, 125 when it cannot check)")
+			fs.BoolVar(&requireEnded, "require-ended", false, "require run_end, confirmed teardown and complete recorded coverage with --check")
+			fs.StringVar(&statusFile, "status-file", "", "launcher status file for --check --require-ended (default run-status.json beside the record or run folder)")
+			fs.StringVar(&verifyCI, "verify-ci", "", "check retained CI evidence and signatures against independent expectations")
+			fs.StringVar(&expect, "expect", "", "independent tego.ci-expect/1 JSON")
+			fs.StringVar(&checksums, "checksums", "", "independently authenticated release checksums, outside the evidence directory")
+			fs.StringVar(&trustedRoot, "trusted-root", "", "independently trusted Sigstore root JSON, outside evidence")
+			fs.StringVar(&cosign, "cosign", "", "absolute path to independently pinned cosign v3.1.3")
+			fs.StringVar(&cosignHash, "cosign-sha256", "", "independent SHA-256 pin for cosign")
+			fs.StringVar(&bundle, "bundle", "", "detached receipt Sigstore bundle with --check; requires --expect, --trusted-root, --cosign and --cosign-sha256")
 		},
 		Run: func(ctx context.Context, fs *flag.FlagSet, stdout, stderr io.Writer) int {
 			checking := false
-			fs.Visit(func(f *flag.Flag) { checking = checking || f.Name == "check" })
+			ciChecking := false
+			fs.Visit(func(f *flag.Flag) {
+				checking = checking || f.Name == "check"
+				ciChecking = ciChecking || f.Name == "verify-ci"
+			})
+			if ciChecking {
+				if verifyCI == "" || expect == "" || checksums == "" || fs.NArg() != 0 || checking || verify || last || requireEnded || statusFile != "" || bundle != "" {
+					message(stderr, "", 0, 0, "tego receipt: use --verify-ci <evidence> --expect <file> --checksums <file> [--json]", codeUsage)
+					return identity.ExitUsage
+				}
+				return runReceiptCI(ctx, verifyCI, expect, checksums, trustedRoot, cosign, cosignHash, asJSON, stdout, stderr)
+			}
+			if (bundle == "" && (expect != "" || trustedRoot != "" || cosign != "" || cosignHash != "")) || checksums != "" || (bundle != "" && (!checking || expect == "" || trustedRoot == "" || cosign == "" || cosignHash == "")) || (!checking && (requireEnded || statusFile != "")) || (statusFile != "" && !requireEnded) {
+				message(stderr, "", 0, 0, "tego receipt: CI flags require --verify-ci; --require-ended and --status-file require --check", codeUsage)
+				return identity.ExitUsage
+			}
 			if checking {
 				if check == "" || fs.NArg() != 1 || fs.Arg(0) == "" || verify || last {
 					message(stderr, "", 0, 0, "tego receipt: --check takes a receipt file and one run folder (or its "+
 						"events.jsonl), and no --verify or --last: tego session show --check receipt.json <run folder>", codeUsage)
 					return identity.ExitUsage
 				}
-				return runReceiptCheck(ctx, check, fs.Arg(0), asJSON, stdout, stderr)
+				if bundle != "" {
+					return runReceiptBundleCheck(ctx, check, fs.Arg(0), bundle, expect, trustedRoot, cosign, cosignHash, asJSON, requireEnded, statusFile, stdout, stderr)
+				}
+				return runReceiptCheck(ctx, check, fs.Arg(0), asJSON, requireEnded, statusFile, stdout, stderr)
 			}
 			if fs.NArg() > 1 || (fs.NArg() == 1 && last) {
 				message(stderr, "", 0, 0, "tego receipt: at most one run id or run directory; none (or --last) means the newest run", codeUsage)
@@ -101,8 +133,8 @@ func runReceipt(ctx context.Context, ref string, asJSON, verify bool, stdout, st
 	defer func() { _ = r.Close() }()
 	r.SkipNewerVersions()
 	defer func() { warnNewer(stderr, "receipt", dir, r.SkippedNewer()) }()
-	// The ledger does not record the run's HOME; "~" in the text is the reader's own home, as a shell reads it.
-	opt := receipt.Options{NowMonoNS: liveMonoNS(r), Prices: measurePrices("receipt", mc, stderr), Home: os.Getenv("HOME")}
+	// The reader's home is not the run's: the receipt folds "~" only under the home the run recorded, and says so when none.
+	opt := receipt.Options{NowMonoNS: liveMonoNS(r), Prices: measurePrices("receipt", mc, stderr), SayNoHome: true}
 	if asJSON {
 		// Only the JSON receipt is bound: it is the one a script keeps and checks later (--check). The text receipt
 		// stays byte for byte what it was.
@@ -117,7 +149,15 @@ func runReceipt(ctx context.Context, ref string, asJSON, verify bool, stdout, st
 		}
 		return readFailed(stderr, "receipt", err)
 	}
-	write := rc.Text
+	write := func(w io.Writer) error {
+		// At a terminal the long sentences are broken at their words; to a pipe or a file the text is what it was.
+		var b strings.Builder
+		if err := rc.Text(&b); err != nil {
+			return err
+		}
+		_, err := io.WriteString(w, fitTerminal(w, b.String()))
+		return err
+	}
 	if asJSON {
 		write = rc.JSON
 		if b := rc.Binding; b != nil && b.Error != "" {
@@ -170,8 +210,8 @@ func verifyReceiptChain(ctx context.Context, dir string, asJSON bool, mc *machin
 // runReceiptCheck is `tego receipt --check <receipt.json> <record>`: receipt.Check, then its result as text or one
 // JSON object, and its exit (receipt.CheckResult.ExitCode). It resolves no run id and no anchor: the record is the path
 // given, and chain.log is never read.
-func runReceiptCheck(ctx context.Context, receiptFile, record string, asJSON bool, stdout, stderr io.Writer) int {
-	res := receipt.Check(ctx, receipt.CheckInput{Receipt: receiptFile, Record: record, By: receiptStamp()})
+func runReceiptCheck(ctx context.Context, receiptFile, record string, asJSON, requireEnded bool, statusFile string, stdout, stderr io.Writer) int {
+	res := receipt.Check(ctx, receipt.CheckInput{Receipt: receiptFile, Record: record, By: receiptStamp(), RequireEnded: requireEnded, StatusFile: statusFile})
 	write := res.Text
 	if asJSON {
 		write = res.JSON
@@ -181,6 +221,102 @@ func runReceiptCheck(ctx context.Context, receiptFile, record string, asJSON boo
 		return identity.ExitError
 	}
 	return res.ExitCode()
+}
+
+func runReceiptCI(ctx context.Context, dir, expectPath, checksumsPath, rootPath, cosignPath, cosignHash string, asJSON bool, stdout, stderr io.Writer) int {
+	paths := []string{expectPath, checksumsPath}
+	if rootPath != "" {
+		paths = append(paths, rootPath, cosignPath)
+	}
+	if err := independentCIInputs(dir, paths); err != nil {
+		message(stderr, "", 0, 0, err.Error(), codeIO)
+		return identity.ExitError
+	}
+	expect, err := readCIInput(expectPath, 64<<10)
+	if err != nil {
+		message(stderr, "", 0, 0, err.Error(), codeIO)
+		return identity.ExitError
+	}
+	ex, err := cireceipt.DecodeExpect(expect)
+	if err != nil {
+		message(stderr, "", 0, 0, err.Error(), codeIO)
+		return identity.ExitError
+	}
+	checksums, err := readCIInput(checksumsPath, 4<<20)
+	if err != nil {
+		message(stderr, "", 0, 0, err.Error(), codeIO)
+		return identity.ExitError
+	}
+	hash, err := receipt.ExecutableSHA256()
+	if err != nil {
+		message(stderr, "", 0, 0, err.Error(), codeIO)
+		return identity.ExitError
+	}
+	by := receiptStamp()
+	scratch, err := os.MkdirTemp("", "tego-ci-check-")
+	if err != nil {
+		message(stderr, "", 0, 0, err.Error(), codeIO)
+		return identity.ExitError
+	}
+	defer func() { _ = os.RemoveAll(scratch) }() // only this invocation's private copies
+	var bundles cireceipt.BundleVerifier
+	if rootPath != "" || cosignPath != "" || cosignHash != "" {
+		root, err := readCIInput(rootPath, 4<<20)
+		if err != nil {
+			message(stderr, "", 0, 0, err.Error(), codeIO)
+			return identity.ExitError
+		}
+		bundles = cireceipt.CosignVerifier{Path: cosignPath, SHA256: cosignHash, TrustedRoot: root, ScratchDir: scratch}
+	}
+	res, err := cireceipt.Verify(ctx, cireceipt.Input{Directory: dir, Expectation: expect, Bundles: bundles,
+		ScratchDir: scratch,
+		Release:    cireceipt.Release{Version: ex.Tego.Version, Commit: ex.Tego.Commit, Checksums: checksums},
+		Checker:    cireceipt.Binary{Asset: "tego_" + strings.TrimPrefix(by.TegoVersion, "v") + "_linux_" + runtime.GOARCH, SHA256: hash}, By: by})
+	if err != nil {
+		message(stderr, "", 0, 0, err.Error(), codeIO)
+		return identity.ExitError
+	}
+	write := res.Text
+	if asJSON {
+		write = res.JSON
+	}
+	if err := write(stdout); err != nil {
+		message(stderr, "", 0, 0, err.Error(), codeIO)
+		return identity.ExitError
+	}
+	return res.ExitCode()
+}
+
+func readCIInput(path string, limit int64) ([]byte, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	dir, err := openDirectoryNoLinks(filepath.Dir(abs))
+	if err != nil {
+		return nil, fmt.Errorf("tego receipt: CI input: %w", err)
+	}
+	defer func() { _ = dir.Close() }() // directory held only while reading this input
+	f, err := ledger.OpenRegularAt(dir, filepath.Base(abs), path)
+	if err != nil {
+		return nil, fmt.Errorf("tego receipt: %w", err)
+	}
+	defer func() { _ = f.Close() }() // read-only descriptor
+	st, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if stat, ok := st.Sys().(*syscall.Stat_t); !ok || stat.Nlink != 1 {
+		return nil, fmt.Errorf("tego receipt: CI input must have exactly one link")
+	}
+	b, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > limit {
+		return nil, fmt.Errorf("tego receipt: %s exceeds %d bytes", path, limit)
+	}
+	return b, nil
 }
 
 // newestRunDir is the newest run directory under the machine's ledger root (by the mint time in its id,
@@ -205,4 +341,112 @@ func newestRunDir(mc *machineOnce) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("no run under %s yet", root)
+}
+
+// runReceiptBundleCheck freezes the receipt before both consumers read it. A
+// signature check never authenticates a subsequently reopened mutable receipt.
+func runReceiptBundleCheck(ctx context.Context, receiptPath, recordPath, bundlePath, expectPath, rootPath, cosignPath, cosignHash string, asJSON, requireEnded bool, statusFile string, stdout, stderr io.Writer) int {
+	if err := independentCIInputs(filepath.Dir(receiptPath), []string{expectPath, rootPath, cosignPath}); err != nil {
+		message(stderr, "", 0, 0, err.Error(), codeIO)
+		return identity.ExitError
+	}
+	data, err := readCIInput(receiptPath, 64<<20)
+	if err != nil {
+		message(stderr, "", 0, 0, err.Error(), codeIO)
+		return identity.ExitError
+	}
+	bundle, err := readCIInput(bundlePath, 4<<20)
+	if err != nil {
+		message(stderr, "", 0, 0, err.Error(), codeIO)
+		return identity.ExitError
+	}
+	expected, err := readCIInput(expectPath, 64<<10)
+	if err != nil {
+		message(stderr, "", 0, 0, err.Error(), codeIO)
+		return identity.ExitError
+	}
+	e, err := cireceipt.DecodeExpect(expected)
+	if err != nil {
+		message(stderr, "", 0, 0, err.Error(), codeIO)
+		return identity.ExitError
+	}
+	root, err := readCIInput(rootPath, 4<<20)
+	if err != nil {
+		message(stderr, "", 0, 0, err.Error(), codeIO)
+		return identity.ExitError
+	}
+	scratch, err := os.MkdirTemp("", "tego-receipt-bundle-")
+	if err != nil {
+		message(stderr, "", 0, 0, err.Error(), codeIO)
+		return identity.ExitError
+	}
+	defer func() { _ = os.RemoveAll(scratch) }() // this invocation owns all private copies
+	frozen := filepath.Join(scratch, "receipt.json")
+	if err := os.WriteFile(frozen, data, 0600); err != nil {
+		message(stderr, "", 0, 0, err.Error(), codeIO)
+		return identity.ExitError
+	}
+	res := receipt.Check(ctx, receipt.CheckInput{Receipt: frozen, Record: recordPath, By: receiptStamp(), RequireEnded: requireEnded, StatusFile: statusFile})
+	verifier := cireceipt.CosignVerifier{Path: cosignPath, SHA256: cosignHash, TrustedRoot: root, ScratchDir: scratch}
+	checked, err := verifier.VerifyReceipt(ctx, data, bundle, e)
+	if err != nil {
+		res.Checks = append(res.Checks, receipt.CheckStep{Name: "signature", Result: receipt.StepNotChecked, Why: err.Error()})
+		if res.ExitCode() == 0 {
+			res.Result = receipt.CheckCannot
+			res.Complete = false
+		}
+	} else {
+		pass := len(checked.Checks) == len(cireceipt.BundleChecks())/2 && len(checked.IntegratedTimes) == 1
+		for _, c := range checked.Checks {
+			res.Checks = append(res.Checks, receipt.CheckStep{Name: "signature." + c.Name, Result: c.Result, Why: c.Why})
+			pass = pass && c.Result == receipt.StepPass
+		}
+		start, _ := time.Parse(time.RFC3339, e.Attempt.StartedAt)
+		end, _ := time.Parse(time.RFC3339, e.Attempt.CompletedAt)
+		for _, when := range checked.IntegratedTimes {
+			pass = pass && !when.Before(start.Add(-60*time.Second)) && !when.After(end.Add(60*time.Second))
+		}
+		if !pass {
+			res.Result = receipt.CheckMismatch
+			res.Complete = false
+			res.Checks = append(res.Checks, receipt.CheckStep{Name: "signature", Result: receipt.StepFail, Why: "signature, exact identity or integration-time comparison failed"})
+		}
+	}
+	write := res.Text
+	if asJSON {
+		write = res.JSON
+	}
+	if err := write(stdout); err != nil {
+		message(stderr, "", 0, 0, err.Error(), codeIO)
+		return identity.ExitError
+	}
+	return res.ExitCode()
+}
+
+func independentCIInputs(evidence string, paths []string) error {
+	base, err := filepath.Abs(evidence)
+	if err != nil {
+		return err
+	}
+	resolvedBase, err := filepath.EvalSymlinks(base)
+	if err != nil {
+		return err
+	}
+	for _, path := range paths {
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return err
+		}
+		resolved, err := filepath.EvalSymlinks(abs)
+		if err != nil {
+			return err
+		}
+		for _, pair := range [][2]string{{base, abs}, {resolvedBase, resolved}} {
+			rel, err := filepath.Rel(pair[0], pair[1])
+			if err != nil || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
+				return errors.New("tego receipt: expectations, roots and verifier must be supplied independently outside evidence")
+			}
+		}
+	}
+	return nil
 }

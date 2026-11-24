@@ -123,6 +123,7 @@ func driftError(stderr io.Writer, err error) int {
 // links for every deny-write search.
 type machineOnce struct {
 	stderr   io.Writer
+	strict   bool // permission-changing consumers require a complete snapshot
 	done     bool
 	reported bool // get printed the failure
 	m        *config.Machine
@@ -134,13 +135,15 @@ type machineOnce struct {
 // the merged contract (its canonical hash, which covers the extends chain it was loaded with), the run's cwd
 // and its command-line command.
 type tableKey struct {
-	hash       [32]byte
-	cwd        string
-	runCommand string
+	baselineEvidence string
+	hash             [32]byte
+	cwd              string
+	runCommand       string
 }
 
-// compileTable is agent.Compile; a variable so a test can count the compiles an aggregation makes.
-var compileTable = agent.Compile
+// compileTable reconstructs recorded source with an UNKNOWN baseline. It is a
+// variable so a test can count the compiles an aggregation makes.
+var compileTable = agent.UnknownBaselineReplay().Compile
 
 // get is the machine config, loaded on the first call.
 func (o *machineOnce) get() (*config.Machine, error) {
@@ -158,7 +161,11 @@ func (o *machineOnce) get() (*config.Machine, error) {
 func (o *machineOnce) load() (*config.Machine, error) {
 	if !o.done {
 		o.done = true
-		m, cds, err := loadMachine(config.TrustWarn)
+		mode := config.TrustWarn
+		if o.strict {
+			mode = config.TrustAbort
+		}
+		m, cds, err := loadMachine(mode)
 		writeConfigDiagnostics(o.stderr, cds)
 		o.m, o.err = m, err
 	}
@@ -223,8 +230,8 @@ func contractTable(ctx context.Context, dir string, origin runOrigin, mc *machin
 		return nil, false
 	}
 	m, err := mc.get()
-	if err != nil {
-		return nil, false
+	if err != nil || !m.BaselineKnown() {
+		return nil, true
 	}
 	c, ds, err := loadContractCopy(path, origin.contractHash, profileSources(m))
 	if err != nil {
@@ -248,14 +255,25 @@ func contractTable(ctx context.Context, dir string, origin runOrigin, mc *machin
 	if origin.runCommand != "" {
 		opts = append(opts, agent.WithRunCommand(origin.runCommand))
 	}
-	key, keyed := tableKey{cwd: origin.cwd, runCommand: origin.runCommand}, false
+	compile := compileTable
+	evidence := ""
+	if origin.start != nil && origin.start.BaselineRecorded() {
+		replay, err := agent.ReplayRecordedBaseline(c, *origin.start)
+		if err != nil {
+			message(stderr, path, 0, 0, "baseline replay refused: "+err.Error(), codeIO)
+			return nil, true
+		}
+		compile = replay.Compile
+		evidence = origin.start.Baseline.EvidenceSHA256
+	}
+	key, keyed := tableKey{baselineEvidence: evidence, cwd: origin.cwd, runCommand: origin.runCommand}, false
 	if h, err := c.Hash(); err == nil {
 		key.hash, keyed = h, true
 		if rt, ok := mc.tables[key]; ok {
 			return rt, false
 		}
 	}
-	rt, ds, err = compileTable(c, m, opts...)
+	rt, ds, err = compile(c, m, opts...)
 	if ctx.Err() != nil {
 		return nil, false // driftReport returns the interrupt, never a degraded contract report
 	}

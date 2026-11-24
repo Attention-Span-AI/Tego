@@ -27,7 +27,7 @@ func (l *Loop) refuseAskConnect(n *notif, d dest, proto, rule, host, reason stri
 	if g != nil {
 		ev.Authority = record.AuthorityGate
 	}
-	l.emitFor(n, ev, netPayload{NetPayload: record.NetPayload{Proto: proto, Dst: d.String(), Host: host}, GateFields: gatePayload(g, false)})
+	l.emitFor(n, ev, netPayload{NetPayload: record.NetPayload{Proto: proto, Dst: d.String(), Host: host, Op: l.netOp(n, proto)}, GateFields: gatePayload(g, false)})
 }
 
 // liveInetBlocked is askHeldUnless's blocked for a held IP connect or datagram to ap, admitted under host: whether a
@@ -503,7 +503,7 @@ func (l *Loop) emitApprovedAskConnect(n *notif, c *compiled, d dest, proto strin
 	}
 	ev := action(l.event(n, record.KindNet, record.SourceSupervisor), dec.rule, record.VerdictAllow, "")
 	ev.Authority = record.AuthorityHuman
-	p := netPayload{NetPayload: record.NetPayload{Proto: proto, Dst: d.String(), Host: dec.host}, ResultUnknown: marks.resultUnknown, GateFields: gatePayload(dec.gate, false)}
+	p := netPayload{NetPayload: record.NetPayload{Proto: proto, Dst: d.String(), Host: dec.host, Op: l.netOp(n, proto)}, ResultUnknown: marks.resultUnknown, GateFields: gatePayload(dec.gate, false)}
 	if marks.resultUnknown {
 		l.awaitPrev(n)
 		l.emit(ev, p)

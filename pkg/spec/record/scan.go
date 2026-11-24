@@ -23,6 +23,18 @@ import (
 // Decode).
 // The error is not yet wrapped with a sentinel; callers add the one that fits their layer.
 func objectFields(raw []byte) ([]field, error) {
+	fields, err := objectFieldsRaw(raw)
+	if err != nil {
+		return nil, err
+	}
+	for i := range fields {
+		fields[i].val = compactValue(fields[i].val)
+	}
+	return fields, nil
+}
+
+// objectFieldsRaw retains original value bytes for gates that must precede E18 repair.
+func objectFieldsRaw(raw []byte) ([]field, error) {
 	i := skipSpace(raw, 0)
 	if i >= len(raw) || raw[i] != '{' {
 		return nil, errors.New("not a JSON object")
@@ -53,7 +65,7 @@ func objectFields(raw []byte) ([]field, error) {
 		if end < 0 {
 			return nil, fmt.Errorf("value of %q is unterminated", key)
 		}
-		fields = append(fields, field{key: key, val: compactValue(raw[i:end])})
+		fields = append(fields, field{key: key, val: raw[i:end]})
 		i = skipSpace(raw, end)
 	}
 	if i >= len(raw) {

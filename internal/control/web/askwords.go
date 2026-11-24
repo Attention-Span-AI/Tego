@@ -44,11 +44,9 @@ func askVerb(op, rule, hold string) string {
 	case "write", "create", "truncate", "append":
 		return "write to"
 	case "open":
-		switch {
-		case strings.HasPrefix(rule, "fs.ask_read["):
-			return "read"
-		case strings.HasPrefix(rule, "fs.ask["):
-			return "write to"
+		// A held open is worded for what the person allows (linewords.AskOp): a read or a write.
+		if w := linewords.AskOp(op, rule); w != op {
+			return askVerb(w, rule, hold)
 		}
 		return "open"
 	case "connect":
@@ -177,6 +175,8 @@ func who(by string) string {
 		return name
 	case "dashboard":
 		return name + ", from the dashboard"
+	case "dashboard relay":
+		return name + ", from the dashboard in a browser on another system (through its relay)"
 	case "cli", "terminal":
 		return name + ", from a terminal"
 	default:
@@ -211,9 +211,12 @@ func askObject(op, rule, hold string) string {
 
 // answered is one answer line as Approvals lists it under "Answered recently".
 type answered struct {
+	// Managed answers record selection; the operation line records completion.
+	Managed           bool
+	Seq               uint64
 	Run, Agent, AskID string
 	Op, Rule, Target  string
-	// Word is what became of the request ("allowed once by somebody after 4 s"), Approved whether it went through.
+	// Word describes the recorded answer; Approved is the selection, not proof of completion.
 	Word     string
 	Approved bool
 	// TimedOut is a request nobody answered in time (answer_reason ask-timeout): Tego refused it, no person denied
@@ -236,10 +239,11 @@ func answersOf(snap *ledgerview.Snapshot, n int) []answered {
 		evs := r.AllEvents()
 		for i := range evs {
 			e := &evs[i]
-			if e.Kind != "answer" {
+			if e.Kind != "answer" || e.Malformed != "" { // an answer with no ask before it answers nothing (askpair)
 				continue
 			}
 			var p struct {
+				record.AnswerAuthority
 				Approved *bool   `json:"approved"`
 				By       string  `json:"by"`
 				After    float64 `json:"after_s"`
@@ -251,8 +255,16 @@ func answersOf(snap *ledgerview.Snapshot, n int) []answered {
 			if json.Unmarshal([]byte(e.Raw), &p) != nil || p.Approved == nil || strings.HasPrefix(p.By, "standing:") {
 				continue
 			}
-			out = append(out, answered{Run: r.ID, Agent: r.Agent, AskID: e.AskID, Op: p.Op, Rule: p.Rule, Target: e.AskTarget(),
-				Word: answerPhrase(*p.Approved, p.Reason, p.By, p.After), Approved: *p.Approved,
+			word := answerPhrase(*p.Approved, p.Reason, p.By, p.After)
+			a := record.AnswerAuthorityOf(json.RawMessage(e.Raw), e.RecordMinor, e.LocalFloor)
+			if a.Actor != nil && *p.Approved {
+				word = "approval recorded; operation completion is separate"
+			}
+			if a.Actor != nil || a.SystemCause != "" {
+				word += "; " + ledgerview.ApprovalIdentity(a)
+			}
+			out = append(out, answered{Seq: e.Seq, Run: r.ID, Agent: r.Agent, AskID: e.AskID, Op: p.Op, Rule: p.Rule, Target: e.AskTarget(),
+				Word: word, Approved: *p.Approved, Managed: a.Actor != nil,
 				TimedOut:  !*p.Approved && p.Reason == string(record.ReasonAskTimeout),
 				Withdrawn: !*p.Approved && p.By == linewords.WithdrawnBy, TS: e.TS})
 		}
@@ -371,4 +383,35 @@ func minutes(d time.Duration) string {
 		return strconv.Itoa(int(d/time.Minute)) + " m"
 	}
 	return human(d)
+}
+
+// requestParts permits breaks after path and host separators while preserving
+// every byte of the requested target in both the decision card and queue.
+func requestParts(target string) []string {
+	var parts []string
+	start := 0
+	for i, r := range target {
+		if r == '.' || r == '/' {
+			parts = append(parts, target[start:i+1])
+			start = i + 1
+		}
+	}
+	if start < len(target) {
+		parts = append(parts, target[start:])
+	}
+	return parts
+}
+
+type requestTargetView struct {
+	Paths []wordsPart
+	Full  string
+}
+
+// requestTarget retains desktop path roots and styling without shortening names.
+func requestTarget(target, home, cwd string) requestTargetView {
+	first, _, _ := strings.Cut(target, " → ")
+	if strings.HasPrefix(first, "/") && !strings.Contains(first, " ") {
+		return requestTargetView{Paths: pathWordsIn(target, home, cwd).Parts}
+	}
+	return requestTargetView{Full: target}
 }

@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/attention-span-ai/tego/pkg/policy/gate"
@@ -49,14 +50,16 @@ const (
 type CompileOption func(*compileOptions)
 
 type compileOptions struct {
-	ctx         context.Context
-	offline     bool
-	resolver    Resolver
-	path        string
-	pathSet     bool
-	cwd         string
-	home        string
-	chainAnchor string
+	caller             *config.CallerContext
+	ctx                context.Context
+	plannedDirectories []string
+	offline            bool
+	resolver           Resolver
+	path               string
+	pathSet            bool
+	cwd                string
+	home               string
+	chainAnchor        string
 	// ownBinaries says WithOwnBinaries was given, and ownExe is the running tego it named, "" for none.
 	ownBinaries bool
 	ownExe      string
@@ -82,8 +85,13 @@ type compileOptions struct {
 	// tiers are the enforcement tiers this binary builds (WithTiers); tiersSet says they were given.
 	tiers    []backend.Tier
 	tiersSet bool
+	// predictNames compiles root-tier name entries for an offline prediction, independent of launch reach.
+	predictNames              bool
+	namePredictionUnavailable func(NameCut)
 	// runCommand is the command `tego run` was given after the contract (WithRunCommand), "" for none.
 	runCommand string
+	// runArgv retains the complete command supplied by a launcher for baseline command checks.
+	runArgv []string
 	// record is the record mode `tego run --record` gives in place of the contract's (WithRecord), "" for none.
 	record RecordMode
 	// observe says the table is compiled for a `tego run --observe` (WithObserve).
@@ -92,6 +100,33 @@ type compileOptions struct {
 	tierFlag backend.Tier
 	// envNames are the names of the launcher's environment (WithEnviron), never their values.
 	envNames []string
+	// envVariableNames excludes inherited entries without '=': those are not variables.
+	envVariableNames []string
+	ownerUID         int
+	ownerSet         bool
+	// wsl is WSL's facts as a test gives them (withWSLFacts in export_test.go); nil reads this machine's, once
+	// (compiler.wsl).
+	wsl *wslFacts
+	// fileID is the device and inode a path reaches as a test gives them (withFileIdentity in export_test.go), so a
+	// bind's two names can be modelled as one file; nil asks stat(2) (compiler.fileIdentity).
+	fileID func(string) (dev, ino uint64, err error)
+
+	// searchEntryTime and searchWholeTime replace the deny_write search's two time limits (maxSearchTime and
+	// maxSearchTimeWhole) where nonzero: a test of the operation budgets alone sets them far out, so which budget ends
+	// first does not depend on how fast the machine is. Nothing but a test sets them.
+	searchEntryTime, searchWholeTime time.Duration
+}
+
+// WithOwnerUID names the governed agent's uid, including another-owner adoption.
+// WithHome must name the same owner's passwd home.
+func WithOwnerUID(uid int) CompileOption {
+	return func(o *compileOptions) { o.ownerUID, o.ownerSet = uid, true }
+}
+
+// WithCallerContext supplies process facts selected by the caller of an offline helper.
+// The compiler does not consult its own environment or passwd identity for these facts.
+func WithCallerContext(c config.CallerContext) CompileOption {
+	return func(o *compileOptions) { o.caller = &c }
 }
 
 // WithRecord gives the run's record mode in place of the contract's: `tego run --record`, the launching user's
@@ -126,7 +161,20 @@ const ReadAggregationWindow = 5 * time.Second
 // RuleTable.RunCommandGrant, an absolute path, which run_start records; the grant covers every exec of that
 // file in the run, not only the first.
 func WithRunCommand(name string) CompileOption {
-	return func(o *compileOptions) { o.runCommand = name }
+	return func(o *compileOptions) { o.runCommand, o.runArgv = name, nil }
+}
+
+// WithRunArgv gives the complete command the launcher will run. It preserves
+// WithRunCommand's image grant and lets baseline checks inspect its arguments.
+func WithRunArgv(argv []string) CompileOption {
+	command := slices.Clone(argv)
+	return func(o *compileOptions) {
+		o.runArgv = slices.Clone(command)
+		o.runCommand = ""
+		if len(command) > 0 {
+			o.runCommand = command[0]
+		}
+	}
 }
 
 // Offline makes an unresolvable host a warning instead of an error; the
@@ -150,12 +198,20 @@ func WithPATH(p string) CompileOption {
 	return func(o *compileOptions) { o.path, o.pathSet = p, true }
 }
 
+// WithPlannedDirectories is for a setup preview only: these exact fs.write
+// directories will be made, with all missing parents, before publication. It skips
+// only the missing-parent error; every R10 and protection check still runs. Runtime
+// compiles must never use it.
+func WithPlannedDirectories(paths []string) CompileOption {
+	return func(o *compileOptions) { o.plannedDirectories = slices.Clone(paths) }
+}
+
 // WithCwd sets the directory relative fs and exec entries resolve against
 // (E28); default os.Getwd at the time of the call.
 func WithCwd(dir string) CompileOption { return func(o *compileOptions) { o.cwd = dir } }
 
-// WithHome sets the home directory "~" expands to; default is the invoking
-// user's passwd entry, never $HOME.
+// WithHome sets the home directory "~" expands to; default is the process's
+// cached real-uid home, checked against passwd, never $HOME or SUDO_UID. CLI callers supply their selected owner home.
 func WithHome(dir string) CompileOption { return func(o *compileOptions) { o.home = dir } }
 
 // WithChainAnchor names the chain.log the run will anchor its head in (the
@@ -203,7 +259,7 @@ func WithMountInfo(path string) CompileOption {
 	return func(o *compileOptions) { o.mountInfo, o.mountInfoSet = path, true }
 }
 
-// WithClock injects the clock NetRule.ResolvedAt is stamped from.
+// WithClock injects the clock NetRule.ResolvedAt is stamped from after a successful lookup.
 func WithClock(now func() time.Time) CompileOption { return func(o *compileOptions) { o.now = now } }
 
 // WithDNSTTL sets the TTL handed to the launcher; floored at MinDNSTTL.
@@ -216,6 +272,18 @@ func WithDNSTTL(d time.Duration) CompileOption { return func(o *compileOptions) 
 // tier alone.
 func WithTiers(tiers ...backend.Tier) CompileOption {
 	return func(o *compileOptions) { o.tiers, o.tiersSet = append([]backend.Tier(nil), tiers...), true }
+}
+
+// WithNamePrediction includes name entries for offline root-tier predictions even when
+// the caller cannot launch at those tiers. It leaves the launch reach and selected tier unchanged.
+// Launchers must use their ordinary reach (ADR 0043, amendment 2026-11-18).
+// onUnavailable reports each place whose permissions prevent constructing that prediction, with how far what lies
+// behind it can reach (NameCut).
+func WithNamePrediction(onUnavailable func(NameCut)) CompileOption {
+	return func(o *compileOptions) {
+		o.predictNames = true
+		o.namePredictionUnavailable = onUnavailable
+	}
 }
 
 // compiler holds one Compile call's state; nothing outlives the call.
@@ -259,15 +327,68 @@ type compiler struct {
 // is a warning; the table is nil on error. Hash is taken before any clamp so
 // it is the same on every machine (R13, I3).
 func Compile(c *Contract, m *config.Machine, opts ...CompileOption) (*RuleTable, []Diagnostic, error) {
+	return compileContractHiding(c, m, nil, opts...)
+}
+
+// compileContractHiding is compileContract and, when the machine's $TEGO_CONFIG value is not a place (config.EnvPlace), hides the
+// value in every message the compile made: the R10 findings about the machine config's layer file name its path, and
+// a value with a control character or a ".." in it is never printed (pkg/spec/identity's envtext.go, rule (b)).
+func compileContractHiding(c *Contract, m *config.Machine, replay *BaselineReplay, opts ...CompileOption) (*RuleTable, []Diagnostic, error) {
+	rt, list, err := compileContract(c, m, replay, opts...)
+	if m == nil || m.Sources == nil || m.Sources.EnvFile == "" || config.EnvPlace(m.Sources.EnvFile) {
+		return rt, list, err
+	}
+	value := m.Sources.EnvFile
+	for i := range list {
+		list[i].Message = config.HideUnplaced(list[i].Message, value)
+		list[i].Fix = config.HideUnplaced(list[i].Fix, value)
+	}
+	if err != nil {
+		if text := config.HideUnplaced(err.Error(), value); text != err.Error() {
+			err = &hiddenValueError{err: err, text: text}
+		}
+	}
+	return rt, list, err
+}
+
+// hiddenValueError is an error whose text is text, not its wrapped error's (compileContract).
+type hiddenValueError struct {
+	err  error
+	text string
+}
+
+func (e *hiddenValueError) Error() string { return e.text }
+func (e *hiddenValueError) Unwrap() error { return e.err }
+
+func compileContract(c *Contract, m *config.Machine, replay *BaselineReplay, opts ...CompileOption) (*RuleTable, []Diagnostic, error) {
 	if c == nil || !c.loaded {
 		return nil, nil, fmt.Errorf("agent: Compile: %w", ErrNotLoaded)
+	}
+	if c.materialized {
+		return nil, nil, errors.New("agent: Compile: an effective contract cannot be materialized again; compile its source contract")
 	}
 	if m == nil {
 		return nil, nil, errors.New("agent: Compile: nil machine")
 	}
+	if replay == nil && !m.BaselineKnown() {
+		var reasons []string
+		for _, layer := range m.LayerSources() {
+			if layer.State == config.LayerUnknown {
+				reasons = append(reasons, layer.Layer.String()+" layer "+layer.File+": "+layer.Reason)
+			}
+		}
+		var ds diags
+		ds.errorf(Pos{}, CodeBaselineUnknown, "machine baseline is UNKNOWN and cannot decide agent rules: %s", strings.Join(reasons, "; ")).
+			fix("repair the unreadable or untrusted config layers, then load them successfully before compiling")
+		return nil, ds.list, firstError(ds.list)
+	}
 	k := &compiler{c: c, m: m, top: c.file, cpos: Pos{File: c.file, Line: 1}}
 	for _, opt := range opts {
 		opt(&k.o)
+	}
+	if replay != nil && replay.known && replay.snapshot != nil {
+		k.o.home = replay.snapshot.Owner.Home
+		k.o.ownerUID, k.o.ownerSet = replay.snapshot.Owner.UID, true
 	}
 	if err := k.defaults(); err != nil {
 		return nil, nil, err
@@ -289,9 +410,22 @@ func Compile(c *Contract, m *config.Machine, opts ...CompileOption) (*RuleTable,
 		return nil, nil, fmt.Errorf("agent: Compile: the contract path %s cannot be placed as the kernel walks it (a link "+
 			"before a \"..\" that does not resolve); give the contract's path without \"..\"", k.contractWalked)
 	}
-	k.rt = &RuleTable{Hash: hash, Contract: c, Profiles: c.Profiles(), ContractPath: place, Home: k.o.home}
+	k.rt = &RuleTable{Hash: hash, EffectiveHash: hash, Contract: c, EffectiveContract: c, Profiles: c.Profiles(), ContractPath: place, Home: k.o.home}
+	var baselineErr error
+	if replay != nil {
+		baselineErr = k.materializeReplay(replay)
+	} else {
+		baselineErr = k.materializeBaseline()
+	}
+	if baselineErr != nil {
+		return nil, k.ds.list, baselineErr
+	}
+	if k.rt.Baseline != nil && k.rt.Baseline.Applied {
+		validateExec(&k.ds, k.c)
+	}
 	k.limits()
 	k.tierAndCapture()
+	k.businessRules()
 	k.gateConfig()
 	k.askConfig()
 	k.http()
@@ -315,8 +449,9 @@ func Compile(c *Contract, m *config.Machine, opts ...CompileOption) (*RuleTable,
 	k.fsAskRead()
 	k.builtinRefusals() // after contract entries: no contract can remove these
 	k.builtinFIFOs()
-	k.heldReads()   // after the fs.ask_read entries, which may replace a built-in deny_read, and before the exec grants
-	k.reasonReads() // after heldReads and before stallReadsUnseen, which asks what the filter notifies
+	k.mountAliases() // after every pass that adds an fs entry, before those that read them
+	k.heldReads()    // after the fs.ask_read entries, which may replace a built-in deny_read, and before the exec grants
+	k.reasonReads()  // after heldReads and before stallReadsUnseen, which asks what the filter notifies
 	// After every pass that adds an fs entry: the plane keys one row per file.
 	k.keyDenyWriteLinked()
 	k.stallReadsUnseen() // after the fs entries: what the filter notifies depends on the gate and the ask entries
@@ -327,6 +462,7 @@ func Compile(c *Contract, m *config.Machine, opts ...CompileOption) (*RuleTable,
 	k.denyReadUnderExecDirs()
 	k.execInsideDenyRead()
 	k.askReadEnforced()
+	k.otherNamesEnforced() // after heldReads and the exec grants, which settle what refuses each other name
 	k.execUnderWrite()
 	k.execSharedWritable()
 	k.execOverRuntimeDir()
@@ -337,7 +473,6 @@ func Compile(c *Contract, m *config.Machine, opts ...CompileOption) (*RuleTable,
 	k.net()
 	k.dnsPolicy()
 	k.listenerControl()
-	k.ioUringListenUndecided()
 	k.networkControlTier()
 	if err := k.o.ctx.Err(); err != nil {
 		return nil, k.ds.list, err
@@ -345,12 +480,19 @@ func Compile(c *Contract, m *config.Machine, opts ...CompileOption) (*RuleTable,
 	k.builtinContainerAliases()
 	k.builtinPeerNames()
 	k.containerSocketWarning()
-	k.builtinRefusedAllows() // after builtinContainerAliases: ADR 0113's built-ins always win over net.allow
+	wslRefused := k.wslLauncherRefused() // on WSL, before builtinRefusedAllows, which leaves its entries alone
+	k.builtinRefusedAllows(wslRefused)   // after builtinContainerAliases: ADR 0113's built-ins always win over net.allow
 	k.hostSocketsReachable()
 	k.harness()
 	k.credentialsAndRelayTier() // ADR 0126: after tierAndCapture, which resolved the run's capture
 	k.modelRoutesTier()         // ADR 0127, as credentials
 	k.markLive(live)
+	k.baselineEnvConflicts()
+	if replay == nil {
+		k.baselineTopology()
+	}
+	k.baselineConflicts()
+	k.baselineRules()
 	// ADR 0033: no_new_privs is set at every tier, and `setuid: true` is a root tier's opt-out of it. Tier 1
 	// runs unprivileged, where the flag is what lets it install Landlock and seccomp at all.
 	// A contract or machine config that holds the run at landlock contradicts setuid: true; an auto contract
@@ -381,22 +523,60 @@ func Compile(c *Contract, m *config.Machine, opts ...CompileOption) (*RuleTable,
 	return k.rt, k.ds.list, nil
 }
 
-// currentUser is user.Current; a test swaps it for a passwd entry with no home.
-var currentUser = user.Current
+// Preserve user.Current's process-cached identity and error, while refusing its
+// pure-Go USER/HOME fallback. SUDO_UID chooses config discovery's owner, not a
+// library compile's implicit home. Once established, the compiler must not move
+// protections to another home after a passwd or process-credential change.
+var currentUser = compilerUserLookup(user.Current, os.Getuid, config.LookupPasswd)
+
+func compilerUserLookup(current func() (*user.User, error), realUID func() int, lookup func(int) (*user.User, error)) func() (*user.User, error) {
+	return sync.OnceValues(func() (*user.User, error) {
+		u, err := current()
+		if err != nil {
+			return nil, err
+		}
+		uid := realUID()
+		if u == nil || u.Uid != strconv.Itoa(uid) {
+			return nil, fmt.Errorf("cached process user differs from real uid %d; pass WithHome explicitly", uid)
+		}
+		trusted, err := lookup(uid)
+		if err != nil {
+			return nil, err
+		}
+		if trusted == nil || trusted.Uid != u.Uid || trusted.HomeDir != u.HomeDir {
+			return nil, fmt.Errorf("cached process home differs from the passwd entry for uid %d; pass WithHome explicitly", uid)
+		}
+		// Do not retain a mutable pointer supplied by a lookup implementation.
+		result := *u
+		return &result, nil
+	})
+}
 
 func (k *compiler) defaults() error {
 	o := &k.o
 	if o.ctx == nil {
 		o.ctx = context.Background()
 	}
-	if o.cwd == "" {
+	if o.cwd == "" && o.caller != nil {
+		if o.caller.CwdError != "" {
+			return fmt.Errorf("agent: Compile: the current directory cannot be named (deleted? cd to one that exists): %s", o.caller.CwdError)
+		}
+		o.cwd = o.caller.Cwd
+	}
+	if o.cwd == "" && o.caller == nil {
 		wd, err := os.Getwd()
 		if err != nil {
 			return fmt.Errorf("agent: Compile: the current directory cannot be named (deleted? cd to one that exists): %w", err)
 		}
 		o.cwd = wd
 	}
-	if o.home == "" {
+	if o.caller != nil && o.home == "" {
+		if o.caller.HomeError != "" {
+			return fmt.Errorf("agent: Compile: looking up the invoking uid: %s", o.caller.HomeError)
+		}
+		o.home = o.caller.Home
+	}
+	if o.home == "" && o.caller == nil {
 		u, err := currentUser()
 		if err != nil {
 			return fmt.Errorf("agent: Compile: home directory of the invoking user: %w", err)
@@ -407,7 +587,12 @@ func (k *compiler) defaults() error {
 		o.home = u.HomeDir
 	}
 	if o.chainAnchor == "" {
-		o.chainAnchor = filepath.Join(o.home, ".tego", "chain.log")
+		if o.home != "" {
+			o.chainAnchor = filepath.Join(o.home, ".tego", "chain.log")
+		} else if root := k.m.LedgerRoot.Value; root != "" && root != "~" && !strings.HasPrefix(root, "~/") {
+			// Match the launcher's no-home anchor beside the selected ledger root.
+			o.chainAnchor = filepath.Join(filepath.Dir(k.abs(root)), "chain.log")
+		}
 	}
 	if !o.mountInfoSet {
 		o.mountInfo = DefaultMountInfo
@@ -449,6 +634,11 @@ func (k *compiler) pos(key string) Pos {
 // inode the kernel will pin.
 func (k *compiler) abs(p string) string {
 	if p == "~" || strings.HasPrefix(p, "~/") {
+		if k.o.home == "" {
+			k.ds.errorf(k.cpos, CodePathMissing, "path %q needs a home directory, but the invoking uid has no passwd home", p).
+				fix("use an absolute path; for ledger_root, set an absolute path in TEGO_CONFIG; or give the uid a passwd home (library callers pass WithHome)")
+			return ""
+		}
 		p = filepath.Join(k.o.home, p[1:])
 	}
 	if !filepath.IsAbs(p) {
@@ -490,7 +680,12 @@ func (k *compiler) asWalked(p string) string {
 // planted makes one call cost tens of milliseconds; the number of calls is
 // the contract's, and the .env scan, whose results the agent can multiply,
 // stops resolving them at its time limit (builtIn, I6).
+//
+// In an offline root-tier prediction a walk a permission failure stops is one root's walk finishes, perhaps
+// elsewhere: walkCut reports it (compiler.namePredictionUnavailable), whichever stage asked (a write entry, an exec
+// entry, a built-in, Tego's own state).
 func (k *compiler) resolve(p string) string {
+	k.walkCut(p)
 	return resolvePath(p)
 }
 

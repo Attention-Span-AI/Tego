@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -25,13 +26,13 @@ import (
 	rtcgroup "github.com/attention-span-ai/tego/internal/runtime/cgroup"
 	"github.com/attention-span-ai/tego/internal/runtime/enforce"
 	"github.com/attention-span-ai/tego/internal/runtime/enforce/cgroup"
-	"github.com/attention-span-ai/tego/internal/runtime/launch"
 	"github.com/attention-span-ai/tego/internal/runtime/limits"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
+	"github.com/attention-span-ai/tego/pkg/spec/runstatus"
 )
 
 func init() { register(cmdRun) }
@@ -50,17 +51,20 @@ func cmdRun() Command {
 		verbose    bool
 		noSummary  bool
 		service    bool
+		statusFile string
 	)
 	return Command{
 		Name:         "run",
 		CommandAfter: 1,
 		Passthrough:  true,
 		Supervises:   true,
-		Summary:      "run a command under a contract",
-		Usage:        "<agent.yaml | name> [--tier <t>] [--record <full|summary|off>] [--no-summary] [--service] [--observe] [--offline] [-- <cmd> [args]]",
+		HoldsSecrets: true,
+		Summary:      "run a command under a contract (opens a user scope when needed)",
+		Usage:        "<agent.yaml | name> [--tier <t>] [--record <full|summary|off>] [--status-file <absolute-path>] [--no-summary] [--service] [--observe] [--offline] [-- <cmd> [args]]",
 		Flags: func(fs *flag.FlagSet) {
 			fs.StringVar(&tier, "tier", "", "pin the enforcement tier for this run (auto|landlock|cgroup|bpflsm)")
 			fs.StringVar(&recordMode, "record", "", "override the contract's record mode (full|summary|off)")
+			fs.StringVar(&statusFile, "status-file", "", "atomically write run teardown status in a fresh private directory")
 			fs.BoolVar(&observe, "observe", false, "record only: no enforcement (never selected automatically)")
 			fs.BoolVar(&offline, "offline", false, "an unresolvable host is a warning, not an error")
 			fs.BoolVar(&verbose, "v", false, "print every compile note at the start, not only those that need you or mean less is enforced")
@@ -83,9 +87,21 @@ func cmdRun() Command {
 				message(stderr, "", 0, 0, "tego run: the command after the contract is an empty string; name a program, or give none to run the contract's command", codeUsage)
 				return identity.ExitUsage // R25: usage error
 			}
+			if code := checkRunFlags(runOptions{tier: tier, record: recordMode, observe: observe, statusFile: statusFile}, stderr); code != identity.ExitOK {
+				return code
+			}
+			if code, done := rulesBeforeScope(runOptions{contract: args[0], command: args[1:], tier: tier, record: recordMode,
+				observe: observe, offline: offline, verbose: verbose, service: service, statusFile: statusFile}, stderr); done {
+				return code
+			}
+			if !service {
+				if code, done := enterUserScope(ctx, stderr); done {
+					return code
+				}
+			}
 			return runRun(ctx, runOptions{
 				contract: args[0], command: args[1:], tier: tier,
-				record: recordMode, observe: observe, offline: offline, verbose: verbose, noSummary: noSummary, service: service,
+				record: recordMode, observe: observe, offline: offline, verbose: verbose, noSummary: noSummary, service: service, statusFile: statusFile,
 			}, stderr)
 		},
 	}
@@ -121,6 +137,9 @@ type runOptions struct {
 	// home is the home "~" and the built-in lists (deny_read's credentials, deny_write's startup files) compile
 	// against; "" is the machine's, the invoking user's. An adoption passes its agent's owner's (prepareAdoption).
 	home string
+	// ownerUID is explicit during adoption, where the adopter and agent differ.
+	ownerUID int
+	ownerSet bool
 	// adopted says the run governs a process already running (tego adopt, the guard): its environment is its own,
 	// not this process's, and env: cannot change it, so compile is given no environment and checks no names for
 	// secret-env.
@@ -133,8 +152,9 @@ type runOptions struct {
 	watched bool
 	// noSummary turns off the end-of-run summary (runsummary.go): only the one line for a run that did not simply
 	// exit is printed, as before the summary existed.
-	noSummary bool
-	service   bool
+	noSummary  bool
+	service    bool
+	statusFile string
 	// report, when set, is told the run's result once the run is over, with its end summary (nil with noSummary,
 	// or for a run that never started), before the exit code is returned. A watched run's summary is printed by
 	// report (watch's footer), not by the run path.
@@ -181,38 +201,55 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 	// ~/.tego and the config layer in it first: with either taken from its owner the config cannot be read.
 	restored := restoreUserState("tego run", stderr)
 	m, cds, err := loadMachine(config.TrustAbort)
-	writeConfigDiagnostics(stderr, cds)
 	if err != nil {
+		writeConfigDiagnostics(stderr, cds)
 		configRefused(stderr, o.cmdName(), err)
 		return identity.ExitConfig // = 125 [config-untrusted]
 	}
 	restored = append(restored, restoreOwnState(m, stderr)...)
 	makeOwnDirs(m)
+	// Keep the snapshot compiled below current after first-use initialization
+	// creates the absent user layer's parent.
+	m, cds, err = loadMachine(config.TrustAbort)
+	writeConfigDiagnostics(stderr, cds)
+	if err != nil {
+		configRefused(stderr, o.cmdName(), err)
+		return identity.ExitConfig
+	}
 	warnUsersIgnored(stderr, o.cmdName(), m)
 	loadRunSavedLogins(o, m.Home, stderr)
 	rt, held, src, code := compileForRun(ctx, o, m, stderr)
 	if rt == nil {
 		return code
 	}
+	if rt.BusinessRulesConfigured() {
+		message(stderr, "", 0, 0, o.cmdName()+": "+agent.BusinessRulesUnavailable, codeRun)
+		return identity.ExitLauncher
+	}
+	if err := tegoruntime.CheckBaselineLaunchRecord(rt); err != nil {
+		message(stderr, "", 0, 0, o.cmdName()+": "+err.Error(), codeRun)
+		return identity.ExitLauncher
+	}
 	o.given, o.command = o.command, commandFor(o, rt)
-	// What Compile resolved capture to, before the run's tier can lower it: warnForwarderEnv speaks only where
-	// Compile kept a variable the forwarder then overrides.
-	compiledCapture := rt.Capture
-	// From here on rt is the table selectBackend returns, which names the tier the run got: the capture
-	// sources, the kernel recorder and runtime.Run below are all handed this one table.
-	b, rt, rep, code := selectBackend(ctx, o, m, rt, stderr)
-	if b == nil {
-		return code
+	// Preserve the caller facts validated here through the probe and into Run.
+	// Contract/caller-only refusals precede machine capability refusals; the runtime
+	// repeats these shared checks and then validates the actual selected backend.
+	parent := parentRunFrom(os.Getenv)
+	stdio := tegoruntime.Stdio{In: os.Stdin, Out: os.Stdout, Err: os.Stderr}
+	if err := tegoruntime.Preflight(rt, o.command, tegoruntime.Deps{Config: m, Stdio: stdio, ParentRun: parent}); err != nil {
+		message(stderr, "", 0, 0, o.cmdName()+": "+err.Error(), codeRun)
+		return identity.ExitLauncher
 	}
-	if finishReserve == nil && (b.Tier() == backend.TierCgroup || b.Tier() == backend.TierBPFLSM) {
-		finishReserve = cgroup.StartDescriptorReservation(os.Stderr)
+	if o.statusFile != "" {
+		status, err := openRunStatusWriter(o.statusFile, rt)
+		if err != nil {
+			message(stderr, "", 0, 0, o.cmdName()+": "+err.Error(), codeRun)
+			return identity.ExitLauncher
+		}
+		// This is eligibility only. Keep the probe's descriptor requirement
+		// unchanged; the real writer is opened and revalidated after selection.
+		_ = status.Close()
 	}
-	_ = agent.WriteDiagnostics(stderr, runNotices(agent.ForTier(held, b.Tier()), o.verbose))
-	// R20: `run` sweeps before it starts, so a crashed launcher's orphan is ended and its process
-	// tree killed before this run competes with it for the machine.
-	sweepBeforeRun(ctx, m, o.cmdName(), stderr)
-	// And, once per gc_interval, gc's retention pass, within its budget.
-	retainBeforeRun(ctx, m, o.cmdName(), cds, stderr)
 
 	// The run directory keeps the contract as compiled, not as written: its sha256 is contract_hash
 	// and it needs no profile to reload (contractCopy).
@@ -234,6 +271,40 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 		message(stderr, "", 0, 0, o.cmdName()+": chain anchor: "+err.Error(), codeRun)
 		return identity.ExitLauncher
 	}
+	// What Compile resolved capture to, before the run's tier can lower it: warnForwarderEnv speaks only where
+	// Compile kept a variable the forwarder then overrides.
+	compiledCapture := rt.Capture
+	finishWait := func() {}
+	if !o.observe {
+		finishWait = startupWait(ctx, stderr, o.cmdName())
+	}
+	defer finishWait()
+	// From here on rt is the table selectBackend returns, which names the tier the run got: the capture
+	// sources, the kernel recorder and runtime.Run below are all handed this one table.
+	b, rt, rep, code := selectBackend(ctx, o, m, rt, stderr)
+	if b == nil {
+		return code
+	}
+	if finishReserve == nil && (b.Tier() == backend.TierCgroup || b.Tier() == backend.TierBPFLSM) {
+		finishReserve = cgroup.StartDescriptorReservation(os.Stderr)
+	}
+	_ = agent.WriteDiagnostics(stderr, runNotices(agent.ForTier(held, b.Tier()), o.verbose))
+	// R20: `run` sweeps before it starts, so a crashed launcher's orphan is ended and its process
+	// tree killed before this run competes with it for the machine.
+	sweepBeforeRun(ctx, m, o.cmdName(), stderr)
+	// And, once per gc_interval, gc's retention pass, within its budget.
+	retainBeforeRun(ctx, m, o.cmdName(), cds, stderr)
+	var writeStatus func(runstatus.Status) error
+	if o.statusFile != "" {
+		status, err := openRunStatusWriter(o.statusFile, rt)
+		if err != nil {
+			message(stderr, "", 0, 0, o.cmdName()+": "+err.Error(), codeRun)
+			return identity.ExitLauncher
+		}
+		defer func() { _ = status.Close() }() // the held output directory is released after the run
+		writeStatus = status.Write
+	}
+
 	prices, priceGap := runPrices(m, rt, o.cmdName(), stderr)
 	// The capture sources are built before the run so the forwarder's sockets are already bound: the
 	// run admits their ports through the enforcement tier it prepares and names their base URLs in the
@@ -250,13 +321,20 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 		}
 		return code
 	}
-	stdio := tegoruntime.Stdio{In: os.Stdin, Out: os.Stdout, Err: os.Stderr}
 	warnStdio(stderr, o.cmdName(), rt, stdio)
 	started, askPending, stopNotice := askNoticesFor(rt, m, b.Tier(), o.cmdName(), stderr)
 	defer stopNotice()
 	quiet := quietRun(o, m, src, stderr)
 	if o.cmd == "" { // tego run names its session; watch and adopt keep their lines
 		started = sessionStarted(rt, stderr, quiet, started)
+	}
+	nextStarted := started
+	started = func(s tegoruntime.StartedRun) error {
+		finishWait()
+		if nextStarted != nil {
+			return nextStarted(s)
+		}
+		return nil
 	}
 	// A SIGINT or SIGTERM that landed after compileForRun's check (during the probe, the sweep, the capture
 	// sources' construction) cancelled a context nothing before this point reads again, and the runtime
@@ -266,7 +344,7 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 	// The signals are subscribed before that check and handed to the runtime, which reads them once it
 	// prepares: notifyContext releases its own handler on the first signal, so one landing between the check and
 	// the runtime's own subscription (mintRun's file I/O) would reach neither and the agent would start.
-	sigCh, unnotify := launch.Notify()
+	sigCh, unnotify, _ := scopeNotify(ctx)
 	defer unnotify()
 	if interruptedBeforeStart(ctx, o, stderr) {
 		for _, s := range append(sources, extra...) {
@@ -282,7 +360,7 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 		Signals:      sigCh,
 		ContractYAML: yaml,
 		AnchorPath:   anchor,
-		ParentRun:    parentRunFrom(os.Getenv),
+		ParentRun:    parent,
 		Prices:       prices,
 		PriceGap:     priceGap,
 		Capture:      sources,
@@ -291,6 +369,7 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 		// How the person learns an ask waits (ADR 0122): the answer line before the agent's first screen, and a
 		// desktop notice per held request; both nil for a run that cannot ask or whose ask.notify turns them off.
 		Started:    started,
+		RunStatus:  writeStatus,
 		AskPending: askPending,
 		// The tier's own recorder cannot be built yet: its ring buffer is named by a hash the
 		// enforcement handle computes during the run. The runtime calls this once it has one, and
@@ -318,6 +397,13 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 			// presenter's first line read like a failure as "warning: ... [unenforced]". So is the list of directories a
 			// deny_read freezes (GAPS A12): it says what the ruleset is, not that a rule was weakened.
 			lead := "warning: "
+			if code == tegoruntime.WarnHeldLabel {
+				// Shown once for a machine state, not on every run: a kernel that lists a module with no policy behind
+				// it (WSL's SELinux) printed it each time (heldnote.go).
+				if root, err := ledgerRootOf(m); err == nil && heldNoteShown(root, kernelRelease(), what) {
+					return
+				}
+			}
 			if code == tegoruntime.WarnHeldLabel || code == tegoruntime.WarnDenyReadFrozen {
 				if quiet != nil && code == tegoruntime.WarnDenyReadFrozen {
 					return // Only the ordinary frozen-directory note may stay quiet.
@@ -349,6 +435,8 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 		if errors.Is(err, rtcgroup.ErrBesideSubtree) {
 			// tego watch places its run where tego run does, and is refused from the same shell.
 			outsideHint(stderr, "run this again there")
+		} else if errors.Is(err, rtcgroup.ErrNoUserManager) {
+			noManagerHint(stderr)
 		}
 		return identity.ExitLauncher // R2: every pre-run_start failure is 125
 	}
@@ -377,7 +465,7 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 		if o.cmd == "" {
 			show = "tego receipt" // Pipes and -v retain the base command's bytes.
 		}
-		_, _ = io.WriteString(stderr, sum.textWithMore(show)+sum.readsLine()) // Output failure never changes the run's exit.
+		_, _ = io.WriteString(stderr, fitTerminal(stderr, sum.textWithMore(show)+sum.readsLine())) // Output failure never changes the run's exit.
 		if res.RecordErr == nil {
 			text, command := sum.runHintWithShow(o, show)
 			writeHint(stderr, text, command)
@@ -415,6 +503,14 @@ func commandFor(o runOptions, rt *agent.RuleTable) []string {
 // machine config is read or the contract compiled: behind a contract that did not compile, a bad flag
 // was reported as the contract's exit 125 and its own usage error never shown (R25).
 func checkRunFlags(o runOptions, stderr io.Writer) int {
+	if o.statusFile != "" && o.observe {
+		message(stderr, "", 0, 0, o.cmdName()+": --status-file cannot be used with --observe", codeUsage)
+		return identity.ExitUsage
+	}
+	if o.statusFile != "" && (!filepath.IsAbs(o.statusFile) || filepath.Clean(o.statusFile) != o.statusFile || o.statusFile == "/") {
+		message(stderr, "", 0, 0, o.cmdName()+": --status-file requires an absolute clean file path", codeUsage)
+		return identity.ExitUsage
+	}
 	if o.record != "" {
 		if _, err := parseRecordMode(o.record); err != nil {
 			message(stderr, "", 0, 0, o.cmdName()+": "+err.Error(), codeUsage)
@@ -503,6 +599,12 @@ func warnUsersIgnored(stderr io.Writer, cmd string, m *config.Machine) {
 // whose ledger is incomplete, or complete but unanchored, read as the agent's exit. The summary
 // above it still says what the agent did.
 func runExitCode(stderr io.Writer, cmd string, res tegoruntime.Result) int {
+	if res.StatusErr != nil {
+		message(stderr, "", 0, 0, fmt.Sprintf("%s: run teardown status could not be written (%s): %v", cmd, res.RunID, res.StatusErr), codeRun)
+		if res.RecordErr == nil {
+			return identity.ExitLauncher
+		}
+	}
 	if res.RecordErr == nil {
 		return res.ExitCode
 	}
@@ -679,7 +781,8 @@ func compileForRun(ctx context.Context, o runOptions, m *config.Machine, stderr 
 	}
 	// The tiers this binary builds, as compile passes them: auto resolves to the highest, never to a tier the
 	// run cannot get, so the capture and the findings Compile derives from the tier are the run's (ADR 0019).
-	opts := []agent.CompileOption{agent.WithContext(ctx), agent.WithPATH(os.Getenv("PATH")), agent.WithClock(time.Now), agent.WithTiers(builtTiers()...)}
+	available := autoSet()
+	opts := []agent.CompileOption{agent.WithContext(ctx), agent.WithPATH(os.Getenv("PATH")), agent.WithClock(time.Now), agent.WithTiers(available.Tiers...)}
 	// A generated contract (watch's, adopt's with no --boundary) passes the whole environment because tego chose to
 	// observe everything, and its author cannot add the env.pass secret-env's fix names: compile checks no names
 	// for it, as it prints none of an adoption's generated warnings (ADR 0067; r6 B1-SECRETS-DEFAULTS).
@@ -696,13 +799,16 @@ func compileForRun(ctx context.Context, o runOptions, m *config.Machine, stderr 
 	if home != "" {
 		opts = append(opts, agent.WithHome(home))
 	}
+	if o.ownerSet {
+		opts = append(opts, agent.WithOwnerUID(o.ownerUID))
+	}
 	opts = append(opts, anchorCompileOptions(m)...)
 	if o.offline {
 		opts = append(opts, agent.Offline())
 	}
 	// The command given on the command line is the launching user's, granted as the run's own command.
 	if len(o.command) > 0 {
-		opts = append(opts, agent.WithRunCommand(o.command[0]))
+		opts = append(opts, agent.WithRunArgv(o.command))
 	}
 	// --record is the CLI's own override, handed to Compile so that the table's record mode is final before any
 	// finding is derived from it (stall-reads-unseen, the record-off budgets): the run is warned about the record it
@@ -731,6 +837,7 @@ func compileForRun(ctx context.Context, o runOptions, m *config.Machine, stderr 
 	if interruptedBeforeStart(ctx, o, stderr) {
 		return nil, nil, nil, identity.ExitLauncher
 	}
+	ds = pidNamespaceTierDiagnostics(rt, ds, available)
 	label := ref.label()
 	if o.generated {
 		label, ds = agent.CommandLineFile, onCommandLine(ds)
@@ -797,6 +904,38 @@ func loadRunContract(o runOptions, m *config.Machine, stderr io.Writer) (*loaded
 		return nil, identity.ExitLauncher
 	}
 	return &loadedContract{ref: ref, contract: c}, identity.ExitOK
+}
+
+// rulesBeforeScope is every check of the rules file a run names that needs no run state, made before the command
+// opens a user scope (ADR 0142, amended 2026-11-19, round 5): the name resolved in the registries, the file read through
+// config.ReadRulesFile (a file system whose owner tego cannot rely on is refused there), parsed and loaded with what it
+// extends, exactly as the run does (loadRunContract). A refused rules file is said and refused here, with the run's
+// own words and exit code, so it never opens a scope and never prints "opened a user scope" for a run that does not
+// start. It reads the machine config (read-only, config.Load) and writes nothing; it prints nothing when the file
+// loads (the run prints its notices once, after the scope). A machine config that cannot be read is left to the run,
+// which says why after restoring tego's own state.
+func rulesBeforeScope(o runOptions, stderr io.Writer) (int, bool) {
+	if o.generated || o.contract == "" || checkRunFlags(o, io.Discard) != identity.ExitOK {
+		return 0, false // a flag the run refuses is its usage error, said by the run (runRun)
+	}
+	m, cds, err := loadMachine(config.TrustAbort)
+	if err != nil {
+		return 0, false
+	}
+	var said bytes.Buffer
+	if _, code := loadRunContract(o, m, &said); code != identity.ExitOK {
+		// What the run says before it loads the rules file comes first here too: the flag notices, the config's.
+		switch {
+		case !o.watched:
+			warnUnenforced(o, stderr)
+		case !o.observe:
+			warnRecordOff(o, stderr)
+		}
+		writeConfigDiagnostics(stderr, cds)
+		_, _ = stderr.Write(said.Bytes()) // the refusal is the result; a failed write leaves nothing more to say
+		return code, true
+	}
+	return 0, false
 }
 
 // refuseStdinContract is the usage error (exit 2) for "-" as a run's or an adoption's contract. Standard input is
@@ -870,6 +1009,9 @@ func selectBackend(ctx context.Context, o runOptions, m *config.Machine, rt *age
 		if rep.OutsideUserManager && landlockWillDo(rt, only) {
 			// The refusal names the cgroup; the shell that is inside it is what this one lacks.
 			outsideHint(stderr, "run this again there")
+		} else if rep.NoUserManager && landlockWillDo(rt, only) {
+			// No user manager runs for this user: what starts one is what this one lacks (acceptance 4, 2026-11-11).
+			noManagerHint(stderr)
 		}
 		return nil, nil, nil, identity.ExitLauncher // 125 [tier-unavailable]
 	}
@@ -1039,7 +1181,7 @@ var (
 // serviceExitCode distinguishes an intentional stop from a memory kill for RestartPreventExitStatus.
 // Recording failures retain exit 125, and the ledger always keeps the actual process exit.
 func serviceExitCode(stderr io.Writer, cmd string, res tegoruntime.Result, service bool) int {
-	if service && res.RecordErr == nil && res.Reason == record.RunEndStopped {
+	if service && res.RecordErr == nil && res.StatusErr == nil && res.Reason == record.RunEndStopped {
 		return identity.ExitStoppedTerm
 	}
 	return runExitCode(stderr, cmd, res)

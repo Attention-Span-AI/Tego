@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# tego/ci, revision 1 (ADR 0068; pkg/spec/presets/README.md is the normative list).
+# Promise: named CI variables stay out, ordinary .github writes are refused, and refused read opens
+# are recorded by default. The contract may override reason.reads.
+#
+# env.deny accumulates across profiles and the contract. env.pass cannot reopen a denied variable, and env.set
+# of one is a contradiction. Passing a denied name warns redundant-rule. GITHUB_TOKEN stays denied even when
+# explicitly passed: the agent must not inherit the receipt writer's authority. INPUT_GITHUB-TOKEN cannot be
+# denied: scrub the launcher environment or use an env.pass allow list. INPUT_TOKEN, INPUT_GITHUB_TOKEN and
+# ACTIONS_CACHE_SERVICE_V2 are recalled, to verify on a runner. The input names depend on the action; the cache switch is configuration, not a credential.
+#
+# Run from GITHUB_WORKSPACE. fs paths expand ~/ and resolve relative to the working directory, not to this file.
+# They do not expand environment variables. RUNNER_TEMP, the full _actions tree, runner installation, tools and
+# GITHUB_EVENT_PATH need concrete paths and write-grant checks in the action. This preset cannot locate them.
+# GITHUB_ENV, GITHUB_PATH, GITHUB_OUTPUT, GITHUB_STATE, GITHUB_STEP_SUMMARY and stdout workflow commands
+# are not protected by this preset. The action must protect command files and control command parsing.
+# A missing .github beneath a write grant warns unenforced; a child write grant can reopen part of it.
+# Outside every write/ask scope the denial is silently omitted, even if .github is absent.
+# A retained denial beneath a write grant with fs.assurance: kernel fails compile at tier landlock
+# (exit 1, unenforced).
+# Nested deny_write is best effort at tier landlock and on the cgroup fanotify listener (ADR 0071).
+# Before signing, the action must reject missing protected paths and overlapping grants (ADR 0143).
+#
+# Frozen once released: a change is a new revision (v2/ci.yaml), never an edit of this file.
+reason:
+  reads: on
+env:
+  deny:
+    - ACTIONS_ID_TOKEN_REQUEST_URL
+    - ACTIONS_ID_TOKEN_REQUEST_TOKEN
+    - ACTIONS_RUNTIME_TOKEN
+    - ACTIONS_RUNTIME_URL
+    - ACTIONS_CACHE_URL
+    - ACTIONS_RESULTS_URL
+    - ACTIONS_CACHE_SERVICE_V2
+    - GITHUB_TOKEN
+    - GH_TOKEN
+    - SIGSTORE_ID_TOKEN
+    - INPUT_TOKEN
+    - INPUT_GITHUB_TOKEN
+fs:
+  deny_write: ["./.github/"]

@@ -101,7 +101,7 @@ What `check` verifies, and what it says when it fails (each failure names its fi
 - each side's Codex login is present and `codex login status` accepts it (no model call);
 - `chatgpt.com` and `auth.openai.com` resolve; nothing but the demo's own dashboard listens on the dashboard address
   (`ok    the demo's dashboard is running (reset keeps it; it follows the new ledger)`, or `no dashboard is
-  running`); the filled contract compiles, and it equals the template filled afresh (`the contract was changed (by
+  running`; the dashboard is undumpable, so `check` knows it only by its command line, which `./demo.sh dashboard` makes name the demo's ledger: one started any other way, such as `tego-control serve` with only a config, is reported as something else on the address); the filled contract compiles, and it equals the template filled afresh (`the contract was changed (by
   Never allow?): run demo.sh reset`);
 - no run of the demo is still running (`N run(s) of this demo are still running (r-…)`, fix: quit both Codex
   windows with `/quit`, then `./demo.sh reset`).
@@ -138,7 +138,7 @@ Ctrl-C, or let it end; the record is kept.` (`TEGO_HINTS=off` leaves it and the 
 ```
 tego watch: recording codex and everything it starts. No rule refuses anything (details: tego watch -v -- codex).
   recorded: every program it starts, every file it opens (reads included), every connection it makes.
-  not a cage: it can still ask another service (systemd --user, D-Bus, an SSH or GPG agent) to act for it.
+  recording only: it can still ask another service (systemd --user, D-Bus, an SSH or GPG agent) to act for it.
   to confine it: tego run <agent.yaml> -- codex, or tego watch --boundary <agent.yaml> -- codex
 ```
 It is expected, it is true (that is the point of the left side), and Codex's screen replaces it. When Codex exits,

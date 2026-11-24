@@ -3,6 +3,8 @@
 package agent
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,6 +16,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/policy/execmatch"
 	"github.com/attention-span-ai/tego/pkg/policy/execmatch/rows"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
 // ExecCommands are a table's compiled exec command rules (ADR 0048 (4)): the patterns indexed by tool, the
@@ -102,7 +105,7 @@ func (k *compiler) execCommands() {
 		unconstrained[t] = true
 	}
 	ec.Identities, ec.Candidates = k.execIdentities(patterns)
-	ec.Loaders = execLoaders(loaderDirs())
+	ec.Loaders = execLoaders(loaderDirs(), k.execCut)
 	ec.Index = execmatch.NewIndex(rows.Builtin(), patterns, execmatch.IndexOptions{
 		Candidates: ec.Candidates, Identities: ec.Identities, Loaders: ec.Loaders, Unconstrained: unconstrained,
 	})
@@ -169,6 +172,11 @@ func (k *compiler) execIdentities(patterns []*execmatch.Pattern) (map[execmatch.
 		ids[execmatch.ID{Dev: uint64(st.Dev), Ino: st.Ino}] = tool
 	}
 	seen := map[string]bool{}
+	type inventory struct {
+		image string
+		names []string
+	}
+	checked := map[string]inventory{}
 	for _, p := range patterns {
 		key := p.Command
 		if seen[key] {
@@ -185,16 +193,141 @@ func (k *compiler) execIdentities(patterns []*execmatch.Pattern) (map[execmatch.
 			continue
 		}
 		addID(path, p.Tool, p.Row)
+		if p.Row != nil && p.Row.Autocorrect {
+			if baseline := k.baselineAutocorrectEntry(p.Tool); baseline != nil {
+				dir, err := completeHelperDir(p.Row, path)
+				if err != nil {
+					k.baselineInventoryError(baseline, path, err)
+					continue
+				}
+				names := slices.Clone(p.Row.Builtins)
+				if dir != "" {
+					addID(filepath.Join(dir, p.Row.Tool), p.Tool, p.Row)
+					helpers, err := completeDashed(dir, p.Row.Tool, maxDirEntries)
+					if err != nil {
+						k.baselineInventoryError(baseline, path, err)
+						continue
+					}
+					names = append(names, helpers...)
+				}
+				candidate := execmatch.NewCandidates(names, p.Row.Common)
+				unique := map[string]bool{}
+				for _, name := range names {
+					if name != "" {
+						unique[name] = true
+					}
+				}
+				if len(candidate.Names()) != len(unique) {
+					k.baselineInventoryError(baseline, path, fmt.Errorf("matcher retains %d of %d unique command candidates; at least one candidate exceeds its supported bound", len(candidate.Names()), len(unique)))
+					continue
+				}
+				if earlier, ok := checked[p.Tool]; ok && !slices.Equal(earlier.names, candidate.Names()) {
+					k.baselineInventoryError(baseline, path, fmt.Errorf("different candidate inventories for ruled images %q (%d names) and %q (%d names) cannot share one autocorrect interpretation", earlier.image, len(earlier.names), path, len(candidate.Names())))
+					continue
+				}
+				checked[p.Tool] = inventory{image: path, names: candidate.Names()}
+				cand = candidate
+				continue
+			}
+		}
 		if p.Row != nil && len(p.Row.HelperDirs) > 0 {
 			if dir := helperDir(p.Row, path); dir != "" {
 				addID(filepath.Join(dir, p.Row.Tool), p.Row.Tool, p.Row)
 				if p.Row.Autocorrect && cand == nil {
-					cand = execmatch.NewCandidates(append(listDashed(dir, p.Row.Tool), p.Row.Builtins...), p.Row.Common)
+					cand = execmatch.NewCandidates(append(listDashed(dir, p.Row.Tool, k.execCut), p.Row.Builtins...), p.Row.Common)
 				}
 			}
 		}
 	}
 	return ids, cand
+}
+
+// Only an applied baseline naming this autocorrect tool requires a complete
+// inventory. Empty/unrelated and record-only snapshots keep existing behavior.
+func (k *compiler) baselineAutocorrectEntry(tool string) *BaselineRule {
+	if k.rt.Baseline == nil || !k.rt.Baseline.Applied {
+		return nil
+	}
+	for i := range k.rt.Baseline.Entries {
+		entry := &k.rt.Baseline.Entries[i]
+		if entry.Key != config.BaselineDenyExec {
+			continue
+		}
+		pattern, err := execmatch.Parse(entry.Expanded, execmatch.ListDeny, rows.Builtin())
+		if err == nil && pattern.Tool == tool {
+			return entry
+		}
+	}
+	return nil
+}
+
+func (k *compiler) baselineInventoryError(entry *BaselineRule, image string, err error) {
+	var sources []string
+	for _, source := range entry.Sources[:min(len(entry.Sources), 8)] {
+		sources = append(sources, source.Layer.String()+" layer "+source.String())
+	}
+	if len(entry.Sources) > len(sources) {
+		sources = append(sources, fmt.Sprintf("and %d further sources", len(entry.Sources)-len(sources)))
+	}
+	k.ds.errorf(baselineEntryPos(entry), CodeBaselinePlacement,
+		"baseline.%s %q from %v (owner uid %d, home %q, tier %s): command inventory for %q is incomplete: %s",
+		entry.Key, entry.Value, sources, k.rt.Baseline.Owner.UID, k.rt.Baseline.Owner.Home, k.rt.Tier, image, err).
+		fix("use a complete supported command inventory, or remove this baseline entry")
+}
+
+// completeHelperDir distinguishes an optional absent installation directory
+// from an unreadable or unplaceable one. Resolve a final directory symlink
+// before listDir's no-follow open, as ordinary lib -> libexec layouts require.
+func completeHelperDir(row *execmatch.Row, image string) (string, error) {
+	resolved, ok := ResolveUnixPlace(image, ReadPlaceLink)
+	if !ok {
+		return "", fmt.Errorf("cannot place tool image %q", image)
+	}
+	prefix := filepath.Dir(filepath.Dir(resolved))
+	for _, layout := range []string{"lib", "libexec"} {
+		dir := filepath.Join(prefix, layout, row.Tool+"-core")
+		fi, err := os.Stat(filepath.Join(dir, row.Tool))
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+			continue
+		}
+		if err != nil {
+			return "", fmt.Errorf("inspect helper placement %q: %w", dir, err)
+		}
+		if !fi.Mode().IsRegular() {
+			continue
+		}
+		placed, ok := ResolveUnixPlace(dir, ReadPlaceLink)
+		if !ok {
+			return "", fmt.Errorf("cannot place helper directory %q", dir)
+		}
+		return placed, nil
+	}
+	return "", nil
+}
+
+func completeDashed(dir, tool string, limit int) ([]string, error) {
+	entries, more, err := listDir(dir, limit)
+	if err != nil {
+		return nil, fmt.Errorf("read helper directory %q: %w", dir, err)
+	}
+	if more {
+		return nil, fmt.Errorf("helper directory %q exceeds the %d-entry inventory bound", dir, limit)
+	}
+	var names []string
+	for _, entry := range entries {
+		name, ok := strings.CutPrefix(entry.Name(), tool+"-")
+		if !ok || name == "" {
+			continue
+		}
+		fi, err := os.Stat(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			return nil, fmt.Errorf("inspect helper %q: %w", filepath.Join(dir, entry.Name()), err)
+		}
+		if fi.Mode().IsRegular() && fi.Mode()&0o111 != 0 {
+			names = append(names, name)
+		}
+	}
+	return names, nil
 }
 
 // loaderDirs are the directories a distribution installs its dynamic loaders in: the library directories, and their
@@ -212,11 +345,16 @@ func loaderDirs() []string {
 // following links (ADR 0048 (3)). The supervisor reads an exec as a loader's by the names it is
 // run under and by these identities, which a hard link under another name keeps; a copy is a file of its own (R2).
 // Every link of a loader is the loader, so a file of several links counts. Compile lists directories and runs nothing.
-func execLoaders(dirs []string) map[execmatch.ID]bool {
+// cut hears a directory a permission failure kept from being listed (compiler.namePredictionUnavailable; nil where no
+// prediction is made): root lists it and keeps the loaders in it.
+func execLoaders(dirs []string, cut func(string, error)) map[execmatch.ID]bool {
 	out := map[execmatch.ID]bool{}
 	for _, dir := range dirs {
 		ents, err := os.ReadDir(dir)
 		if err != nil {
+			if cut != nil {
+				cut(dir, err)
+			}
 			continue
 		}
 		for _, e := range ents {
@@ -252,10 +390,14 @@ func helperDir(row *execmatch.Row, path string) string {
 	return ""
 }
 
-// listDashed lists the <tool>-<name> executables of a directory as names.
-func listDashed(dir, tool string) []string {
+// listDashed lists the <tool>-<name> executables of a directory as names. cut hears a directory a permission failure
+// kept from being listed (compiler.namePredictionUnavailable): root lists it and knows the names.
+func listDashed(dir, tool string, cut func(string, error)) []string {
 	ents, err := os.ReadDir(dir)
 	if err != nil {
+		if cut != nil {
+			cut(dir, err)
+		}
 		return nil
 	}
 	var out []string

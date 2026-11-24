@@ -1,0 +1,26 @@
+version: 0
+name: ci
+extends: tego/ci
+command:
+  - /bin/true
+fs:
+  write:
+    - ./src/
+  deny_write:
+    - ./.github/
+env:
+  deny:
+    - ACTIONS_ID_TOKEN_REQUEST_URL
+    - ACTIONS_ID_TOKEN_REQUEST_TOKEN
+    - ACTIONS_RUNTIME_TOKEN
+    - ACTIONS_RUNTIME_URL
+    - ACTIONS_CACHE_URL
+    - ACTIONS_RESULTS_URL
+    - ACTIONS_CACHE_SERVICE_V2
+    - GITHUB_TOKEN
+    - GH_TOKEN
+    - SIGSTORE_ID_TOKEN
+    - INPUT_TOKEN
+    - INPUT_GITHUB_TOKEN
+reason:
+  reads: "on"

@@ -13,11 +13,15 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/attention-span-ai/tego/internal/contracts"
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
+	"github.com/attention-span-ai/tego/internal/control/pathcheck"
 	"github.com/attention-span-ai/tego/internal/control/rules"
 	"github.com/attention-span-ai/tego/internal/control/runact"
 	"github.com/attention-span-ai/tego/internal/liveblock"
+	"github.com/attention-span-ai/tego/internal/shellword"
 )
 
 // The Change rules pages, every one served through the rule service (Config.Rules,
@@ -82,15 +86,15 @@ type groupMeta struct {
 // network). TestChangeGroupsCoverEditKeys holds it to rules.EditKeys.
 var changeGroups = []groupMeta{
 	{Key: "fs.write", Title: "Can change", Lede: "files and folders it may write", Icon: "i-scroll-text",
-		Hint: "File, or folder ending in / · ./out/, ~/notes/ or absolute", Example: "./out/"},
+		Hint: "A file, or a folder: end a folder with /. Start with ./ for the project (./out/), ~/ for your home folder (~/notes/), or give the whole path", Example: "./out/"},
 	{Key: "fs.ask", Title: "Asks you before it changes", Lede: "a write here waits for your answer", Icon: "i-hand", Ask: true,
-		Hint: "File or folder ending in /, inside what it may change", Example: "./held/"},
+		Hint: "A file, or a folder ending with /, inside what it may change", Example: "./held/"},
 	{Key: "fs.ask_read", Title: "Asks you before it reads", Lede: "a read here waits for your answer", Icon: "i-hand", Ask: true,
-		Hint: "File or folder ending in /", Example: "~/.config/telemetry/"},
+		Hint: "A file, or a folder ending with /. ~/ is your home folder", Example: "~/.config/telemetry/"},
 	{Key: "fs.deny_read", Title: "Can never read", Lede: "on top of the built-in secret list", Icon: "i-ban",
-		Hint: "A file or a folder ending in /: ./secrets/, ~/.aws/.", Example: "./secrets/"},
+		Hint: "A file, or a folder ending with /: ./secrets/ in the project, ~/.aws/ in your home folder", Example: "./secrets/"},
 	{Key: "fs.deny_write", Title: "Can never change", Lede: "even inside what it may change", Icon: "i-ban",
-		Hint: "File or folder ending in /, inside what it may change", Example: "./.git/"},
+		Hint: "A file, or a folder ending with /, inside what it may change", Example: "./.git/"},
 	{Key: "exec.allow", Title: "Programs it may run", Lede: "every other program is refused", Icon: "i-terminal",
 		Hint: "git, /usr/bin/git, or git status", Example: "git"},
 	{Key: "net.allow", Title: "Can connect to", Lede: "every other destination is refused", Icon: "i-activity",
@@ -101,6 +105,8 @@ var changeGroups = []groupMeta{
 
 // changeGroup is one panel of the form: its list's entries.
 type changeGroup struct {
+	Input, Err string
+
 	groupMeta
 	Entries []string
 	// Absent says the file has no such list.
@@ -139,10 +145,16 @@ type rawView struct {
 	Now []nowRun
 }
 
-// diagLine is one line of a compile diagnostic and the contract line it names (0: none).
+// diagLine is one line of a compile diagnostic and the contract line it names (0: none). A diagnostic that lies in a
+// profile the contract extends names the profile, its file and the line in that file instead, which are not lines of
+// the text in the editor.
 type diagLine struct {
 	Line int
 	Text string
+	// Profile, File and FileLine say where in another file the diagnostic is: the profile's name, its path and the
+	// line. Empty and 0 for a position in the contract's own text.
+	Profile, File string
+	FileLine      int
 }
 
 // numLine is one line of the edited text with its number; Bad marks a line a diagnostic names, Gap a skipped stretch.
@@ -154,7 +166,16 @@ type numLine struct {
 
 // changeData is the Change rules page's data.
 type changeData struct {
-	Contracts []rules.ContractRef
+	Now time.Time
+
+	View      string
+	Errors    []builderError
+	Fields    []builderField
+	Decisions []rules.Decision
+	Draft     string
+
+	Contracts    []rules.ContractRef
+	SelectionErr string
 	// C is the contract shown; nil on the chooser.
 	C *rules.ContractRef
 	// NotWritable says why the dashboard may not change it.
@@ -172,6 +193,37 @@ type changeData struct {
 	Raw       *rawView
 	// Hint is the terminal twin: compile the file.
 	Hint string
+	// Several is the Several changes at once form's rows (rules.MaxEdits of them, the first severalShown always shown);
+	// SeveralOpen opens the form (it was refused, with what was typed kept in the rows).
+	Several     []severalRow
+	SeveralOpen bool
+	// SeveralMore opens "More rows": a row past the first severalShown holds an entry.
+	SeveralMore bool
+}
+
+// severalField is the field a problem of the Several changes at once form names (its anchor).
+const severalField = "several"
+
+// severalShown is how many of the form's rows are shown before "More rows".
+const severalShown = 4
+
+// severalRow is one row of the Several changes at once form: an action, a list and an entry.
+type severalRow struct {
+	N              int
+	Op, Key, Entry string
+	Hidden         bool
+}
+
+// severalRows is the form's rows: blank ones, or the values of a refused request kept as typed.
+func severalRows(form url.Values) []severalRow {
+	rows := make([]severalRow, rules.MaxEdits)
+	for i := range rows {
+		rows[i] = severalRow{N: i + 1, Op: "add", Key: changeGroups[0].Key, Hidden: i >= severalShown}
+		if i < len(form["op"]) && i < len(form["key"]) && i < len(form["v"]) {
+			rows[i].Op, rows[i].Key, rows[i].Entry = form["op"][i], form["key"][i], form["v"][i]
+		}
+	}
+	return rows
 }
 
 // nowRun is one running run "Also apply now" can reach, with the live blocks the change maps to on it.
@@ -181,6 +233,11 @@ type nowRun struct {
 	Blocks []nowBlock
 	// Observe is a watched run: what it gets now is recorded, not enforced.
 	Observe bool
+	// Waits says some change cannot be applied to this run now, so it keeps its rules until the agent is started
+	// again; Restart is the terminal line that starts it again with the same contract and command ("" when the run's
+	// record cannot say).
+	Waits   bool
+	Restart string
 }
 
 // nowBlock is one "Also apply now" option with its live block in words (liveWords), the raw key kept for a title.
@@ -202,15 +259,42 @@ func nowRuns(opts []rules.NowOption) []nowRun {
 		out[i].Blocks = append(out[i].Blocks, nowBlock{NowOption: o, Words: liveWords(o.Block, shortener{cwd: o.Cwd, home: home})})
 		out[i].OK = out[i].OK || o.OK
 		out[i].Observe = out[i].Observe || o.Observe
+		out[i].Waits = out[i].Waits || !o.OK && !o.FenceLift
 	}
 	return out
 }
 
+// nextRunWords is what every change that cannot be applied live says it does, in plain words: the run keeps the rules it
+// started with, and the change is in force from the next start of the agent. restart is the line that starts it.
+const nextRunWords = "This run keeps the rules it started with. The change is in force the next time the agent starts: stop this run, then start the agent again"
+
+// restartLine is the terminal line that starts run again with its contract and command, or "" when the run is
+// watched only (it enforces nothing, so a restart would not apply a rule), has no contract file, or cannot be read.
+func (s *Server) restartLine(run string) string {
+	rr, err := ledgerview.LoadRun(s.cfg.Ledger, run)
+	if err != nil || rr.Contract == "" || ledgerview.LiveFactsOf(rr).Observe {
+		return ""
+	}
+	return "tego run " + shellword.Quote(rr.Contract) + startCommand(rr)
+}
+
+// withRestarts gives each run that waits for the next start the line that starts it.
+func (s *Server) withRestarts(runs []nowRun) []nowRun {
+	for i := range runs {
+		if runs[i].Waits {
+			runs[i].Restart = s.restartLine(runs[i].Run)
+		}
+	}
+	return runs
+}
+
 // previewData is the preview's data, and the confirm's again when the service refused it.
 type previewData struct {
-	P    *rules.ChangePlan
-	Edit rules.Edit
-	Now  []nowRun
+	ReadOnly bool
+	P        *rules.ChangePlan
+	// Edits are the changes the preview checks and its Save writes together (one for the single add form).
+	Edits []rules.Edit
+	Now   []nowRun
 	// After is the change's After sentences, which the widening box and its checkbox name.
 	After string
 	// NowOn names the running runs whose "Also apply now" box is offered ("r-…qfjbjv", or "2 running runs"), for the
@@ -255,22 +339,30 @@ type savedData struct {
 type savedOut struct {
 	rules.LiveResult
 	State, Chip, Class, Before, After, Title, Words string
+	// Restart is the line that starts the run again, for an outcome that did not put the block in force.
+	Restart string
 }
 
 // savedNext is one list change that waits for the next run on a running run: no live block applies it, or Also apply
 // now was not ticked for that run.
 type savedNext struct {
 	Run, Change, Why string
+	// Restart is the line that starts the run again ("" when it cannot be said).
+	Restart string
 	// FenceLift is a widening inside the running Adjustable run's fence (rules.NowOption.FenceLift): the row links to
 	// the run's fence on the Rules page, where a lift gives it now.
 	FenceLift bool
 }
 
 // changeService is the rule service as ChangeService, or the page that says the dashboard has none.
-func (s *Server) changeService(w http.ResponseWriter) (ChangeService, bool) {
-	svc, ok := s.cfg.Rules.(ChangeService)
+func (s *Server) changeService(w http.ResponseWriter, r *http.Request) (ChangeService, bool) {
+	source := s.cfg.Rules
+	if local, ok := source.(*rules.Service); ok {
+		source = local.ForRequest(r.Context())
+	}
+	svc, ok := source.(ChangeService)
 	if !ok {
-		s.fail(w, http.StatusNotFound, "Edit contract", "Contract editing is off here · start it with tego-control serve, or use tego rule <run> <line>")
+		s.fail(w, http.StatusNotFound, "Edit contract", "Contract editing is off here · start it with tego-control serve, or use tego rules edit <run> <line>")
 	}
 	return svc, ok
 }
@@ -282,11 +374,44 @@ func (s *Server) changeChrome(w http.ResponseWriter, title string) (chrome, bool
 	if !ok {
 		return chrome{}, false
 	}
-	return s.chromeOf(snap, title, "rules"), true
+	c := s.chromeOf(snap, title, "rules")
+	c.PhoneName = "Contracts" // the compact header names the section, as the contract builder pages always have
+	return c, true
+}
+
+// checkUnavailable explains a bounded check failure without claiming whether a
+// submitted mutation reached disk (ADR 0144). Retrying a POST blindly is unsafe.
+func (s *Server) checkUnavailable(w http.ResponseWriter, err error) bool {
+	if err == nil || !pathcheck.IsUnanswered(err) && !contracts.IsCompileUnfinished(err) && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+		return false
+	}
+	s.checkNotFinished(w, err)
+	return true
+}
+
+// checkNotFinished is the 503 page of a check that did not finish. It says which case happened, from the error's type
+// (pathcheck.Words): the machine is busy, the check was still working, the checker could not start, the request was
+// cancelled, earlier checks are stuck, or the location does not answer. It does not say whether a submitted save
+// reached the file, because it may be in either state.
+func (s *Server) checkNotFinished(w http.ResponseWriter, err error) {
+	s.checkNotFinishedWords(w, pathcheck.Words(err))
+}
+
+// checkNotFinishedWords is checkNotFinished for a cause a view carries as text (pathcheck.WordsOf).
+func (s *Server) checkNotFinishedWords(w http.ResponseWriter, words string) {
+	what := "The dashboard is busy, or a location did not answer in time."
+	if words != "" {
+		what = "The check did not finish: " + words + "."
+	}
+	s.failPage(w, http.StatusServiceUnavailable, "The contract check could not finish",
+		what+" Reload the contract and its History, then review again before trying to save; a submitted save may already have reached the file.", true)
 }
 
 // serviceFail answers an error of the rule service that no page can recover from.
 func (s *Server) serviceFail(w http.ResponseWriter, heading string, err error) {
+	if s.checkUnavailable(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, rules.ErrNoContract):
 		s.fail(w, http.StatusNotFound, "No such contract file", "No run used that contract file · pick one on the Contracts page")
@@ -299,7 +424,7 @@ func (s *Server) serviceFail(w http.ResponseWriter, heading string, err error) {
 
 // rulesChange serves GET /rules/change and /rules/change/preview.
 func (s *Server) rulesChange(w http.ResponseWriter, r *http.Request) {
-	svc, ok := s.changeService(w)
+	svc, ok := s.changeService(w, r)
 	if !ok {
 		return
 	}
@@ -315,9 +440,12 @@ func (s *Server) rulesChange(w http.ResponseWriter, r *http.Request) {
 }
 
 // changePage is Change rules for the contract ref, or the chooser when ref is "".
-func (s *Server) changePage(w http.ResponseWriter, r *http.Request, svc ChangeService, ref string) {
+func (s *Server) changePage(w http.ResponseWriter, r *http.Request, svc ChangeService, ref string, issues ...builderError) {
 	refs, err := svc.Contracts()
 	if err != nil {
+		if s.checkUnavailable(w, err) { // a check that did not finish is the 503 page, with its cause
+			return
+		}
 		s.fail(w, http.StatusInternalServerError, "Change rules", "The runs of this ledger could not be read: "+err.Error())
 		return
 	}
@@ -329,28 +457,64 @@ func (s *Server) changePage(w http.ResponseWriter, r *http.Request, svc ChangeSe
 			}
 		}
 	}
-	d := changeData{Contracts: refs}
+	d := changeData{Contracts: refs, View: builderView(r), Fields: builderFields, Errors: issues, Now: s.cfg.Now()}
 	if ref != "" {
 		i := slices.IndexFunc(refs, func(c rules.ContractRef) bool { return c.Ref == ref })
 		if i < 0 {
-			s.serviceFail(w, "Change rules", rules.ErrNoContract)
-			return
+			if (len(ref) == 16 && strings.Trim(ref, "0123456789abcdef") == "") || isLegacyRef(ref) {
+				for _, entry := range refs {
+					if pathcheck.UnansweredText(entry.Why) {
+						d.SelectionErr = "The requested contract cannot be identified: " + entry.Why
+						break
+					}
+				}
+			}
+			if d.SelectionErr == "" {
+				s.serviceFail(w, "Change rules", rules.ErrNoContract)
+				return
+			}
+		} else {
+			d.C = &refs[i]
 		}
-		d.C = &refs[i]
+	}
+	if d.C != nil {
 		if !s.fillChange(w, svc, &d) {
 			return
 		}
-		if r.URL.Query().Get("raw") == "1" && d.CanRaw {
+		for j := range d.Groups {
+			for _, issue := range issues {
+				if issue.Field == "add-"+d.Groups[j].Key {
+					d.Groups[j].Err = issue.Message
+					d.Groups[j].Input = r.FormValue("v")
+				}
+			}
+		}
+		d.Several = severalRows(nil)
+		for _, issue := range issues {
+			if issue.Field == severalField {
+				_ = r.FormValue("v") // parses the query and the form
+				d.Several, d.SeveralOpen = severalRows(r.Form), true
+				for _, row := range d.Several {
+					d.SeveralMore = d.SeveralMore || (row.Hidden && row.Entry != "")
+				}
+			}
+		}
+		if d.CanRaw {
 			d.Raw = &rawView{Open: true, Text: d.Text}
 		}
 	}
+	rememberBuilderView(w, d.View)
 	title := "Change rules"
 	if d.C != nil {
 		title += " · " + d.C.Agent
 	}
 	c, ok := s.changeChrome(w, title)
 	if ok {
-		s.render(w, http.StatusOK, "rules-change", c, d)
+		status := http.StatusOK
+		if len(issues) > 0 {
+			status = http.StatusUnprocessableEntity
+		}
+		s.render(w, status, "rules-change", c, d)
 	}
 }
 
@@ -363,7 +527,7 @@ func (s *Server) fillChange(w http.ResponseWriter, svc ChangeService, d *changeD
 	}
 	cur, err := svc.Current(d.C.Ref)
 	switch {
-	case errors.Is(err, rules.ErrNotWritable):
+	case errors.Is(err, rules.ErrNotWritable), err != nil && pathcheck.IsUnanswered(err):
 		d.NotWritable = err.Error()
 		return true
 	case err != nil:
@@ -376,6 +540,7 @@ func (s *Server) fillChange(w http.ResponseWriter, svc ChangeService, d *changeD
 		d.Groups = append(d.Groups, changeGroup{groupMeta: g, Entries: es, Absent: !has})
 	}
 	d.CanRaw, d.EnvHidden = cur.Editor != nil, cur.Editor != nil && cur.EnvSet
+	_, d.Decisions, _ = rules.EditDraft(rules.NewReq{Text: cur.Editor})
 	if d.CanRaw {
 		d.Text = string(cur.Editor)
 	} else {
@@ -383,6 +548,9 @@ func (s *Server) fillChange(w http.ResponseWriter, svc ChangeService, d *changeD
 	}
 	d.Hist = histView{CSRF: s.csrf, Ref: d.C.Ref, Base: cur.Base}
 	d.Hist.Rows, d.HistoryErr = historyOf(svc, d.C.Ref, cur.Base)
+	if pathcheck.UnansweredText(d.HistoryErr) {
+		d.NotWritable = d.HistoryErr
+	}
 	return true
 }
 
@@ -398,7 +566,7 @@ func historyOf(svc ChangeService, ref, base string) ([]historyRow, string) {
 			break
 		}
 		row := historyRow{HistoryEntry: h, UndoAck: h.Direction != widens}
-		row.CanUndo = h.Current && h.UndoneBy == "" && base != ""
+		row.CanUndo = h.Undoable(base)
 		if row.CanUndo && row.UndoAck {
 			row.Lift = liftOuts(h.Lift)
 		}
@@ -407,9 +575,9 @@ func historyOf(svc ChangeService, ref, base string) ([]historyRow, string) {
 	return out, ""
 }
 
-// editOf is the one edit a preview or confirm names (op, key, v), or why it names none.
-func editOf(v url.Values) (rules.Edit, string) {
-	e := rules.Edit{Op: v.Get("op"), Key: v.Get("key"), Entry: v.Get("v")}
+// oneEdit is the edit of op, key and entry, or why they name none.
+func oneEdit(op, key, entry string) (rules.Edit, string) {
+	e := rules.Edit{Op: op, Key: key, Entry: entry}
 	if e.Op == "add" {
 		e.Entry = strings.TrimSpace(e.Entry)
 	}
@@ -426,6 +594,61 @@ func editOf(v url.Values) (rules.Edit, string) {
 	return e, ""
 }
 
+// editsOf is the edits a preview or confirm names: the values op, key and v, repeated once for each edit and in the same
+// order (the single add form names one; the Several changes at once form names up to rules.MaxEdits), or why they name
+// none. The several form (batch set) leaves a row with no entry empty and skips it; a row with a mistake is named by
+// its number. The edits are one transaction: the service writes all of them or none.
+func editsOf(v url.Values) ([]rules.Edit, string) {
+	ops, keys, entries := v["op"], v["key"], v["v"]
+	if len(ops) == 0 {
+		_, why := oneEdit("", "", "")
+		return nil, why
+	}
+	if len(keys) != len(ops) || len(entries) != len(ops) {
+		return nil, "Each change needs its action, its list and its entry"
+	}
+	// The limit comes before the loop: the body may be megabytes of repeated fields, and the de-duplication below is a
+	// linear scan, so tens of thousands of rows would cost seconds of CPU before the check that refuses them. The several
+	// form posts exactly rules.MaxEdits rows (blanks included), so no real form has more.
+	if len(ops) > rules.MaxEdits {
+		return nil, fmt.Sprintf("At most %d changes at once", rules.MaxEdits)
+	}
+	batch := v.Get("batch") != ""
+	var out []rules.Edit
+	for i := range ops {
+		if batch && strings.TrimSpace(entries[i]) == "" {
+			continue
+		}
+		e, why := oneEdit(ops[i], keys[i], entries[i])
+		if why != "" {
+			if batch {
+				why = fmt.Sprintf("Change %d: %s", i+1, why)
+			}
+			return nil, why
+		}
+		if slices.Contains(out, e) {
+			return nil, fmt.Sprintf("Change %d is the same as an earlier one", i+1)
+		}
+		out = append(out, e)
+	}
+	if len(out) == 0 {
+		return nil, "Type the entry of at least one change"
+	}
+	return out, ""
+}
+
+// editQuery is the preview's query for edits on the contract ref: the same values editsOf reads back, so the page after
+// a refusal checks the same transaction again.
+func editQuery(ref string, edits []rules.Edit) url.Values {
+	q := url.Values{"c": {ref}}
+	for _, e := range edits {
+		q.Add("op", e.Op)
+		q.Add("key", e.Key)
+		q.Add("v", e.Entry)
+	}
+	return q
+}
+
 // hintOf is the Add hint of the list key.
 func hintOf(key string) string {
 	for _, g := range changeGroups {
@@ -439,23 +662,40 @@ func hintOf(key string) string {
 // rulesPreview serves GET /rules/change/preview: the change planned, nothing written.
 func (s *Server) rulesPreview(w http.ResponseWriter, r *http.Request, svc ChangeService) {
 	q := r.URL.Query()
-	e, why := editOf(q)
+	edits, why := editsOf(q)
 	if why != "" {
+		if q.Get("batch") != "" { // the several form's own page says what to fix and keeps what was typed
+			s.changePage(w, r, svc, q.Get("c"), builderError{Field: severalField, Message: why})
+			return
+		}
 		s.fail(w, http.StatusBadRequest, "Not a change", why)
 		return
 	}
-	req := rules.ChangeReq{Ref: q.Get("c"), Base: q.Get("base"), Edits: []rules.Edit{e}}
+	// A peer that cannot Save must not consume the person's shared review budget.
+	readOnly := s.governed(r) != nil
+	req := rules.ChangeReq{Session: s.session, PreviewOnly: readOnly, Ref: q.Get("c"), Base: q.Get("base"), Edits: edits}
 	p, err := svc.PlanChange(r.Context(), req)
 	if err != nil {
 		s.serviceFail(w, "Check the change", err)
 		return
 	}
-	s.renderPreview(w, http.StatusOK, previewOf(p, e))
+	if p.Err != "" && len(edits) > 1 && q.Get("batch") != "" {
+		s.changePage(w, r, svc, q.Get("c"), builderError{Field: severalField, Message: p.Err})
+		return
+	}
+	if p.Err != "" && len(edits) == 1 && edits[0].Op == "add" {
+		s.changePage(w, r, svc, q.Get("c"), builderError{Field: "add-" + edits[0].Key, Message: p.Err})
+		return
+	}
+	d := previewOf(p, edits)
+	d.Now = s.withRestarts(d.Now)
+	d.ReadOnly = readOnly
+	s.renderPreview(w, http.StatusOK, d)
 }
 
 // previewOf is the preview's data for the plan p of the edit e.
-func previewOf(p *rules.ChangePlan, e rules.Edit) previewData {
-	d := previewData{P: p, Edit: e}
+func previewOf(p *rules.ChangePlan, edits []rules.Edit) previewData {
+	d := previewData{P: p, Edits: edits}
 	var after []string
 	for _, sn := range p.Sentences {
 		after = append(after, sn.After)
@@ -478,21 +718,23 @@ func previewOf(p *rules.ChangePlan, e rules.Edit) previewData {
 	default:
 		d.NowOn = plural4(len(on), "running run", "running runs")
 	}
-	d.CLINote, d.CLI = changeCLI(p.Contract, e, p.Now)
+	d.CLINote, d.CLI = changeCLI(p.Contract, edits, p.Now)
 	return d
 }
 
-// changeCLI is the terminal twin of the edit e of the contract at path: the edit by hand in words, then the compile
-// that checks it and `tego block` for each live block "Also apply now" offers.
-func changeCLI(path string, e rules.Edit, now []rules.NowOption) (string, []string) {
-	var what string
-	switch e.Op {
-	case "add":
-		what = "add " + strconv.Quote(e.Entry) + " to " + e.Key
-	case "remove":
-		what = "remove " + strconv.Quote(e.Entry) + " from " + e.Key
-	default:
-		what = "remove " + strconv.Quote(e.Entry) + " from " + e.Key + " (and refuse it instead)"
+// changeCLI is the terminal twin of the edits of the contract at path: each edit by hand in words, then the compile
+// that checks them and `tego block` for each live block "Also apply now" offers.
+func changeCLI(path string, edits []rules.Edit, now []rules.NowOption) (string, []string) {
+	var what []string
+	for _, e := range edits {
+		switch e.Op {
+		case "add":
+			what = append(what, "add "+strconv.Quote(e.Entry)+" to "+e.Key)
+		case "remove":
+			what = append(what, "remove "+strconv.Quote(e.Entry)+" from "+e.Key)
+		default:
+			what = append(what, "remove "+strconv.Quote(e.Entry)+" from "+e.Key+" (and refuse it instead)")
+		}
 	}
 	out := []string{"tego rules check " + shellWord(path)}
 	for _, o := range now {
@@ -500,7 +742,7 @@ func changeCLI(path string, e rules.Edit, now []rules.NowOption) (string, []stri
 			out = append(out, "tego block "+o.Run+" "+changeWords(o.Kind, o.Value, ""))
 		}
 	}
-	return "By hand: in " + path + ", " + what + ", then check it", out
+	return "By hand: in " + path + ", " + strings.Join(what, "; ") + ", then check " + map[bool]string{true: "them", false: "it"}[len(edits) > 1], out
 }
 
 func (s *Server) renderPreview(w http.ResponseWriter, status int, d previewData) {
@@ -513,6 +755,8 @@ func (s *Server) renderPreview(w http.ResponseWriter, status int, d previewData)
 // refusal is the status and sentence of a confirm the service refused that the page can say and show again.
 func refusal(err error) (int, string, bool) {
 	switch {
+	case errors.Is(err, rules.ErrReviewGone):
+		return http.StatusConflict, err.Error(), true
 	case errors.Is(err, rules.ErrStale):
 		return http.StatusConflict, "Not saved · the contract changed since you looked · check again and save", true
 	case errors.Is(err, rules.ErrAckMismatch):
@@ -528,7 +772,7 @@ func refusal(err error) (int, string, bool) {
 // rulesChangePost serves POST /rules/change, which postAllowed has passed: a structured change, or with mode=raw a
 // free edit's Check or Save.
 func (s *Server) rulesChangePost(w http.ResponseWriter, r *http.Request) {
-	svc, ok := s.changeService(w)
+	svc, ok := s.changeService(w, r)
 	if !ok {
 		return
 	}
@@ -541,14 +785,22 @@ func (s *Server) rulesChangePost(w http.ResponseWriter, r *http.Request) {
 		s.rawPost(w, r, svc)
 		return
 	}
-	e, why := editOf(f)
+	edits, why := editsOf(f)
 	if why != "" {
-		s.fail(w, http.StatusBadRequest, "Not a change", why)
+		field := "add-" + r.FormValue("key")
+		if len(f["op"]) > 1 || f.Get("batch") != "" {
+			field = severalField
+		}
+		s.changePage(w, r, svc, r.FormValue("c"), builderError{Field: field, Message: why})
 		return
 	}
-	req := rules.ChangeReq{Ref: f.Get("c"), Base: f.Get("base"), Edits: []rules.Edit{e}, AlsoNow: f["now"], Ack: f.Get("ack")}
+	req := rules.ChangeReq{Session: s.session, Ref: f.Get("c"), Base: f.Get("base"), Edits: edits, AlsoNow: f["now"], Ack: f.Get("ack")}
 	a, err := svc.ApplyChange(r.Context(), req)
 	if err != nil {
+		if errors.Is(err, rules.ErrReviewGone) {
+			s.fail(w, http.StatusConflict, "Review again", err.Error())
+			return
+		}
 		_, text, again := refusal(err)
 		if !again {
 			s.serviceFail(w, "Change rules", err)
@@ -558,9 +810,9 @@ func (s *Server) rulesChangePost(w http.ResponseWriter, r *http.Request) {
 		// preview reads the file's own (ChangePlan.Base), so its form carries the base and the ack of that new plan and
 		// the next Save can land. With the refused, stale base the preview would plan on the file now but say so in a
 		// second banner, and every later Save from a page still holding the old base was refused again.
-		q := url.Values{"c": {req.Ref}, "op": {e.Op}, "key": {e.Key}, "v": {e.Entry}}
-		if errors.Is(err, rules.ErrStale) {
-			text = staleText(r.Context(), svc, req, e, text)
+		q := editQuery(req.Ref, edits)
+		if errors.Is(err, rules.ErrAlreadyApplied) {
+			text = "Already in the contract · nothing written"
 		}
 		s.redirectBack(w, r, "/rules/change/preview?"+q.Encode(), flash{Text: text})
 		return
@@ -569,34 +821,6 @@ func (s *Server) rulesChangePost(w http.ResponseWriter, r *http.Request) {
 		CLI: []string{"tego rules check " + shellWord(a.Plan.Contract)}}
 	d.UndoAck, d.UndoWords = a.Plan.Direction != widens, beforeWords(a.Plan.Sentences)
 	s.savedAnswer(w, r, d, appliedLine(a))
-}
-
-// staleText is what a Save refused as stale says: text, or, when the edit cannot be made again because the file as it
-// is now already has it, that nothing more was needed, so the person does not save it again. That is the second POST
-// of a double click (the first one wrote it from the same base) or the same edit made by hand: the edit planned on
-// the file now has nothing to do, or cannot be made and the change the file holds now (the journal's newest, which
-// stands) made it. Only the words differ: nothing is written either way.
-func staleText(ctx context.Context, svc ChangeService, req rules.ChangeReq, e rules.Edit, text string) string {
-	const already = "Already in the contract · nothing written"
-	p, err := svc.PlanChange(ctx, rules.ChangeReq{Ref: req.Ref, Edits: req.Edits})
-	switch {
-	case err != nil || p.Err == "":
-		return text // the edit can be made on the file now: the preview shows it again
-	case p.Nothing:
-		return already
-	}
-	hs, err := svc.History(req.Ref)
-	if err != nil || len(hs) == 0 || !hs[0].Current {
-		return text
-	}
-	want := e.Key + " -= " + e.Entry // a removal, and the ask a Never allow takes away
-	if e.Op == "add" {
-		want = e.Key + " += " + e.Entry
-	}
-	if slices.Contains(strings.Split(hs[0].Summary, "; "), want) {
-		return already
-	}
-	return text
 }
 
 // appliedLine is a change written, in one line: what the next run gets, and where "Also apply now" put it in force.
@@ -706,6 +930,8 @@ func (s *Server) settleSaved(d *savedData) {
 		o := savedOut{LiveResult: l, Words: liveWords(l.Block, shortener{cwd: cwd[l.Run], home: home})}
 		if l.OK {
 			s.settleOut(&o)
+		} else {
+			o.Restart = s.restartLine(l.Run)
 		}
 		d.Live = append(d.Live, o)
 	}
@@ -715,10 +941,13 @@ func (s *Server) settleSaved(d *savedData) {
 		case o.OK && placedOn[o.Run]:
 			continue // its outcome is in Live
 		case o.OK:
-			n.Why = "Also apply now was not ticked for this run"
+			n.Why = "Apply now was not ticked for this run"
 		}
 		if n.Change == "" {
 			n.Change = o.Block
+		}
+		if !n.FenceLift {
+			n.Restart = s.restartLine(n.Run)
 		}
 		if !slices.Contains(d.Next, n) {
 			d.Next = append(d.Next, n)
@@ -731,7 +960,7 @@ func (s *Server) settleSaved(d *savedData) {
 func (s *Server) settleOut(o *savedOut) {
 	rr, err := ledgerview.LoadRun(s.cfg.Ledger, o.Run)
 	if err != nil {
-		o.State, o.Chip, o.Class, o.Before, o.After = ledgerview.LiveWaiting, "Placed", "b-waiting", "on run ", ": its state cannot be read now"
+		o.State, o.Chip, o.Class, o.Before, o.After = ledgerview.LiveWaiting, "Placed", "b-neutral", "on run ", ": its state cannot be read now"
 		return
 	}
 	f := ledgerview.LiveFactsOf(rr)
@@ -747,7 +976,7 @@ func (s *Server) settleOut(o *savedOut) {
 		serial = f.Confirmed + 1 // not in the overlay: never claimed in force
 	}
 	kind, _, _ := strings.Cut(o.Block, ":")
-	st := f.StatusAt(kind, serial, s.cfg.Now(), e.From, e.Until)
+	st := f.StatusAt(kind, blockValueOf(o.Block, e), serial, s.cfg.Now(), e.From, e.Until)
 	o.State, o.Title = st.State, st.Sentence
 	since := ""
 	if st.Since > 0 {
@@ -758,8 +987,10 @@ func (s *Server) settleOut(o *savedOut) {
 		o.Chip, o.Class, o.Before, o.After = "Live now", "b-active", "on run ", since
 	case ledgerview.LivePartial:
 		o.Chip, o.Class, o.Before, o.After = "Live now", "b-active", "on run ", since+": changes are refused; this run's reads are not seen"
+	case ledgerview.LivePartlyKernel:
+		o.Chip, o.Class, o.Before, o.After = "Partly live now", "b-active", "on run ", since+": file changes the kernel decides in this run are not covered"
 	case ledgerview.LiveWaiting:
-		o.Chip, o.Class, o.Before, o.After = "Putting it in force", "b-waiting", "on run ", "…"
+		o.Chip, o.Class, o.Before, o.After = "Putting it in force", "b-neutral", "on run ", "…"
 	case ledgerview.LiveRecordedOnly:
 		o.Chip, o.Class, o.Before, o.After = "Recorded only", "b-observed", "on watched run ", ": matching actions are recorded, not stopped"
 	case ledgerview.LiveDormant:
@@ -776,7 +1007,7 @@ func (s *Server) settleOut(o *savedOut) {
 // was is no longer live (a watched run, a run that ended).
 func savedHeadline(outs []savedOut) string {
 	var runs []string
-	live, waiting := true, false
+	live, waiting, partly := true, false, false
 	for _, o := range outs {
 		if !o.OK {
 			continue
@@ -786,6 +1017,8 @@ func savedHeadline(outs []savedOut) string {
 		}
 		switch o.State {
 		case ledgerview.LiveInForce, ledgerview.LivePartial:
+		case ledgerview.LivePartlyKernel:
+			partly = true
 		case ledgerview.LiveWaiting:
 			live, waiting = false, true
 		default:
@@ -800,6 +1033,8 @@ func savedHeadline(outs []savedOut) string {
 	}
 	switch {
 	case len(runs) == 0:
+	case live && partly:
+		return "Saved · partly live now on " + on + " and from the next run"
 	case live:
 		return "Saved · live now on " + on + " and from the next run"
 	case waiting:
@@ -810,7 +1045,7 @@ func savedHeadline(outs []savedOut) string {
 
 // rulesRevert serves POST /rules/revert, which postAllowed has passed: Undo of a journal entry.
 func (s *Server) rulesRevert(w http.ResponseWriter, r *http.Request) {
-	svc, ok := s.changeService(w)
+	svc, ok := s.changeService(w, r)
 	if !ok {
 		return
 	}
@@ -864,12 +1099,22 @@ func (s *Server) rulesRevert(w http.ResponseWriter, r *http.Request) {
 // check writes nothing and is checked again.
 func (s *Server) rawPost(w http.ResponseWriter, r *http.Request, svc ChangeService) {
 	f := r.PostForm
+	// Check applies Drop to the text and renders remaining choices as Keep.
+	// A new Drop needs another review; Save cannot build its replacement proposal.
+	if f.Get("step") == "save" && f.Get("current-view") == "simple" {
+		for name, values := range f {
+			if strings.HasPrefix(name, "choice-") && slices.Contains(values, "drop") {
+				s.fail(w, http.StatusConflict, "Check choices", "Your choices changed; check the contract again before saving.")
+				return
+			}
+		}
+	}
 	ref, base := f.Get("c"), f.Get("base")
 	// A textarea submits its lines ending in CR LF (HTML's form encoding); a contract's lines end in LF.
 	text := strings.ReplaceAll(f.Get("text"), "\r\n", "\n")
 	refs, err := svc.Contracts()
 	if err != nil {
-		s.fail(w, http.StatusInternalServerError, "Change rules", err.Error())
+		s.serviceFail(w, "Change rules", err)
 		return
 	}
 	i := slices.IndexFunc(refs, func(c rules.ContractRef) bool { return c.Ref == ref })
@@ -877,11 +1122,15 @@ func (s *Server) rawPost(w http.ResponseWriter, r *http.Request, svc ChangeServi
 		s.serviceFail(w, "Change rules", rules.ErrNoContract)
 		return
 	}
-	d := changeData{Contracts: refs, C: &refs[i]}
+	d := changeData{Contracts: refs, C: &refs[i], View: builderView(r), Fields: builderFields}
 	if !s.fillChange(w, svc, &d) {
 		return
 	}
 	if d.NotWritable != "" || !d.CanRaw {
+		if pathcheck.UnansweredText(d.NotWritable) { // fillChange carries the refusal as the text a view shows
+			s.checkNotFinishedWords(w, pathcheck.WordsOf(d.NotWritable))
+			return
+		}
 		why := d.NotWritable
 		if why == "" {
 			why = d.RawWhy
@@ -889,9 +1138,27 @@ func (s *Server) rawPost(w http.ResponseWriter, r *http.Request, svc ChangeServi
 		s.fail(w, http.StatusForbidden, "Edit YAML", why)
 		return
 	}
+	if f.Get("step") != "save" && f.Get("current-view") == "simple" {
+		req := rules.NewReq{Text: []byte(text), NameHosts: map[string]string{}}
+		for k, vs := range f {
+			if strings.HasPrefix(k, "choice-") && len(vs) > 0 && vs[0] == "drop" {
+				req.Drop = append(req.Drop, strings.TrimPrefix(k, "choice-"))
+			}
+		}
+		edited, _, editErr := rules.EditDraft(req)
+		if editErr != nil {
+			s.fail(w, http.StatusUnprocessableEntity, "Check choices", editErr.Error())
+			return
+		}
+		text = string(edited)
+	}
+	d.Draft = text
+	if f.Get("step") != "save" {
+		_, d.Decisions, _ = rules.EditDraft(rules.NewReq{Text: []byte(text)})
+	}
 	d.Raw = &rawView{Open: true, Text: text}
 	status := http.StatusOK
-	req := rules.RawReq{Ref: ref, Base: base, Text: []byte(text), Ack: f.Get("ack"), AlsoNow: f["now"]}
+	req := rules.RawReq{Session: s.session, Ref: ref, Base: base, Text: []byte(text), Ack: f.Get("ack"), AlsoNow: f["now"]}
 	switch {
 	case f.Get("step") == "save":
 		a, err := svc.ApplyRaw(r.Context(), req)
@@ -900,6 +1167,11 @@ func (s *Server) rawPost(w http.ResponseWriter, r *http.Request, svc ChangeServi
 				UndoAck: true, CLI: []string{"tego rules check " + shellWord(a.Plan.Contract)}}
 			s.savedAnswer(w, r, sd, appliedLine(a))
 			return
+		}
+		if errors.Is(err, rules.ErrReviewGone) {
+			status = http.StatusConflict
+			d.Raw.Err = err.Error()
+			break
 		}
 		var again bool
 		if status, d.Raw.Err, again = refusal(err); !again {
@@ -912,13 +1184,12 @@ func (s *Server) rawPost(w http.ResponseWriter, r *http.Request, svc ChangeServi
 				d.Raw.Err = "Not saved · the text changed · check it again and save"
 			}
 		}
-		if r.Header.Get(inlineHeader) != "" {
+		if r.Header.Get(inlineHeader) != "" && f.Get("builder") != "1" {
 			// live.js posted the Save: the editor keeps its text, and the toast says why nothing was written (a
-			// plain form gets the editor again with the check below).
+			// plain form gets its editor again and must explicitly Check).
 			s.redirectBack(w, r, "", flash{Text: d.Raw.Err})
 			return
 		}
-		fallthrough
 	default:
 		p, err := svc.PlanRaw(r.Context(), req)
 		if err != nil {
@@ -927,7 +1198,7 @@ func (s *Server) rawPost(w http.ResponseWriter, r *http.Request, svc ChangeServi
 		}
 		d.Raw.Plan = p
 		if p.Err == "" {
-			d.Raw.Now = nowRuns(p.Now)
+			d.Raw.Now = s.withRestarts(nowRuns(p.Now))
 		}
 		if p.EnvRefused {
 			status = http.StatusUnprocessableEntity
@@ -937,6 +1208,7 @@ func (s *Server) rawPost(w http.ResponseWriter, r *http.Request, svc ChangeServi
 			d.Raw.Lines = numbered(text, d.Raw.Diags)
 		}
 	}
+	rememberBuilderView(w, d.View)
 	c, ok := s.changeChrome(w, "Edit YAML · "+d.C.Agent)
 	if ok {
 		s.render(w, status, "rules-change", c, d)
@@ -946,8 +1218,16 @@ func (s *Server) rawPost(w http.ResponseWriter, r *http.Request, svc ChangeServi
 // diagPos finds the line a compile diagnostic names: "<file>:12:3: ", "<file>:12: " or YAML's "line 12".
 var diagPos = regexp.MustCompile(`:(\d+)(?::\d+)?: |\bline (\d+)\b`)
 
-// diagsOf splits a plan's compile error into its lines, each with the contract line it names. A position in the
-// contract's own file is preferred to one in a profile it extends.
+// diagFile finds a position in a file that is not the contract: "<file>.yaml:4:3: ".
+var diagFile = regexp.MustCompile(`(/[^\s:]+\.ya?ml):(\d+)(?::\d+)?:`)
+
+// diagWhere is the draft compiler's location-only line for a fault it will not quote: "profile base · /p/base.yaml ·
+// line 4" or "the draft · line 3" (internal/control/draftcompile inheritedWhere).
+var diagWhere = regexp.MustCompile(`^(?:profile (\S+) · (/\S+) · line (\d+)|the draft · line (\d+))$`)
+
+// diagsOf splits a plan's compile error into its lines, each with the contract line it names, or, for a position in
+// a profile the contract extends, the profile, its file and the line there. A position in the contract's own file is
+// preferred to one in a profile it extends.
 func diagsOf(msg, contract string) []diagLine {
 	var out []diagLine
 	for _, l := range strings.Split(msg, "\n") {
@@ -955,11 +1235,25 @@ func diagsOf(msg, contract string) []diagLine {
 			continue
 		}
 		d := diagLine{Text: strings.TrimRight(l, " ")}
+		if m := diagWhere.FindStringSubmatch(strings.TrimSpace(l)); m != nil {
+			if m[4] != "" {
+				d.Line, _ = strconv.Atoi(m[4])
+			} else {
+				d.Profile, d.File = m[1], m[2]
+				d.FileLine, _ = strconv.Atoi(m[3])
+			}
+			out = append(out, d)
+			continue
+		}
 		probe := l
 		if contract != "" && strings.Contains(l, contract+":") {
 			probe = l[strings.Index(l, contract+":")+len(contract):]
 		} else if strings.Contains(l, ".yaml:") && !strings.Contains(l, "line ") {
 			probe = "" // another file's position (a profile): no line of this text
+			if m := diagFile.FindStringSubmatch(l); m != nil {
+				d.File, d.Profile = m[1], strings.TrimSuffix(strings.TrimSuffix(filepath.Base(m[1]), ".yaml"), ".yml")
+				d.FileLine, _ = strconv.Atoi(m[2])
+			}
 		}
 		if m := diagPos.FindStringSubmatch(probe); m != nil {
 			n := m[1]

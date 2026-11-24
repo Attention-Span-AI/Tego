@@ -17,12 +17,22 @@
 # Every go test step, in either mode, runs with -count=1 (gated-test.sh adds it too): go test's cache rechecks only
 # the files the test process itself opens, so a test whose verdict comes from a go build, go list or a built binary it
 # runs (the link gate, the binary-closure suites) replayed a stale pass.
+# scripts/deadcode-report.sh (ADR 0029's ratchet, CI's deadcode-report job): an unreachable function nobody classified in
+# tools/deadcode-allow.txt, a stale classification or an analysis that could not run fails here, not after the merge.
+# The browser tests (-tags chrome: nothing else compiles them) run in their own job beside the integration tests, when
+# google-chrome is on PATH ($TEGO_CHROME names another); without it, or with TEGO_PRECOMMIT_CHROME=0, the step is
+# reported NOT RUN with the reason, and the gate ends with exit 3 and a verdict that names it, never "every step passed".
+# TEGO_PRECOMMIT_CHROME=smoke (the default) leaves out the eleven matrix tests that take most of the time, full runs all
+# (scripts/chrome-tests.sh, which CI's chrome-tests job runs too).
 # bpf-objects (scripts/check-bpf-objects.sh: `make gen` in a clean copy must reproduce internal/bpf) runs only when
 # bpf/ or internal/bpf/ differs from origin/main or has uncommitted changes, or when TEGO_PRECOMMIT_BPF=1.
 # Then the script self-tests build-test runs (install, coverage, bench-gate, timing-budgets, skipgate, release and
 # the harness tests, and precommit_test.sh, which holds this list to ci.yml's), and actionlint when it is installed.
 # Where tools/oss/export.py exists, the export's self-tests, and tools/oss/public_build.py: the public tree cut from
-# this checkout must compile (go vet under the tag sets above and tegotesthooks; nothing is linked or run).
+# this checkout must compile (go vet under the tag sets above and tegotesthooks; nothing is linked or run). The full gate
+# also runs tools/oss/cut_test.py unrestricted (scripts/oss-cut-test.sh: the cut tree built, vetted and tested with -short,
+# under a scratch home, with the caller's real ~/.tego checked unchanged), as its own job beside the integration tests; it
+# appends one line per run to <scratch>/osscut/evidence.jsonl and removes the passing run's tree.
 # govulncheck is not run: it needs the network. The absolute timing budgets themselves are not run here: they need
 # an idle machine (`make budgets`, scripts/timing-budgets.sh; CI's bench-gate job), and the gated tests hold them to
 # their unit-gate ceilings.
@@ -33,8 +43,9 @@
 # Steps run concurrently (scripts/precommit-runner.sh), in three phases: the static checks (the lint job, the
 # longest, started first), then the unit tests followed in the same job by the tegotesthooks tests (go test -p sized
 # to the job budget), then the integration tests alone. At most TEGO_PRECOMMIT_JOBS jobs run at once; the default is
-# min(nproc/2, memory/2 GB) and never below 1, the memory being the lower of MemAvailable and what each of this
-# process's cgroups has left (memory.max less memory.current without its inactive page cache: the gate's slice is
+# min(nproc/2, memory/2 GB, idle cores/2) and never below 1, idle cores being the CPUs less the one-minute load
+# average (a gate started on a busy machine took cores from the work already there), the memory being the lower of
+# MemAvailable and what each of this process's cgroups has left (memory.max less memory.current without its inactive page cache: the gate's slice is
 # shared). TEGO_PRECOMMIT_JOBS=1 runs every step one after another in the order above. Each step's output is kept apart and printed in that fixed order,
 # with its duration, whatever finished first; a step that is killed, or never reported, is a failure.
 #
@@ -53,7 +64,10 @@
 # Environment: TEGO_PRECOMMIT_JOBS (jobs at once), TEGO_PRECOMMIT_SINCE (the scoped mode's base revision),
 #   TEGO_PRECOMMIT_BPF=1 (force the bpf-objects step), GO (go), GOLANGCI_LINT (golangci-lint), SHELLCHECK
 #   (shellcheck), ACTIONLINT (actionlint).
-# Exit: 0 when every step passed, 1 when one failed, 2 on a bad TEGO_PRECOMMIT_JOBS.
+#   TEGO_PRECOMMIT_CHROME (smoke, full or 0), TEGO_CHROME (the browser), TEGO_CHROME_TIMEOUT (the chrome step's alarm),
+#   TEGO_PRECOMMIT_OSSCUT_TIMEOUT (the public cut-tree step's overall alarm, seconds).
+# Exit: 0 when every step passed, 1 when one failed, 2 on a bad TEGO_PRECOMMIT_JOBS, 3 when none failed but a step could
+# not run (the verdict names it).
 set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
@@ -70,13 +84,17 @@ trap 'exit 130' INT TERM
 # shellcheck disable=SC2034 # read by the sourced runner
 PC_TMP="$tmp"
 
-# default_jobs: min(nproc/2, GB/2), GB being MemAvailable or the least any of this process's cgroups has left
-# (memory.max less memory.current: a VM or another gate in the same slice holds part of it). inactive_file is taken
+# default_jobs: min(nproc/2, GB/2, idle cores/2), GB being MemAvailable or the least any of this process's cgroups has
+# left (memory.max less memory.current: a VM or another gate in the same slice holds part of it), and idle cores the
+# CPUs less the one-minute load average (a gate starting beside other builds, tests or guests otherwise took the whole
+# machine on top of them, and its timing tests then ran slow and failed). inactive_file is taken
 # off memory.current, as MemAvailable counts it: the page cache of the builds before this gate stays charged to the
 # slice, and counted as used it turned a parallel gate into a serial one with nothing else running.
-# PC_SYSROOT: a tree holding proc/meminfo and sys/fs/cgroup in place of the real ones (precommit_test.sh's fixture).
+# It prints the number on stdout and, on stderr, one line saying what each limit allowed and which one decided (the
+# gate's log shows it); a load it cannot read is no limit, and the line says so.
+# PC_SYSROOT: a tree holding proc/meminfo, proc/loadavg and sys/fs/cgroup in place of the real ones (precommit_test.sh's fixture).
 default_jobs() {
-	local n gb cg lim cur cache free j root="${PC_SYSROOT:-}/sys/fs/cgroup"
+	local n gb cg lim cur cache free j cj mj lj load why root="${PC_SYSROOT:-}/sys/fs/cgroup"
 	n="$(nproc 2>/dev/null || echo 2)"
 	gb="$(awk '/^MemAvailable:/{print int($2/1048576)}' "${PC_SYSROOT:-}/proc/meminfo" 2>/dev/null)"
 	gb="${gb:-2}"
@@ -96,12 +114,24 @@ default_jobs() {
 		[ "$cg" != / ] || break
 		cg="$(dirname "$cg")"
 	done
-	j=$((n / 2))
-	[ $((gb / 2)) -ge "$j" ] || j=$((gb / 2))
+	cj=$((n / 2))
+	mj=$((gb / 2))
+	load="$(awk 'NR == 1 && $1 ~ /^[0-9]+(\.[0-9]+)?$/ { print $1 }' "${PC_SYSROOT:-}/proc/loadavg" 2>/dev/null)"
+	lj=
+	[ -z "$load" ] || lj="$(awk -v n="$n" -v l="$load" 'BEGIN { j = int((n - l) / 2); print (j < 1 ? 1 : j) }')"
+	j=$cj why=cpus
+	[ "$mj" -ge "$j" ] || { j=$mj why=memory; }
+	[ -z "$lj" ] || [ "$lj" -ge "$j" ] || { j=$lj why=load; }
 	[ "$j" -ge 1 ] || j=1
+	echo "precommit: jobs: $j of cpus $n (allows $cj), memory ${gb} GB (allows $mj), one-minute load ${load:-unknown} (allows ${lj:-no limit}); the lowest decides: $why" >&2
 	echo "$j"
 }
-PC_JOBS="${TEGO_PRECOMMIT_JOBS:-$(default_jobs)}"
+if [ -n "${TEGO_PRECOMMIT_JOBS:-}" ]; then
+	PC_JOBS=$TEGO_PRECOMMIT_JOBS
+	echo "precommit: jobs: $PC_JOBS, as TEGO_PRECOMMIT_JOBS says (cpus, memory and load are not consulted)"
+else
+	PC_JOBS="$(default_jobs)"
+fi
 case "$PC_JOBS" in '' | *[!0-9]* | 0)
 	echo "precommit: TEGO_PRECOMMIT_JOBS must be a positive integer, not '$PC_JOBS'" >&2
 	exit 2
@@ -137,19 +167,30 @@ rulecheck() { "$GO" run ./tools/rulecheck; }
 rulecheck_strict() { "$GO" run ./tools/rulecheck -strict 2>&1 | sed -n 's/^rulecheck: strict: //p'; }
 isocheck() { "$GO" run ./tools/isocheck; }
 bpf_objects() { ./scripts/check-bpf-objects.sh --worktree; }
+# deadcode_ratchet: CI's deadcode-report job (ADR 0029 (4)): production reachability under the four tag sets on both
+# architectures, and the ratchet: a function nothing classified in tools/deadcode-allow.txt, a stale classification or an
+# analysis that could not run fails. The output directory must be new, so it is under the gate's own temporary one.
+deadcode_ratchet() { TEGO_DEADCODE_GO="$GO" ./scripts/deadcode-report.sh -o "$tmp/deadcode"; }
 actionlint_run() { "$ACTIONLINT"; }
+# oss_cut_test: the unrestricted public cut-tree target (make oss-cut-test with no base and no package list), its
+# evidence line kept in the scratch folder's evidence.jsonl and the passing run's tree removed (a failed run's stays).
+# It builds, vets and tests with go -p of the gate's job budget (PC_JOBS, as the test passes do; the cut test's own
+# default is 1) and under an overall alarm, TEGO_PRECOMMIT_OSSCUT_TIMEOUT seconds (default 2700: 45 minutes, a ceiling
+# until a full run is measured): on expiry the processes it started are killed and the step fails with a message that
+# names the alarm, instead of holding the gate open.
+oss_cut_test() { GO="$GO" ./scripts/oss-cut-test.sh --discard-tree --jobs "$PC_JOBS" --timeout "${TEGO_PRECOMMIT_OSSCUT_TIMEOUT:-2700}"; }
 # script_tests: the shell self-tests build-test runs (make release-test, install-test, skipgate-test, coverage-test,
 # bench-gate-test, budgets-test and harness-test, and the vm helpers' own).
 script_tests() {
 	local t st=0
 	# The python helpers some self-tests run leave no __pycache__ in the tree.
 	export PYTHONDONTWRITEBYTECODE=1
-	for t in scripts/install_test.sh scripts/install_mac_test.sh scripts/coverage_test.sh scripts/bench-gate_test.sh scripts/timing-budgets_test.sh scripts/check-spdx_test.sh scripts/check-licenses_test.sh scripts/scrub-capture_test.sh scripts/fuzz-corpus_test.sh scripts/deadcode-report_test.sh scripts/skipgate_test.sh \
+	for t in scripts/install_test.sh scripts/install_mac_test.sh scripts/install_windows_test.sh scripts/coverage_test.sh scripts/bench-gate_test.sh scripts/timing-budgets_test.sh scripts/gate-cost_test.sh scripts/check-spdx_test.sh scripts/check-licenses_test.sh scripts/scrub-capture_test.sh scripts/fuzz-corpus_test.sh scripts/deadcode-report_test.sh scripts/skipgate_test.sh \
 		scripts/demo-credentials_test.sh scripts/demo-reset_test.sh scripts/cleanup-guards_test.sh \
 		scripts/check-skiplists_test.sh scripts/release_test.sh scripts/check-control-pin_test.sh scripts/bpf-toolchain_test.sh scripts/tree-files_test.sh \
 		scripts/precommit_test.sh scripts/check-bpf-objects_test.sh scripts/fd-churn_test.sh scripts/check-fd_test.sh scripts/check-edgelint_test.sh test/vm/kvm-step_test.sh test/vm/held-label_test.sh test/vm/python-pkgs_test.sh test/vm/fetch-kernel_test.sh \
 		test/e2e/lib_test.sh test/e2e/pydeps_test.sh test/e2e/kt4_test.sh test/e2e/kt5_test.sh test/e2e/kt2_pairs_test.sh test/e2e/m0_demo_test.sh test/e2e/overhead/kt3_test.sh test/e2e/overhead/bench_test.sh test/e2e/overhead/run_test.sh \
-		test/vm/matrix_test.sh test/vm/root-suites_test.sh test/vm/doctor-refusal_test.sh test/vm/doctor-facts_test.sh test/vm/perf_test.sh \
+		test/vm/matrix_test.sh test/vm/capture-stack_test.sh test/vm/root-suites_test.sh test/vm/host-facts_test.sh test/vm/doctor-refusal_test.sh test/vm/doctor-facts_test.sh test/vm/perf_test.sh \
 		test/vm/guarded-run_test.sh test/vm/bounded-run_test.sh test/vm/fwd-run_test.sh test/vm/kvm-modules_test.sh test/vm/kvm-files_test.sh test/vm/kvm-cleanup_test.sh test/vm/tier2-pairs_test.sh test/vm/pairs_test.sh \
 		test/vm/kvm-run_test.sh test/vm/ssh-suite_test.sh; do
 		"./$t" >"$tmp/script-test.out" 2>&1 || { echo "$t failed:"; cat "$tmp/script-test.out"; st=1; }
@@ -162,7 +203,14 @@ script_tests() {
 # go list it ran would now read a different tree (the header).
 gated_unit() { GO="$GO" ./scripts/gated-test.sh test/unit-skips.txt "$("$GO" env CGO_ENABLED)" -count=1 "${test_p[@]}" "$@"; }
 gated_integration() { GO="$GO" ./scripts/gated-test.sh test/integration-skips.txt 0 -count=1 "${test_p[@]}" -tags integration "$@"; }
-hooks_test() { "$GO" test -count=1 "${test_p[@]}" -tags tegotesthooks "$@"; }
+# -timeout: the same explicit package alarm as gated-test.sh (see its header): internal/cli's tegotesthooks binary took 418 s in one
+# gate and was killed at the 10-minute default in another while a busy host slowed every test in it.
+hooks_test() { "$GO" test -count=1 -timeout "${TEGO_TEST_TIMEOUT:-30m}" "${test_p[@]}" -tags tegotesthooks "$@"; }
+# chrome_tests: the browser tests (scripts/chrome-tests.sh, which says what it runs and why). TEGO_PRECOMMIT_CHROME=full
+# adds the matrix tests that take most of the time; the default leaves them out.
+chrome_tests() {
+	if [ "${TEGO_PRECOMMIT_CHROME:-smoke}" = full ]; then GO="$GO" ./scripts/chrome-tests.sh --full; else GO="$GO" ./scripts/chrome-tests.sh; fi
+}
 # check_fd: ADR 0023 A9 holds the baseline's total to the merge base with main (the gate runs
 # locally); a checkout with no main branch checks everything but the total, and says so.
 check_fd() {
@@ -206,6 +254,7 @@ add_full() {
 	pc_add static rulecheck "rulecheck" step rulecheck
 	pc_add static isocheck "isocheck (harnesses keep out of ~/.tego)" step isocheck
 	pc_add static rulecheck "rulecheck -strict (report only)" report rulecheck_strict
+	pc_add static deadcode "deadcode-report (ADR 0029 ratchet)" step deadcode_ratchet
 	if [ "${TEGO_PRECOMMIT_BPF:-}" = 1 ] || bpf_touched; then
 		pc_add static bpf "bpf-objects (make gen reproduces internal/bpf)" step bpf_objects
 	else
@@ -229,8 +278,22 @@ add_full() {
 	pc_add tests unit "unit tests (test/unit-skips.txt)" step gated_unit ./...
 	# In the unit job, after the unit pass: beside it, the unit pass's timing tests (rulesview's InForce) ran slow.
 	# precommit_test.sh holds this list to the directories with tegotesthooks test files.
-	pc_add tests unit "unit tests (-tags tegotesthooks)" step hooks_test ./internal/bpf/ ./internal/cli/ ./internal/platform/sys/ ./internal/runtime/enforce/ ./internal/runtime/enforce/landlock/
+	pc_add tests unit "unit tests (-tags tegotesthooks)" step hooks_test ./cmd/tego/ ./internal/bpf/ ./internal/cli/ ./internal/platform/peer/ ./internal/platform/sys/ ./internal/runtime/ ./internal/runtime/enforce/ ./internal/runtime/enforce/landlock/ ./internal/selftest/
 	pc_add integration integration "integration tests (test/integration-skips.txt)" step gated_integration ./...
+	# The public cut tree (tools/oss/cut_test.py, unrestricted): its own job, so it overlaps the integration tests when
+	# there is a slot for it. Only where the export tooling is (the public tree has none).
+	if [ -f tools/oss/cut_test.py ]; then
+		pc_add integration osscut "public cut tree: build, vet, short tests (oss-cut-test)" step oss_cut_test
+	fi
+	# The browser tests, in their own job: beside the integration tests when there are two jobs or more, one Chrome at once.
+	chrome_bin="${TEGO_CHROME:-google-chrome}"
+	if [ "${TEGO_PRECOMMIT_CHROME:-smoke}" = 0 ]; then
+		pc_add integration - "chrome tests (-tags chrome)" notrun "turned off by TEGO_PRECOMMIT_CHROME=0"
+	elif command -v "$chrome_bin" >/dev/null; then
+		pc_add integration chrome "chrome tests (-tags chrome, ${TEGO_PRECOMMIT_CHROME:-smoke})" step chrome_tests
+	else
+		pc_add integration - "chrome tests (-tags chrome)" notrun "no $chrome_bin on PATH: the browser tests need it (TEGO_CHROME names another)"
+	fi
 }
 
 # add_scoped PLAN: the steps tools/affected's plan selects (mode scoped or docs). A build's test and run lines share
@@ -312,7 +375,7 @@ if [ -n "${TEGO_PRECOMMIT_SINCE:-}" ]; then
 		;;
 	esac
 fi
-echo "precommit: $PC_JOBS job(s) at once (TEGO_PRECOMMIT_JOBS)"
+echo "precommit: $PC_JOBS job(s) at once"
 if [ "$mode" = full ]; then add_full; else add_scoped "$tmp/plan"; fi
 pc_run static
 pc_run tests

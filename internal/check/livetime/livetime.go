@@ -238,9 +238,9 @@ func At(t, now time.Time, loc *time.Location) string {
 	if t.Sub(now).Abs() < time.Hour && !lt.Truncate(time.Minute).Equal(lt) {
 		clk = "15:04:05"
 	}
-	layout := "Mon 2 Jan " + clk
+	layout := "Mon 2 Jan " + clk + " MST"
 	if lt.Year() != now.In(loc).Year() {
-		layout = "Mon 2 Jan 2006 " + clk
+		layout = "Mon 2 Jan 2006 " + clk + " MST"
 	}
 	return lt.Format(layout) + " (" + Away(t.Sub(now)) + ")"
 }

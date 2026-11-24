@@ -1,0 +1,9 @@
+[Unit]
+Description=MCP_CANARY_18
+[Service]
+Type=oneshot
+Environment=KEY=MCP_CANARY_18
+ExecStart=-@:/opt/codex custom-argv0 --token MCP_CANARY_18 \
+ # ignored comment in continuation
+ --header=MCP_CANARY_18 %h
+ExecStart=+/opt/gemini "MCP_CANARY_18" '\x25i'

@@ -1,0 +1,75 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Page rules loaded only with their owning page. */
+
+.ap-tabs { margin-bottom: var(--space-4); }
+
+/* Approval decisions keep exact targets and the existing protected POST forms. */
+.ap-card-body { display: grid; gap: var(--space-3); padding: var(--space-5); }
+.ap-card-body p { margin: 0; }
+.ap-card-body .ask-q { overflow-wrap: anywhere; }
+.ap-target, .ap-why { display: grid; gap: var(--space-1); }
+.ap-target .ut-box { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--text-md); }
+.ap-card-body .soft, .ap-wait, .ap-effect { font-size: var(--text-sm); color: var(--c-text2); }
+.ap-card-body .ask-d > form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+.ap-card-body .ask-btn { color: var(--c-ask-text); background: var(--c-ask-soft); border-color: var(--c-ask-text); }
+.ap-card-body .ask-btn:hover { background: var(--c-surface); }
+.ap-card-body .ask-more > summary, .ap-record > summary { display: flex; align-items: center; cursor: pointer; min-height: 44px; }
+.ap-card-body .ask-more-in, .ap-record .kv { padding-top: var(--space-3); }
+.ap-record .kv dd { min-width: 0; overflow-wrap: anywhere; }
+.ap-phone-answer { display: none; }
+.ap-answer-facts { display: flex; gap: var(--space-3); width: 100%; min-width: 0; }
+.ap-tabs a { min-height: 44px; }
+@media screen and (max-width: 600px) {
+  .ap-card-body { padding: 16px; gap: 12px; }
+  .ap-card-body .ask-q { font-size: 16px; line-height: 24px; }
+  .ap-detail .ask-bar { padding: 8px 16px; font-size: 13px; }
+  .ap-card-body .ut-box { font-family: var(--font-sans); font-size: 16px; line-height: 24px; padding: 0; border: 0; background: transparent; }
+  .ap-effect { font-size: 13px; line-height: 20px; }
+  .ap-card-body .ask-btn { min-height: 44px; font-size: 16px; padding: 8px; }
+  .ap-card-body .ask-btn svg { display: none; }
+  .ap-answer-facts { display: none; }
+  .ans-list > li { display: block; padding: 0; }
+  .ans-list .ap-phone-answer { display: grid; }
+  .ans-list .phone-when { font-size: 13px; }
+  .ap-record a, .ap-answer a, .ap-card-body .check-inline { min-width: 44px; min-height: 44px; }
+  .ap-record a { display: inline-flex; align-items: center; }
+  .ap-record .kv { display: grid; grid-template-columns: minmax(0,1fr); gap: 8px; }
+}
+@media (forced-colors: active) { .ap-card-body .ask-btn { border-color: ButtonText; } }
+.ap-compact { display: none; }
+@media screen and (max-width: 600px) {
+ .ap-compact { display: block; border-color: var(--c-ask); background: var(--c-ask-soft); }
+ .ap-default { display: none; }
+ .ap-default:has(.ask:target) { display: block; }
+ .ap-compact:has(+ .ap-default .ask:target) { display: none; }
+
+}
+.ap-detail-count { margin: 0; font-size: var(--text-sm); color: var(--c-text2); }
+.ap-detail-count a { display: inline-flex; min-height: 44px; min-width: 44px; align-items: center; }
+@media screen and (max-width: 600px) {
+ .ap-detail .ask-d { display: contents; }
+ .ap-detail .ask-d > form { position: sticky; bottom: calc(80px + env(safe-area-inset-bottom)); z-index: 2; padding: 8px 0; background: var(--c-surface); }
+ .ap-detail .ask-bar { display: none; }
+}
+
+
+.ap-card-body .ask-path .sp { display: inline; }
+.ap-card-body .ask-path .sp, .ap-card-body .ask-path .sp > *, .ap-card-body .ask-path .nb { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+
+.ap-recovery > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; }
+
+.approval-queue .phone-who { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+.ap-request-target { display: block; font-weight: 400; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.ap-recovery-actions { display: flex; align-items: flex-start; flex-wrap: wrap; gap: var(--space-2); }
+
+.ap-target .ut-box { overflow: visible; text-overflow: clip; }
+
+.approval-queue .phone-row { grid-template-rows: auto auto; align-content: start; align-items: start; }
+
+@media screen and (max-width: 600px) {
+  .ap-target .ut-box, .ap-card-body .ut-box { max-height: 8.5rem; overflow: auto; overscroll-behavior: contain; }
+  /* The queue's row says the start of a huge target; its whole text is in the card the row opens and in the row's
+     text for a screen reader (approvals.queue-full). */
+  .approval-queue .ap-request-target { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }
+}

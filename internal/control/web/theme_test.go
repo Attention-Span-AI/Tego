@@ -73,28 +73,6 @@ func contrast(a, b string) float64 {
 	return (la + 0.05) / (lb + 0.05)
 }
 
-func hue(hex string) float64 {
-	r, g, b := rgb(hex)
-	mx, mn := math.Max(r, math.Max(g, b)), math.Min(r, math.Min(g, b))
-	d := mx - mn
-	var h float64
-	switch {
-	case d == 0:
-		return 0
-	case mx == r:
-		h = math.Mod((g-b)/d, 6)
-	case mx == g:
-		h = (b-r)/d + 2
-	default:
-		h = (r-g)/d + 4
-	}
-	h *= 60
-	if h < 0 {
-		h += 360
-	}
-	return h
-}
-
 func tokenBlock(t *testing.T, css, start string) map[string]string {
 	t.Helper()
 	i := strings.Index(css, start)
@@ -110,7 +88,7 @@ func tokenBlock(t *testing.T, css, start string) map[string]string {
 	return m
 }
 
-// TestThemeTokens: in both themes the link colour is not the refusal colour (the hues sit well apart), every text
+// TestThemeTokens: orange means waiting, red decisions differ by shape, and every text
 // token clears WCAG AA (4.5:1) on every surface it is drawn on, and the media-query dark block and the
 // data-theme="dark" block hold the same values, so Auto and the switch look alike.
 func TestThemeTokens(t *testing.T) {
@@ -129,12 +107,8 @@ func TestThemeTokens(t *testing.T) {
 		}
 	}
 	for name, tk := range map[string]map[string]string{"light": light, "dark": dark} {
-		d := math.Abs(hue(tk["accent-text"]) - hue(tk["danger"]))
-		if d > 180 {
-			d = 360 - d
-		}
-		if d < 30 {
-			t.Errorf("%s: link %s and refusal %s are only %.0f degrees of hue apart", name, tk["accent-text"], tk["danger"], d)
+		if tk["ask"] != "#F26327" || tk["refused"] != tk["through"] || tk["primary"] != tk["brand"] || tk["current"] != tk["text"] {
+			t.Errorf("%s: waiting, red decisions, routine actions or current destination violate the phone palette", name)
 		}
 		for _, fg := range []string{"text", "text2", "text3", "accent-text", "danger", "success", "warn", "info"} {
 			for _, bg := range []string{"bg", "surface", "sunken"} {

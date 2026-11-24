@@ -134,9 +134,90 @@ func TestPlaneFilterHookNamesAreThePlanesHooks(t *testing.T) {
 	}
 	for _, n := range []string{landlock.HookFileOpen, landlock.HookPathUnlink, landlock.HookPathRmdir,
 		landlock.HookPathRename, landlock.HookPathLink, landlock.HookPathMknod, landlock.HookPathMkdir,
-		landlock.HookPathSymlink, landlock.HookPathTruncate} {
+		landlock.HookPathSymlink, landlock.HookPathTruncate, landlock.HookSocketRecvmsg} {
 		if !names[n] {
 			t.Errorf("the filter's hook %q is no bpf.PlaneHook", n)
 		}
+	}
+}
+
+// importsInherited is inherited tier-1 state of a net.assurance: kernel run: the filter that denies recvmsg is one
+// instruction, the one that leaves it to the plane's socket_recvmsg another, and it too narrows by what the loaded
+// plane decides (landlock.Handle.PlaneImportsFilter and PlaneFilter).
+type importsInherited struct {
+	asked  *map[string]bool
+	strict bool // the run's filter denies recvmsg at all (landlock's strictNet)
+}
+
+var importsLeft = []bpf.RawInstruction{{Op: 6, K: 0x7fff0001}}
+
+func (importsInherited) LandlockRuleset() (int, bool)                { return -1, false }
+func (importsInherited) SeccompFilter() ([]bpf.RawInstruction, bool) { return fullFilter, true }
+func (i importsInherited) PlaneImportsFilter(hooks map[string]bool) ([]bpf.RawInstruction, bool, error) {
+	*i.asked = maps.Clone(hooks)
+	if !i.strict || !hooks[landlock.HookSocketRecvmsg] {
+		return fullFilter, false, nil
+	}
+	return importsLeft, true, nil
+}
+
+// TestRecvmsgIsLeftToThePlaneOnlyWhereItsHookIsAttached: a net.assurance: kernel run whose plane reports
+// socket_recvmsg attached gets the filter that leaves recvmsg to it from the first SeccompFilter (not only after
+// UsePlaneFilter, which an Adjustable run or a gate never calls), and its slot header says imports are denied; with
+// the hook absent, or with no strict assurance, the filter is the full one and the slot is not flagged. A run that starts
+// the open deputy is flagged like any other (ADR 0128, amended 2026-11-21): its deputy is exempted by identity.
+func TestRecvmsgIsLeftToThePlaneOnlyWhereItsHookIsAttached(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		strict  bool
+		hook    bool
+		left    bool
+		flagged bool
+		deputy  bool // the run holds its reads, so it starts the open deputy, which receives with a control buffer
+	}{
+		{"strict, hook attached", true, true, true, true, false},
+		{"strict, hook absent", true, false, false, false, false},
+		{"not strict, hook attached", false, true, false, false, false},
+		// The filter (landlock.Handle.recvmsgInPlane) and the flag (fillPlane) both leave the deputy's run to the hook,
+		// which passes the deputy by the identity ExemptDeputy writes: the fake filter below stands for the real one.
+		{"strict, hook attached, open deputy", true, true, true, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var asked map[string]bool
+			f, plane := planeFixture(t, ebpfbindings.PlaneLSM, func(o *Options) {
+				o.Inherit = func(context.Context, *agent.RuleTable, Run) (Inherited, error) {
+					return importsInherited{asked: &asked, strict: tc.strict}, nil
+				}
+			})
+			if tc.strict {
+				f.table.NetAssurance = agent.NetAssuranceKernel
+			}
+			if tc.deputy {
+				f.table.Reads = agent.HeldReads{Mode: agent.ReadsHeld}
+				if !f.table.NeedsOpenDeputy() {
+					t.Fatal("the table does not start the open deputy")
+				}
+			}
+			plane.attached = map[string]bool{"bprm_check": true, ebpfbindings.PlaneHookSocketRecvmsg: tc.hook}
+			h, err := f.backend.Prepare(context.Background(), f.table, f.run)
+			if err != nil {
+				t.Fatalf("Prepare: %v", err)
+			}
+			defer func() { _ = h.Close() }()
+			want := fullFilter
+			if tc.left {
+				want = importsLeft
+			}
+			if prog, _ := h.SeccompFilter(); !slices.Equal(prog, want) {
+				t.Errorf("the filter is %v, want %v", prog, want)
+			}
+			if len(plane.fills) != 1 || plane.fills[0].ImportsDenied != tc.flagged {
+				t.Errorf("fill requests %+v, want ImportsDenied %v", plane.fills, tc.flagged)
+			}
+			if dropped := h.UsePlaneFilter(); len(dropped) != 0 {
+				t.Errorf("UsePlaneFilter = %v: the receive hook is no fs decision", dropped)
+			}
+		})
 	}
 }

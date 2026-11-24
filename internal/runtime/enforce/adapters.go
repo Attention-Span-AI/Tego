@@ -92,8 +92,9 @@ func observeFilter(full, frames bool) ([]bpf.RawInstruction, error) {
 // is built in Prepare from both halves. The pre-built b answers Tier and Capabilities, which are the
 // tier's static row and depend on no option.
 type cgroupBackend struct {
-	b    *cgroupenforce.Backend
-	opts cgroupenforce.Options
+	b          *cgroupenforce.Backend
+	opts       cgroupenforce.Options
+	recordOnly bool
 	// newRun builds the run-scoped backend; nil means cgroup.New. It is a seam because the sink is the
 	// one option whose absence is silent — nothing about the returned Handle reveals it — so this
 	// package's own test reads back the Options a run is prepared with instead.
@@ -195,6 +196,12 @@ func (a cgroupBackend) Prepare(ctx context.Context, rt *agent.RuleTable, run Run
 		// second attempt hands no rows over, so choosePlane cannot answer it this way again.
 		crun.PlaneRows, crun.PlaneErr = nil, err
 		h, err = a.prepareRun(ctx, rt, run, crun)
+	}
+	if err == nil && a.recordOnly {
+		if concrete, ok := h.(*cgroupenforce.Handle); ok {
+			return adoptionObservedHandle{Handle: concrete}, nil
+		}
+		return nil, fmt.Errorf("record-only adoption: unexpected prepared handle %T", h)
 	}
 	return h, listenerAliasRemedy(err, rt, crun.Mounts)
 }
@@ -303,8 +310,10 @@ var (
 	_ KernelDatagramReader = cgroupHandle{}
 	_ KernelDatagramReader = (*cgroupenforce.Handle)(nil)
 	// and is armed after the child stage's exec (Armer, ADR 0021 (2)).
-	_ api.Armer = cgroupHandle{}
-	_ api.Armer = (*cgroupenforce.Handle)(nil)
+	_ api.AdmissionRechecker = cgroupHandle{}
+	_ api.AdmissionRechecker = adoptionObservedHandle{}
+	_ api.Armer              = cgroupHandle{}
+	_ api.Armer              = (*cgroupenforce.Handle)(nil)
 	// and its listener leaves the line of an exec's refused open to the supervisor (SupervisorExecLines).
 	_ SupervisorExecLines = cgroupHandle{}
 	_ SupervisorExecLines = (*cgroupenforce.Handle)(nil)
@@ -322,6 +331,44 @@ var (
 	// and sums the skip counters of the shared programs the run's rules rely on (SkipCounter, ADR 0148).
 	_ SkipCounter = cgroupHandle{}
 	_ SkipCounter = (*cgroupenforce.Handle)(nil)
+	// and names the open deputy to its plane before Arm (DeputyExempter, ADR 0128 amended 2026-11-21).
+	_ DeputyExempter = cgroupHandle{}
+	_ DeputyExempter = (*cgroupenforce.Handle)(nil)
+	// and puts live path, read and write blocks in force in its plane (PlaneBlocker, ADR 0124 amended 2026-11-21).
+	_ PlaneBlocker = cgroupHandle{}
+	_ PlaneBlocker = (*cgroupenforce.Handle)(nil)
+)
+
+// DeputyExempter is the optional Handle extension of a tier whose decision plane guards descriptor imports (ADR 0128,
+// amended 2026-11-21): ExemptDeputy writes the run's open deputy, its pid and its start time in USER_HZ ticks, into the
+// run's slot, after the deputy's hello and before Arm. A run whose slot is not flagged needs nothing; an error refuses
+// the run.
+type DeputyExempter interface {
+	ExemptDeputy(pid int, startTicks uint64) error
+}
+
+// PlaneBlocker is the optional Handle extension of a tier whose decision plane decides file changes in the kernel (ADR
+// 0124, amended 2026-11-21): PlaneBlocks is the run's live-block writer, false where the run has none.
+type PlaneBlocker interface {
+	PlaneBlocks() (PlaneBlockWriter, bool)
+}
+
+// PlaneBlockWriter, PlaneBlockFill and PlaneBlockResult are the plane backend's (cgroup), which this package may name
+// but not define.
+type (
+	PlaneBlockWriter = cgroupenforce.PlaneBlockWriter
+	PlaneBlockFill   = cgroupenforce.PlaneBlockFill
+	PlaneBlockResult = cgroupenforce.PlaneBlockResult
+)
+
+// BootOffsetZero is nil when this launcher's CLOCK_BOOTTIME is the kernel's (no time namespace offset), which a plane
+// row's instant and the open deputy's start time rest on; the plane backend's.
+func BootOffsetZero() error { return cgroupenforce.BootOffsetZero() }
+
+// The plane backend's live-block errors.
+var (
+	ErrPlaneBlockFull  = cgroupenforce.ErrPlaneBlockFull
+	ErrPlaneBlockClash = cgroupenforce.ErrPlaneBlockClash
 )
 
 // ProgramSkips is one reading of the skip counters of the shared programs a run's rules rely on (SkipCounter); the
@@ -341,6 +388,18 @@ type PlaneKeyed = cgroupenforce.PlaneKeyed
 func (h cgroupHandle) DenyReadFrozen() []string {
 	if f, ok := h.inherited.(interface{ DenyReadFrozen() []string }); ok {
 		return f.DenyReadFrozen()
+	}
+	return nil
+}
+
+// DenyReadSnapshot is the deny_read enumeration of the inherited tier-1 ruleset as Prepare froze it
+// (landlock.Handle.DenyReadSnapshot): a root tier installs that ruleset as composed, so a name made beside one of its
+// enumerated ancestors after launch is refused by the same kernel domain here as at tier landlock, and the supervisor
+// answers it the same way, refused, read-denied, rule deny-read-snapshot, instead of continuing it for a line of allow.
+// nil when the inherited state enumerated no ancestor.
+func (h cgroupHandle) DenyReadSnapshot() func(path string) bool {
+	if s, ok := h.inherited.(interface{ DenyReadSnapshot() func(path string) bool }); ok {
+		return s.DenyReadSnapshot()
 	}
 	return nil
 }

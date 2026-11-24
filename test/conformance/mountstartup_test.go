@@ -9,7 +9,7 @@ import (
 
 func TestBindMountStartupExpectations(t *testing.T) {
 	want := map[string]bool{
-		"mounts-bind": false, "mounts-bindsub": false,
+		"mounts-bind": false, "mounts-bindsub": false, "mounts-bindwrite": false,
 		"mounts-bindfile": true, "mounts-bindhidden": true, "mounts-bindmove": true,
 		"mounts-bindancestor": true, "mounts-bindask": true,
 	}

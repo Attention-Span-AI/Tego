@@ -51,7 +51,7 @@ func namedRunAt(t *testing.T, root, name string, at time.Time) {
 	t.Helper()
 	e := ledgertest.Event(t, record.KindRunStart, record.RunStartPayload{Tier: "landlock", Capture: "off",
 		ContractHash: strings.Repeat("0", 64), Command: []string{"sh"}, Cwd: "/", Kernel: "6", StopGrace: "1s",
-		RecordMinor: record.Minor}, func(e *record.Event) { e.Run, e.TS = name, at.UTC() })
+		RecordMinor: record.MinorLearn}, func(e *record.Event) { e.Run, e.TS = name, at.UTC() })
 	l, err := e.MarshalLine()
 	if err != nil {
 		t.Fatal(err)

@@ -27,5 +27,6 @@
 // refusal. The format moved here from internal/runtime/ask unchanged, byte for byte (TestAskWireGolden holds it to
 // frames recorded before the move); it has no version field yet.
 //
-// Standard library only (Layer 0).
+// Imports: standard library only, including the typed local answer authority DTO.
+// Must not import: internal packages or runtime enforcement.
 package askproto

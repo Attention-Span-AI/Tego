@@ -3,10 +3,13 @@
 package ledgerview
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 // adjustableStart is an Adjustable run's run_start: a read that is new access, a destination, and a program the
@@ -137,5 +140,58 @@ func TestFenceRowsRestoreBy(t *testing.T) {
 	}
 	if rows[1].State != FenceRefused || rows[1].Note != "" {
 		t.Errorf("net row %+v: want refused again by a person, with no note", rows[1])
+	}
+}
+
+// TestFenceRowsLiftNote: a lift's note is the row's LiftNote while the lift stands (bounded and escaped as the terminal
+// shows it, record.LiveNoteShown), and goes with the lift: a restore, an expiry and a limit passed by the page's clock
+// clear it; a later lift without a note replaces it.
+func TestFenceRowsLiftNote(t *testing.T) {
+	root := t.TempDir()
+	t0 := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
+	const run = "r-aaaa-0005-note"
+	by := "uid:1000 pid:9 dashboard"
+	noted := func(seq int, ts time.Time, why, op, kind, value string, serial int, until, note string) string {
+		l := fenceGap(run, seq, ts, why, op, kind, value, by, serial, until, "")
+		nb, err := json.Marshal(note)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.Replace(l, `"serial":`+fmt.Sprint(serial), `"note":`+string(nb)+`,"serial":`+fmt.Sprint(serial), 1)
+	}
+	tampered := "tampered \x1b[2J \u202eline\nbreak " + strings.Repeat("long ", 80)
+	writeRun(t, root, run,
+		line(run, "probe", 0, t0, "run_start", adjustableStart),
+		noted(1, t0.Add(time.Second), "live-rule-lifted", "lift", "read", "/srv/exports", 1, "", "ticket 4411"),
+		noted(2, t0.Add(2*time.Second), "live-rule-lifted", "lift", "net", "api.stripe.com:443", 2, "2026-10-27T13:00:00Z", "until one"),
+		noted(3, t0.Add(3*time.Second), "live-rule-lifted", "lift", "exec", "/usr/bin/psql", 3, "", tampered),
+		noted(4, t0.Add(4*time.Second), "live-rule-lifted", "lift", "read", "/srv/exports", 4, "", "second note"))
+	r, err := LoadRun(root, run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := FenceRows(r, t0.Add(time.Minute))
+	if rows[0].State != FenceLifted || rows[0].LiftNote != "second note" {
+		t.Errorf("read row %+v: want the later lift's note", rows[0])
+	}
+	if rows[1].State != FenceLifted || rows[1].LiftNote != "until one" {
+		t.Errorf("net row %+v: want lifted with its note", rows[1])
+	}
+	if got := rows[2].LiftNote; got != record.LiveNoteShown(tampered) || strings.ContainsAny(got, "\x1b\u202e\n") || len(got) > 4*record.MaxLiveNote {
+		t.Errorf("exec row's tampered note is shown as %q", got)
+	}
+	if rows := FenceRows(r, t0.Add(2*time.Hour)); rows[1].State != FenceRefused || rows[1].LiftNote != "" {
+		t.Errorf("net row after its limit %+v: want refused, no note", rows[1])
+	}
+	writeRun(t, root, run+"2",
+		line(run+"2", "probe", 0, t0, "run_start", adjustableStart),
+		strings.ReplaceAll(noted(1, t0.Add(time.Second), "live-rule-lifted", "lift", "read", "/srv/exports", 1, "", "ticket 4411"), run, run+"2"),
+		strings.ReplaceAll(noted(2, t0.Add(2*time.Second), "live-rule-restored", "restore", "read", "/srv/exports", 2, "", ""), run, run+"2"))
+	r2, err := LoadRun(root, run+"2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows := FenceRows(r2, t0.Add(time.Minute)); rows[0].State != FenceRefused || rows[0].LiftNote != "" {
+		t.Errorf("a restored entry keeps its note: %+v", rows[0])
 	}
 }

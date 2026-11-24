@@ -55,6 +55,8 @@ type planefillrdTegoPlaneClearCtx struct {
 	ExecDeleted   uint32
 	Status        int32
 	ListenDeleted uint32
+	BlocksDeleted uint32
+	Pad           uint32
 }
 
 type planefillrdTegoPlaneCounts struct {
@@ -125,22 +127,29 @@ type planefillrdTegoPlaneFillCfg struct {
 }
 
 type planefillrdTegoPlaneFillRow struct {
-	_         structs.HostLayout
-	What      uint8
-	Kind      uint8
-	RuleIdx   uint16
-	NameLen   uint8
-	Scope     uint8
-	ExecRule  uint16
-	Status    uint32
-	OtherRule uint16
-	Pad2      uint16
-	Err       int32
-	Gen       uint32
-	MntId     uint64
-	Ino       uint64
-	ParentIno uint64
-	Name      [256]int8
+	_            structs.HostLayout
+	What         uint8
+	Kind         uint8
+	RuleIdx      uint16
+	NameLen      uint8
+	Scope        uint8
+	ExecRule     uint16
+	Status       uint32
+	OtherRule    uint16
+	Pad2         uint16
+	Err          int32
+	Gen          uint32
+	MntId        uint64
+	Ino          uint64
+	ParentIno    uint64
+	Name         [256]int8
+	BlockFrom    uint64
+	BlockNameKey uint64
+	BlockRead    uint16
+	BlockWrite   uint16
+	BlockGuard   uint16
+	BlockFlags   uint8
+	Pad3         uint8
 }
 
 type planefillrdTegoReason struct {
@@ -183,6 +192,7 @@ const (
 	planefillrdMapTegoLost             = "tego_lost"
 	planefillrdMapTegoNetCidr          = "tego_net_cidr"
 	planefillrdMapTegoNetExact         = "tego_net_exact"
+	planefillrdMapTegoPlaneBlocks      = "tego_plane_blocks"
 	planefillrdMapTegoPlaneCounters    = "tego_plane_counters"
 	planefillrdMapTegoPlaneExecRows    = "tego_plane_exec_rows"
 	planefillrdMapTegoPlaneFillConfig  = "tego_plane_fill_config"
@@ -195,8 +205,10 @@ const (
 	planefillrdMapTegoTrackingFailed   = "tego_tracking_failed"
 	planefillrdProgTegoPlaneClear      = "tego_plane_clear"
 	planefillrdProgTegoPlaneFill       = "tego_plane_fill"
+	planefillrdVarTegoBtfBlockMapRow   = "tego_btf_block_map_row"
 	planefillrdVarTegoBtfListenMapKey  = "tego_btf_listen_map_key"
 	planefillrdVarTegoBtfListenMapRow  = "tego_btf_listen_map_row"
+	planefillrdVarTegoBtfPlaneBlockRow = "tego_btf_plane_block_row"
 	planefillrdVarTegoBtfPlaneClearCtx = "tego_btf_plane_clear_ctx"
 	planefillrdVarTegoBtfPlaneFill     = "tego_btf_plane_fill"
 	planefillrdVarTegoBtfPlaneFillCfg  = "tego_btf_plane_fill_cfg"
@@ -260,6 +272,7 @@ type planefillrdMapSpecs struct {
 	TegoLost            *ebpf.MapSpec `ebpf:"tego_lost"`
 	TegoNetCidr         *ebpf.MapSpec `ebpf:"tego_net_cidr"`
 	TegoNetExact        *ebpf.MapSpec `ebpf:"tego_net_exact"`
+	TegoPlaneBlocks     *ebpf.MapSpec `ebpf:"tego_plane_blocks"`
 	TegoPlaneCounters   *ebpf.MapSpec `ebpf:"tego_plane_counters"`
 	TegoPlaneExecRows   *ebpf.MapSpec `ebpf:"tego_plane_exec_rows"`
 	TegoPlaneFillConfig *ebpf.MapSpec `ebpf:"tego_plane_fill_config"`
@@ -276,8 +289,10 @@ type planefillrdMapSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type planefillrdVariableSpecs struct {
+	TegoBtfBlockMapRow   *ebpf.VariableSpec `ebpf:"tego_btf_block_map_row"`
 	TegoBtfListenMapKey  *ebpf.VariableSpec `ebpf:"tego_btf_listen_map_key"`
 	TegoBtfListenMapRow  *ebpf.VariableSpec `ebpf:"tego_btf_listen_map_row"`
+	TegoBtfPlaneBlockRow *ebpf.VariableSpec `ebpf:"tego_btf_plane_block_row"`
 	TegoBtfPlaneClearCtx *ebpf.VariableSpec `ebpf:"tego_btf_plane_clear_ctx"`
 	TegoBtfPlaneFill     *ebpf.VariableSpec `ebpf:"tego_btf_plane_fill"`
 	TegoBtfPlaneFillCfg  *ebpf.VariableSpec `ebpf:"tego_btf_plane_fill_cfg"`
@@ -311,6 +326,7 @@ type planefillrdMaps struct {
 	TegoLost            *ebpf.Map `ebpf:"tego_lost"`
 	TegoNetCidr         *ebpf.Map `ebpf:"tego_net_cidr"`
 	TegoNetExact        *ebpf.Map `ebpf:"tego_net_exact"`
+	TegoPlaneBlocks     *ebpf.Map `ebpf:"tego_plane_blocks"`
 	TegoPlaneCounters   *ebpf.Map `ebpf:"tego_plane_counters"`
 	TegoPlaneExecRows   *ebpf.Map `ebpf:"tego_plane_exec_rows"`
 	TegoPlaneFillConfig *ebpf.Map `ebpf:"tego_plane_fill_config"`
@@ -333,6 +349,7 @@ func (m *planefillrdMaps) Close() error {
 		m.TegoLost,
 		m.TegoNetCidr,
 		m.TegoNetExact,
+		m.TegoPlaneBlocks,
 		m.TegoPlaneCounters,
 		m.TegoPlaneExecRows,
 		m.TegoPlaneFillConfig,
@@ -350,8 +367,10 @@ func (m *planefillrdMaps) Close() error {
 //
 // It can be passed to loadPlanefillrdObjects or ebpf.CollectionSpec.LoadAndAssign.
 type planefillrdVariables struct {
+	TegoBtfBlockMapRow   *ebpf.Variable `ebpf:"tego_btf_block_map_row"`
 	TegoBtfListenMapKey  *ebpf.Variable `ebpf:"tego_btf_listen_map_key"`
 	TegoBtfListenMapRow  *ebpf.Variable `ebpf:"tego_btf_listen_map_row"`
+	TegoBtfPlaneBlockRow *ebpf.Variable `ebpf:"tego_btf_plane_block_row"`
 	TegoBtfPlaneClearCtx *ebpf.Variable `ebpf:"tego_btf_plane_clear_ctx"`
 	TegoBtfPlaneFill     *ebpf.Variable `ebpf:"tego_btf_plane_fill"`
 	TegoBtfPlaneFillCfg  *ebpf.Variable `ebpf:"tego_btf_plane_fill_cfg"`

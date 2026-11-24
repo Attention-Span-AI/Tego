@@ -1,0 +1,4480 @@
+{
+  "SPDX-License-Identifier": "Apache-2.0",
+  "about": "Every number a dashboard page shows: its page, label, source and what it shows when that source is incomplete (numbers.go, docs/DASHBOARD.md). The vault layer registers the Vault page's rows itself.",
+  "rows": [
+    {
+      "page": "overview",
+      "id": "overview.running",
+      "label": "running",
+      "source": "live",
+      "incomplete": "at least N when runs are omitted from the snapshot; could not read when a run could not be listed (malformed lines cannot hide a run or its live lock); live-index failures qualify only the running, waiting or status-dependent source"
+    },
+    {
+      "page": "overview",
+      "id": "overview.runs",
+      "label": "runs",
+      "source": "runs",
+      "incomplete": "at least N when runs are omitted from the snapshot; could not read when a run could not be listed (malformed lines cannot hide a run or its live lock)"
+    },
+    {
+      "page": "overview",
+      "id": "overview.refused",
+      "label": "refused",
+      "source": "aggregate",
+      "incomplete": "at least N if runs omitted; could not read on reader failure"
+    },
+    {
+      "page": "overview",
+      "id": "overview.bar-refusals",
+      "label": "bar refusals",
+      "source": "aggregate",
+      "incomplete": "at least N if runs omitted; could not read on reader failure"
+    },
+    {
+      "page": "overview",
+      "id": "overview.waiting",
+      "label": "waiting",
+      "source": "queue",
+      "incomplete": "known N stays at least N waiting with the reason and N+ in badge/title for a cut or unreadable source; with none known, ? and could not tell whether a request is waiting with the reason"
+    },
+    {
+      "page": "overview",
+      "id": "overview.routine",
+      "label": "routine",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "overview",
+      "id": "overview.severity-channel",
+      "label": "severity channel",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "overview",
+      "id": "overview.severity-total",
+      "label": "severity total",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "overview",
+      "id": "overview.protected",
+      "label": "protected",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "overview",
+      "id": "overview.exposed",
+      "label": "exposed",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "overview",
+      "id": "overview.unrecorded",
+      "label": "unrecorded",
+      "source": "aggregate",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "overview",
+      "id": "overview.refusal-repeat",
+      "label": "refusal repeat",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "overview",
+      "id": "overview.checked",
+      "label": "checked",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "overview",
+      "id": "overview.checking",
+      "label": "checking",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "overview",
+      "id": "overview.check-limit",
+      "label": "check limit",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "overview",
+      "id": "overview.chart-runs",
+      "label": "chart runs",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "overview",
+      "id": "overview.bar-runs",
+      "label": "bar runs",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "overview",
+      "id": "overview.setup-step",
+      "label": "setup step",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "hours",
+      "id": "hours.total",
+      "label": "refused in the period",
+      "source": "daily",
+      "incomplete": "at least N if runs omitted; could not read on reader failure"
+    },
+    {
+      "page": "hours",
+      "id": "hours.peak",
+      "label": "refused in the busiest hour",
+      "source": "daily",
+      "incomplete": "at least N if runs omitted; could not read on reader failure"
+    },
+    {
+      "page": "hours",
+      "id": "hours.active",
+      "label": "hours with a refusal",
+      "source": "daily",
+      "incomplete": "at least N if runs omitted; could not read on reader failure"
+    },
+    {
+      "page": "hours",
+      "id": "hours.row",
+      "label": "refused in one hour",
+      "source": "daily",
+      "incomplete": "at least N if runs omitted; could not read on reader failure"
+    },
+    {
+      "page": "hours",
+      "id": "hours.series",
+      "label": "refusals in each hour",
+      "source": "daily",
+      "incomplete": "each hour at least N with source reason; graph withheld and could not read on reader failure"
+    },
+    {
+      "page": "overview",
+      "id": "overview.refused-today",
+      "label": "refused today",
+      "source": "daily",
+      "incomplete": "at least N if runs omitted; could not read on reader failure"
+    },
+    {
+      "page": "runs",
+      "id": "runs.all",
+      "label": "all",
+      "source": "runs",
+      "incomplete": "at least N when runs are omitted from the snapshot; could not read when a run could not be listed (malformed lines cannot hide a run or its live lock)"
+    },
+    {
+      "page": "runs",
+      "id": "runs.running",
+      "label": "running",
+      "source": "live",
+      "incomplete": "at least N when runs are omitted from the snapshot; could not read when a run could not be listed (malformed lines cannot hide a run or its live lock); live-index failures qualify only the running, waiting or status-dependent source"
+    },
+    {
+      "page": "runs",
+      "id": "runs.ended",
+      "label": "ended",
+      "source": "aggregate",
+      "incomplete": "at least N if runs omitted; could not read on reader failure"
+    },
+    {
+      "page": "runs",
+      "id": "runs.lost",
+      "label": "lost",
+      "source": "status",
+      "incomplete": "at least when decoded metadata or the run list is incomplete; could not read when status or records cannot be read"
+    },
+    {
+      "page": "runs",
+      "id": "runs.today",
+      "label": "today",
+      "source": "aggregate",
+      "incomplete": "at least N if runs omitted; could not read on reader failure"
+    },
+    {
+      "page": "runs",
+      "id": "runs.matches",
+      "label": "matches",
+      "source": "selection",
+      "incomplete": "at least N if runs omitted; could not read on reader failure; live-index failures qualify only the running, waiting or status-dependent source"
+    },
+    {
+      "page": "runs",
+      "id": "runs.remaining",
+      "label": "remaining",
+      "source": "remaining",
+      "incomplete": "at least N if runs omitted; could not read on reader failure; live-index failures qualify only the running, waiting or status-dependent source"
+    },
+    {
+      "page": "runs",
+      "id": "runs.page-from",
+      "label": "page from",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "runs",
+      "id": "runs.page-to",
+      "label": "page to",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "runs",
+      "id": "runs.page-running",
+      "label": "page running",
+      "source": "live",
+      "incomplete": "at least N when runs are omitted from the snapshot; could not read when a run could not be listed (malformed lines cannot hide a run or its live lock); live-index failures qualify only the running, waiting or status-dependent source"
+    },
+    {
+      "page": "run",
+      "id": "run.refused",
+      "label": "refused",
+      "source": "aggregate",
+      "incomplete": "at least N if runs omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.events",
+      "label": "events",
+      "source": "aggregate",
+      "incomplete": "at least N if runs omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.asks",
+      "label": "asks",
+      "source": "aggregate",
+      "incomplete": "at least N if runs omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.waiting",
+      "label": "waiting",
+      "source": "pending",
+      "incomplete": "known N stays at least N waiting with the reason and N+ in badge/title for a cut or unreadable source; with none known, ? and could not tell whether a request is waiting with the reason"
+    },
+    {
+      "page": "run",
+      "id": "run.timeline",
+      "label": "timeline",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.timeline-total",
+      "label": "timeline total",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.refusal-repeat",
+      "label": "refusal repeat",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.severity",
+      "label": "severity",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.severity-groups",
+      "label": "severity groups",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.routine-lines",
+      "label": "routine lines",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.routine-groups",
+      "label": "routine groups",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.group-times",
+      "label": "group times",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.group-hosts",
+      "label": "group hosts",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.group-ports",
+      "label": "group ports",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.group-targets",
+      "label": "group targets",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.secrets",
+      "label": "secrets",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.secret-actions",
+      "label": "secret actions",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.outbound",
+      "label": "outbound",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.dest-refused",
+      "label": "dest refused",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.dest-asked",
+      "label": "dest asked",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.dest-allowed",
+      "label": "dest allowed",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.dest-observed",
+      "label": "dest observed",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.dest-through",
+      "label": "dest through",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.routine-hosts",
+      "label": "routine hosts",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.approvals",
+      "label": "approvals",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.approved",
+      "label": "approved",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.denied",
+      "label": "denied",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.unanswered",
+      "label": "unanswered",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.recorded-blocks",
+      "label": "recorded blocks",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.block-refusals",
+      "label": "block refusals",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.programs",
+      "label": "programs",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.program-refusals",
+      "label": "program refusals",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.timeline-shown",
+      "label": "timeline shown",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.more-destinations",
+      "label": "more destinations",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.more-asks",
+      "label": "more asks",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.earlier-asks",
+      "label": "earlier asks",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.more-programs",
+      "label": "more programs",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.active-blocks",
+      "label": "active blocks",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.proposal-entries",
+      "label": "proposal entries",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.files-written",
+      "label": "files written",
+      "source": "receipt",
+      "incomplete": "at least N when the Receipt list reached its identity limit, the run did not record every file read, or model responses lack token counts or prices; the Receipt itself is built from the complete record and says so when it cannot be built"
+    },
+    {
+      "page": "run",
+      "id": "run.files-created",
+      "label": "files created",
+      "source": "receipt",
+      "incomplete": "at least N when the Receipt list reached its identity limit, the run did not record every file read, or model responses lack token counts or prices; the Receipt itself is built from the complete record and says so when it cannot be built"
+    },
+    {
+      "page": "run",
+      "id": "run.files-deleted",
+      "label": "files deleted",
+      "source": "receipt",
+      "incomplete": "at least N when the Receipt list reached its identity limit, the run did not record every file read, or model responses lack token counts or prices; the Receipt itself is built from the complete record and says so when it cannot be built"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-refusals",
+      "label": "receipt refusals",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-rules",
+      "label": "receipt rules",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-denied",
+      "label": "receipt denied",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-times",
+      "label": "receipt times",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-connections",
+      "label": "receipt connections",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-addresses",
+      "label": "receipt addresses",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.processes",
+      "label": "processes",
+      "source": "window",
+      "incomplete": "at least N when the retained event or receipt identity list is incomplete; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.process-lines",
+      "label": "process lines",
+      "source": "window",
+      "incomplete": "at least N when the retained event or receipt identity list is incomplete; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.process-refused",
+      "label": "process refused",
+      "source": "window",
+      "incomplete": "at least N when the retained event or receipt identity list is incomplete; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.process-reads",
+      "label": "process reads",
+      "source": "window",
+      "incomplete": "at least N when the retained event or receipt identity list is incomplete; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.process-writes",
+      "label": "process writes",
+      "source": "window",
+      "incomplete": "at least N when the retained event or receipt identity list is incomplete; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.process-connects",
+      "label": "process connects",
+      "source": "window",
+      "incomplete": "at least N when the retained event or receipt identity list is incomplete; could not read on reader failure"
+    },
+    {
+      "page": "logs",
+      "id": "logs.matched",
+      "label": "matched",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "logs",
+      "id": "logs.refused",
+      "label": "refused",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "logs",
+      "id": "logs.asked",
+      "label": "asked",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "logs",
+      "id": "logs.groups",
+      "label": "groups",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "logs",
+      "id": "logs.group-matched",
+      "label": "group matched",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "logs",
+      "id": "logs.folded-rows",
+      "label": "folded rows",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "logs",
+      "id": "logs.system-hidden",
+      "label": "system hidden",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "logs",
+      "id": "logs.facet",
+      "label": "facet",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "logs",
+      "id": "logs.facet-more",
+      "label": "facet more",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "logs",
+      "id": "logs.group-lines",
+      "label": "group lines",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "logs",
+      "id": "logs.group-refused",
+      "label": "group refused",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "logs",
+      "id": "logs.keyless",
+      "label": "keyless",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "logs",
+      "id": "logs.repeat",
+      "label": "repeat",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure",
+      "scope": "row"
+    },
+    {
+      "page": "logs",
+      "id": "logs.shown-groups",
+      "label": "shown groups",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "logs",
+      "id": "logs.shown-rows",
+      "label": "shown rows",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "logs",
+      "id": "logs.query-fields",
+      "label": "query fields",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "logs",
+      "id": "logs.export-lines",
+      "label": "export lines",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "logs",
+      "id": "logs.export-system",
+      "label": "export system",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "logs",
+      "id": "logs.export-ledger",
+      "label": "export ledger",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "detections",
+      "id": "detections.noticed",
+      "label": "noticed",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "detections",
+      "id": "detections.severity",
+      "label": "severity",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "detections",
+      "id": "detections.channels",
+      "label": "channels",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "detections",
+      "id": "detections.channel",
+      "label": "channel",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "detections",
+      "id": "detections.routine",
+      "label": "routine",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "detections",
+      "id": "detections.low",
+      "label": "low",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "detections",
+      "id": "detections.times",
+      "label": "times",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "detections",
+      "id": "detections.addresses",
+      "label": "addresses",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "detections",
+      "id": "detections.ports",
+      "label": "ports",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "approvals",
+      "id": "approvals.waiting",
+      "label": "waiting",
+      "source": "queue",
+      "incomplete": "known N stays at least N waiting with the reason and N+ in badge/title for a cut or unreadable source; with none known, ? and could not tell whether a request is waiting with the reason"
+    },
+    {
+      "page": "approvals",
+      "id": "approvals.history",
+      "label": "history",
+      "source": "history",
+      "incomplete": "at least N when events omitted or answer limit reached; could not read on reader failure"
+    },
+    {
+      "page": "approvals",
+      "id": "approvals.session-allowed",
+      "label": "session allowed",
+      "source": "history",
+      "incomplete": "at least N when events omitted or answer limit reached; could not read on reader failure"
+    },
+    {
+      "page": "approvals",
+      "id": "approvals.session-denied",
+      "label": "session denied",
+      "source": "history",
+      "incomplete": "at least N when events omitted or answer limit reached; could not read on reader failure"
+    },
+    {
+      "page": "mcp",
+      "id": "mcp.calls",
+      "label": "calls",
+      "source": "mcp",
+      "incomplete": "could not read on reader failure; otherwise complete streamed run aggregate"
+    },
+    {
+      "page": "mcp",
+      "id": "mcp.refused",
+      "label": "refused",
+      "source": "mcp",
+      "incomplete": "could not read on reader failure; otherwise complete streamed run aggregate"
+    },
+    {
+      "page": "mcp",
+      "id": "mcp.asked",
+      "label": "asked",
+      "source": "mcp",
+      "incomplete": "could not read on reader failure; otherwise complete streamed run aggregate"
+    },
+    {
+      "page": "contracts",
+      "id": "contracts.contracts",
+      "label": "contracts",
+      "source": "aggregate",
+      "incomplete": "at least N if runs omitted; could not read on reader failure"
+    },
+    {
+      "page": "contracts",
+      "id": "contracts.runs",
+      "label": "runs",
+      "source": "aggregate",
+      "incomplete": "at least N if runs omitted; could not read on reader failure"
+    },
+    {
+      "page": "contracts",
+      "id": "contracts.running",
+      "label": "running",
+      "source": "aggregate",
+      "incomplete": "at least N if runs omitted; could not read on reader failure"
+    },
+    {
+      "page": "contracts",
+      "id": "contracts.hits",
+      "label": "hits",
+      "source": "window",
+      "incomplete": "at least N when retained events omitted; could not read on reader failure"
+    },
+    {
+      "page": "contracts",
+      "id": "contracts.more-rules",
+      "label": "more rules",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named displayed or configuration scope"
+    },
+    {
+      "page": "shared",
+      "id": "shared.waiting",
+      "label": "waiting",
+      "source": "queue",
+      "incomplete": "known N stays at least N waiting with the reason and N+ in badge/title for a cut or unreadable source; with none known, ? and could not tell whether a request is waiting with the reason"
+    },
+    {
+      "page": "overview",
+      "id": "overview.attention",
+      "label": "attention",
+      "source": "window",
+      "incomplete": "known facts with the affected source reason; known waiting requests stay at least N, unreadable ordinary counts are unknown, and incomplete attention sources cannot establish an all-clear"
+    },
+    {
+      "page": "run",
+      "id": "run.attention",
+      "label": "attention",
+      "source": "window",
+      "incomplete": "known facts with the affected source reason; known waiting requests stay at least N, unreadable ordinary counts are unknown, and incomplete attention sources cannot establish an all-clear"
+    },
+    {
+      "page": "shared",
+      "id": "shared.run-events",
+      "label": "run-events",
+      "source": "aggregate",
+      "incomplete": "could not read on reader failure; complete run aggregates survive retention",
+      "scope": "row"
+    },
+    {
+      "page": "shared",
+      "id": "shared.run-refused",
+      "label": "run-refused",
+      "source": "aggregate",
+      "incomplete": "could not read on reader failure; complete run aggregates survive retention",
+      "scope": "row"
+    },
+    {
+      "page": "shared",
+      "id": "shared.run-asks",
+      "label": "run-asks",
+      "source": "aggregate",
+      "incomplete": "could not read on reader failure; complete run aggregates survive retention",
+      "scope": "row"
+    },
+    {
+      "page": "shared",
+      "id": "shared.verified-lines",
+      "label": "verified-lines",
+      "source": "exact",
+      "incomplete": "exact for the recorded value or checked scope"
+    },
+    {
+      "page": "shared",
+      "id": "shared.exit-code",
+      "label": "exit-code",
+      "source": "exact",
+      "incomplete": "exact for the recorded value or checked scope"
+    },
+    {
+      "page": "run",
+      "id": "run.files-renamed",
+      "label": "files renamed",
+      "source": "receipt",
+      "incomplete": "at least N when the Receipt list reached its identity limit, the run did not record every file read, or model responses lack token counts or prices; the Receipt itself is built from the complete record and says so when it cannot be built"
+    },
+    {
+      "page": "run",
+      "id": "run.process-actions",
+      "label": "process actions",
+      "source": "window",
+      "incomplete": "at least N when the retained event or receipt identity list is incomplete; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.process-below",
+      "label": "process below",
+      "source": "window",
+      "incomplete": "at least N when the retained event or receipt identity list is incomplete; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.process-below-refused",
+      "label": "process below refused",
+      "source": "window",
+      "incomplete": "at least N when the retained event or receipt identity list is incomplete; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.process-children-hidden",
+      "label": "process children hidden",
+      "source": "window",
+      "incomplete": "at least N when the retained event or receipt identity list is incomplete; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.process-exec-tries",
+      "label": "process exec tries",
+      "source": "window",
+      "incomplete": "at least N when the retained event or receipt identity list is incomplete; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.process-group-refused",
+      "label": "process group refused",
+      "source": "window",
+      "incomplete": "at least N when the retained event or receipt identity list is incomplete; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.process-group-size",
+      "label": "process group size",
+      "source": "window",
+      "incomplete": "at least N when the retained event or receipt identity list is incomplete; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.process-hidden",
+      "label": "process hidden",
+      "source": "window",
+      "incomplete": "at least N when the retained event or receipt identity list is incomplete; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.process-hosts-more",
+      "label": "process hosts more",
+      "source": "window",
+      "incomplete": "at least N when the retained event or receipt identity list is incomplete; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.process-no-pid",
+      "label": "process no pid",
+      "source": "window",
+      "incomplete": "at least N when the retained event or receipt identity list is incomplete; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.process-notes",
+      "label": "process notes",
+      "source": "window",
+      "incomplete": "at least N when the retained event or receipt identity list is incomplete; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.process-own-refused",
+      "label": "process own refused",
+      "source": "window",
+      "incomplete": "at least N when the retained event or receipt identity list is incomplete; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.process-tries",
+      "label": "process tries",
+      "source": "window",
+      "incomplete": "at least N when the retained event or receipt identity list is incomplete; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.process-unrecorded",
+      "label": "process unrecorded",
+      "source": "window",
+      "incomplete": "at least N when the retained event or receipt identity list is incomplete; could not read on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-approved",
+      "label": "receipt approved",
+      "source": "exact",
+      "incomplete": "exact for the complete receipt aggregate or explicitly named list, formatting or duration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-asked",
+      "label": "receipt asked",
+      "source": "exact",
+      "incomplete": "exact for the complete receipt aggregate or explicitly named list, formatting or duration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-cost",
+      "label": "receipt cost",
+      "source": "receipt",
+      "incomplete": "at least N when the Receipt list reached its identity limit, the run did not record every file read, or model responses lack token counts or prices; the Receipt itself is built from the complete record and says so when it cannot be built"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-duration",
+      "label": "receipt duration",
+      "source": "exact",
+      "incomplete": "exact for the complete receipt aggregate or explicitly named list, formatting or duration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-model-calls",
+      "label": "receipt model calls",
+      "source": "exact",
+      "incomplete": "exact for the complete receipt aggregate or explicitly named list, formatting or duration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-more-files",
+      "label": "receipt more files",
+      "source": "receipt",
+      "incomplete": "at least N when the Receipt list reached its identity limit, the run did not record every file read, or model responses lack token counts or prices; the Receipt itself is built from the complete record and says so when it cannot be built"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-more-refused",
+      "label": "receipt more refused",
+      "source": "exact",
+      "incomplete": "exact for the complete receipt aggregate or explicitly named list, formatting or duration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-more-sensitive",
+      "label": "receipt more sensitive",
+      "source": "receipt",
+      "incomplete": "at least N when the Receipt list reached its identity limit, the run did not record every file read, or model responses lack token counts or prices; the Receipt itself is built from the complete record and says so when it cannot be built"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-overtime-sentence",
+      "label": "receipt overtime sentence",
+      "source": "exact",
+      "incomplete": "exact for the complete receipt aggregate or explicitly named list, formatting or duration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-program-starts",
+      "label": "receipt program starts",
+      "source": "receipt",
+      "incomplete": "at least N when the Receipt list reached its identity limit, the run did not record every file read, or model responses lack token counts or prices; the Receipt itself is built from the complete record and says so when it cannot be built"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-refused-sentence",
+      "label": "receipt refused sentence",
+      "source": "exact",
+      "incomplete": "exact for the complete receipt aggregate or explicitly named list, formatting or duration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-routine-sentence",
+      "label": "receipt routine sentence",
+      "source": "exact",
+      "incomplete": "exact for the complete receipt aggregate or explicitly named list, formatting or duration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-sensitive-files",
+      "label": "receipt sensitive files",
+      "source": "receipt",
+      "incomplete": "at least N when the Receipt list reached its identity limit, the run did not record every file read, or model responses lack token counts or prices; the Receipt itself is built from the complete record and says so when it cannot be built"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-stall-minutes",
+      "label": "receipt stall minutes",
+      "source": "exact",
+      "incomplete": "exact for the complete receipt aggregate or explicitly named list, formatting or duration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-stall-sentence",
+      "label": "receipt stall sentence",
+      "source": "exact",
+      "incomplete": "exact for the complete receipt aggregate or explicitly named list, formatting or duration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-timed-out",
+      "label": "receipt timed out",
+      "source": "exact",
+      "incomplete": "exact for the complete receipt aggregate or explicitly named list, formatting or duration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-tokens",
+      "label": "receipt tokens",
+      "source": "receipt",
+      "incomplete": "at least N when the Receipt list reached its identity limit, the run did not record every file read, or model responses lack token counts or prices; the Receipt itself is built from the complete record and says so when it cannot be built"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-unanswered",
+      "label": "receipt unanswered",
+      "source": "exact",
+      "incomplete": "exact for the complete receipt aggregate or explicitly named list, formatting or duration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-wait",
+      "label": "receipt wait",
+      "source": "exact",
+      "incomplete": "exact for the complete receipt aggregate or explicitly named list, formatting or duration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-coverage-sentence",
+      "label": "receipt coverage sentence",
+      "source": "exact",
+      "incomplete": "exact for the complete receipt aggregate or named coverage scope"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-note-sentence",
+      "label": "receipt note sentence",
+      "source": "exact",
+      "incomplete": "exact for the complete receipt aggregate or named coverage scope"
+    },
+    {
+      "page": "overview",
+      "id": "overview.refusal-series",
+      "label": "refusal-series",
+      "source": "aggregate",
+      "incomplete": "each series value at least N with source reason; graph withheld and could not read on reader failure"
+    },
+    {
+      "page": "overview",
+      "id": "overview.secret-series",
+      "label": "secret-series",
+      "source": "window",
+      "incomplete": "each series value at least N with source reason; graph withheld and could not read on reader failure"
+    },
+    {
+      "page": "shared",
+      "id": "shared.secret-chip",
+      "label": "secrets in run summary",
+      "source": "window",
+      "incomplete": "at least N for a partial verdict; reader failure says could not read",
+      "scope": "row"
+    },
+    {
+      "page": "run",
+      "id": "run.unused",
+      "label": "unused",
+      "source": "exact",
+      "incomplete": "complete streamed result or explicitly named displayed/configuration scope; no prefix on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.declared",
+      "label": "declared",
+      "source": "exact",
+      "incomplete": "complete streamed result or explicitly named displayed/configuration scope; no prefix on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.learn-omitted-kinds",
+      "label": "learn-omitted-kinds",
+      "source": "exact",
+      "incomplete": "complete streamed result or explicitly named displayed/configuration scope; no prefix on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.rule-allowed",
+      "label": "rule-allowed",
+      "source": "exact",
+      "incomplete": "complete streamed result or explicitly named displayed/configuration scope; no prefix on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.rule-asked",
+      "label": "rule-asked",
+      "source": "exact",
+      "incomplete": "complete streamed result or explicitly named displayed/configuration scope; no prefix on reader failure"
+    },
+    {
+      "page": "run",
+      "id": "run.rule-refused",
+      "label": "rule-refused",
+      "source": "exact",
+      "incomplete": "complete streamed result or explicitly named displayed/configuration scope; no prefix on reader failure"
+    },
+    {
+      "page": "logs",
+      "id": "logs.run-options-limit",
+      "label": "run-options-limit",
+      "source": "exact",
+      "incomplete": "complete streamed result or explicitly named displayed/configuration scope; no prefix on reader failure"
+    },
+    {
+      "page": "contracts",
+      "id": "contracts.ended-blocks",
+      "label": "ended-blocks",
+      "source": "exact",
+      "incomplete": "complete streamed result or explicitly named displayed/configuration scope; no prefix on reader failure"
+    },
+    {
+      "page": "contracts",
+      "id": "contracts.default-hits",
+      "label": "hits of the contract's default (lines no entry names)",
+      "source": "window",
+      "incomplete": "at least N when retained event windows were truncated or evicted, runs are omitted or a run has malformed lines; could not read when a run could not be read"
+    },
+    {
+      "page": "contracts",
+      "id": "contracts.unmatched",
+      "label": "lines no contract entry decided",
+      "source": "window",
+      "incomplete": "at least N when retained event windows were truncated or evicted, runs are omitted or a run has malformed lines; could not read when a run could not be read"
+    },
+    {
+      "page": "shared",
+      "id": "shared.check-reason",
+      "label": "why a record was not checked, which may name the configured line limit (Record tile, run details)",
+      "source": "exact",
+      "incomplete": "always exact: the reason names the configured limit, not a count"
+    },
+    {
+      "page": "run",
+      "id": "run.routine-window",
+      "label": "lines from a secret touch within which a refusal is never routine (Refusals tab rule)",
+      "source": "exact",
+      "incomplete": "always exact: a fixed rule of the Signal"
+    },
+    {
+      "page": "approvals",
+      "id": "approvals.attention",
+      "label": "Waiting and incomplete-source sentences",
+      "source": "queue",
+      "incomplete": "known N stays at least N waiting with the reason and N+ in badge/title for a cut or unreadable source; with none known, ? and could not tell whether a request is waiting with the reason"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-connection-summary",
+      "label": "Listed places, other identified places, and overflow connection attempts",
+      "source": "exact",
+      "incomplete": "Names listed identities separately from attempts beyond the receipt identity limit."
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-program-summary",
+      "label": "Listed programs, other identified programs, and overflow program starts",
+      "source": "exact",
+      "incomplete": "Names listed identities separately from attempts beyond the receipt identity limit."
+    },
+    {
+      "page": "shared",
+      "id": "shared.run-limit",
+      "label": "Configured run-list limit",
+      "source": "exact",
+      "incomplete": "Exact configuration or known subset; an incomplete run list qualifies the candidate tally with its reason."
+    },
+    {
+      "page": "shared",
+      "id": "shared.run-candidates",
+      "label": "Run candidates before the display limit",
+      "source": "candidates",
+      "incomplete": "exact eligible candidate total despite a display cap; could not read when a candidate could not enter the scan"
+    },
+    {
+      "page": "overview",
+      "id": "overview.skipped-checks",
+      "label": "Runs not checked by verification",
+      "source": "exact",
+      "incomplete": "Exact configuration or known subset; an incomplete run list qualifies the candidate tally with its reason."
+    },
+    {
+      "page": "run",
+      "id": "run.refused-zero",
+      "label": "No refused action in the available record",
+      "source": "window",
+      "incomplete": "No refusal seen in retained windows, or the record could not be read, with its reason and recovery."
+    },
+    {
+      "page": "run",
+      "id": "run.request-answers",
+      "label": "No recorded answer to one request",
+      "source": "window",
+      "incomplete": "No answer seen in the retained record, or the source could not be read, with reason and recovery."
+    },
+    {
+      "page": "overview",
+      "id": "overview.ended",
+      "label": "No ended runs in the decoded record",
+      "source": "aggregate",
+      "incomplete": "No ended run seen in the available record, or the source could not be read, with reason and recovery."
+    },
+    {
+      "page": "overview",
+      "id": "overview.guide-fact",
+      "label": "The guide service fact and next step",
+      "source": "exact",
+      "incomplete": "The guide uses its own scan and uncertainty states; it states an absence only after a complete scan."
+    },
+    {
+      "page": "mcp",
+      "id": "mcp.tools",
+      "label": "No tool definition observed in the selected run",
+      "source": "mcp",
+      "incomplete": "Qualifies missing tool observations by the same complete stream or read failure as the selected run."
+    },
+    {
+      "page": "run",
+      "id": "run.process-execs-zero",
+      "label": "No exec observed for one process",
+      "source": "window",
+      "incomplete": "No exec seen in the available retained window; a read failure carries its reason and recovery."
+    },
+    {
+      "page": "shared",
+      "id": "shared.running-zero",
+      "label": "No known running run",
+      "source": "live",
+      "incomplete": "Running state not fully known when runs are omitted; could not read running state after a source reader failure, with its reason and recovery."
+    },
+    {
+      "page": "run",
+      "id": "run.lost-unanswered",
+      "label": "Requests left unanswered when a run was lost",
+      "source": "unanswered",
+      "incomplete": "An incomplete pending-identity list is a lower bound; a reader error hides the prefix and states the reason."
+    },
+    {
+      "id": "compare.cell-detail",
+      "page": "compare",
+      "label": "compare.cell-detail",
+      "source": "window",
+      "incomplete": "exact for the named complete source; at least N or retained-only absence with the reason for a bounded source; could not read with the reader failure",
+      "scope": "row"
+    },
+    {
+      "id": "compare.cell-empty",
+      "page": "compare",
+      "label": "compare.cell-empty",
+      "source": "window",
+      "incomplete": "exact for the named complete source; at least N or retained-only absence with the reason for a bounded source; could not read with the reader failure",
+      "scope": "row"
+    },
+    {
+      "id": "compare.refusals",
+      "page": "compare",
+      "label": "compare.refusals",
+      "source": "aggregate",
+      "incomplete": "exact for the named complete source; at least N or retained-only absence with the reason for a bounded source; could not read with the reader failure",
+      "scope": "row"
+    },
+    {
+      "id": "compare.stopped",
+      "page": "compare",
+      "label": "compare.stopped",
+      "source": "window",
+      "incomplete": "exact for the named complete source; at least N or retained-only absence with the reason for a bounded source; could not read with the reader failure",
+      "scope": "row"
+    },
+    {
+      "id": "compare.head",
+      "page": "compare",
+      "label": "compare.head",
+      "source": "window",
+      "incomplete": "exact for the named complete source; at least N or retained-only absence with the reason for a bounded source; could not read with the reader failure",
+      "scope": "row"
+    },
+    {
+      "id": "compare.detail",
+      "page": "compare",
+      "label": "compare.detail",
+      "source": "window",
+      "incomplete": "exact for the named complete source; at least N or retained-only absence with the reason for a bounded source; could not read with the reader failure",
+      "scope": "row"
+    },
+    {
+      "id": "compare.summary",
+      "page": "compare",
+      "label": "compare.summary",
+      "source": "window",
+      "incomplete": "exact for the named complete source; at least N or retained-only absence with the reason for a bounded source; could not read with the reader failure"
+    },
+    {
+      "id": "compare.chart",
+      "page": "compare",
+      "label": "compare.chart",
+      "source": "window",
+      "incomplete": "exact for the named complete source; at least N or retained-only absence with the reason for a bounded source; could not read with the reader failure",
+      "scope": "row"
+    },
+    {
+      "id": "compare.chart-count",
+      "page": "compare",
+      "label": "compare.chart-count",
+      "source": "window",
+      "incomplete": "exact for the named complete source; at least N or retained-only absence with the reason for a bounded source; could not read with the reader failure",
+      "scope": "row"
+    },
+    {
+      "id": "compare.rows",
+      "page": "compare",
+      "label": "compare.rows",
+      "source": "window",
+      "incomplete": "exact for the named complete source; at least N or retained-only absence with the reason for a bounded source; could not read with the reader failure"
+    },
+    {
+      "id": "compare.shown",
+      "page": "compare",
+      "label": "compare.shown",
+      "source": "window",
+      "incomplete": "exact for the named complete source; at least N or retained-only absence with the reason for a bounded source; could not read with the reader failure"
+    },
+    {
+      "id": "compare.routine",
+      "page": "compare",
+      "label": "compare.routine",
+      "source": "window",
+      "incomplete": "exact for the named complete source; at least N or retained-only absence with the reason for a bounded source; could not read with the reader failure"
+    },
+    {
+      "id": "compare.folded",
+      "page": "compare",
+      "label": "compare.folded",
+      "source": "window",
+      "incomplete": "exact for the named complete source; at least N or retained-only absence with the reason for a bounded source; could not read with the reader failure"
+    },
+    {
+      "id": "compare.background-a",
+      "page": "compare",
+      "label": "compare.background-a",
+      "source": "window",
+      "incomplete": "exact for the named complete source; at least N or retained-only absence with the reason for a bounded source; could not read with the reader failure"
+    },
+    {
+      "id": "compare.background-b",
+      "page": "compare",
+      "label": "compare.background-b",
+      "source": "window",
+      "incomplete": "exact for the named complete source; at least N or retained-only absence with the reason for a bounded source; could not read with the reader failure"
+    },
+    {
+      "id": "compare.available",
+      "page": "compare",
+      "label": "compare.available",
+      "source": "runs",
+      "incomplete": "exact for the named complete source; at least N or retained-only absence with the reason for a bounded source; could not read with the reader failure"
+    },
+    {
+      "id": "compare.required",
+      "page": "compare",
+      "label": "compare.required",
+      "source": "exact",
+      "incomplete": "exact for the named complete source; at least N or retained-only absence with the reason for a bounded source; could not read with the reader failure"
+    },
+    {
+      "id": "glossary.matches",
+      "page": "glossary",
+      "label": "glossary.matches",
+      "source": "exact",
+      "incomplete": "exact for the named complete source; at least N or retained-only absence with the reason for a bounded source; could not read with the reader failure"
+    },
+    {
+      "id": "severity.own",
+      "page": "severity",
+      "label": "severity.own",
+      "source": "aggregate",
+      "incomplete": "exact for the named complete source; at least N or retained-only absence with the reason for a bounded source; could not read with the reader failure"
+    },
+    {
+      "id": "machine.netguards",
+      "page": "machine",
+      "label": "machine.netguards",
+      "source": "aggregate",
+      "incomplete": "exact for the complete named source; retained-only absence with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "machine.netmissing",
+      "page": "machine",
+      "label": "machine.netmissing",
+      "source": "aggregate",
+      "incomplete": "exact for the complete named source; retained-only absence with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "machine.caps",
+      "page": "machine",
+      "label": "machine.caps",
+      "source": "aggregate",
+      "incomplete": "exact for the complete named source; retained-only absence with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "machine.nocaps",
+      "page": "machine",
+      "label": "machine.nocaps",
+      "source": "aggregate",
+      "incomplete": "exact for the complete named source; retained-only absence with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "machine.besteffort",
+      "page": "machine",
+      "label": "machine.besteffort",
+      "source": "aggregate",
+      "incomplete": "exact for the complete named source; retained-only absence with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "machine.runs",
+      "page": "machine",
+      "label": "machine.runs",
+      "source": "runs",
+      "incomplete": "exact for the complete named source; retained-only absence with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "machine.tier-runs",
+      "page": "machine",
+      "label": "machine.tier-runs",
+      "source": "metadata",
+      "incomplete": "exact for the complete named source; retained-only absence with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "routes.runs",
+      "page": "routes",
+      "label": "routes.runs",
+      "source": "metadata",
+      "incomplete": "exact for the complete named source; retained-only absence with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "routes.requests",
+      "page": "routes",
+      "label": "routes.requests",
+      "source": "exact",
+      "incomplete": "exact for the complete named source; retained-only absence with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "routes.declared",
+      "page": "routes",
+      "label": "routes.declared",
+      "source": "exact",
+      "incomplete": "exact for the complete named source; retained-only absence with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "routes.changes",
+      "page": "routes",
+      "label": "routes.changes",
+      "source": "exact",
+      "incomplete": "exact for the complete named source; retained-only absence with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "editor.retired-written",
+      "page": "editor",
+      "label": "editor.retired-written",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "editor.new-written",
+      "page": "editor",
+      "label": "editor.new-written",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "editor.preview-written",
+      "page": "editor",
+      "label": "editor.preview-written",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "editor.preview-saved",
+      "page": "editor",
+      "label": "editor.preview-saved",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "editor.running",
+      "page": "editor",
+      "label": "editor.running",
+      "source": "live",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure; live-index failures qualify only the running, waiting or status-dependent source"
+    },
+    {
+      "id": "editor.history-zero",
+      "page": "editor",
+      "label": "editor.history-zero",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "investigate.position",
+      "page": "investigate",
+      "label": "investigate.position",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "investigate.of-severity",
+      "page": "investigate",
+      "label": "investigate.of-severity",
+      "source": "window",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "investigate.times",
+      "page": "investigate",
+      "label": "investigate.times",
+      "source": "window",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "investigate.addresses",
+      "page": "investigate",
+      "label": "investigate.addresses",
+      "source": "window",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "investigate.ports",
+      "page": "investigate",
+      "label": "investigate.ports",
+      "source": "window",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "investigate.linked-zero",
+      "page": "investigate",
+      "label": "investigate.linked-zero",
+      "source": "window",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "event.similar-lines",
+      "page": "event",
+      "label": "event.similar-lines",
+      "source": "window",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "event.similar-runs",
+      "page": "event",
+      "label": "event.similar-runs",
+      "source": "window",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "event.similar-refused",
+      "page": "event",
+      "label": "event.similar-refused",
+      "source": "window",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "event.before",
+      "page": "event",
+      "label": "event.before",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "event.after",
+      "page": "event",
+      "label": "event.after",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "event.raw-bytes",
+      "page": "event",
+      "label": "event.raw-bytes",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "event.raw-record",
+      "page": "event",
+      "label": "event.raw-record",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "event.raw-copy",
+      "page": "event",
+      "label": "event.raw-copy",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "event.field-value",
+      "page": "event",
+      "label": "event.field-value",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "event.fields",
+      "page": "event",
+      "label": "event.fields",
+      "source": "exact",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "event.record-lines",
+      "page": "event",
+      "label": "event.record-lines",
+      "source": "aggregate",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "event.process-execs-zero",
+      "page": "event",
+      "label": "event.process-execs-zero",
+      "source": "window",
+      "incomplete": "exact for the explicitly named value or complete list; retained-only absence or at least N with the reason for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "investigate.link-window",
+      "page": "investigate",
+      "label": "linked detection window in seconds",
+      "source": "exact",
+      "incomplete": "exact configuration"
+    },
+    {
+      "id": "editor.finished-runs-zero",
+      "page": "editor",
+      "label": "editor.finished-runs-zero",
+      "source": "status",
+      "incomplete": "at least when decoded metadata or the run list is incomplete; could not read when status or records cannot be read"
+    },
+    {
+      "id": "mcp.runs-zero",
+      "page": "mcp",
+      "label": "mcp.runs-zero",
+      "source": "metadata",
+      "incomplete": "exact for complete named sources; retained-only absence or at least N with the reason; could not read on reader failure"
+    },
+    {
+      "id": "event.step",
+      "page": "event",
+      "label": "event action step ordinal",
+      "source": "exact",
+      "incomplete": "exact for its named source; at least or retained-only words with a reason and full-record recovery for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "event.parent-context",
+      "page": "event",
+      "label": "recorded parent context",
+      "source": "window",
+      "incomplete": "exact for its named source; at least or retained-only words with a reason and full-record recovery for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "event.command-bytes",
+      "page": "event",
+      "label": "bytes in the displayed complete command",
+      "source": "exact",
+      "incomplete": "exact for its named source; at least or retained-only words with a reason and full-record recovery for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "event.chain-head",
+      "page": "event",
+      "label": "shown process ancestry",
+      "source": "window",
+      "incomplete": "exact for its named source; at least or retained-only words with a reason and full-record recovery for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "event.chain-more",
+      "page": "event",
+      "label": "retained ancestors outside the displayed ancestry",
+      "source": "window",
+      "incomplete": "exact for its named source; at least or retained-only words with a reason and full-record recovery for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "event.blob-bytes",
+      "page": "event",
+      "label": "size of the selected blob file",
+      "source": "exact",
+      "incomplete": "exact for its named source; at least or retained-only words with a reason and full-record recovery for incomplete sources; could not read on reader failure"
+    },
+    {
+      "id": "event.wider",
+      "page": "event",
+      "label": "contract scope ancestor choices",
+      "source": "exact",
+      "incomplete": "exact number of choices in this complete scope menu"
+    },
+    {
+      "id": "event.rules-zero",
+      "page": "event",
+      "label": "deciding rules named by this selected line",
+      "source": "exact",
+      "incomplete": "exact fact of the selected line, not an absence inferred from other events"
+    },
+    {
+      "id": "contracts.compiled-facts",
+      "page": "contracts",
+      "label": "complete contract text and compiled configuration and counts",
+      "source": "exact",
+      "incomplete": "exact complete compiler output for this contract, independent of observed event retention"
+    },
+    {
+      "page": "run",
+      "id": "run.empty-rule-list",
+      "label": "rules in the complete drift result",
+      "source": "exact",
+      "incomplete": "exact for the named result or configuration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.contract-copy",
+      "label": "presence of a contract copy in the drift result",
+      "source": "exact",
+      "incomplete": "exact for the named result or configuration scope"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-availability",
+      "label": "availability of a built receipt",
+      "source": "exact",
+      "incomplete": "exact for the named result or configuration scope"
+    },
+    {
+      "page": "editor",
+      "id": "editor.entries-zero",
+      "label": "entries in a complete configuration list",
+      "source": "exact",
+      "incomplete": "exact for the named result or configuration scope"
+    },
+    {
+      "page": "overview",
+      "id": "overview.chain-lines-zero",
+      "label": "lines read in the failed verification result",
+      "source": "exact",
+      "incomplete": "exact for the named result or configuration scope"
+    },
+    {
+      "page": "event",
+      "id": "event.available-actions-zero",
+      "label": "available actions at the selected configuration scope",
+      "source": "exact",
+      "incomplete": "exact for the complete result or configuration comparison"
+    },
+    {
+      "page": "run",
+      "id": "run.proposal-availability",
+      "label": "availability of a built proposal",
+      "source": "exact",
+      "incomplete": "exact for the complete result or configuration comparison"
+    },
+    {
+      "page": "editor",
+      "id": "editor.changes-zero",
+      "label": "changes in the complete before and after configuration comparison",
+      "source": "exact",
+      "incomplete": "exact for the complete result or configuration comparison"
+    },
+    {
+      "page": "shared",
+      "id": "shared.watch-refusals",
+      "label": "refusals enforced by watch mode, always zero",
+      "source": "exact",
+      "incomplete": "fixed non-enforcement policy, independent of record completeness"
+    },
+    {
+      "page": "contracts",
+      "id": "contracts.fence-entries",
+      "label": "entries in the complete startup fence configuration",
+      "source": "exact",
+      "incomplete": "exact for this complete configuration or decoded field, independent of retained event counts"
+    },
+    {
+      "page": "shared",
+      "id": "shared.record-fields",
+      "label": "presence of a field in the decoded record or complete process result",
+      "source": "exact",
+      "incomplete": "exact for this complete configuration or decoded field, independent of retained event counts"
+    },
+    {
+      "page": "shared",
+      "id": "shared.configuration",
+      "label": "complete contract configuration and fixed operating defaults",
+      "source": "exact",
+      "incomplete": "exact for this complete configuration or decoded field, independent of retained event counts"
+    },
+    {
+      "page": "run",
+      "id": "run.receipt-coverage",
+      "label": "completeness of the streamed receipt field-coverage result",
+      "source": "exact",
+      "incomplete": "This sentence renders only when the streaming builder confirms Coverage.Complete; otherwise the receipt renders its missing-field diagnostics."
+    },
+    {
+      "page": "shared",
+      "id": "shared.policy",
+      "label": "fixed action, authority and non-enforcement policy guarantees",
+      "source": "exact",
+      "incomplete": "fixed policy semantics, independent of how much of the record is retained"
+    },
+    {
+      "page": "run",
+      "id": "run.tree-coverage",
+      "label": "retained process-tree coverage and identity-field absence",
+      "source": "window",
+      "incomplete": "only what was seen in what is retained with the reason for a partial process tree; could not read on reader failure"
+    }
+  ],
+  "exclusions": [
+    {
+      "id": "layout.clock-1",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "layout.tmpl:11 data-number-exclude"
+    },
+    {
+      "id": "layout.clock-2",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "layout.tmpl:11 data-number-exclude"
+    },
+    {
+      "id": "layout.clock-3",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "layout.tmpl:59 data-number-exclude"
+    },
+    {
+      "id": "overview.broken-run-id",
+      "element": "broken chain run identifier span",
+      "reason": "The run identity whose chain verification failed. Digits belong to that identity."
+    },
+    {
+      "id": "overview.clock-1",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "overview.tmpl:72 data-number-exclude"
+    },
+    {
+      "id": "overview.clock-2",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "overview.tmpl:72 data-number-exclude"
+    },
+    {
+      "id": "overview.clock-3",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "overview.tmpl:85 data-number-exclude"
+    },
+    {
+      "id": "run.clock-4",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "run.tmpl:38 data-number-exclude"
+    },
+    {
+      "id": "run.clock-5",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "run.tmpl:40 data-number-exclude"
+    },
+    {
+      "id": "run.clock-6",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "run.tmpl:50 data-number-exclude"
+    },
+    {
+      "id": "run.clock-7",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "run.tmpl:51 data-number-exclude"
+    },
+    {
+      "id": "run.clock-10",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "run.tmpl:110 data-number-exclude"
+    },
+    {
+      "id": "logs.clock-1",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "logs.tmpl:36 data-number-exclude"
+    },
+    {
+      "id": "logs.clock-2",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "logs.tmpl:36 data-number-exclude"
+    },
+    {
+      "id": "logs.clock-3",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "logs.tmpl:39 data-number-exclude"
+    },
+    {
+      "id": "logs.clock-4",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "logs.tmpl:39 data-number-exclude"
+    },
+    {
+      "id": "logs.clock-5",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "logs.tmpl:39 data-number-exclude"
+    },
+    {
+      "id": "logs.clock-6",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "logs.tmpl:45 data-number-exclude"
+    },
+    {
+      "id": "hours.clock-1",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "hours.tmpl:14 data-number-exclude"
+    },
+    {
+      "id": "hours.clock-2",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "hours.tmpl:18 data-number-exclude"
+    },
+    {
+      "id": "hours.clock-3",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "hours.tmpl:25 data-number-exclude"
+    },
+    {
+      "id": "hours.agent-1",
+      "reason": "One agent display identity; digits name the agent rather than counting observed activity.",
+      "element": "hours.tmpl:20 data-number-exclude"
+    },
+    {
+      "id": "editor.several-row-1",
+      "reason": "A form row's position in the Several changes at once form, a label and not a count of anything.",
+      "element": "rules-change.tmpl row number data-number-exclude"
+    },
+    {
+      "id": "editor.several-row-2",
+      "reason": "A form row's position in the Several changes at once form, a label and not a count of anything.",
+      "element": "rules-change.tmpl action label data-number-exclude"
+    },
+    {
+      "id": "editor.several-row-3",
+      "reason": "A form row's position in the Several changes at once form, a label and not a count of anything.",
+      "element": "rules-change.tmpl list label data-number-exclude"
+    },
+    {
+      "id": "editor.several-row-4",
+      "reason": "A form row's position in the Several changes at once form, a label and not a count of anything.",
+      "element": "rules-change.tmpl entry label data-number-exclude"
+    },
+    {
+      "id": "detections.clock-1",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "detections.tmpl:8 data-number-exclude"
+    },
+    {
+      "id": "detections.clock-2",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "detections.tmpl:38 data-number-exclude"
+    },
+    {
+      "id": "detections.clock-3",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "detections.tmpl:39 data-number-exclude"
+    },
+    {
+      "id": "rules.clock-1",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "rules.tmpl:20 data-number-exclude"
+    },
+    {
+      "id": "rules.clock-4",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "rules.tmpl:66 data-number-exclude"
+    },
+    {
+      "id": "rules.clock-10",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "rules.tmpl:102 data-number-exclude"
+    },
+    {
+      "id": "approvals.clock-1",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "approvals.tmpl:12 data-number-exclude"
+    },
+    {
+      "id": "approvals.clock-2",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "approvals.tmpl:20 data-number-exclude"
+    },
+    {
+      "id": "approvals.clock-5",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "approvals.tmpl:26 data-number-exclude"
+    },
+    {
+      "id": "approvals.clock-6",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "approvals.tmpl:27 data-number-exclude"
+    },
+    {
+      "id": "approvals.clock-7",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "approvals.tmpl:35 data-number-exclude"
+    },
+    {
+      "id": "approvals.clock-8",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "approvals.tmpl:38 data-number-exclude"
+    },
+    {
+      "id": "approvals.clock-9",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "approvals.tmpl:40 data-number-exclude"
+    },
+    {
+      "id": "highlights.clock-1",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "highlights.tmpl:54 data-number-exclude"
+    },
+    {
+      "id": "highlights.clock-2",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "highlights.tmpl:56 data-number-exclude"
+    },
+    {
+      "id": "highlights.clock-3",
+      "reason": "Clock time or age of one recorded event, not an event quantity.",
+      "element": "highlights.tmpl:56 data-number-exclude"
+    },
+    {
+      "id": "layout.fact-2",
+      "element": "layout.tmpl:11 data-number-exclude",
+      "reason": "A recorded outcome, duration, enforcement description or person identity, not an aggregate count."
+    },
+    {
+      "id": "layout.fact-3",
+      "element": "layout.tmpl:14 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "layout.fact-4",
+      "element": "layout.tmpl:16 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "layout.fact-6",
+      "element": "layout.tmpl:44 data-number-exclude",
+      "reason": "Quoted contract or terminal command; numeric arguments and versions are configuration text."
+    },
+    {
+      "id": "layout.fact-7",
+      "element": "layout.tmpl:45 data-number-exclude",
+      "reason": "Quoted contract or terminal command; numeric arguments and versions are configuration text."
+    },
+    {
+      "id": "layout.fact-8",
+      "element": "layout.tmpl:46 data-number-exclude",
+      "reason": "Quoted contract or terminal command; numeric arguments and versions are configuration text."
+    },
+    {
+      "id": "layout.fact-9",
+      "element": "layout.tmpl:47 data-number-exclude",
+      "reason": "Quoted contract or terminal command; numeric arguments and versions are configuration text."
+    },
+    {
+      "id": "layout.fact-11",
+      "element": "layout.tmpl:59 data-number-exclude",
+      "reason": "A clock, duration or exit outcome of one recorded event."
+    },
+    {
+      "id": "layout.fact-12",
+      "element": "layout.tmpl:59 data-number-exclude",
+      "reason": "A recorded outcome, duration, enforcement description or person identity, not an aggregate count."
+    },
+    {
+      "id": "layout.fact-13",
+      "element": "layout.tmpl:61 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "layout.fact-16",
+      "element": "layout.tmpl:154 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "overview.fact-1",
+      "element": "overview.tmpl:28 data-number-exclude",
+      "reason": "Quoted contract or terminal command; numeric arguments and versions are configuration text."
+    },
+    {
+      "id": "overview.fact-2",
+      "element": "overview.tmpl:65 data-number-exclude",
+      "reason": "A clock, duration or exit outcome of one recorded event."
+    },
+    {
+      "id": "overview.fact-3",
+      "element": "overview.tmpl:77 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "run.fact-2",
+      "element": "run.tmpl:35 data-number-exclude",
+      "reason": "Quoted contract or terminal command; numeric arguments and versions are configuration text."
+    },
+    {
+      "id": "run.fact-3",
+      "element": "run.tmpl:35 data-number-exclude",
+      "reason": "Quoted contract or terminal command; numeric arguments and versions are configuration text."
+    },
+    {
+      "id": "run.fact-7",
+      "element": "run.tmpl:82 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "run.fact-8",
+      "element": "run.tmpl:84 data-number-exclude",
+      "reason": "Quoted contract or terminal command; numeric arguments and versions are configuration text."
+    },
+    {
+      "id": "run.fact-9",
+      "element": "run.tmpl:89 data-number-exclude",
+      "reason": "Quoted contract or terminal command; numeric arguments and versions are configuration text."
+    },
+    {
+      "id": "run.fact-10",
+      "element": "run.tmpl:90 data-number-exclude",
+      "reason": "Quoted contract or terminal command; numeric arguments and versions are configuration text."
+    },
+    {
+      "id": "run.fact-11",
+      "element": "run.tmpl:100 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "run.fact-12",
+      "element": "run.tmpl:103 data-number-exclude",
+      "reason": "Quoted contract or terminal command; numeric arguments and versions are configuration text."
+    },
+    {
+      "id": "run.fact-13",
+      "element": "run.tmpl:110 data-number-exclude",
+      "reason": "A clock, duration or exit outcome of one recorded event."
+    },
+    {
+      "id": "run.fact-14",
+      "element": "run.tmpl:110 data-number-exclude",
+      "reason": "A process identifier or record-line position, not a retained-event tally."
+    },
+    {
+      "id": "run.fact-15",
+      "element": "run.tmpl:110 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "run.fact-17",
+      "element": "run.tmpl:110 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "run.fact-18",
+      "element": "run.tmpl:117 data-number-exclude",
+      "reason": "A recorded outcome, duration, enforcement description or person identity, not an aggregate count."
+    },
+    {
+      "id": "run.fact-19",
+      "element": "run.tmpl:129 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "run.fact-20",
+      "element": "run.tmpl:137 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "run.fact-21",
+      "element": "run.tmpl:143 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "run.fact-22",
+      "element": "run.tmpl:149 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "run.fact-23",
+      "element": "run.tmpl:157 data-number-exclude",
+      "reason": "A clock, duration or exit outcome of one recorded event."
+    },
+    {
+      "id": "run.fact-24",
+      "element": "run.tmpl:157 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "run.fact-25",
+      "element": "run.tmpl:157 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "run.fact-26",
+      "element": "run.tmpl:161 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "run.fact-28",
+      "element": "run.tmpl:164 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "run.fact-29",
+      "element": "run.tmpl:171 data-number-exclude",
+      "reason": "Quoted contract or terminal command; numeric arguments and versions are configuration text."
+    },
+    {
+      "id": "run.fact-30",
+      "element": "run.tmpl:171 data-number-exclude",
+      "reason": "Quoted contract or terminal command; numeric arguments and versions are configuration text."
+    },
+    {
+      "id": "run.coverage-level",
+      "element": "run.tmpl:172 data-number-exclude-text",
+      "reason": "A coverage level, one word of a fixed set (partial or none) the receipt gives a gap; the word none names a level, not a count."
+    },
+    {
+      "id": "logs.fact-1",
+      "element": "logs.tmpl:36 data-number-exclude",
+      "reason": "A process identifier or record-line position, not a retained-event tally."
+    },
+    {
+      "id": "logs.fact-3",
+      "element": "logs.tmpl:36 data-number-exclude",
+      "reason": "A process identifier or record-line position, not a retained-event tally."
+    },
+    {
+      "id": "logs.fact-4",
+      "element": "logs.tmpl:36 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "logs.fact-5",
+      "element": "logs.tmpl:36 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "logs.fact-6",
+      "element": "logs.tmpl:36 data-number-exclude",
+      "reason": "A process identifier or record-line position, not a retained-event tally."
+    },
+    {
+      "id": "logs.fact-7",
+      "element": "logs.tmpl:36 data-number-exclude",
+      "reason": "A process identifier or record-line position, not a retained-event tally."
+    },
+    {
+      "id": "logs.fact-8",
+      "element": "logs.tmpl:39 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "logs.fact-9",
+      "element": "logs.tmpl:39 data-number-exclude",
+      "reason": "A process identifier or record-line position, not a retained-event tally."
+    },
+    {
+      "id": "logs.fact-10",
+      "element": "logs.tmpl:39 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "logs.fact-11",
+      "element": "logs.tmpl:39 data-number-exclude",
+      "reason": "A process identifier or record-line position, not a retained-event tally."
+    },
+    {
+      "id": "logs.fact-12",
+      "element": "logs.tmpl:43 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "logs.fact-14",
+      "element": "logs.tmpl:48 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "logs.fact-16",
+      "element": "logs.tmpl:55 data-number-exclude",
+      "reason": "A process identifier or record-line position, not a retained-event tally."
+    },
+    {
+      "id": "logs.fact-17",
+      "element": "logs.tmpl:66 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "logs.fact-18",
+      "element": "logs.tmpl:66 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "detections.fact-1",
+      "element": "detections.tmpl:33 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "detections.fact-2",
+      "element": "detections.tmpl:35 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "rules.fact-3",
+      "element": "rules.tmpl:7 data-number-exclude",
+      "reason": "A clock, duration or exit outcome of one recorded event."
+    },
+    {
+      "id": "rules.fact-4",
+      "element": "rules.tmpl:18 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "rules.fact-11",
+      "element": "rules.tmpl:40 data-number-exclude",
+      "reason": "A recorded outcome, duration, enforcement description or person identity, not an aggregate count."
+    },
+    {
+      "id": "rules.fact-12",
+      "element": "rules.tmpl:41 data-number-exclude",
+      "reason": "Quoted contract or terminal command; numeric arguments and versions are configuration text."
+    },
+    {
+      "id": "rules.fact-14",
+      "element": "rules.tmpl:50 data-number-exclude",
+      "reason": "Quoted contract or terminal command; numeric arguments and versions are configuration text."
+    },
+    {
+      "id": "rules.fact-17",
+      "element": "rules.tmpl:63 data-number-exclude",
+      "reason": "A recorded outcome, duration, enforcement description or person identity, not an aggregate count."
+    },
+    {
+      "id": "rules.fact-18",
+      "element": "rules.tmpl:66 data-number-exclude",
+      "reason": "A recorded outcome, duration, enforcement description or person identity, not an aggregate count."
+    },
+    {
+      "id": "rules.fact-23",
+      "element": "rules.tmpl:94 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "rules.fact-27",
+      "element": "rules.tmpl:102 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "rules.fact-28",
+      "element": "rules.tmpl:107 data-number-exclude",
+      "reason": "Quoted contract or terminal command; numeric arguments and versions are configuration text."
+    },
+    {
+      "id": "rules.fact-29",
+      "element": "rules.tmpl:107 data-number-exclude",
+      "reason": "Quoted contract or terminal command; numeric arguments and versions are configuration text."
+    },
+    {
+      "id": "approvals.ask-id",
+      "element": "approvals.tmpl:38 data-number-exclude",
+      "reason": "The request's identifier as the terminal's approve and deny take it and the record holds it, not a count."
+    },
+    {
+      "id": "approvals.fact-1",
+      "element": "approvals.tmpl:38 data-number-exclude",
+      "reason": "A process identifier or record-line position, not a retained-event tally."
+    },
+    {
+      "id": "procs.fact-1",
+      "element": "procs.tmpl:6 data-number-exclude",
+      "reason": "Clock time or age of one recorded event."
+    },
+    {
+      "id": "procs.fact-2",
+      "element": "procs.tmpl:8 data-number-exclude",
+      "reason": "Quoted contract or terminal command; numeric arguments and versions are configuration text."
+    },
+    {
+      "id": "procs.fact-3",
+      "element": "procs.tmpl:13 data-number-exclude",
+      "reason": "A process identifier or record-line position, not a retained-event tally."
+    },
+    {
+      "id": "procs.fact-5",
+      "element": "procs.tmpl:14 data-number-exclude",
+      "reason": "A process identifier or record-line position, not a retained-event tally."
+    },
+    {
+      "id": "procs.fact-6",
+      "element": "procs.tmpl:14 data-number-exclude",
+      "reason": "Clock time or age of one recorded event."
+    },
+    {
+      "id": "procs.fact-8",
+      "element": "procs.tmpl:15 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "procs.fact-9",
+      "element": "procs.tmpl:15 data-number-exclude",
+      "reason": "A process identifier or record-line position, not a retained-event tally."
+    },
+    {
+      "id": "highlights.fact-1",
+      "element": "highlights.tmpl:10 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "highlights.fact-2",
+      "element": "highlights.tmpl:13 data-number-exclude",
+      "reason": "Quoted contract or terminal command; numeric arguments and versions are configuration text."
+    },
+    {
+      "id": "highlights.fact-3",
+      "element": "highlights.tmpl:24 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "highlights.fact-4",
+      "element": "highlights.tmpl:43 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "highlights.fact-5",
+      "element": "highlights.tmpl:54 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "highlights.fact-6",
+      "element": "highlights.tmpl:55 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "highlights.fact-7",
+      "element": "highlights.tmpl:55 data-number-exclude",
+      "reason": "A recorded outcome, duration, enforcement description or person identity, not an aggregate count."
+    },
+    {
+      "id": "highlights.fact-8",
+      "element": "highlights.tmpl:61 data-number-exclude",
+      "reason": "A clock, duration or exit outcome of one recorded event."
+    },
+    {
+      "id": "mcp-tools.fact-1",
+      "element": "mcp-tools.tmpl:27 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "mcp-tools.fact-2",
+      "element": "mcp-tools.tmpl:27 data-number-exclude",
+      "reason": "The exact target, command, rule text or source location of one record; digits are part of that identity."
+    },
+    {
+      "id": "layout.explicit-1",
+      "element": "layout.tmpl:10 data-number-exclude",
+      "reason": "One recorded duration or configured time interval, not a tally of events."
+    },
+    {
+      "id": "layout.duration-ended",
+      "element": "layout.tmpl:10 data-number-exclude",
+      "reason": "One recorded duration or configured time interval, not a tally of events."
+    },
+    {
+      "id": "layout.explicit-2",
+      "element": "layout.tmpl:3 data-number-exclude-title",
+      "reason": "Exit status and explanation of one run, not an event count."
+    },
+    {
+      "id": "layout.explicit-3",
+      "element": "layout.tmpl:3 data-number-exclude-title",
+      "reason": "Exit status and explanation of one run, not an event count."
+    },
+    {
+      "id": "layout.explicit-4",
+      "element": "layout.tmpl:5 data-number-exclude-title",
+      "reason": "The chain verifier diagnostic names a file or line limit, not a retained-event count."
+    },
+    {
+      "id": "layout.explicit-5",
+      "element": "layout.tmpl:13 data-number-exclude",
+      "reason": "One record identity, process id, address, rule/source text or command; digits belong to the named value."
+    },
+    {
+      "id": "logs.explicit-1",
+      "element": "logs.tmpl:58 data-number-exclude",
+      "reason": "One record identity, process id, address, rule/source text or command; digits belong to the named value."
+    },
+    {
+      "id": "logs.explicit-2",
+      "element": "logs.tmpl:58 data-number-exclude",
+      "reason": "One record identity, process id, address, rule/source text or command; digits belong to the named value."
+    },
+    {
+      "id": "highlights.explicit-2",
+      "element": "highlights.tmpl:24 data-number-exclude",
+      "reason": "Fixed proximity thresholds used to classify one recorded event."
+    },
+    {
+      "id": "logs.explicit-3",
+      "element": "logs.tmpl:16 data-number-exclude",
+      "reason": "One recorded duration or configured time interval, not a tally of events."
+    },
+    {
+      "id": "logs.explicit-4",
+      "element": "logs.tmpl:89 data-number-exclude",
+      "reason": "One recorded duration or configured time interval, not a tally of events."
+    },
+    {
+      "id": "logs.explicit-5",
+      "element": "logs.tmpl:90 data-number-exclude",
+      "reason": "One recorded duration or configured time interval, not a tally of events."
+    },
+    {
+      "id": "approvals.explicit-1",
+      "element": "approvals.tmpl:3 data-number-exclude",
+      "reason": "One recorded duration or configured time interval, not a tally of events."
+    },
+    {
+      "id": "run.explicit-2",
+      "element": "run.tmpl:110 data-number-exclude",
+      "reason": "The kind and exit status of this one timeline event."
+    },
+    {
+      "id": "run.explicit-3",
+      "element": "run.tmpl:157 data-number-exclude",
+      "reason": "The kind and exit status of this one timeline event."
+    },
+    {
+      "id": "run.explicit-4",
+      "element": "run.tmpl:164 data-number-exclude",
+      "reason": "The kind and exit status of this one timeline event."
+    },
+    {
+      "id": "logs.explicit-6",
+      "element": "logs.tmpl:12 data-number-exclude",
+      "reason": "A named facet value or verdict code, including verdict:none; no absence tally is being asserted."
+    },
+    {
+      "id": "logs.explicit-7",
+      "element": "logs.tmpl:12 data-number-exclude",
+      "reason": "A named facet value or verdict code, including verdict:none; no absence tally is being asserted."
+    },
+    {
+      "id": "logs.explicit-8",
+      "element": "logs.tmpl:52 data-number-exclude-title",
+      "reason": "The cryptographic identity of one record line."
+    },
+    {
+      "id": "procs.explicit-2",
+      "element": "procs.tmpl:13 data-number-exclude",
+      "reason": "The name or known unknown-exec state of one process."
+    },
+    {
+      "id": "procs.explicit-3",
+      "element": "procs.tmpl:13 data-number-exclude",
+      "reason": "The name or known unknown-exec state of one process."
+    },
+    {
+      "id": "procs.explicit-8",
+      "element": "procs.tmpl:14 data-number-exclude",
+      "reason": "One record identity, process id, address, rule/source text or command; digits belong to the named value."
+    },
+    {
+      "id": "logs.static-1",
+      "element": "logs.tmpl:99 data-number-exclude",
+      "reason": "A field state, vocabulary item or fixed configuration/capability description, not a count over records."
+    },
+    {
+      "id": "logs.static-2",
+      "element": "logs.tmpl:39 data-number-exclude",
+      "reason": "A field state, vocabulary item or fixed configuration/capability description, not a count over records."
+    },
+    {
+      "id": "rules.static-1",
+      "element": "rules.tmpl:113 data-number-exclude",
+      "reason": "A field state, vocabulary item or fixed configuration/capability description, not a count over records."
+    },
+    {
+      "id": "rules-parts.element-12",
+      "element": "rules-parts.tmpl:25 data-number-exclude",
+      "reason": "A fixed vocabulary or capability description, or the rule/exec field state of one record, not a retained-event tally."
+    },
+    {
+      "id": "overview.element-1",
+      "element": "overview.tmpl:83 data-number-exclude",
+      "reason": "A read/configuration diagnostic; its line, byte offset and configured limit numbers identify the failure."
+    },
+    {
+      "id": "logs.element-1",
+      "element": "logs.tmpl:36 data-number-exclude",
+      "reason": "Duration, exit outcome, person identity, operation or process id of one record."
+    },
+    {
+      "id": "logs.element-2",
+      "element": "logs.tmpl:39 data-number-exclude",
+      "reason": "A fixed vocabulary or capability description, or the rule/exec field state of one record, not a retained-event tally."
+    },
+    {
+      "id": "run.element-3",
+      "element": "run.tmpl:96 data-number-exclude",
+      "reason": "A fixed vocabulary or capability description, or the rule/exec field state of one record, not a retained-event tally."
+    },
+    {
+      "id": "run.element-4",
+      "element": "run.tmpl:160 data-number-exclude",
+      "reason": "A read/configuration diagnostic; its line, byte offset and configured limit numbers identify the failure."
+    },
+    {
+      "id": "logs.detail-2",
+      "element": "logs.tmpl:81 data-number-exclude",
+      "reason": "A filter choice for records with no verdict, not a tally of them."
+    },
+    {
+      "id": "logs.detail-7",
+      "element": "logs.tmpl:12 data-number-exclude-title",
+      "reason": "The name of one facet/verdict category; verdict:none is a literal filter value."
+    },
+    {
+      "id": "logs.detail-8",
+      "element": "logs.tmpl:42 data-number-exclude-aria-label",
+      "reason": "The identity of the one record opened in this fragment."
+    },
+    {
+      "id": "logs.detail-9",
+      "element": "logs.tmpl:52 data-number-exclude",
+      "reason": "Line and byte positions of this one recorded event."
+    },
+    {
+      "id": "rules.detail-1",
+      "element": "rules.tmpl:104 data-number-exclude",
+      "reason": "Contract/capability descriptions, not counts of events."
+    },
+    {
+      "id": "rules.detail-2",
+      "element": "rules.tmpl:100 data-number-exclude",
+      "reason": "Contract/capability descriptions, not counts of events."
+    },
+    {
+      "id": "rules.detail-4",
+      "element": "rules.tmpl:46 data-number-exclude",
+      "reason": "Contract/capability descriptions, not counts of events."
+    },
+    {
+      "id": "rules.detail-5",
+      "element": "rules.tmpl:107 data-number-exclude",
+      "reason": "A missing contract-source field in this one run."
+    },
+    {
+      "id": "run.detail-1",
+      "element": "run.tmpl:51 data-number-exclude",
+      "reason": "Exit explanation for this run, including its exit code."
+    },
+    {
+      "id": "run.detail-3",
+      "element": "run.tmpl:94 data-number-exclude",
+      "reason": "A read diagnostic; numbers identify corrupt record lines and byte offsets."
+    },
+    {
+      "id": "approvals.detail-1",
+      "element": "approvals.tmpl:27 data-number-exclude",
+      "reason": "Process id, exit status or answer time of one record."
+    },
+    {
+      "id": "approvals.detail-2",
+      "element": "approvals.tmpl:20 data-number-exclude",
+      "reason": "Process id, exit status or answer time of one record."
+    },
+    {
+      "id": "highlights.detail-1",
+      "element": "highlights.tmpl:33 data-number-exclude",
+      "reason": "This watched run has no reference contract; this describes its configuration."
+    },
+    {
+      "id": "logs.detail-10",
+      "element": "logs.tmpl:40 data-number-exclude-text",
+      "reason": "The grouping definition states that the counted lines name no target; the marked count remains audited."
+    },
+    {
+      "id": "run.specific-1",
+      "element": "run.tmpl:51 data-number-exclude-text",
+      "reason": "Recorded exit code, pid, duration or record position of this one event, not an event quantity."
+    },
+    {
+      "id": "logs.specific-1",
+      "element": "logs.tmpl:45 data-number-exclude-text",
+      "reason": "Recorded exit code, pid, duration or record position of this one event, not an event quantity."
+    },
+    {
+      "id": "logs.specific-2",
+      "element": "logs.tmpl:46 data-number-exclude-text",
+      "reason": "Recorded exit code, pid, duration or record position of this one event, not an event quantity."
+    },
+    {
+      "id": "logs.specific-3",
+      "element": "logs.tmpl:46 data-number-exclude",
+      "reason": "Recorded exit code, pid, duration or record position of this one event, not an event quantity."
+    },
+    {
+      "id": "overview.specific-1",
+      "element": "overview.tmpl:50 data-number-exclude-title",
+      "reason": "The chain-verification diagnostic contains a path or a configured line limit, not a retained-event tally."
+    },
+    {
+      "id": "highlights.specific-1",
+      "element": "highlights.tmpl:13 data-number-exclude",
+      "reason": "The fixed per-open performance estimate for full recording, not an event quantity."
+    },
+    {
+      "id": "overview.specific-2",
+      "element": "overview.tmpl:25 data-number-exclude",
+      "reason": "The guide lists categories it does not discover; these are scope limitations, not claims of zero agents or runs."
+    },
+    {
+      "id": "run.specific-2",
+      "element": "run.tmpl:88 data-number-exclude",
+      "reason": "The proposal deliberately omits future run limits until the run ends; this describes configuration generation."
+    },
+    {
+      "id": "logs.record-field",
+      "element": "logs.tmpl:54 data-number-exclude",
+      "reason": "One exact field of one record, including process ids, ports and envelope positions; no aggregation over retained records."
+    },
+    {
+      "id": "procs.phone-process",
+      "element": "procs.tmpl:6 data-number-exclude",
+      "reason": "Program identity or pid fallback for this one process, not a quantity of events."
+    },
+    {
+      "id": "rules.compile-note",
+      "element": "rules.tmpl:66 data-number-exclude",
+      "reason": "A compile/capability diagnostic, not a count over recorded events."
+    },
+    {
+      "id": "rules.lift-note",
+      "element": "rules.tmpl:82 data-number-exclude",
+      "reason": "The text a person typed with one lift of a fence entry, shown as written; it is not a tally over recorded events."
+    },
+    {
+      "id": "rules.group-description",
+      "element": "rules.tmpl:101 data-number-exclude",
+      "reason": "A configured rule group describes built-in protections, not an event tally."
+    },
+    {
+      "id": "layout.identity-1",
+      "element": "layout.tmpl:11 data-number-exclude-title",
+      "reason": "An identity, query/configuration example, record position, or clock time in the shown attribute; it is not an aggregate tally."
+    },
+    {
+      "id": "layout.identity-2",
+      "element": "layout.tmpl:11 data-number-exclude-title",
+      "reason": "An identity, query/configuration example, record position, or clock time in the shown attribute; it is not an aggregate tally."
+    },
+    {
+      "id": "layout.identity-7",
+      "element": "layout.tmpl:122 data-number-exclude-title",
+      "reason": "An identity, query/configuration example, record position, or clock time in the shown attribute; it is not an aggregate tally."
+    },
+    {
+      "id": "layout.identity-8",
+      "element": "layout.tmpl:11 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "layout.identity-10",
+      "element": "layout.tmpl:11 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "layout.identity-12",
+      "element": "layout.tmpl:50 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "layout.identity-13",
+      "element": "layout.tmpl:54 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "layout.identity-22",
+      "element": "layout.tmpl:122 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "layout.identity-23",
+      "element": "layout.tmpl:144 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "layout.identity-24",
+      "element": "layout.tmpl:154 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "layout.identity-33",
+      "element": "layout.tmpl:124 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "overview.identity-1",
+      "element": "overview.tmpl:65 data-number-exclude-aria-label",
+      "reason": "An identity, query/configuration example, record position, or clock time in the shown attribute; it is not an aggregate tally."
+    },
+    {
+      "id": "overview.identity-2",
+      "element": "overview.tmpl:77 data-number-exclude-aria-label",
+      "reason": "An identity, query/configuration example, record position, or clock time in the shown attribute; it is not an aggregate tally."
+    },
+    {
+      "id": "overview.identity-4",
+      "element": "overview.tmpl:65 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "run.identity-1",
+      "element": "run.tmpl:28 data-number-exclude-placeholder",
+      "reason": "An identity, query/configuration example, record position, or clock time in the shown attribute; it is not an aggregate tally."
+    },
+    {
+      "id": "run.identity-7",
+      "element": "run.tmpl:39 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "run.identity-8",
+      "element": "run.tmpl:40 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "run.identity-9",
+      "element": "run.tmpl:40 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "run.identity-12",
+      "element": "run.tmpl:48 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "run.identity-13",
+      "element": "run.tmpl:49 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "run.identity-14",
+      "element": "run.tmpl:54 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "run.identity-16",
+      "element": "run.tmpl:130 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "run.identity-17",
+      "element": "run.tmpl:162 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "logs.identity-2",
+      "element": "logs.tmpl:36 data-number-exclude-title",
+      "reason": "An identity, query/configuration example, record position, or clock time in the shown attribute; it is not an aggregate tally."
+    },
+    {
+      "id": "logs.identity-3",
+      "element": "logs.tmpl:54 data-number-exclude-title",
+      "reason": "An identity, query/configuration example, record position, or clock time in the shown attribute; it is not an aggregate tally."
+    },
+    {
+      "id": "logs.identity-5",
+      "element": "logs.tmpl:36 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "logs.identity-6",
+      "element": "logs.tmpl:39 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "logs.identity-9",
+      "element": "logs.tmpl:48 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "logs.identity-10",
+      "element": "logs.tmpl:71 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "rules.identity-1",
+      "element": "rules.tmpl:17 data-number-exclude-aria-label",
+      "reason": "An identity, query/configuration example, record position, or clock time in the shown attribute; it is not an aggregate tally."
+    },
+    {
+      "id": "rules.identity-2",
+      "element": "rules.tmpl:63 data-number-exclude-title",
+      "reason": "An identity, query/configuration example, record position, or clock time in the shown attribute; it is not an aggregate tally."
+    },
+    {
+      "id": "rules.identity-8",
+      "element": "rules.tmpl:102 data-number-exclude-aria-label",
+      "reason": "An identity, query/configuration example, record position, or clock time in the shown attribute; it is not an aggregate tally."
+    },
+    {
+      "id": "rules.identity-10",
+      "element": "rules.tmpl:6 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "rules.identity-21",
+      "element": "rules.tmpl:47 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "rules.identity-22",
+      "element": "rules.tmpl:48 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "rules.identity-24",
+      "element": "rules.tmpl:63 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "rules.identity-25",
+      "element": "rules.tmpl:66 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "rules.identity-28",
+      "element": "rules.tmpl:94 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "rules.identity-31",
+      "element": "rules.tmpl:102 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "approvals.identity-1",
+      "element": "approvals.tmpl:26 data-number-exclude-aria-label",
+      "reason": "An identity, query/configuration example, record position, or clock time in the shown attribute; it is not an aggregate tally."
+    },
+    {
+      "id": "approvals.identity-5",
+      "element": "approvals.tmpl:12 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "approvals.identity-6",
+      "element": "approvals.tmpl:20 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "approvals.identity-8",
+      "element": "approvals.tmpl:20 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "approvals.identity-13",
+      "element": "approvals.tmpl:27 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "approvals.identity-15",
+      "element": "approvals.tmpl:32 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "approvals.identity-16",
+      "element": "approvals.tmpl:33 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "approvals.identity-17",
+      "element": "approvals.tmpl:34 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "approvals.identity-18",
+      "element": "approvals.tmpl:38 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "approvals.identity-20",
+      "element": "approvals.tmpl:38 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "highlights.identity-1",
+      "element": "highlights.tmpl:9 data-number-exclude-title",
+      "reason": "An identity, query/configuration example, record position, or clock time in the shown attribute; it is not an aggregate tally."
+    },
+    {
+      "id": "highlights.identity-2",
+      "element": "highlights.tmpl:10 data-number-exclude-title",
+      "reason": "An identity, query/configuration example, record position, or clock time in the shown attribute; it is not an aggregate tally."
+    },
+    {
+      "id": "highlights.identity-3",
+      "element": "highlights.tmpl:9 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "highlights.identity-4",
+      "element": "highlights.tmpl:10 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "highlights.identity-7",
+      "element": "highlights.tmpl:61 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "mcp-tools.identity-1",
+      "element": "mcp-tools.tmpl:15 data-number-exclude",
+      "reason": "The identity or exact field of one record, contract, machine or person. Digits belong to that named value, not an aggregate count."
+    },
+    {
+      "id": "layout.request-target",
+      "element": "layout.tmpl:51 data-number-exclude-aria-label",
+      "reason": "One request identity and its exact target; its digits are a port or address, not a count."
+    },
+    {
+      "id": "layout.full-request-target",
+      "element": "layout.tmpl:55 data-number-exclude-aria-label",
+      "reason": "One request identity and its exact target; its digits are a port or address, not a count."
+    },
+    {
+      "id": "logs.literal-1",
+      "element": "logs.tmpl:107 data-number-exclude",
+      "reason": "A literal query-syntax example; digits are a sample time interval or process id."
+    },
+    {
+      "id": "logs.literal-2",
+      "element": "logs.tmpl:106 data-number-exclude",
+      "reason": "A literal query-syntax example; digits are a sample time interval or process id."
+    },
+    {
+      "id": "logs.literal-3",
+      "element": "logs.tmpl:105 data-number-exclude",
+      "reason": "A literal query-syntax example; digits are a sample time interval or process id."
+    },
+    {
+      "id": "logs.literal-4",
+      "element": "logs.tmpl:104 data-number-exclude",
+      "reason": "A literal query-syntax example; digits are a sample time interval or process id."
+    },
+    {
+      "id": "logs.literal-5",
+      "element": "logs.tmpl:103 data-number-exclude",
+      "reason": "A literal query-syntax example; digits are a sample time interval or process id."
+    },
+    {
+      "id": "logs.literal-6",
+      "element": "logs.tmpl:102 data-number-exclude",
+      "reason": "A literal query-syntax example; digits are a sample time interval or process id."
+    },
+    {
+      "id": "logs.literal-7",
+      "element": "logs.tmpl:101 data-number-exclude",
+      "reason": "A literal query-syntax example; digits are a sample time interval or process id."
+    },
+    {
+      "id": "logs.literal-8",
+      "element": "logs.tmpl:100 data-number-exclude",
+      "reason": "A literal query-syntax example; digits are a sample time interval or process id."
+    },
+    {
+      "id": "logs.literal-9",
+      "element": "logs.tmpl:99 data-number-exclude",
+      "reason": "A literal query-syntax example; digits are a sample time interval or process id."
+    },
+    {
+      "id": "logs.literal-10",
+      "element": "logs.tmpl:104 data-number-exclude",
+      "reason": "Literal time-range syntax examples, not a count of recorded lines."
+    },
+    {
+      "id": "run.step-head",
+      "element": "run.tmpl:113 data-number-exclude",
+      "reason": "A model-step group header on the run timeline: its digit is the writer's step number, a name for a group of lines (the Logs link beside it counts nothing), not a count of lines."
+    },
+    {
+      "id": "logs.literal-11",
+      "element": "logs.tmpl:55 data-number-exclude",
+      "reason": "The byte-exact payload of one record for Copy, including its identifiers, timestamps and individual fields."
+    },
+    {
+      "id": "highlights.literal-1",
+      "element": "highlights.tmpl:56 data-number-exclude",
+      "reason": "Clock times and the first record-line position of this one group."
+    },
+    {
+      "id": "layout.count-diagnostic",
+      "element": "layout.tmpl:97 data-number-exclude",
+      "reason": "The completeness diagnostic names run identifiers, corrupt-line positions and configured limits; it does not report an event total."
+    },
+    {
+      "id": "shared.run-choice",
+      "element": "cmpform.tmpl:4 data-number-exclude",
+      "reason": "One run name, identifier and start time in the run selector."
+    },
+    {
+      "id": "run.related-target",
+      "element": "run.tmpl:110 data-number-exclude",
+      "reason": "The destination and path of the one recorded read/send pair; digits are an address or port."
+    },
+    {
+      "id": "run.answer-byline",
+      "element": "run.tmpl:164 data-number-exclude-title",
+      "reason": "The recorded person/process identity of this one answer."
+    },
+    {
+      "id": "run.answer-byline-text",
+      "element": "run.tmpl:164 data-number-exclude-text",
+      "reason": "The person identity printed beside this one answer; the child wait duration has its own marker."
+    },
+    {
+      "id": "run.approval-identity",
+      "element": "run.tmpl:169 data-number-exclude",
+      "reason": "The recorded root actor of this one answer under the local approval floor (user id, process id); the digits are identifiers."
+    },
+    {
+      "id": "run.leak-proposal-address",
+      "element": "run.tmpl:78 data-number-exclude-text",
+      "reason": "One recorded leak destination; digits are its address or port."
+    },
+    {
+      "id": "run.withheld-addresses",
+      "element": "run.tmpl:78 data-number-exclude",
+      "reason": "The exact destinations withheld from this proposal, including their ports and addresses."
+    },
+    {
+      "id": "rules.copy-location",
+      "element": "rules.tmpl:63 data-number-exclude",
+      "reason": "The exact location of this run contract copy, not an event tally."
+    },
+    {
+      "id": "rules.run-copy-path",
+      "element": "rules.tmpl:112 data-number-exclude",
+      "reason": "The path identifying this run contract copy, not a count of events."
+    },
+    {
+      "id": "shared.second-run-choice",
+      "element": "cmpform.tmpl:5 data-number-exclude",
+      "reason": "One run name, identifier and start time in the second run selector."
+    },
+    {
+      "id": "compare.target-title",
+      "element": "compare.tmpl:4 data-number-exclude-title",
+      "reason": "One cell’s recorded endpoint addresses and explanation of its outcome, not event totals."
+    },
+    {
+      "id": "compare.target",
+      "element": "compare.tmpl:6 data-number-exclude",
+      "reason": "The recorded destination address of this one comparison cell."
+    },
+    {
+      "id": "compare.started",
+      "element": "compare.tmpl:14 data-number-exclude",
+      "reason": "The start clock and timestamp of this one run."
+    },
+    {
+      "id": "compare.duration",
+      "element": "compare.tmpl:14 data-number-exclude",
+      "reason": "The elapsed time of one run, not an action count."
+    },
+    {
+      "id": "compare.probe-port",
+      "element": "compare.tmpl:34 data-number-exclude",
+      "reason": "The fixed destination port identifying background route probes."
+    },
+    {
+      "id": "machine.tier-time",
+      "element": "machine.tmpl:14 data-number-exclude",
+      "reason": "The last-use clock of one protection tier."
+    },
+    {
+      "id": "machine.requirement",
+      "element": "machine.tmpl:16 data-number-exclude",
+      "reason": "A static requirement of the named protection mechanism (including no administrator rights), not a count of runs."
+    },
+    {
+      "id": "machine.last-run",
+      "element": "machine.tmpl:17 data-number-exclude",
+      "reason": "One recorded run identity in a last-use link."
+    },
+    {
+      "id": "glossary.definition",
+      "element": "glossary.tmpl:8 data-number-exclude",
+      "reason": "One static glossary definition. Digits describe named protection tiers; absence phrases define watch mode and chain verification rather than asserting an event count."
+    },
+    {
+      "id": "routes.run",
+      "element": "model-routes.tmpl:15 data-number-exclude",
+      "reason": "One selected run identifier."
+    },
+    {
+      "id": "routes.endpoint",
+      "element": "model-routes.tmpl:19 data-number-exclude",
+      "reason": "One endpoint authority, including its port."
+    },
+    {
+      "id": "routes.backend",
+      "element": "model-routes.tmpl:20 data-number-exclude",
+      "reason": "One current backend authority, including its port."
+    },
+    {
+      "id": "routes.endpoint-label",
+      "element": "model-routes.tmpl:22 data-number-exclude-aria-label",
+      "reason": "The endpoint authority labelling this route choice list."
+    },
+    {
+      "id": "routes.authority",
+      "element": "model-routes.tmpl:25 data-number-exclude",
+      "reason": "One declared route backend authority."
+    },
+    {
+      "id": "routes.history-backend",
+      "element": "model-routes.tmpl:32 data-number-exclude",
+      "reason": "One recorded route-change authority."
+    },
+    {
+      "id": "routes.history-by",
+      "element": "model-routes.tmpl:32 data-number-exclude",
+      "reason": "One recorded route-change operator and timestamp."
+    },
+    {
+      "id": "compare.selection-error",
+      "element": "compare.tmpl:22 data-number-exclude",
+      "reason": "An error identifying the selected missing run or explaining the fixed two-run selection requirement."
+    },
+    {
+      "id": "shared.error-text",
+      "element": "error.tmpl:4 data-number-exclude",
+      "reason": "A route or request validation error; it may name a run, path or address, and does not summarize events."
+    },
+    {
+      "id": "shared.validation-error",
+      "element": "error.tmpl:4 data-number-exclude",
+      "reason": "An address or request validation error, not a summary of events."
+    },
+    {
+      "id": "compare.row-target",
+      "element": "compare.tmpl:31 data-number-exclude",
+      "reason": "One comparison row’s target address, program or rule identity."
+    },
+    {
+      "id": "machine.source-run",
+      "element": "machine.tmpl:22 data-number-exclude",
+      "reason": "The run identifier naming the source of these recorded machine facts."
+    },
+    {
+      "id": "stop.run",
+      "element": "stop.tmpl:3 data-number-exclude",
+      "reason": "One run identifier in the stop confirmation."
+    },
+    {
+      "id": "stop.command",
+      "element": "stop.tmpl:17 data-number-exclude",
+      "reason": "The terminal command identifying this one run."
+    },
+    {
+      "id": "lift.target-headline",
+      "element": "livefence.tmpl:4 data-number-exclude",
+      "reason": "The exact target of the access being previewed, including ports."
+    },
+    {
+      "id": "lift.run",
+      "element": "livefence.tmpl:4 data-number-exclude",
+      "reason": "One run identifier in this access preview."
+    },
+    {
+      "id": "lift.limit",
+      "element": "livefence.tmpl:10 data-number-exclude",
+      "reason": "The exact access target and selected time limit of this proposed transaction."
+    },
+    {
+      "id": "lift.target",
+      "element": "livefence.tmpl:11 data-number-exclude",
+      "reason": "The exact authority or path being previewed."
+    },
+    {
+      "id": "lift.command",
+      "element": "livefence.tmpl:21 data-number-exclude",
+      "reason": "One command specifying the run, authority and chosen time limit."
+    },
+    {
+      "id": "editor.file",
+      "element": "rules-change.tmpl:11 data-number-exclude",
+      "reason": "The selected contract path."
+    },
+    {
+      "id": "editor.choice",
+      "element": "rules-change.tmpl:14 data-number-exclude",
+      "reason": "One contract name and path in the file chooser."
+    },
+    {
+      "id": "editor.yaml-file",
+      "element": "rules-change.tmpl:31 data-number-exclude",
+      "reason": "The path labelling this one contract editor."
+    },
+    {
+      "id": "editor.yaml",
+      "element": "rules-change.tmpl:32 data-number-exclude",
+      "reason": "The exact contract YAML under edit. Digits are configuration values, not claims about retained events."
+    },
+    {
+      "id": "editor.compile-command",
+      "element": "rules-change.tmpl:39 data-number-exclude",
+      "reason": "The terminal compile command and its exact contract path."
+    },
+    {
+      "id": "editor.preview-path",
+      "element": "rules-preview.tmpl:6 data-number-exclude",
+      "reason": "The exact contract path being previewed."
+    },
+    {
+      "id": "editor.preview-diff",
+      "element": "rules-preview.tmpl:36 data-number-exclude",
+      "reason": "The exact proposed configuration diff, including line locations and configuration values."
+    },
+    {
+      "id": "editor.preview-hint",
+      "element": "rules-preview.tmpl:37 data-number-exclude",
+      "reason": "A terminal instruction naming the selected contract path."
+    },
+    {
+      "id": "editor.preview-command",
+      "element": "rules-preview.tmpl:37 data-number-exclude",
+      "reason": "The compile or live-block terminal command, with one run identity and target."
+    },
+    {
+      "id": "editor.now-run",
+      "element": "rules-parts.tmpl:13 data-number-exclude",
+      "reason": "One running run identifier in the Also apply now control."
+    },
+    {
+      "id": "investigate.last-clock",
+      "element": "investigate.tmpl:11 data-number-exclude",
+      "reason": "This detection’s latest event clock."
+    },
+    {
+      "id": "investigate.first-clock",
+      "element": "investigate.tmpl:18 data-number-exclude",
+      "reason": "This detection’s first event timestamp."
+    },
+    {
+      "id": "investigate.linked-target",
+      "element": "investigate.tmpl:28 data-number-exclude",
+      "reason": "One linked detection target; digits name a port, address or path."
+    },
+    {
+      "id": "investigate.linked-clock",
+      "element": "investigate.tmpl:28 data-number-exclude",
+      "reason": "One linked detection’s first event clock."
+    },
+    {
+      "id": "event.context-line",
+      "element": "event.tmpl:2 data-number-exclude",
+      "reason": "The sequence identifier of one context line."
+    },
+    {
+      "id": "event.context-time",
+      "element": "event.tmpl:2 data-number-exclude",
+      "reason": "The clock of one context line."
+    },
+    {
+      "id": "event.context-target",
+      "element": "event.tmpl:2 data-number-exclude",
+      "reason": "The subject and recorded identities of one context event."
+    },
+    {
+      "id": "event.sentence",
+      "element": "event.tmpl:12 data-number-exclude",
+      "reason": "The selected event’s action sentence, including its process identity and target address."
+    },
+    {
+      "id": "event.change-words",
+      "element": "event.tmpl:80 data-number-exclude",
+      "reason": "A rule change made from this line, said in words: the entries it changed, with their paths, ports and addresses."
+    },
+    {
+      "id": "event.previous",
+      "element": "event.tmpl:13 data-number-exclude",
+      "reason": "The previous line’s sequence identifier."
+    },
+    {
+      "id": "event.next",
+      "element": "event.tmpl:13 data-number-exclude",
+      "reason": "The next line’s sequence identifier."
+    },
+    {
+      "id": "event.command",
+      "element": "event.tmpl:22 data-number-exclude",
+      "reason": "One terminal command naming the selected run and line identifier."
+    },
+    {
+      "id": "event.selected-line",
+      "element": "event.tmpl:25 data-number-exclude",
+      "reason": "The selected line’s sequence identifier."
+    },
+    {
+      "id": "event.selected-time",
+      "element": "event.tmpl:25 data-number-exclude",
+      "reason": "The selected line’s clock."
+    },
+    {
+      "id": "event.selected-target",
+      "element": "event.tmpl:25 data-number-exclude",
+      "reason": "The selected event’s target address or path."
+    },
+    {
+      "id": "event.similar-subject",
+      "element": "event.tmpl:28 data-number-exclude",
+      "reason": "The subject address or path used to find similar records."
+    },
+    {
+      "id": "event.similar-run",
+      "element": "event.tmpl:29 data-number-exclude",
+      "reason": "One run identifier naming a row of similar events."
+    },
+    {
+      "id": "event.search-title",
+      "element": "event.tmpl:31 data-number-exclude-title",
+      "reason": "The exact subject address or path shown as the search field’s native tooltip."
+    },
+    {
+      "id": "event.fact-target",
+      "element": "evfacts.tmpl:6 data-number-exclude",
+      "reason": "The exact target of the selected event, including addresses, paths and ports."
+    },
+    {
+      "id": "event.fact-clock",
+      "element": "evfacts.tmpl:7 data-number-exclude",
+      "reason": "The selected event’s local and UTC timestamp."
+    },
+    {
+      "id": "event.into",
+      "element": "evfacts.tmpl:7 data-number-exclude",
+      "reason": "The elapsed time of the selected event within its run."
+    },
+    {
+      "id": "event.since-previous",
+      "element": "evfacts.tmpl:7 data-number-exclude",
+      "reason": "The selected event’s time since the preceding line and that line’s sequence identifier."
+    },
+    {
+      "id": "event.fact-run",
+      "element": "evfacts.tmpl:8 data-number-exclude",
+      "reason": "The selected event’s run identifier."
+    },
+    {
+      "id": "event.technical-clock",
+      "element": "evfacts.tmpl:32 data-number-exclude",
+      "reason": "The elapsed times identifying this event’s place within the run, and a run identifier link."
+    },
+    {
+      "id": "event.process-ids",
+      "element": "evfacts.tmpl:38 data-number-exclude",
+      "reason": "The selected line’s PID, TID and cgroup identifiers."
+    },
+    {
+      "id": "event.fields-caption",
+      "element": "evfacts.tmpl:44 data-number-exclude",
+      "reason": "The selected line’s sequence identifier in its fields-table caption."
+    },
+    {
+      "id": "event.hash",
+      "element": "evfacts.tmpl:51 data-number-exclude",
+      "reason": "The selected line’s hash, not an event count."
+    },
+    {
+      "id": "event.integrity-previous",
+      "element": "evfacts.tmpl:52 data-number-exclude",
+      "reason": "The preceding line’s sequence identifier in the integrity explanation."
+    },
+    {
+      "id": "editor.entry-example",
+      "element": "rules-change.tmpl:47 data-number-exclude-placeholder",
+      "reason": "A schema example for this rule entry, including the example authority’s port."
+    },
+    {
+      "id": "editor.entry-hint",
+      "element": "rules-change.tmpl:48 data-number-exclude",
+      "reason": "One schema hint describing an entry example and its port."
+    },
+    {
+      "id": "event.breadcrumb-line",
+      "element": "event.tmpl:10 data-number-exclude",
+      "reason": "The selected line’s sequence identifier."
+    },
+    {
+      "id": "event.similar-caption",
+      "element": "event.tmpl:29 data-number-exclude",
+      "reason": "The address or path identifying the subject of this table."
+    },
+    {
+      "id": "event.enforcement-name",
+      "element": "evfacts.tmpl:20 data-number-exclude",
+      "reason": "The named protection tier and its fixed capability description, including the tier number."
+    },
+    {
+      "id": "event.integrity-line",
+      "element": "evfacts.tmpl:50 data-number-exclude",
+      "reason": "The selected line’s sequence identifier; its adjacent total is separately inventoried."
+    },
+    {
+      "id": "investigate.port-list",
+      "element": "investigate.tmpl:13 data-number-exclude",
+      "reason": "The actual port identifiers listed for this detection."
+    },
+    {
+      "id": "investigate.last-full-clock",
+      "element": "investigate.tmpl:18 data-number-exclude",
+      "reason": "The last event’s exact clock in a repeated detection."
+    },
+    {
+      "id": "editor.reads-cost",
+      "element": "rules-new.tmpl:5 data-number-exclude",
+      "reason": "The fixed, documented measurement of recording overhead, not an event count from this ledger."
+    },
+    {
+      "id": "editor.finished-run",
+      "element": "rules-new.tmpl:37 data-number-exclude",
+      "reason": "One finished run’s agent, identifier and timestamp in the source chooser."
+    },
+    {
+      "id": "editor.preset-promise",
+      "element": "rules-new.tmpl:47 data-number-exclude-title",
+      "reason": "One preset’s declared policy promise, not a measured absence of events."
+    },
+    {
+      "id": "editor.host-placeholder",
+      "element": "rules-new.tmpl:51 data-number-exclude-placeholder",
+      "reason": "The schema example authority and its port."
+    },
+    {
+      "id": "mcp.preview-run",
+      "element": "mcp-preview.tmpl:13 data-number-exclude",
+      "reason": "One selected run identifier."
+    },
+    {
+      "id": "routes.preview-endpoint",
+      "element": "model-routes-preview.tmpl:9 data-number-exclude",
+      "reason": "One model endpoint authority."
+    },
+    {
+      "id": "routes.preview-from",
+      "element": "model-routes-preview.tmpl:10 data-number-exclude",
+      "reason": "The route’s current authority."
+    },
+    {
+      "id": "routes.preview-to",
+      "element": "model-routes-preview.tmpl:11 data-number-exclude",
+      "reason": "The proposed backend authority."
+    },
+    {
+      "id": "routes.preview-run",
+      "element": "model-routes-preview.tmpl:12 data-number-exclude",
+      "reason": "One run identifier."
+    },
+    {
+      "id": "routes.preview-request-endpoint",
+      "element": "model-routes-preview.tmpl:16 data-number-exclude",
+      "reason": "The endpoint whose requests are being moved."
+    },
+    {
+      "id": "routes.preview-request-backend",
+      "element": "model-routes-preview.tmpl:16 data-number-exclude",
+      "reason": "The proposed backend authority receiving requests."
+    },
+    {
+      "id": "run.unused-error",
+      "element": "run.tmpl:93 data-number-exclude",
+      "reason": "The reader diagnostic’s file path, line position and byte offset, not a count of unused permissions."
+    },
+    {
+      "id": "event.search-value",
+      "element": "event.tmpl:31 data-number-exclude-value",
+      "reason": "The exact address or path currently entered as the search query."
+    },
+    {
+      "id": "livefence.agent-1",
+      "element": "livefence.tmpl:4 data-number-exclude",
+      "reason": "One agent display identity, with its run identifier or operation when this element includes that context; digits name that identity and are not an event tally."
+    },
+    {
+      "id": "livefence.agent-2",
+      "element": "livefence.tmpl:6 data-number-exclude",
+      "reason": "One agent display identity, with its run identifier or operation when this element includes that context; digits name that identity and are not an event tally."
+    },
+    {
+      "id": "investigate.agent-1",
+      "element": "investigate.tmpl:11 data-number-exclude",
+      "reason": "One agent display identity, with its run identifier or operation when this element includes that context; digits name that identity and are not an event tally."
+    },
+    {
+      "id": "event.agent-1",
+      "element": "event.tmpl:10 data-number-exclude",
+      "reason": "One agent display identity, with its run identifier or operation when this element includes that context; digits name that identity and are not an event tally."
+    },
+    {
+      "id": "evfacts.agent-1",
+      "element": "evfacts.tmpl:8 data-number-exclude",
+      "reason": "One agent display identity, with its run identifier or operation when this element includes that context; digits name that identity and are not an event tally."
+    },
+    {
+      "id": "compare.agent-1",
+      "element": "compare.tmpl:8 data-number-exclude",
+      "reason": "One agent display identity, with its run identifier or operation when this element includes that context; digits name that identity and are not an event tally."
+    },
+    {
+      "id": "compare.agent-2",
+      "element": "compare.tmpl:24 data-number-exclude",
+      "reason": "One agent display identity, with its run identifier or operation when this element includes that context; digits name that identity and are not an event tally."
+    },
+    {
+      "id": "compare.agent-3",
+      "element": "compare.tmpl:30 data-number-exclude",
+      "reason": "One agent display identity, with its run identifier or operation when this element includes that context; digits name that identity and are not an event tally."
+    },
+    {
+      "id": "compare.agent-4",
+      "element": "compare.tmpl:30 data-number-exclude",
+      "reason": "One agent display identity, with its run identifier or operation when this element includes that context; digits name that identity and are not an event tally."
+    },
+    {
+      "id": "stop.agent-1",
+      "element": "stop.tmpl:3 data-number-exclude",
+      "reason": "One agent display identity, with its run identifier or operation when this element includes that context; digits name that identity and are not an event tally."
+    },
+    {
+      "id": "stop.agent-2",
+      "element": "stop.tmpl:3 data-number-exclude",
+      "reason": "One agent display identity, with its run identifier or operation when this element includes that context; digits name that identity and are not an event tally."
+    },
+    {
+      "id": "run.agent-1",
+      "element": "run.tmpl:11 data-number-exclude",
+      "reason": "One agent display identity, with its run identifier or operation when this element includes that context; digits name that identity and are not an event tally."
+    },
+    {
+      "id": "run.agent-2",
+      "element": "run.tmpl:40 data-number-exclude",
+      "reason": "One agent display identity, with its run identifier or operation when this element includes that context; digits name that identity and are not an event tally."
+    },
+    {
+      "id": "rules-preview.agent-1",
+      "element": "rules-preview.tmpl:8 data-number-exclude",
+      "reason": "One agent display identity, with its run identifier or operation when this element includes that context; digits name that identity and are not an event tally."
+    },
+    {
+      "id": "event.scope-identity",
+      "element": "event.tmpl:7 data-number-exclude",
+      "reason": "One exact proposed contract scope, including its path or authority."
+    },
+    {
+      "id": "event.scope-description",
+      "element": "event.tmpl:54 data-number-exclude",
+      "reason": "The exact selected contract scope in words, including its path or authority."
+    },
+    {
+      "id": "event.effect",
+      "element": "event.tmpl:56 data-number-exclude",
+      "reason": "One proposed rule’s effect, including its target path or authority."
+    },
+    {
+      "id": "event.inapplicable-effect",
+      "element": "event.tmpl:57 data-number-exclude",
+      "reason": "One proposed change is already present in the complete contract; its reason names that exact policy entry."
+    },
+    {
+      "id": "event.network-capability",
+      "element": "event.tmpl:60 data-number-exclude",
+      "reason": "The schema has no network deny list; this is a static capability description."
+    },
+    {
+      "id": "event.act-command",
+      "element": "event.tmpl:71 data-number-exclude",
+      "reason": "One terminal command naming this run, line and proposed rule action."
+    },
+    {
+      "id": "event.fact-process-identifiers",
+      "element": "evfacts.tmpl:36 data-number-exclude",
+      "reason": "The selected line’s PID, TID and cgroup identifiers."
+    },
+    {
+      "id": "event.program-process-identifier",
+      "element": "evfacts.tmpl:33 data-number-exclude",
+      "reason": "The PID of the one program named beside it."
+    },
+    {
+      "id": "event.started-line",
+      "element": "evfacts.tmpl:37 data-number-exclude",
+      "reason": "The sequence identifier of this program’s start line."
+    },
+    {
+      "id": "event.rule-key",
+      "element": "evfacts.tmpl:16 data-number-exclude",
+      "reason": "The exact deciding rule key of the selected record."
+    },
+    {
+      "id": "shared.search-query",
+      "element": "layout.tmpl:125 data-number-exclude-value",
+      "reason": "The user-entered global search query; its numeric tokens are terms or identities, not a result tally."
+    },
+    {
+      "id": "logs.search-query",
+      "element": "logs.tmpl:62 data-number-exclude-value",
+      "reason": "The user-entered Logs query; numeric tokens are terms or identities, not a result tally."
+    },
+    {
+      "id": "shared.record-link-identity",
+      "element": "layout.tmpl:97 data-number-exclude",
+      "reason": "One complete-record recovery link naming the agent or run."
+    },
+    {
+      "id": "event.run-meta-agent",
+      "element": "evfacts.tmpl:8 data-number-exclude-text",
+      "reason": "The display identity of the selected event’s agent, beside the separately named run."
+    },
+    {
+      "id": "investigate.agent-project",
+      "element": "investigate.tmpl:17 data-number-exclude-text",
+      "reason": "One recorded agent and project identity."
+    },
+    {
+      "id": "detections.agent-project",
+      "element": "detections.tmpl:36 data-number-exclude-text",
+      "reason": "One recorded agent and project identity."
+    },
+    {
+      "id": "overview.agent-field-1",
+      "element": "overview.tmpl:72 data-number-exclude",
+      "reason": "One agent display identity; digits name the agent rather than counting observed activity."
+    },
+    {
+      "id": "overview.agent-field-2",
+      "element": "overview.tmpl:84 data-number-exclude",
+      "reason": "One agent display identity; digits name the agent rather than counting observed activity."
+    },
+    {
+      "id": "overview.agent-field-3",
+      "element": "overview.tmpl:85 data-number-exclude",
+      "reason": "One agent display identity; digits name the agent rather than counting observed activity."
+    },
+    {
+      "id": "logs.agent-field-1",
+      "element": "logs.tmpl:36 data-number-exclude",
+      "reason": "One agent display identity; digits name the agent rather than counting observed activity."
+    },
+    {
+      "id": "event.agent-field-1",
+      "element": "event.tmpl:29 data-number-exclude",
+      "reason": "One agent display identity; digits name the agent rather than counting observed activity."
+    },
+    {
+      "id": "layout.agent-field-1",
+      "element": "layout.tmpl:11 data-number-exclude",
+      "reason": "One agent display identity; digits name the agent rather than counting observed activity."
+    },
+    {
+      "id": "layout.agent-field-2",
+      "element": "layout.tmpl:11 data-number-exclude",
+      "reason": "One agent display identity; digits name the agent rather than counting observed activity."
+    },
+    {
+      "id": "layout.agent-field-3",
+      "element": "layout.tmpl:50 data-number-exclude",
+      "reason": "One agent display identity; digits name the agent rather than counting observed activity."
+    },
+    {
+      "id": "layout.agent-field-4",
+      "element": "layout.tmpl:50 data-number-exclude",
+      "reason": "One agent display identity; digits name the agent rather than counting observed activity."
+    },
+    {
+      "id": "layout.agent-field-5",
+      "element": "layout.tmpl:54 data-number-exclude",
+      "reason": "One agent display identity; digits name the agent rather than counting observed activity."
+    },
+    {
+      "id": "layout.agent-field-7",
+      "element": "layout.tmpl:154 data-number-exclude",
+      "reason": "One agent display identity; digits name the agent rather than counting observed activity."
+    },
+    {
+      "id": "rules.agent-field-3",
+      "element": "rules.tmpl:38 data-number-exclude",
+      "reason": "One agent display identity; digits name the agent rather than counting observed activity."
+    },
+    {
+      "id": "rules.agent-field-6",
+      "element": "rules.tmpl:62 data-number-exclude",
+      "reason": "One agent display identity; digits name the agent rather than counting observed activity."
+    },
+    {
+      "id": "rules.agent-field-7",
+      "element": "rules.tmpl:66 data-number-exclude",
+      "reason": "One agent display identity; digits name the agent rather than counting observed activity."
+    },
+    {
+      "id": "compare.agent-field-1",
+      "element": "compare.tmpl:27 data-number-exclude",
+      "reason": "One agent display identity; digits name the agent rather than counting observed activity."
+    },
+    {
+      "id": "approvals.agent-field-2",
+      "element": "approvals.tmpl:20 data-number-exclude",
+      "reason": "One agent display identity; digits name the agent rather than counting observed activity."
+    },
+    {
+      "id": "approvals.agent-field-5",
+      "element": "approvals.tmpl:26 data-number-exclude",
+      "reason": "One agent display identity; digits name the agent rather than counting observed activity."
+    },
+    {
+      "id": "approvals.agent-field-6",
+      "element": "approvals.tmpl:40 data-number-exclude",
+      "reason": "One agent display identity; digits name the agent rather than counting observed activity."
+    },
+    {
+      "id": "detections.agent-field-1",
+      "element": "detections.tmpl:39 data-number-exclude",
+      "reason": "One agent display identity; digits name the agent rather than counting observed activity."
+    },
+    {
+      "id": "event.contract-path",
+      "element": "evfacts.tmpl:9 data-number-exclude",
+      "reason": "One selected run’s recorded contract path."
+    },
+    {
+      "id": "event.command-preview",
+      "element": "evfacts.tmpl:6 data-number-exclude",
+      "reason": "The exact selected program command, masked and shortened for display."
+    },
+    {
+      "id": "event.full-command",
+      "element": "evfacts.tmpl:6 data-number-exclude",
+      "reason": "The complete selected program command, masked for display."
+    },
+    {
+      "id": "event.ancestor-process",
+      "element": "evfacts.tmpl:39 data-number-exclude",
+      "reason": "The PID identifying the one program in this ancestry step."
+    },
+    {
+      "id": "event.contract-identity",
+      "element": "event.tmpl:64 data-number-exclude",
+      "reason": "The exact contract path to which the preview applies."
+    },
+    {
+      "id": "event.contract-diff",
+      "element": "event.tmpl:70 data-number-exclude",
+      "reason": "The exact proposed contract diff, including configuration values and line positions."
+    },
+    {
+      "id": "rules.contract-identity",
+      "element": "rules.tmpl:114 data-number-exclude",
+      "reason": "The exact recorded source contract path."
+    },
+    {
+      "id": "rules.directory-identity",
+      "element": "rules.tmpl:115 data-number-exclude",
+      "reason": "The selected contract’s exact working directory."
+    },
+    {
+      "id": "rules.compile-command",
+      "element": "rules.tmpl:116 data-number-exclude",
+      "reason": "One terminal command naming the selected contract and working directory."
+    },
+    {
+      "id": "rules.list-contract-path",
+      "element": "rules.tmpl:21 data-number-exclude-text",
+      "reason": "The path identifying one listed contract."
+    },
+    {
+      "id": "event.deciding-policy",
+      "element": "evfacts.tmpl:15 data-number-exclude",
+      "reason": "The exact policy entry that decided this selected event, including its authority or path."
+    },
+    {
+      "id": "logs.agent-filter",
+      "element": "logs.tmpl:72 data-number-exclude",
+      "reason": "The one agent identity offered as a filter."
+    },
+    {
+      "id": "overview.bar-agent",
+      "element": "overview.tmpl:86 data-number-exclude",
+      "reason": "The agent identity for one bar; the refused action quantity has a separate marker."
+    },
+    {
+      "id": "event.policy-reason",
+      "element": "evfacts.tmpl:17 data-number-exclude",
+      "reason": "The exact deciding-policy reason for the selected event, including its authority or path."
+    },
+    {
+      "id": "rules.source-identity",
+      "element": "rules.tmpl:66 data-number-exclude",
+      "reason": "The exact source contract path of the selected recorded run."
+    },
+    {
+      "id": "event.rule-label",
+      "element": "evfacts.tmpl:16 data-number-exclude-text",
+      "reason": "The deciding rule’s display name, including its exact host and port; its separately marked zero statement is still audited."
+    },
+    {
+      "id": "rules.selected-agent",
+      "element": "rules.tmpl:30 data-number-exclude",
+      "reason": "The agent display identity recorded by this selected run."
+    },
+    {
+      "id": "rules.selected-source",
+      "element": "rules.tmpl:30 data-number-exclude",
+      "reason": "The source contract path and line position identifying this one rule."
+    },
+    {
+      "id": "rules.selected-run",
+      "element": "rules.tmpl:30 data-number-exclude",
+      "reason": "The run identifier to which this selected rule belongs."
+    },
+    {
+      "id": "approvals.answered-outcome",
+      "element": "approvals.tmpl:7 data-number-exclude",
+      "reason": "The outcome and elapsed time of one selected answer."
+    },
+    {
+      "id": "approvals.answered-agent",
+      "element": "approvals.tmpl:7 data-number-exclude",
+      "reason": "The one agent identity and operation in the selected answered request."
+    },
+    {
+      "id": "approvals.answered-target",
+      "element": "approvals.tmpl:7 data-number-exclude",
+      "reason": "The exact requested target of one selected answered request."
+    },
+    {
+      "id": "approvals.lost-agent",
+      "element": "approvals.tmpl:22 data-number-exclude",
+      "reason": "The agent identity and operation of one unanswered request on a lost run."
+    },
+    {
+      "id": "approvals.lost-agent-detail",
+      "element": "approvals.tmpl:22 data-number-exclude",
+      "reason": "The one lost request’s agent identity in its detail row."
+    },
+    {
+      "id": "approvals.lost-clock",
+      "element": "approvals.tmpl:22 data-number-exclude",
+      "reason": "The asked-at clock time of one request on a lost run."
+    },
+    {
+      "id": "editor.chooser-agent",
+      "element": "rules-change.tmpl:6 data-number-exclude",
+      "reason": "One contract’s agent identity in the editor chooser."
+    },
+    {
+      "id": "editor.chooser-path",
+      "element": "rules-change.tmpl:6 data-number-exclude",
+      "reason": "The exact path naming one contract in the editor chooser."
+    },
+    {
+      "id": "highlights.block-kind",
+      "element": "<span class=\"op\">{{$kv.Kind}}</span>",
+      "reason": "The name of the live block action."
+    },
+    {
+      "id": "highlights.block-value",
+      "element": "<span class=\"ut\">{{$kv.Value}}</span>",
+      "reason": "The target identity named by a live block."
+    },
+    {
+      "id": "detections.action-name",
+      "element": "<span class=\"dt-verb\">{{.Verb}}</span>",
+      "reason": "The recorded action name, not the number of actions."
+    },
+    {
+      "id": "approvals.request-agent",
+      "element": "ap-card agent span",
+      "reason": "The requesting agent name, including digits in that name."
+    },
+    {
+      "id": "layout.path-token",
+      "element": "pwp path token span",
+      "reason": "One path or source-text token; digits identify the path, address or policy value."
+    },
+    {
+      "id": "logs.line-hash",
+      "element": "log line hash span",
+      "reason": "The selected record line hash, not a count of lines."
+    },
+    {
+      "id": "event.previous-line",
+      "element": "preceding event link",
+      "reason": "The sequence identifier of the preceding record line."
+    },
+    {
+      "id": "event.policy-reason-key",
+      "element": "policy reason key span",
+      "reason": "The selected policy reason code, including digits in the code."
+    },
+    {
+      "id": "event.technical-run",
+      "element": "technical event run link",
+      "reason": "The run identifier attached to this event."
+    },
+    {
+      "id": "layout.phone-count-diagnostic",
+      "element": "phone recovery diagnostic paragraph",
+      "reason": "The full source diagnostic, with any run or path identities, inside recovery details."
+    },
+    {
+      "id": "shared.phone-record-link-identity",
+      "element": "phone recovery record link",
+      "reason": "The agent or run identity in the complete-record link label."
+    },
+    {
+      "id": "event.program-name",
+      "element": "evfacts.tmpl process name",
+      "reason": "One process name or PID, not a quantity of processes."
+    },
+    {
+      "id": "rules.fence-cli",
+      "element": "rules.tmpl fence CLI example",
+      "reason": "The run identity embedded in a command example, not an activity count."
+    },
+    {
+      "id": "approvals.queue-target",
+      "element": "approvals.tmpl waiting queue exact target",
+      "reason": "The exact host, file path or command requested, including identity digits; not an activity count."
+    },
+    {
+      "id": "approvals.queue-full",
+      "element": "approvals.tmpl waiting queue whole sentence for assistive technology",
+      "reason": "The whole request sentence of a LONG row: the agent's name and exact target, whose digits are a port, address or path, not a count."
+    },
+    {
+      "id": "approvals.queue-phone",
+      "element": "approvals.tmpl waiting queue phone LONG sentence",
+      "reason": "The request sentence with its target cut in the middle for a phone; its digits are part of the target's identity, not a count."
+    },
+    {
+      "id": "approvals.queue-wide",
+      "element": "approvals.tmpl waiting queue wide sentence",
+      "reason": "The request sentence as a wide screen shows it, whole or cut in the middle; its digits are part of the target's identity, not a count."
+    },
+    {
+      "id": "layout.request-full",
+      "element": "layout.tmpl request-long whole sentence for assistive technology",
+      "reason": "The whole request sentence beside a LONG banner sentence: the agent's name and exact target, not a count."
+    },
+    {
+      "id": "layout.request-long",
+      "element": "layout.tmpl request-long cut sentence",
+      "reason": "The request sentence with its target cut in the middle; its digits are part of the target's identity, not a count."
+    },
+    {
+      "id": "layout.review-request",
+      "element": "layout.tmpl ask-review data-number-exclude-aria-label",
+      "reason": "Review request's accessible name: the whole request sentence; its digits are a port, address or path, not a count."
+    },
+    {
+      "id": "approvals.lost-phone-clock",
+      "element": "approvals.tmpl lost request phone clock",
+      "reason": "Age of a single recorded request, not a count of requests."
+    },
+    {
+      "id": "event.ancestor-unrecorded-identity",
+      "element": "evfacts.tmpl unrecorded ancestor PID",
+      "reason": "The PID identity of an unrecorded ancestor; the zero-program explanation has its own source."
+    },
+    {
+      "id": "layout.request-file-title",
+      "element": "layout.tmpl request-target file title",
+      "reason": "The complete path identity, including digits, spoken as a title."
+    },
+    {
+      "id": "layout.request-verbatim-target",
+      "element": "layout.tmpl request-target host or command",
+      "reason": "One complete requested host or command identity; its digits are not an activity count."
+    },
+    {
+      "id": "run.paused-clock",
+      "element": "run.tmpl pause status run.paused-clock",
+      "reason": "A single pause clock time or recorded line identity, not a quantity of actions."
+    },
+    {
+      "id": "run.sofar-clock-1",
+      "element": "run.tmpl least privilege so-far note run.sofar-clock-1",
+      "reason": "A single clock time the run's newest line carries, not a quantity of actions."
+    },
+    {
+      "id": "run.sofar-clock-2",
+      "element": "run.tmpl learn proposal so-far note run.sofar-clock-2",
+      "reason": "A single clock time the run's newest line carries, not a quantity of actions."
+    },
+    {
+      "id": "run.pause-request-clock-1",
+      "element": "run.tmpl pause status run.pause-request-clock-1",
+      "reason": "A single pause clock time or recorded line identity, not a quantity of actions."
+    },
+    {
+      "id": "run.pause-request-clock-2",
+      "element": "run.tmpl pause status run.pause-request-clock-2",
+      "reason": "A single pause clock time or recorded line identity, not a quantity of actions."
+    },
+    {
+      "id": "run.pause-position-1",
+      "element": "run.tmpl pause status run.pause-position-1",
+      "reason": "A single pause clock time or recorded line identity, not a quantity of actions."
+    },
+    {
+      "id": "run.pause-position-2",
+      "element": "run.tmpl pause status run.pause-position-2",
+      "reason": "A single pause clock time or recorded line identity, not a quantity of actions."
+    },
+    {
+      "id": "run.pause-position-3",
+      "element": "run.tmpl pause status run.pause-position-3",
+      "reason": "A single pause clock time or recorded line identity, not a quantity of actions."
+    },
+    {
+      "id": "logs.mirrored-line",
+      "element": "Repeated-by link line position",
+      "reason": "Recorded line position identifies the mirrored refusal, not a count."
+    },
+    {
+      "id": "rules.baseline-state",
+      "element": "rules.tmpl:21 data-number-exclude",
+      "reason": "The machine baseline's own state sentence from the configuration layers, not a count of retained events."
+    },
+    {
+      "id": "rules.compile-says",
+      "element": "rules.tmpl:55 data-number-exclude",
+      "reason": "The compiler's diagnostics for the contract as written, with their file, line and column positions."
+    },
+    {
+      "id": "rules.compile-diagnostics",
+      "element": "rules.tmpl:134 data-number-exclude",
+      "reason": "The compiler's diagnostics for the run's contract copy, with their positions."
+    },
+    {
+      "id": "rules.contract-error",
+      "element": "rules.tmpl:133 data-number-exclude",
+      "reason": "The load or compile refusal for this contract, with its file positions and versions."
+    },
+    {
+      "id": "run.line-refusal",
+      "element": "run.tmpl:13 data-number-exclude",
+      "reason": "The decoder's refusal of one record line, with its byte offset; digits are positions in the file."
+    },
+    {
+      "id": "run.read-refusal",
+      "element": "run.tmpl:13 data-number-exclude",
+      "reason": "The reader's refusal while rereading the record, with its byte offset; digits are positions in the file."
+    },
+    {
+      "id": "editor.field-key",
+      "element": "builder-parts.tmpl:4 data-number-exclude",
+      "reason": "A contract field's key as the schema spells it."
+    },
+    {
+      "id": "editor.field-meaning",
+      "element": "builder-parts.tmpl:4 data-number-exclude",
+      "reason": "The schema's fixed definition of one contract field: its limits and examples are the format's own, not retained-event counts."
+    },
+    {
+      "id": "rules-new.from-nothing",
+      "element": "rules-new.tmpl:21 data-number-exclude",
+      "reason": "The name of the blank starting point, not an absence claim about the record."
+    },
+    {
+      "id": "editor.draft-empty",
+      "element": "rules-new.tmpl:45 data-number-exclude",
+      "reason": "States that the unsaved draft lists no grants beyond its fields; the draft is the form itself, not a count read from the record."
+    },
+    {
+      "id": "editor.fixed-limit",
+      "element": "rules-new.tmpl:46 data-number-exclude",
+      "reason": "The fixed two-hour option's label; its number is the limit the contract would carry, not a measured count."
+    },
+    {
+      "id": "editor.compiler-output",
+      "element": "rules-new.tmpl:51 data-number-exclude",
+      "reason": "The compiler's diagnostics for the draft, with their file, line and column positions."
+    },
+    {
+      "id": "editor.limit-placeholder",
+      "element": "rules-new.tmpl:46 data-number-exclude-placeholder",
+      "reason": "A schema example duration for the custom time limit."
+    },
+    {
+      "id": "editor.builder-yaml",
+      "element": "rules-new.tmpl:44 data-number-exclude",
+      "reason": "The exact contract YAML under edit. Digits are configuration values, not claims about retained events."
+    },
+    {
+      "id": "editor.hidden-yaml",
+      "element": "rules-change.tmpl:34 data-number-exclude",
+      "reason": "The exact contract YAML the Simple view carries to Check and Save. Digits are configuration values, not claims about retained events."
+    },
+    {
+      "id": "editor.yaml-preview",
+      "element": "rules-change.tmpl:34 data-number-exclude",
+      "reason": "The exact contract YAML shown beside the Simple choices. Digits are configuration values, not claims about retained events."
+    },
+    {
+      "id": "rules.general-note",
+      "element": "rules.tmpl:14 data-number-exclude",
+      "reason": "The general contract note: what the loader found about the selected source."
+    },
+    {
+      "id": "rules.general-scope",
+      "element": "rules.tmpl:14 data-number-exclude",
+      "reason": "The scope sentence naming whose home or which fixed source the general contract reads."
+    },
+    {
+      "id": "rules.general-name",
+      "element": "rules.tmpl:14 data-number-exclude",
+      "reason": "The general contract's own name."
+    },
+    {
+      "id": "rules.general-hash",
+      "element": "rules.tmpl:14 data-number-exclude",
+      "reason": "The canonical hash of the general contract, a digest and not a count."
+    },
+    {
+      "id": "rules.general-source",
+      "element": "rules.tmpl:14 data-number-exclude",
+      "reason": "One general-contract source layer, its file path and state."
+    },
+    {
+      "id": "rules.general-reason",
+      "element": "rules.tmpl:14 data-number-exclude",
+      "reason": "The reader's sentence about why one source could not be used."
+    },
+    {
+      "id": "rules.general-sha",
+      "element": "rules.tmpl:14 data-number-exclude",
+      "reason": "The SHA-256 digest of one source file, not a count."
+    },
+    {
+      "id": "rules.general-owner",
+      "element": "rules.tmpl:14 data-number-exclude",
+      "reason": "The owner uid, mode and resolved path of one source file: file identities, not counts."
+    },
+    {
+      "id": "rules.general-walk",
+      "element": "rules.tmpl:14 data-number-exclude",
+      "reason": "One step of the path walk that identified a source file."
+    },
+    {
+      "id": "rules.general-profile",
+      "element": "rules.tmpl:14 data-number-exclude",
+      "reason": "A profile's name, kind and digest."
+    },
+    {
+      "id": "rules.general-diag",
+      "element": "rules.tmpl:14 data-number-exclude",
+      "reason": "One diagnostic of the general contract's source inspection."
+    },
+    {
+      "id": "rules.general-resolved",
+      "element": "rules.tmpl/rules-new.tmpl data-number-exclude",
+      "reason": "The resolved path of one source file."
+    },
+    {
+      "id": "rules.general-profile-sha",
+      "element": "rules.tmpl/rules-new.tmpl data-number-exclude",
+      "reason": "A profile's SHA-256 digest, not a count."
+    },
+    {
+      "id": "editor.draft-yaml",
+      "element": "rules.tmpl/rules-new.tmpl data-number-exclude",
+      "reason": "The exact reviewed contract YAML the draft carries to Save. Digits are configuration values, not claims about retained events."
+    },
+    {
+      "id": "editor.editor-yaml",
+      "element": "rules.tmpl/rules-new.tmpl data-number-exclude",
+      "reason": "The exact contract YAML the Simple view carries to Check and Save. Digits are configuration values, not claims about retained events."
+    },
+    {
+      "id": "rules.general-sha-label",
+      "element": "rules.tmpl data-number-exclude",
+      "reason": "The label naming the digest algorithm, not a count."
+    },
+    {
+      "id": "logs.literal-12",
+      "element": "logs.tmpl:105 data-number-exclude",
+      "reason": "A literal query-syntax example and its explanation; digits are a sample model step number."
+    },
+    {
+      "id": "logs.literal-13",
+      "element": "logs.tmpl:114 data-number-exclude",
+      "reason": "The explanation of a literal query-syntax example (the model-step term); it names the lines tied to a step or to none, and states no count."
+    }
+  ]
+}

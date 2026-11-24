@@ -16,13 +16,18 @@ import (
 // TestOneProfileSourceConstructor fails for a load site that builds its own, and
 // TestProfileSourcesIsTheSharedChain for a source registered in internal/cli's profileSources instead of here. A
 // built-in source must not import the engine (.golangci.yml linked-into-control-never-imports-engine).
-func Chain(m *config.Machine) agent.ProfileSource {
+// An explicit caller fixes the profile trust uid before crossing a helper boundary.
+func Chain(m *config.Machine, caller ...config.CallerContext) agent.ProfileSource {
 	c := &agent.ProfileChain{}
 	c.WithBuiltin(presets.Source{})
 	root := ""
 	if m != nil {
 		root = m.Profiles.Value
 	}
-	c.WithDir(Dir{Root: root})
+	d := Dir{Root: root}
+	if len(caller) > 0 {
+		d.UID = &caller[0].UID
+	}
+	c.WithDir(d)
 	return c
 }

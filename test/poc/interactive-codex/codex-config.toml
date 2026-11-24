@@ -17,7 +17,7 @@ model_catalog_json = "@ROOT@/codex-user/models.json"
 
 # Codex's own sandbox (bubblewrap) cannot start inside tego's Landlock domain: left on, every command the model asks for
 # fails with "error building bubblewrap command: Permission denied (os error 13)", exit 1, and never reaches the shell.
-# Tego is the cage, so Codex's is off, and nothing asks a person on Codex's side: the contract's `ask` is the approval.
+# Tego enforces the contract, so Codex's is off, and nothing asks a person on Codex's side: the contract's `ask` is the approval.
 # The command-line equivalents, measured: `--dangerously-bypass-approvals-and-sandbox`, or `-s danger-full-access -a never`
 # (`codex exec` takes `-s danger-full-access` alone: its approval policy is never already, and it refuses `-a`).
 sandbox_mode = "danger-full-access"

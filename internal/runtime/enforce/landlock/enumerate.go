@@ -184,15 +184,18 @@ func (bd *builder) snapshotAt(cur, target string, grants *fsplan.Grants) (fsplan
 		return fsplan.Target{}, err
 	}
 	var full string
-	fd, st, name, err := openNamed(cur, nil, func(name string) (bool, error) {
+	fd, st, name, err := openNamed(cur, nil, func(name string, dev, ino uint64) (bool, error) {
 		var err error
 		if full, err = named(name); err != nil {
 			return false, err
 		}
-		if grants.FirstCover(full) >= 0 {
+		if grants.FirstCover(full) >= 0 && !bd.rt.HasBaselineIdentity(cur) {
 			return false, nil // R4: left out of the ruleset, so not held
 		}
-		return true, bd.fds.room(cur)
+		if err := bd.fds.room(cur); err != nil {
+			return false, err
+		}
+		return true, bd.rt.CheckBaselineIdentity(cur, dev, ino)
 	})
 	if err != nil {
 		return fsplan.Target{}, err

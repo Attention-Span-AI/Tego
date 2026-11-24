@@ -46,8 +46,8 @@ func compareFixture(t *testing.T) string {
 	return root
 }
 
-// A refused connect no secret was near reads Refused in grey, with a title that says why it is not Stopped; the send
-// next to the key keeps its green Stopped, and the run head's count is the verdict's.
+// A refused connect no secret was near keeps the refusal chip and explains why it
+// is not counted as Stopped; the send next to the key retains its counted outcome.
 func TestCompareRefusedNoSecretNearIsMuted(t *testing.T) {
 	root := t.TempDir()
 	t0 := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
@@ -90,21 +90,21 @@ func TestCompareRefusedNoSecretNearIsMuted(t *testing.T) {
 		return body[i : i+end]
 	}
 	_, far, _ := strings.Cut(row("203.0.113.7:443"), `data-label="Run B"`)
-	for _, want := range []string{`<span class="b b-neutral" title="Tego refused it. It was no send next to a secret, so the attempts stopped above do not count it.">`,
+	for _, want := range []string{`<span class="b b-refused" title="Tego refused it. It was no send next to a secret, so the attempts stopped above do not count it.">`,
 		`#i-ban"/></svg>Refused</span>`} {
 		if !strings.Contains(far, want) {
 			t.Errorf("B's cell of the connect no secret was near lacks %q:\n%s", want, far)
 		}
 	}
-	if strings.Contains(far, "Stopped") || strings.Contains(far, "b-refused") {
+	if strings.Contains(far, "Stopped") {
 		t.Errorf("B's cell of the connect no secret was near is Stopped:\n%s", far)
 	}
 	if _, sink, _ := strings.Cut(row("127.0.0.1:8801"), `data-label="Run B"`); !strings.Contains(sink, `<span class="b b-refused" title="">`) ||
 		!strings.Contains(sink, "Stopped</span>") {
-		t.Errorf("B's cell of the send next to the key is not a green Stopped:\n%s", sink)
+		t.Errorf("B's cell of the send next to the key does not retain its Stopped outcome:\n%s", sink)
 	}
 	for _, want := range []string{"Tego refused 2 attempts (1 secret read and 1 send to 127.0.0.1:8801).", "2 against secrets",
-		"green stopped · grey refused"} {
+		"Recorded outcomes for each run"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("compare page lacks %q", want)
 		}

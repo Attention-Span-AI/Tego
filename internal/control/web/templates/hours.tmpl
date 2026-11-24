@@ -1,0 +1,25 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{/* Refusals by hour (hours.go, C111): one bar for each local hour of the last day or week, from the same reader as
+     the Overview's "refused today". The chart is for the eye (hidden from the accessibility tree, like every svg);
+     the list under it is the same hours as links, in order, for the keyboard and a screen reader. Every number is a
+     quantity of the "daily" source, so a count that is a lower bound says "at least". */}}
+{{define "content"}}<link rel="stylesheet" href="/static/hours.css">{{with .Data}}{{$d := .}}<div class="hours-page">
+<div class="head"><div><nav class="crumbs" aria-label="Breadcrumb"><a class="link" href="/detections">Detections</a><span aria-hidden="true">/</span><span>Refusals by hour</span></nav>
+{{if $.Tour}}<h2>{{else}}<h1>{{end}}Refusals by hour{{if $.Tour}}</h2>{{else}}</h1>{{end}}<p class="lede">When actions were refused, hour by hour, in this computer's time.</p></div></div>
+<nav class="chips hr-span" aria-label="Period">{{range .Spans}}<a class="chip" href="/refusals?span={{.Key}}"{{if .Current}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</nav>
+{{if not .Total}}<section class="panel" aria-labelledby="h-hr-none"><div class="empty"><div class="glyph">{{template "i" "i-check"}}</div><h2 id="h-hr-none">{{if $unknown := unknownCount $.Numbers.Daily "Refused actions"}}{{$unknown}}{{else}}{{template "quantity" (quantityZero "hours.total" "Nothing was refused in this period" $.Numbers)}}{{end}}</h2><p>Actions Tego refuses a run under a contract show here, by the hour they happened. <a class="link" href="/detections">Detections</a></p></div></section>
+{{else}}
+<section class="tiles hr-tiles" aria-label="Summary">
+<div class="tile"><span class="label">{{template "i" "i-ban"}}Refused</span><span class="value"><a href="{{.LogsHref}}" aria-label="{{quantityText "hours.total" .Total $.Numbers}} refused in this period, open Logs" data-number-aria-label="hours.total">{{template "quantity" (quantity "hours.total" .Total $.Numbers)}}</a></span><span class="meta"><span data-number="hours.active">{{template "quantity" (quantity "hours.active" .Active $.Numbers)}} {{plural .Active "hour" "hours"}} with a refusal</span></span></div>
+<div class="tile"><span class="label">{{template "i" "i-activity"}}Busiest hour</span><span class="value"><a href="{{.PeakBar.Href}}" aria-label="{{quantityText "hours.peak" .Peak $.Numbers}} refused in the busiest hour, open Logs" data-number-aria-label="hours.peak">{{template "quantity" (quantity "hours.peak" .Peak $.Numbers)}}</a></span><span class="meta"><time datetime="{{iso .PeakBar.Start}}" title="{{stamp .PeakBar.Start}}" data-number-exclude="hours.clock-1">{{hourWords .PeakBar.Start $d.Now}}</time></span></div>
+</section>
+<figure class="panel ch-fig hr-fig"><figcaption class="ch-cap"><span class="ch-h">Refused each hour</span><span class="ch-n">Tallest bar {{template "quantity" (quantity "hours.peak" .Peak $.Numbers)}}</span></figcaption>
+{{template "chart" .Chart}}
+<div class="hr-axis" aria-hidden="true"><time datetime="{{iso .From}}" data-number-exclude="hours.clock-2">{{hourWords .From $d.Now}}</time><span>now</span></div></figure>
+{{end}}
+{{if .Lower}}<p class="soft hr-note">{{if .Unreadable}}Some record lines could not be read.{{else if .Records}}Retained event windows omit part of this period.{{else}}Some runs are omitted from this snapshot.{{end}} Open complete records:{{range .Records}} <a class="link" href="{{.URL}}" data-number-exclude="hours.agent-1">{{.Label}}</a>{{end}}{{if not .Records}} <a class="link" href="/runs">All runs</a>{{end}}.</p>{{end}}
+{{if .Total}}<section class="panel hr-list" aria-labelledby="h-hr-list"><div class="panel-head"><h2 id="h-hr-list">Hours with refusals</h2><a class="link" href="{{.LogsHref}}">All in Logs</a></div>
+<ul class="list hr-rows">{{range .Rows}}{{template "hourrow" (hourRowOf . $d.Now $.Numbers)}}{{end}}</ul>
+{{if .More}}<details class="hr-more"><summary>Older hours</summary><ul class="list hr-rows">{{range .More}}{{template "hourrow" (hourRowOf . $d.Now $.Numbers)}}{{end}}</ul></details>{{end}}</section>{{end}}
+</div>{{end}}{{end}}
+{{define "hourrow"}}<li><a class="hr-when" href="{{.Bar.Href}}"><time datetime="{{iso .Bar.Start}}" title="{{stamp .Bar.Start}}" data-number-exclude="hours.clock-3">{{hourWords .Bar.Start .Now}}</time></a><span class="hr-n">{{template "quantity" (quantity "hours.row" .Bar.N .Numbers)}}</span> <span class="soft">refused</span></li>{{end}}

@@ -96,6 +96,11 @@ func TestTheNoManagerFixOpensTheShellAsThatUser(t *testing.T) {
 		if strings.Contains(fix, "opened with XDG_RUNTIME_DIR") {
 			t.Errorf("uid %d: the fix names a command that opens the reader's own scope: %q", uid, fix)
 		}
+		// Typed inside a shell sudo su opened, sudo -u fails ("is not in the sudoers file", acceptance 4): the words
+		// say how to come back.
+		if !strings.Contains(fix, "not one sudo or su opened; if you are in one, type exit first") {
+			t.Errorf("uid %d: the fix does not say to type exit in a shell sudo or su opened: %q", uid, fix)
+		}
 	}
 }
 
@@ -146,12 +151,13 @@ func TestThePlacementFixOpensTheShellAsThatUserForAnotherReader(t *testing.T) {
 		t.Fatal(err)
 	}
 	session := []byte("0::/user.slice/user-1000.slice/session-3.scope\n")
-	prevName, prevReader := lookupName, readByAnother
+	prevName, prevReader, prevReach := lookupName, readByAnother, managerReachable
 	lookupName = func(uid int) (string, bool) {
 		name, ok := map[int]string{os.Getuid(): "svc", 1002: "svc", 1003: "#0", 1004: "+x"}[uid]
 		return name, ok
 	}
-	t.Cleanup(func() { lookupName, readByAnother = prevName, prevReader })
+	managerReachable = func(int) bool { return true }
+	t.Cleanup(func() { lookupName, readByAnother, managerReachable = prevName, prevReader, prevReach })
 
 	const bare = "open one with systemd-run --user --scope bash"
 	asSvc := "sudo -u svc XDG_RUNTIME_DIR=/run/user/" + strconv.Itoa(os.Getuid()) + " systemd-run --user --scope bash"
@@ -165,7 +171,7 @@ func TestThePlacementFixOpensTheShellAsThatUserForAnotherReader(t *testing.T) {
 		// doctor prints Remedy after "fix: " (detectFailure); run, watch and test print Error().
 		for _, said := range []string{de.Remedy, err.Error()} {
 			if other && (strings.Contains(said, bare) || !strings.Contains(said, asSvc) ||
-				!strings.Contains(said, "from your own login shell, not one sudo or su opened")) {
+				!strings.Contains(said, "from your own login shell, not one sudo or su opened (if you are in one, type exit first)")) {
 				t.Errorf("read by another user: %q, want %q from your own login shell and not %q", said, asSvc, bare)
 			}
 			if !other && (!strings.Contains(said, bare) || strings.Contains(said, "sudo -u")) {
@@ -178,5 +184,44 @@ func TestThePlacementFixOpensTheShellAsThatUserForAnotherReader(t *testing.T) {
 		if got := PlacementFix(uid, true); !strings.Contains(got, want) {
 			t.Errorf("uid %d: %q, want %q", uid, got, want)
 		}
+	}
+}
+
+// TestThePlacementFixNamesNoCommandWhenTheManagerKeepsNoSocket: the user manager runs (Detect found
+// user@<uid>.service) but the user's logind folder holds no socket of it, so the sudo -u command the fix: line named
+// fails from the administrator's shell (systemd-run --user connects through that folder). The next: line of tego setup,
+// run, watch and test named no command there, and this fix: line still named one (integration pass 5, 2026-11-11, read
+// not run). The remedy now says why and names none; with a socket it names the command as before, and for the user's
+// own shell it is unchanged.
+func TestThePlacementFixNamesNoCommandWhenTheManagerKeepsNoSocket(t *testing.T) {
+	mount := t.TempDir()
+	root := filepath.Join(mount, "user.slice/user-1002.slice/user@1002.service")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	session := []byte("0::/user.slice/user-1000.slice/session-3.scope\n")
+	prevName, prevReader, prevReach := lookupName, readByAnother, managerReachable
+	lookupName = func(int) (string, bool) { return "svc", true }
+	t.Cleanup(func() { lookupName, readByAnother, managerReachable = prevName, prevReader, prevReach })
+	uid := os.Getuid()
+	remedy := func(other, reachable bool) string {
+		readByAnother, managerReachable = func() bool { return other }, func(int) bool { return reachable }
+		var de *DetectError
+		if err := canPlace(mount, session, root, placementRemedy); !errors.As(err, &de) || !errors.Is(err, ErrBesideSubtree) {
+			t.Fatalf("canPlace = %v, want the placement refusal", err)
+		}
+		return de.Remedy
+	}
+	got := remedy(true, false)
+	if strings.Contains(got, "systemd-run --user --scope") || strings.Contains(got, "sudo -u") ||
+		!strings.Contains(got, "keeps no socket under /run/user/"+strconv.Itoa(uid)) || !strings.Contains(got, "no command opens a shell in it") {
+		t.Errorf("no socket, read by another user: %q", got)
+	}
+	if got := remedy(true, true); !strings.Contains(got, "sudo -u svc XDG_RUNTIME_DIR=/run/user/"+strconv.Itoa(uid)+" systemd-run --user --scope bash") {
+		t.Errorf("a socket, read by another user: %q", got)
+	}
+	// The user's own shell names the bare command whatever the folder holds: its XDG_RUNTIME_DIR is its own.
+	if got := remedy(false, false); !strings.Contains(got, "open one with systemd-run --user --scope bash") || strings.Contains(got, "sudo -u") {
+		t.Errorf("no socket, read by the user: %q", got)
 	}
 }

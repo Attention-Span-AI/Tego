@@ -66,9 +66,9 @@ func TestVerdictSaysReadyOrNotAndForWhom(t *testing.T) {
 
 // A login over SSH or on a console runs beside its user manager's cgroup: D3's placement refusal is then all tier
 // landlock misses, and a shell opened inside that cgroup gets the tier (Report.OutsideUserManager). Neither the
-// Not ready line nor the tier line may say the shell "can only record": tego watch is placed in the same cgroup and
-// fails too. Any other missing check, root, or a ceiling above tier landlock
-// is not this case.
+// Not ready line nor the tier line may say the shell "can only record": placement also prevents recording there.
+// A run command can attempt a scope handoff; doctor describes only the shell it checked. Any other missing check,
+// root, or a ceiling above tier landlock is not this case.
 func TestOutsideUserManagerIsThePlacementAlone(t *testing.T) {
 	beside := func(st *probeState) {
 		st.root = false
@@ -100,8 +100,8 @@ func TestOutsideUserManagerIsThePlacementAlone(t *testing.T) {
 		tier    string
 	}{
 		{"beside the user manager", beside, config.Builtin(), true,
-			"Not ready: this shell is outside your user manager's cgroup, so tego starts no run from it, not even tego watch.",
-			"tier: none (this shell is outside your user manager's cgroup, so tego starts no run from it)"},
+			"Not ready: this shell is outside your user manager's cgroup; run, watch and test can try a user scope.",
+			"tier: none in this shell (run commands can try a user scope)"},
 		{"beside it, under a landlock ceiling", beside, pinned("landlock"), true, "", ""},
 		{"beside it, under a cgroup ceiling", beside, pinned("cgroup"), false, "", ""},
 		{"beside it, with no Landlock either", func(st *probeState) {

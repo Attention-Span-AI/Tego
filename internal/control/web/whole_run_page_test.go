@@ -151,3 +151,23 @@ func TestProcsHeldOnALiveRun(t *testing.T) {
 		t.Error("another ledger root's run of the same id shared the held tab")
 	}
 }
+
+func TestRoutineSentenceNamesLiveBlockException(t *testing.T) {
+	root, lines := noteFixture(t)
+	lines = append(lines[:4], line(noteRun, "codex", 4, time.Now(), "refused", `"rule":"held-unsupported","reason":"fs-gate","op":"open","target":"/dev/tty"`), lines[4])
+	if err := os.WriteFile(filepath.Join(root, noteRun, "events.jsonl"), []byte(strings.Join(lines, "")), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s := newServer(t, root)
+	c := login(t, s)
+	body := get(t, s, c, "/runs/"+noteRun+"/refusals")
+	if !strings.Contains(body, "no live network block in this run named that host") || !strings.Contains(body, "restored live fence") {
+		t.Fatal("Routine sentence omits the live-block exception")
+	}
+}
+
+func TestRoutineSentenceNamesRestoredFenceException(t *testing.T) {
+	if !strings.Contains(ledgerview.RoutineWords, "restored live fence") {
+		t.Fatal("routine explanation omits restored live fences")
+	}
+}

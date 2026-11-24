@@ -57,7 +57,7 @@ func jsonKeys(typ reflect.Type) (all, required []string) {
 func TestEntryFieldsAreTheListedOnes(t *testing.T) {
 	entry, _ := jsonKeys(reflect.TypeFor[Entry]())
 	if want := []string{"seq", "ts", "pid", "op", "target", "reason", "rule", "text", "mechanism", "command_rule",
-		"command_match"}; !slices.Equal(entry, want) {
+		"command_match", "owners"}; !slices.Equal(entry, want) {
 		t.Errorf("Entry's keys %v, want %v", entry, want)
 	}
 	file, _ := jsonKeys(reflect.TypeFor[File]())
@@ -353,5 +353,48 @@ func TestHookInstructionsAreInstructionsAndTheNote(t *testing.T) {
 	}
 	if m := commandLike.FindString(HookNote); m != "" {
 		t.Errorf("HookNote reads as a command (%q)", m)
+	}
+}
+
+// TestOwnersAreBoundedAndWhole: an owners string longer than MaxOwnersBytes is cut at an identity boundary, one that
+// fits is kept, and Nearest matches whole identities only.
+func TestOwnersAreBoundedAndWhole(t *testing.T) {
+	var ids []string
+	for i := range 40 {
+		ids = append(ids, fmt.Sprintf("%d:%d", 1000+i, 123456789012+i))
+	}
+	long := strings.Join(ids, ",")
+	r := refusals(1)
+	r[0].Owners = long
+	b, err := Encode(testRun, 1, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := Decode(bytes.NewReader(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := f.Recent[0].Owners
+	if len(got) > MaxOwnersBytes || !strings.HasPrefix(long, got) || long[len(got)] != ',' {
+		t.Errorf("owners %q (%d bytes), want a whole-identity prefix within %d", got, len(got), MaxOwnersBytes)
+	}
+	e := Entry{Owners: "30:3,20:2,100:10"}
+	// Nearest is the first owner, nearest the refused process first, that is a recorded harness; whole identities only.
+	for _, tc := range []struct {
+		recorded []string
+		want     string
+	}{
+		{[]string{"100:10"}, "100:10"},
+		{[]string{"100:10", "20:2"}, "20:2"},
+		{[]string{"100:10", "20:2", "30:3"}, "30:3"},
+		{[]string{"00:10", "10", "", "20:2,"}, ""},
+		{nil, ""},
+	} {
+		if got := e.Nearest(tc.recorded); got != tc.want {
+			t.Errorf("Nearest(%v) = %q, want %q", tc.recorded, got, tc.want)
+		}
+	}
+	if (Entry{}).Nearest([]string{"", "30:3"}) != "" {
+		t.Error("an entry with no owners has a nearest harness")
 	}
 }

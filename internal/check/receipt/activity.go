@@ -16,18 +16,7 @@ import (
 // it read. A watched run refuses nothing, so without them its receipt said only "Nothing was refused" about a run
 // that read ~/.ssh/id_rsa and connected to an attacker three times.
 
-// Verdicts counts what happened to the tries of one action: recorded only (a watched run decides nothing), allowed
-// by a rule, or refused.
-type Verdicts struct {
-	Observed int `json:"observed"`
-	Allowed  int `json:"allowed"`
-	Refused  int `json:"refused"`
-}
-
-// Total is every try counted.
-func (v Verdicts) Total() int { return v.Observed + v.Allowed + v.Refused }
-
-func (v *Verdicts) add(verdict record.Verdict) {
+func addVerdict(v *Verdicts, verdict record.Verdict) {
 	switch verdict {
 	case record.VerdictObserved:
 		v.Observed++
@@ -38,43 +27,24 @@ func (v *Verdicts) add(verdict record.Verdict) {
 	}
 }
 
-// Connection is one destination the run connected to (ip:port, name:port when the line names the host, or
-// unix:<path>), how many times it tried, and what happened to those tries.
-type Connection struct {
-	Destination string   `json:"destination"`
-	Count       int      `json:"count"`
-	Verdicts    Verdicts `json:"verdicts"`
-}
-
-// Program is one program the run started, by path, and how many times.
-type Program struct {
-	Path  string `json:"path"`
-	Count int    `json:"count"`
-}
-
-// SensitiveRead is one secret-looking or rule-guarded file the run opened or tried to, and what happened to the
-// tries.
-type SensitiveRead struct {
-	Path     string   `json:"path"`
-	Verdicts Verdicts `json:"verdicts"`
-}
-
 // activity is one pass's state for the activity sections. Each map holds at most MaxPaths keys: a key past the cap
 // is counted in its over count, never named, so memory stays bounded whatever the run did.
 type activity struct {
-	conns    map[string]*Verdicts
-	connOver int
-	tries    int // every connection counted, listed or past the cap
-	lookups  int // the routine system lookups, counted apart from conns
-	sockets  int // the socket calls that name no place (syslookup.NoPlace), counted apart from conns
-	progs    map[string]int
-	progOver int
-	sens     map[string]int  // path -> index in Receipt.SensitiveReads
-	fresh    map[string]bool // the paths this run created (foldTempRenames)
+	conns     map[string]*Verdicts
+	connOver  int
+	tries     int            // every connection counted, listed or past the cap
+	sends     int            // of tries, the UDP datagram sends (record.NetOpSend)
+	destSends map[string]int // dst -> its sends, for the destinations conns retained
+	lookups   int            // the routine system lookups, counted apart from conns
+	sockets   int            // the socket calls that name no place (syslookup.NoPlace), counted apart from conns
+	progs     map[string]int
+	progOver  int
+	sens      map[string]int  // path -> index in Receipt.SensitiveReads
+	fresh     map[string]bool // the paths this run created (foldTempRenames)
 }
 
 func newActivity() activity {
-	return activity{conns: map[string]*Verdicts{}, progs: map[string]int{}, sens: map[string]int{}, fresh: map[string]bool{}}
+	return activity{conns: map[string]*Verdicts{}, destSends: map[string]int{}, progs: map[string]int{}, sens: map[string]int{}, fresh: map[string]bool{}}
 }
 
 // destination is the place a net line names: name:port when the line carries a host name other than the address
@@ -98,10 +68,10 @@ func destination(p *payload) string {
 // forwarder already made, a bind opens no connection, and the tego DNS broker's socket is tego's own. An ask line is
 // skipped: the line after the answer carries the verdict. A routine system lookup is counted apart (countConn).
 func (b *builder) connection(e *record.Event, p *payload) {
-	if e.Verdict == record.VerdictAsk || (p.Op != "" && p.Op != "connect") || p.Mechanism == "dns-broker" || p.Dst == "" {
+	if e.Verdict == record.VerdictAsk || (p.Op != "" && p.Op != "connect" && p.Op != record.NetOpSend) || p.Mechanism == "dns-broker" || p.Dst == "" {
 		return
 	}
-	b.countConn(destination(p), e.Rule, e.Verdict)
+	b.countConn(destination(p), e.Rule, e.Verdict, p.Op == record.NetOpSend)
 }
 
 // countConn counts one connection to dst under rule. A routine system lookup (syslookup.Routine: the nscd socket a real
@@ -111,10 +81,17 @@ func (b *builder) connection(e *record.Event, p *payload) {
 // names no place (syslookup.NoPlace: glibc's connect(AF_UNSPEC) resets, the kernel's netlink socket) is no place
 // either: the first watch of a Python fetch named "unspec" its most used place. One that was not refused is counted in
 // RoutineSockets. A refused one is no routine call: the supervisor refuses a send whose address is AF_UNSPEC (R4,
-// since udp_sendmsg sends to the address behind the family word) and a netlink send that is no route query (ADR
-// 0128). Refusals counts and lists it, and, as on the dashboard, it is neither a place nor a routine socket call.
-func (b *builder) countConn(dst, rule string, verdict record.Verdict) {
+// whose interpretation depends on the socket's domain) and a netlink send that is no route query (ADR 0128).
+// Refusals counts and lists it, and, as on the dashboard, it is neither a place nor a routine socket call. An
+// observe run continues that send instead (GAPS C61): an attempted send whose destination and result were not
+// established. It is listed under syslookup.UnreadSendPlace, observed, and never as a disconnect.
+//
+// send says the line is a UDP datagram the run sent (record.NetOpSend), not a connect: it is one more attempt at its
+// destination, and is counted again in DatagramSends and the destination's Sends, so the receipt tells a socket that
+// only connected from one that sent (GAPS C172). A ledger from before the op has none, and counts as a connect.
+func (b *builder) countConn(dst, rule string, verdict record.Verdict, send bool) {
 	a := &b.act
+	dst = syslookup.PlaceOf(dst, rule) // an AF_UNSPEC send attempt stays visible even though its destination is unknown
 	if syslookup.NoPlace(dst, rule) {
 		if verdict != record.VerdictRefused {
 			a.sockets++
@@ -126,6 +103,9 @@ func (b *builder) countConn(dst, rule string, verdict record.Verdict) {
 		return
 	}
 	a.tries++
+	if send {
+		a.sends++
+	}
 	v, ok := a.conns[dst]
 	if !ok {
 		if len(a.conns) >= MaxPaths {
@@ -135,7 +115,10 @@ func (b *builder) countConn(dst, rule string, verdict record.Verdict) {
 		v = &Verdicts{}
 		a.conns[dst] = v
 	}
-	v.add(verdict)
+	addVerdict(v, verdict)
+	if send {
+		a.destSends[dst]++
+	}
 }
 
 // program counts one exec that ran: a refused exec never ran (Refusals lists it), and a failed one ran nothing.
@@ -151,7 +134,12 @@ func (b *builder) program(e *record.Event, p *payload) {
 	a.progs[p.Path]++
 }
 
-// sensitive counts one open of a file that looks like a secret or that a read rule guards. An open for writing only
+// isSensitive applies one path classification to action and refused-only lines.
+func (b *builder) isSensitive(path, rule string) bool {
+	return secretpath.Is(path) || secretpath.GuardRule(rule) || b.sensitivePath != nil && b.sensitivePath(path)
+}
+
+// sensitive counts one open of a secret-looking, rule-guarded or context-protected file. An open for writing only
 // reads nothing; an allowed open that failed (no such file) read nothing either. A refused try counts whatever its
 // flags: the agent asked for the file.
 func (b *builder) sensitive(e *record.Event, p *payload) {
@@ -161,7 +149,7 @@ func (b *builder) sensitive(e *record.Event, p *payload) {
 	if e.Verdict != record.VerdictRefused && (!secretpath.ReadOpen(p.Op, p.Flags, p.Errno, p.Created) || p.SyscallRet < 0) {
 		return
 	}
-	if !secretpath.Is(p.Path) && !secretpath.GuardRule(e.Rule) {
+	if !b.isSensitive(p.Path, e.Rule) {
 		return
 	}
 	b.countRead(p.Path, e.Verdict)
@@ -179,7 +167,7 @@ func (b *builder) countRead(path string, verdict record.Verdict) {
 		a.sens[path] = i
 		rc.SensitiveReads = append(rc.SensitiveReads, SensitiveRead{Path: path})
 	}
-	rc.SensitiveReads[i].Verdicts.add(verdict)
+	addVerdict(&rc.SensitiveReads[i].Verdicts, verdict)
 }
 
 // refusedAlone counts a kind=refused line written with no action line before it (a supervisor's net refusal, a
@@ -188,10 +176,10 @@ func (b *builder) refusedAlone(e *record.Event, p *payload) {
 	switch p.Op {
 	case "net", "connect":
 		if p.Target != "" {
-			b.countConn(p.Target, e.Rule, record.VerdictRefused)
+			b.countConn(p.Target, e.Rule, record.VerdictRefused, false)
 		}
 	case record.FSOpen:
-		if secretpath.Is(p.Target) || secretpath.GuardRule(e.Rule) {
+		if b.isSensitive(p.Target, e.Rule) {
 			b.countRead(p.Target, record.VerdictRefused)
 		}
 	}
@@ -203,7 +191,7 @@ func (b *builder) finishActivity() {
 	rc, a := b.rc, &b.act
 	conns := make([]Connection, 0, len(a.conns))
 	for d, v := range a.conns {
-		conns = append(conns, Connection{Destination: d, Count: v.Total(), Verdicts: *v})
+		conns = append(conns, Connection{Destination: d, Count: v.Total(), Verdicts: *v, Sends: a.destSends[d]})
 	}
 	sort.Slice(conns, func(i, j int) bool {
 		if conns[i].Count != conns[j].Count {
@@ -212,12 +200,12 @@ func (b *builder) finishActivity() {
 		return conns[i].Destination < conns[j].Destination
 	})
 	if len(conns) > MaxTop {
-		rc.ConnectionsMore = len(conns) - MaxTop + a.connOver
+		rc.ConnectionsMore = len(conns) - MaxTop
 		conns = conns[:MaxTop]
-	} else if a.connOver > 0 {
-		rc.ConnectionsMore = a.connOver
 	}
+	rc.ConnectionsOverflowAttempts = a.connOver
 	rc.Connections, rc.ConnectionTries, rc.SystemLookups, rc.RoutineSockets = conns, a.tries, a.lookups, a.sockets
+	rc.DatagramSends = a.sends
 
 	progs := make([]Program, 0, len(a.progs))
 	for p, n := range a.progs {
@@ -230,11 +218,10 @@ func (b *builder) finishActivity() {
 		return progs[i].Path < progs[j].Path
 	})
 	if len(progs) > MaxTop {
-		rc.ProgramsMore = len(progs) - MaxTop + a.progOver
+		rc.ProgramsMore = len(progs) - MaxTop
 		progs = progs[:MaxTop]
-	} else if a.progOver > 0 {
-		rc.ProgramsMore = a.progOver
 	}
+	rc.ProgramsOverflowAttempts = a.progOver
 	rc.Programs = progs
 
 	// A ledger written before the capability line cannot say what was recorded: no note, as for files, and an empty

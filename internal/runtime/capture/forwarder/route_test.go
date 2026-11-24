@@ -46,7 +46,19 @@ func okBody(w http.ResponseWriter) {
 	_, _ = io.WriteString(w, `{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[],"usage":{"input_tokens":1,"output_tokens":1}}`)
 }
 
+// newRouteHarness is the harness of an Adjustable run, whose live routes move its endpoint; newLockedRouteHarness is the
+// one of a Locked run, which is what a run that says nothing is (Options.Adjustable).
 func newRouteHarness(t *testing.T, opts Options) *routeHarness {
+	t.Helper()
+	return newRouteHarnessMode(t, opts, true)
+}
+
+func newLockedRouteHarness(t *testing.T, opts Options) *routeHarness {
+	t.Helper()
+	return newRouteHarnessMode(t, opts, false)
+}
+
+func newRouteHarnessMode(t *testing.T, opts Options, adjustable bool) *routeHarness {
 	t.Helper()
 	rh := &routeHarness{dir: t.TempDir(), seenHost: make(chan string, 16), seenKey: make(chan string, 16)}
 	note := func(r *http.Request) {
@@ -78,6 +90,8 @@ func newRouteHarness(t *testing.T, opts Options) *routeHarness {
 	l.model.Routes = []agent.ModelRoute{{Name: "alt", Host: altHost, Port: altPort},
 		{Name: "plain", Host: plainHost, Port: plainPort, TLS: &off}}
 	rt := newRouter([]agent.ModelEndpoint{l.model}, nil)
+	rt.adjustable = true
+	rt.adjustable = adjustable
 	altTransport := rh.alt.Client().Transport
 	rt.newTransport = func(l *Listener, r modelroute.Route) http.RoundTripper {
 		if r.Name == "alt" {
@@ -281,7 +295,7 @@ func TestRouteOffPathUnchanged(t *testing.T) {
 func TestManagerPollsRouteChanges(t *testing.T) {
 	model := agent.ModelEndpoint{Provider: "anthropic", Host: "api.anthropic.com", Port: 443,
 		Routes: []agent.ModelRoute{{Name: "corp", Host: "proxy.example", Port: 8443}}}
-	m, err := NewManager([]agent.ModelEndpoint{model}, Options{Clock: newClock(), Rand: &countingRand{}})
+	m, err := NewManager([]agent.ModelEndpoint{model}, Options{Clock: newClock(), Rand: &countingRand{}, Adjustable: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,6 +356,7 @@ func TestRouteMovedWhileHeldIsNotSent(t *testing.T) {
 	altHost, altPort := hostPort(t, altUp.Listener.Addr().String())
 	l.model.Routes = []agent.ModelRoute{{Name: "alt", Host: altHost, Port: altPort}}
 	rt := newRouter([]agent.ModelEndpoint{l.model}, nil)
+	rt.adjustable = true
 	rt.newTransport = func(*Listener, modelroute.Route) http.RoundTripper { return altUp.Client().Transport }
 	l.routes = rt
 	rt.bind(dir, testRun.ID, l)
@@ -552,6 +567,7 @@ func TestRouteChangeLineGoesThroughTheEndpointsListener(t *testing.T) {
 	h1.listener.model.Routes = []agent.ModelRoute{{Name: "corp", Host: "proxy.example", Port: 8443}}
 	h2.listener.model.Routes = []agent.ModelRoute{{Name: "corp", Host: "proxy.example", Port: 9443}}
 	rt := newRouter([]agent.ModelEndpoint{h1.listener.model, h2.listener.model}, nil)
+	rt.adjustable = true
 	h1.listener.routes, h2.listener.routes = rt, rt
 	dir := t.TempDir()
 	rt.bind(dir, testRun.ID, h1.listener, h2.listener)
@@ -599,6 +615,7 @@ func TestRouteSetBeforeBindIsRecorded(t *testing.T) {
 		t.Fatal(err)
 	}
 	rt := newRouter([]agent.ModelEndpoint{h.listener.model}, nil)
+	rt.adjustable = true
 	h.listener.routes = rt
 	rt.bind(dir, testRun.ID, h.listener)
 	t.Cleanup(rt.stopAndWait)
@@ -619,6 +636,7 @@ func TestRouteSetBeforeBindIsRecorded(t *testing.T) {
 		t.Fatal(err)
 	}
 	rt2 := newRouter([]agent.ModelEndpoint{other.listener.model}, nil)
+	rt2.adjustable = true
 	other.listener.routes = rt2
 	rt2.bind(quiet, testRun.ID, other.listener)
 	t.Cleanup(rt2.stopAndWait)
@@ -652,6 +670,7 @@ func TestRouteCoalescedRetryAfterASwitchGetsItsOwnApproval(t *testing.T) {
 	altHost, altPort := hostPort(t, altUp.Listener.Addr().String())
 	l.model.Routes = []agent.ModelRoute{{Name: "alt", Host: altHost, Port: altPort}}
 	rt := newRouter([]agent.ModelEndpoint{l.model}, nil)
+	rt.adjustable = true
 	rt.newTransport = func(*Listener, modelroute.Route) http.RoundTripper { return altUp.Client().Transport }
 	l.routes = rt
 	rt.bind(dir, testRun.ID, l)
@@ -720,7 +739,7 @@ func TestRoutedTunnelRefusalIsRecorded(t *testing.T) {
 	host, port := hostPort(t, up.Addr().String())
 	model := agent.ModelEndpoint{Host: host, Port: port, Routes: []agent.ModelRoute{{Name: "corp", Host: "proxy.example", Port: 8443}}}
 	p := compiledProtocols(t, model, &agent.ProxyPolicy{Connect: []string{up.Addr().String()}})
-	m, err := NewManager([]agent.ModelEndpoint{model}, Options{Proxy: p})
+	m, err := NewManager([]agent.ModelEndpoint{model}, Options{Proxy: p, Adjustable: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -864,4 +883,47 @@ type fixedResolver []netip.Addr
 
 func (r fixedResolver) LookupNetIP(context.Context, string, string) ([]netip.Addr, error) {
 	return r, nil
+}
+
+// unreadableGaps are the model-route-unreadable lines the sink holds.
+func unreadableGaps(t *testing.T, s *fakeSink) int {
+	t.Helper()
+	n := 0
+	for _, ev := range s.of(record.KindGap) {
+		if p := payloadOf[record.GapPayload](t, ev); p.Why == record.GapModelRouteUnreadable {
+			if p.What != record.GapEnforce || p.Count != 0 || p.Binary != "" || ev.Source != record.SourceForwarder {
+				t.Errorf("unreadable line %+v %+v", ev, p)
+			}
+			n++
+		}
+	}
+	return n
+}
+
+// TestRouteUnreadableOverlayIsRecorded (GAPS C220): an overlay the forwarder cannot read is a gap line in the record, once
+// per state of the file, and the routes read last stay in force (a refusal never becomes an allow).
+func TestRouteUnreadableOverlayIsRecorded(t *testing.T) {
+	rh := newRouteHarness(t, Options{})
+	rh.set(t, "alt")
+	if code, _ := rh.send(t, nil); code != http.StatusOK || rh.altHits.Load() != 1 {
+		t.Fatalf("alt: %d", code)
+	}
+	if n := unreadableGaps(t, rh.sink); n != 0 {
+		t.Fatalf("%d unreadable lines before anything was unreadable", n)
+	}
+	if err := os.Chmod(filepath.Join(rh.dir, modelroutes.FileName), 0o666); err != nil {
+		t.Fatal(err)
+	}
+	for range 3 { // every request rereads the overlay: the same broken state is one line
+		if code, _ := rh.send(t, nil); code != http.StatusOK {
+			t.Fatalf("after the overlay became untrusted: %d", code)
+		}
+	}
+	if rh.altHits.Load() != 4 || rh.direct.Load() != 0 {
+		t.Fatalf("the last routes did not stay in force: alt %d direct %d", rh.altHits.Load(), rh.direct.Load())
+	}
+	delivered(rh.listener)
+	if n := unreadableGaps(t, rh.sink); n != 1 {
+		t.Fatalf("%d unreadable lines, want 1", n)
+	}
 }

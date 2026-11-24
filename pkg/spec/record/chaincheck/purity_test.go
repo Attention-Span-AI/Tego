@@ -128,6 +128,10 @@ func TestTheClosureReadsNoClockAndMakesNoIO(t *testing.T) {
 					forbidden = member == "Print" || member == "Printf" || member == "Println"
 				case "net":
 					forbidden = member != "SplitHostPort"
+				case "net/netip":
+					// Address values and their parsing only: no lookup, socket or host state. The record's learn
+					// history (minor 31) canonicalizes its endpoints with ParseAddrPort and AddrPortFrom.
+					forbidden = false
 				default:
 					forbidden = strings.HasPrefix(path, "golang.org/x/sys/") || strings.HasPrefix(path, "net/")
 				}

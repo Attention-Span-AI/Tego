@@ -214,6 +214,13 @@ func openAnchor(dir, name string, flags int) (*os.File, error) {
 	return f, nil
 }
 
+// OpenAnchorReader opens the chain anchor read-only through the same directory,
+// link and regular-single-link checks as verification. The caller owns the file
+// and may bound a snapshot read before passing its bytes to chaincheck.
+func OpenAnchorReader(path string) (*os.File, error) {
+	return openAnchor(filepath.Dir(path), filepath.Base(path), unix.O_RDONLY)
+}
+
 // syncDirAt fsyncs the directory open at at, which may be O_PATH, through a readable descriptor of it, strict
 // (a durability path: fsync first, and the close's error is reported). A filesystem that cannot fsync a
 // directory (EINVAL, EROFS) is not a failure, as in syncDirs.

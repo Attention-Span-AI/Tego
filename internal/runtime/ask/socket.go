@@ -13,13 +13,16 @@ import (
 	"os"
 	"sort"
 	"sync"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/askclient"
 	"github.com/attention-span-ai/tego/internal/platform/peer"
+	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/pkg/spec/askproto"
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 const (
@@ -38,19 +41,20 @@ type (
 // those open to reply, so an answer that ends the run (the held operation refused, the agent exiting, the broker
 // closed) is still told to the person who gave it, never EOF.
 type server struct {
-	b         *Broker
-	dir       *os.File
-	listener  *net.UnixListener
-	socket    os.FileInfo
-	ctx       context.Context
-	cancel    context.CancelFunc
-	mu        sync.Mutex
-	closed    bool
-	conns     map[*net.UnixConn]bool
-	wg        sync.WaitGroup
-	done      chan struct{}
-	closeOnce sync.Once
-	closeErr  error
+	b           *Broker
+	packetPIDFD bool
+	dir         *os.File
+	listener    *net.UnixListener
+	socket      os.FileInfo
+	ctx         context.Context
+	cancel      context.CancelFunc
+	mu          sync.Mutex
+	closed      bool
+	conns       map[*net.UnixConn]bool
+	wg          sync.WaitGroup
+	done        chan struct{}
+	closeOnce   sync.Once
+	closeErr    error
 }
 
 func newServer(runDir string, b *Broker) (*server, error) {
@@ -78,6 +82,14 @@ func newServer(runDir string, b *Broker) (*server, error) {
 		cleanup()
 		return nil, errors.Join(err, passErr)
 	}
+	packetPIDFD := false
+	if b.opts.OwnerOnly != nil {
+		packetPIDFD, err = passPidfd(raw)
+		if err != nil {
+			cleanup()
+			return nil, err
+		}
+	}
 	if err = os.Chmod(path, 0600); err != nil {
 		cleanup()
 		return nil, err
@@ -94,7 +106,7 @@ func newServer(runDir string, b *Broker) (*server, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &server{b: b, dir: dir, listener: l, socket: st, ctx: ctx, cancel: cancel, conns: make(map[*net.UnixConn]bool), done: make(chan struct{})}
+	s := &server{b: b, packetPIDFD: packetPIDFD, dir: dir, listener: l, socket: st, ctx: ctx, cancel: cancel, conns: make(map[*net.UnixConn]bool), done: make(chan struct{})}
 	s.wg.Add(1)
 	go s.accept()
 	go func() { s.wg.Wait(); close(s.done) }()
@@ -133,7 +145,7 @@ func identifyPeer(c *net.UnixConn) (Peer, uint64, error) {
 	if err != nil {
 		return Peer{}, 0, err
 	}
-	return Peer{PID: p.PID, UID: uint32(p.UID), Cgroup: p.Cgroup, CgroupNS: p.CgroupNS}, p.StartBootNS, nil
+	return Peer{PID: p.PID, UID: uint32(p.UID), Cgroup: p.Cgroup, CgroupNS: p.CgroupNS, Undumpable: p.Undumpable}, p.StartBootNS, nil
 }
 
 func passCred(c *net.UnixConn) error {
@@ -149,20 +161,43 @@ func passCred(c *net.UnixConn) error {
 	return controlErr
 }
 
+// passPidfd requests the sender handle on each packet on Linux 6.5 and newer.
+// Older kernels retain the start-time-bound pidfd_open receipt fallback.
+func passPidfd(raw syscall.RawConn) (bool, error) {
+	var optionErr error
+	err := raw.Control(func(fd uintptr) {
+		optionErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_PASSPIDFD, 1)
+	})
+	if err != nil {
+		return false, err
+	}
+	if errors.Is(optionErr, unix.ENOPROTOOPT) {
+		return false, nil
+	}
+	return optionErr == nil, optionErr
+}
+
 // Credentials are kernel supplied; connection-time credentials alone cannot
 // authenticate an inherited or passed connected client socket's later writer.
 // The received rights are returned for the caller to close or take; on an
 // error every one is closed already.
 func packetPeer(oob []byte, flags int) (Peer, []int, error) {
+	handles, handleErr := sys.ReceivePidfds(oob)
 	msgs, err := unix.ParseSocketControlMessage(oob)
-	if err != nil {
+	if err != nil || handleErr != nil {
+		for _, h := range handles {
+			_ = h.Close()
+		}
 		closeRights(oobRights(oob))
 		return Peer{}, nil, ErrProtocol
 	}
 	var writer Peer
+	if len(handles) == 1 {
+		writer.packetFD = handles[0]
+	}
 	var rights []int
 	credentials := 0
-	bad := flags&(unix.MSG_TRUNC|unix.MSG_CTRUNC) != 0
+	bad := flags&(unix.MSG_TRUNC|unix.MSG_CTRUNC) != 0 || len(handles) > 1
 	for _, m := range msgs {
 		switch {
 		case m.Header.Level == unix.SOL_SOCKET && m.Header.Type == unix.SCM_RIGHTS:
@@ -171,6 +206,8 @@ func packetPeer(oob []byte, flags int) (Peer, []int, error) {
 			if e != nil {
 				bad = true
 			}
+		case m.Header.Level == unix.SOL_SOCKET && m.Header.Type == unix.SCM_PIDFD:
+			// ReceivePidfds owns this separately from alternate rights.
 		case m.Header.Level == unix.SOL_SOCKET && m.Header.Type == unix.SCM_CREDENTIALS:
 			cred, e := unix.ParseUnixCredentials(&m)
 			if e != nil {
@@ -178,13 +215,16 @@ func packetPeer(oob []byte, flags int) (Peer, []int, error) {
 				continue
 			}
 			credentials++
-			writer = Peer{PID: int(cred.Pid), UID: cred.Uid}
+			writer.PID, writer.UID, writer.GID = int(cred.Pid), cred.Uid, cred.Gid
 		default:
 			bad = true
 		}
 	}
 	if bad || credentials != 1 || writer.PID <= 0 {
 		closeRights(rights)
+		for _, h := range handles {
+			_ = h.Close()
+		}
 		return Peer{}, nil, ErrProtocol
 	}
 	return writer, rights, nil
@@ -218,9 +258,9 @@ func (s *server) handle(c *net.UnixConn) {
 	defer s.wg.Done()
 	defer func() { _ = c.Close(); s.mu.Lock(); delete(s.conns, c); s.mu.Unlock() }()
 	_ = c.SetDeadline(time.Now().Add(clientTimeout))
-	connectionPeer, started, err := identify(c)
+	connectionPeer, started, err := s.identify(c)
 	if err != nil || s.b.authorize(connectionPeer) != nil {
-		s.reply(c, response{Error: ErrUnauthorized.Error(), Code: askproto.CodeUnauthorized})
+		s.refusePeer(c)
 		return
 	}
 	if err = passCred(c); err != nil {
@@ -229,7 +269,7 @@ func (s *server) handle(c *net.UnixConn) {
 	}
 	peerFD, err := unix.PidfdOpen(connectionPeer.PID, 0)
 	if err != nil {
-		s.reply(c, response{Error: ErrUnauthorized.Error(), Code: askproto.CodeUnauthorized})
+		s.refusePeer(c)
 		return
 	}
 	defer func() { _ = unix.Close(peerFD) }()
@@ -243,7 +283,7 @@ func (s *server) handle(c *net.UnixConn) {
 	challenge := hex.EncodeToString(nonce[:])
 	s.reply(c, response{Ready: challenge})
 	buf := make([]byte, maxPacket)
-	oob := make([]byte, unix.CmsgSpace(unix.SizeofUcred)+unix.CmsgSpace(256*4))
+	oob := make([]byte, unix.CmsgSpace(unix.SizeofUcred)+unix.CmsgSpace(256*4)+unix.CmsgSpace(4))
 	n, on, flags, _, err := c.ReadMsgUnix(buf, oob)
 	if err != nil {
 		return
@@ -253,24 +293,48 @@ func (s *server) handle(c *net.UnixConn) {
 		s.reply(c, response{Error: ErrProtocol.Error(), Code: askproto.CodeProtocol})
 		return
 	}
+	defer func() {
+		if writer.packetFD != nil {
+			_ = writer.packetFD.Close()
+		}
+	}()
+	if s.packetPIDFD && writer.packetFD == nil {
+		closeRights(rights)
+		s.refusePeer(c)
+		return
+	}
 	if writer.PID != connectionPeer.PID || !pidfdAlive(peerFD) {
 		closeRights(rights)
-		s.reply(c, response{Error: ErrUnauthorized.Error(), Code: askproto.CodeUnauthorized})
+		s.refusePeer(c)
 		return
 	}
-	// The writer's cgroup is read again now that its packet is in: a process can move between cgroups after its
-	// connect, and the connect's reading is not the writer's. The same process, by its start time, or nothing.
-	now, nowStarted, err := identify(c)
+	// Re-read scope after receiving the packet. This judges current scope, not
+	// send-time scope; only the credentials and process handle bind at the send.
+	// The same process, by its start time, or nothing.
+	now, nowStarted, err := s.identify(c)
 	if err != nil || now.PID != writer.PID || nowStarted != started {
 		closeRights(rights)
-		s.reply(c, response{Error: ErrUnauthorized.Error(), Code: askproto.CodeUnauthorized})
+		s.refusePeer(c)
 		return
 	}
-	writer.Cgroup, writer.CgroupNS = now.Cgroup, now.CgroupNS
+	writer.Cgroup, writer.CgroupNS, writer.Undumpable = now.Cgroup, now.CgroupNS, now.Undumpable
+	writer.StartBootNS, writer.UserNamespace = nowStarted, now.UserNamespace
 	if err = s.b.authorize(writer); err != nil {
 		closeRights(rights)
-		s.reply(c, response{Error: ErrUnauthorized.Error(), Code: askproto.CodeUnauthorized})
+		s.refusePeer(c)
 		return
+	}
+	if s.b.opts.OwnerOnly != nil {
+		fd := writer.packetFD
+		writer.packetFD = nil // openSender takes ownership, including on error.
+		h, err := openSender(writer, fd)
+		if err != nil {
+			closeRights(rights)
+			s.refusePeer(c)
+			return
+		}
+		defer h.close()
+		writer.sender = h
 	}
 	cmd, err := decodeCommand(buf[:n])
 	if err != nil || cmd.Nonce != challenge || !pidfdAlive(peerFD) || (cmd.Alternate != nil) != (len(rights) == 1) || len(rights) > 1 {
@@ -317,6 +381,7 @@ func (s *server) handle(c *net.UnixConn) {
 		ctx, cancel := context.WithTimeout(s.ctx, clientTimeout)
 		defer cancel()
 		var decision Decision
+		writer.Via = cmd.Via
 		decision, err = s.b.answer(ctx, cmd.AskID, *cmd.Approve, cmd.Remember != nil && *cmd.Remember, alternate, writer)
 		if err == nil {
 			w := decision.wire()
@@ -431,13 +496,13 @@ func AlternateFor(ctx context.Context, dir string, expectedPID int, id string, a
 
 // wire is r as the socket carries it: every field but Alternates, which never leaves the run.
 func (r Request) wire() askproto.Request {
-	return askproto.Request{Score: r.Score, GateRule: r.GateRule, AskID: r.AskID, Op: r.Op, Target: r.Target, Target2: r.Target2, Rule: r.Rule,
+	return askproto.Request{LocalApprovalAuthority: r.LocalApprovalAuthority, Score: r.Score, GateRule: r.GateRule, AskID: r.AskID, Op: r.Op, Target: r.Target, Target2: r.Target2, Rule: r.Rule,
 		Hold: r.Hold, PID: r.PID, TID: r.TID}
 }
 
 // requestOf is a request as the socket carried it.
 func requestOf(w askproto.Request) Request {
-	return Request{Score: w.Score, GateRule: w.GateRule, AskID: w.AskID, Op: w.Op, Target: w.Target, Target2: w.Target2, Rule: w.Rule,
+	return Request{LocalApprovalAuthority: w.LocalApprovalAuthority, Score: w.Score, GateRule: w.GateRule, AskID: w.AskID, Op: w.Op, Target: w.Target, Target2: w.Target2, Rule: w.Rule,
 		Hold: w.Hold, PID: w.PID, TID: w.TID}
 }
 
@@ -451,11 +516,41 @@ func summaryOf(w askproto.Summary) Summary {
 
 // wire is d as the socket carries it: every field but File, the descriptor, which never leaves the run.
 func (d Decision) wire() askproto.Decision {
-	return askproto.Decision{AskID: d.AskID, Approved: d.Approved, By: d.By, Reason: d.Reason, AfterS: d.AfterS, Always: d.Always,
+	return askproto.Decision{AnswerAuthority: d.AnswerAuthority, AskID: d.AskID, Approved: d.Approved, By: d.By, Reason: d.Reason, AfterS: d.AfterS, Always: d.Always,
 		Alternate: d.Alternate, AlternateDev: d.AlternateDev, AlternateIno: d.AlternateIno}
 }
 
 func decisionOf(w askproto.Decision) Decision {
-	return Decision{AskID: w.AskID, Approved: w.Approved, By: w.By, Reason: w.Reason, AfterS: w.AfterS, Always: w.Always,
+	return Decision{AnswerAuthority: w.AnswerAuthority, AskID: w.AskID, Approved: w.Approved, By: w.By, Reason: w.Reason, AfterS: w.AfterS, Always: w.Always,
 		Alternate: w.Alternate, AlternateDev: w.AlternateDev, AlternateIno: w.AlternateIno}
+}
+
+// userNamespace reads the peer's kernel namespace identity only in the opt-in profile.
+var userNamespace = func(pid int) (uint64, error) {
+	var st unix.Stat_t
+	if err := unix.Stat(fmt.Sprintf("/proc/%d/ns/user", pid), &st); err != nil {
+		return 0, err
+	}
+	return st.Ino, nil
+}
+
+func (s *server) identify(c *net.UnixConn) (Peer, uint64, error) {
+	p, start, err := identify(c)
+	if err != nil || s.b.opts.OwnerOnly == nil {
+		return p, start, err
+	}
+	p.StartBootNS = start
+	p.UserNamespace, err = userNamespace(p.PID)
+	if err != nil || p.UserNamespace != record.InitialUserNamespace || start == 0 {
+		return Peer{}, 0, askproto.ErrOwnerOnly
+	}
+	return p, start, nil
+}
+
+func (s *server) refusePeer(c *net.UnixConn) {
+	if s.b.opts.OwnerOnly != nil {
+		s.reply(c, response{Error: askproto.ErrOwnerOnly.Error(), Code: askproto.CodeOwnerOnly})
+		return
+	}
+	s.reply(c, response{Error: ErrUnauthorized.Error(), Code: askproto.CodeUnauthorized})
 }

@@ -42,7 +42,7 @@ func askLedger(t *testing.T, lines []*record.Event) (dir, id string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := w.WriteRunStart(record.RunStartPayload{Command: []string{"true"}, Cwd: "/", Tier: "landlock", RecordMinor: record.Minor}); err != nil {
+	if err := w.WriteRunStart(record.RunStartPayload{Command: []string{"true"}, Cwd: "/", Tier: "landlock", RecordMinor: record.MinorLearn}); err != nil {
 		t.Fatal(err)
 	}
 	for _, e := range lines {
@@ -128,7 +128,7 @@ func TestAskOfAWatchRunSaysItTakesNone(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = w.Abandon() })
-	if err := w.WriteRunStart(record.RunStartPayload{Command: []string{"codex"}, Cwd: "/", Tier: "observe", RecordMinor: record.Minor}); err != nil {
+	if err := w.WriteRunStart(record.RunStartPayload{Command: []string{"codex"}, Cwd: "/", Tier: "observe", RecordMinor: record.MinorLearn}); err != nil {
 		t.Fatal(err)
 	}
 	start, err := tegoruntime.StartBootNS(os.Getpid())

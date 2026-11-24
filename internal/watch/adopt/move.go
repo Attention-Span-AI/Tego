@@ -5,6 +5,7 @@ package adopt
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/attention-span-ai/tego/internal/platform/proc"
 	"golang.org/x/sys/unix"
 )
 
@@ -29,6 +31,9 @@ type CgroupFS interface {
 	Freeze(dir string, frozen bool) error
 	// Exists reports whether dir is a cgroup.
 	Exists(dir string) bool
+	// Make creates dir as an empty cgroup (its parent exists): the leaf a release uses where no existing cgroup takes
+	// a process. A dir that is already there is an error that wraps fs.ErrExist.
+	Make(dir string) error
 }
 
 // Liveness tells, without being a process's parent, whether it has exited: a pidfd.
@@ -221,7 +226,13 @@ const releaseRounds = 8
 // Release moves every process with a live thread in dest (absolute; scopeProcs, so one whose leader exited and stayed
 // elsewhere too) to the first of targets (absolute) that takes it. dest is
 // frozen first, so no process in it forks or execs while they leave, and thawed after; a process thaws as it
-// arrives in an unfrozen cgroup. Release never signals a process, and it leaves one no target takes where it is.
+// arrives in an unfrozen cgroup. Release never signals a process.
+//
+// A process no target takes is moved to a new empty cgroup beside the targets, "tego-released-<run>" under the
+// first of them that exists and lets one be made (releaseLeaf): the kernel refuses a process in a cgroup that has
+// controllers on for its children, which every ancestor of a scope the service manager already removed has, and
+// a lone transient scope is removed the moment its only process leaves it. Only when no target takes the process and
+// none lets a leaf be made does it stay where it is, counted in Left.
 //
 // The pid of each process scopeProcs finds (the thread group of a task dest's cgroup.threads lists) is written as root,
 // and a member can still die meanwhile (SIGKILL reaches a frozen process, and with no cgroup.freeze nothing holds the
@@ -236,6 +247,7 @@ func Release(env Env, dest string, targets []string) ReleaseResult {
 		defer func() { _ = env.FS.Freeze(dest, false) }()
 	}
 	from := env.rel(dest)
+	leaf := releaseLeaf(dest)
 	for range releaseRounds {
 		pids, err := scopeProcs(env, dest)
 		if err != nil || len(pids) == 0 {
@@ -243,7 +255,7 @@ func Release(env Env, dest string, targets []string) ReleaseResult {
 		}
 		moved := 0
 		for _, pid := range pids {
-			to, done, misplaced := releaseOne(env, from, pid, targets)
+			to, done, misplaced := releaseOne(env, from, pid, targets, leaf)
 			if to != "" {
 				res.To[to] = append(res.To[to], pid)
 			}
@@ -262,10 +274,19 @@ func Release(env Env, dest string, targets []string) ReleaseResult {
 	return res
 }
 
-// releaseOne moves one pid read from the scope (from, relative) to the first target that takes it, with the checks
-// Release describes. to is where it went ("" when it did not move); done says the pid needs nothing more (moved, gone,
-// or no longer in the scope); misplaced that the write moved another process, which was put back.
-func releaseOne(env Env, from string, pid int, targets []string) (to string, done, misplaced bool) {
+// releaseLeaf is the name of the cgroup a release makes for processes no target takes: the adoption's scope name
+// (adopt-<run>.scope) with the unit parts replaced by tego-released-, so one run's leaves are one name and a second
+// release finds the first's. It has no unit suffix: the service manager owns every name that has one.
+func releaseLeaf(dest string) string {
+	name := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(dest), "adopt-"), ".scope")
+	return "tego-released-" + name
+}
+
+// releaseOne moves one pid read from the scope (from, relative) to the first target that takes it, or else to the
+// leaf under the first target that lets one be made, with the checks Release describes. to is where it went ("" when
+// it did not move); done says the pid needs nothing more (moved, gone, or no longer in the scope); misplaced that
+// the write moved another process, which was put back.
+func releaseOne(env Env, from string, pid int, targets []string, leaf string) (to string, done, misplaced bool) {
 	w, err := env.Live.Watch(pid)
 	if err != nil {
 		return "", true, false // gone: nothing to move
@@ -282,30 +303,50 @@ func releaseOne(env Env, from string, pid int, targets []string) (to string, don
 		if !env.FS.Exists(t) {
 			continue
 		}
-		err := env.FS.Add(t, pid)
-		if errors.Is(err, syscall.ESRCH) {
-			return "", true, false
+		if to, done, misplaced, ok := releaseInto(env, w, st, pid, t); ok {
+			return to, done, misplaced
 		}
-		if err != nil {
+	}
+	for _, t := range targets {
+		if !env.FS.Exists(t) {
 			continue
 		}
-		if !w.Exited() {
-			return t, true, false // alive throughout: the write moved the process held
+		l := filepath.Join(t, leaf)
+		if err := env.FS.Make(l); err != nil && !errors.Is(err, fs.ErrExist) {
+			continue
 		}
-		// It exited around the write. The pid may name a process born since, which the write moved instead.
-		st2, err := env.Proc.Stat(pid)
-		if err != nil || st2.StartTicks == st.StartTicks {
-			return "", true, false
+		if to, done, misplaced, ok := releaseInto(env, w, st, pid, l); ok {
+			return to, done, misplaced
 		}
-		if cg, err := CgroupOf(env.Proc, pid); err == nil && cg == env.rel(t) {
-			if pcg, err := CgroupOf(env.Proc, st2.PPID); err == nil {
-				_ = env.FS.Add(env.abs(pcg), pid)
-			}
-			return "", true, true
-		}
-		return "", true, false
 	}
 	return "", false, false
+}
+
+// releaseInto writes pid into dir and says what became of it; ok false is a write the kernel refused (nothing moved,
+// try another place).
+func releaseInto(env Env, w Watch, st proc.Stat, pid int, dir string) (to string, done, misplaced, ok bool) {
+	err := env.FS.Add(dir, pid)
+	if errors.Is(err, syscall.ESRCH) {
+		return "", true, false, true
+	}
+	if err != nil {
+		return "", false, false, false
+	}
+	if !w.Exited() {
+		return dir, true, false, true // alive throughout: the write moved the process held
+	}
+	// It exited around the write. The pid may name a process born since, which the write moved instead.
+	st2, err := env.Proc.Stat(pid)
+	if err != nil || st2.StartTicks == st.StartTicks {
+		return "", true, false, true
+	}
+	if cg, err := CgroupOf(env.Proc, pid); err == nil && cg == env.rel(dir) {
+		if pcg, err := CgroupOf(env.Proc, st2.PPID); err == nil {
+			_ = env.FS.Add(env.abs(pcg), pid)
+		}
+		return "", true, true, true
+	}
+	return "", true, false, true
 }
 
 // ReleaseTargets are where Release sends an adopted tree back: the cgroup it came from (relative from), then its
@@ -367,6 +408,9 @@ func (Cgroups) Freeze(dir string, frozen bool) error {
 	}
 	return os.WriteFile(filepath.Join(dir, "cgroup.freeze"), []byte(v), 0)
 }
+
+// Make creates the cgroup dir (mkdir(2) on cgroup2 makes it a cgroup).
+func (Cgroups) Make(dir string) error { return os.Mkdir(dir, 0o755) }
 
 // Exists reports whether dir is a directory holding a cgroup.procs.
 func (Cgroups) Exists(dir string) bool {

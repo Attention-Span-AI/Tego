@@ -290,12 +290,15 @@ func TestGCDeletesNothingByAConfigItCannotRead(t *testing.T) {
 				t.Setenv("TEGO_CONFIG", filepath.Join(t.TempDir(), "machine.yaml"))
 			}
 			code, out, errs := gcOut(t, c.args...)
-			if code != identity.ExitError || !strings.Contains(errs, c.why) || !strings.Contains(errs, "[config-untrusted]") ||
+			if code != identity.ExitError || !strings.Contains(errs, c.why) || !strings.Contains(errs, "[config-baseline-unknown]") ||
 				!strings.Contains(errs, "tego gc: nothing was swept or deleted") {
-				t.Errorf("exit %d stderr %q, want 125 [config-untrusted] naming %q and saying nothing was deleted", code, errs, c.why)
+				t.Errorf("exit %d stderr %q, want 125 [config-baseline-unknown] naming %q and saying nothing was deleted", code, errs, c.why)
 			}
-			if out != "" {
-				t.Errorf("stdout %q, want nothing: no pass was made", out)
+			if strings.Count(errs, "tego gc: nothing was swept or deleted") != 1 {
+				t.Errorf("want one clear no-work line: %q", errs)
+			}
+			if out != "" && !strings.Contains(out, "baseline UNKNOWN") {
+				t.Errorf("stdout %q, want unknown status: no pass was made", out)
 			}
 			if !exists(t, root, old) {
 				t.Errorf("gc deleted the run by a config it could not read")
@@ -313,7 +316,7 @@ func TestGCDryRunGivesNoModeBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, out, errs := gcOut(t, "--dry-run")
-	if code != identity.ExitError || !strings.Contains(errs, "permission denied") || !strings.Contains(errs, "--dry-run gives no mode back") {
+	if code != identity.ExitError || !strings.Contains(errs, "permission denied") || !strings.Contains(errs, "baseline UNKNOWN") {
 		t.Errorf("exit %d out %q stderr %q, want 125 naming the layer it could not read and how to give its mode back", code, out, errs)
 	}
 	if st, err := os.Lstat(layer); err != nil || st.Mode().Perm() != 0 {
@@ -404,8 +407,8 @@ func TestGCPrunesTheRuleChangeJournal(t *testing.T) {
 }
 
 // TestGCJournalNotPrunedWhenALayerWasSkipped: a machine config layer gc cannot read whole may set the retention and the
-// ledger root, so gc refuses with 125 and removes nothing, runs or journal, with or without --keep (GAPS C52's rule);
-// the rule-change journal keeps both lines.
+// ledger root, so gc reports UNKNOWN and removes nothing, runs or journal, with or without --keep (GAPS C52's rule,
+// spec/config/v0/README.md, configuration trust rules); the rule-change journal keeps both lines.
 func TestGCJournalNotPrunedWhenALayerWasSkipped(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Chmod(dir, 0o700); err != nil {
@@ -430,8 +433,8 @@ func TestGCJournalNotPrunedWhenALayerWasSkipped(t *testing.T) {
 
 	for _, args := range [][]string{nil, {"--keep", "0s"}} {
 		code, out, errs := gcOut(t, args...)
-		if code != identity.ExitError || !strings.Contains(errs, "[config-") || strings.Contains(out, "rule-change journal") {
-			t.Errorf("gc %v: exit %d, stdout %q, stderr %q, want 125 naming the layer and nothing pruned", args, code, out, errs)
+		if code != identity.ExitError || !strings.Contains(errs, "[config-baseline-unknown]") || strings.Contains(out, "rule-change journal") {
+			t.Errorf("gc %v: exit %d, stdout %q, stderr %q, want 125 naming the unknown layer and nothing pruned", args, code, out, errs)
 		}
 		if n := journalLines(t, root); n != 2 {
 			t.Errorf("gc %v: the journal holds %d lines, want both", args, n)

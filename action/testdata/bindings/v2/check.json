@@ -1,0 +1,79 @@
+{
+  "check_v": 1,
+  "binding_v": 2,
+  "coverage_complete": false,
+  "complete": false,
+  "result": "match",
+  "run": "r-5cd05e60-0dmrm463r69xq-kpyavw",
+  "lines": 74,
+  "head": "a48c6844922d6ea567be6d901561116d2b79255471b10ef3851464867443f6a8",
+  "ended": true,
+  "checks": [
+    {
+      "name": "receipt",
+      "result": "pass"
+    },
+    {
+      "name": "binding",
+      "result": "pass",
+      "why": "binding.receipt_sha256 matches the receipt's other values; anyone who edits the receipt can recompute it"
+    },
+    {
+      "name": "made_by",
+      "result": "pass"
+    },
+    {
+      "name": "run",
+      "result": "pass"
+    },
+    {
+      "name": "chain",
+      "result": "pass"
+    },
+    {
+      "name": "head",
+      "result": "pass"
+    },
+    {
+      "name": "bytes",
+      "result": "pass"
+    },
+    {
+      "name": "facts",
+      "result": "pass",
+      "why": "every key and value compared but binding.binary_sha256; producer image identity must be checked against release checksums separately, and price or clock inputs are held to their valid ranges"
+    }
+  ],
+  "limits": [
+    {
+      "code": "launching-user-can-rewrite",
+      "why": "the user who started the run can rewrite this record and its receipt together, so a pair that matches can still have been made up"
+    },
+    {
+      "code": "tail-not-synced",
+      "why": "lines are not synced to disk during the run, so a crash can lose the last ones and nothing counts them"
+    },
+    {
+      "code": "no-signature",
+      "why": "This JSON carries no signature. A CI signature is a detached bundle checked separately."
+    }
+  ],
+  "not_shown": [
+    "complete",
+    "honest-host",
+    "who",
+    "when",
+    "expected-job"
+  ],
+  "receipt_by": {
+    "tego_version": "v0.1.2",
+    "commit": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "checked_by": {
+    "tego_version": "v0.1.2",
+    "commit": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "not_compared": [
+    "binding.binary_sha256"
+  ]
+}

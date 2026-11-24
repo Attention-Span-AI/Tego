@@ -82,9 +82,26 @@ func TestTimeoutDoesNotStandForWhatCannotBeRemembered(t *testing.T) {
 		"a gate-raised ask":  func(r *Request) { r.GateRule = "gate.exec" },
 	} {
 		t.Run(name, func(t *testing.T) {
-			// 300 ms, not 50: the second request is visible to waitAsk only until it times out, and a raced poll on a
-			// busy runner missed a 50 ms window (GitHub's race job).
-			b, dir := testBroker(t, func(o *Options) { o.Timeout = 300 * time.Millisecond; o.TimeoutStands = true })
+			published, release := make(chan struct{}), make(chan struct{})
+			t.Cleanup(func() {
+				select {
+				case <-release:
+				default:
+					close(release)
+				}
+			})
+			calls := 0
+			b, dir := testBroker(t, func(o *Options) {
+				o.Timeout = 20 * time.Millisecond
+				o.TimeoutStands = true
+				o.Pending = func(Request) {
+					calls++
+					if calls == 2 {
+						close(published)
+						<-release
+					}
+				}
+			})
 			req := testRequest()
 			mutate(&req)
 			d, err := b.Request(context.Background(), req)
@@ -92,8 +109,17 @@ func TestTimeoutDoesNotStandForWhatCannotBeRemembered(t *testing.T) {
 				t.Fatalf("the timeout = %+v, %v; want a plain one", d, err)
 			}
 			again := requestAsync(b, req)
-			waitAsk(t, dir) // held again
-			decisionWithin(t, again, 2*time.Second)
+			select {
+			case <-published:
+			case <-time.After(2 * time.Second):
+				t.Fatal("retry was not published")
+			}
+			// Pending holds publication open until the reader has observed it, even after the timer fires.
+			waitAsk(t, dir)
+			close(release)
+			if d := decisionWithin(t, again, 2*time.Second); d.Reason != ReasonTimeout || d.Always || d.By != "timeout" {
+				t.Fatalf("the retry timeout = %+v; want a plain one", d)
+			}
 		})
 	}
 }

@@ -3,6 +3,7 @@
 package profilesrc
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,7 +20,11 @@ import (
 // ../outside/secret.yaml through, and the outside file became contract input. os.Root also refuses every symlink
 // whose target is absolute, even one naming a file inside Root, so a link in the profiles directory resolves only when
 // it is relative and stays inside Root. An empty Root resolves nothing.
-type Dir struct{ Root string }
+type Dir struct {
+	Root string
+	// UID is the caller-selected profile owner; nil uses the local invoking user.
+	UID *int
+}
 
 // Location implements agent.ProfileLocator: the file Resolve reads name from, "" for a name that resolves to no file
 // under Root, which extends-not-found names as the file to create.
@@ -68,6 +73,18 @@ func (s Dir) Holds(name string) (string, bool) {
 // escapes from parent") reaches Load, which reports extends-not-found with it as the fix, so the operator sees why a
 // profile that exists was not read.
 func (s Dir) Resolve(name string) (string, []byte, error) {
+	return s.resolve(context.Background(), name, -1)
+}
+
+// ResolveBounded implements agent.BoundedProfileSource for graph inspections.
+func (s Dir) ResolveBounded(ctx context.Context, name string, max int64) (string, []byte, error) {
+	return s.resolve(ctx, name, max)
+}
+
+func (s Dir) resolve(ctx context.Context, name string, max int64) (string, []byte, error) {
+	if err := ctx.Err(); err != nil {
+		return "", nil, err
+	}
 	if s.Root == "" || name == "" || strings.Contains(name, "\x00") {
 		return "", nil, fmt.Errorf("profile %q: %w", name, os.ErrNotExist)
 	}
@@ -88,10 +105,34 @@ func (s Dir) Resolve(name string) (string, []byte, error) {
 	}
 	defer func() { _ = f.Close() }()
 	path := filepath.Join(s.placed(), rel)
-	if err := trusted(r, s.placed(), rel, f); err != nil {
+	if err := s.trusted(r, s.placed(), rel, f); err != nil {
 		return "", nil, fmt.Errorf("profile %q: %w", name, err)
 	}
-	data, err := agent.ReadCapped(f, path)
+	if max < 0 {
+		data, err := config.ReadRulesFile(context.Background(), f, path, agent.MaxContractSize+1)
+		if err != nil {
+			return "", nil, fmt.Errorf("profile %q: %w", name, err)
+		}
+		return path, data, nil
+	}
+	// These are policy files, so no stream may hold a request open.
+	st, err := f.Stat()
+	if err != nil {
+		return "", nil, err
+	}
+	if !st.Mode().IsRegular() {
+		return "", nil, agent.ErrNotAFile
+	}
+	if err := ctx.Err(); err != nil {
+		return "", nil, err
+	}
+	data, err := config.ReadRulesFile(ctx, f, path, max+1)
+	if err == nil && int64(len(data)) > max {
+		return "", nil, fmt.Errorf("%w: %s: source bytes; reduce the profile graph", agent.ErrLoadBudget, path)
+	}
+	if err == nil {
+		err = ctx.Err()
+	}
 	if err != nil {
 		return "", nil, fmt.Errorf("profile %q: %w", name, err)
 	}
@@ -103,8 +144,13 @@ func (s Dir) Resolve(name string) (string, []byte, error) {
 // profiles: puts root: a profile is merged into every contract that extends it, so
 // whoever may rewrite one, or swap one in, widens those contracts. Each directory is opened through r, as the file
 // was, so a link cannot send the check somewhere the read did not go.
-func trusted(r *os.Root, root, rel string, f *os.File) error {
-	uid, _ := config.InvokingUID()
+func (s Dir) trusted(r *os.Root, root, rel string, f *os.File) error {
+	uid := 0
+	if s.UID != nil {
+		uid = *s.UID
+	} else {
+		uid, _ = config.InvokingUID()
+	}
 	if err := config.CheckTrusted(f, filepath.Join(root, rel), uid); err != nil {
 		return err
 	}

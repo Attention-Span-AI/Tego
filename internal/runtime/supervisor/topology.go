@@ -55,9 +55,10 @@ func handleMoveMount(l *Loop, n *notif) {
 }
 
 // handleUnshare, handleClone and handleSetns answer the namespace arm's notifications (the Landlock filter's
-// namespaceTest): an unshare or clone asking for a new mount or user namespace, and every setns. A new mount
-// namespace is a copy of the mount tree with none of tier 2's fanotify marks on it, where a deny_read
-// fanotify alone enforces was read with no permission event. They are
+// namespaceTest): an unshare or clone asking for a new mount, user, cgroup or process-id namespace, and every setns.
+// A new mount namespace is a copy of the mount tree with none of tier 2's fanotify marks on it, where a deny_read
+// fanotify alone enforces was read with no permission event; a new cgroup namespace made by a capability holder hides
+// the run's scope from every cgroup path read inside it. They are
 // refused
 // with EPERM, the answer of a host that disallows unprivileged user namespaces, and recorded as
 // landlock-topology, the reason SEMANTICS §10 gives a sandbox these tiers cannot host.

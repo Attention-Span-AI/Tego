@@ -642,6 +642,9 @@ struct tego_ev_ssl_close {
 #define TEGO_PLANE_ROWS_MAX 4096        /* rows in one slot's inner rows map */
 #define TEGO_PLANE_EXEC_ROWS_MAX 1024   /* rows in one slot's inner exec-rows map */
 #define TEGO_PLANE_LISTEN_ROWS_MAX 256
+/* Rows in one slot's live-block map (ADR 0124, amendment 2026-11-21): a block that needs more sets its class's
+ * overflow bit (tego_plane_block_state.over), which refuses every action of the class. */
+#define TEGO_PLANE_BLOCK_ROWS_MAX 1024
 
 /* ADR 0043's name entries (D9): a run's name rows, beside its fs, exec and listener rows. A slot's name map holds at
  * most TEGO_PLANE_NAME_ROWS_MAX rows (exact, prefix, exception and exemption-only rows) and one config row at key 0,
@@ -698,6 +701,7 @@ enum tego_plane_hook {
     TEGO_HOOK_SOCKET_LISTEN = 28,
     TEGO_HOOK_CAPABLE = 29,
     TEGO_HOOK_UNIX_MAY_SEND = 30,
+    TEGO_HOOK_SOCKET_RECVMSG = 31, /* ADR 0128: a receive carrying a control buffer, under net.assurance: kernel */
 };
 
 /* A slot's unix policy for the plane's step D hooks (socket_connect, socket_sendmsg; enforce-plane R14), in
@@ -734,6 +738,10 @@ enum tego_plane_slot_flag {
      * then sched_process_exec). Clear, bprm_check and the pin program return after this flag test. */
     TEGO_SLOT_EXEC_PIN = 0x100,
     TEGO_SLOT_BUILTIN_TTY = 0x200, /* ADR 0113: the inherited Landlock tty layer decides terminal opens */
+    /* ADR 0128 (amended): net.assurance: kernel. socket_recvmsg refuses a receive whose kernel-copied msghdr carries a
+     * control buffer (msg_controllen != 0), so no descriptor or pidfd is installed by it; the seccomp filter then
+     * leaves recvmsg to the plane. Clear, the hook passes every receive (a slot whose header is missing is refused). */
+    TEGO_SLOT_IMPORTS_DENIED = 0x400,
 };
 
 /* A slot's header, in tego_plane_slots at run_idx (enforce-plane R6): the gen of the run whose rows the slot holds
@@ -766,7 +774,13 @@ struct tego_plane_slot {
      * bpf_get_ns_current_pid_tgid compares (ADR 0048's K0 note). */
     __u64 pidns_dev;
     __u64 pidns_ino;
-    __u8  pad2[16];     /* to 128 bytes, two cache lines: the slots ARRAY's elements stay line-aligned */
+    /* ADR 0128 (amended 2026-11-21): the run's open deputy, which socket_recvmsg passes under
+     * TEGO_SLOT_IMPORTS_DENIED: its thread-group id in the pid namespace pidns_dev and pidns_ino name (the launcher's,
+     * written whenever the deputy is) and its start time in clock ticks since boot (/proc/<pid>/stat field 22,
+     * USER_HZ). 0: the run has no deputy. Written before Arm, after the deputy's hello. */
+    __u32 deputy_tgid;
+    __u32 deputy_pad;
+    __u64 deputy_start; /* to 128 bytes, two cache lines: the slots ARRAY's elements stay line-aligned */
 };
 
 #define TEGO_BIND_ABSTRACT 1U
@@ -837,6 +851,14 @@ enum tego_plane_row_kind {
 #define TEGO_PLANE_RULE_LISTEN 0x20000
 #define TEGO_PLANE_RULE_BUILTIN_HOST 0x40000
 #define TEGO_PLANE_RULE_BUILTIN_SURFACE 0x80000
+/* The rule_idx of a receive socket_recvmsg refused for its control buffer (ADR 0128); the ledger names it socket-import. */
+#define TEGO_PLANE_RULE_SOCKET_IMPORT 0x100000
+/* The rule_idx of a refusal a live block made (ADR 0124, amendment 2026-11-21): this bit | the block's id (1 to
+ * TEGO_PLANE_BLOCK_ID_MAX), which the launcher names live.block[<kind>:<value>]. It fits the 16 bits a recorder fexit's
+ * header carries (tego_plane_stamp): no fs row reaches it (TEGO_PLANE_ROWS_MAX), a name entry's tag has
+ * TEGO_PLANE_RULE_NAME set and stays below it otherwise, and TEGO_PLANE_RULE_NONE has TEGO_PLANE_RULE_NAME set too. */
+#define TEGO_PLANE_RULE_LIVE_BLOCK 0x4000
+#define TEGO_PLANE_BLOCK_ID_MAX 0x3fff
 
 /* The rule_idx of a refusal a name entry decided (ADR 0043 D8): TEGO_PLANE_RULE_NAME | scope bit << 6 | the entry's
  * position in RuleTable.NameDeny (decide.PlaneNameTag). fs rows stay below TEGO_PLANE_ROWS_MAX, so a reader tests
@@ -860,6 +882,64 @@ struct tego_plane_row {
     __u16 exec_rule;        /* the lowest exec.allow entry covering this row, or TEGO_PLANE_RULE_NONE */
     __u16 pad2;
     __u32 pad3;
+};
+
+/* One row of a slot's live-block map (tego_plane_blocks; ADR 0124, amendment 2026-11-21), keyed by the struct inode *
+ * of an object a live path, read or write block's path names (the launcher holds an O_PATH descriptor of it while the
+ * row exists), or, for a name that did not exist when the block was placed, by tego_block_name_key over its
+ * directory's struct inode * and the name's key (name_key, which the row keeps). i_ino, i_generation and s_dev are the
+ * key inode's (the directory's for a name row), compared on every hit; gen is the run's. from_ns is the CLOCK_BOOTTIME
+ * instant before which the row refuses nothing (a dormant block), 0 for now. id_read and id_write are the blocks that
+ * refuse reads and changes at the object (TEGO_BLOCK_SELF) and beneath it (TEGO_BLOCK_BENEATH), id_guard the block
+ * whose path runs through it, which refuses the object's own rename, unlink and rmdir; 0 is none. A name row refuses
+ * the creation of its name with whichever id it has. */
+struct tego_plane_block_row {
+    __u64 i_ino;
+    __u32 i_generation;
+    __u32 s_dev;
+    __u64 from_ns;
+    __u64 name_key;
+    __u32 gen;
+    __u16 id_read;
+    __u16 id_write;
+    __u16 id_guard;
+    __u8  flags;        /* enum tego_plane_block_flag */
+    /* The classes (enum tego_plane_block_class) the row refuses at the object itself and beneath it, which the fill
+     * derives from the ids and flags, so the walk's step tests one mask (bpf_loop callbacks are verified as loops on
+     * 6.19.4 and 7.0, where every branch there costs many times). */
+    __u8  self_q;
+    __u8  beneath_q;
+    __u8  pad;
+    __u16 pad2;
+};
+
+enum tego_plane_block_flag {
+    TEGO_BLOCK_SELF = 0x01,       /* id_read and id_write refuse at the object itself */
+    TEGO_BLOCK_BENEATH = 0x02,    /* ... and beneath it */
+    TEGO_BLOCK_MOUNT_ONLY = 0x04, /* a mounted root beneath a target: for the walk inside one superblock only */
+    TEGO_BLOCK_NAME = 0x08,       /* keyed by a directory and a name */
+};
+
+/* The classes a block check asks (tego_block_check's q), and tego_plane_block_state.over's bits. */
+enum tego_plane_block_class {
+    TEGO_BLOCK_READ = 0x01,
+    TEGO_BLOCK_WRITE = 0x02,
+    TEGO_BLOCK_GUARD = 0x04, /* a move or removal of the object itself */
+    TEGO_BLOCK_CREATE = 0x08, /* a creation at the object's name: the name rows are asked */
+};
+
+/* A slot's live-block state (tego_plane_block_states at run_idx), written whole by the launcher: Prepare writes it with
+ * the run's gen and nothing on, and the launcher writes it again around every change of its rows, in an order that only
+ * refuses more on a stale or torn read (on and names before rows go in, off after they are gone; over before a row is
+ * given up, cleared after the rows it stood for are in). A header of another gen is no blocks. */
+struct tego_plane_block_state {
+    __u32 gen;
+    __u32 on;           /* nonzero: the hooks walk the slot's block rows */
+    __u32 names;        /* nonzero: some are name rows, which a creation asks */
+    __u32 over;         /* TEGO_BLOCK_READ | TEGO_BLOCK_WRITE: every action of the class is refused */
+    __u16 over_read;    /* the block an overflow of reads is named by */
+    __u16 over_write;
+    __u32 pad;
 };
 
 /* One exec row; every exec entry allows (decide.ErrPlaneExecVerdict), so a row is a match, and rule_idx the exec
@@ -1198,6 +1278,12 @@ enum tego_plane_fill_what {
     TEGO_FILL_FS = 1,   /* tego_plane_rows: struct tego_plane_row */
     TEGO_FILL_EXEC = 2, /* tego_plane_exec_rows: struct tego_plane_exec_row */
     TEGO_FILL_LISTEN = 3, /* pathname listener parent descriptor */
+    /* A live block's row (tego_plane_blocks; ADR 0124, amendment 2026-11-21). Its wants key carries kind 0, the one
+     * kind the key's two bits leave: each block row has its own descriptor. */
+    TEGO_FILL_BLOCK = 4,          /* at the descriptor's inode */
+    TEGO_FILL_BLOCK_NAME = 5,     /* at the descriptor's directory and block_name_key */
+    TEGO_FILL_BLOCK_DEL = 6,      /* delete the row at the descriptor's inode */
+    TEGO_FILL_BLOCK_NAME_DEL = 7, /* delete the row at the descriptor's directory and block_name_key */
 };
 
 /* What the fill did with one wanted descriptor. Anything but OK fails Prepare. */
@@ -1250,6 +1336,14 @@ struct tego_plane_fill_row {
     __u64 ino;          /* out: the inode's i_ino, as fdinfo prints it */
     __u64 parent_ino;   /* out, exec: the parent directory's i_ino */
     char  name[TEGO_NAME_MAX]; /* exec: the final component, zero past name_len */
+    /* A block row's template (TEGO_FILL_BLOCK*): struct tego_plane_block_row's fields the launcher chooses. */
+    __u64 block_from;
+    __u64 block_name_key;
+    __u16 block_read;
+    __u16 block_write;
+    __u16 block_guard;
+    __u8  block_flags;
+    __u8  pad3;
 };
 
 /* A clear's arguments and result, the BPF_PROG_TEST_RUN context of tego_plane_clear. */
@@ -1260,6 +1354,8 @@ struct tego_plane_clear_ctx {
     __u32 exec_deleted; /* out: exec rows deleted */
     __s32 status;       /* out: 0, or 1 when the slot has no fs rows map */
     __u32 listen_deleted;
+    __u32 blocks_deleted; /* out: live-block rows deleted */
+    __u32 pad;
 };
 
 #endif /* TEGO_EVENTS_H */

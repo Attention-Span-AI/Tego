@@ -8,17 +8,15 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/attention-span-ai/tego/internal/shellword"
+	"github.com/attention-span-ai/tego/internal/selfbin"
 	"github.com/attention-span-ai/tego/internal/watch/procconn"
 	"github.com/attention-span-ai/tego/internal/watch/sig"
 	"github.com/attention-span-ai/tego/internal/watch/watcher"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
-	"github.com/attention-span-ai/tego/pkg/spec/record"
 	"golang.org/x/sys/unix"
 )
 
@@ -143,6 +141,7 @@ func cmdAgents() Command {
 				// The way without root, part of the refusal (an exit 125 has no hint): tego watch records any agent
 				// started under it, by whatever name.
 				fmt.Fprintln(stderr, "to record any agent without root, start it under tego watch -- "+startPlaceholder)
+				fmt.Fprintln(stderr, "to look for your own agents without root: tego scan")
 				return identity.ExitLauncher
 			}
 			return runAgents(ctx, rules, follow, children, asJSON, guardOpts, stdout, stderr)
@@ -160,7 +159,10 @@ const privilegeMessage = "tego agents: needs root (CAP_NET_ADMIN, to listen to t
 // looks for and how to name another agent (a fresh guest's own agent was none of the four, FIRST-TEN-MINUTES stumble
 // 5). flags says the command line had flags, which the command run as root needs too.
 func agentsPrivilegeMessage(rules sig.List, flags bool) string {
-	run := sudoSelf("agents")
+	run, why := sudoSelf("agents")
+	if why != "" {
+		run = "root with sudo (" + strings.TrimSuffix(why, ".") + ")"
+	}
 	if flags {
 		run += " with the same flags"
 	}
@@ -169,18 +171,17 @@ func agentsPrivilegeMessage(rules sig.List, flags bool) string {
 		" (another agent: --signature <its program name>), and only observes, changing no process"
 }
 
+// namedSelf is selfbin.Named for this process's executable: the running tego as a sudo line names it, or why it cannot
+// be named. A variable so a test describes the binary.
+var namedSelf = func() (string, string) { return selfbin.Named(executable) }
+
 // sudoSelf is `sudo <this tego's absolute path> <args>`, a command a person can paste: sudo resets PATH to its
 // secure_path, which leaves out ~/.local/bin, where the installer puts tego (doctor's fix lines name it the same way,
-// doctor.sudoDoctor). A binary whose path cannot be read is named as the docs name it.
-func sudoSelf(args string) string {
-	path, err := executable()
-	if err != nil || path == "" {
-		return `sudo "$(command -v tego)" ` + args
-	}
-	if real, err := filepath.EvalSymlinks(path); err == nil {
-		path = real
-	}
-	return "sudo " + shellword.Quote(path) + " " + args
+// doctor.sudoDoctor). A binary whose path cannot be named safely (selfbin.Named: unreadable, replaced since it started,
+// a character that does not print, not executable, or its path ownership/write authority cannot be verified) gives no command and why; it never falls back to a lookup of tego
+// in the reader's PATH, which would select another binary and run it as root.
+func sudoSelf(args string) (command, why string) {
+	return selfbin.Sudo(args, namedSelf)
 }
 
 // agentsNext is the "next:" block a scan's text report ends with, true for what it found: the pids of the agents
@@ -195,9 +196,13 @@ func agentsNext(outside []int32, runs []string) (text, command string) {
 		if len(outside) == 1 {
 			pid = strconv.Itoa(int(outside[0]))
 		}
-		return "record it while it runs; Ctrl-C releases it, never kills it:", sudoSelf("adopt --pid " + pid)
+		command, why := sudoSelf("adopt --pid " + pid)
+		if why != "" {
+			return why, ""
+		}
+		return "record it while it runs; Ctrl-C releases it, never kills it:", command
 	case len(runs) > 0:
-		return "it runs inside a tego run; see that run:", "tego status " + record.Printable(runs[0])
+		return "it runs inside a tego run; see that run:", "tego status " + runs[0]
 	}
 	return "if yours goes by another name, record it as you start it:", "tego watch -- " + startPlaceholder
 }
@@ -270,6 +275,9 @@ func runAgents(ctx context.Context, rules sig.List, follow, children, asJSON boo
 		if err := w.Scan(); err != nil {
 			message(stderr, "", 0, 0, "tego agents: "+err.Error(), codeIO)
 			return identity.ExitError
+		}
+		if found == 0 {
+			fmt.Fprintf(stderr, "tego agents: rules %s; for another name, use tego watch -- %s\n", ruleNames(rules), startPlaceholder)
 		}
 		if !asJSON {
 			if found == 0 {

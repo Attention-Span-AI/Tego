@@ -403,7 +403,7 @@ func TestReceiptQuietWithoutModelResponses(t *testing.T) {
 	if code != identity.ExitOK || errs != "" {
 		t.Fatalf("exit %d, stderr %q", code, errs)
 	}
-	for _, want := range []string{"\nConnections\n", "127.0.0.1:9823  3  allowed", "\nSensitive files read\n", "~/.ssh/id_rsa  1  allowed"} {
+	for _, want := range []string{"\nConnections\n", "127.0.0.1:9823  3  allowed", "\nSensitive files read\n", "/home/u/.ssh/id_rsa  1  allowed"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("receipt lacks %q:\n%s", want, out)
 		}

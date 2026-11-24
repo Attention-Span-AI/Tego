@@ -13,8 +13,10 @@
 // lines (what=enforce, why live-block-added or live-block-removed, carrying the overlay serial it put in force).
 // FromStart and FromStartJSON read run_start; the caller finds the confirmed serial in the gap lines.
 //
-// A block with a time limit (ADR 0125) is judged by StatusAt at an instant the caller passes: dormant while it is
-// unblocked for a while, expired once its limit passed.
+// A block with a time limit (ADR 0125) is judged by StatusRecorded, on what the run's launcher recorded (Limits: its
+// live-block-expired and live-unblock-expired lines), since it ends a limit on a wall clock and a clock no step moves,
+// which a reader's wall clock cannot see. Dormant is a block unblocked for a while; expired one whose limit the launcher
+// ended. StatusAt judges by the caller's wall clock alone, for a caller with no lines.
 //
 // Nothing here does I/O, reads a clock or starts a goroutine.
 //

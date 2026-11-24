@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net"
 	"net/http"
@@ -28,7 +29,7 @@ import (
 // The main journey over one real, governed run: the tego binary runs a contract at
 // tier landlock whose agent, a shell script, reads a file under fs.ask_read and writes one under fs.ask at the same
 // time; tego-control serve shows both asks to a person who answers over HTTP as a browser does (session cookie, CSRF
-// field, Origin): Deny the read, Allow the write. The person then turns a line's "Act on this" into a live block, and
+// field, Origin): Deny the read, Allow the write. The person then turns a line's "What to do about this" into a live block, and
 // the agent's next exec of that program is refused while the run is still going; at last Stop ends the run and the
 // dashboard reads it Stopped, with how it was started. Everything runs unprivileged and in the test's own
 // directories: tegotesthooks builds, a machine config, chain anchor, own log and runtime directory under one
@@ -83,6 +84,20 @@ func until(t *testing.T, what string, limit time.Duration, cond func() bool) {
 			t.Fatalf("timed out after %s waiting for %s", limit, what)
 		}
 	}
+}
+
+// hangGuard is how long a wait for something that must come may go on before the test calls itself hung: what is left
+// of the test binary's own deadline (go test -timeout), less a margin to report in. It is no speed bound, so a slow or
+// starved host only makes the journey take longer, and a wait is cut short by the condition it waits for or by the
+// process it waits on ending (the callers watch for that), never by a count of seconds that a loaded host can pass.
+func hangGuard(t *testing.T) time.Duration {
+	t.Helper()
+	const margin, unbounded = 15 * time.Second, 10 * time.Minute
+	d, ok := t.Deadline()
+	if !ok {
+		return unbounded
+	}
+	return max(time.Until(d)-margin, time.Second)
 }
 
 // syncBuf is an output buffer a process writes while the test reads it.
@@ -380,17 +395,39 @@ func (b *browser) status() liveState {
 	return st
 }
 
+// textOf is the words of an HTML fragment's first submatch: its tags dropped, entities read, white space collapsed.
+func textOf(m []string) string {
+	if len(m) < 2 {
+		return ""
+	}
+	plain := regexp.MustCompile(`<[^>]*>`).ReplaceAllString(m[1], "")
+	return strings.Join(strings.Fields(html.UnescapeString(plain)), " ")
+}
+
 // card is one pending request of the Approvals page: its id, and the target it names.
 type card struct{ id, target string }
 
-var askCard = regexp.MustCompile(`<section class="ask" id="(q-[0-9a-f]+)"[\s\S]*?<span class="ut ut-box">([^<]*)</span>`)
+// queueLink is one row of Approvals' waiting list: the request's own place, /approvals?run=…&ask=…#id.
+var queueLink = regexp.MustCompile(`<a class="phone-row" href="(/approvals\?[^"#]*)#(q-[0-9a-f]+)"`)
 
+// askCard is the request card of Approvals: its id, and the exact target its "Exact target" line names.
+var askCard = regexp.MustCompile(`<section class="ask" id="(q-[0-9a-f]+)"[\s\S]*?<p class="ut ut-box"[^>]*>([^<]*)</p>`)
+
+// cards reads the waiting requests the way a person does on the redesigned page: Approvals lists every waiting request
+// as a row and shows the oldest one's card; each row opens its request in its own place, where its card names the
+// exact target.
 func (b *browser) cards() []card {
 	b.t.Helper()
 	_, page := b.get("/approvals")
 	var out []card
-	for _, m := range askCard.FindAllStringSubmatch(page, -1) {
-		out = append(out, card{m[1], m[2]})
+	for _, row := range queueLink.FindAllStringSubmatch(page, -1) {
+		href := html.UnescapeString(row[1])
+		code, own := b.get(href)
+		m := askCard.FindStringSubmatch(own)
+		if code != http.StatusOK || m == nil || m[1] != row[2] {
+			b.t.Fatalf("the waiting list row %s opened %d with no card for %s\n%s", href, code, row[2], own)
+		}
+		out = append(out, card{m[1], html.UnescapeString(m[2])})
 	}
 	return out
 }
@@ -415,7 +452,7 @@ func TestDashboardJourneyOverALiveRun(t *testing.T) {
 	cmd.Env = w.env
 	run := start(t, cmd)
 	var id string
-	until(t, "the run's run_start line", 30*time.Second, func() bool {
+	until(t, "the run's run_start line", hangGuard(t), func() bool {
 		if run.over() {
 			t.Fatalf("tego run ended first: %v\n%s", run.err, run.out.String())
 		}
@@ -447,7 +484,7 @@ func TestDashboardJourneyOverALiveRun(t *testing.T) {
 	case tokenURL = <-first:
 	case <-srv.done:
 		t.Fatalf("tego-control serve ended first: %v\n%s", srv.err, srv.out.String())
-	case <-time.After(30 * time.Second):
+	case <-time.After(hangGuard(t)):
 		t.Fatal("tego-control serve printed no URL")
 	}
 	if host, _, err := net.SplitHostPort(strings.TrimPrefix(strings.SplitN(tokenURL, "/?", 2)[0], "http://")); err != nil || host != "127.0.0.1" {
@@ -455,17 +492,36 @@ func TestDashboardJourneyOverALiveRun(t *testing.T) {
 	}
 	b := newBrowser(t, tokenURL)
 	b.signIn()
+	// The dashboard holds the token and the keys: it must be closed to every other process of the user, and it answers
+	// the asks below all the same (its answers are made by an undumpable process the broker identifies by its cgroup
+	// path alone).
+	requireUndumpableDashboard(t, serve.Process.Pid)
+	requireDashboardNamedToTheScan(t, w, serve.Process.Pid)
 
 	// Both asks wait: the live state, Overview's banner and Approvals say so.
-	until(t, "two pending asks in status.json", 30*time.Second, func() bool { return b.status().Pending == 2 })
+	until(t, "two pending asks in status.json", hangGuard(t), func() bool {
+		if run.over() {
+			t.Fatalf("tego run ended before both asks were pending: %v\n%s", run.err, run.out.String())
+		}
+		return b.status().Pending == 2
+	})
 	if st := b.status(); st.Live != 1 {
 		t.Errorf("status.json: %+v, want one live run", st)
 	}
 	_, overview := b.get("/")
 	b.readCSRF(overview)
-	for _, want := range []string{`id="ask-banner"`, "2 requests are waiting for you", "e2e-journey", "<title>(2) "} {
-		if !strings.Contains(overview, want) {
-			t.Errorf("Overview lacks %q", want)
+	// A person reads the banner's words and the tab's title, not the markup around a number: the page marks each count
+	// for the number inventory (data-number), so the words are read without their tags.
+	bannerWords := textOf(regexp.MustCompile(`id="ask-banner-h"[^>]*>([\s\S]*?)</p>`).FindStringSubmatch(overview))
+	titleWords := textOf(regexp.MustCompile(`<title[^>]*>([^<]*)</title>`).FindStringSubmatch(overview))
+	for what, ok := range map[string]bool{
+		`the banner (id="ask-banner")`:                             strings.Contains(overview, `id="ask-banner"`),
+		`the banner saying "2 requests are waiting for you"`:       bannerWords == "2 requests are waiting for you",
+		"the banner naming the asking agent e2e-journey":           strings.Contains(overview, "e2e-journey"),
+		`the tab title opening "(2) " for a tab in the background`: strings.HasPrefix(titleWords, "(2) "),
+	} {
+		if !ok {
+			t.Errorf("Overview lacks %s (banner words %q, title %q)", what, bannerWords, titleWords)
 		}
 	}
 	cards := b.cards()
@@ -572,22 +628,25 @@ func TestDashboardJourneyOverALiveRun(t *testing.T) {
 	}
 
 	// Act on this: the details page of the agent's first /bin/echo offers Block now; adding it refuses the next exec.
+	// The supervisor answers a call and then writes its line (docs/GAPS.md C64, supervisor R23), so the agent's own
+	// result file (rc_first) can exist before the exec line of the echo does: the test waits for the line.
 	var echoSeq = -1
-	for _, l := range kindsOf(lines, "exec") {
-		if argv, _ := l.Payload["argv"].([]any); len(argv) == 2 && argv[1] == "first" {
-			echoSeq = l.Seq
+	until(t, "the exec line of /bin/echo first", hangGuard(t), func() bool {
+		for _, l := range kindsOf(ledgerOf(t, w.ledger, id), "exec") {
+			if argv, _ := l.Payload["argv"].([]any); len(argv) == 2 && argv[1] == "first" {
+				echoSeq = l.Seq
+				return true
+			}
 		}
-	}
-	if echoSeq < 0 {
-		t.Fatalf("no exec line of /bin/echo first in the ledger:\n%s", rawOf(lines))
-	}
+		return false
+	})
 	if out("rc_second") != "" {
 		t.Fatal("the agent ran its second echo before the block")
 	}
 	line := fmt.Sprintf("/runs/%s/lines/%d", id, echoSeq)
 	code, page = b.get(line)
 	form := regexp.MustCompile(`action="/runs/` + regexp.QuoteMeta(id) + `/block"><input type="hidden" name="csrf" value="[0-9a-f]+"><input type="hidden" name="kind" value="([a-z]+)"><input type="hidden" name="value" value="([^"]+)">`).FindStringSubmatch(page)
-	if code != http.StatusOK || !strings.Contains(page, "Act on this") || form == nil || form[1] != "exec" {
+	if code != http.StatusOK || !strings.Contains(page, "What to do about this") || form == nil || form[1] != "exec" {
 		t.Fatalf("line %d's page: %d, Block now form %v", echoSeq, code, form)
 	}
 	code, page = b.post("/runs/"+id+"/block", url.Values{"kind": {form[1]}, "value": {form[2]}})
@@ -607,15 +666,17 @@ func TestDashboardJourneyOverALiveRun(t *testing.T) {
 	if out("rc_second") == "0" || out("second.txt") != "" {
 		t.Errorf("the blocked program ran: status %q, output %q (%s)", out("rc_second"), out("second.txt"), out("err2.txt"))
 	}
-	var refused bool
-	for _, l := range kindsOf(ledgerOf(t, w.ledger, id), "exec") {
-		if l.Verdict == "refused" && strings.HasPrefix(l.Rule, "live.block[exec:") {
-			refused = true
+	// The refused echo's line is written after its answer, so rc_second can exist before the line does (docs/GAPS.md
+	// C64): a read of the ledger at that moment misses it. The test waits for the line; the run's ledger is dumped when
+	// it never comes.
+	until(t, "the exec line refused by the live block", hangGuard(t), func() bool {
+		for _, l := range kindsOf(ledgerOf(t, w.ledger, id), "exec") {
+			if l.Verdict == "refused" && strings.HasPrefix(l.Rule, "live.block[exec:") {
+				return true
+			}
 		}
-	}
-	if !refused {
-		t.Errorf("no exec line refused by the live block:\n%s", rawOf(ledgerOf(t, w.ledger, id)))
-	}
+		return false
+	})
 	if out("rc_first") != "0" {
 		t.Errorf("the first echo exited %q, want 0: the block must not reach back", out("rc_first"))
 	}
@@ -630,7 +691,7 @@ func TestDashboardJourneyOverALiveRun(t *testing.T) {
 	}
 	select {
 	case <-run.done:
-	case <-time.After(30 * time.Second):
+	case <-time.After(hangGuard(t)):
 		t.Fatalf("tego run did not end after Stop\n%s", run.out.String())
 	}
 	var end ledgerLine
@@ -652,9 +713,10 @@ func TestDashboardJourneyOverALiveRun(t *testing.T) {
 	if _, ended := b.get("/runs?state=ended"); !strings.Contains(ended, "Stopped") || !strings.Contains(ended, `title="Started without a terminal"`) {
 		t.Error("Runs?state=ended lacks the Stopped word or the Started without a terminal title")
 	}
-	if elapsed := time.Since(began); elapsed > 60*time.Second {
-		t.Errorf("the journey took %s after the build, the bound is 60 s", elapsed.Round(time.Second))
-	}
+	// No speed bound: how long the journey takes is the host's, and a fixed number of seconds only fails a loaded one.
+	// What a bound would guard is a step that did not happen; each step above waits for its own condition (until, or
+	// hangGuard where a process must end) and fails by name when it does not come, so reaching this line is the property.
+	t.Logf("the journey took %s after the build", time.Since(began).Round(time.Second))
 }
 
 func rawOf(lines []ledgerLine) string {

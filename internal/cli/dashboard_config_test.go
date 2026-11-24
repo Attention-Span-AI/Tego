@@ -17,13 +17,15 @@ func TestDashboardConfigurationBoundToReuse(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(dashboardLog(f.Home)), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(dashboardLog(f.Home), []byte(s.URL+"/?t=0123abcd"), 0600); err != nil {
-		t.Fatal(err)
-	}
+	startedBy(t, f.Home, thisProgramFile(t), s.URL+"/?t=0123abcd")
 	if got := runningDashboard(f.Home); got == "" {
 		t.Fatal("matching dashboard was not reused")
 	}
-	other := filepath.Join(t.TempDir(), "other.yaml")
+	otherDir := t.TempDir()
+	if err := os.Chmod(otherDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(otherDir, "other.yaml")
 	b, err := os.ReadFile(f.Config)
 	if err != nil {
 		t.Fatal(err)
@@ -74,15 +76,37 @@ func TestDashboardConfigurationLayers(t *testing.T) {
 				}
 				paths[name] = p
 			}
+			// This account cannot create a trusted root-owned system layer. Keep
+			// a previously known dashboard to prove unknown layers refuse its link.
+			server := dashboardStandIn(t)
 			old := machineSources
 			t.Cleanup(func() { machineSources = old })
 			machineSources = func(int, bool) (config.Sources, string, []config.Diagnostic) {
 				return config.Sources{Etc: paths["etc"], User: paths["user"], EnvFile: paths["env"]}, f.Home, nil
 			}
 			t.Setenv(config.EnvConfigVar, paths["env"])
-			server := dashboardStandIn(t)
+			if layer != "etc" {
+				// Only the requested, user-owned layer is selected in these cases.
+				machineSources = func(int, bool) (config.Sources, string, []config.Diagnostic) {
+					src := config.Sources{}
+					if layer == "user" {
+						src.User = paths[layer]
+					} else {
+						src.EnvFile = paths[layer]
+					}
+					return src, f.Home, nil
+				}
+				server = dashboardStandIn(t)
+			}
 			link := server.URL + "/?t=0123abcd"
-			if !probeDashboard(link) {
+			if layer == "etc" {
+				if _, _, _, err := dashboardConfiguration(); err == nil {
+					t.Fatal("unknown system layer was treated as an authenticated configuration")
+				}
+				if probeDashboard(link) {
+					t.Fatal("unknown system layer reused a dashboard link")
+				}
+			} else if !probeDashboard(link) {
 				t.Fatal("loaded configuration does not match itself")
 			}
 			b, err := os.ReadFile(paths[layer])

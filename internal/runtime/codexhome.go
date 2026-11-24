@@ -58,7 +58,7 @@ func (r *runner) writeCodexHome() error {
 	if path := codexConfigPath(agentEnv, os.Getuid()); path != "" && readDenied(r.rt, path) {
 		// The copy would sit in the agent's own runtime directory, readable, while the original is not:
 		// a deny_read over the user's codex config must not be undone by the launcher's own read.
-		r.log.Info("run: the user's codex config.toml is denied to the agent and is not copied into the run's", "path", path)
+		r.log.Info("run: the user's codex config.toml is denied to the agent and is not copied into the run's; inspect its location with: echo $CODEX_HOME; echo $HOME")
 	} else {
 		user, err = userCodexConfig(agentEnv, os.Getuid())
 	}
@@ -151,7 +151,17 @@ func userCodexConfig(agentEnv []string, uid int) ([]byte, error) {
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
-	return b, err
+	if err != nil {
+		// The path comes from the agent's environment (its CODEX_HOME or HOME), so it is never printed (identity
+		// envtext.go, rule (a)); the system's reason is kept, without the path a path error carries.
+		cause := "it is not such a file"
+		var pe *os.PathError
+		if errors.As(err, &pe) {
+			cause = pe.Err.Error()
+		}
+		return nil, fmt.Errorf("codex config selected via CODEX_HOME, HOME or the passwd home is not readable as a regular file of at most %d bytes (%s); inspect its location and permissions with: echo $CODEX_HOME; echo $HOME", maxCodexConfig, cause)
+	}
+	return b, nil
 }
 
 // codexConfigPath is where userCodexConfig reads: "" when the agent's environment names no home.

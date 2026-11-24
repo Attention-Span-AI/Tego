@@ -28,6 +28,7 @@ type Snapshot struct {
 	set    map[netip.Addr]bool
 	bcast  map[netip.Addr]bool
 	routes routeIndex
+	unread []uint32
 }
 
 // New creates a snapshot with injectable enumeration and clock functions.
@@ -40,6 +41,15 @@ func New(list func() ([]net.Addr, error), now func() time.Time, maxAge time.Dura
 // none, as New.
 func NewWithLocalTable(list func() ([]net.Addr, error), table func() (LocalTable, error), now func() time.Time, maxAge time.Duration) *Snapshot {
 	return &Snapshot{list: list, table: table, now: now, maxAge: maxAge}
+}
+
+// UnreadWords says which routing tables hold local, broadcast or anycast routes the last reading of the tables did not
+// count as this host's (LocalTable.UnreadWords), "" when none, or when the tables were not read. It is the words a
+// note on this host's own addresses carries.
+func (h *Snapshot) UnreadWords() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return LocalTable{Unread: h.unread}.UnreadWords()
 }
 
 // Has reports whether this host takes a as its own, and whether any snapshot succeeded: a is assigned to one of its
@@ -83,7 +93,7 @@ func (h *Snapshot) refresh() {
 		}
 		if h.table != nil {
 			if t, err := h.table(); err == nil {
-				h.routes = indexLocalTable(t)
+				h.routes, h.unread = indexLocalTable(t), t.Unread
 			}
 		}
 	}

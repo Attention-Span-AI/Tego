@@ -21,8 +21,11 @@
 // it compiled.
 //
 // Save is the user registry's one writer: `tego learn --save` and the dashboard's "Make a contract from this run"
-// both write <registry>/agents/<name>.yaml through it, never over a file or through a link, and read the entry back as
+// both write <registry>/agents/<name>.yaml through it. Save delegates to the same atomic publisher as dashboard
+// project creates and replacements, never follows a directory link, and reads the entry back as
 // `tego run <name>` will.
+// WriteContext checks cancellation after reads and compilation and before each mutation.
+// An already-submitted filesystem mutation can remain uncertain.
 //
 // A registry is also the home of skills: <registry>/skills/<name>/ in either registry is where a skill a contract
 // declares will be found when skills are provisioned (FEATURES.md I6c). Until then `skills:` does not compile,
@@ -31,6 +34,7 @@ package registry
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -433,7 +437,7 @@ func readEntry(r *os.Root, rel, path, inside string) (*os.File, fs.FileInfo, []b
 	}
 	var data []byte
 	if err == nil {
-		data, err = agent.ReadCapped(f, path)
+		data, err = config.ReadRulesFile(context.Background(), f, path, agent.MaxContractSize+1)
 	}
 	if err != nil {
 		_ = f.Close()

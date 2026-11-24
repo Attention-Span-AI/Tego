@@ -44,6 +44,7 @@ func TestNeverOnWriteAskAppliesNow(t *testing.T) {
 			if p.NeedsAck {
 				t.Fatalf("never on a write ask needs an ack: %+v", p)
 			}
+			req.Ack = p.Ack
 			if _, err := f.s.ApplyChange(ctx, req); err != nil {
 				t.Fatal(err)
 			}

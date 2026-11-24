@@ -173,3 +173,12 @@ build, and budget mode keeps the original best of three against max(200 µs, 12 
 slowdown hook can refute both modes. No production threshold, ownership proof or skip list changes. Rejected:
 skip these tests under `-race`, which would lose their notification checks; change R22's production limit;
 keep asserting a production latency figure on instrumented code using a gauge that does not measure that work.
+
+*Amended 2026-11-12 (reviewed harness line):* isocheck omits the exact reviewed
+physical assignment line in `action/test/security-tests.py` before searching for
+shell-rule findings, retaining its newline slot. A later unsafe config assignment
+is therefore still found at its original line number. A changed line that retains
+the old marker text receives no exemption. The test
+`TestTheCIActionExemptsOnlyTheExactReviewedLine` places both assignments in one
+fixture and also checks a modified line, a marker in a comment and the same text
+in another file. The earlier isolated fixtures did not establish that property.

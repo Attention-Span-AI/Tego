@@ -11,7 +11,7 @@ import (
 
 // A run page asks for the run's Signal on every request, and a live run's page every few seconds. A run's lines only
 // grow, so the result is kept per run and reused while the run has the same lines: the key is the run, its line
-// count, its first and last line (so a run read again from a rewritten file does not match) and its Sensitive (the
+// count, its first and last line, the events file version (identity, size and timestamps), and its Sensitive (the
 // contract entries that make a path a secret, and the person's severity rules, so a change re-sorts every run at once). The key also holds what the Signal reads besides the lines: whether the run is live and
 // how many asks are open (an ask is pending only while the run is live), and the run's revision, which moves when
 // either changes. A run that goes from live to lost leaves no new line, and without these its open asks stayed
@@ -32,6 +32,7 @@ type signalKey struct {
 	live        bool
 	pending     int
 	rev         uint64
+	file        fileID // Store revisions and line marks alone do not identify the source ledger.
 }
 
 // signalSlot is one run's cache entry. mu is held while its Signal is computed, so concurrent requests for the same
@@ -65,7 +66,7 @@ func Signal(r *Run, s Sensitive) *RunSignal {
 	}
 	last := &evs[len(evs)-1]
 	k := signalKey{run: r.ID, n: len(evs), first: evs[0].TS, last: last.TS, lastSeq: last.Seq,
-		sens: sensKey(s), live: r.Live, pending: len(r.Pending), rev: r.Rev}
+		sens: sensKey(s), live: r.Live, pending: len(r.Pending), rev: r.Rev, file: r.file}
 	signalMu.Lock()
 	slot := signalCache[r.ID]
 	if slot == nil {
@@ -85,7 +86,7 @@ func Signal(r *Run, s Sensitive) *RunSignal {
 		// fold from the first line: the newer version that comes next extends that fold again, so a race costs one
 		// whole pass, never a wrong Signal.
 		f := slot.fold
-		if f != nil && f.sens.key == k.sens && f.extends(evs) {
+		if f != nil && !rewritten(k.file, slot.key.file, slot.key.file.size) && f.sens.key == k.sens && f.extends(evs) {
 			signalFolds.Add(1)
 			f.add(evs[f.n:])
 		} else {

@@ -230,7 +230,7 @@ func TestChainBrokenWithNoLineReadNamesNone(t *testing.T) {
 	if err := s.pages["overview"].ExecuteTemplate(&b, "r-ov-tiles", page{Data: d}); err != nil {
 		t.Fatal(err)
 	}
-	wantIn(t, "overview tiles", b.String(),
+	wantIn(t, "overview tiles", unmarked(b.String()),
 		[]string{`Broken · <span class="mono">` + shortRun(goodRun), ">No lines read</span>"},
 		[]string{"Broken after #", "Broken at #"})
 }
@@ -241,7 +241,7 @@ func TestChainUnanchoredRun(t *testing.T) {
 	root, anchor := chainFixture(t, false)
 	writeRun(t, root, anchor, openRun, false)
 	s := chainServer(t, root, anchor)
-	wantIn(t, "unended run page", getPage(t, s, "/runs/"+openRun), []string{"b b-waiting", "Not anchored · 4 lines"},
+	wantIn(t, "unended run page", getPage(t, s, "/runs/"+openRun), []string{"b b-neutral", "Not anchored · 4 lines"},
 		[]string{"Verified ·", "b b-verified"})
 	wantIn(t, "good run page", getPage(t, s, "/runs/"+goodRun), []string{"b b-verified", "Verified · 5 lines"}, []string{"Not anchored"})
 }

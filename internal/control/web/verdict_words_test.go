@@ -59,7 +59,7 @@ func chipRun(t *testing.T) (*Server, *http.Cookie) {
 }
 
 // chipRe is a verdict chip as the templates write it: its class, its icon and its word.
-var chipRe = regexp.MustCompile(`<span class="b b-([a-z]+)"[^>]*><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#(i-[a-z-]+)"/></svg>([A-Za-z]+)</span>`)
+var chipRe = regexp.MustCompile(`<span class="b b-([a-z]+)"[^>]*><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#(i-[a-z-]+)"/></svg>([A-Za-z ,]+)</span>`)
 
 // chipIn is the one chip in the part of page from the first from up to the next to, as "class icon Word".
 func chipIn(t *testing.T, what, page, from, to string) string {
@@ -71,6 +71,9 @@ func chipIn(t *testing.T, what, page, from, to string) string {
 	part := page[i:]
 	if j := strings.Index(part, to); j >= 0 {
 		part = part[:j]
+	}
+	if what != "" && strings.Contains(what, "Logs") {
+		part, _, _ = strings.Cut(part, `<td role="cell" class="phone-cell">`)
 	}
 	m := chipRe.FindAllStringSubmatch(part, -1)
 	if len(m) != 1 {
@@ -106,19 +109,27 @@ func TestAskAndAnswerChipsAgree(t *testing.T) {
 		n := strconv.Itoa(seq)
 		lines[seq] = get(t, s, c, "/runs/"+actRun+"/lines/"+n)
 		for _, v := range []struct{ what, page, from, to string }{
-			{"the timeline", run, `id="l` + n + `"`, "</div>"},
+			{"the timeline", pageElement(t, run, "id", "l"+n), `<span class="tl-end">`, "</div>"},
+			{"the phone timeline", pageElement(t, run, "id", "l"+n), `<a class="phone-row run-event-row"`, "</a>"},
 			{"Logs", logs, `data-k="` + actRun + "-" + n + `"`, "</tr>"},
 			{"the line page's headline", lines[seq], `<p class="ev-lede">`, "</p>"},
 			{"What happened", lines[seq], `<h2 id="h-facts">What happened</h2>`, "</div>"},
 			{"Around it", around, ">#" + n + "<", "</li>"},
 		} {
-			if got := chipIn(t, v.what+" of #"+n, v.page, v.from, v.to); got != w {
-				t.Errorf("%s of #%d: chip %q, want %q", v.what, seq, got, w)
+			expected := w
+			if seq == 6 {
+				expected = "through i-triangle-alert Read allowed"
+			}
+			if got := chipIn(t, v.what+" of #"+n, v.page, v.from, v.to); got != expected {
+				t.Errorf("%s of #%d: chip %q, want %q", v.what, seq, got, expected)
 			}
 		}
 		// The timeline row's edge colour is its chip's.
 		class, _, _ := strings.Cut(w, " ")
-		if !strings.Contains(run, `<div class="tl v-`+class+`" id="l`+n+`"`) {
+		if seq == 6 {
+			class = "through"
+		}
+		if !strings.Contains(run, `<div class="tl v-`+class+` run-tl" id="l`+n+`"`) {
 			t.Errorf("the timeline row of #%d is not v-%s", seq, class)
 		}
 	}

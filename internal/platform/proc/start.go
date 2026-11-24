@@ -5,6 +5,7 @@ package proc
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"sync"
@@ -23,6 +24,12 @@ var ErrIdentity = errors.New("proc: the started process's start time could not b
 // Cmd is os/exec's command, named here so that a package building a command needs no import of os/exec, which
 // lint allows in this package only (ADR 0021 (3), .golangci.yml): every process start goes through Start.
 type Cmd = exec.Cmd
+
+// NotFound reports whether err, from starting a command, says its program was not found: no file of that name in
+// PATH, or no such file. A caller that may not print the command says so in its own words.
+func NotFound(err error) bool {
+	return errors.Is(err, exec.ErrNotFound) || errors.Is(err, fs.ErrNotExist)
+}
 
 // Command is exec.Command. The command it returns is started with Start, never with its own Start, Run, Output
 // or CombinedOutput, which lint refuses outside this package.
@@ -65,7 +72,9 @@ func Armed() bool {
 // is compared by its start as well (SameProcess). Start never returns an identity whose start it could not read:
 // that start is undone as ErrIdentity.
 type Identity struct {
-	PID         int
+	PID int
+	// On Windows this field is the opaque creation FILETIME (100 ns ticks),
+	// rather than a Linux boot-relative time. Compare identities only on one host.
 	StartBootNS uint64
 }
 
@@ -89,7 +98,7 @@ func (f *FS) Identity(pid int) (Identity, error) {
 // a row in sites_test.go saying when the start runs against Arm, and an unexported function that calls it is
 // followed in turn: each call of that function is a row too.
 func Start(cmd *Cmd) (Identity, error) {
-	return startWithIdentity(cmd, New().Identity)
+	return startWithIdentity(cmd, processIdentity)
 }
 
 // startWithIdentity keeps identity refusal testable independently of the host's proc mount.

@@ -2,13 +2,17 @@
 // logs.js: the Logs page's own behaviour, on top of a page that works without it (a GET form, links, an Older lines
 // link, each row's line link). It never reloads the page:
 // - the live tail: when the ledger moves (live.js's "tego:moved" event) it asks GET /logs/rows for the rows newer than
-//   the newest one shown and puts them at the top when the reader is there, or else counts them in a "N new lines"
+//   the newest one shown (by an append cursor, not by sort key) and puts them at the top when the reader is there, or else counts them in a "N new lines"
 //   pill that brings them in; with more than a page of new lines the pill loads the newest page instead. While it
 //   follows, the rows region is its own (live.js no longer re-renders it), so rows opened in place stay open;
+// - the rule-change rows follow the rule changes (live.js's "tego:changes", from the rule-change journal's revision):
+//   it asks GET /logs/changes and places them among the rows shown, with no new line needed;
 // - older lines come in place under the rows (the Older lines link, or on its own as it scrolls into view, up to
 //   AUTO pages);
 // - a row opens in place (its chevron, a click on the row, or Enter) with every field of its line from GET
-//   /logs/line, and closes again (Escape);
+//   /logs/line, and closes again (Escape); an open row asks again when the ledger or the rules move (its revision,
+//   the answer's ETag, comes back as If-None-Match: 304 while nothing behind it changed) and merges what changed in
+//   place, so focus, a collapsed field list and the reader's place stay;
 // - j and k move through the rows, o opens the line's page, / goes to the query;
 // - "Save this view" keeps the page's address under a name in this browser (localStorage), listed as chips.
 // A filter, facet or chip changes the view in place (place.js, keeping the reader's place): place.js says tego:leave
@@ -72,6 +76,11 @@
     var q = document.querySelector('.lq-where input');
     if (!q) return;
     e.preventDefault();
+    var dialog = q.closest('dialog.filter-sheet');
+    if (dialog && !dialog.open && getComputedStyle(dialog).display === 'none') {
+      var opener = document.querySelector('[data-filter-open]');
+      if (opener) opener.click();
+    }
     var sheet = q.closest('details');
     if (sheet && !sheet.open) sheet.open = true;
     q.focus();
@@ -120,7 +129,7 @@
       el.classList.add('live-new');
       setTimeout(function () { el.classList.remove('live-new'); }, 2600);
     }
-    function atTop() { return window.scrollY - (window.tegoRoom || 0) < 120; }
+    function atTop() { return window.scrollY < 120; }
 
     // the rows of box that are row n again: the same line, or the older row of n's folded refusal group (data-f
     // starts with the run, since a group never spans runs: another run's same refusal stays)
@@ -190,6 +199,7 @@
         tbody.textContent = '';
         tbody.appendChild(frag(x.html));
         tbody.dataset.after = x.r.headers.get('X-Tego-After') || tbody.dataset.after;
+        tbody.dataset.tail = x.r.headers.get('X-Tego-Tail') || tbody.dataset.tail || '';
         tbody.dataset.next = x.r.headers.get('X-Tego-Next') || '';
         if (older) older.hidden = !tbody.dataset.next;
         autoLoads = 0;
@@ -201,13 +211,17 @@
     function tail() {
       if (dead) return;
       if (busy) { again = true; return; }
-      if (!tbody.dataset.after || onOlderPage) return;
+      if ((!tbody.dataset.after && !tbody.dataset.tail) || onOlderPage) return;
       busy = true;
       again = false;
-      var u = tbody.dataset.rows + (tbody.dataset.rows.indexOf('?') < 0 ? '?' : '&') + 'after=' + encodeURIComponent(tbody.dataset.after);
+      // The append cursor says what was written since, whatever its time; the newest row's cursor is only the fallback of
+      // a server that sends none (or of more open runs than a cursor can name).
+      var u = tbody.dataset.rows + (tbody.dataset.rows.indexOf('?') < 0 ? '?' : '&') + 'after=' + encodeURIComponent(tbody.dataset.after || '') +
+        (tbody.dataset.tail ? '&tail=' + encodeURIComponent(tbody.dataset.tail) : '');
       get(u).then(function (x) {
         var n = x.html ? frag(x.html) : null, k = n ? n.querySelectorAll('tr.lq-r').length : 0;
         tbody.dataset.after = x.r.headers.get('X-Tego-After') || tbody.dataset.after;
+        tbody.dataset.tail = x.r.headers.get('X-Tego-Tail') || tbody.dataset.tail || '';
         if (x.r.headers.get('X-Tego-More') === '1') { more = true; showPill(); counts(x.r.headers.get('X-Tego-Rows')); return; }
         if (!k) return;
         if (atTop() && !waiting && !document.querySelector('tr.lx-row:not([hidden])')) {
@@ -223,11 +237,37 @@
       }).catch(function () { /* the next change asks again */ })
         .then(function () { busy = false; if (again) tail(); });
     }
+    // changes asks for the search's rule-change rows again (GET /logs/changes) and places them among the rows held, as
+    // the page does (changefeed.go placedChanges): each before the newest row that is not newer than it, one older than
+    // every row only at the end of the last page. live.js says tego:changes when the rule-change journal's revision moves.
+    var changing = false, changeAgain = false;
+    function at(tr) { var t = tr.querySelector('time'); return t ? Date.parse(t.getAttribute('datetime')) : NaN; }
+    function placeChanges(f) {
+      tbody.querySelectorAll('tr.rc-row').forEach(function (n) { n.remove(); });
+      var held = Array.prototype.slice.call(tbody.querySelectorAll('tr.lq-r')), last = !tbody.dataset.next;
+      Array.prototype.slice.call(f.querySelectorAll('tr.rc-row')).forEach(function (c) {
+        var t = at(c), i = 0;
+        while (i < held.length && at(held[i]) > t) i++;
+        if (i < held.length) tbody.insertBefore(c, held[i]);
+        else if (last) tbody.appendChild(c);
+      });
+    }
+    function changes() {
+      if (dead) return;
+      if (changing) { changeAgain = true; return; }
+      changing = true;
+      changeAgain = false;
+      get(tbody.dataset.rows.replace(/^\/logs\/rows/, '/logs/changes')).then(function (x) {
+        placeChanges(frag(x.html));
+      }).catch(function () { /* the next change asks again */ })
+        .then(function () { changing = false; if (changeAgain) changes(); });
+    }
     if (region && !onOlderPage) {
       // The rows are followed here: live.js leaves this region alone (it would re-render the rows and close the open
       // ones), and still refreshes the counts and facets around them.
       region.removeAttribute('data-live');
       on(document, 'tego:moved', tail);
+      on(document, 'tego:changes', changes);
     }
     if (pill) on(pill, 'click', takeWaiting);
     on(window, 'scroll', function () { if (atTop() && waiting && !more) takeWaiting(); }, { passive: true });
@@ -300,9 +340,10 @@
       tr.after(p);
       if (b) b.setAttribute('aria-controls', p.id);
       var l = lineOf(tr);
-      get('/logs/line?run=' + encodeURIComponent(l.run) + '&seq=' + encodeURIComponent(l.seq)).then(function (x) {
+      get(lineUrl(tr)).then(function (x) {
         td.textContent = '';
         td.appendChild(frag(x.html));
+        td.dataset.rev = x.r.headers.get('ETag') || '';
       }).catch(function () {
         td.textContent = '';
         var a = document.createElement('a');
@@ -312,6 +353,54 @@
         td.appendChild(a);
       });
     }
+    function lineUrl(tr) {
+      var l = lineOf(tr);
+      return '/logs/line?run=' + encodeURIComponent(l.run) + '&seq=' + encodeURIComponent(l.seq);
+    }
+    // An open row follows the state behind it. Each open panel asks for its line again with the revision it shows;
+    // a changed panel is merged into the one on the page (live.js's merge: nodes stay, so focus on its buttons, an
+    // opened or closed field list and the reader's place stay), never replaced, and never while text in it is selected.
+    var refreshing = false, refreshAgain = false;
+    function refreshOpen() {
+      if (dead) return;
+      if (refreshing) { refreshAgain = true; return; }
+      var open = Array.prototype.slice.call(tbody.querySelectorAll('tr.lx-open')).filter(function (tr) {
+        var p = panelOf(tr);
+        return p && !p.hidden && p.firstElementChild && p.firstElementChild.dataset.rev;
+      });
+      if (!open.length) return;
+      refreshing = true;
+      refreshAgain = false;
+      Promise.all(open.map(refreshRow)).then(function () { refreshing = false; if (refreshAgain) refreshOpen(); });
+    }
+    function refreshRow(tr) {
+      var td = panelOf(tr).firstElementChild;
+      return fetch(lineUrl(tr), { credentials: 'same-origin', cache: 'no-store', headers: { 'If-None-Match': td.dataset.rev } }).then(function (r) {
+        if (r.status === 304 || !r.ok) return;
+        return r.text().then(function (html) {
+          var sel = window.getSelection();
+          if (dead || !td.isConnected || (sel && !sel.isCollapsed && td.contains(sel.anchorNode))) return; // the next move asks again
+          mergeRow(tr, td, frag(html).firstElementChild, r.headers.get('ETag') || '');
+        });
+      }).catch(function () { /* the next move asks again */ });
+    }
+    function mergeRow(tr, td, n, rev) {
+      var o = td.firstElementChild, had = document.activeElement;
+      if (!n) return;
+      if (!o || o.className !== n.className) {
+        td.textContent = '';
+        td.appendChild(n);
+      } else {
+        window.tegoLive.attrs(o, n);
+        window.tegoLive.merge(o, n);
+        var raw = o.querySelector('template.lx-raw'), fresh = n.querySelector('template.lx-raw');
+        if (raw && fresh) raw.innerHTML = fresh.innerHTML; // a template's content is not among its children
+      }
+      td.dataset.rev = rev;
+      if (had && had !== document.body && !had.isConnected) tr.focus({ preventScroll: true }); // its control went: the row keeps focus
+    }
+    on(document, 'tego:moved', refreshOpen);
+    on(document, 'tego:changes', refreshOpen);
     function toggle(tr) {
       if (tr.classList.contains('lx-open')) closeRow(tr); else openRow(tr);
     }
@@ -345,7 +434,8 @@
       tr.classList.add('lq-cur');
       tr.setAttribute('tabindex', '-1');
       if (focus) {
-        tr.focus({ preventScroll: true });
+        var phone = tr.querySelector('a.phone-row');
+        (phone && phone.getClientRects().length ? phone : tr).focus({ preventScroll: true });
         var r = tr.getBoundingClientRect(), top = 120;
         if (r.top < top || r.bottom > window.innerHeight - 40) window.scrollBy({ top: r.top - window.innerHeight / 3 });
       }

@@ -272,6 +272,7 @@ func TestLandUnixStepwise(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := os.Geteuid() == 0
+	// rootskips:ignore as root this skips only where /proc/sys/fs/protected_symlinks is missing, which the root run's kernel has; not a skip for want of root
 	if root {
 		// The kernel's refusal this branch asks for is fs.protected_symlinks', which a host or guest may have off (the
 		// kernel's own default): turned on for the test, as TestHeldOpenDifferentialAcrossMounts turns it on.

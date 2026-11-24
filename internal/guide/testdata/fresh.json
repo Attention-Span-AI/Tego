@@ -62,7 +62,8 @@
     "placeholder": true
   },
   "not_known": [
-    "agents Tego never recorded: nothing here looks for them yet",
+    "No saved scan. Run tego scan from your project folder.",
+    "agents outside a scan's rules and sources, or activity between scans",
     "a contract in no registry (a file given by its path) that no run used"
   ]
 }

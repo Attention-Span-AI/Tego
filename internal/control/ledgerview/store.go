@@ -5,6 +5,7 @@ package ledgerview
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -12,6 +13,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/attention-span-ai/tego/internal/check/mirror"
+	"github.com/attention-span-ai/tego/internal/ledger"
 )
 
 // MaxResidentBytes bounds the decoded lines the read model keeps (an estimate, eventBytes). Past it, the lines of the
@@ -31,6 +35,14 @@ type Store struct {
 	rev      uint64
 	tick     uint64
 	resident int64
+	// Source failures move the revision independently of cached record data.
+	scanError     string
+	scanLiveError string
+	rootSeen      bool
+	rootIdentity  os.FileInfo
+	// recordEvidence remembers observed record files or recorded-line evidence for the store’s lifetime.
+	recordEvidence map[string]bool
+	anchor         string
 	// bg is set while the background Snapshot a LoadNow handed a big read to runs, so at most one does.
 	bg bool
 
@@ -58,7 +70,7 @@ func Open(root string) *Store {
 		// The revision starts at the clock in microseconds, so a restarted server never repeats one an open page
 		// still holds.
 		s = &Store{root: root, runs: map[string]*runState{}, rev: uint64(time.Now().UnixMicro()), intern: map[string]string{},
-			probes: map[string]lockProbe{}}
+			probes: map[string]lockProbe{}, recordEvidence: map[string]bool{}}
 		stores[root] = s
 	}
 	return s
@@ -125,6 +137,12 @@ type job struct {
 
 // claim marks w's run as being read by the caller. s.mu must be held and the run not claimed.
 func (s *Store) claim(w want) *job {
+	if w.seen != nil {
+		if s.recordEvidence == nil {
+			s.recordEvidence = map[string]bool{}
+		}
+		s.recordEvidence[w.st.id] = true
+	}
 	w.st.reading = make(chan struct{})
 	return &job{want: w, before: w.st.bytes, wasResident: w.st.resident}
 }
@@ -134,7 +152,7 @@ func (s *Store) claim(w want) *job {
 // no newer mtime or ctime) is enough, so a request does not read twice what another just read. s.mu must be held and
 // st not claimed.
 func stale(st *runState, seen os.FileInfo, again bool) bool {
-	if st.pub == nil {
+	if st.pub == nil || st.b.ReadError != "" {
 		return true
 	}
 	if seen == nil {
@@ -142,7 +160,7 @@ func stale(st *runState, seen os.FileInfo, again bool) bool {
 	}
 	now := idOf(seen)
 	if now == st.file {
-		return false
+		return st.racy && !again // a racy file's unchanged stamps tell nothing, unless a read just made saw it as it is
 	}
 	return !again || now.dev != st.file.dev || now.ino != st.file.ino || now.size > st.file.size || now.mtime > st.file.mtime ||
 		now.ctime > st.file.ctime
@@ -251,10 +269,30 @@ func (s *Store) readOne(j *job) {
 // must be held.
 func (s *Store) finish(j *job) {
 	st := j.st
+	if st.off > 0 || st.file.size > 0 {
+		if s.recordEvidence == nil {
+			s.recordEvidence = map[string]bool{}
+		}
+		s.recordEvidence[st.id] = true
+	}
 	changed := j.changed
-	if j.err != nil && st.pub == nil {
-		st.b.Bad++
-		changed = true
+	var refusal *rereadRefusal
+	if errors.As(j.err, &refusal) {
+		changed = st.refuseReread(refusal) || changed
+	} else {
+		if j.err == nil && st.rereadErr != nil {
+			st.rereadErr = nil
+		}
+		// A failed read is kept apart from malformed lines (Bad): ReadError holds the last reader failure and a
+		// successful read clears it.
+		readError := ""
+		if j.err != nil {
+			readError = j.err.Error()
+		}
+		if st.b.ReadError != readError {
+			st.b.ReadError = readError
+			changed = true
+		}
 	}
 	if j.live != st.live {
 		st.live, changed = j.live, true
@@ -299,7 +337,7 @@ func (s *Store) evict(keep *runState) {
 		}
 		s.resident -= st.bytes
 		st.bytes, st.resident = 0, false
-		st.paired = nil
+		st.pairs = mirror.Pairs{}
 		st.b.Events = nil
 		signalMu.Lock()
 		delete(signalCache, st.id)
@@ -331,13 +369,19 @@ func (s *Store) lines(st *runState) []Event {
 		s.mu.Unlock()
 		err := st.loadWindow()
 		s.mu.Lock()
+		changed := true
 		if err != nil {
-			st.b.Bad++
-			st.b.Cut = true
+			changed = st.refuseReread(err)
+		} else if st.off >= st.file.size {
+			// Rehydrating a prefix cannot clear an error reading its suffix.
+			st.rereadErr = nil
+			st.b.ReadError = ""
 		}
 		s.resident += st.bytes
-		s.rev++ // the retained window's visibility changed
-		st.publish(s.rev)
+		if changed {
+			s.rev++ // the retained window's visibility or refusal changed
+			st.publish(s.rev)
+		}
 		close(st.reading)
 		st.reading = nil
 		s.touch(st)
@@ -377,36 +421,142 @@ func (s *Store) Snapshot() (*Snapshot, error) { return s.snapshot(true) }
 func (s *Store) snapshot(wait bool) (*Snapshot, error) {
 	snap := &Snapshot{Root: s.root}
 	// Before any events file is looked at: a lock seen free then means the look finds run_end if the run ended.
-	live := s.liveRuns()
-	ents, err := os.ReadDir(s.root)
-	if errors.Is(err, os.ErrNotExist) {
+	live, liveErr := s.liveRuns()
+	if liveErr != nil && !errors.Is(liveErr, fs.ErrNotExist) {
+		snap.LiveError = liveErr.Error()
+	}
+	var ents []os.DirEntry
+	err := s.checkRootIdentity()
+	if err == nil {
+		ents, err = os.ReadDir(s.root)
+	}
+	if err == nil {
 		s.mu.Lock()
-		snap.Rev = s.rev
+		s.rootSeen = true
 		s.mu.Unlock()
-		return snap, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read ledger root: %w", err)
+		s.mu.Lock()
+		known := s.rootSeen || len(s.recordEvidence) > 0
+		snap.Rev = s.rev
+		s.mu.Unlock()
+		if !known {
+			if errors.Is(err, os.ErrNotExist) {
+				return snap, nil
+			}
+			return nil, fmt.Errorf("read ledger root: %w", err)
+		}
+		// A failed root read can hide unobserved runs as well as remembered
+		// requests. Use the same immutable-prefix path for every failure shape.
+		snap.ReadError = fmt.Errorf("read ledger root: %w", err).Error()
+		snap.ReadErrorListed = false
 	}
 	type cand struct {
-		id string
-		fi os.FileInfo
+		id        string
+		fi        os.FileInfo
+		failed    bool
+		readError string
 	}
 	var cands []cand
+	var unknownMissing []string
 	present := map[string]bool{}
+	addFailure := func(id, reason string) {
+		present[id] = true
+		cands = append(cands, cand{id: id, failed: true, readError: reason})
+		if snap.ReadError == "" {
+			snap.ReadError = reason
+			snap.ReadErrorListed = true
+		}
+	}
+	addMissing := func(id string) { addFailure(id, missingRecord(id)) }
 	for _, e := range ents {
 		if !e.IsDir() || !strings.HasPrefix(e.Name(), "r-") || e.Type()&os.ModeSymlink != 0 {
 			continue
 		}
+		present[e.Name()] = true
 		fi, err := os.Lstat(filepath.Join(s.root, e.Name(), "events.jsonl"))
-		if err != nil || !fi.Mode().IsRegular() {
+		if errors.Is(err, fs.ErrNotExist) {
+			if s.hasRecordEvidence(e.Name()) {
+				addMissing(e.Name())
+			} else {
+				unknownMissing = append(unknownMissing, e.Name())
+			}
 			continue
 		}
-		cands = append(cands, cand{e.Name(), fi})
+		if err != nil || !fi.Mode().IsRegular() {
+			reason := recordReadFailure(s.root, e.Name(), err)
+			if s.hasRecordEvidence(e.Name()) {
+				addFailure(e.Name(), reason)
+			} else {
+				if snap.ReadError == "" || snap.ReadErrorListed {
+					snap.ReadError = reason
+				}
+				snap.ReadErrorListed = false
+			}
+			continue
+		}
+		cands = append(cands, cand{id: e.Name(), fi: fi})
 		present[e.Name()] = true
 	}
+	// The index also associates a run ID with this root after its directory is
+	// gone. A positive chain head can then establish the missing recorded source.
+	s.liveMu.Lock()
+	var indexedMissing []string
+	for id := range s.probes {
+		if validRunID(id) && !present[id] {
+			indexedMissing = append(indexedMissing, id)
+		}
+	}
+	s.liveMu.Unlock()
+	for _, id := range indexedMissing {
+		if _, err := os.Lstat(filepath.Join(s.root, id)); errors.Is(err, fs.ErrNotExist) && !s.hasRecordEvidence(id) {
+			unknownMissing = append(unknownMissing, id)
+		}
+	}
+	// A directory disappearing cannot erase a previously observed record source.
+	s.mu.Lock()
+	var vanished []string
+	for id := range s.recordEvidence {
+		if !present[id] {
+			vanished = append(vanished, id)
+		}
+	}
+	s.mu.Unlock()
+	for _, id := range vanished {
+		present[id] = true
+		if err != nil {
+			addFailure(id, snap.ReadError)
+		} else {
+			addMissing(id)
+		}
+	}
+	if len(unknownMissing) > 0 {
+		heads := anchorHeadsNow(s.anchorPath(unknownMissing[0]), unknownMissing...)
+		for i, h := range heads {
+			if h.OK {
+				s.rememberRecordEvidence(unknownMissing[i])
+				present[unknownMissing[i]] = true
+				addMissing(unknownMissing[i])
+			} else if h.Err != nil {
+				addFailure(unknownMissing[i], missingEvidenceError(unknownMissing[i], h.Err))
+			}
+		}
+	}
 	snap.TotalRuns = len(cands)
-	sort.Slice(cands, func(i, j int) bool { return cands[i].fi.ModTime().After(cands[j].fi.ModTime()) })
+	sort.Slice(cands, func(i, j int) bool {
+		if cands[i].failed != cands[j].failed {
+			return cands[i].failed
+		}
+		if cands[i].failed {
+			return cands[i].id < cands[j].id
+		}
+		if mi, mj := cands[i].fi.ModTime(), cands[j].fi.ModTime(); !mi.Equal(mj) {
+			return mi.After(mj)
+		}
+		// Files written within one clock tick carry the same time on some kernels: cut them by a fixed order,
+		// not by listing order, so the same ledger keeps the same runs on every machine and every look.
+		return cands[i].id > cands[j].id
+	})
 	if len(cands) > MaxRuns {
 		cands = cands[:MaxRuns]
 		snap.RunsCut = true
@@ -428,7 +578,12 @@ func (s *Store) snapshot(wait bool) (*Snapshot, error) {
 	}
 	ws := make([]want, 0, len(cands))
 	for _, c := range cands {
-		ws = append(ws, want{st: s.state(c.id), seen: c.fi, live: live[c.id]})
+		if c.failed {
+			st := s.state(c.id)
+			pubs = append(pubs, s.publishReadFailure(st, live[c.id], wait, c.readError))
+		} else {
+			ws = append(ws, want{st: s.state(c.id), seen: c.fi, live: live[c.id]})
+		}
 	}
 	deferred := s.bring(ws, wait)
 	s.evict(nil)
@@ -441,6 +596,25 @@ func (s *Store) snapshot(wait bool) (*Snapshot, error) {
 			snap.Partial = true
 		}
 		pubs = append(pubs, w.st.pub)
+	}
+	// No index is normal before any recorded run. Complete ended runs cannot
+	// hold an actionable request either. Unfinished or omitted records can, so
+	// a missing index there remains a read failure even after a dashboard restart.
+	if errors.Is(liveErr, fs.ErrNotExist) {
+		couldWait := snap.Partial || snap.RunsCut
+		for _, p := range pubs {
+			couldWait = couldWait || !p.Ended
+		}
+		if couldWait {
+			snap.LiveError = liveErr.Error()
+		}
+	}
+	if s.scanError != snap.ReadError || s.scanLiveError != snap.LiveError {
+		s.scanError, s.scanLiveError = snap.ReadError, snap.LiveError
+		s.rev++
+	}
+	for i, p := range pubs {
+		pubs[i] = liveFailureView(s.runs[p.ID], p, snap.LiveError, s.rev)
 	}
 	snap.Rev = s.rev
 	if deferred && !s.bg {
@@ -517,29 +691,64 @@ func cutRun(p *Run, limit int) *Run {
 }
 
 // Run brings one run up to date and returns it with its lines in memory. A malformed id or a missing run is
-// os.ErrNotExist.
+// os.ErrNotExist unless observed-source or recorded-line evidence makes its absence a read failure.
 func (s *Store) Run(id string) (*Run, error) {
 	if !validRunID(id) {
 		return nil, os.ErrNotExist
 	}
-	live := s.liveRuns()[id] // before the events file, as in snapshot
+	if err := s.checkRootIdentity(); err != nil {
+		s.mu.Lock()
+		st := s.runs[id]
+		if st == nil || st.pub == nil {
+			s.mu.Unlock()
+			return nil, err
+		}
+		p := s.publishReadFailure(st, st.pub.Live, true, fmt.Errorf("read ledger root: %w", err).Error())
+		s.mu.Unlock()
+		return s.withLiveFailure(p, err), nil
+	}
+	lives, liveErr := s.liveRuns() // before the events file, as in snapshot
+	live := lives[id]
 	fi, err := os.Lstat(filepath.Join(s.root, id, "events.jsonl"))
+	if errors.Is(err, fs.ErrNotExist) {
+		if reason := s.missingFailure(id); reason != "" {
+			s.mu.Lock()
+			st := s.state(id)
+			p := s.publishReadFailure(st, live, true, reason)
+			s.mu.Unlock()
+			return s.withLiveFailure(p, liveErr), nil
+		}
+	}
 	if err != nil || !fi.Mode().IsRegular() {
-		return nil, os.ErrNotExist
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, os.ErrNotExist
+		}
+		s.mu.Lock()
+		st := s.state(id)
+		p := s.publishReadFailure(st, live, true, recordReadFailure(s.root, id, ledger.WithModeAdvice(filepath.Join(s.root, id), err)))
+		s.mu.Unlock()
+		return s.withLiveFailure(p, liveErr), nil
 	}
 	s.mu.Lock()
 	st := s.state(id)
 	s.bring([]want{{st: st, seen: fi, live: live}}, true)
 	s.touch(st)
 	s.evict(st)
-	p := st.pub
+	p, readErr := st.pub, st.rereadErr
 	s.mu.Unlock()
+	if readErr != nil {
+		return nil, readErr
+	}
 	if p.Events == nil && p.Lines > 0 {
 		p.AllEvents()
 		s.mu.Lock()
-		p = st.pub
+		p, readErr = st.pub, st.rereadErr
 		s.mu.Unlock()
+		if readErr != nil {
+			return nil, readErr
+		}
 	}
+	p = s.withLiveFailure(p, liveErr)
 	if p.Lines > MaxLines {
 		return cutRun(p, MaxLines), nil
 	}
@@ -556,4 +765,203 @@ func (s *Snapshot) Changed(since uint64) []*Run {
 		}
 	}
 	return out
+}
+
+// readError keeps a root snapshot's published refusals and also checks lazy
+// consumers of an older, evicted snapshot against the Store's latest refusal.
+func (r *Run) readError() error {
+	if len(r.LineErrors) > 0 {
+		var refusals []error
+		for _, refusal := range r.LineErrors {
+			refusals = append(refusals, errors.New(refusal.Reason))
+		}
+		return errors.Join(refusals...)
+	}
+	if r.ReadError != "" {
+		return errors.New(r.ReadError)
+	}
+	if r.StartError != "" {
+		return errors.New(r.StartError)
+	}
+	if r.st == nil || r.st.store == nil {
+		return nil
+	}
+	s := r.st.store
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if r.st.rereadErr != nil {
+		return r.st.rereadErr
+	}
+	return nil
+}
+
+// SetAnchor names the same chain anchor the dashboard verifies, for missing-record evidence.
+func (s *Store) SetAnchor(path string) { s.mu.Lock(); s.anchor = path; s.mu.Unlock() }
+
+func missingRecord(id string) string { return "read run " + id + ": its record file is missing" }
+
+func recordReadFailure(root, id string, err error) string {
+	if RootLaunched(root, id, err) {
+		return RootLaunchedWords(id)
+	}
+	if err != nil {
+		return fmt.Errorf("read run %s: %w", id, err).Error()
+	}
+	return fmt.Sprintf("read run %s: events.jsonl is not a regular file", id)
+}
+
+// hasRecordEvidence accepts a previously observed record file (even if empty), or evidence of lines.
+// A file observed empty could have gained lines before it vanished. A contract copy and a lock precede the
+// first event, so neither distinguishes an empty run after a dashboard restart.
+func (s *Store) hasRecordEvidence(id string) bool {
+	s.mu.Lock()
+	known := s.recordEvidence[id]
+	if st := s.runs[id]; st != nil && st.pub != nil {
+		known = known || st.pub.Lines > 0 || st.pub.Bad > 0
+	}
+	s.mu.Unlock()
+	if known {
+		return true
+	}
+	fi, err := os.Lstat(filepath.Join(s.root, id, ledger.LastRefusalFile))
+	positive := err == nil && fi.Mode().IsRegular() && fi.Size() > 0
+	if positive {
+		s.rememberRecordEvidence(id)
+	}
+	return positive
+}
+
+func (s *Store) anchorPath(id string) string {
+	s.mu.Lock()
+	anchor := s.anchor
+	s.mu.Unlock()
+	if anchor == "" {
+		anchor = ledger.DefaultAnchorPath(filepath.Join(s.root, id))
+	}
+	return anchor
+}
+
+func (s *Store) rememberRecordEvidence(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.recordEvidence == nil {
+		s.recordEvidence = map[string]bool{}
+	}
+	s.recordEvidence[id] = true
+}
+
+func missingEvidenceError(id string, err error) string {
+	return missingRecord(id) + "; could not check chain evidence: " + err.Error()
+}
+
+func (s *Store) missingFailure(id string) string {
+	if s.hasRecordEvidence(id) {
+		return missingRecord(id)
+	}
+	// The account-wide chain needs a root association: a surviving directory
+	// or a live-index entry. A foreign ID with neither cannot invent a run here.
+	if fi, err := os.Lstat(filepath.Join(s.root, id)); err != nil || !fi.IsDir() {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return ""
+		}
+		s.liveMu.Lock()
+		_, indexed := s.probes[id]
+		s.liveMu.Unlock()
+		if !indexed {
+			return ""
+		}
+	}
+	head := anchorHeadsNow(s.anchorPath(id), id)[0]
+	if head.OK {
+		s.rememberRecordEvidence(id)
+		return missingRecord(id)
+	}
+	if head.Err != nil {
+		return missingEvidenceError(id, head.Err)
+	}
+	return ""
+}
+
+// publishReadFailure retains known requests and counters, with an explicit read
+// failure. Waiting for an in-flight decoder prevents a second writer to its state.
+func (s *Store) publishReadFailure(st *runState, live, wait bool, reason string) *Run {
+	if st.reading != nil && !wait {
+		p := Run{ID: st.id}
+		if st.pub != nil {
+			p = *st.pub
+		}
+		p.ReadError = reason
+		p.Live = live && !p.Ended
+		p.Rev = s.rev
+		return &p
+	}
+	for st.reading != nil {
+		ch := st.reading
+		s.mu.Unlock()
+		<-ch
+		s.mu.Lock()
+	}
+	if st.pub == nil || st.b.ReadError != reason || st.live != live {
+		st.b.ReadError = reason
+		st.live = live
+		s.rev++
+		st.publish(s.rev)
+	}
+	return st.pub
+}
+
+// withLiveFailure keeps record counters readable while qualifying unknown liveness.
+func (s *Store) withLiveFailure(p *Run, err error) *Run {
+	if p == nil || p.Ended {
+		return p
+	}
+	reason := ""
+	if err != nil {
+		reason = err.Error()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return liveFailureView(s.runs[p.ID], p, reason, s.rev)
+}
+
+// liveFailureView needs the store mutex. Its immutable view is reused until the
+// record or reason changes. Publish releases it; an older request cannot cache
+// an evicted version. Clearing the reason also moves the row's revision.
+func liveFailureView(st *runState, p *Run, reason string, rev uint64) *Run {
+	if p == nil || p.Ended {
+		return p
+	}
+	if st != nil && st.pub != p {
+		st = nil
+	}
+	if st != nil && st.liveSource == p && st.liveView != nil && st.liveView.LiveError == reason {
+		return st.liveView
+	}
+	if reason == "" && (st == nil || st.liveView == nil) {
+		return p
+	}
+	cp := *p
+	cp.LiveError, cp.Rev = reason, rev
+	if st != nil {
+		st.liveSource, st.liveView = p, &cp
+	}
+	return &cp
+}
+
+// checkRootIdentity pins the directory that this process first reads. A readable
+// replacement is still a failure: its index cannot retire this root's requests.
+func (s *Store) checkRootIdentity() error {
+	fi, err := os.Stat(s.root)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.rootIdentity != nil && !os.SameFile(s.rootIdentity, fi) {
+		return errors.New("the record folder changed")
+	}
+	if fi.IsDir() && s.rootIdentity == nil {
+		s.rootIdentity = fi
+	}
+	return nil
 }

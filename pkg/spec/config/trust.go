@@ -13,16 +13,15 @@ import (
 	"syscall"
 )
 
-// TrustMode says what a failed trust check does: abort the whole Load (tego run, and tego gc, which
-// deletes by the config) or warn and skip that layer entirely (compile, doctor). Both call sites share the
-// one check below (I11).
+// TrustMode separates permission decisions from observation and stop operations (ADR 0144).
 type TrustMode int
 
 // TrustMode values.
 const (
 	// TrustAbort returns *UntrustedError from Load before any later layer is read (R14).
 	TrustAbort TrustMode = iota
-	// TrustWarn records a warning diagnostic and skips the layer; it is never partially applied (R20).
+	// TrustWarn returns a degraded snapshot on a failed layer, with an UNKNOWN baseline.
+	// Callers may observe or stop runs, but must never start or widen one from this snapshot.
 	TrustWarn
 )
 
@@ -39,6 +38,7 @@ type UntrustedError struct {
 	Owner  int         // uid of the failing file or directory
 	Mode   fs.FileMode // its mode, permission bits and type
 	Reason string      // one clause: what failed
+	system bool        // the fixed system layer requires root placement, not the generic owner set
 	Names  uint64      // the file's names (st_nlink) when a second one is what failed (manyNamesReason), else 0
 }
 
@@ -56,6 +56,9 @@ func (e *UntrustedError) Fix() string {
 		return fmt.Sprintf("Give it one name: remove its other hard link (find / -xdev -samefile %s lists them), "+
 			"or replace it with a copy (cp -p %[1]s %[1]s.new && mv %[1]s.new %[1]s).", e.Path)
 	}
+	if e.system {
+		return "Use a root-owned regular system file readable by governed users (normally 0644), with root-owned placement and no group/other write bits on its ancestors."
+	}
 	return "Make it a regular file owned by root or you, chmod g-w,o-w on it and its directory."
 }
 
@@ -68,42 +71,70 @@ const groupOtherWrite = syscall.S_IWGRP | syscall.S_IWOTH
 // file. The directory checked is that of the resolved target, so a symlink out of /etc is judged
 // by where it points (E10). No fd escapes this function.
 func readTrusted(path string, invokingUID int) (data []byte, absent bool, err error) {
+	return readTrustedBounded(path, invokingUID, MaxLayerSize)
+}
+
+func readTrustedBounded(path string, invokingUID int, maxBytes int64) (data []byte, absent bool, err error) {
 	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, true, nil
+			absent, why := layerAbsent(path)
+			if why != nil {
+				return nil, false, fmt.Errorf("config: inspect missing layer %s: %w", path, why)
+			}
+			return nil, absent, nil
 		}
 		return nil, false, fmt.Errorf("config: open %s: %w", path, err)
 	}
 	defer func() { _ = f.Close() }()
 
-	st, err := fstat(f)
-	if err != nil {
-		return nil, false, fmt.Errorf("config: fstat %s: %w", path, err)
-	}
-	if st.Mode&syscall.S_IFMT != syscall.S_IFREG {
-		return nil, false, untrusted(path, st, "not a regular file")
-	}
-	if reason := ownerModeReason(st, invokingUID); reason != "" {
-		return nil, false, untrusted(path, st, reason)
-	}
-	if err := oneName(path, st, invokingUID); err != nil {
+	return readTrustedFile(f, path, invokingUID, maxBytes)
+}
+
+// readTrustedFile checks and reads the same descriptor for all file layers, at most maxBytes of it.
+func readTrustedFile(f *os.File, path string, invokingUID int, maxBytes int64) ([]byte, bool, error) {
+	if err := checkTrustedFile(f, path, invokingUID, maxBytes); err != nil {
 		return nil, false, err
 	}
-	if err := checkDirectory(f, path, invokingUID); err != nil {
-		return nil, false, err
-	}
-	if st.Size > MaxLayerSize {
-		return nil, false, fmt.Errorf("config: %s: %w", path, errTooLarge)
-	}
-	data, err = io.ReadAll(io.LimitReader(f, MaxLayerSize+1))
+	data, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
 	if err != nil {
 		return nil, false, fmt.Errorf("config: read %s: %w", path, err)
 	}
-	if len(data) > MaxLayerSize {
-		return nil, false, fmt.Errorf("config: %s: %w", path, errTooLarge)
+	if int64(len(data)) > maxBytes {
+		if maxBytes == MaxLayerSize {
+			return nil, false, fmt.Errorf("config: %s: %w", path, errTooLarge)
+		}
+		return nil, false, fmt.Errorf("config: %s: layer file exceeds %d bytes", path, maxBytes)
 	}
 	return data, false, nil
+}
+
+// checkTrustedFile is readTrustedFile's checks of the open file f, before any byte is read: a regular file, R20's
+// owner and mode, one name, its directory's owner and mode, and its size within maxBytes.
+func checkTrustedFile(f *os.File, path string, invokingUID int, maxBytes int64) error {
+	st, err := fstat(f)
+	if err != nil {
+		return fmt.Errorf("config: fstat %s: %w", path, err)
+	}
+	if st.Mode&syscall.S_IFMT != syscall.S_IFREG {
+		return untrusted(path, st, "not a regular file")
+	}
+	if reason := ownerModeReason(st, invokingUID); reason != "" {
+		return untrusted(path, st, reason)
+	}
+	if err := oneName(path, st, invokingUID); err != nil {
+		return err
+	}
+	if err := checkDirectory(f, path, invokingUID); err != nil {
+		return err
+	}
+	if st.Size > maxBytes {
+		if maxBytes == MaxLayerSize {
+			return fmt.Errorf("config: %s: %w", path, errTooLarge)
+		}
+		return fmt.Errorf("config: %s: layer file exceeds %d bytes", path, maxBytes)
+	}
+	return nil
 }
 
 // errTooLarge is wrapped when a layer exceeds MaxLayerSize.
@@ -128,6 +159,12 @@ var errTooLarge = fmt.Errorf("layer file exceeds %d bytes", MaxLayerSize)
 // and Linux answers ENOTDIR to ".." under a non-directory — TestProcFDDotDotOnFileIsENOTDIR pins that
 // kernel behaviour so the dead branch is not reintroduced.
 func checkDirectory(f *os.File, path string, invokingUID int) error {
+	return checkDirectoryForRead(f, path, invokingUID, false)
+}
+
+// checkDirectoryForRead shares the descriptor binding with policy sources, whose
+// resolved parent also has to exclude group and other read and search permission.
+func checkDirectoryForRead(f *os.File, path string, invokingUID int, private bool) error {
 	fst, err := fstat(f) // f is pinned, so this is the same identity readTrusted approved (R20's fstat-the-fd rule)
 	if err != nil {
 		return fmt.Errorf("config: fstat %s: %w", path, err)
@@ -154,6 +191,9 @@ func checkDirectory(f *os.File, path string, invokingUID int) error {
 	}
 	if reason := ownerModeReason(st, invokingUID); reason != "" {
 		return untrusted(dir, st, "directory "+reason)
+	}
+	if private && st.Mode&0o077 != 0 {
+		return untrusted(dir, st, "user policy directory must be private (0700)")
 	}
 	return checkContains(d, dir, base, fst)
 }

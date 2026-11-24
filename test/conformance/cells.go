@@ -191,6 +191,12 @@ const (
 	OpRequestKey = "request-key"
 	// OpBPF creates a one-entry array map, bpf(BPF_MAP_CREATE).
 	OpBPF = "bpf"
+	// OpRecvFD is the descriptor-import guard's probe (ADR 0128, amended; SEMANTICS §Network assurance): the actor makes an
+	// AF_UNIX SOCK_DGRAM socketpair of its own, sends one byte on one end carrying one of its own descriptors in SCM_RIGHTS,
+	// and receives it on the other with recvmsg and a control buffer, closing any descriptor that arrives. A run with
+	// net.assurance: kernel whose plane holds the hook refuses the receive with EACCES and writes one refused line, op
+	// recvmsg, rule socket-import; nothing else here refuses it (an unguarded receive installs the descriptor).
+	OpRecvFD = "recv-fd"
 )
 
 // The kernel runner's await handshake for a fixture's later files (Fixture.Later): the script's first action, never a
@@ -234,9 +240,10 @@ const RaceArgvBenign = "diff"
 
 // controlOps are the process and control ops, each with the op its refused ledger line names: the plane's process
 // hooks' (ptrace, ptrace_traceme) and the supervisor's keyring arm's (keyctl, add_key, request_key); bpf(2) is
-// refused by the filter, which writes no line, or by the plane's hook (op bpf).
+// refused by the filter, which writes no line, or by the plane's hook (op bpf); a control-bearing recvmsg on a unix
+// socket is the plane's socket_recvmsg hook's (op recvmsg), under net.assurance: kernel.
 var controlOps = map[string]string{OpPtraceAttach: "ptrace", OpPtraceTraceme: "ptrace_traceme", OpKeyctl: "keyctl",
-	OpAddKey: "add_key", OpRequestKey: "request_key", OpBPF: "bpf"}
+	OpAddKey: "add_key", OpRequestKey: "request_key", OpBPF: "bpf", OpRecvFD: "recvmsg"}
 
 // targetOps are the control ops that name a Target, each with the targets it takes.
 var targetOps = map[string][]string{OpPtraceAttach: {TargetChild, TargetHost}, OpPtraceTraceme: {TargetParent, TargetOrphan}}
@@ -301,13 +308,24 @@ type Cell struct {
 	WantWhere []CondWant `json:",omitempty"`
 }
 
+// ContractError declares an intentional invalid contract. The host-side fixture
+// test requires this diagnostic at this stage, and every cell must say no_compile.
+type ContractError struct {
+	Stage    string `yaml:"stage"`
+	Code     string `yaml:"code"`
+	Contains string `yaml:"contains"`
+	Why      string `yaml:"why"`
+}
+
 // Fixture is one contract with the files its cells act on, run once per tier (ADR 0017: all actions of one
 // contract run in one tego run).
 type Fixture struct {
 	Name string
 	// Contract is the agent.yaml. {{P}} is the project directory, {{PORT}} and {{PORT2}} the listeners.
 	Contract string
-	Dirs     []string
+	// ContractError is nil for a contract that must strictly load and compile.
+	ContractError *ContractError `json:",omitempty"`
+	Dirs          []string
 	// Files are created with mode 0644; Scripts with 0755; Actors are copies of the actor binary (0755).
 	Files   map[string]string
 	Scripts map[string]string
@@ -390,6 +408,10 @@ type Model struct {
 	// FSAssuranceKernel is a contract with fs.assurance: kernel, which a tier no decision plane decides refuses
 	// before the actor starts when DenyWrite is not empty (ADR 0041 D1 (a)).
 	FSAssuranceKernel bool
+	// NetAssuranceKernel is a contract with net.assurance: kernel (ADR 0128): tier landlock refuses to start such a run,
+	// and tier cgroup's listener fallback refuses it below Linux 6.7 (ErrNetAssurance, exit 125), before the actor
+	// starts. Where a plane decides, its socket_recvmsg hook refuses a descriptor import (OpRecvFD).
+	NetAssuranceKernel bool `json:",omitempty"`
 	// PlaneCannotHold is a fixture whose mount table the decision plane cannot hold (enforce/cgroup
 	// ErrPlaneDetachedPart: a part of a deny_read tree bound outside it): tier cgroup falls back to the listener,
 	// whose startup check also applies, and tier bpflsm refuses it before the actor starts (exit 125).

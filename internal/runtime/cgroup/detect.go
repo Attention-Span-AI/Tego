@@ -82,15 +82,45 @@ func PlacementFix(uid int, other bool) string {
 	if other {
 		return "start tego from a shell in this user's user manager's cgroup: tego ran as this user, started from " +
 			"another user's shell through sudo or su, so open one as this user from your own login shell, not one sudo " +
-			"or su opened, with " + ScopeAsCommand(uid, "bash") + ", then run tego there"
+			"or su opened (if you are in one, type exit first), with " + ScopeAsCommand(uid, "bash") + ", then run tego there"
 	}
 	return "start tego from a shell in your user manager's cgroup: open one with systemd-run --user --scope bash, " +
 		"then run tego there"
 }
 
 // placementRemedy is PlacementFix for this process: its real uid (a delegated FS is never root's), and whether the
-// person who reads the remedy is another user (readByAnother). It is asked only when CanPlace refuses.
-func placementRemedy() string { return PlacementFix(os.Getuid(), readByAnother()) }
+// person who reads the remedy is another user (readByAnother). It is asked only when CanPlace refuses. When that
+// reader could not use the command PlacementFix gives, because the user manager keeps no socket under the user's logind
+// folder (managerReachable), the remedy says so and names no command, as the next: line of tego setup, run, watch and
+// test does (integration pass 5, 2026-11-11: the fix: line still named a command that fails there).
+func placementRemedy() string {
+	uid, other := os.Getuid(), readByAnother()
+	if other && !managerReachable(uid) {
+		return "start tego from a shell in this user's user manager's cgroup: tego ran as this user, started from another " +
+			"user's shell through sudo or su, and the user manager of uid " + strconv.Itoa(uid) + " keeps no socket under " +
+			path.Join(config.LogindRuntimeRoot, strconv.Itoa(uid)) + ", so systemd-run --user cannot reach it from another " +
+			"user's shell and no command opens a shell in it from yours; a terminal on that user's desktop is in it"
+	}
+	return PlacementFix(uid, other)
+}
+
+// managerReachable reports whether uid's user manager keeps a socket (systemd/private or bus) that uid owns under its
+// logind folder, in a folder uid owns: what ScopeAsCommand's XDG_RUNTIME_DIR=/run/user/<uid> needs for systemd-run
+// --user to reach it from another user's shell (guide.OpenScope looks at the same). A variable so a test describes
+// the folder.
+var managerReachable = func(uid int) bool {
+	dir := path.Join(config.LogindRuntimeRoot, strconv.Itoa(uid))
+	var st unix.Stat_t
+	if unix.Lstat(dir, &st) != nil || st.Mode&unix.S_IFMT != unix.S_IFDIR || int(st.Uid) != uid {
+		return false
+	}
+	for _, name := range []string{"systemd/private", "bus"} {
+		if unix.Stat(path.Join(dir, name), &st) == nil && st.Mode&unix.S_IFMT == unix.S_IFSOCK && int(st.Uid) == uid {
+			return true
+		}
+	}
+	return false
+}
 
 // readByAnother is config.ReadByAnother; a variable so a test is read by another user.
 var readByAnother = config.ReadByAnother
@@ -202,7 +232,8 @@ func NoManagerFix(uid int) string {
 			"runs the agent as an account whose name starts with a letter and holds only letters, digits, '_' and '-'"
 	}
 	return fmt.Sprintf("start a user manager for this user that runs without a login: an administrator runs %s; then "+
-		"opens a shell in it as this user, from the administrator's own shell, with %s, and runs tego there",
+		"opens a shell in it as this user, from the administrator's own login shell (not one sudo or su opened; if you are in "+
+		"one, type exit first), with %s, and runs tego there",
 		LingerCommand(uid), ScopeAsCommand(uid, "bash"))
 }
 

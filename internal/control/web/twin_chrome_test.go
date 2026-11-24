@@ -105,8 +105,19 @@ func TestBlockTwinInChrome(t *testing.T) {
 	set("value", "", "input")
 	says("an emptied value", placeholders)
 
-	// The Block link on a timeline row opens the panel filled in, and the twin with it.
-	pre := c.open(t, "prefilled run page", page+"?block=net&value=example.com%3A443#block")
-	pre.until(t, "the prefilled twin", `document.readyState === "complete" && document.querySelector("code[data-twin]").textContent === `+
-		jsString(cmd+" net example.com:443"))
+	// The timeline row's Block parameters prefill the panel and its twin.
+	// A newly attached target can still show a completed about:blank document.
+	// Exercise that state explicitly: readiness must be false, without throwing.
+	pre := c.open(t, "prefilled run page", "about:blank")
+	pre.until(t, "completed blank target", `document.readyState === "complete" && location.href === "about:blank"`)
+	prefilled := `document.readyState === "complete" && !!document.querySelector("code[data-twin]") && document.querySelector("code[data-twin]").textContent === ` +
+		jsString(cmd+" net example.com:443")
+	if got := pre.eval(t, prefilled); got != "false" {
+		t.Fatalf("blank target reported a prefilled twin: %s", got)
+	}
+	c.call(t, pre.session, "Page.navigate", map[string]any{"url": page + "?block=net&value=example.com%3A443#block"})
+	pre.until(t, "the prefilled twin", prefilled)
+	if pre.eval(t, `(()=>{const f=document.getElementById('block-form');return !!document.querySelector('section#block')&&f.elements.namedItem('kind').value==='net'&&f.elements.namedItem('value').value==='example.com:443';})()`) != "true" {
+		t.Error("prefilled twin does not match the visible block form")
+	}
 }

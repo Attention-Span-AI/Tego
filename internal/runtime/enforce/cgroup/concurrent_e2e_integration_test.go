@@ -13,6 +13,8 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -24,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -32,12 +35,13 @@ import (
 )
 
 // concurrentAgent is each run's agent in TestTier2ConcurrentRunsOfOneBuild: it opens its run's own watched file
-// E2E_OPENS times, execs true, and makes one TLS exchange with the fake Anthropic endpoint on E2E_PORT through
-// the host's libssl, whose capture probes the build's runs share.
+// E2E_OPENS times, execs true, and makes E2E_EXCHANGES TLS exchanges, each on a connection of its own, with the
+// fake Anthropic endpoint on E2E_PORT through the host's libssl, whose capture probes the build's runs share. It
+// writes its pid into out/ready, so a failed run's leftover capture scratch rows can be told apart.
 const concurrentAgent = `import os, socket, ssl, subprocess, time
 # The parent samples the active file-open program once every agent is waiting here.
-with open("out/ready", "w"):
-    pass
+with open("out/ready", "w") as f:
+    f.write(str(os.getpid()))
 while not os.path.exists("out/start"):
     time.sleep(0.01)
 path = "out/data"
@@ -48,17 +52,18 @@ ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
 body = b'{"model":"claude-opus-4-1","max_tokens":64,"messages":[{"role":"user","content":"hi"}]}'
-with socket.create_connection(("127.0.0.1", int(os.environ["E2E_PORT"]))) as raw:
-    with ctx.wrap_socket(raw, server_hostname="api.anthropic.com") as s:
-        s.sendall(b"POST /v1/messages HTTP/1.1\r\nHost: api.anthropic.com\r\nContent-Type: application/json\r\n"
-                  b"Content-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body)
-        data = b""
-        while not (b"\r\n\r\n" in data and data.endswith(b"}")):
-            chunk = s.recv(65536)
-            if not chunk:
-                break
-            data += chunk
-print("RESULT exchange", len(data), flush=True)
+for _ in range(int(os.environ["E2E_EXCHANGES"])):
+    with socket.create_connection(("127.0.0.1", int(os.environ["E2E_PORT"]))) as raw:
+        with ctx.wrap_socket(raw, server_hostname="api.anthropic.com") as s:
+            s.sendall(b"POST /v1/messages HTTP/1.1\r\nHost: api.anthropic.com\r\nContent-Type: application/json\r\n"
+                      b"Content-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body)
+            data = b""
+            while not (b"\r\n\r\n" in data and data.endswith(b"}")):
+                chunk = s.recv(65536)
+                if not chunk:
+                    break
+                data += chunk
+    print("RESULT exchange", len(data), flush=True)
 `
 
 // concurrentContract pins capture: uprobe and carries a token budget, so a run whose capture could not start is
@@ -74,7 +79,7 @@ exec:
 net:
   allow: ["127.0.0.1:%d"]
 env:
-  pass: ["PATH", "HOME", "E2E_PORT", "E2E_OPENS"]
+  pass: ["PATH", "HOME", "E2E_PORT", "E2E_OPENS", "E2E_EXCHANGES"]
 limits:
   tokens: 1000000
 capture: uprobe
@@ -88,6 +93,12 @@ const anthropicReply = `{"id":"msg_01","type":"message","role":"assistant","mode
 
 // concurrentE2EOpens is how many times each run's agent opens its watched file.
 const concurrentE2EOpens = 2000
+
+// concurrentE2EExchanges is how many model exchanges each run's agent makes. One is the hosted matrix's condition.
+// Before ADR 0150, on Fedora's 7.0.14 kernel with the BPF LSM active, 40 turned a capture loss in 1 round of 69 into
+// failed runs in 9 rounds of 11, and showed the kernel faults behind them (docs/GAPS.md C76): raise it to look for
+// a capture loss under concurrency.
+const concurrentE2EExchanges = 1
 
 // TestTier2ConcurrentRunsOfOneBuild is ADR 0026 run the way an operator runs it: 2, 8 and 32 `tego run --tier
 // cgroup` of one build at once, as root, each with a token budget and capture: uprobe, each agent opening its own
@@ -121,8 +132,18 @@ func TestTier2ConcurrentRunsOfOneBuild(t *testing.T) {
 	}
 	// The testhooks build prints each start phase's time under TEGO_TEST_PHASE_TIMING (internal/platform/startphase),
 	// so a round logs what its Prepares took apart from the agents' own work.
-	bin := buildTegoWithTags(t, base, "tegobpf,tegotesthooks")
-	requireTier(t, bin, "cgroup")
+	// After a guest kernel fault in a round, the next setup can block in an SRCU grace period:
+	// the kernel stacks of what blocks are printed and the binary ends, rather than waiting out the suite's alarm.
+	bin := concurrentSetup(t,
+		func() string { return buildTegoWithTags(t, base, "tegobpf,tegotesthooks") },
+		func(bin string) { requireTier(t, bin, "cgroup") },
+		func() func() {
+			stall := time.AfterFunc(90*time.Second, func() {
+				fmt.Fprint(os.Stderr, blockedTasks("the setup of a round has not finished in 90 s"))
+				panic("concurrent runs: setup stalled for 90 s; the blocked tasks and their kernel stacks are above")
+			})
+			return func() { stall.Stop() }
+		})
 	_, resolverSetting, _ := machineResolver(t)
 	ln, err := tls.Listen("tcp4", "127.0.0.1:0", &tls.Config{Certificates: []tls.Certificate{anthropicCert(t)}})
 	if err != nil {
@@ -136,6 +157,18 @@ func TestTier2ConcurrentRunsOfOneBuild(t *testing.T) {
 			concurrentE2E(t, bin, python, base, resolverSetting, port, uid, gid, n)
 		})
 	}
+}
+
+// concurrentSetup excludes compilation from the kernel-stall deadline and owns the watchdog even when the tier
+// check skips or fails with Goexit. A completed setup stops the watchdog before later test work starts.
+func concurrentSetup(t *testing.T, build func() string, require func(string), startWatchdog func() func()) string {
+	t.Helper()
+	bin := build()
+	stop := sync.OnceFunc(startWatchdog())
+	t.Cleanup(stop)
+	require(bin)
+	stop()
+	return bin
 }
 
 // logPhases logs, for a round of n runs, each start phase's slowest and median time across the runs, from the
@@ -176,6 +209,8 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 		project, ledger, cfg string
 		stdout, stderr       strings.Builder
 		err                  error
+		peakRSS              uint64
+		memoryErr            error
 		done                 chan struct{}
 	}
 	runs := make([]*run, n)
@@ -208,7 +243,7 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 		if err := os.Mkdir(r.ledger, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(r.cfg, []byte(fmt.Sprintf("version: 0\nledger_root: %s\nresolver: %s\n", r.ledger,
+		if err := os.WriteFile(r.cfg, []byte(fmt.Sprintf("version: 0\nledger_root: %s\nresolver: %s\nlog:\n  level: debug\n", r.ledger,
 			resolverSetting)), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -234,6 +269,11 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 			time.Since(started).Round(time.Millisecond), share)
 	}()
 	isoEnv := testutil.TegoEnv(t, base) // built here: the goroutines below must not call t.Fatal
+	kmsg := openKernelLog()
+	defer kmsg.close()
+	if kmsg.err != nil {
+		t.Fatalf("%d runs: kernel log evidence unavailable: %v", n, kmsg.err)
+	}
 	var wg sync.WaitGroup
 	for _, r := range runs {
 		wg.Add(1)
@@ -244,14 +284,20 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 				"--", python, "./agent.py")
 			cmd.Dir = r.project
 			cmd.Env = append(isoEnv[:len(isoEnv):len(isoEnv)], "TEGO_CONFIG="+r.cfg, "E2E_PORT="+strconv.Itoa(port),
-				"E2E_OPENS="+strconv.Itoa(concurrentE2EOpens), "GOTRACEBACK=all", "TEGO_TEST_PHASE_TIMING=1")
+				"E2E_OPENS="+strconv.Itoa(concurrentE2EOpens), "E2E_EXCHANGES="+strconv.Itoa(concurrentE2EExchanges), "GOTRACEBACK=all", "TEGO_TEST_PHASE_TIMING=1")
 			cmd.Stdout, cmd.Stderr = &r.stdout, &r.stderr
 			r.err = cmd.Run()
+			var usage any
+			if cmd.ProcessState != nil {
+				usage = cmd.ProcessState.SysUsage()
+			}
+			r.peakRSS, r.memoryErr = concurrentLauncherMemory(usage)
 		}()
 	}
 	// Every agent is now running but has not opened its watched file. Sampling after this barrier
 	// includes the full round even on a cold build with no links before the first Prepare.
 	var counter *fileOpenCounter
+	var scratch *sslScratchMaps
 	var before, fileOpenSkips uint64
 	var skipsBefore map[string]uint64
 	counterErr := func() error {
@@ -289,6 +335,7 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 		if err != nil {
 			return err
 		}
+		scratch = openSSLScratchMaps(filepath.Join(DefaultBPFFS, pinRoot, hash, pinMaps))
 		before, err = counter.read()
 		if err != nil {
 			return err
@@ -332,6 +379,7 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 		}
 		counter.close()
 	}
+	defer scratch.close()
 	if counterErr != nil {
 		t.Errorf("round-wide file-open coverage uncertain: %v", counterErr)
 	}
@@ -340,6 +388,13 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 		stderrs[i] = r.stderr.String()
 	}
 	logPhases(t, n, stderrs)
+	faults, evidenceErr := kmsg.ofNote()
+	if evidenceErr != nil {
+		t.Errorf("%d runs: %v", n, evidenceErr)
+	}
+	if faults != "" {
+		t.Errorf("%d runs: the guest kernel reported a fault during the round:\n%s", n, faults)
+	}
 	// Ended or stopped at the bound, no run of the round may leave its row behind: the tests after this one need
 	// the build's last launcher out to find its run set empty.
 	if liveRunRows(t) {
@@ -348,9 +403,17 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 
 	openCounts := make([]watchedOpenCount, 0, n)
 	var execsLost uint64 // runs whose exec of true has no line
+	gapWhys := map[string]int{}
 	for i, r := range runs {
+		t.Logf("%d runs: run %d launcher wait peak RSS: %d bytes (growth bound %d bytes)", n, i, r.peakRSS, concurrentLauncherRSSBound)
+		if r.memoryErr != nil {
+			t.Errorf("run %d: launcher memory observation: %v", i, r.memoryErr)
+		}
 		if r.err != nil {
-			t.Errorf("run %d: tego run: %v\nstdout:\n%s\nstderr:\n%s", i, r.err, r.stdout.String(), r.stderr.String())
+			t.Errorf("run %d: tego run: %v\n%s\n%s%s%s", i, r.err, concurrentDiagnosticTail("stdout", r.stdout.String()),
+				concurrentFailureDiagnostics(r.ledger, r.stderr.String()),
+				concurrentOwnLogLines(filepath.Join(testutil.OwnStateDir(base), "home", ".tego"), r.stderr.String()),
+				scratch.describe(filepath.Join(r.project, "out", "ready")))
 			continue
 		}
 		events := runEvents(t, r.ledger)
@@ -376,6 +439,9 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 			case e["kind"] == "exec" && filepath.Base(path) == "true" && e["verdict"] == "allow":
 				trues++
 			case e["kind"] == "gap":
+				what, _ := e["what"].(string)
+				why, _ := e["why"].(string)
+				gapWhys[what+"/"+why]++
 				switch e["why"] {
 				case "bpf-trampoline-miss/shared-build":
 					count, _ := e["count"].(float64)
@@ -418,15 +484,25 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 				}
 			}
 		}
-		if requests != 1 || metered != 1 {
-			t.Errorf("run %d captured %d requests and %d metered responses, want its one exchange once with its usage",
-				i, requests, metered)
+		if requests != concurrentE2EExchanges || metered != concurrentE2EExchanges {
+			t.Errorf("run %d captured %d requests and %d metered responses, want each of its %d exchanges once with its usage",
+				i, requests, metered, concurrentE2EExchanges)
 		}
 		end := findEvent(events, func(e map[string]any) bool { return e["kind"] == "run_end" })
+		if resources, ok := end["resources"].(map[string]any); ok {
+			if peak, ok := resources["memory_peak"].(float64); ok {
+				t.Logf("%d runs: run %d agent cgroup memory.peak: %.0f bytes (excludes launcher RSS)", n, i, peak)
+			} else {
+				t.Logf("%d runs: run %d agent cgroup memory.peak unavailable", n, i)
+			}
+		} else {
+			t.Logf("%d runs: run %d agent cgroup memory.peak unavailable", n, i)
+		}
 		if end == nil || end["reason"] != "exit" {
 			t.Errorf("run %d run_end %v, want reason exit", i, end)
 		}
 	}
+	t.Logf("%d runs: gap lines across the runs that closed: %v", n, gapWhys)
 	if counterErr == nil {
 		// One skipped sched_process_exec loses at most one exec's line: the round's missing exec lines are bounded by
 		// the program's own skips, as its missing opens are by tego_file_open's.
@@ -489,4 +565,117 @@ func anthropicCert(t *testing.T) tls.Certificate {
 		t.Fatal(err)
 	}
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
+}
+
+// concurrentFailureDiagnostics keeps the evidence the success-only assertions
+// cannot reach when a launcher exits early.
+func concurrentFailureDiagnostics(root, stderr string) string {
+	var out strings.Builder
+	paths, err := filepath.Glob(filepath.Join(root, "*", "events.jsonl"))
+	if err != nil || len(paths) != 1 {
+		fmt.Fprintf(&out, "ledger lookup under %s: %d ledgers (%v), want one\n", root, len(paths), err)
+	}
+	const maxLedgerLines, maxLedgerLine = 64, 4 << 10
+	printed := 0
+	omitted := map[string]int{}
+	var omittedKinds []string
+	formatLedgerLine := func(kind, body string) string {
+		line := kind + ": " + strings.TrimSpace(body)
+		if len(line) > maxLedgerLine {
+			const marker = " [ledger line truncated at 4 KiB]"
+			line = line[:maxLedgerLine-len(marker)] + marker
+		}
+		return line
+	}
+	ledgerLine := func(kind, body string) {
+		if printed == maxLedgerLines {
+			if omitted[kind] == 0 {
+				omittedKinds = append(omittedKinds, kind)
+			}
+			omitted[kind]++
+			return
+		}
+		printed++
+		fmt.Fprintln(&out, formatLedgerLine(kind, body))
+	}
+	// Keep the final outcome even when gaps exhaust the diagnostic-line budget.
+	var lastEnd string
+	for _, path := range paths {
+		f, err := os.Open(path)
+		if err != nil {
+			ledgerLine("open ledger", fmt.Sprintf("%s: %v", path, err))
+			continue
+		}
+		r := bufio.NewReader(f)
+		for {
+			line, readErr := r.ReadBytes('\n')
+			if strings.TrimSpace(string(line)) != "" {
+				var header struct {
+					Kind string `json:"kind"`
+				}
+				if err := json.Unmarshal(line, &header); err != nil {
+					ledgerLine("decode ledger", fmt.Sprintf("%s: %v", path, err))
+				} else if header.Kind == "run_end" {
+					lastEnd = formatLedgerLine(header.Kind, string(line))
+				} else if header.Kind == "gap" {
+					ledgerLine(header.Kind, string(line))
+				}
+			}
+			if readErr != nil {
+				if !errors.Is(readErr, io.EOF) {
+					ledgerLine("read ledger", fmt.Sprintf("%s: %v", path, readErr))
+				}
+				break
+			}
+		}
+		if err := f.Close(); err != nil {
+			ledgerLine("close ledger", fmt.Sprintf("%s: %v", path, err))
+		}
+	}
+	for _, kind := range omittedKinds {
+		plural := "s"
+		if omitted[kind] == 1 {
+			plural = ""
+		}
+		fmt.Fprintf(&out, "%d more %s line%s omitted\n", omitted[kind], kind, plural)
+	}
+	if lastEnd == "" {
+		out.WriteString("run_end: absent\n")
+	} else {
+		fmt.Fprintln(&out, lastEnd)
+	}
+	out.WriteString(concurrentDiagnosticTail("stderr", stderr))
+	return out.String()
+}
+
+func concurrentDiagnosticTail(name, output string) string {
+	const maxOutput = 8 << 10
+	tail := output[max(0, len(output)-maxOutput):]
+	var out strings.Builder
+	if len(tail) != len(output) {
+		fmt.Fprintf(&out, "%s truncated: %d earlier bytes omitted\n", name, len(output)-len(tail))
+	}
+	fmt.Fprintf(&out, "%s tail (last %d of %d bytes):\n%s", name, len(tail), len(output), tail)
+	return out.String()
+}
+
+// A 256 MiB peak is a growth guard, not a measured requirement. The hosted OOM victim used about
+// 72 MB. Wait rusage cheaply bounds launcher RSS (and can include the largest reaped descendant,
+// not their sum); run_end's memory.peak instead measures the agent scope.
+const concurrentLauncherRSSBound = 256 << 20
+
+func concurrentLauncherMemory(usage any) (uint64, error) {
+	r, ok := usage.(*syscall.Rusage)
+	if !ok || r == nil || r.Maxrss <= 0 {
+		return 0, errors.New("launcher peak RSS unavailable from wait rusage")
+	}
+	// Linux wait rusage reports KiB. Guard the conversion as well as the regression bound.
+	if uint64(r.Maxrss) > ^uint64(0)>>10 {
+		return 0, errors.New("launcher peak RSS overflows bytes")
+	}
+	peak := uint64(r.Maxrss) << 10
+	if peak > concurrentLauncherRSSBound {
+		return peak, fmt.Errorf("launcher peak RSS %d bytes exceeds the %d-byte growth bound", peak, concurrentLauncherRSSBound)
+	}
+	return peak, nil
 }

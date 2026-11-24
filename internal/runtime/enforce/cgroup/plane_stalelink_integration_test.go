@@ -43,7 +43,7 @@ func TestPlaneStaleLinkOverARecreatedBuildIsNotAdopted(t *testing.T) {
 	}
 	hash := fmt.Sprintf("t6stlnk%09d", os.Getpid())
 	b := New(Options{Machine: machineLinger(time.Hour), BPFFS: DefaultBPFFS, StateDir: pinState(t), Hash: hash,
-		Plane: PlaneSetup{Mode: mode, Build: build}})
+		Plane: PlaneSetup{Mode: mode, Build: build, RecheckAdmission: testPlaneAdmission}})
 	pins, err := newPinLayout(DefaultBPFFS, hash)
 	if err != nil {
 		t.Fatal(err)

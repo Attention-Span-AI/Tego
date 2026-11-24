@@ -20,6 +20,17 @@ import (
 // charges the same bytes more.
 const planeVerifiedBudget = 20000
 
+// planeBlockWalkBudget is what a plane program may spend on top for its second walk, the live blocks' (ADR 0124,
+// amendment 2026-11-21: tego_block_decide, form d too, a global function verified once per program, which walks to
+// the namespace root). Measured on one test binary at 858f6def7, the largest walking program went from 13,804 to 16,864
+// on 6.17 (rd path_mknod) and from 19,834 to 24,167 on Fedora's 7.0.14 (rd path_rename), a walk of about 3,100 and
+// 4,400; 5.14 (RHEL 9.8) and 6.12 (Debian 13) verified the same objects (6392c64b3) in at most 19,171. It is not
+// scaled by a family's charge: on Linux 6.19.4 to 6.19.y, which charges bpf_loop callbacks as loops without 7.0's
+// offset, the block walk was not measured, and scaling the sum would lift the pr budget over form b's bare walk
+// (67,514). A loop-form walk still costs more than this allowance alone on every measured kernel (T0's a-rd 35,855 on
+// 5.14 the least of them).
+const planeBlockWalkBudget = 8000
+
 // planeListenVerifiedBudget is socket_listen's own budget. That hook walks no path, so form d's figures say
 // nothing about it: its body is decide_listen.h's bound-address and autobind checks, which the verifier walked
 // 16,945 to 18,295 times on 6.17 and 43,850 to 44,096 times on 7.0 (GitHub's runners, 7.0.0-1017-azure),
@@ -108,9 +119,10 @@ func planeBudgetFor(hook string, o Object, release string) uint32 {
 	}
 	c := planeChargeFor(release)
 	if c == nil || c.baseline[o] == 0 || c.there[o] <= c.baseline[o] {
-		return planeVerifiedBudget
+		return planeVerifiedBudget + planeBlockWalkBudget
 	}
-	return uint32((uint64(planeVerifiedBudget)*uint64(c.there[o]) + uint64(c.baseline[o]) - 1) / uint64(c.baseline[o]))
+	return uint32((uint64(planeVerifiedBudget)*uint64(c.there[o])+uint64(c.baseline[o])-1)/uint64(c.baseline[o])) +
+		planeBlockWalkBudget
 }
 
 // planeBudgetLogged is the set of builds whose budget this test binary has logged.
@@ -146,27 +158,35 @@ func TestPlaneBudgetFollowsTheKernelsChargeForTheSameBytes(t *testing.T) {
 		want        uint32
 		mustHoldMax uint32 // the largest plane program that kernel verified, which the budget must admit
 	}{
-		// Kernels that charge the plane what the budget was set against: 20,000, unchanged.
-		{"5.14.0-687.61.1.el9_8.x86_64", "path_mknod", ObjectPlaneRdonly, 20000, 13819},
-		{"6.12.115+deb13.1-cloud-amd64", "path_mknod", ObjectPlaneRdonly, 20000, 13819},
-		{"6.17.0-061700-generic", "path_mknod", ObjectPlaneRdonly, 20000, 13804},
-		{"6.18.0-061800-generic", "path_mknod", ObjectPlaneRdonly, 20000, 14562},
-		{"6.19.0-061900-generic", "path_mknod", ObjectPlaneRdonly, 20000, 14562},
-		{"6.19.3-061903-generic", "path_mknod", ObjectPlaneRdonly, 20000, 14562},
-		{"6.19.3-061903-generic", "path_mknod", ObjectPlaneProbe, 20000, 11582},
-		{"7.0.14-201.fc44.x86_64", "path_mknod", ObjectPlaneRdonly, 20000, 19834},
-		{"7.2.9-300.fc45.x86_64", "path_mknod", ObjectPlaneRdonly, 20000, 18137},
-		// Linux 6.19.4 and later 6.19.y: the same bytes cost 63,939 / 14,562 (rd) and 28,681 / 11,582 (pr) of 6.19.3's.
-		{"6.19.4-061904-generic", "path_mknod", ObjectPlaneRdonly, 87817, 63939},
-		{"6.19.4-061904-generic", "path_mknod", ObjectPlaneProbe, 49527, 28681},
-		{"6.19.10-300.fc44.x86_64", "file_open", ObjectPlaneRdonly, 87817, 63939},
-		{"6.19.10-300.fc44.x86_64", "", ObjectPlaneProbe, 49527, 28681},
+		// Kernels that charge the plane what the budget was set against: 20,000 and the block walk's 8,000. The
+		// counts are the largest walking program measured with the block walk (5.14, 6.12, 6.17, 7.0.14) or, where
+		// no guest ran it, before it.
+		{"5.14.0-687.53.1.el9_8.x86_64", "path_mknod", ObjectPlaneProbe, 28000, 13959},
+		{"5.14.0-687.53.1.el9_8.x86_64", "path_mknod", ObjectPlaneRdonly, 28000, 19171},
+		{"5.14.0-687.61.1.el9_8.x86_64", "path_mknod", ObjectPlaneRdonly, 28000, 19171},
+		{"6.12.107+deb13-amd64", "path_mknod", ObjectPlaneProbe, 28000, 13959},
+		{"6.12.107+deb13-amd64", "path_mknod", ObjectPlaneRdonly, 28000, 19171},
+		{"6.12.115+deb13.1-cloud-amd64", "path_mknod", ObjectPlaneRdonly, 28000, 19171},
+		{"6.17.0-41-generic", "path_mknod", ObjectPlaneRdonly, 28000, 16864},
+		{"6.18.0-061800-generic", "path_mknod", ObjectPlaneRdonly, 28000, 14562},
+		{"6.19.0-061900-generic", "path_mknod", ObjectPlaneRdonly, 28000, 14562},
+		{"6.19.3-061903-generic", "path_mknod", ObjectPlaneRdonly, 28000, 14562},
+		{"6.19.3-061903-generic", "path_mknod", ObjectPlaneProbe, 28000, 11582},
+		{"7.0.14-201.fc44.x86_64", "path_rename", ObjectPlaneRdonly, 28000, 24167},
+		{"7.0.14-201.fc44.x86_64", "path_rename", ObjectPlaneProbe, 28000, 19098},
+		{"7.2.9-300.fc45.x86_64", "path_mknod", ObjectPlaneRdonly, 28000, 18137},
+		// Linux 6.19.4 and later 6.19.y: the same bytes (before the block walk) cost 63,939 / 14,562 (rd) and
+		// 28,681 / 11,582 (pr) of 6.19.3's; the block walk's allowance is added unscaled.
+		{"6.19.4-061904-generic", "path_mknod", ObjectPlaneRdonly, 95817, 63939},
+		{"6.19.4-061904-generic", "path_mknod", ObjectPlaneProbe, 57527, 28681},
+		{"6.19.10-300.fc44.x86_64", "file_open", ObjectPlaneRdonly, 95817, 63939},
+		{"6.19.10-300.fc44.x86_64", "", ObjectPlaneProbe, 57527, 28681},
 		// socket_listen walks no path and has its own budget, which 6.19.4 did not move (16,768 on both).
 		{"6.19.10-300.fc44.x86_64", "socket_listen", ObjectPlaneRdonly, planeListenVerifiedBudget, 16768},
 		{"7.0.14-201.fc44.x86_64", "socket_listen", ObjectPlaneProbe, planeListenVerifiedBudget, 43978},
 		// A release this test cannot read is held to the unscaled budget.
-		{"", "file_open", ObjectPlaneRdonly, 20000, 0},
-		{"6.19", "file_open", ObjectPlaneRdonly, 20000, 0},
+		{"", "file_open", ObjectPlaneRdonly, 28000, 0},
+		{"6.19", "file_open", ObjectPlaneRdonly, 28000, 0},
 	} {
 		got := planeBudgetFor(c.hook, c.o, c.release)
 		if got != c.want {
@@ -184,5 +204,9 @@ func TestPlaneBudgetFollowsTheKernelsChargeForTheSameBytes(t *testing.T) {
 	}
 	if b := planeBudgetFor("file_open", ObjectPlaneProbe, "6.19.10-300.fc44.x86_64"); b >= 67514 {
 		t.Errorf("the 6.19.4+ pr budget %d admits form b's bare walk (67,514)", b)
+	}
+	// Elsewhere, the cheapest loop-form walk T0 measured alone (a-rd, 35,855 on 5.14) still costs more than the budget.
+	if b := planeBudgetFor("file_open", ObjectPlaneRdonly, "5.14.0-687.61.1.el9_8.x86_64"); b >= 35855 {
+		t.Errorf("the 5.14 rd budget %d admits form a's bare walk there (35,855)", b)
 	}
 }

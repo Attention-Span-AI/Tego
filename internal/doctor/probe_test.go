@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/attention-span-ai/tego/internal/selfbin"
+	"github.com/attention-span-ai/tego/internal/shellword"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
@@ -73,38 +75,84 @@ func TestWriteResults(t *testing.T) {
 // $HOME/.local/bin, where the install script puts tego, so the line answered "command not found". Every root-only
 // probe's fix names this binary by its absolute path.
 func TestSudoFixNamesThisBinary(t *testing.T) {
-	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	bin := filepath.Join(dir, "tego")
 	if err := os.WriteFile(bin, nil, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func(orig func() (string, error)) func() { return func() { executable = orig } }(executable))
-	executable = func() (string, error) { return bin, nil }
-	resolved, err := filepath.EvalSymlinks(bin)
+	t.Cleanup(func(e func() (string, error), n func() (string, string)) func() {
+		return func() { executable, namedSelf = e, n }
+	}(executable, namedSelf))
+	// The real checks may refuse a test binary beneath a shared, writable build directory.
+	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "sudo " + resolved + " doctor"
-	if got := sudoDoctor(); got != want {
-		t.Fatalf("sudoDoctor() = %q, want %q", got, want)
+	executable = func() (string, error) { return self, nil }
+	want := "sudo " + shellword.Quote(mustResolve(t, self)) + " machine check"
+	word, why := selfbin.Named(executable)
+	if why == "" {
+		if got := sudoDoctor(); got != "sudo "+word+" machine check" {
+			t.Fatalf("sudoDoctor() = %q, want %q", got, "sudo "+word+" machine check")
+		}
+	} else {
+		if word != "" || why != selfbin.Untrusted {
+			t.Fatalf("Named(test binary) = %q, %q", word, why)
+		}
+		if got := sudoDoctor(); got != "run this tego as root with sudo ("+strings.TrimSuffix(why, ".")+")" {
+			t.Fatalf("sudoDoctor() = %q: want no command and %q", got, why)
+		}
 	}
+	// Probe rendering has its own trusted fixture, so build-directory permissions cannot hide its command branch.
+	namedSelf = func() (string, string) { return shellword.Quote(mustResolve(t, self)), "" }
 	fan, _ := probeFanotify(false, Version{6, 17, 0})
 	progs, _ := probeHooks(false, os.Getuid(), Version{6, 17, 0}, nil, nil)
 	for _, r := range []Result{fan, progs} {
 		if r.Fix != "re-run as root: "+want {
-			t.Errorf("%s fix %q, want it to name %s", r.ID, r.Fix, resolved)
+			t.Errorf("%s fix %q, want it to name %s", r.ID, r.Fix, self)
 		}
 	}
 	if got := state(func(st *probeState) { st.root = false }).fix(backend.TierLandlock); !strings.HasSuffix(got, want) {
 		t.Errorf("tier fix %q does not end in %q", got, want)
 	}
-	// A path the shell would split is one quoted word; an unreadable one falls back to the name.
-	executable = func() (string, error) { return "/opt/my tools/tego", nil }
-	if got := sudoDoctor(); got != "sudo '/opt/my tools/tego' doctor" {
+	// A path the shell would split is one quoted word.
+	namedSelf = func() (string, string) { return "'/opt/my tools/tego'", "" }
+	if got := sudoDoctor(); got != "sudo '/opt/my tools/tego' machine check" {
 		t.Errorf("sudoDoctor() = %q", got)
 	}
-	executable = func() (string, error) { return "", os.ErrNotExist }
-	if got := sudoDoctor(); got != "sudo tego machine check" {
-		t.Errorf("sudoDoctor() = %q", got)
+	// Every way the binary cannot be named gives no command, and never a lookup in the reader's PATH or a path that was
+	// not checked (an earlier version printed sudo "$(command -v tego)" and an unresolved path).
+	namedSelf = func() (string, string) { return selfbin.Named(executable) }
+	unlinked := filepath.Join(dir, "gone")
+	for name, exe := range map[string]func() (string, error){
+		"unreadable":  func() (string, error) { return "", os.ErrNotExist },
+		"missing":     func() (string, error) { return unlinked, nil },
+		"not a file":  func() (string, error) { return dir, nil },
+		"not running": func() (string, error) { return bin, nil }, // a real file, but not the running binary
+		"unsafe":      func() (string, error) { return filepath.Join(dir, "x\n  sudo -i\ntego"), nil },
+	} {
+		executable = exe
+		if name == "unsafe" {
+			if err := os.WriteFile(filepath.Join(dir, "x\n  sudo -i\ntego"), nil, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		got := sudoDoctor()
+		if strings.Contains(got, "command -v") || strings.Contains(got, "sudo tego") || strings.Contains(got, "sudo /") ||
+			strings.Contains(got, "sudo '") || !strings.HasPrefix(got, "run this tego as root with sudo (") {
+			t.Errorf("%s: sudoDoctor() = %q: want no command", name, got)
+		}
 	}
+}
+
+func mustResolve(t *testing.T, p string) string {
+	t.Helper()
+	r, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
 }

@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -38,20 +39,24 @@ type Limits struct {
 
 // RunStartPayload is the run_start payload.
 type RunStartPayload struct {
-	LauncherPID     int               `json:"launcher_pid"`
-	LauncherStartNS uint64            `json:"launcher_start_ns"`
-	TegoVersion     string            `json:"tego_version"`
-	Commit          string            `json:"commit"`
-	BPFHash         string            `json:"bpf_hash"` // empty in tier 1
-	Tier            string            `json:"tier"`
-	Capture         string            `json:"capture"`
-	NetAssurance    string            `json:"net_assurance,omitempty"`  // requested best-effort|kernel
-	NetGuarantees   map[string]bool   `json:"net_guarantees,omitempty"` // actual tcp|udp|unix attachment proof
-	Kernel          string            `json:"kernel"`
-	ContractHash    string            `json:"contract_hash"` // hex sha256
-	Parsers         map[string]string `json:"parsers"`       // {anthropic, openai, mcp}
-	StopGrace       string            `json:"stop_grace"`    // duration
-	Command         []string          `json:"command"`
+	// LocalApprovalAuthority is present only on the opt-in root-only profile (ADR 0154).
+	LocalApprovalAuthority *LocalApprovalAuthority `json:"local_approval_authority,omitempty"`
+	LauncherPID            int                     `json:"launcher_pid"`
+	LauncherStartNS        uint64                  `json:"launcher_start_ns"`
+	TegoVersion            string                  `json:"tego_version"`
+	Commit                 string                  `json:"commit"`
+	BPFHash                string                  `json:"bpf_hash"` // empty in tier 1
+	Tier                   string                  `json:"tier"`
+	Capture                string                  `json:"capture"`
+	NetAssurance           string                  `json:"net_assurance,omitempty"`  // requested best-effort|kernel
+	NetGuarantees          map[string]bool         `json:"net_guarantees,omitempty"` // actual tcp|udp|unix attachment proof
+	Kernel                 string                  `json:"kernel"`
+	EffectiveHash          string                  `json:"effective_hash,omitempty"`
+	Baseline               *Baseline               `json:"baseline,omitempty"`
+	ContractHash           string                  `json:"contract_hash"` // hex sha256
+	Parsers                map[string]string       `json:"parsers"`       // {anthropic, openai, mcp}
+	StopGrace              string                  `json:"stop_grace"`    // duration
+	Command                []string                `json:"command"`
 	// CommandBlob is the sha256 of the argv's JSON when it was over R10's threshold and so is not in Command.
 	CommandBlob string  `json:"command_blob,omitempty"`
 	Cwd         string  `json:"cwd"`
@@ -182,6 +187,37 @@ type RunStartPayload struct {
 	// run started is unreadable to the agent until the run ends, and everything beneath it too (GAPS A12). Absent at
 	// MinorDenyReadFrozen or later when the ruleset listed none.
 	DenyReadFrozen *DenyReadFrozen `json:"deny_read_frozen,omitempty"`
+	// AppliedLimits are the kernel limits the run's cgroup holds, as the kernel reports them back: for a launch (GAPS
+	// C221, MinorEveryLaunch) every file of cpu.max, cpu.weight, memory.max, memory.high and pids.max the contract's or
+	// the machine config's limits made the launcher write; for a boundary adoption (MinorAppliedLimits, A52) what its cpu,
+	// cpu_weight and pids asked for, as written. run_start.limits carries the budgets only, and the contract's limits are
+	// what was asked for, not what holds. Absent when the run wrote none: for a record-only adoption and for an
+	// adoption whose table held none; a ledger below MinorAppliedLimits says nothing either way, and one below
+	// MinorEveryLaunch says nothing of a launch.
+	AppliedLimits *AppliedLimits `json:"applied_limits,omitempty"`
+	// Home is the run's home directory as the run resolved it (the passwd entry of its user, never $HOME), an absolute
+	// path (MinorEveryLaunch, ADR 0157), so a receipt can fold it to ~ for every new run. Absent when the run resolved
+	// none (an adoption with no governed passwd home); a ledger below MinorEveryLaunch says nothing.
+	Home string `json:"home,omitempty"`
+}
+
+// AppliedLimits is RunStartPayload.AppliedLimits. Each member is the value of the cgroup file the run wrote and, for a
+// launch, the lowest ceiling along the cgroups above it up to the cgroup2 mount (GAPS N85), read once at the start; a
+// member whose ancestors could not be read (or are hidden above a private cgroup namespace's root) is absent. It is absent too when the run wrote that file no value; at least one
+// is present. The members are pointers or strings so a written
+// zero is not read as absent; a limit that reads back as "max" is absent.
+type AppliedLimits struct {
+	// CPUMax is cpu.max as written: "max 100000" or "<quota> <period>" in microseconds.
+	CPUMax string `json:"cpu_max,omitempty"`
+	// CPUWeight is cpu.weight as written, 1 to 10000.
+	CPUWeight *int `json:"cpu_weight,omitempty"`
+	// PidsMax is pids.max as written, a positive count; a limit written as "max" is absent.
+	PidsMax *int `json:"pids_max,omitempty"`
+	// MemoryMax and MemoryHigh are memory.max and memory.high in bytes, as the kernel reports them back (page rounded);
+	// 0 is a cap of nothing. Written by a launch only (an adoption never holds a memory limit), at MinorEveryLaunch or
+	// later: below it they are refused (below-minor).
+	MemoryMax  *int64 `json:"memory_max,omitempty"`
+	MemoryHigh *int64 `json:"memory_high,omitempty"`
 }
 
 // MaxDenyReadFrozen bounds run_start.deny_read_frozen.dirs. The field stays on its run_start line (mvpKeys), where
@@ -518,6 +554,8 @@ const (
 
 // ContractSource is where a run's contract came from (RunStartPayload.ContractSource).
 type ContractSource struct {
+	// Learn is the compiled contract's own learn history, not an authenticated account of its edits.
+	Learn *LearnNote `json:"learn,omitempty"`
 	// Path is the contract file's absolute path.
 	Path string `json:"path"`
 	// Name is the agent name the file was resolved from, absent when the file was named by its path.
@@ -717,9 +755,15 @@ const (
 	FSByOther = "other"
 )
 
+// NetOpSend is the op of a net line for a UDP datagram the run sent (sendto, sendmsg, sendmmsg, or a kernel record's
+// unconnected datagram), so a receipt counts it apart from the connect(2) of a UDP socket, which sends nothing (GAPS C172).
+// A connect has no op. A ledger written before this has no op on either, and a reader reads such a line as a connection
+// attempt of either kind, as it always did.
+const NetOpSend = "send"
+
 // NetPayload is the net payload.
 type NetPayload struct {
-	Op            string   `json:"op,omitempty"` // http_request distinguishes request policy from connect
+	Op            string   `json:"op,omitempty"` // absent: a connect; send: a UDP datagram (NetOpSend); http_request: request policy
 	Method        string   `json:"method,omitempty"`
 	Path          string   `json:"path,omitempty"`           // validated escaped path; ledger redacts resource paths; no query
 	HTTPAuthority string   `json:"http_authority,omitempty"` // fixed declared upstream, including TLS port
@@ -976,6 +1020,11 @@ const (
 	// GapLiveBlockLost counts, in count, changes the overlay no longer held when the launcher read it (it keeps the
 	// newest 256): their blocks are in force or not as the overlay says, but their own lines are missing.
 	GapLiveBlockLost = "live-block-lost"
+	// GapLiveBlockPartial is one line, written beside a live-block-added line of a path, read or write block, when the
+	// mount table could not list every other name of the blocked file: the block applies to the file's own name and
+	// to every other name the table did list, and no more. binary is the block's value and, after a colon and a space,
+	// the reason the table could not list them all (never a silent partial block, ADR 0011, amended 2026-11-19).
+	GapLiveBlockPartial = "live-block-partial"
 )
 
 // The ops of a live change: a live block's add and remove (LiveBlockChange.Op), and a pause's and a resume's
@@ -1085,7 +1134,26 @@ type LiveBlockChange struct {
 	// Refused is why the launcher did not apply a lift (MinorLiveModes): one of the LiveRefused values, on a
 	// live-lift-refused line only.
 	Refused string `json:"refused,omitempty"`
+	// Addrs are the addresses a live or restored net block by name was enforced on when its line was written
+	// (MinorEveryLaunch, ADR 0157): every address the lookups of its name had answered and the Set refused it by, as
+	// enforced (unmapped, an IPv6 zone kept), sorted, at most MaxLiveBlockAddrs. AddrsMore counts the ones past the
+	// cap, so a list with more is not the whole set. A block by address has neither. Absent on a name block whose
+	// lookup answered none, and below the revision. A name's later lookups may add addresses the line does not name.
+	Addrs     []string `json:"addrs,omitempty"`
+	AddrsMore int      `json:"addrs_more,omitempty"`
+	// Note is the text the person who lifted a fence entry gave with the lift (MinorEveryLaunch, ADR 0125 amended
+	// 2026-11-23): on a live-rule-lifted line only, at most MaxLiveNote bytes of printable text, signed inside the
+	// lift's MAC so the launcher writes exactly what its writer signed. It is shown and never interpreted. It is not
+	// Reason, which on a line is the closed reason set. Absent when the lift had none, and below the revision.
+	Note string `json:"note,omitempty"`
 }
+
+// MaxLiveNote bounds LiveBlockChange.Note in bytes.
+const MaxLiveNote = 200
+
+// MaxLiveBlockAddrs bounds LiveBlockChange.Addrs: a line names this many addresses of a block by name and counts the
+// rest in AddrsMore.
+const MaxLiveBlockAddrs = 32
 
 // Limit which values.
 const (
@@ -1287,8 +1355,16 @@ func (e *Event) SetPayload(v any) error {
 	return nil
 }
 
-// DecodePayload unmarshals e.Payload into v. Unknown keys are ignored (docs/VERSIONING.md §2).
+// DecodePayload resets v before unmarshaling e.Payload. Unknown keys are ignored
+// (docs/VERSIONING.md §2). Callers must discard the destination on any error;
+// a decode may leave partial values even though earlier evidence was cleared.
 func (e *Event) DecodePayload(v any) error {
+	// The generic payload API must clear reuse even when JSON rejects syntax before
+	// invoking a destination's UnmarshalJSON method.
+	dst := reflect.ValueOf(v)
+	if dst.Kind() == reflect.Pointer && !dst.IsNil() {
+		dst.Elem().SetZero()
+	}
 	if len(e.Payload) == 0 {
 		return json.Unmarshal([]byte("{}"), v)
 	}

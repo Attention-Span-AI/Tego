@@ -3196,7 +3196,7 @@ over a vocabulary of empty words, `-` and `--`, `+x` forms, combined short optio
 own subcommands and options; `FuzzPrefixFinalHolds` does the same for any vector of that vocabulary.
 `TestPrefixCodeBeforeItsEnd`, `TestPrefixCutAtAValueOption` (`deny: [pip]` among its entries) and
 `TestPrefixRewriteAfterTheSubcommand` (`cargo pub` and `cargo build`) hold the three cases above.
-`TestStagedReadDifferential` (run with `TEGO_STAGED_DIFF` set) decides 6,490,026 prefixes of every row's vocabulary
+`TestStagedReadDifferential` (run with `TEGO_STAGED_DIFF` set; the nightly `fuzz` workflow's `staged-read-differential` job sets it and fails unless both counts of non-refusing differences print as 0, about 34 s and 250 MB) decides 6,490,026 prefixes of every row's vocabulary
 pairs and seeded vectors: 0 are final, do not refuse and differ from the whole vector; with the earlier code 2190
 were, each a none or allowed prefix of a refused vector; the whole-vector decisions hash the same before and after.
 `internal/runtime/supervisor`: `TestExecCommandPrefixNotFinalPastTheFirstStage` (python under `deny: [pip install]`

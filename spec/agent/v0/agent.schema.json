@@ -9,6 +9,10 @@
   "properties": {
     "version": {"type": "integer", "const": 0},
     "name": {"type": "string", "pattern": "^[a-z0-9-]{1,40}$"},
+    "learn": {"type": "object", "additionalProperties": false, "required": ["run", "withheld"], "description": "Editable history only, never a grant; top-level contract only (ADR 0016)", "properties": {
+      "run": {"type": "string", "pattern": "^r-[0-9a-f]{8}-[0-9a-z]{13}-[0-9a-z]{6}$"},
+      "withheld": {"type": "array", "minItems": 1, "maxItems": 100000, "uniqueItems": true, "description": "Sorted canonical tcp:// or udp:// IP address:port endpoints withheld after a secret read near a send; no host names, ranges or wildcards", "items": {"type": "string", "pattern": "^(tcp|udp)://.+:[0-9]+$"}}
+    }},
     "revision": {"description": "the author's name for this version of the contract (agent-contract.md R28); the top-level contract's own, refused in a profile", "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$"},
     "extends": {"description": "one profile name, or a list of 1 to 8 merged left to right (ADR 0066); names under tego/ are built-in profiles", "oneOf": [{"$ref": "#/$defs/profileName"}, {"type": "array", "minItems": 1, "maxItems": 8, "items": {"$ref": "#/$defs/profileName"}}]},
     "command": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
@@ -179,6 +183,17 @@
         "name": {"type": "string", "pattern": "^[a-z0-9-]{1,40}$"},
         "command": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "description": "a stdio server the agent launches; command[0] is granted exec"},
         "url": {"type": "string", "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://[^/@?#]+(/[^?#]*)?$", "description": "an HTTP server the agent connects to; under a net: section its host and port are granted as the rule mcp[<name>] (agent-contract.md R16a)"},
+        "business_rules": {"type": "object", "additionalProperties": false,
+          "description": "ADR 0152: immutable business bundle pin; current builds refuse activation until the exclusive trusted-worker route and durable owner exist",
+          "required": ["version", "topology", "worker_digest", "bundle_sha256", "bundle_json"],
+          "properties": {
+            "version": {"type": "integer", "const": 1},
+            "topology": {"type": "string", "const": "trusted-stdio-worker-v1"},
+            "worker_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "bundle_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "bundle_json": {"type": "string", "minLength": 1, "maxLength": 32768, "description": "canonical v1 JSON with no LF; byte bound, native DecodeBundle, digest/server and slice capability checks also apply"}
+          }
+        },
         "tools": {"type": "object", "additionalProperties": false, "description": "per-tool rules enforced by Tego's MCP relay (agent-contract.md R16b, ADR 0126); present, even {}, puts the server behind the relay; allow present denies every tool it does not list", "properties": {
           "allow": {"type": "array", "items": {"type": "string", "pattern": "^[A-Za-z0-9_.:/-]{1,128}$"}},
           "deny": {"type": "array", "items": {"type": "string", "pattern": "^[A-Za-z0-9_.:/-]{1,128}$"}},

@@ -4,6 +4,7 @@ package ledgerview
 
 import (
 	"encoding/json"
+	"net/netip"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -21,7 +22,7 @@ import (
 // verdicts, not against itself.
 
 // refBlocked is what the rule on a live-blocked host keeps out of "the run also reached this host", added with that rule.
-func refBlocked(liveHosts map[string]bool, outbound []Dest) map[string]bool {
+func refBlocked(liveHosts, reached, reachedNamed map[string]bool, outbound []Dest, names refNames) map[string]bool {
 	out := map[string]bool{}
 	for h := range liveHosts {
 		out[h] = true
@@ -29,11 +30,76 @@ func refBlocked(liveHosts map[string]bool, outbound []Dest) map[string]bool {
 	for i := range outbound {
 		if liveHosts[strings.ToLower(outbound[i].Name)] {
 			for _, a := range outbound[i].Addrs {
-				out[HostOf(a)] = true
+				out[BlockHostOf(HostOf(a))] = true
 			}
 		}
 	}
+	blind := refNameBlock(liveHosts, names) != ""
+	for h := range reached {
+		if !reachedNamed[h] && (blind || names.owner(BlockHostOf(HostOf(h))) != "") {
+			out[BlockHostOf(HostOf(h))] = true
+		}
+	}
 	return out
+}
+
+// refNames is, for each host name a net live block or restored fence put in force, the addresses its line recorded
+// (BlockHostOf's form) and whether some line recorded none or said there were more (blind): the one-pass reference of
+// signalFold.nameAddrs, written apart from it.
+type refNames map[string]*struct {
+	addrs map[string]bool
+	blind bool
+}
+
+func (n refNames) note(c *record.LiveBlockChange) {
+	name := HostOf(c.Value)
+	if name == "" {
+		return
+	}
+	if _, err := netip.ParseAddr(name); err == nil {
+		return
+	}
+	e := n[name]
+	if e == nil {
+		e = &struct {
+			addrs map[string]bool
+			blind bool
+		}{addrs: map[string]bool{}}
+		n[name] = e
+	}
+	e.blind = e.blind || len(c.Addrs) == 0 || c.AddrsMore > 0
+	for _, a := range c.Addrs {
+		e.addrs[BlockHostOf(HostOf(a))] = true
+	}
+}
+
+// owner is the first name, in byte order, whose recorded addresses include host.
+func (n refNames) owner(host string) string {
+	best := ""
+	for name, e := range n {
+		if e.addrs[host] && (best == "" || name < best) {
+			best = name
+		}
+	}
+	return best
+}
+
+// refNameBlock is the first host name (not an address) a live block named, "" for none (A34).
+func refNameBlock(liveHosts map[string]bool, recorded refNames) string {
+	var names []string
+	for h := range liveHosts {
+		if _, err := netip.ParseAddr(h); err != nil {
+			if e := recorded[h]; e != nil && !e.blind {
+				continue // its line named every address it was enforced on
+			}
+			names = append(names, h)
+		}
+	}
+	sort.Strings(names)
+	if len(names) == 0 {
+		return ""
+	}
+	return names[0]
 }
 
 func refUnder(s Sensitive, p string) (string, bool) {
@@ -88,7 +154,7 @@ func refProbeTargets(r *Run) map[string]bool {
 // refSignal is computeSignal as it was before the fold (signalfold.go): one pass over every line, kept as the
 // reference the incremental Signal must equal.
 func refSignal(r *Run, s Sensitive) *RunSignal {
-	out := &RunSignal{agent: CommandAgent(r.Command), rules: s.Rules}
+	out := &RunSignal{agent: r.CommandAgent(), rules: s.Rules}
 	secrets := map[string]int{}
 	type at struct {
 		seq uint64
@@ -137,7 +203,8 @@ func refSignal(r *Run, s Sensitive) *RunSignal {
 		}
 		return &out.Outbound[i]
 	}
-	reached, probes := map[string]bool{}, refProbeTargets(r)
+	reached, reachedNamed, probes := map[string]bool{}, map[string]bool{}, refProbeTargets(r)
+	names := refNames{}
 	liveHosts := map[string]bool{} // added with the rule: a net live block's hosts, and the addresses one refused
 	groups := map[string]int{}
 	// Only a live run's open asks wait on a person; a lost run's were never answered (Snapshot.Pending).
@@ -204,8 +271,14 @@ func refSignal(r *Run, s Sensitive) *RunSignal {
 				d.sends = append(d.sends, touchAt{e.Seq, e.TS})
 				h, _ := hostPort(dst)
 				reached[h] = true
+				if name != "" && name != h {
+					reachedNamed[h] = true
+				}
 			}
 		case "ask":
+			if e.askRepeat {
+				continue // a repeated ask id is malformed and no second question (askpair)
+			}
 			a := Approval{AskID: e.AskID, Op: e.askOp, Target: e.askTarget, Rule: e.Rule, TS: e.TS, Seq: e.Seq, State: "unanswered"}
 			switch {
 			case pending[e.AskID]:
@@ -222,8 +295,8 @@ func refSignal(r *Run, s Sensitive) *RunSignal {
 			}
 		case "answer":
 			i, ok := asks[e.AskID]
-			if !ok {
-				continue
+			if !ok || e.answerUnpaired {
+				continue // an answer that pairs with no ask answers nothing (askpair)
 			}
 			a := &out.Approvals[i]
 			a.State = "denied"
@@ -293,7 +366,7 @@ func refSignal(r *Run, s Sensitive) *RunSignal {
 			if v, ok := strings.CutPrefix(e.Rule, "live.block["); ok {
 				if g.Class == "net" {
 					for _, dst := range []string{ruleDest(e.Rule), e.Target} {
-						if h := HostOf(dst); h != "" {
+						if h := BlockHostOf(HostOf(dst)); h != "" {
 							liveHosts[h] = true
 						}
 					}
@@ -308,11 +381,12 @@ func refSignal(r *Run, s Sensitive) *RunSignal {
 			}
 		case "gap":
 			var p record.GapPayload
-			if strings.HasSuffix(e.Target, record.GapLiveBlockAdded) && json.Unmarshal([]byte(e.Raw), &p) == nil &&
+			if (strings.HasSuffix(e.Target, record.GapLiveBlockAdded) || strings.HasSuffix(e.Target, record.GapLiveRuleRestored)) && json.Unmarshal([]byte(e.Raw), &p) == nil &&
 				p.LiveBlock != nil && p.LiveBlock.Kind == record.LiveKindNet {
-				if h := HostOf(p.LiveBlock.Value); h != "" {
+				if h := BlockHostOf(HostOf(p.LiveBlock.Value)); h != "" {
 					liveHosts[h] = true
 				}
+				names.note(p.LiveBlock)
 			}
 		}
 	}
@@ -325,13 +399,21 @@ func refSignal(r *Run, s Sensitive) *RunSignal {
 		}
 		return false
 	}
-	blocked := refBlocked(liveHosts, out.Outbound)
+	blocked := refBlocked(liveHosts, reached, reachedNamed, out.Outbound, names)
+	nameBlock := refNameBlock(liveHosts, names)
 	for i := range out.Groups {
 		g := &out.Groups[i]
 		// A system lookup (nscd, userdb, the D-Bus buses) or a DNS lookup is what the C library does around any
 		// connect: it carries none of the run's data, so it is never "next to a secret", however close it comes.
 		g.NearSecret = g.Class == "net" && !g.SystemLookup && !dnsGroup(g) && near(g.FirstSeq, g.First)
 		classify(g, reached, probes, blocked)
+		if nameBlock != "" && g.Class == "net" && !g.Background && !loopback(g.Subject) && reached[g.Subject] && !reachedNamed[g.Subject] {
+			g.NameUnknown = "a block on " + nameBlock + " may cover this address: the record does not say which addresses that name was"
+		}
+		if g.Class == "net" && !loopback(g.Subject) {
+			g.BlockName = names.owner(BlockHostOf(HostOf(g.Subject)))
+			g.BlockWords = blockWords(g.BlockName)
+		}
 		g.Severity = groupSeverity(g, out.agent, out.rules)
 		if out.sev == nil {
 			out.sev = map[string]Severity{}

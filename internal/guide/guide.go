@@ -9,10 +9,13 @@ import (
 	"io/fs"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/agentid"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
+	"github.com/attention-span-ai/tego/pkg/spec/record/chaincheck"
 )
 
 // Schema is the object's schema line. New fields may be added within it; removing one or changing what one means
@@ -59,6 +62,14 @@ var titles = map[string]string{
 // Inputs is what Compute reads. Both callers fill it for the invoking user: internal/cli from the process it runs
 // in, the dashboard from the machine config it serves.
 type Inputs struct {
+	// Caller carries process facts selected before a helper dispatch. Nil keeps
+	// the in-process caller's ordinary compiler defaults.
+	Caller *config.CallerContext
+	// Scan is the shared reader answer, optional when a view already read it for its cache key.
+	Scan *ScanState
+	// Now is the evaluation time. Zero uses Caller.CheckedAt when Caller is set,
+	// otherwise the current clock.
+	Now time.Time
 	// Machine is the machine config (pkg/spec/config): its registry, profiles and ledger root.
 	Machine *config.Machine
 	// Home is the invoking user's home, absolute (check.json lives under it).
@@ -100,12 +111,16 @@ type Inputs struct {
 
 // State is the object: `tego setup --json` prints it, and the dashboard's guide renders it.
 type State struct {
-	Schema string `json:"schema"`
-	Tego   Tego   `json:"tego"`
-	As     *As    `json:"as"`
-	Host   Host   `json:"host"`
-	Steps  []Step `json:"steps"`
-	Next   Next   `json:"next"`
+	// Agents contains named recorded-run rows and separate scan observations.
+	Agents []agentid.Agent `json:"agents,omitempty"`
+	// RecordsPartial discloses unreadable or capped run-start evidence.
+	RecordsPartial bool   `json:"records_partial,omitempty"`
+	Schema         string `json:"schema"`
+	Tego           Tego   `json:"tego"`
+	As             *As    `json:"as"`
+	Host           Host   `json:"host"`
+	Steps          []Step `json:"steps"`
+	Next           Next   `json:"next"`
 	// NotKnown is what the guide could not know, one sentence each; never empty, since it never knows of an agent
 	// Tego did not record.
 	NotKnown []string `json:"not_known"`
@@ -177,7 +192,11 @@ type facts struct {
 	notKnown  []string
 	ctx       context.Context
 	// verdicts are the runs checked against the chain anchor, by id (verify).
-	verdicts map[string]verdict
+	verdicts                map[string]verdict
+	agentChecks, agentBytes int
+	anchorRead              bool
+	anchorHeads             map[string]chaincheck.AnchorHead
+	anchorErr               error
 	// ready is the stored or fresh check that says a tier runs, nil for none; hereCannot is true when the invoker's own
 	// place (As.Where) has a check that says no tier runs from it.
 	ready      *Check
@@ -195,6 +214,12 @@ type verdict struct {
 
 // Compute reads the sources and returns the object. It writes nothing and starts no program.
 func Compute(ctx context.Context, in Inputs) *State {
+	if in.Now.IsZero() && in.Caller != nil {
+		in.Now = in.Caller.CheckedAt
+	}
+	if in.Scan == nil {
+		in.Scan = ReadScan(in.Home, in.UID, in.Host.BootID, in.Now)
+	}
 	f := &facts{in: &in, steps: map[string]*Step{}, ctx: ctx, verdicts: map[string]verdict{}}
 	s := &State{Schema: Schema, Tego: Tego{Version: in.Version, Commit: in.Commit}, As: in.As, Host: in.Host}
 	f.install()
@@ -225,14 +250,18 @@ func Compute(ctx context.Context, in Inputs) *State {
 		}
 	}
 	f.notKnown = append(f.notKnown,
-		"agents Tego never recorded: nothing here looks for them yet",
+		"agents outside a scan's rules and sources, or activity between scans",
 		"a contract in no registry (a file given by its path) that no run used")
 	s.Next = f.next() // before the steps are copied: runUnder adds to the contract step's link
 	s.Next.built = true
+	f.settleScopeAs(s.Next)
 	for _, id := range []string{StepInstall, StepCheck, StepFind, StepRecord, StepContract, StepEnforce} {
 		s.Steps = append(s.Steps, *f.steps[id])
 	}
 	s.NotKnown = f.notKnown
+	f.checkAgents()
+	s.Agents = f.agentRows()
+	s.RecordsPartial = f.runsErr != nil || f.runs != nil && (f.runs.unreadable > 0 || f.runs.more > 0)
 	return s
 }
 
@@ -332,9 +361,12 @@ func (f *facts) check() {
 		f.blocked = &c
 		fact := fmt.Sprintf("no tier enforces from %s, checked %s", whereWords(c.Where), when(c.Time))
 		switch {
+		case c.Cause == CauseOutsideUserManager && c.ScopeError != "":
+			fact = fmt.Sprintf("this shell is outside your user manager's cgroup and tego could not open a user scope from it (%s), checked %s",
+				c.ScopeError, when(c.Time))
 		case c.Cause == CauseOutsideUserManager:
-			fact = fmt.Sprintf("tego starts no run from %s, not even tego watch, checked %s; a shell inside it can start one",
-				whereWords(c.Where), when(c.Time))
+			fact = fmt.Sprintf("this shell is outside your user manager's cgroup, checked %s; run, watch and test can try a user scope",
+				when(c.Time))
 		case c.Cause == CauseNoUserManager && f.in.ManagerRefused != "":
 			fact = fmt.Sprintf("no user manager runs for you, so tego starts no run from %s, not even tego watch, checked %s; %s",
 				whereWords(c.Where), when(c.Time), f.in.ManagerRefused)
@@ -351,12 +383,23 @@ func (f *facts) check() {
 		return
 	}
 	fact := fmt.Sprintf("ready: %s from %s, checked %s", tierWords(ready.Tier), whereWords(ready.Where), when(ready.Time))
+	if ready.ThroughUserScope {
+		// The shell is outside the user manager's cgroup, and the commands that start a run open a user scope for
+		// each run: entry was rehearsed from it and worked, so it is no blocker (ADR 0142, amended 2026-11-19).
+		fact = fmt.Sprintf("ready: %s, checked %s; %s", tierWords(ready.Tier), when(ready.Time), ThroughScopeFact)
+		if here != ready {
+			fact = fmt.Sprintf("ready: %s from %s, checked %s; from there tego run, watch and test open a user scope for each run (checked)",
+				tierWords(ready.Tier), whereWords(ready.Where), when(ready.Time))
+		}
+	}
 	if here != nil && here.Tier == "" {
 		fact += fmt.Sprintf("; not from %s, where you are now", whereWords(here.Where))
-		switch here.Cause {
-		case CauseOutsideUserManager:
-			fact += ", which starts no run, not even tego watch"
-		case CauseNoUserManager:
+		switch {
+		case here.Cause == CauseOutsideUserManager && here.ScopeError != "":
+			fact += "; tego could not open a user scope from it (" + here.ScopeError + ")"
+		case here.Cause == CauseOutsideUserManager:
+			fact += "; run, watch and test can try a user scope"
+		case here.Cause == CauseNoUserManager:
 			fact += ", where no user manager runs for you"
 		}
 		fact += f.scopeMissing(here) + f.scopeAs(here)
@@ -369,6 +412,11 @@ func (f *facts) check() {
 	f.ready = ready
 	f.set(StepCheck, Done, fact+stale, source)
 }
+
+// ThroughScopeFact is the check's words for a shell outside the user manager's cgroup from which entry into a user
+// scope was rehearsed and worked (Check.ThroughUserScope), as doctor and tego start say it too
+// (doctor.ThroughScopeFact, which a test holds equal).
+const ThroughScopeFact = "this shell is outside your user manager's cgroup; tego run, watch and test open a user scope for each run (checked)"
 
 // NotCheckedSinceStart is what both surfaces say of a place no check of this boot and build covers (ADR 0142).
 const NotCheckedSinceStart = "not checked since this machine started"
@@ -390,19 +438,47 @@ func (f *facts) scopeAs(c *Check) string {
 	if as := f.in.As; as != nil && c.Cause == CauseOutsideUserManager && c.Where == as.Where && as.Scope != "" &&
 		as.ScopeAs != "" {
 		return "; tego ran as " + as.ScopeAs + ", started from another user's shell through sudo or su: type the next " +
-			"command in your own login shell, not in one sudo or su opened; it opens a shell as " + as.ScopeAs + " in " + as.ScopeAs + "'s user manager's cgroup, not in yours"
+			"command in your own login shell, not in one sudo or su opened (if you are in one, type exit first)" + scopeAsOpens(as.ScopeAs)
 	}
 	return ""
 }
 
-// find: a run is recorded. Nothing looks for agents yet, so Todo never says there are none.
+// scopeAsOpens is the end of scopeAs's sentence while the next command opens a shell as the account.
+func scopeAsOpens(account string) string {
+	return "; it opens a shell as " + account + " in " + account + "'s user manager's cgroup, not in yours"
+}
+
+// settleScopeAs corrects the check step's fact once the next step is known: scopeAs says the next command opens a
+// shell as the account, which holds only when it is the step that opens one. When the next command is a tego command
+// written with sudo -u (ForReader), the fact says that it runs as the account, so the line does not claim a shell that
+// is not opened (acceptance 4, 2026-11-11: after "every step is done" the step said the receipt opens a shell as svc).
+func (f *facts) settleScopeAs(n Next) {
+	as := f.in.As
+	if as == nil || as.ScopeAs == "" || n.Rule == RuleCheckOutside || n.Rule == RuleHereOutside {
+		return
+	}
+	st := f.steps[StepCheck]
+	if st == nil || st.Fact == nil {
+		return
+	}
+	tail := ""
+	if strings.HasPrefix(n.Command, "sudo -u "+as.ScopeAs+" ") {
+		tail = "; it runs as " + as.ScopeAs + " (sudo -u), not as you"
+	}
+	fact := strings.Replace(*st.Fact, scopeAsOpens(as.ScopeAs), tail, 1)
+	st.Fact = &fact
+}
+
+// find: recorded runs retain precedence; scan can tick only an otherwise Todo find.
 func (f *facts) find() {
 	source := f.in.LedgerRoot
 	switch {
 	case f.runsErr != nil:
 		f.set(StepFind, NotKnown, "", source)
 	case len(f.runs.all) == 0:
-		f.set(StepFind, Todo, "Tego has recorded no run here yet", source)
+		if !f.findByScan() {
+			f.set(StepFind, Todo, "Tego has recorded no run here yet", source)
+		}
 	default:
 		r := f.runs.all[0]
 		st := f.set(StepFind, Done, "you recorded "+commandWords(r.start.Command), filepath.Join(source, r.id))
@@ -555,14 +631,7 @@ func (f *facts) verify(r *run) verdict {
 	if v, ok := f.verdicts[r.id]; ok {
 		return v
 	}
-	v := verdict{err: errors.New("the chain anchor could not be named")}
-	if f.in.Anchor != "" {
-		rep, err := ledger.VerifyRunDir(f.ctx, r.dir, ledger.NewFileChainAnchor(f.in.Anchor))
-		v = verdict{ledger.VerdictOf(rep, err), err}
-		if v.v == ledger.NoVerdict && v.err == nil {
-			v.err = errors.New("the record holds no run_start")
-		}
-	}
+	v := f.checkSnapshot(r)
 	f.verdicts[r.id] = v
 	return v
 }

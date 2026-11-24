@@ -12,14 +12,16 @@ import (
 	"unicode/utf8"
 
 	"github.com/attention-span-ai/tego/internal/check/rule"
+	"github.com/attention-span-ai/tego/internal/control/draftcompile"
 	"github.com/attention-span-ai/tego/internal/control/rulesview"
-	"github.com/attention-span-ai/tego/internal/rulefile"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
 // RawReq is a free edit: the whole new text of the contract req.Ref names, from the advanced editor.
 type RawReq struct {
-	Ref string
+	// Session is supplied by the authenticated handler.
+	Session string
+	Ref     string
 	// Base is the sha256 of the text the editor was opened on.
 	Base string
 	Text []byte
@@ -31,8 +33,17 @@ type RawReq struct {
 	AlsoNow []string
 }
 
-// freeWhy is what a free edit's plan says of its direction.
-const freeWhy = "Free edit: cannot be classified; confirm it like a widening"
+// freeWhy is what a free edit's plan says of its direction before the compiled comparison names what it moves: a text
+// is confirmed like a widening whatever it does, since the page cannot read intent from a whole file.
+const freeWhy = "Free edit: confirm it like a widening"
+
+// freeSummary is a free edit's one line (the journal's Summary): the compiled families it moved, or that none did.
+func freeSummary(fs []FamilyChange) string { return "free edit: " + familySummary(fs) }
+
+// freeWhyOf is freeWhy with what the compiled comparison found, so the line says what the text does.
+func freeWhyOf(fs []FamilyChange) string {
+	return freeWhy + "; the compiled contract before and after: " + familySummary(fs)
+}
 
 // PlanRaw plans a free edit and writes nothing: the text is compiled in the contract's run context, as a structured
 // change is, and shown as a diff. It cannot be classified: its Direction is mixed and it always
@@ -43,23 +54,32 @@ const freeWhy = "Free edit: cannot be classified; confirm it like a widening"
 // variable is refused (EnvRefused), so a value is never carried by a page. A host name the text adds to net.allow or
 // net.ask that does not resolve here is the plan's Unresolved, a warning: the text can still be saved.
 func (s *Service) PlanRaw(ctx context.Context, req RawReq) (*ChangePlan, error) {
+	if s.remote() {
+		return remoteService[*ChangePlan](s, ctx, "PlanRaw", struct{ Req RawReq }{req})
+	}
+
+	ctx = draftcompile.WithBudget(ctx)
 	p, err := s.planRaw(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 	p.Unresolved = s.unresolved(ctx, p.changes)
+	s.keepChange(req.Session, p, req.Text)
 	return p, nil
 }
 
-// planRaw is PlanRaw without the lookup of the host names the text adds, which a write does not wait for.
+// planRaw builds a preview without looking up the host names it adds. Save uses the retained plan instead.
 func (s *Service) planRaw(ctx context.Context, req RawReq) (*ChangePlan, error) {
+	if s.proposalBuilt != nil {
+		s.proposalBuilt("raw")
+	}
 	c, f, err := s.writable(req.Ref)
 	if err != nil {
 		return nil, err
 	}
 	cc := c.context(s)
-	p := &ChangePlan{Ref: c.Ref, Contract: c.Path, Agent: c.Agent, Base: f.SHA256, Stale: req.Base != "" && req.Base != f.SHA256,
-		Raw: true, Direction: string(rule.Mixed), Why: freeWhy, NeedsAck: true, Summary: "free edit of the whole text"}
+	p := &ChangePlan{Ref: c.Ref, Contract: f.Path, Agent: c.Agent, Base: f.SHA256, Stale: req.Base != "" && req.Base != f.SHA256,
+		input: bytes.Clone(req.Text), Raw: true, Direction: string(rule.Mixed), Why: freeWhy, NeedsAck: true, Summary: "free edit of the whole text", directory: f.DirectoryIdentity}
 	switch {
 	case len(req.Text) == 0:
 		p.Err = "the new text is empty"
@@ -94,13 +114,21 @@ func (s *Service) planRaw(ctx context.Context, req RawReq) (*ChangePlan, error) 
 		p.Err = fmt.Sprintf("the new text is %d bytes with its env.set values, more than a contract may be (%d)", len(text), agent.MaxContractSize)
 		return p, nil
 	}
-	if err := s.check(ctx, cc)([]byte(text)); err != nil {
-		p.Err = "the new contract does not compile, so nothing was written: " + scrub(err.Error(), restored)
-		return p, nil
-	}
 	name := filepath.Base(cc.Contract)
 	p.text, p.Diff = []byte(text), shownDiff(name, f.Text, []byte(text), rule.Diff(name, f.Text, []byte(text)))
-	p.Ack = s.ack(contractAckRef(p.Ref), p.Base, rulefile.Sum(p.text))
+	p.NewlyAllows, err = s.newlyAllows(ctx, cc, f.Text, p.text, p)
+	if err != nil {
+		p.Err = compileFailure(err, restored)
+		return p, nil
+	}
+	switch {
+	case p.compared:
+		p.Families = familyChanges(p.rows)
+		p.Summary, p.Why = freeSummary(p.Families), freeWhyOf(p.Families)
+	case p.repair:
+		p.Summary = "free edit: the previous file did not compile, so nothing was compared"
+		p.Why = freeWhy + "; the previous file does not compile, so there is nothing to compare the repaired contract with"
+	}
 	if p.changes = rawChanges(f.Text, p.text); len(p.changes) > 0 {
 		cwd := cc.Cwd
 		if cwd == "" {
@@ -142,11 +170,21 @@ func rawChanges(old, new []byte) []rule.Change {
 const envRefusal = "this text changes environment values (env.set). A page never shows or carries them: keep each as " +
 	rulesview.Hidden + " (saving puts it back) or remove it, and set a value in a terminal; nothing was written"
 
+// compileFailure is the plan's refusal for a text the compiler did not accept. A compile that did not finish (it ran
+// out of time, or the caller gave up) is not a contract that does not compile: it says so in its own words, which
+// carry no contract text, and nothing was written either way.
+func compileFailure(err error, restored []string) string {
+	if words, ok := rule.NotFinishedWords(err); ok {
+		return words + "; nothing was written; try again"
+	}
+	return "the new contract does not compile, so nothing was written: " + scrub(err.Error(), restored)
+}
+
 // scrub is msg with every value of vals (env.set values put back) replaced by rulesview.Hidden: a compile error may
-// quote a value, and the page shows the error. A value under 4 bytes is left, since it would also hide line numbers.
+// quote a value, and the page shows the error. Privacy also takes precedence over diagnostic line numbers.
 func scrub(msg string, vals []string) string {
 	for _, v := range vals {
-		if len(v) >= 4 {
+		if v != "" {
 			msg = strings.ReplaceAll(msg, v, rulesview.Hidden)
 		}
 	}
@@ -157,11 +195,12 @@ func scrub(msg string, vals []string) string {
 // Ack of this text's check, a text that does not compile are refused, and the write is base-checked under the
 // contract's lock and journaled.
 func (s *Service) ApplyRaw(ctx context.Context, req RawReq) (*Applied, error) {
-	p, err := s.planRaw(ctx, req)
-	if err != nil {
-		return nil, err
+	if s.remote() {
+		return remoteService[*Applied](s, ctx, "ApplyRaw", struct{ Req RawReq }{req})
 	}
-	c, err := s.contract(req.Ref)
+
+	ctx = draftcompile.WithBudget(ctx)
+	c, p, err := s.savedChange(ctx, req.Session, req.Ack, req.Ref, req.Base, nil, req.Text, true)
 	if err != nil {
 		return nil, err
 	}

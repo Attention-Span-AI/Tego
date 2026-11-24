@@ -46,6 +46,22 @@ func TestControlRefusesRoot(t *testing.T) {
 	}
 }
 
+// TestControlRefusesARootRealOrSavedUser: the root-only approval floor admits an answer by the sender's real uid, so
+// a dashboard whose effective uid was dropped but whose real or saved uid is still 0 (setpriv --euid, a setuid
+// helper's dropped privilege) could answer for every signed-in browser. The guard refuses it like euid 0.
+func TestControlRefusesARootRealOrSavedUser(t *testing.T) {
+	p := privilege{euid: 1000, rootReal: true}
+	for _, argv := range [][]string{nil, {"help"}, {"dashboard"}, {"nonesuch"}} {
+		code, out, errs := run(t, p, argv...)
+		if code != identity.ExitError || out != "" || !strings.Contains(errs, "["+handoff.CodeAsRoot+"]") || !strings.Contains(errs, "real or saved") {
+			t.Errorf("%v: exit %d stdout %q stderr %q, want 125 [%s] naming the real or saved user id", argv, code, out, errs, handoff.CodeAsRoot)
+		}
+	}
+	if code, _, errs := run(t, privilege{euid: 1000}, "help"); code != identity.ExitOK {
+		t.Errorf("an ordinary user: exit %d, stderr %q", code, errs)
+	}
+}
+
 // TestHostPrivilegeOfThisProcess: the guard reads the real euid and capability sets; the test process is no
 // root and holds no capability unless the suite runs as root.
 func TestHostPrivilegeOfThisProcess(t *testing.T) {
@@ -54,6 +70,7 @@ func TestHostPrivilegeOfThisProcess(t *testing.T) {
 		t.Fatalf("euid %d, want %d", p.euid, os.Geteuid())
 	}
 	if os.Geteuid() != 0 && (p.effective != 0 || p.permitted != 0) {
+		// rootskips:ignore a non-root process that holds capabilities (a container's ambient set), not a skip for want of root
 		t.Skipf("this test process holds capabilities %+v", p)
 	}
 	if os.Geteuid() != 0 {

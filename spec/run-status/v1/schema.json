@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tego.dev/spec/run-status/v1/schema.json",
+  "title": "Tego run teardown status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "run", "scope", "cgroup_id", "removed", "deferred"],
+  "properties": {
+    "schema": {"const": "tego.run-status/1"},
+    "run": {"type": "string", "pattern": "^r-[0-9a-f]{8}-[0-9a-z]{13}-[0-9a-z]{6}$"},
+    "scope": {"type": "string", "pattern": "^$|^/[^\\r\\n\\x00]+$", "description": "Exact absolute clean runtime scope path; empty means unknown."},
+    "cgroup_id": {"type": "string", "pattern": "^$|^[1-9][0-9]*$", "description": "Kernel cgroup ID as a uint64 decimal string; empty means unknown."},
+    "removed": {"type": "boolean"},
+    "deferred": {"type": "boolean"}
+  },
+  "allOf": [{
+    "if": {"properties": {"removed": {"const": true}}},
+    "then": {"properties": {"scope": {"minLength": 2}, "cgroup_id": {"minLength": 1}, "deferred": {"const": false}}}
+  }]
+}

@@ -243,12 +243,13 @@ fetch_kernel() {
 # fetch_module_tree extracts linux-modules-$KVER (and -extra when asked) for --module only: the root
 # is an initramfs and the console is a built-in 8250 UART, so an ordinary boot needs no module. apt has
 # that package only for a kernel it knows. A kernel-matrix row's kernel (matrix-<row>) is not one: its tree
-# is the one test/vm/fetch-kernel.py --modules extracts from the row's own package, stamped with that
-# package's digest (.package-sha256), and it is all the modules the row has, with no -extra to add.
+# is the one test/vm/fetch-kernel.py --modules extracts from the row's own packages, stamped with their
+# image/companion digests (.package-sha256). The prepared packages are the whole tree available here;
+# --module never falls back to apt for a row's missing module or -extra package.
 fetch_module_tree() {
 	if [ ! -d "$KDIR/mods/lib/modules/$KVER" ]; then
 		case "$KVER" in
-		matrix-*) env_fail "--module on the kernel-matrix row ${KVER#matrix-} needs its own authenticated module tree: test/vm/fetch-kernel.py --modules ${KVER#matrix-} prepares it (Debian, Amazon Linux and Fedora rows)" ;;
+		matrix-*) env_fail "--module on the kernel-matrix row ${KVER#matrix-} needs its own authenticated module tree: test/vm/fetch-kernel.py --modules ${KVER#matrix-} prepares it (Ubuntu, Debian, Amazon Linux and Fedora rows)" ;;
 		esac
 		fetch_debs "$KDIR/mods" "linux-modules-$KVER"
 	fi
@@ -261,21 +262,24 @@ fetch_module_tree() {
 # ---- 3. the base initramfs ------------------------------------------------------------------------
 
 BUSYBOX="${TEGO_VM_BUSYBOX:-/usr/bin/busybox}"
-BASE_VERSION=4
+BASE_VERSION=5
 
-# The host packages copied into the guest, whole (minus /usr/share): what the privileged tests and
+# The host packages copied into the guest, whole (minus /usr/share, bar the node builtins stage_node_builtins adds): what the privileged tests and
 # their helpers exec by absolute path or PATH lookup (sh, sleep, true, df, ldconfig -p, python3,
 # bwrap), a real OpenSSL for the uprobe tests (libssl3t64 + openssl), and bpftool/strace for looking
-# at a failure from inside the guest, and git for the exec command-rule tests (ADR 0048 C6), which run
-# its real subcommands and helpers. A package this host does not have is skipped.
+# at a failure from inside the guest, git for the exec command-rule tests (ADR 0048 C6), which run
+# its real subcommands and helpers, and nodejs for the dashboard's script tests and the runtime's node
+# cells (node and the libraries ldd finds for it, libnode and ICU among them, about 100 MB unpacked).
+# A package this host does not have is skipped.
 # shellcheck source=test/vm/python-pkgs.sh
 . "$here/python-pkgs.sh"
 # The python packages are the host's own (python_host_pkgs), not a version named here.
 HOST_PKGS="dash bash coreutils coreutils-from-uutils rust-coreutils gnu-coreutils findutils grep sed
 mawk util-linux mount procps iproute2 libc-bin kmod python3-minimal $(python_host_pkgs)
-bubblewrap openssl libssl3t64 bpftool strace git apparmor"
+bubblewrap openssl libssl3t64 bpftool strace git apparmor nodejs"
 # Names that live outside any package list (update-alternatives links) or that must exist.
-HOST_EXTRA="/usr/bin/awk /usr/bin/python3 /usr/bin/sh /etc/ld.so.conf /etc/ld.so.conf.d /etc/os-release
+# The CLI's fixed-path scope-runner check needs the real executable even without a user manager.
+HOST_EXTRA="/usr/bin/awk /usr/bin/python3 /usr/bin/sh /usr/bin/systemd-run /etc/ld.so.conf /etc/ld.so.conf.d /etc/os-release
 /usr/lib/os-release /etc/ssl/openssl.cnf /usr/lib/ssl"
 
 declare -A INODE_OF=()
@@ -331,6 +335,43 @@ stage_path() {
 			return 0
 		fi
 	done
+}
+
+# node_builtin_paths FILE...: the /usr/share/nodejs files the given libnode names. Debian and Ubuntu build libnode
+# with NODE_SHARED_BUILTIN_*_PATH defines, so node loads six of its own builtins (cjs-module-lexer, undici, acorn,
+# acorn-walk, minimatch) from the packages node-cjs-module-lexer, node-undici, node-acorn and node-minimatch instead
+# of carrying them; without one of the files node aborts at startup ("Cannot load externalized builtin"). The list
+# is read from the libnode itself, so a libnode that names another file is followed. A strace of `node -e 1` opens
+# exactly these files under /usr/share/nodejs and nothing else there.
+node_builtin_paths() {
+	local f
+	for f in "$@"; do
+		grep -aoE '/usr/share/nodejs/[A-Za-z0-9_@+./-]+\.(js|cjs|mjs|json)' "$f" 2>/dev/null || true
+	done | sort -u
+}
+
+# missing_node_builtins: the builtins of every libnode staged in $STAGE that are not staged (a path per line).
+missing_node_builtins() {
+	local lib p
+	while read -r lib; do
+		while read -r p; do
+			[ -e "$STAGE$p" ] || echo "$p"
+		done < <(node_builtin_paths "$lib")
+	done < <(find "$STAGE" -type f -name 'libnode*' 2>/dev/null)
+}
+
+# stage_node_builtins copies the files a staged libnode names out of /usr/share (the package copy skips that
+# tree) and fails when one cannot be copied: a guest whose node cannot start must stop the build, not every node
+# test that follows. Nothing happens when no libnode is staged (nodejs not installed, or a node that carries its own).
+stage_node_builtins() {
+	local lib p miss
+	while read -r lib; do
+		while read -r p; do
+			stage_path "$p" >/dev/null || true
+		done < <(node_builtin_paths "$lib")
+	done < <(find "$STAGE" -type f -name 'libnode*' 2>/dev/null)
+	miss="$(missing_node_builtins)"
+	[ -z "$miss" ] || env_fail "the guest's node needs files the host does not have (install the packages that own them): ${miss//$'\n'/ }"
 }
 
 is_elf() { [ "$(head -c 4 "$1" 2>/dev/null | od -An -c | tr -d ' ')" = '177ELF' ]; }
@@ -400,6 +441,7 @@ build_base() {
 	for f in $libs; do
 		stage_path "$f" >/dev/null || log "could not copy library $f"
 	done
+	stage_node_builtins
 
 	# Directory modes as the host has them. mkdir -p made every staged directory with this script's
 	# umask, and the guest's own mount points are not on the host at all: /root is 0700 there, /tmp

@@ -6,6 +6,8 @@
 .rules-pick .rp-file { flex: 2 1 320px; }
 .rules-pick .rp-run { flex: 1 1 240px; }
 .rules-pick .select { width: 100%; }
+.rp-pages { margin: var(--space-2) 0 var(--space-4); font-size: var(--text-xs); }
+.rp-alias { margin: var(--space-2) 0 var(--space-3); font-size: var(--text-xs); overflow-wrap: anywhere; }
 .rules-pick-hint { flex-basis: 100%; margin: 0; font-size: var(--text-xs); color: var(--c-text3); }
 .rules-soon { flex-basis: 100%; margin: 0; max-width: 38ch; font-size: var(--text-xs); color: var(--c-text3); text-align: right; }
 .page > .rules-pending, .page > .note { margin-bottom: var(--space-3); }
@@ -52,8 +54,6 @@
 .rules-raw > summary.panel-head { list-style: none; flex-wrap: wrap; }
 .rules-raw > summary.panel-head .soft { min-width: 0; overflow-wrap: anywhere; }
 .rules-raw > summary.panel-head::-webkit-details-marker { display: none; }
-.rules-raw > summary h2::before { content: "▸"; color: var(--c-text3); margin-right: var(--space-2); font-size: var(--text-sm); }
-.rules-raw[open] > summary h2::before { content: "▾"; }
 .rules-g .panel-head h2, .rules-live .panel-head h2 { flex-wrap: wrap; row-gap: 2px; }
 /* Set up a new agent (templates/rules-new.tmpl) and a rules file not run yet. */
 .page > .nw-mode, .page > .nw-form, .page > .banner, .page > .nw-create { margin-bottom: var(--space-4); }
@@ -92,3 +92,60 @@
   .nw-form .panel-foot .btn, .nw-create .panel-foot .btn { width: 100%; justify-content: center; }
 }
 .nw-adv > summary { cursor: pointer; color: var(--c-text2); font-size: var(--text-sm); }
+
+/* General source facts must remain whole at phone widths and high zoom. */
+.general-contract .code-i { overflow-wrap: anywhere; white-space: normal; }
+.general-contract summary { min-height: 30px; padding-block: 6px; }
+/* At phone widths the panel keeps the dashboard's phone sizes: 13 px source text and 44 px touch targets. */
+@media screen and (max-width: 600px) {
+  .general-contract .code-i { font-size: 13px; }
+  .general-contract summary { min-height: 44px; padding-block: 12px; box-sizing: border-box; }
+}
+/* Contracts' ledger list and the exact rule recovery page. */
+.contract-row { display: grid; grid-template-columns: minmax(0, 2fr) auto auto; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: var(--line) solid var(--c-border); text-decoration: none; color: var(--c-text); }
+.contract-row:hover { background: var(--c-raised); }
+.contract-row:last-child { border-bottom: 0; }
+.contract-row .phone-who { font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+.contract-row .phone-when { color: var(--c-text3); font-size: var(--text-sm); }
+.contract-file { grid-column: 1 / -1; color: var(--c-text2); overflow-wrap: anywhere; font-size: var(--text-sm); }
+.contract-file .soft { display: block; }
+.rule-detail h2 { font-size: var(--text-xl); overflow-wrap: anywhere; }
+.contracts-page .term, .contracts-page .raw { white-space: pre-wrap; overflow-wrap: anywhere; }
+.contracts-page .t-rules { table-layout: fixed; }
+.contracts-page .t-rules .c-hits { width: 12%; }
+.contracts-page .t-rules .c-src { width: 20%; }
+.contracts-page .t-rules .c-enf { width: 23%; }
+.contracts-page .t-rules .c-effect { width: 12%; }
+@media screen and (max-width: 600px) {
+  .contract-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 24px auto; min-height: 80px; gap: 8px; padding: 12px 16px; }
+  .contract-row .phone-who { grid-column: 1 / -1; }
+  .rule-detail h2 { font-size: 16px; }
+  .contracts-page .rules-g .panel-head h2 .soft { display: none; }
+  .contracts-page .rules-g, .contracts-page .rules-live, .contracts-page > .note, .contracts-page > .rules-ended { margin: 0; }
+  .contracts-page .t-rules th { width: auto; }
+  .contracts-page .rules-pick { margin: 0; }
+  .contracts-page .lf-form { width: 100%; }
+  .contracts-page .lf-form .field { min-width: 0; }
+  .contracts-page .lf-form select { width: 100%; }
+  .contracts-page .rules-default { padding: 12px 16px; }
+}
+@media screen and (max-width: 600px) {
+  .contracts-page .term, .contracts-page .raw { font-size: 13px; }
+  .contracts-page .rules-pending .rp-h { font-size: 16px; }
+  .contracts-page .rc-diff { max-height: none; overflow: visible; }
+}
+.contract-filter { display: flex; gap: var(--space-3); align-items: center; justify-content: space-between; }
+
+
+@media screen and (max-width: 600px) { .contracts-page .t .mono { font-size: 13px; } }
+.lf-entry-what { min-width: 0; overflow-wrap: anywhere; }
+.lf-exact { margin: var(--space-2) 0; }
+@media screen and (max-width: 600px) {
+ .lf-entry { width: 100%; }
+ .lf-entry > summary { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 0; }
+ .lf-entry > summary .lf-entry-what { flex: 1 1 100%; }
+ .contracts-page .lf-list { padding: 0 16px; }
+ .contracts-page .lf-list > li { padding: 0; }
+}
+/* The live table reserves room for its existing Remove action at desktop widths. */
+.contracts-page .rules-live .t-rules .c-act { width: 120px; }

@@ -38,10 +38,11 @@ func TestProbeMapSpecRequiresListenerAndKeepsProductionPinning(t *testing.T) {
 }
 
 func TestPlaneFillerRequiresOwnedListenerReplacement(t *testing.T) {
-	// Validation precedes an ELF load or kernel operation, including untagged builds.
-	for _, maps := range [][]*ebpf.Map{nil, {nil}, {nil, nil}} {
-		if f, err := newPlaneFiller(bpfobj.ObjectPlaneFillProbe, nil, nil, maps...); err == nil || f != nil {
-			t.Fatal("filler accepted a missing or ambiguous owned listener map")
+	// Validation precedes an ELF load or kernel operation, including untagged builds: a fill build loaded with no
+	// listener map or no live-block map of the caller's would make its own.
+	for _, maps := range []fillMaps{{}, {ListenRows: new(ebpf.Map)}, {Blocks: new(ebpf.Map)}} {
+		if f, err := newPlaneFiller(bpfobj.ObjectPlaneFillProbe, maps); err == nil || f != nil {
+			t.Fatal("filler accepted a missing owned listener or live-block map")
 		}
 	}
 }

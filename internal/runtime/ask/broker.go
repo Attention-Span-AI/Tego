@@ -13,7 +13,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/attention-span-ai/tego/internal/askclient"
+	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/pkg/spec/askproto"
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 const (
@@ -48,12 +50,25 @@ var (
 // the connection or the packet, and the cgroup and cgroup namespace peer.Identify read and proved for that pid on
 // the connection (the socket reads them at the connect and again once the packet is in).
 type Peer struct {
-	PID int
-	UID uint32
+	PID      int
+	UID      uint32
+	GID      uint32
+	realUID  uint32 // current real UID, read through sender; UID retains packet identity
+	sender   *senderHandle
+	packetFD *sys.FD
+	// Managed answers require live start and initial user namespace facts.
+	StartBootNS   uint64
+	UserNamespace uint64
 	// Cgroup is the peer's unified cgroup path, relative to this process's cgroup namespace root; CgroupNS the inode
 	// of its cgroup namespace, 0 when it could not be read (peer.Peer).
 	Cgroup   string
 	CgroupNS uint64
+	// Undumpable is peer.Peer's: the cgroup namespace is hidden (CgroupNS 0) because the peer has the dumpable flag at
+	// 0, which Identify proved from files that stay readable (ADR 0100 (7), amended 2026-11-22).
+	Undumpable bool
+	// Via is where the peer says the person answered (askproto.Via*), "" for a terminal command. It is the peer's
+	// claim, recorded after its uid and pid in the answer's by.
+	Via string
 }
 
 // HoldOpen is the hold of a file-open approval: the open syscall itself is held, whatever the contract's
@@ -79,11 +94,12 @@ const MaxAlternate = askproto.MaxAlternate
 
 // Request describes the immutable held operation. AskID is assigned by Broker.
 type Request struct {
-	Score    *int   `json:"score,omitempty"`
-	GateRule string `json:"gate_rule,omitempty"`
-	AskID    string `json:"ask_id"`
-	Op       string `json:"op"`
-	Target   string `json:"target"`
+	LocalApprovalAuthority string `json:"local_approval_authority,omitempty"`
+	Score                  *int   `json:"score,omitempty"`
+	GateRule               string `json:"gate_rule,omitempty"`
+	AskID                  string `json:"ask_id"`
+	Op                     string `json:"op"`
+	Target                 string `json:"target"`
 	// Target2 is a held mutation's second name (HoldMutation): a rename's or a link's new name, a symlink's stored
 	// target, exactly as the person is shown it. Empty for every other request.
 	Target2 string `json:"target2,omitempty"`
@@ -122,6 +138,7 @@ func (c *AlternateCheck) Check(a *AlternateFile) (string, error) {
 }
 
 type Decision struct {
+	record.AnswerAuthority
 	AskID    string  `json:"ask_id"`
 	Approved bool    `json:"approved"`
 	By       string  `json:"by"`
@@ -161,12 +178,24 @@ type Event struct {
 	Decision Decision
 }
 
+// OwnerOnlyAuthority is the fixed root binding and live system-source check.
+// Check must be bounded and safe for concurrent calls.
+type OwnerOnlyAuthority struct {
+	AgentUID uint32
+	Check    func() error
+	// readSnapshot is replaced only by unprivileged unit fixtures.
+	readSnapshot  func(Peer, func(Peer) error) (Peer, error)
+	afterSnapshot func() // nil in production; completed-snapshot test barrier
+	beforeReply   func() // nil in production; cancelled-answer reply test barrier
+}
+
 // Options callbacks are mandatory. Authorize must reject processes in the
 // governed cgroup and its descendants, and in any other run's or adoption's
 // (peer.Refuse); UID alone does not establish a human.
 // Emit must accept the event or return an error. It must be bounded and
 // must not call Request, Answer or Close synchronously on the same broker.
 type Options struct {
+	OwnerOnly  *OwnerOnlyAuthority
 	UID        uint32
 	Timeout    time.Duration
 	MaxPending int
@@ -189,6 +218,8 @@ type pending struct {
 	done       chan struct{}
 	result     Decision
 	err        error
+	attempt    chan error // one selected answer attempt; refusal does not end the held operation
+	answerPeer Peer       // immutable packet facts for final managed authority checks
 	// remember is the standing answer a human's "always" (or a timeout under TimeoutStands) asks for. It is
 	// installed only once the answer line saying " always" is in the ledger (installStanding), never when the
 	// answer is given.
@@ -289,6 +320,14 @@ func New(runDir string, opts Options) (*Broker, error) {
 	if opts.Authorize == nil || opts.Emit == nil {
 		return nil, fmt.Errorf("%w: authorization and ledger callbacks required", ErrUnavailable)
 	}
+	if opts.OwnerOnly != nil {
+		if opts.OwnerOnly.AgentUID == 0 || opts.OwnerOnly.AgentUID == ^uint32(0) || opts.OwnerOnly.Check == nil {
+			return nil, fmt.Errorf("%w: invalid root-only authority", ErrUnavailable)
+		}
+		authority := *opts.OwnerOnly
+		opts.OwnerOnly = &authority
+		opts.TimeoutStands = false
+	}
 	if opts.Timeout == 0 {
 		opts.Timeout = DefaultTimeout
 	}
@@ -348,6 +387,9 @@ func (b *Broker) Request(ctx context.Context, req Request) (Decision, error) {
 	if _, err := rand.Read(id[:]); err != nil {
 		return Decision{Reason: ReasonUnavailable}, err
 	}
+	if b.opts.OwnerOnly != nil {
+		req.LocalApprovalAuthority = "owner_only"
+	}
 	req.AskID = "q-" + hex.EncodeToString(id[:])
 	p := &pending{req: req, started: time.Now(), choice: make(chan Decision, 1), done: make(chan struct{})}
 	b.mu.Lock()
@@ -381,6 +423,7 @@ func (b *Broker) Request(ctx context.Context, req Request) (Decision, error) {
 	if !closed && b.opts.Pending != nil {
 		b.opts.Pending(req)
 	}
+awaitAnswer:
 	var result Decision
 	select {
 	case result = <-p.choice:
@@ -400,11 +443,47 @@ func (b *Broker) Request(ctx context.Context, req Request) (Decision, error) {
 	if closed {
 		result = refused(result, ReasonUnavailable)
 		result.By = "shutdown"
+		if b.opts.OwnerOnly != nil {
+			result.AnswerAuthority = record.AnswerAuthority{}
+		}
 	} else if cause := ctx.Err(); cause != nil {
 		result = replaced(result, cancelledDecision(req.AskID, cause))
 	}
+	var authorityErr error
+	if b.opts.OwnerOnly != nil {
+		if result.Actor != nil {
+			authorityErr = b.ownerAnswer(p.answerPeer, false, false)
+			if errors.Is(authorityErr, askproto.ErrOwnerOnly) {
+				if err := b.retryLocal(p, authorityErr, false); err != nil {
+					b.finish(p, Decision{AskID: req.AskID, Reason: ReasonUnavailable}, err)
+					return p.result, err
+				}
+				goto awaitAnswer
+			}
+			if authorityErr != nil {
+				result = refused(result, ReasonUnavailable)
+				result.Actor = nil
+				result.By = "unavailable"
+			}
+		}
+		if result.Actor == nil {
+			result.SystemCause = result.By
+		}
+	}
 	result.AfterS = time.Since(p.started).Seconds()
 	err := b.opts.Emit(Event{Kind: "answer", Request: req, Decision: result})
+	if b.opts.OwnerOnly != nil {
+		result, err = b.deliverLocal(ctx, p, result, errors.Join(err, authorityErr))
+		if errors.Is(err, errRetrySender) {
+			if err := b.retryLocal(p, askproto.ErrOwnerOnly, true); err != nil {
+				b.finish(p, Decision{AskID: p.req.AskID, Reason: ReasonUnavailable}, err)
+				return p.result, err
+			}
+			req = p.req
+			goto awaitAnswer
+		}
+		return result, err
+	}
 	// What the line says is what stands: an answer whose line ends in " always" was recorded as standing.
 	recordedAlways := err == nil && result.Always
 	// A recorded standing alternate keeps the descriptor its line named, since a cancellation below closes this
@@ -599,6 +678,108 @@ func (b *Broker) applyStanding(ctx context.Context, req Request, s standing) (De
 	return d, nil
 }
 
+// deliverLocal commits a managed delivery while holding the pending-state lock.
+// Authority reads can block. The monotonic deadline and terminal state are checked
+// after those reads; nothing that performs I/O runs between that check and commit.
+func (b *Broker) deliverLocal(ctx context.Context, p *pending, result Decision, err error) (Decision, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var authorityErr error
+	if err == nil && result.Actor != nil {
+		authorityErr = b.ownerAnswer(p.answerPeer, false, false)
+	}
+	cause := ctx.Err()
+	now := time.Now()
+	system := ""
+	switch {
+	case !now.Before(p.started.Add(b.opts.Timeout)):
+		system = "timeout"
+		err = fmt.Errorf("%w: answer expired before delivery: %w", ErrNotPending, context.DeadlineExceeded)
+	case b.closed:
+		system = "shutdown"
+		err = ErrUnavailable
+	case cause != nil:
+		system = "cancelled"
+		if errors.Is(cause, context.DeadlineExceeded) {
+			system = "timeout"
+		}
+		err = cause
+	case b.pending[p.req.AskID] != p || !p.ready || !p.won:
+		system = "unavailable"
+		err = ErrNotPending
+	case err == nil && errors.Is(authorityErr, askproto.ErrOwnerOnly):
+		return Decision{}, errRetrySender
+	case err != nil || authorityErr != nil:
+		system = "unavailable"
+		if authorityErr != nil {
+			err = authorityErr
+		}
+	}
+	if system != "" {
+		result = refused(result, ReasonUnavailable)
+		if system == "timeout" {
+			result.Reason = ReasonTimeout
+		}
+		result.By = system
+		result.AnswerAuthority = record.AnswerAuthority{SystemCause: system}
+	}
+	result.AfterS = now.Sub(p.started).Seconds()
+	delete(b.pending, p.req.AskID)
+	p.result, p.err = result, err
+	close(p.done)
+	return result, err
+}
+
+// errRetrySender is internal to Request: the selected sender could not be
+// admitted, but the held operation still owns its original deadline.
+var errRetrySender = errors.New("ask: retry sender admission")
+
+func (b *Broker) retryLocal(p *pending, refusal error, recorded bool) error {
+	var id [16]byte
+	if recorded {
+		if _, err := rand.Read(id[:]); err != nil {
+			return err
+		}
+	}
+	b.mu.Lock()
+	attempt := p.attempt
+	p.attempt = nil
+	p.won, p.ready = false, !recorded
+	p.answerPeer = Peer{}
+	if recorded {
+		// One immutable answer per ask id. The old line is a selection whose
+		// delivery failed, so republish this held operation under a fresh id.
+		delete(b.pending, p.req.AskID)
+		p.req.AskID = "q-" + hex.EncodeToString(id[:])
+		b.pending[p.req.AskID] = p
+	}
+	if !recorded && b.closed {
+		b.chooseLocked(p, Decision{AskID: p.req.AskID, Reason: ReasonUnavailable, By: "shutdown"})
+	}
+	b.mu.Unlock()
+	if recorded {
+		if err := b.opts.Emit(Event{Kind: "ask", Request: p.req}); err != nil {
+			return err
+		}
+		b.mu.Lock()
+		p.ready = true
+		closed := b.closed
+		if closed {
+			b.chooseLocked(p, Decision{AskID: p.req.AskID, Reason: ReasonUnavailable, By: "shutdown"})
+		}
+		b.mu.Unlock()
+		if !closed && b.opts.Pending != nil {
+			b.opts.Pending(p.req)
+		}
+	}
+	// Reply only once the held operation is ready to answer again. In
+	// particular, its new ask line must be accepted before it is advertised.
+	if attempt != nil {
+		attempt <- refusal
+	}
+	return nil
+}
+
 func (b *Broker) finish(p *pending, result Decision, err error) {
 	b.mu.Lock()
 	delete(b.pending, p.req.AskID)
@@ -628,6 +809,23 @@ func (b *Broker) choose(p *pending, d Decision) bool {
 // opens the file as the agent; one it refuses, or a request that takes none, leaves the request pending. The
 // caller keeps alternate; the chosen decision holds its own duplicate.
 func (b *Broker) answer(ctx context.Context, id string, approve, always bool, alternate *AlternateFile, peer Peer) (Decision, error) {
+	if b.opts.OwnerOnly != nil {
+		b.mu.Lock()
+		p := b.pending[id]
+		if b.closed || p == nil || !p.ready || p.won {
+			b.mu.Unlock()
+			return Decision{}, ErrNotPending
+		}
+		if !time.Now().Before(p.started.Add(b.opts.Timeout)) {
+			b.mu.Unlock()
+			return Decision{}, ErrNotPending
+		}
+		err := b.ownerAnswer(peer, always, alternate != nil)
+		b.mu.Unlock()
+		if err != nil {
+			return Decision{}, err
+		}
+	}
 	resolved := ""
 	if alternate != nil {
 		if approve || !ValidAlternate(alternate.Named) {
@@ -660,6 +858,19 @@ func (b *Broker) answer(ctx context.Context, id string, approve, always bool, al
 		return Decision{}, ErrNotPending
 	}
 	d := Decision{AskID: id, Approved: approve, By: fmt.Sprintf("uid:%d pid:%d", peer.UID, peer.PID)}
+	if b.opts.OwnerOnly != nil {
+		// Repeat after the final pending lookup; no failed authority consumes a choice.
+		snapshot, err := b.ownerSnapshot(peer, always, alternate != nil)
+		if err != nil {
+			b.mu.Unlock()
+			return Decision{}, err
+		}
+		peer = snapshot
+		d.Actor = &record.LocalApprovalActor{UID: peer.UID, PID: peer.PID, StartBootNS: peer.StartBootNS, UserNamespace: peer.UserNamespace, Source: "kernel-local-uid", Role: "owner"}
+	}
+	if askproto.ValidVia(peer.Via) && peer.Via != "" {
+		d.By += " " + peer.Via // "uid:26743 pid:912 dashboard": how the answer came, beside who gave it
+	}
 	if alternate != nil {
 		d.Alternate, d.AlternateDev, d.AlternateIno = resolved, alternate.Dev, alternate.Ino
 	}
@@ -703,15 +914,41 @@ func (b *Broker) answer(ctx context.Context, id string, approve, always bool, al
 		}
 		d.File = f
 	}
+	if b.opts.OwnerOnly != nil {
+		p.answerPeer = peer
+		p.attempt = make(chan error, 1)
+	}
 	b.chooseLocked(p, d)
+	attempt := p.attempt
 	b.mu.Unlock()
 	select {
+	case err := <-attempt:
+		return Decision{}, err
 	case <-p.done:
+		select {
+		case err := <-attempt:
+			return Decision{}, err
+		default:
+		}
 		return p.result, p.err
 	case <-ctx.Done():
+		// A refused attempt stays refused even if a later answer has completed.
+		select {
+		case err := <-attempt:
+			return Decision{}, err
+		default:
+		}
+		if b.opts.OwnerOnly != nil && b.opts.OwnerOnly.beforeReply != nil {
+			b.opts.OwnerOnly.beforeReply()
+		}
 		// A decision already taken is what the person is told, not the server's closing after it.
 		select {
 		case <-p.done:
+			select {
+			case err := <-attempt:
+				return Decision{}, err
+			default:
+			}
 			return p.result, p.err
 		default:
 		}
@@ -844,3 +1081,55 @@ func validID(id string) bool { return askproto.ValidID(id) }
 
 // ValidID validates the local broker identifier before a CLI reads account state.
 func ValidID(id string) bool { return validID(id) }
+
+// ownerAnswer is checked after request lookup, for both Approve and Deny.
+func (b *Broker) ownerAnswer(p Peer, always, alternate bool) error {
+	_, err := b.ownerSnapshot(p, always, alternate)
+	return err
+}
+
+// ownerSnapshot returns one whole sender reading or refuses it. Both policy
+// readings must match the activation pin (trusted inode and exact bytes).
+// An answer that names a via is refused as well: the record's actor rule requires `by` to be exactly the root's uid and
+// pid, and a via appended to it would fail the append and end the run. A root terminal command names none.
+func (b *Broker) ownerSnapshot(p Peer, always, alternate bool) (Peer, error) {
+	if p.sender != nil {
+		p.sender.mu.Lock()
+		defer p.sender.mu.Unlock()
+	}
+	check := func() error {
+		if err := b.opts.OwnerOnly.Check(); err != nil {
+			return fmt.Errorf("%w: %v", askproto.ErrApprovalPolicyChanged, err)
+		}
+		return nil
+	}
+	if err := check(); err != nil {
+		return Peer{}, err
+	}
+	if p.sender != nil {
+		p.sender.barrier("policy-before")
+	}
+	read := readSenderSnapshot
+	if b.opts.OwnerOnly.readSnapshot != nil {
+		read = b.opts.OwnerOnly.readSnapshot
+	}
+	snapshot, peerErr := read(p, b.authorize)
+	if err := check(); err != nil {
+		return Peer{}, err
+	}
+	if p.sender != nil {
+		p.sender.barrier("policy-after")
+	}
+	if peerErr == nil && snapshot.sender != nil {
+		// No further proc read may escape the policy bracket. This final poll
+		// only proves that the retained sender has not exited during policy I/O.
+		peerErr = snapshot.sender.alive()
+	}
+	if peerErr != nil || snapshot.realUID != 0 || snapshot.UID != 0 || snapshot.UID == b.opts.OwnerOnly.AgentUID || snapshot.UserNamespace != record.InitialUserNamespace || snapshot.StartBootNS == 0 || snapshot.Cgroup == "" || snapshot.CgroupNS == 0 || always || alternate || p.Via != "" {
+		return Peer{}, askproto.ErrOwnerOnly
+	}
+	if b.opts.OwnerOnly.afterSnapshot != nil {
+		b.opts.OwnerOnly.afterSnapshot()
+	}
+	return snapshot, nil
+}

@@ -6,6 +6,8 @@
 // (a host name is resolved at run start, E18). It is the one compile both rule write paths call, `tego rule`
 // (internal/cli) and the dashboard's rule service (internal/control/rules), so the same change gets the same verdict
 // from either (TestParityCLIAndDashboard).
+// CompileLoaded accepts an already merged contract so a bounded compiler can use
+// one dependency snapshot for validation, comparison, binding and diagnostic redaction.
 //
 // UnresolvedHosts is the one lookup a change makes: the host names it adds to net.allow or net.ask, all at once and
 // within HostBudget, so `tego rule` and the dashboard's previews can warn of one that does not resolve here. It is never

@@ -117,7 +117,7 @@ refused_row "a kernel set by hand for another row" "says another kernel" TEGO_VM
 # a guest that ran. The suites' own verdicts are not what is judged here, so the script's exit is not either.
 repo="$tmp/repo"
 mkdir -p "$repo/test/vm" "$repo/scripts" "$repo/internal/bpf" "$repo/internal/runtime/enforce/landlock" "$tmp/stub"
-cp "$here/root-suites.sh" "$here/fwd-run.sh" "$here/suites.sh" "$here/summarize.py" "$here/bounded-run.sh" "$here/go-shim.sh" \
+cp "$here/root-suites.sh" "$here/fwd-run.sh" "$here/suites.sh" "$here/summarize.py" "$here/consoleframe.py" "$here/bounded-run.sh" "$here/go-shim.sh" \
 	"$here/root-skips.txt" "$here/root-must-pass.txt" "$here/fetch-kernel.py" "$here/kernel_auth.py" "$here/conformance-require.sh" "$repo/test/vm/"
 cp -r "$here/keys" "$repo/test/vm/keys"
 # Keep row validation real, while module preparation uses no network in these stand-in boots.
@@ -179,6 +179,9 @@ case "$1 $2" in
 esac
 # list -f names the test files of the package, for root-suites.sh's .list: those this directory holds (part 4)
 if [ "$1" = list ]; then
+	if [ "${STUB_BPF_DEPS:-}" = yes ]; then
+		for a in "$@"; do [ "$a" != -deps ] || { echo github.com/attention-span-ai/tego/internal/bpf; exit 0; }; done
+	fi
 	for a in "$@"; do [ "$a" != -f ] || { for f in *_test.go; do [ ! -f "$f" ] || printf '%s ' "$f"; done; exit 0; }; done
 fi
 out=""
@@ -226,6 +229,18 @@ if grep -qv 'KERNEL=matrix-fedora-7.2 ' "$tmp/boots"; then fail "a guest booted 
 grep -F -- "--cwd /src/internal/runtime/enforce/landlock" "$tmp/boots" | grep -qF -- "--env TEGO_VM_ROW=fedora-7.2" ||
 	fail "the suite's guest was not told its row: $(cat "$tmp/boots")"
 
+# The fedora rows preempt kernel code (lazy preemption), where a product doctor rules fmod_ret mode out: their guests get
+# TEGO_TEST_PLANE_PREEMPT=waive unless the caller chose a value (even an empty one); other rows and the host get none.
+for row in fedora-7.0 fedora-7.2; do
+	run_stub VM_HOST=kvm TEGO_VM_ROW=$row TEGO_VM_KERNEL=matrix-$row
+	grep -F -- "--cwd /src/internal/runtime/enforce/landlock" "$tmp/boots" | grep -qF -- "--env TEGO_TEST_PLANE_PREEMPT=waive" ||
+		fail "$row's guest was not given the preemption waiver: $(cat "$tmp/boots")"
+	run_stub VM_HOST=kvm TEGO_VM_ROW=$row TEGO_VM_KERNEL=matrix-$row TEGO_TEST_PLANE_PREEMPT=
+	if grep -qF -- "TEGO_TEST_PLANE_PREEMPT" "$tmp/boots"; then fail "$row: a waiver the caller emptied came back: $(cat "$tmp/boots")"; fi
+done
+run_stub VM_HOST=kvm TEGO_VM_ROW=debian-13 TEGO_VM_KERNEL=matrix-debian-13
+if grep -qF -- "TEGO_TEST_PLANE_PREEMPT" "$tmp/boots"; then fail "debian-13 was given the preemption waiver: $(cat "$tmp/boots")"; fi
+
 # With no row named, no guest is told one, and the kernel is whatever the caller set.
 run_stub VM_HOST=kvm
 if grep -qF -- "TEGO_VM_ROW" "$tmp/boots"; then fail "a guest was told a row the caller never named: $(cat "$tmp/boots")"; fi
@@ -242,6 +257,23 @@ for row in al2023 al2023-6.12 debian-13; do
 	run_stub VM_HOST=kvm TEGO_VM_ROW=$row TEGO_VM_KERNEL=matrix-$row
 	grep -qF -- "--module unix_diag " "$tmp/boots" || fail "$row's own Unix socket tests need unix_diag"
 done
+run_stub VM_HOST=kvm TEGO_VM_ROW=debian-13 TEGO_VM_KERNEL=matrix-debian-13
+for module in overlay crc32c_generic loop btrfs unix_diag tcp_diag; do
+	grep -F -- ":/vm/tego " "$tmp/boots" | grep -qF -- "--module $module " ||
+		fail "debian-13's doctor guest lost $module"
+done
+for row in ubuntu-24.04 ubuntu-25.10; do
+	run_stub VM_HOST=kvm TEGO_VM_ROW=$row TEGO_VM_KERNEL=matrix-$row
+	for module in overlay btrfs unix_diag inet_diag tcp_diag; do
+		grep -F -- "--cwd /src/internal/runtime/enforce/landlock" "$tmp/boots" | grep -qF -- "--module $module " ||
+			fail "$row's root suites need $module"
+		grep -F -- ":/vm/tego " "$tmp/boots" | grep -qF -- "--module $module " ||
+			fail "$row's doctor guest lost $module"
+	done
+	if grep -qF -- "--module loop " "$tmp/boots"; then fail "$row builds loop in"; fi
+done
+run_stub VM_HOST=kvm TEGO_VM_ROW=ubuntu-24.04 TEGO_VM_KERNEL=matrix-ubuntu-24.04 VM_MODULES=""
+if grep -qF -- "--module" "$tmp/boots"; then fail "Ubuntu ignored an explicit empty VM_MODULES"; fi
 run_stub VM_HOST=kvm TEGO_VM_ROW=debian-13 TEGO_VM_KERNEL=matrix-debian-13 VM_MODULES=""
 if grep -qF -- "--module" "$tmp/boots"; then fail "an explicit empty VM_MODULES was ignored"; fi
 run_stub VM_HOST=kvm TEGO_VM_ROW=fedora-7.2 TEGO_VM_KERNEL=matrix-fedora-7.2 VM_MODULES=overlay
@@ -254,6 +286,61 @@ run_stub VM_HOST=kvm TEGO_VM_ROW=host
 grep -F -- "--cwd /src/internal/runtime/enforce/landlock" "$tmp/boots" | grep -qF -- "$default_modules" ||
 	fail "the host row lost the default modules ($default_modules): $(cat "$tmp/boots")"
 
+# Btrfs is required by the row, even when built in or VM_MODULES deliberately loads none. Only RHEL 9 lacks a
+# usable driver. Inspect each suite's actual --env, rather than the default module list or a console message.
+for row in fedora-7.0 fedora-7.2 ubuntu-24.04 ubuntu-25.10 debian-13 al2023 al2023-6.12 host; do
+	row_kernel=matrix-$row
+	[ "$row" != host ] || row_kernel=$(uname -r)
+	for override in default empty; do
+		if [ "$override" = empty ]; then
+			run_stub VM_HOST=kvm TEGO_VM_ROW="$row" TEGO_VM_KERNEL="$row_kernel" VM_MODULES=""
+		else
+			run_stub VM_HOST=kvm TEGO_VM_ROW="$row" TEGO_VM_KERNEL="$row_kernel"
+		fi
+		grep -F -- "--cwd /src/internal/runtime/enforce/landlock" "$tmp/boots" |
+			grep -Eq -- '--env TEGO_CONFORMANCE_FS_REQUIRE=([^ ]+ )*btrfs( |$)' ||
+			fail "$row ($override modules) did not require Btrfs"
+	done
+done
+run_stub VM_HOST=kvm TEGO_VM_ROW=rhel-9 TEGO_VM_KERNEL=matrix-rhel-9
+if grep -q 'TEGO_CONFORMANCE_FS_REQUIRE=.*btrfs' "$tmp/boots"; then fail "RHEL 9 cannot require a driver it does not ship"; fi
+
+# Exercise the actual root registry with the absent-driver results, after removing only the existing plain-build
+# allowances as root-suites.sh does. Its three cell skips are registered for RHEL 9, and never for Fedora or a caller
+# that did not name a row. The parent skip in an untagged build retains its existing allowance.
+grep -v '[[:space:]]#[[:space:]]*untagged:' "$here/root-skips.txt" >"$tmp/tagged-skips"
+for cell in cgroup@lsm bpflsm@lsm cgroup@fmod_ret; do
+	printf '{"Action":"skip","Package":"github.com/attention-span-ai/tego/internal/runtime/enforce/cgroup","Test":"TestPlaneRunBtrfsSubvolumeInodeIdentity/%s"}\n' "$cell"
+done >"$tmp/btrfs-absent.json"
+for row in rhel-9 fedora-7.0 fedora-7.2 debian-13 host ''; do
+	rc=0
+	"$here/../../scripts/skipgate.sh" --row "$row" "$tmp/tagged-skips" "$tmp/btrfs-absent.json" >"$tmp/btrfs-gate.log" 2>&1 || rc=$?
+	want=1
+	[ "$row" != rhel-9 ] || want=0
+	[ "$rc" = "$want" ] || fail "Btrfs absent on row '${row:-unset}': registry exit $rc, want $want: $(cat "$tmp/btrfs-gate.log")"
+done
+rc=0
+"$here/../../scripts/skipgate.sh" "$tmp/tagged-skips" "$tmp/btrfs-absent.json" >"$tmp/btrfs-gate.log" 2>&1 || rc=$?
+[ "$rc" = 1 ] || fail "the root registry allowed missing Btrfs without any row context: $(cat "$tmp/btrfs-gate.log")"
+printf '{"Action":"skip","Package":"github.com/attention-span-ai/tego/internal/runtime/enforce/cgroup","Test":"TestPlaneRunBtrfsSubvolumeInodeIdentity"}\n' >"$tmp/btrfs-plain.json"
+"$here/../../scripts/skipgate.sh" --row fedora-7.2 "$here/root-skips.txt" "$tmp/btrfs-plain.json" >"$tmp/btrfs-gate.log" 2>&1 ||
+	fail "the plain build lost its untagged allowance: $(cat "$tmp/btrfs-gate.log")"
+
+# Package budgets apply to both builds; a suite key can give just the tagged build more time without exceeding the
+# CI job's combined budget. The guest bound and Go's earlier diagnostic timeout must agree for each build.
+: >"$repo/internal/bpf/fixture_bpfel.o"
+# Only this case asks the stand-in go to report an internal/bpf dependency, enabling the second build.
+run_stub VM_HOST=kvm VM_BPF=yes STUB_BPF_DEPS=yes \
+	VM_SUITE_TIMEOUT="1500 internal/runtime/enforce/landlock=3600 internal_runtime_enforce_landlock.tegobpf=9000"
+grep -F -- "--cwd /src/internal/runtime/enforce/landlock" "$tmp/boots" | grep -F -- "landlock.test " |
+	grep -qF -- "--timeout 3600 " || fail "plain build lost its package budget"
+grep -F -- "--cwd /src/internal/runtime/enforce/landlock" "$tmp/boots" | grep -F -- "landlock.tegobpf.test " |
+	grep -qF -- "--timeout 9000 " || fail "tagged build lost its suite budget"
+grep -F -- "landlock.test " "$tmp/boots" | grep -qF -- "-test.timeout=3300s" || fail "plain Go timeout disagrees"
+grep -F -- "landlock.tegobpf.test " "$tmp/boots" | grep -qF -- "-test.timeout=8700s" || fail "tagged Go timeout disagrees"
+run_stub VM_HOST=kvm VM_BPF=yes STUB_BPF_DEPS=yes TEGO_VM_ROW=rhel-9 TEGO_VM_KERNEL=matrix-rhel-9
+[ "$(grep -c '^--row rhel-9 ' "$tmp/gates")" = 2 ] ||
+	fail "both strict and plain skip gates must receive the row: $(cat "$tmp/gates")"
 # The skip gates get the row the run boots (TEGO_VM_ROW), so a row-scoped entry applies there and nowhere else.
 run_stub VM_HOST=kvm TEGO_VM_ROW=debian-13 TEGO_VM_KERNEL=matrix-debian-13
 grep -q -- '^--row debian-13 ' "$tmp/gates" ||
@@ -429,7 +516,121 @@ env -i PATH="$tmp/stub:$PATH" HOME="$tmp" TMPDIR="$tmp" GO="$tmp/stub/go" VM_OUT
 	STUB_RUNS="$tmp/runs" STUB_SUDO="$tmp/sudo.log" VM_SHARD=r "$repo/test/vm/root-suites.sh" >"$tmp/stub.log" 2>&1 || true
 [ "$(wc -l <"$tmp/runs.args")" = $((npkgs - 1)) ] || fail "the \"*\" shard ran $(wc -l <"$tmp/runs.args") suites, want every package but the split one ($((npkgs - 1)))"
 if grep -q 'test\.run\|test\.skip\|landlock' "$tmp/runs.args"; then fail "the \"*\" shard ran a part, or the split package: $(cat "$tmp/runs.args")"; fi
+# 4b. A package ROOT_SPLITS splits is run, without VM_SHARD, as its parts one after another: each its own guest and its own
+# row of summary.json, all of the one package, with the part's own .list, and every part's log goes to the skip gate. A
+# VM_RUN runs the package whole, and a package ROOT_SPLITS does not name is never split.
+{ cat "$tmp/suites.sh.orig"; echo 'ROOT_SPLITS=("p|internal/runtime/enforce/landlock|2")'; } >"$repo/test/vm/suites.sh"
+for variant in "|2" "VM_RUN=TestB|1"; do
+	: >"$tmp/runs"
+	: >"$tmp/runs.args"
+	: >"$tmp/gates"
+	rm -rf "$tmp/sudoout"
+	# shellcheck disable=SC2086 # the assignment, if any, is a word of env's command line
+	env -i PATH="$tmp/stub:$PATH" HOME="$tmp" TMPDIR="$tmp" GO="$tmp/stub/go" VM_OUT="$tmp/sudoout" VM_BPF=no VM_HOST=sudo \
+		STUB_RUNS="$tmp/runs" STUB_SUDO="$tmp/sudo.log" STUB_GATES="$tmp/gates" ${variant%%|*} \
+		"$repo/test/vm/root-suites.sh" internal/runtime/enforce/landlock >"$tmp/stub.log" 2>&1 || true
+	want=${variant#*|}
+	[ "$(wc -l <"$tmp/runs.args")" = "$want" ] || fail "split package ($variant): $(wc -l <"$tmp/runs.args") guests, want $want: $(cat "$tmp/runs.args") $(tail -5 "$tmp/stub.log")"
+	if [ "$want" = 2 ]; then
+		if ! grep -qF -- ' -test.run=^(TestA|TestC|TestE)$' "$tmp/runs.args" || ! grep -qF -- ' -test.skip=^(TestA|TestC|TestE)$' "$tmp/runs.args"; then
+			fail "the two parts did not get -test.run of the odd tests and -test.skip of them: $(cat "$tmp/runs.args")"
+		fi
+		[ "$(paste -sd' ' "$tmp/sudoout/logs/internal_runtime_enforce_landlock.p1.list")" = "TestA TestC TestE" ] &&
+			[ "$(paste -sd' ' "$tmp/sudoout/logs/internal_runtime_enforce_landlock.p2.list")" = "TestB TestD" ] ||
+			fail "the parts' .list files are not their tests"
+		python3 - "$tmp/sudoout/summary.json" <<'PY' || fail "summary.json does not hold the two parts as rows of one package"
+import json, sys
+rows = json.load(open(sys.argv[1]))
+rows = rows["suites"] if isinstance(rows, dict) and "suites" in rows else rows
+mine = [r for r in rows if r.get("package") == "internal/runtime/enforce/landlock"]
+assert sorted(r["suite"] for r in mine) == ["internal_runtime_enforce_landlock.p1", "internal_runtime_enforce_landlock.p2"], mine
+PY
+		[ "$(cut -f2,3 "$tmp/sudoout/results.tsv" | grep -c '^internal/runtime/enforce/landlock	')" = 2 ] &&
+			[ "$(cut -f5 "$tmp/sudoout/results.tsv" | grep -c 'enforce_landlock\.p[12]\.json$')" = 2 ] ||
+			fail "results.tsv, which the skip gate's logs are read from, lacks the two parts' json: $(cat "$tmp/sudoout/results.tsv")"
+	else
+		if ! grep -qF -- ' -test.run=TestB' "$tmp/runs.args" || grep -qF -- 'test.skip' "$tmp/runs.args"; then fail "VM_RUN's run was split: $(cat "$tmp/runs.args")"; fi
+	fi
+done
 cp "$tmp/suites.sh.orig" "$repo/test/vm/suites.sh"
+
+# 4c. The parts cover the whole list and no test is in two. For the real plan: each split package's plain and tegobpf
+# lists, read from its sources as root-suites.sh reads them, and lists of every small size, are cut into the plan's n
+# parts by split_part; the parts' tests are the list, once each, and part n skips exactly the others' (so it runs what a
+# list misses), the others run exactly their own. The plan's n is the shards' n.
+bash -c 'set -u; here=$1; GO=${GO:-go}; command -v "$GO" >/dev/null || { echo "no go to read the lists" >&2; exit 1; }
+	eval "$(sed -n "/^suite_list() {/,/^}/p;/^split_part() {/,/^}/p;/^split_count() {/,/^}/p" "$here/root-suites.sh")"
+	. "$here/suites.sh"; cd "$here/../.."
+	tmp=$(mktemp -d "${TMPDIR:-/tmp}/tego-parts.XXXXXX"); trap "rm -rf $tmp" EXIT
+	check() { # LISTFILE N LABEL
+		local lf=$1 n=$2 label=$3 j seen="$tmp/seen" total=0 mine skip=0
+		: >"$seen"
+		total=$(grep -c . "$lf" || true)
+		for ((j = 1; j <= n; j++)); do
+			split_part "$j" "$n" "$lf"
+			[ "$PART_TOTAL" = "$total" ] || { echo "$label part $j/$n counts $PART_TOTAL of $total tests" >&2; return 1; }
+			printf "%s\n" "${PART_MINE[@]+"${PART_MINE[@]}"}" | grep . >>"$seen" || true
+			a="${PART_ARGS[*]-}"
+			if [ "$j" != "$n" ]; then
+				[ "$a" = "-test.run=^($(IFS="|"; echo "${PART_MINE[*]-}"))\$" ] || { echo "$label part $j/$n runs $a, not its own tests" >&2; return 1; }
+			else
+				# part n skips every test of the others, and none of its own
+				others=$(grep . "$lf" | grep -vxFf <(printf "%s\n" "${PART_MINE[@]+"${PART_MINE[@]}"}" | grep . || true) | paste -sd"|" || true)
+				if [ -n "$others" ]; then [ "$a" = "-test.skip=^($others)\$" ] || { echo "$label part $n/$n skips $a, not the others" >&2; return 1; }
+				elif [ -n "$a" ]; then echo "$label part $n/$n has arguments $a with nothing to skip" >&2; return 1; fi
+			fi
+		done
+		[ "$(sort "$seen" | uniq -d | wc -l)" = 0 ] || { echo "$label: a test is in two parts: $(sort "$seen" | uniq -d | head -3)" >&2; return 1; }
+		[ "$(sort "$seen")" = "$(grep . "$lf" | sort)" ] || { echo "$label: the parts do not hold the whole list" >&2; return 1; }
+	}
+	for e in "${ROOT_SPLITS[@]}"; do
+		IFS="|" read -r name pkg n <<<"$e"
+		[ "$(split_count "$pkg")" = "$n" ] || { echo "split_count $pkg is not $n" >&2; exit 1; }
+		# the shards are the parts: every j of n, once
+		for ((j = 1; j <= n; j++)); do
+			c=0; for s in "${ROOT_SHARDS[@]}"; do [ "$s" != "$name-$j|$pkg|$j/$n" ] || c=$((c + 1)); done
+			[ "$c" = 1 ] || { echo "ROOT_SHARDS does not hold $name-$j|$pkg|$j/$n once" >&2; exit 1; }
+		done
+		[ "$(for s in "${ROOT_SHARDS[@]}"; do case "$s" in *"|$pkg|"*/*) echo x ;; esac; done | wc -l)" = "$n" ] || { echo "ROOT_SHARDS holds parts of $pkg other than the $n of ROOT_SPLITS" >&2; exit 1; }
+		for tags in integration integration,tegobpf; do
+			suite_list "$pkg" "$tags" >"$tmp/list" 2>/dev/null
+			[ "$(grep -c . "$tmp/list")" -gt "$n" ] || { echo "$pkg $tags: no list read" >&2; exit 1; }
+			[ "$(sort "$tmp/list" | uniq -d | wc -l)" = 0 ] || { echo "$pkg $tags lists a test twice" >&2; exit 1; }
+			check "$tmp/list" "$n" "$pkg $tags" || exit 1
+		done
+		for ((size = 0; size <= 3 * n + 1; size++)); do
+			seq 1 "$size" | sed "s/^/TestT/" >"$tmp/small"
+			check "$tmp/small" "$n" "a list of $size" || exit 1
+		done
+	done
+' _ "$here" || fail "the parts of ROOT_SPLITS do not cover each suite's list exactly once (above)"
+
+# 4d. VM_PART_RUN keeps the parts and narrows each: part j runs, by -test.run, only its own tests the expression
+# matches (part n too, which then skips nothing), a part with none has no arguments and no test, and the parts together
+# hold exactly the list's matching tests, once each.
+bash -c 'set -u; here=$1
+	eval "$(sed -n "/^split_part() {/,/^}/p" "$here/root-suites.sh")"
+	tmp=$(mktemp -d "${TMPDIR:-/tmp}/tego-partrun.XXXXXX"); trap "rm -rf $tmp" EXIT
+	printf "%s
+" TestPlaneA TestOther1 TestPlaneB TestOther2 TestPlaneC TestOther3 TestPlaneD >"$tmp/list"
+	VM_PART_RUN="^TestPlane"
+	seen=""
+	for j in 1 2 3; do
+		split_part "$j" 3 "$tmp/list"
+		for t in "${PART_MINE[@]+"${PART_MINE[@]}"}"; do
+			case "$t" in TestPlane*) ;; *) echo "part $j/3 keeps $t, which the expression does not match" >&2; exit 1 ;; esac
+			seen="$seen $t"
+		done
+		if [ "${#PART_MINE[@]}" -gt 0 ]; then
+			want="-test.run=^($(IFS="|"; echo "${PART_MINE[*]}"))\$"
+			[ "${PART_ARGS[*]}" = "$want" ] || { echo "part $j/3 runs ${PART_ARGS[*]-}, want $want" >&2; exit 1; }
+		elif [ "${#PART_ARGS[@]}" -ne 0 ]; then
+			echo "part $j/3 has no matching test and arguments ${PART_ARGS[*]}" >&2; exit 1
+		fi
+	done
+	[ "$(echo $seen | tr " " "\n" | sort | paste -sd" ")" = "TestPlaneA TestPlaneB TestPlaneC TestPlaneD" ] ||
+		{ echo "the parts hold$seen, want the four TestPlane tests once each" >&2; exit 1; }
+' _ "$here" || fail "VM_PART_RUN does not narrow each part to its own matching tests (above)"
 
 # 5. --gather DIR, the job named root-suites after its shards: every shard of the plan finished with 0, none missing,
 # twice or unknown, and root-must-pass.txt over all their logs together. The logs here pass every must-pass test, each
@@ -480,5 +681,8 @@ gather 1 "a must-pass test skipped" ": skip"
 rc=0
 "$here/root-suites.sh" --gather "$tmp/no-such-dir" >"$tmp/gather.log" 2>&1 || rc=$?
 [ "$rc" = 2 ] || fail "--gather of no directory: exit $rc, want 2"
+
+python3 "$here/matrix-workflow_test.py"
+(cd "$here" && python3 summarize_test.py)
 
 echo "ok root-suites_test.sh"

@@ -11,6 +11,14 @@ import (
 	"strings"
 )
 
+// VerdictRootRequired and RootRequiredRule are the answer of a root-tier column that compile, run by a normal user,
+// cannot predict (ADR 0043, amendment 2026-11-18): a step root finishes was cut short by a permission failure, so the
+// column is neither allowed nor refused. compile --test and compile --exec print it and exit 125.
+const (
+	VerdictRootRequired Verdict = "cannot tell without root"
+	RootRequiredRule    string  = "root-required"
+)
+
 // EvaluateGateRow applies a configured gate after the caller's pure tier floor.
 // Its facts are hypothetical table values; it performs no DNS, file or process
 // lookups and grants no live operation. The kernel-only evaluator stays intact.
@@ -22,7 +30,8 @@ import (
 // source is scored by both kinds summed as the run's is, and its two ends are one action, every matching rule counted
 // once.
 func EvaluateGateRow(rt *RuleTable, a Action, floor EvalResult) EvalResult {
-	if rt == nil || rt.Gate == nil || floor.Verdict == VerdictRefused {
+	// No gate is scored on a floor compile could not give: a gate's verdict over it would read as an answer.
+	if rt == nil || rt.Gate == nil || floor.Verdict == VerdictRefused || floor.Verdict == VerdictRootRequired {
 		return floor
 	}
 	g := gate.Action{Complete: true, Path: a.Path, Worktree: rt.Workdir, Executable: a.Path, Invocation: a.Path, Args: a.Argv, Host: a.Host, Declared: floor.Rule != UnmatchedRule && floor.Rule != UnresolvedRule && !IsRuntimeRule(floor.Rule)}

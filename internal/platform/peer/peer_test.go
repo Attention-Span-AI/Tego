@@ -22,6 +22,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/internal/runscope"
 	"github.com/attention-span-ai/tego/internal/testutil"
+	"github.com/attention-span-ai/tego/internal/testutil/answertest"
 )
 
 const (
@@ -74,28 +75,67 @@ func TestRefuseCodes(t *testing.T) {
 		{"no pid", with(func(p *Peer) { p.PID = 0 }), nil, CodeUnidentified},
 		{"no cgroup", Peer{UID: owner, PID: 42, CgroupNS: ns}, nil, CodeUnidentified},
 	} {
-		err := refuse(c.p, owner, ns, c.err)
+		// In the initial cgroup namespace this process's own answer is never asked for: the table is as it was.
+		err := refuse(c.p, owner, ns, c.err, neverAsked(t, c.name), notHeld)
 		if got := codeOf(err); got != c.want || (err == nil) != (c.want == "") {
 			t.Errorf("%s: refuse = %v, want code %q", c.name, err, c.want)
 		}
 	}
-	if err := refuse(ok, owner, 0, nil); codeOf(err) != CodeCgroupNS {
+	if err := refuse(ok, owner, 0, nil, neverAsked(t, "inode 0"), notHeld); codeOf(err) != CodeCgroupNS {
 		t.Errorf("refuse with this process's namespace inode 0 = %v, want [%s]", err, CodeCgroupNS)
 	}
-	// This process in a cgroup namespace of its own (a container's, or one an agent unshared inside its run's
-	// scope): every path it reads starts at that namespace's root, so a peer sharing the namespace at its root reads
-	// "/", and a run's scope above that root would not show. It is refused, wherever the root is.
+	// On WSL in the initial cgroup namespace (isolateDistroCgroup=false) the gate holds: no peer is served, and a
+	// peer refused for an earlier reason keeps that reason.
+	onWSL := func() (runscope.Cause, bool) { return runscope.CauseWSLLauncherUnproven, true }
+	if err := refuse(ok, owner, ns, nil, neverAsked(t, "the gate"), onWSL); codeOf(err) != CodeCgroupNS ||
+		!strings.Contains(err.Error(), "on WSL this build treats no process as outside every tego run yet") {
+		t.Errorf("refuse of the person's own terminal on WSL in the initial namespace = %v, want [%s] with the gate's words", err, CodeCgroupNS)
+	}
+	for _, q := range []Peer{with(func(p *Peer) { p.UID = 1001 }), with(func(p *Peer) { p.Cgroup = runCgroup[3 : len(runCgroup)-1] })} {
+		if err := refuse(q, owner, ns, nil, neverAsked(t, "the gate"), onWSL); codeOf(err) == CodeCgroupNS || err == nil {
+			t.Errorf("refuse of %+v on WSL = %v, want its own earlier code", q, err)
+		}
+	}
+	// This process in a cgroup namespace of its own (a WSL distribution's, a container's, or one an agent unshared
+	// inside its run's scope): every path it reads starts at that namespace's root, so a peer sharing the namespace
+	// at its root reads "/", and a run's scope above that root would not show. A peer is served there only when this
+	// process's own answer is outside; inside and unknown both refuse every peer, wherever the root is.
 	const containerNS = ns + 0x10000001
-	for _, cg := range []string{"/", userApp + "/app-term.scope"} {
+	answers := map[string]runscope.Answer{
+		"inside (the zero value)": {},
+		"inside, governed":        answertest.Inside(runscope.CauseGoverned),
+		"unknown":                 runscope.Unproven(runscope.CausePeerElsewhere, nil),
+		"unknown, the WSL gate":   runscope.Unproven(runscope.CauseWSLLauncherUnproven, nil),
+	}
+	for _, cg := range []string{"/", "/non-systemd", userApp + "/app-term.scope"} {
 		p := with(func(p *Peer) { p.Cgroup, p.CgroupNS = cg, containerNS })
-		if err := refuse(p, owner, containerNS, nil); codeOf(err) != CodeCgroupNS {
-			t.Errorf("refuse of %q with this process and the peer in cgroup namespace %d = %v, want [%s]", cg, containerNS, err, CodeCgroupNS)
+		for name, own := range answers {
+			if err := refuse(p, owner, containerNS, nil, func() runscope.Answer { return own }, notHeld); codeOf(err) != CodeCgroupNS {
+				t.Errorf("refuse of %q with this process (%s) and the peer in cgroup namespace %d = %v, want [%s]", cg, name, containerNS, err, CodeCgroupNS)
+			}
+		}
+		outside := func() runscope.Answer { return answertest.Outside() }
+		if err := refuse(p, owner, containerNS, nil, outside, notHeld); err != nil {
+			t.Errorf("refuse of %q with this process outside every run of cgroup namespace %d = %v, want it served", cg, containerNS, err)
+		}
+		// Its other tests are unchanged there: a run's member, another uid, another or an unreadable namespace.
+		for want, q := range map[string]Peer{
+			CodeRunMember:   with(func(p *Peer) { p.Cgroup, p.CgroupNS = runCgroup[3:len(runCgroup)-1], containerNS }),
+			CodeUnmappedUID: with(func(p *Peer) { p.Cgroup, p.CgroupNS, p.UID = cg, containerNS, owner+1 }),
+			CodeCgroupNS:    with(func(p *Peer) { p.Cgroup, p.CgroupNS = cg, containerNS+1 }),
+		} {
+			if err := refuse(q, owner, containerNS, nil, outside, notHeld); codeOf(err) != want {
+				t.Errorf("refuse of %+v with this process outside every run = %v, want [%s]", q, err, want)
+			}
+		}
+		if err := refuse(with(func(p *Peer) { p.Cgroup, p.CgroupNS = cg, 0 }), owner, containerNS, nil, outside, notHeld); codeOf(err) != CodeCgroupNS {
+			t.Errorf("refuse of a peer whose namespace could not be read = %v, want [%s]", err, CodeCgroupNS)
 		}
 	}
 	if runscope.InitCgroupNS != ns {
 		t.Errorf("runscope.InitCgroupNS = %d, want %d (PROC_CGROUP_INIT_INO)", runscope.InitCgroupNS, uint64(ns))
 	}
-	if err := refuse(Peer{UID: owner, PID: 1, Cgroup: "/x", CgroupNS: ns}, owner, ns, nil); err != nil {
+	if err := refuse(Peer{UID: owner, PID: 1, Cgroup: "/x", CgroupNS: ns}, owner, ns, nil, neverAsked(t, "a plain peer"), notHeld); err != nil {
 		t.Errorf("refuse of a plain peer = %v", err)
 	}
 	r := &Refusal{Code: CodeRunMember, Detail: "pid 7 is inside a run", Err: os.ErrClosed}
@@ -104,19 +144,21 @@ func TestRefuseCodes(t *testing.T) {
 	}
 }
 
+// neverAsked is this process's own answer where Refuse must not ask for it: in the initial cgroup namespace, and
+// for a peer refused before the namespace is looked at.
+func neverAsked(t *testing.T, name string) func() runscope.Answer {
+	return func() runscope.Answer {
+		t.Helper()
+		t.Errorf("%s: refuse asked for this process's own answer", name)
+		return runscope.Answer{}
+	}
+}
+
 // listen serves a unix socket in a fresh directory of the test's.
 func listen(t *testing.T) (*net.UnixListener, string) {
 	t.Helper()
 	// t.TempDir includes the test's name, which can exhaust sockaddr_un even under a modest TMPDIR.
-	dir, err := os.MkdirTemp("", "peer-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.RemoveAll(dir); err != nil {
-			t.Error(err)
-		}
-	})
+	dir := testutil.SunPathDir(t, "peer-", len("/s"))
 	path := filepath.Join(dir, "s")
 	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
 	if err != nil {
@@ -229,9 +271,9 @@ func TestIdentifyReadsThePeer(t *testing.T) {
 	if err != nil || got != want {
 		t.Fatalf("Identify = %+v, %v; want %+v", got, err, want)
 	}
-	in, inErr := runscope.InRun()
-	if err := Refuse(got, os.Geteuid()); (err == nil) != (!in && inErr == nil) {
-		t.Errorf("Refuse(this process) = %v; this process in a run: %v, %v", err, in, inErr)
+	own := Self()
+	if err := Refuse(got, os.Geteuid()); (err == nil) != own.Outside() {
+		t.Errorf("Refuse(this process) = %v; this process's own answer: %s %q (%v)", err, runscope.Describe(own).Verdict, runscope.Describe(own).Cause, runscope.Describe(own).Err)
 	}
 	if err := Refuse(got, os.Geteuid()+1); codeOf(err) != CodeUnmappedUID {
 		t.Errorf("Refuse(this process, another owner) = %v, want [%s]", err, CodeUnmappedUID)
@@ -243,8 +285,8 @@ func statLine(pid int, startTicks uint64) string {
 	return fmt.Sprintf("%d (peer test) S 1 %d %d 0 -1 4194560 0 0 0 0 0 0 0 0 20 0 1 0 %d 0 0\n", pid, pid, pid, startTicks)
 }
 
-// fixtureProc is a proc tree holding pid alone, with the given cgroup file and start time and a cgroup namespace
-// file; it returns the tree and that file's inode, which Identify reads as the namespace's. Its self is this process's
+// fixtureProc is a proc tree holding pid alone, one thread, with the given cgroup file and start time and a cgroup
+// namespace file; it returns the tree and that file's inode, which Identify reads as the namespace's. Its self is this process's
 // own, so the pidfd's fdinfo read through it is the kernel's: the pid it shows is the connector's in this process's
 // pid namespace.
 func fixtureProc(t *testing.T, pid int, cgroup string, startTicks uint64) (dirFS, uint64) {
@@ -257,7 +299,12 @@ func fixtureProc(t *testing.T, pid int, cgroup string, startTicks uint64) (dirFS
 	if err := os.MkdirAll(filepath.Join(dir, "ns"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for name, body := range map[string]string{"cgroup": cgroup, "stat": statLine(pid, startTicks), "ns/cgroup": ""} {
+	task := filepath.Join("task", strconv.Itoa(pid))
+	if err := os.MkdirAll(filepath.Join(dir, task), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{"cgroup": cgroup, "stat": statLine(pid, startTicks), "ns/cgroup": "",
+		filepath.Join(task, "cgroup"): cgroup} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -303,7 +350,7 @@ func TestIdentifyReadsFixtureCgroups(t *testing.T) {
 		// The fixture's namespace file is no namespace: judge the cgroup read as a server in the initial cgroup
 		// namespace would, with the peer in it too.
 		got.CgroupNS = runscope.InitCgroupNS
-		if err := refuse(got, got.UID, runscope.InitCgroupNS, nil); codeOf(err) != c.code {
+		if err := refuse(got, got.UID, runscope.InitCgroupNS, nil, neverAsked(t, c.name), notHeld); codeOf(err) != c.code {
 			t.Errorf("%s: refuse = %v, want code %q", c.name, err, c.code)
 		}
 	}
@@ -513,7 +560,7 @@ func TestIdentifyBindsProcToThePidfd(t *testing.T) {
 // the pidfd's process (its fdinfo) must be the SO_PEERCRED pid. Here it is not, so the peer is [peer-unidentified],
 // through SO_PEERPIDFD and on the fallback alike.
 func TestIdentifyForeignProcRefused(t *testing.T) {
-	cmd := exec.Command(os.Args[0], clientArg, "identify-self", filepath.Join(t.TempDir(), "s"))
+	cmd := exec.Command(os.Args[0], clientArg, "identify-self", filepath.Join(testutil.SunPathDir(t, "peer-", len("/s")), "s"))
 	cmd.SysProcAttr = &syscall.SysProcAttr{Cloneflags: syscall.CLONE_NEWUSER | syscall.CLONE_NEWPID}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -558,3 +605,143 @@ func noFDLeak(t *testing.T) {
 	_ = ln.Close()
 	testutil.NoFDLeak(t)
 }
+
+// fixtureThread adds thread tid to pid in a fixture tree, with the given cgroup file ("" for a thread directory with
+// no cgroup file: one that exited after the listing).
+func fixtureThread(t *testing.T, fs dirFS, pid, tid int, cgroup string) {
+	t.Helper()
+	dir := filepath.Join(string(fs), strconv.Itoa(pid), "task", strconv.Itoa(tid))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if cgroup == "" {
+		return
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cgroup"), []byte(cgroup), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestIdentifyReadsEveryThread: /proc/<pid>/cgroup is the first thread's file. A process whose first thread has
+// exited keeps that thread's old cgroup there after the process is moved (the kernel does not migrate a dead
+// leader), so a member of an adoption's scope read as the person's terminal. Identify reads the cgroup file of every
+// thread and refuses [peer-unidentified] when one differs from the first thread's, when one names no single path,
+// when the first thread is a zombie, and when the threads cannot be listed. A thread that exited after the listing
+// is in no cgroup and is passed over.
+func TestIdentifyReadsEveryThread(t *testing.T) {
+	server, _ := selfConn(t)
+	pid := os.Getpid()
+	identify := func(fs procFS) (Peer, error) {
+		h := kernel
+		h.proc = fs
+		return h.identify(server)
+	}
+	t.Run("every thread in the first thread's cgroup", func(t *testing.T) {
+		fs, _ := fixtureProc(t, pid, terminalCgroup, 5)
+		fixtureThread(t, fs, pid, pid+1, terminalCgroup)
+		fixtureThread(t, fs, pid, pid+2, "12:pids:/a\n"+terminalCgroup)
+		fixtureThread(t, fs, pid, pid+3, "") // exited after the listing
+		if p, err := identify(fs); err != nil || p.Cgroup != userApp+"/app-term.scope" {
+			t.Errorf("identify = %+v, %v; want the terminal's cgroup", p, err)
+		}
+	})
+	for _, c := range []struct{ name, thread, detail string }{
+		{"a thread in a run's scope behind a first thread in the terminal", runCgroup, "is in cgroup"},
+		{"a thread in an adoption's scope", "0::/tego.slice/tego-a.slice/adopt-" + testRun + ".scope\n", "is in cgroup"},
+		{"a thread whose file names two paths", terminalCgroup + runCgroup, "thread"},
+		{"a thread whose cgroup was removed", "0::" + userApp + "/gone.scope (deleted)\n", "thread"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			fs, _ := fixtureProc(t, pid, terminalCgroup, 5)
+			fixtureThread(t, fs, pid, pid+1, terminalCgroup)
+			fixtureThread(t, fs, pid, pid+2, c.thread)
+			if p, err := identify(fs); codeOf(err) != CodeUnidentified || !containsDetail(err, c.detail) {
+				t.Errorf("identify = %+v, %v; want [%s] naming the thread", p, err, CodeUnidentified)
+			}
+		})
+	}
+	t.Run("a first thread that is a zombie", func(t *testing.T) {
+		fs, _ := fixtureProc(t, pid, terminalCgroup, 5)
+		fixtureThread(t, fs, pid, pid+1, terminalCgroup)
+		zombie := strings.Replace(statLine(pid, 5), ") S ", ") Z ", 1)
+		if err := os.WriteFile(filepath.Join(string(fs), strconv.Itoa(pid), "stat"), []byte(zombie), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if p, err := identify(fs); codeOf(err) != CodeUnidentified || !containsDetail(err, "first thread") {
+			t.Errorf("identify = %+v, %v; want [%s] naming the first thread", p, err, CodeUnidentified)
+		}
+	})
+	t.Run("no thread listing", func(t *testing.T) {
+		fs, _ := fixtureProc(t, pid, terminalCgroup, 5)
+		if err := os.RemoveAll(filepath.Join(string(fs), strconv.Itoa(pid), "task")); err != nil {
+			t.Fatal(err)
+		}
+		if p, err := identify(fs); codeOf(err) != CodeUnidentified {
+			t.Errorf("identify = %+v, %v; want [%s]", p, err, CodeUnidentified)
+		}
+	})
+	t.Run("every listed thread gone", func(t *testing.T) {
+		fs, _ := fixtureProc(t, pid, terminalCgroup, 5)
+		if err := os.Remove(filepath.Join(string(fs), strconv.Itoa(pid), "task", strconv.Itoa(pid), "cgroup")); err != nil {
+			t.Fatal(err)
+		}
+		if p, err := identify(fs); codeOf(err) != CodeUnidentified {
+			t.Errorf("identify = %+v, %v; want [%s]", p, err, CodeUnidentified)
+		}
+	})
+}
+
+// TestIdentifyRefusesAnExitedFirstThread: a real process whose first thread has exited (leaderExit) while another
+// thread holds the connection. Its pidfd is alive (the thread group has not exited), its /proc/<pid>/cgroup still
+// reads, and before the thread-by-thread read Identify served it. It is [peer-unidentified] now.
+func TestIdentifyRefusesAnExitedFirstThread(t *testing.T) {
+	ln, path := listen(t)
+	cmd := startClient(t, leaderExitMode, path)
+	server := accept(t, ln)
+	pid := cmd.Process.Pid
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		st, err := proc.New().Stat(pid)
+		if err != nil {
+			t.Fatalf("the stat of pid %d: %v", pid, err)
+		}
+		if st.LeaderExited() {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("pid %d did not become a process whose first thread exited: %+v", pid, st)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if b, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "cgroup")); err != nil {
+		t.Fatalf("the first thread's cgroup file no longer reads: %v", err)
+	} else if _, err := runscope.Unified(b); err != nil {
+		t.Fatalf("the first thread's cgroup file: %v", err)
+	}
+	p, err := Identify(server)
+	if codeOf(err) != CodeUnidentified || !containsDetail(err, "first thread") {
+		t.Fatalf("Identify of a process whose first thread exited = %+v, %v; want [%s] naming the first thread", p, err, CodeUnidentified)
+	}
+	if errors.Is(err, ErrExited) {
+		t.Errorf("the refusal is the process's exit (%v); the process is alive and its first thread is what refuses it", err)
+	}
+}
+
+// TestOnlyAnOutsideAnswerPermits walks the one table of answers (answertest.Rows) over Refuse: outside the initial
+// cgroup namespace a peer that passes every other test is served on an outside answer of this process alone.
+func TestOnlyAnOutsideAnswerPermits(t *testing.T) {
+	const owner, ns = 1000, runscope.InitCgroupNS + 0x10000001
+	p := Peer{UID: owner, PID: 42, Cgroup: "/non-systemd", CgroupNS: ns, StartBootNS: 1}
+	for _, row := range answertest.Rows() {
+		err := refuse(p, owner, ns, nil, row.Self, notHeld)
+		if served := err == nil; served != row.Permits {
+			t.Errorf("%s: served %v (%v)", row.Name, served, err)
+		}
+		if err != nil && codeOf(err) != CodeCgroupNS {
+			t.Errorf("%s: refused with %v; want [%s]", row.Name, err, CodeCgroupNS)
+		}
+	}
+}
+
+// notHeld is a gate that holds nothing back: the initial cgroup namespace outside WSL.
+func notHeld() (runscope.Cause, bool) { return "", false }

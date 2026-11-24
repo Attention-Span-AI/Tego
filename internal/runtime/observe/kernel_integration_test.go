@@ -858,9 +858,15 @@ func concurrentRuns(t *testing.T, python string, n int) {
 				}
 			}
 		}
-		if opens != concurrentOpens || trues != 1 {
-			t.Errorf("%s recorded %d opens of its file and %d execs of true, want %d and 1", s.run.ID, opens, trues,
-				concurrentOpens)
+		// A recorder program the kernel skipped is no silent loss: the recorder reports the shared-build skips of its
+		// window as a gap (GapTrampolineMiss), and a run's shortfall is covered by them or the round fails. The
+		// round's other gaps (a full ring, a dropped capture, a missing kernel record) are never covered.
+		skips := sharedSkips(s.rec.Gaps())
+		t.Logf("%s: %d opens of %d, %d execs of true, %d shared-build skips; gaps %+v, capture gaps %+v", s.run.ID, opens,
+			concurrentOpens, trues, skips, s.rec.Gaps(), s.up.Gaps())
+		if !coveredBySkips(opens, concurrentOpens, skips) || !coveredBySkips(trues, 1, skips) {
+			t.Errorf("%s recorded %d opens of its file and %d execs of true with %d shared-build skips reported, want %d and 1, "+
+				"or fewer by no more than the skips", s.run.ID, opens, trues, skips, concurrentOpens)
 		}
 		for _, c := range s.hook.all() {
 			if f := strings.Fields(c); f[0] != "exit" && (len(f) < 3 || f[2] != strconv.FormatUint(s.run.CgroupID, 10)) {

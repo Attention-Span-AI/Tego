@@ -44,6 +44,14 @@ contract alone does not link the core, and external modules cannot import `inter
   no key names, and readers ignore unknown fields, so every earlier ledger still decodes and verifies (its version
   reads empty). No later rename or re-meaning of a field may use this exception.
 
+A local approval profile is an explicit exception to the default minor stamp
+(ADR 0154, 2026-11-12). `record.Minor` and personal launch/adoption remain 31.
+Only a qualified run with the fixed system root-only floor writes
+`MinorLocalRoles` 37. Revisions 32 to 35 remain declared fields and 36 remains
+the team-principal reservation; this profile asserts none of them. The version
+tests check both the contiguous default table and this named opt-in profile.
+No historical line is rewritten.
+
 ## 3. Contract (`spec/agent/v0`)
 - `version: 0` on the file. Unknown fields are errors from M0 (yaml.v3 `KnownFields(true)`): a misspelt `write:` must
   never pass silently.

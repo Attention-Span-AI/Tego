@@ -288,9 +288,10 @@ func stopRun(ctx context.Context, dir, runID string, info runlock.LockInfo,
 	// I/O error) would stay in a live run and turn its next Ctrl-C into reason=stopped (R22).
 	target, err := runlock.OpenStopTargetFor(dir, info)
 	if err != nil {
-		if errors.Is(err, runlock.ErrStale) {
+		if errors.Is(err, runlock.ErrStale) || (errors.Is(err, runlock.ErrNotLockHolder) && runlock.LockFree(dir)) {
 			// The pid was reused since the lock file was written: the launcher is gone and
-			// signalling that pid would hit an unrelated process (R22, case 15).
+			// signalling that pid would hit an unrelated process (R22, case 15). Or the launcher released the run's
+			// lock while it was being proved (the ledger's close, before the process exits): the run ended.
 			fmt.Fprintf(stdout, "%s: not running\n", runID)
 			return identity.ExitOK
 		}

@@ -21,9 +21,10 @@ var planeDeclared = map[string]int{
 	"path_chown": 1, "inode_setxattr": 2, "inode_removexattr": 2, "inode_set_acl": 2, "inode_remove_acl": 2,
 	"socket_create": 4, "mmap_file": 4, "file_mprotect": 3,
 	"socket_bind": 3, "ptrace_access_check": 2, "ptrace_traceme": 1, "bpf": 3, "key_permission": 3,
-	"socket_listen": 2,
-	"capable":       3,
-	"unix_may_send": 2,
+	"socket_listen":  2,
+	"capable":        3,
+	"unix_may_send":  2,
+	"socket_recvmsg": 4,
 }
 
 // planeDeclaredFmodRet is the arguments a hook's fmod_ret program reads where its security_ function takes fewer
@@ -385,5 +386,28 @@ func TestPlaneRecordedMask(t *testing.T) {
 	}
 	if PlaneHookNumber("bprm_check") != 2 || PlaneHookNumber("nope") != 0 {
 		t.Error("PlaneHookNumber is not enum tego_plane_hook")
+	}
+}
+
+// TestPlaneBlockNameKey holds the live-block name key's definition (bpf/decide.bpf.c tego_block_name_hash): bit 0 set,
+// the length and the first 32 bytes deciding it, nothing past them; no key for an empty or overlong name.
+func TestPlaneBlockNameKey(t *testing.T) {
+	a, ok1 := PlaneBlockNameKey("absent.txt")
+	b, ok2 := PlaneBlockNameKey("absent.txu")
+	if !ok1 || !ok2 || a == b || a&1 != 1 || b&1 != 1 {
+		t.Errorf("keys %#x %#x (%v %v): two names of one length must differ and have bit 0 set", a, b, ok1, ok2)
+	}
+	long := strings.Repeat("x", 32)
+	c, _ := PlaneBlockNameKey(long + "aa")
+	d, _ := PlaneBlockNameKey(long + "bb")
+	e, _ := PlaneBlockNameKey(long + "a")
+	if c != d || c == e {
+		t.Errorf("past 32 bytes only the length counts: %#x %#x %#x", c, d, e)
+	}
+	if _, ok := PlaneBlockNameKey(""); ok {
+		t.Error("an empty name has a key")
+	}
+	if _, ok := PlaneBlockNameKey(strings.Repeat("y", NameMax)); ok {
+		t.Error("a name longer than a dentry's has a key")
 	}
 }

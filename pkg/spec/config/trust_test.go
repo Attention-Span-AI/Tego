@@ -183,41 +183,23 @@ func TestReadTrusted(t *testing.T) {
 	}
 }
 
-// T-config-trust-2 / I11: both trust modes run through the one helper; abort stops before the
-// next layer, warn skips the layer whole.
-// Abort and warn-and-skip both go through the one trust helper.
+// Both modes share the trust reader. Decision loads stop before a later layer; observation
+// loads keep inspecting layers, but preserve every failed input as UNKNOWN (ADR 0144, I11).
 func TestLoadSourcesTrustModes(t *testing.T) {
 	dir := trustedDir(t)
-	etc := writeFile(t, dir, "etc.yaml", "stop_grace: 3s\nlimits:\n  pids: 10\n", 0o664) // untrusted
-	env := writeFile(t, dir, "env.yaml", "this: [is: not\n", 0o600)                      // malformed, must not be read in abort mode
-	src := Sources{Etc: etc, EnvFile: env}
-
-	m, diags, err := LoadSources(src, "", os.Getuid(), TrustAbort)
-	if m != nil || !errors.Is(err, ErrUntrusted) {
-		t.Fatalf("abort: m=%v err=%v", m, err)
+	user := writeFile(t, dir, "user.yaml", "stop_grace: 3s\n", 0o664)
+	env := writeFile(t, dir, "env.yaml", "this: [is: not\n", 0o600)
+	src := Sources{User: user, EnvFile: env}
+	m, ds, err := LoadSources(src, "", os.Getuid(), TrustAbort)
+	if m != nil || !errors.Is(err, ErrUntrusted) || len(ds) != 0 {
+		t.Fatalf("strict: %v %v %v", m, ds, err)
 	}
-	for _, d := range diags {
-		if strings.Contains(d.File, "env.yaml") {
-			t.Errorf("later layer was read after an untrusted one: %v", d)
-		}
+	m, ds, err = LoadSources(src, "", os.Getuid(), TrustWarn)
+	if err != nil || m == nil || m.BaselineKnown() || m.baseline.Empty() || HasErrors(ds) || countCode(ds, CodeBaselineUnknown) != 2 {
+		t.Fatalf("degraded: %v %v %v", m, ds, err)
 	}
-
-	m, diags, err = LoadSources(src, "", os.Getuid(), TrustWarn)
-	if err != nil || m == nil {
-		t.Fatalf("warn: err=%v", err)
-	}
-	if m.StopGrace.Value != DefaultStopGrace || m.Limits.Pids.Bounded {
-		t.Error("untrusted layer partially applied")
-	}
-	codes := map[string]int{}
-	for _, d := range diags {
-		codes[d.Code]++
-		if d.Severity != SeverityWarning {
-			t.Errorf("warn mode produced a non-warning: %v", d)
-		}
-	}
-	if codes[CodeUntrusted] != 1 || codes[CodeInvalid] < 1 {
-		t.Errorf("diagnostics = %v", diags)
+	if m.StopGrace.Value != DefaultStopGrace || m.LayerSources()[1].State != LayerUnknown || m.LayerSources()[2].State != LayerUnknown {
+		t.Fatalf("failed input was partly applied: %+v", m.LayerSources())
 	}
 }
 
@@ -393,8 +375,8 @@ func TestProcFDDotDotOnFileIsENOTDIR(t *testing.T) {
 	}
 }
 
-// A $TEGO_CONFIG path that does not exist is refused under run and warned
-// under compile/doctor, never skipped silently; an absent etc layer stays optional.
+// E13: a selected missing explicit layer refuses decisions and is UNKNOWN for observation;
+// an absent optional system layer remains optional.
 func TestLoadSourcesMissingEnvFile(t *testing.T) {
 	dir := trustedDir(t)
 	missing := filepath.Join(dir, "nope.yaml")
@@ -402,20 +384,11 @@ func TestLoadSourcesMissingEnvFile(t *testing.T) {
 		t.Fatalf("abort: err=%v, want ErrInvalid", err)
 	}
 	m, diags, err := LoadSources(Sources{EnvFile: missing}, "", os.Getuid(), TrustWarn)
-	if err != nil || m == nil {
-		t.Fatalf("warn: err=%v", err)
+	if err != nil || m == nil || m.BaselineKnown() || m.LayerSources()[2].State != LayerUnknown || HasErrors(diags) || countCode(diags, CodeBaselineUnknown) != 1 {
+		t.Fatalf("degraded mode hid missing explicit layer: %v %v", err, diags)
 	}
-	found := false
-	for _, d := range diags {
-		if d.File == missing && d.Severity == SeverityWarning {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("warn: no warning naming the missing file: %v", diags)
-	}
-	if _, _, err := LoadSources(Sources{Etc: missing}, "", os.Getuid(), TrustAbort); err != nil {
-		t.Errorf("an absent etc layer must stay optional: %v", err)
+	if _, _, err := fixtureLoad(Sources{Etc: missing}, "", os.Getuid(), TrustAbort); err != nil {
+		t.Errorf("absent etc layer: %v", err)
 	}
 }
 
@@ -468,13 +441,13 @@ func TestLoadSourcesNamesEveryLayerPlace(t *testing.T) {
 	user := writeFile(t, dir, "user.yaml", "stop_grace: 3s\n", 0o600)
 	env := writeFile(t, dir, "env.yaml", "limits:\n  pids: 10\n", 0o600)
 	lax := writeFile(t, dir, "lax.yaml", "stop_grace: 4s\n", 0o664)
-	m, _, err := LoadSources(Sources{Etc: absent, User: user, EnvFile: env}, "", os.Getuid(), TrustAbort)
+	m, _, err := fixtureLoad(Sources{Etc: absent, User: user, EnvFile: env}, "", os.Getuid(), TrustAbort)
 	if err != nil || !slices.Equal(m.Layers, []string{absent, user, env}) {
 		t.Fatalf("layers = %v, err = %v, want [%s %s %s]", m.Layers, err, absent, user, env)
 	}
 	m, _, err = LoadSources(Sources{User: lax, EnvFile: env}, "", os.Getuid(), TrustWarn)
-	if err != nil || !slices.Equal(m.Layers, []string{lax, env}) {
-		t.Fatalf("warn: layers = %v, err = %v, want [%s %s]", m.Layers, err, lax, env)
+	if err != nil || m == nil || m.BaselineKnown() || !slices.Equal(m.Layers, []string{lax, env}) || m.LayerSources()[1].State != LayerUnknown || m.LayerSources()[2].State != LayerPresent {
+		t.Fatalf("degraded layer places lost: %v %v", m, err)
 	}
 	if b := Builtin(); len(b.Layers) != 0 {
 		t.Fatalf("the built-in layer names files: %v", b.Layers)
@@ -506,9 +479,8 @@ func TestLoadSourcesRefusesARelativeLayer(t *testing.T) {
 			t.Errorf("run's Load of $TEGO_CONFIG=%s: m %v, err %v, diagnostics %v; want refused as relative", env, m, err, ds)
 		}
 		m, ds, err = LoadSources(Sources{EnvFile: env}, "", os.Getuid(), TrustWarn)
-		if err != nil || m == nil || len(m.Layers) != 0 || m.StopGrace.Value == 3*time.Second || m.StopGrace.Value == 4*time.Second ||
-			HasErrors(ds) || len(ds) == 0 || ds[len(ds)-1].Code != CodeInvalid {
-			t.Errorf("compile's Load of $TEGO_CONFIG=%s: m %+v, err %v, diagnostics %v; want the layer skipped with a warning", env, m, err, ds)
+		if err != nil || m == nil || m.BaselineKnown() || len(m.Layers) != 0 || HasErrors(ds) || countCode(ds, CodeBaselineUnknown) != 1 {
+			t.Errorf("observation Load of $TEGO_CONFIG=%s: m %+v, err %v, diagnostics %v; want UNKNOWN without opening the layer", env, m, err, ds)
 		}
 	}
 	m, _, err := LoadSources(Sources{User: dir + "/lnk/../user.yaml", EnvFile: dir + "/cfg/../cfg/env.yaml"}, "", os.Getuid(), TrustAbort)
@@ -538,9 +510,8 @@ func TestLoadSourcesRefusesALayerThroughProcfs(t *testing.T) {
 			t.Errorf("run's Load of $TEGO_CONFIG=%s: m %v, err %v, diagnostics %v; want refused as reaching procfs", env, m, err, ds)
 		}
 		m, ds, err = LoadSources(Sources{EnvFile: env}, "", os.Getuid(), TrustWarn)
-		if err != nil || m == nil || len(m.Layers) != 0 || m.StopGrace.Value == 3*time.Second ||
-			HasErrors(ds) || len(ds) == 0 || ds[len(ds)-1].Code != CodeInvalid {
-			t.Errorf("compile's Load of $TEGO_CONFIG=%s: m %+v, err %v, diagnostics %v; want the layer skipped with a warning", env, m, err, ds)
+		if err != nil || m == nil || m.BaselineKnown() || len(m.Layers) != 0 || HasErrors(ds) || countCode(ds, CodeBaselineUnknown) != 1 {
+			t.Errorf("observation Load of $TEGO_CONFIG=%s: m %+v, err %v, diagnostics %v; want UNKNOWN without opening the layer", env, m, err, ds)
 		}
 	}
 	_, ds, err := LoadSources(Sources{User: "/proc/self/cwd/env.yaml"}, "", os.Getuid(), TrustAbort)

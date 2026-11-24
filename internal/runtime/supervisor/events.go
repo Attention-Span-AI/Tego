@@ -182,6 +182,11 @@ func (l *Loop) emit(ev *record.Event, payload any) {
 		}
 		stampObserved(ev)
 	}
+	if ev.Kind == record.KindRefused || ev.Verdict == record.VerdictRefused {
+		// The reason channel's per-session ownership (ADR 0063): read here, right after the answer, while the refused
+		// process is usually still there; one that already exited leaves the line unowned. Never in the ledger.
+		ev.Lineage = l.lineageOf(ev.PID)
+	}
 	if err := ev.SetPayload(payload); err != nil {
 		l.log.Warn("supervisor: event payload", "kind", ev.Kind, "err", err)
 		return

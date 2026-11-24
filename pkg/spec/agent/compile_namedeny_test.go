@@ -310,7 +310,7 @@ func TestCompactionFactsBoundedByTheScanBudget(t *testing.T) {
 	}
 	b.envEnd = time.Now().Add(time.Minute)
 	b.compactionFacts()
-	if want := dirCaseExact(f.project); b.rules[0].DirCaseExact != want {
+	if want, _ := dirCaseExact(f.project); b.rules[0].DirCaseExact != want {
 		t.Errorf("inside the limit: DirCaseExact = %v, the directory says %v", b.rules[0].DirCaseExact, want)
 	}
 }
@@ -477,7 +477,7 @@ func TestCompactionFactsReadPastTheThreshold(t *testing.T) {
 	default:
 		t.Skipf("the fixture lies on %q, which has no casefold flag to read", r.Filesystem)
 	}
-	if want := dirCaseExact(filepath.Dir(r.Canonical())); r.DirCaseExact != want || !want {
+	if want, _ := dirCaseExact(filepath.Dir(r.Canonical())); r.DirCaseExact != want || !want {
 		t.Errorf("DirCaseExact = %v, the directory's flags say %v (a casefolded test directory?)", r.DirCaseExact, want)
 	}
 }

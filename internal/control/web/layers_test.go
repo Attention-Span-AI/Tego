@@ -122,3 +122,33 @@ func TestLayerNavOrderAndSoon(t *testing.T) {
 		t.Errorf("a Soon entry is drawn as a link: %s", nav)
 	}
 }
+
+// TestLayerGlossaryTermsStandAfterTheirCoreTerm: a layer's word stands after the core term it names, at the end when
+// the core has no such term, and the core's own list is left as it was.
+func TestLayerGlossaryTermsStandAfterTheirCoreTerm(t *testing.T) {
+	old := layers
+	t.Cleanup(func() { layers = old })
+	core := len(glossaryTerms)
+	layers = append(slices.Clone(old), layer{Glossary: []layerTerm{
+		{After: "model-route", Term: glossaryTerm{ID: "probe-a", Term: "Probe A", Means: "a"}},
+		{After: "no-such-term", Term: glossaryTerm{ID: "probe-b", Term: "Probe B", Means: "b"}},
+	}})
+	var ids []string
+	for _, term := range allGlossaryTerms() {
+		ids = append(ids, term.ID)
+	}
+	at := slices.Index(ids, "model-route")
+	if at < 0 || ids[at+1] != "probe-a" {
+		t.Errorf("probe-a does not follow model-route: %v", ids)
+	}
+	if ids[len(ids)-1] != "probe-b" {
+		t.Errorf("probe-b is not at the end: %v", ids)
+	}
+	if len(glossaryTerms) != core {
+		t.Errorf("the core's glossary changed: %d terms, was %d", len(glossaryTerms), core)
+	}
+	s := newServer(t, fixture(t))
+	if b := get(t, s, login(t, s), "/glossary"); !strings.Contains(b, `id="probe-a"`) || !strings.Contains(b, `id="probe-b"`) {
+		t.Error("the Glossary page lacks the layer's words")
+	}
+}

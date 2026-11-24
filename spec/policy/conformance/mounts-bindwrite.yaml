@@ -1,0 +1,80 @@
+# SPDX-License-Identifier: Apache-2.0
+# mounts-bindwrite: ADR 0017 space 5, ADR 0011 (amended 2026-11-19, round 5): a read-write bind mount of a write entry
+# (walias, the review's F1 and F6 case: the home or the project bound elsewhere). Landlock keys the write grant to the
+# entry's inode, so the bind is granted too, and compile models it so: the entry's other name is a write entry of the
+# same rule, the deny_read target inside it is nested under its other name as under its own (held at tier landlock),
+# and the declared deny_write target gets its other name in the supervisor's floor. Each cell is read or written
+# through both names; the root runner makes the bind in the run's own mount namespace before it starts, so compile sees
+# it in /proc/self/mountinfo. compile --test answers names and sees no mount, so the cells have no compile row. At tier
+# cgroup where the listener would decide, the run refuses to start (the deny_read tree has another name, ADR 0011);
+# a plane holds the whole-tree alias by inode. A write of an ordinary file through the bind (allowed, named after the
+# write entry since round 5) is mounts-bind.yaml's write-bind-alias-of-write-entry cell.
+version: 2
+name: mounts-bindwrite
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./w/"]
+    deny_read: ["./w/inner/"]
+    deny_write: ["./w/locked"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  net:
+    allow: []
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [w/inner, walias]
+files:
+  w/f: x
+  w/locked: x
+  w/inner/key: the secret
+mounts:
+  - {kind: bind, at: walias, from: w}
+model:
+  write: [w]
+  deny_read: [w/inner]
+  deny_write: [w/locked]
+  deny_write_declared: [w/locked]
+  exec_allow: [bin/actor]
+  net_declared: true
+  listener_refuses: true
+cells:
+  # The declared deny_write target, written through its other name: refused under its own rule at every tier (the
+  # supervisor's floor by the other name compile added, the plane by inode).
+  - name: write-target-through-the-other-name
+    op: write-open
+    path: walias/locked
+    canon: w/locked
+    want:
+      all: refused fs.deny_write[./w/locked]
+    no_compile: compile --test answers names and sees no mount
+    source: 'ADR 0011 (2026-11-19 amendment, round 5; review F1); ADR 0071'
+  - name: write-target-by-its-own-name
+    op: write-open
+    path: w/locked
+    canon: w/locked
+    want:
+      all: refused fs.deny_write[./w/locked]
+    no_compile: compile --test answers names and sees no mount
+    source: 'ADR 0071'
+  # The deny_read target inside the write entry, read through its other name: held reads refuse it at tier landlock
+  # (compile nested the other name under the bind's write entry, review F6), the plane by inode.
+  - name: read-nested-target-through-the-other-name
+    op: read
+    path: walias/inner/key
+    canon: w/inner/key
+    want:
+      all: refused fs.deny_read[./w/inner/]
+    no_compile: compile --test answers names and sees no mount
+    source: 'ADR 0011 (2026-11-19 amendment, round 5; review F6); ADR 0069 (held reads)'
+  - name: read-nested-target-by-its-own-name
+    op: read
+    path: w/inner/key
+    canon: w/inner/key
+    want:
+      all: refused fs.deny_read[./w/inner/]
+    no_compile: compile --test answers names and sees no mount
+    source: 'ADR 0069 (held reads)'

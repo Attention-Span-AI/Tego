@@ -314,6 +314,7 @@ func TestPrepareMarksEachMountForTheEventsItCanRefuse(t *testing.T) {
 	})
 	table := *f.table
 	table.Contract = &agent.Contract{}
+	table.EffectiveContract = table.Contract
 	h, err := f.backend.Prepare(context.Background(), &table, f.run)
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)

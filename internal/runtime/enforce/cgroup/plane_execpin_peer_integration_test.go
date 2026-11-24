@@ -191,7 +191,7 @@ func TestPlaneRunExecPinGuardedPtrace(t *testing.T) {
 }
 
 // TestPlaneRunExecPinInterpreted is ADR 0048 P2's K6 interpreted cell: a script run through `#!/usr/bin/env python3`
-// (the guest has no node; env then execs python3, a second exec with its own pin) and a two-stage script (its #!
+// (env then execs python3, a second exec with its own pin) and a two-stage script (its #!
 // names another script, whose #! names /bin/sh: two binfmt_script stages in one exec) each run pinned, every exec
 // line saying kernel_pinned.
 func TestPlaneRunExecPinInterpreted(t *testing.T) {

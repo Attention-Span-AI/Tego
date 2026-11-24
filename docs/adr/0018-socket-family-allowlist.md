@@ -163,7 +163,8 @@ did not hold as the 2026-10-16 note built it, and now does. Decided and built he
   top of them either the inherited filter's arm (no io_uring) or a plane mode's `socket_create` (io_uring admitted).
   A run with io_uring admitted and no plane still has none (a test build's seam on the fallback). The bound is on the
   sockets the run makes: one made outside it and passed in (`SCM_RIGHTS`, `pidfd_getfd`) is whatever family its maker
-  chose, which `socket_imports_denied` bounds (the strict filter of `net.assurance: kernel`), not this row. Since the
+  chose, which `socket_imports_denied` bounds (the strict filter of `net.assurance: kernel`, and where the plane runs the
+  run its `socket_recvmsg`, ADR 0128's amendment of 2026-11-20), not this row. Since the
   kernel runs the cgroup programs of the cgroup a socket was made in, a `TCP_ULP` set on such a socket meets the
   filter's arm on `setsockopt(2)` but no program through io_uring, which only a plane mode with `io_uring: true` admits
   and `net.assurance: kernel` refuses; the bound never covered such a socket.

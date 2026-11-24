@@ -39,6 +39,9 @@ func TestLiveChipTimeLimits(t *testing.T) {
 
 	expired := block
 	expired.Until = now.Add(-time.Hour)
+	// The launcher's own line says the limit passed (a wall clock alone does not: TestTimedBlockFollowsTheLaunchersClock).
+	facts.Limits.Record(livestatus.WhyBlockExpired, "exec", "/bin/curl", expired.Until)
+	v.Facts = facts
 	c = liveChipOf(expired, v)
 	if c.State != ledgerview.LiveExpired || c.Label != "Ended by its time limit" || strings.Contains(c.Label+c.Note, "In force") {
 		t.Errorf("expired chip: %+v", c)
@@ -64,7 +67,7 @@ func TestLiveChipTimeLimits(t *testing.T) {
 		t.Errorf("pending, expired: %+v", pl)
 	}
 	for _, e := range []liveblock.Entry{dormant, expired} {
-		state, before, _, _ := liveOutWords(facts.StatusAt("exec", 3, now, e.From, e.Until))
+		state, before, _, _ := liveOutWords(facts.StatusAt("exec", "/bin/curl", 3, now, e.From, e.Until))
 		if strings.HasPrefix(before, "Live now") || (state != ledgerview.LiveDormant && state != ledgerview.LiveExpired) {
 			t.Errorf("line page outcome for %+v: %s %q", e, state, before)
 		}

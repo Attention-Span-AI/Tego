@@ -34,6 +34,12 @@ var adjNetUntil = time.Date(2026, 10, 31, 21, 0, 0, 0, time.UTC)
 // refused; its run directory holds the run's live key and its lock is held, as a launcher's would be.
 func liveFenceServer(t *testing.T) (*Server, *http.Cookie, string) {
 	t.Helper()
+	return liveFenceServerNote(t, "")
+}
+
+// liveFenceServerNote is liveFenceServer whose launcher's lift line of the net entry carries note.
+func liveFenceServerNote(t *testing.T, note string) (*Server, *http.Cookie, string) {
+	t.Helper()
 	root := t.TempDir()
 	proj := filepath.Join(t.TempDir(), "proj")
 	if err := os.MkdirAll(proj, 0o700); err != nil {
@@ -56,7 +62,7 @@ func liveFenceServer(t *testing.T) (*Server, *http.Cookie, string) {
 		ledgertest.Event(t, record.KindGap, record.GapPayload{What: record.GapEnforce, Why: record.GapLiveRuleLifted,
 			LiveBlock: &record.LiveBlockChange{Op: record.LiveOpLift, Kind: "net", Value: "api.stripe.com:443",
 				Rule: "live.fence[net:api.stripe.com:443]", By: "uid:1000 pid:9 dashboard", Serial: 1,
-				At: time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC), Until: adjNetUntil}}),
+				At: time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC), Until: adjNetUntil, Note: note}}),
 	}
 	writeLines(t, root, adjRun, evs)
 	dir := filepath.Join(root, adjRun)
@@ -341,7 +347,7 @@ func TestSetUpLiveSection(t *testing.T) {
 	}
 	_, body := f.get(t, "/rules/new")
 	mustContain(t, "the form", body, "While it runs", `name="live" value="locked" checked`,
-		`name="live" value="adjustable"`, "Adjustable (live both ways)", "Compare modes", `name="fence_read"`, "<summary>Advanced</summary>")
+		`name="live" value="adjustable"`, "Adjustable (live both ways)", "Compare modes", `name="fence_read"`, "<summary>More choices</summary>")
 	q := url.Values{"dir": {dir}, "preset": {"no-secrets"}, "cmd": {"sh"}, "preview": {"1"}, "live": {"locked"},
 		"fence_read": {"/srv/exports"}}
 	_, body = f.get(t, "/rules/new?"+q.Encode())
@@ -380,12 +386,14 @@ func TestTimedBlocksOnPages(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// The launcher recorded the end of curl's limit (live-block-expired): only its line says a limit passed.
+	appendLine(t, s.cfg.Ledger, adjRun, strings.ReplaceAll(limitGapLine(2, now.Add(-2*time.Hour), "live-block-expired", "exec", "/usr/bin/curl", 1, now.Add(-2*time.Hour)), harmRun, adjRun))
 	ended, back := chipUntil(now.Add(-2*time.Hour), now), chipUntil(now.Add(3*time.Hour), now)
 	removeCurl := `name="value" value="/usr/bin/curl"`
 	rp := do(s, "GET", "/rules?run="+adjRun, "127.0.0.1:8484", c).Body.String()
 	mustContain(t, "the Rules page's live group", html.UnescapeString(rp), "ended at "+ended,
-		"Its time limit has passed: it refuses nothing now.", "unblocked until "+back+", then refused again",
-		"Unblocked for now: it refuses nothing until "+back+".",
+		"Its time limit has passed: it refuses nothing now.", "unblocked until "+back+" (in 3 hours), then refused again",
+		"Unblocked for now: it refuses nothing until "+back+" (in 3 hours).",
 		"Each is unblocked for a while or past its time limit, so none refuses anything now.")
 	if strings.Contains(html.UnescapeString(rp), "They end with the run.") {
 		t.Error("the Rules page's live group says every block ends with the run")
@@ -424,9 +432,9 @@ func TestLiftDoubleConfirm(t *testing.T) {
 	s, c, dir := liveFenceServer(t)
 	was := liftRun
 	t.Cleanup(func() { liftRun = was })
-	liftRun = func(ctx context.Context, root, run, kind, value string, until time.Time, via string) (runact.Lifted, error) {
+	liftRun = func(ctx context.Context, root, run, kind, value, note string, until time.Time, via string, serial uint64) (runact.Lifted, error) {
 		time.Sleep(50 * time.Millisecond) // widen the window between the check and the write
-		return was(ctx, root, run, kind, value, until, via)
+		return was(ctx, root, run, kind, value, note, until, via, serial)
 	}
 	target := "/runs/" + adjRun + "/lift"
 	form, _ := previewForm(t, s, c, target+"?kind=read&value=/srv/exports&for=1d")
@@ -442,6 +450,39 @@ func TestLiftDoubleConfirm(t *testing.T) {
 	<-done
 	if ch := overlayChanges(t, dir); len(ch) != 1 {
 		t.Fatalf("overlay changes %+v: want one lift", ch)
+	}
+}
+
+// TestLiftRefusesAnOverlayAnotherWriterMoved: another writer (a `tego block` or `tego restore` in a terminal)
+// changes the run's overlay after the dashboard checked the acknowledgement and before it writes the lift. The
+// acknowledgement was made for the overlay as the preview saw it, so the lift is refused and nothing is written.
+func TestLiftRefusesAnOverlayAnotherWriterMoved(t *testing.T) {
+	s, c, dir := liveFenceServer(t)
+	was := liftRun
+	t.Cleanup(func() { liftRun = was })
+	external := true
+	liftRun = func(ctx context.Context, root, run, kind, value, note string, until time.Time, via string, serial uint64) (runact.Lifted, error) {
+		if external { // the race window: after the acknowledgement was checked, before the write
+			external = false
+			if _, err := runact.Block(ctx, root, run, "exec", "curl", true); err != nil {
+				t.Errorf("the other writer: %v", err)
+			}
+		}
+		return was(ctx, root, run, kind, value, note, until, via, serial)
+	}
+	target := "/runs/" + adjRun + "/lift"
+	form, _ := previewForm(t, s, c, target+"?kind=read&value=/srv/exports&for=1d")
+	form.Set("understand", "yes")
+	w := post(s, target, form, own, "", c)
+	if ch := overlayChanges(t, dir); len(ch) != 1 || ch[0].Op != liveblock.OpAdd {
+		t.Fatalf("overlay changes %+v: want the other writer's block alone, and no lift", ch)
+	}
+	loc, err := url.Parse(w.Header().Get("Location"))
+	if err != nil || w.Code != http.StatusSeeOther {
+		t.Fatalf("answered %d %q", w.Code, w.Header().Get("Location"))
+	}
+	if fl := s.takeFlash(loc.Query().Get("flash")); fl == nil || fl.OK || !strings.Contains(fl.Text, "live rules changed since the preview") {
+		t.Errorf("the flash %+v: want a refusal that says the live rules changed", fl)
 	}
 }
 

@@ -19,6 +19,9 @@ import (
 
 // svgChart is one chart for the "chart" template: its class and viewBox, its words, and its marks.
 type svgChart struct {
+	// NumberID is the inventory id of the series the chart draws, set when its source is qualified (count_charts.go).
+	NumberID    string
+	Reason      string
 	Class       string
 	W, H        string // the viewBox's width and height
 	Label, Desc string

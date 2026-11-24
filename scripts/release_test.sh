@@ -14,6 +14,8 @@ git init -q --bare "$tmp/origin.git"
 git init -q -b main "$tmp/work"
 mkdir "$tmp/work/scripts"
 cp "$here/release.sh" "$tmp/work/scripts/release.sh"
+# release.sh asks this helper whether the optional verifier is on (the notes command); it sits beside release.sh in the repository.
+cp "$here/experimental-verifier.sh" "$here/experimental-verifier.conf" "$tmp/work/scripts/"
 cd "$tmp/work"
 git config user.email t@example.invalid
 git config user.name t

@@ -18,6 +18,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/doctor"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
+	"github.com/attention-span-ai/tego/internal/shellword"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
@@ -52,12 +53,15 @@ func TestHintsFollowTheTerminalAndTEGO_HINTS(t *testing.T) {
 		{true, "on", true, false},
 	} {
 		hintsAt(t, tc.terminal, tc.env)
-		prev := selfInRun
-		selfInRun = func() (bool, error) { return tc.inRun, nil }
+		prev := selfAnswer
+		selfAnswer = answerOutside
+		if tc.inRun {
+			selfAnswer = answerGoverned
+		}
 		var b bytes.Buffer
 		writeHint(&b, "say it:", "tego it")
 		writeGuide(&b, "  stop: x\n")
-		selfInRun = prev
+		selfAnswer = prev
 		want := ""
 		if tc.want {
 			want = "\nnext: say it:\n  tego it\n  stop: x\n"
@@ -266,7 +270,7 @@ func TestWatchSaysHowToStopAndWhatIsNext(t *testing.T) {
 	sandboxedLaunch(t)
 	dir := trustedDir(t)
 	contract := filepath.Join(dir, "agent.yaml")
-	writeTestFile(t, contract, "version: 0\nname: caged\ncommand: [\"true\"]\nnet: {}\n")
+	writeTestFile(t, contract, "version: 0\nname: bounded\ncommand: [\"true\"]\nnet: {}\n")
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -406,10 +410,10 @@ func TestLearnSaveWritesTheRegistryEntry(t *testing.T) {
 		}
 	}
 
-	prev := selfInRun
-	selfInRun = func() (bool, error) { return true, nil }
+	prev := selfAnswer
+	selfAnswer = answerGoverned
 	code, _, errs = run(t, "learn", short, "--save", "x")
-	selfInRun = prev
+	selfAnswer = prev
 	if _, err := os.Stat(filepath.Join(reg, "agents", "x.yaml")); code != identity.ExitLauncher || !strings.Contains(errs, "[governed]") || err == nil {
 		t.Errorf("--save inside a run: exit %d, stderr %q, file there: %v", code, errs, err == nil)
 	}
@@ -444,6 +448,9 @@ func TestLearnSaveRefusesItsOwnWriteEntry(t *testing.T) {
 // After tego test passed: record your own agent. Doctor's verdict: Ready leads to tego test (as root for a root
 // report), not ready to doctor's own fix and the check again by tego setup, never tego doctor itself; a root report's sentence says to run the check again. Neither with TEGO_HINTS=off.
 func TestDoctorAndTestHints(t *testing.T) {
+	// The linker can make the test binary group-writable under umask 002.
+	// Exercise rendering with a checked path; selfbin tests cover path refusals.
+	exe := agentsSelf(t)
 	hintsAt(t, false, "on")
 	var b bytes.Buffer
 	writeDoctorVerdict(&b, &doctor.Report{Tier: backend.TierLandlock})
@@ -452,7 +459,9 @@ func TestDoctorAndTestHints(t *testing.T) {
 	}
 	b.Reset()
 	writeDoctorVerdict(&b, &doctor.Report{Tier: backend.TierCgroup, Root: true})
-	if want := "\nReady: a run started as root here can enforce at tier 2 (cgroup).\n\nnext: see Tego refuse four harmless actions on decoy files:\n  sudo \"$(command -v tego)\" test\n"; b.String() != want {
+	// sudo resets PATH to its secure_path, which leaves out the installer's ~/.local/bin: the line names this binary by its
+	// absolute path, not by a lookup in the reader's shell.
+	if want := "\nReady: a run started as root here can enforce at tier 2 (cgroup).\n\nnext: see Tego refuse four harmless actions on decoy files:\n  sudo " + shellword.Quote(exe) + " test\n"; b.String() != want || strings.Contains(b.String(), "command -v") {
 		t.Errorf("root: %q, want %q", b.String(), want)
 	}
 	b.Reset()
@@ -479,6 +488,8 @@ func TestDoctorAndTestHints(t *testing.T) {
 // Every hint sentence fits in 80 columns with its "next: " (T1), and its command, when it has a placeholder, puts what
 // Tego cannot know in angle brackets.
 func TestHintSentencesFitEightyColumns(t *testing.T) {
+	// Check normal hint sentences independently of the test binary's permissions.
+	agentsSelf(t)
 	texts := []string{testNext, "make a contract from what it did, and read it before you use it:", "save it as a contract:",
 		learnSaveHint, learnNameHint, watchNameHint,
 		"run your agent under it:", "make a contract from what it did:", "see Tego refuse four harmless actions on decoy files:",

@@ -46,6 +46,15 @@ const (
 	// overlay once it is VersionLink, keeps the blocks it last read and ignores every later change. Like ControlName it
 	// is a mark of capability, not of authority.
 	LinkName = "live-link"
+	// NoteName is the launcher's mark that it reads a lift's note (Change.Note, LiftMAC's second domain): an empty file it
+	// makes once its live-block poll runs (MarkNote). A writer signs and writes a note only for a run whose directory
+	// has it (TakesNote): a launcher from before the note checks the lift's MAC without it and refuses the lift
+	// (refused mac), so a note written to it would undo the lift itself. Like ControlName it is a mark of capability, not
+	// of authority.
+	NoteName = "live-note"
+	// PlaneName is the launcher's mark that its run's kernel decision plane holds the run's path, read and write blocks
+	// too (MarkPlane): an empty file it makes once its live-block poll runs over a plane that decides file changes.
+	PlaneName = "live-plane"
 )
 
 // lockWait bounds how long a writer waits for another writer's lock.
@@ -104,6 +113,23 @@ func marked(dir, name string) bool {
 	return st.Mode&unix.S_IFMT == unix.S_IFREG && (st.Uid == uint32(os.Geteuid()) || st.Uid == 0)
 }
 
+// MarkPlane makes dir's PlaneName, the launcher's mark that it puts path, read and write blocks in force in the run's
+// kernel decision plane too (ADR 0124, amendment 2026-11-21), so a writer may say such a block is in force on a run
+// whose plane decides file changes.
+func MarkPlane(dir string) error { return mark(dir, PlaneName) }
+
+// TakesPlane reports whether the launcher of the run in dir puts file blocks in force in its plane: dir holds PlaneName
+// as MarkPlane made it.
+func TakesPlane(dir string) bool { return marked(dir, PlaneName) }
+
+// MarkNote makes dir's NoteName, the launcher's mark that it reads a lift's note (0600, no symlink followed); one
+// already there is kept.
+func MarkNote(dir string) error { return mark(dir, NoteName) }
+
+// TakesNote reports whether the launcher of the run in dir reads a lift's note: dir holds NoteName as MarkNote makes
+// it (as TakesControl checks ControlName).
+func TakesNote(dir string) bool { return marked(dir, NoteName) }
+
 // MarkReal makes dir's RealName, the launcher's mark that it reads a block's real path (0600, no symlink followed);
 // one already there is kept.
 func MarkReal(dir string) error { return mark(dir, RealName) }
@@ -159,6 +185,9 @@ func Read(dir, run string) (*Overlay, error) {
 // error, never replaced: the launcher keeps the last good one in force, and a new file written over it would drop
 // those blocks. It returns the overlay as it now stands.
 func Update(ctx context.Context, dir, run string, fn func(*Overlay) (bool, error)) (*Overlay, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	unlock, err := lock(ctx, dir)
 	if err != nil {
 		return nil, err
@@ -171,8 +200,17 @@ func Update(ctx context.Context, dir, run string, fn func(*Overlay) (bool, error
 	case err != nil:
 		return nil, fmt.Errorf("the run's %s cannot be read, so it is not replaced (remove it to start over): %w", FileName, err)
 	}
-	o.dropEnded(readClock().Wall)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	now := readClock()
+	o.dropEnded(now)
+	held := o.untilPins()
 	changed, err := fn(o)
+	o.pinUntils(held, now)
+	if err == nil {
+		err = ctx.Err()
+	}
 	if err != nil || !changed {
 		return o, err
 	}
@@ -180,31 +218,94 @@ func Update(ctx context.Context, dir, run string, fn func(*Overlay) (bool, error
 	if err != nil {
 		return nil, err
 	}
-	if err := writeAtomic(dir, b); err != nil {
+	if err := writeAtomic(ctx, dir, b); err != nil {
 		return nil, err
 	}
 	return o, nil
 }
 
-// endedKeep is how long past its until by the wall clock a block stays in the file. The launcher wrote its expiry line
-// when it ended, but it judges a block's end on BOOTTIME too (Ended): a wall clock stepped forward must not let a
-// writer drop a block the launcher still holds in force.
+// endedKeep is how long a block stays in the file once its limit has ended. The launcher writes its expiry line from
+// the file it last read, on the poll after the end, and the pages say "ended at" of an entry still listed, so an
+// ended entry is kept a day; dropping it then keeps ended blocks from filling MaxBlocks over a long run.
 const endedKeep = 24 * time.Hour
 
-// dropEnded removes the blocks whose until is more than endedKeep before now, recording no change: their lines were
-// written by the launcher when they ended, and dropping them keeps them from filling MaxBlocks over a long run.
-func (o *Overlay) dropEnded(now time.Time) {
-	o.Blocks = slices.DeleteFunc(o.Blocks, func(e Entry) bool { return !e.Until.IsZero() && now.Sub(e.Until) > endedKeep })
+// dropEnded removes the blocks whose limit ended more than endedKeep before now, recording no change. Ended is the
+// launcher's own rule (Ended, ADR 0125 decision 4, amendment 2026-11-18), asked endedKeep later on the same clocks:
+//
+//   - an entry pinned in this boot (Entry.UntilPin) is gone only when BOTH clocks are endedKeep past its limit, the
+//     pin the launcher holds it by. The wall clock alone decided before, so a wall clock stepped forward more than a
+//     day let a writer drop a block the launcher still refused by; a wall clock stepped back keeps it longer, as it
+//     keeps the block itself in force longer;
+//   - an entry pinned in another boot is gone by the wall clock alone: its launcher did not outlive that boot, and
+//     its BOOTTIME instant counts from a start that is gone;
+//   - an entry with no pin (written by a tego from before pins, or where the boot could not be named) is gone by the
+//     wall clock alone, as it always was;
+//   - where this boot cannot be named now, a pinned entry is kept: nothing says which of the two cases it is.
+func (o *Overlay) dropEnded(now Clock) {
+	o.Blocks = slices.DeleteFunc(o.Blocks, func(e Entry) bool {
+		if e.Until.IsZero() {
+			return false
+		}
+		gone := e.Until.Add(endedKeep)
+		pin, pinned := e.UntilPin(now)
+		switch {
+		case pinned:
+			return Ended(gone, pin+endedKeep, true, now) && now.Wall.After(gone)
+		case e.Boot != "" && now.BootID == "":
+			return false
+		}
+		return now.Wall.After(gone)
+	})
+}
+
+// untilPins is the pin each limit of o's blocks carries now, by DeadlineKey: what pinUntils keeps for a limit that
+// stood before a write. A limit with no pin is listed too, with none.
+func (o *Overlay) untilPins() map[string]Entry {
+	held := map[string]Entry{}
+	for _, e := range o.Blocks {
+		if !e.Until.IsZero() {
+			held[DeadlineKey(e.Key(), e.Until)] = e
+		}
+	}
+	return held
+}
+
+// pinUntils settles the pin of every block's limit after a write's change: a limit that stood before the write
+// (held) keeps the pin it had, or none; a limit the write made is pinned at now, the write's own reading, in now's
+// boot. A pin is made once, with its limit, and never again: the launcher holds the limit by the pin it first read,
+// so a pin made later, after a clock step, would be another instant than the launcher's.
+func (o *Overlay) pinUntils(held map[string]Entry, now Clock) {
+	for i := range o.Blocks {
+		e := &o.Blocks[i]
+		e.Boot, e.UntilBoot = "", 0
+		if e.Until.IsZero() {
+			continue
+		}
+		if was, ok := held[DeadlineKey(e.Key(), e.Until)]; ok {
+			e.Boot, e.UntilBoot = was.Boot, was.UntilBoot
+			continue
+		}
+		if pin := now.Pin(e.Until); now.BootID != "" && now.Boot > 0 && pin > 0 {
+			e.Boot, e.UntilBoot = now.BootID, pin
+		}
+	}
 }
 
 // lock flocks dir's LockName, waiting at most lockWait, and returns its release.
 func lock(ctx context.Context, dir string) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	f, err := os.OpenFile(filepath.Join(dir, LockName), os.O_RDWR|os.O_CREATE|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("live-block lock: %w", err)
 	}
 	deadline := time.Now().Add(lockWait)
 	for {
+		if err := ctx.Err(); err != nil {
+			_ = f.Close()
+			return nil, err
+		}
 		err := sys.Flock(f, unix.LOCK_EX|unix.LOCK_NB)
 		if err == nil {
 			return func() { _ = f.Close() }, nil // closing the file drops the flock
@@ -224,7 +325,10 @@ func lock(ctx context.Context, dir string) (func(), error) {
 }
 
 // writeAtomic replaces dir's FileName with b: a new 0600 file, synced, renamed over it, and the directory synced.
-func writeAtomic(dir string, b []byte) error {
+func writeAtomic(ctx context.Context, dir string, b []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	var rnd [8]byte
 	if _, err := rand.Read(rnd[:]); err != nil {
 		return err
@@ -240,6 +344,11 @@ func writeAtomic(dir string, b []byte) error {
 	}
 	if cerr := f.Close(); werr == nil {
 		werr = cerr
+	}
+	if werr == nil {
+		// A prior read or fsync may outlive a request. Never submit a new
+		// overlay rename once that request's context has expired.
+		werr = ctx.Err()
 	}
 	if werr == nil {
 		werr = os.Rename(tmp, filepath.Join(dir, FileName))

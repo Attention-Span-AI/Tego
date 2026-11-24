@@ -11,7 +11,10 @@
 // engine's LedgerRoot applies, since it may not import the engine. For an account with no home that root also places
 // the chain.log serve reads: the one beside it, where tego anchors the account's runs.
 //
-// Imports: the standard library, internal/handoff (the noun list and the shared reason codes), internal/buildinfo,
+// The private filesystem-helper mode is dispatched only after the same privilege refusal as ordinary commands.
+// It re-executes the control binary's own image, never a program selected from PATH.
+//
+// Imports: internal/contracts, internal/control/pathcheck, the standard library, internal/handoff (the noun list and the shared reason codes), internal/buildinfo,
 // internal/platform/sys (capabilities), pkg/spec/identity (exit codes), the module root's package (the licence texts
 // licenses prints), internal/platform/proc (open starts the browser), and for serve internal/control/web (the
 // dashboard), internal/control/rules (its rule service), internal/profilesrc (where a rules file's extends: names are

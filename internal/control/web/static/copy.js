@@ -6,16 +6,35 @@
 // that does nothing. One click listener on the document serves buttons a live region swaps in later. The clipboard
 // API needs a secure context; on plain http to a LAN address it is missing, so the fallback selects the text and asks
 // the browser to copy the selection.
+// What the button says after a click ("Copied", or "Selected: press Ctrl+C") is said to a screen reader too (WCAG
+// 4.1.3): each button's .copy-lbl is a polite live region, marked here before any click and again after live.js
+// merges regions or place.js enters a view (tego:merged, tego:enter), so no page has to mark it. The words said are the label's own words, the same
+// fixed words the page shows; nothing from the copied text is put in the label. The label's return to "Copy" is not
+// said again.
 (function () {
   "use strict";
   document.documentElement.classList.add("has-copy");
+
+  function mark() {
+    document.querySelectorAll("button.copy-btn .copy-lbl:not([aria-live])").forEach(function (l) {
+      l.setAttribute("aria-live", "polite");
+    });
+  }
+  if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", mark); } else { mark(); }
+  document.addEventListener("tego:merged", mark);
+  document.addEventListener("tego:enter", mark);
 
   function said(btn, text) {
     var label = btn.querySelector(".copy-lbl") || btn;
     var was = label.getAttribute("data-was") || label.textContent;
     label.setAttribute("data-was", was);
     label.textContent = text;
-    window.setTimeout(function () { label.textContent = was; }, 1600);
+    window.setTimeout(function () {
+      var live = label.getAttribute("aria-live");
+      if (live) { label.setAttribute("aria-live", "off"); }
+      label.textContent = was;
+      if (live) { window.setTimeout(function () { label.setAttribute("aria-live", live); }, 0); }
+    }, 1600);
   }
 
   function selectText(el) {

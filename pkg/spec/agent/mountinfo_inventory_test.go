@@ -65,7 +65,9 @@ func TestCapturedMountTablesHaveNoAmbiguousSiblings(t *testing.T) {
 	if tables == 0 {
 		t.Fatal("no mount-table fixtures measured")
 	}
-	if tables != 51 || unlinked != 6 {
+	// 53: the 51 captured tables, WSL's (testdata/wsl-mountinfo, reconstructed from measured rows, 2026-11-19) and
+	// this machine's own (testdata/additional-mountinfo/desktop-live, 2026-11-19).
+	if tables != 53 || unlinked != 6 {
 		t.Fatalf("inventory changed: %d raw tables, %d unlinked rows", tables, unlinked)
 	}
 	t.Logf("%d raw tables measured; %d documented unlinked file rows; no unclassified unlinked roots", tables, unlinked)

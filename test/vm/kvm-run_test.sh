@@ -209,4 +209,53 @@ for w in "it's" "" "'" "a'b'c" "$nl2" "$nlonly" "two words" '$HOME `id` \'; do
 	[ "${got%x}" = "$w" ] || fail "sq $(printf '%q' "$w") reached sh as $(printf '%q' "${got%x}")"
 done
 
+# The guest's userland holds node, so the root rows run the dashboard's script tests (builder, place, twin, live)
+# and the runtime's node cells rather than skipping them, and no root skip still says the guest has none.
+pkgs=$(awk '/^HOST_PKGS="/ { p = 1 } p { print } p && /"$/ { exit }' "$here/kvm-run.sh")
+case " $(printf '%s' "$pkgs" | tr '\n"' '  ') " in *" nodejs "*) ;; *) fail "kvm-run.sh's HOST_PKGS does not copy nodejs into the guest: $pkgs" ;; esac
+if grep -nE 'no node|node is not installed' "$here/root-skips.txt"; then
+	fail "root-skips.txt still allows a skip for a guest without node"
+fi
+
+# 7. node's shared builtins. The host's libnode loads six files from /usr/share/nodejs, a tree the package copy
+# skips, and aborts at startup without them ("Cannot load externalized builtin": 2026-11-19, three root tests
+# failed on it). The staged tree must hold every file its staged libnode names, read from the libnode itself.
+# shellcheck source=/dev/null
+. <(func node_builtin_paths)
+# shellcheck source=/dev/null
+. <(func missing_node_builtins)
+# shellcheck source=/dev/null
+. <(func stage_node_builtins)
+# shellcheck source=/dev/null
+. <(func stage_path)
+# shellcheck disable=SC2034 # read by the extracted stage_path
+declare -A INODE_OF=()
+nb="$tmp/nb"
+mkdir -p "$nb/lib"
+printf 'junk\0/usr/share/nodejs/acorn/dist/acorn.js\0more\0/usr/share/nodejs/undici/undici-fetch.js\0/usr/share/nodejs/acorn/dist/acorn.js\0/usr/share/other/x.js\0/usr/share/nodejs/\0' >"$nb/fake"
+[ "$(node_builtin_paths "$nb/fake")" = "$(printf '/usr/share/nodejs/acorn/dist/acorn.js\n/usr/share/nodejs/undici/undici-fetch.js')" ] ||
+	fail "node_builtin_paths read: $(node_builtin_paths "$nb/fake")"
+# A staged libnode whose builtins are not staged is caught, and each missing file is named.
+STAGE="$nb/stage"
+mkdir -p "$STAGE/usr/lib"
+cp "$nb/fake" "$STAGE/usr/lib/libnode.so.99"
+[ "$(missing_node_builtins | wc -l)" = 2 ] || fail "missing_node_builtins did not name both files: $(missing_node_builtins)"
+# A builtin the host lacks stops the build with the file named.
+printf '/usr/share/nodejs/tego-no-such-package/x.js\0' >"$STAGE/usr/lib/libnode.so.99"
+out=$( (stage_node_builtins) 2>&1) && rc=0 || rc=$?
+[ "$rc" = 97 ] || fail "a builtin the host lacks was not refused (rc $rc): $out"
+case "$out" in *tego-no-such-package/x.js*) ;; *) fail "the refusal does not name the missing file: $out" ;; esac
+# The real host: stage its node and libnode the way build_base does, and every file the libnode names is staged.
+if nodebin="$(command -v node)" && libnode="$(ldd "$nodebin" 2>/dev/null | awk '/libnode/ { print $3; exit }')" && [ -n "$libnode" ]; then
+	STAGE="$nb/real"
+	mkdir -p "$STAGE"
+	stage_path "$nodebin" >/dev/null
+	stage_path "$libnode" >/dev/null
+	[ -n "$(node_builtin_paths "$(readlink -f "$libnode")")" ] || fail "the host's libnode names no builtin (the read is broken)"
+	[ -n "$(missing_node_builtins)" ] || fail "the staged libnode already had its builtins before stage_node_builtins ran"
+	stage_node_builtins
+	[ -z "$(missing_node_builtins)" ] || fail "staged node still lacks: $(missing_node_builtins)"
+	while read -r p; do [ -s "$STAGE$p" ] || fail "staged builtin $p is empty"; done < <(node_builtin_paths "$(readlink -f "$libnode")")
+fi
+
 echo "ok kvm-run_test.sh"

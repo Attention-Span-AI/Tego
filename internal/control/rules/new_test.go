@@ -44,7 +44,7 @@ func TestNewPlanAndCreate(t *testing.T) {
 	if !p.OK || len(p.Problems) > 0 {
 		t.Fatalf("plan not OK: %+v", p)
 	}
-	if p.Name != "my-project" || p.File != filepath.Join(dir, "agent.yaml") || p.Base != rulefile.Sum(p.Text) {
+	if p.Name != "my-project" || p.File != filepath.Join(dir, "agent.yaml") || (p.Base == "" || p.Base == rulefile.Sum(p.Text)) {
 		t.Fatalf("plan = name %q file %q", p.Name, p.File)
 	}
 	for _, want := range []string{"tego/no-secrets", "tego/no-prod", "api.example.com:443", "my-project"} {
@@ -104,8 +104,8 @@ func TestNewPlanAndCreate(t *testing.T) {
 		t.Fatalf("a change of the new contract: %+v, %v", cp, err)
 	}
 
-	if _, err := f.s.CreateNew(context.Background(), req, p.Base); !errors.Is(err, ErrRefused) {
-		t.Fatalf("a second Create = %v, want ErrRefused", err)
+	if _, err := f.s.CreateNew(context.Background(), req, p.Base); !errors.Is(err, ErrReviewGone) {
+		t.Fatalf("a second Create = %v, want ErrReviewGone", err)
 	}
 	again, _ := f.s.PlanNew(context.Background(), req)
 	if !again.Exists || again.OK {
@@ -151,7 +151,7 @@ func TestNewRefusals(t *testing.T) {
 		{"ledger", NewReq{Dir: inLedger, Presets: []string{"no-secrets"}}, "tego's own folder"},
 		{"link to the ledger", NewReq{Dir: link, Presets: []string{"no-secrets"}}, "tego's own folder"},
 		{"bad name", NewReq{Dir: ok, Name: "Bad Name", Presets: []string{"no-secrets"}}, "not an agent id"},
-		{"no preset", NewReq{Dir: ok}, "Pick at least one preset"},
+		{"no preset", NewReq{Dir: ok}, "Pick at least one preset: no-secrets, no-prod, repo-only-writes or ci."},
 		{"unknown preset", NewReq{Dir: ok, Presets: []string{"yolo"}}, "unknown preset"},
 		{"repo-only-writes with no folder", NewReq{Dir: ok, Presets: []string{"repo-only-writes"}}, "needs the folders"},
 	} {
@@ -163,8 +163,8 @@ func TestNewRefusals(t *testing.T) {
 			if p.OK || !slices.ContainsFunc(p.Problems, func(s string) bool { return strings.Contains(strings.ToLower(s), strings.ToLower(tc.want)) }) {
 				t.Fatalf("problems = %q, want one with %q", p.Problems, tc.want)
 			}
-			if _, err := f.s.CreateNew(context.Background(), tc.req, p.Base); !errors.Is(err, ErrRefused) {
-				t.Fatalf("CreateNew = %v, want ErrRefused", err)
+			if _, err := f.s.CreateNew(context.Background(), tc.req, p.Base); !errors.Is(err, ErrReviewGone) {
+				t.Fatalf("CreateNew without a valid review = %v, want ErrReviewGone", err)
 			}
 		})
 	}
@@ -176,25 +176,30 @@ func TestNewRefusals(t *testing.T) {
 	if p, _ := f.s.PlanNew(context.Background(), NewReq{Dir: "~/work", Presets: []string{"no-secrets"}}); p.Dir != home || !p.OK {
 		t.Fatalf("~/work = %+v", p)
 	}
-	// A stale base: nothing written, no folder made.
+	// A changed reviewed destination: nothing written, no folder made.
 	req := NewReq{Dir: ok, Presets: []string{"repo-only-writes"}, Writes: []string{"src/"}}
-	if _, err := f.s.CreateNew(context.Background(), req, strings.Repeat("0", 64)); !errors.Is(err, ErrStale) {
-		t.Fatalf("stale base = %v", err)
+	p, err := f.s.PlanNew(context.Background(), req)
+	if err != nil || !p.OK {
+		t.Fatalf("review: %+v, %v", p, err)
+	}
+	req.Name = "changed-after-review"
+	if _, err := f.s.CreateNew(context.Background(), req, p.Base); !errors.Is(err, ErrStale) {
+		t.Fatalf("changed reviewed destination = %v", err)
 	}
 	if ents, _ := os.ReadDir(ok); len(ents) != 0 {
 		t.Fatalf("a refused create left %v", ents)
 	}
 	// A test compiler that refuses: not OK, nothing written.
-	p, _ := f.s.PlanNew(context.Background(), NewReq{Dir: ok, Presets: []string{"no-secrets"}, Command: "broken"})
+	p, _ = f.s.PlanNew(context.Background(), NewReq{Dir: ok, Presets: []string{"no-secrets"}, Command: "broken"})
 	if p.OK || len(p.Diagnostics) == 0 {
 		t.Fatalf("a contract that does not compile = %+v", p)
 	}
-	if _, err := f.s.CreateNew(context.Background(), NewReq{Dir: ok, Presets: []string{"no-secrets"}, Command: "broken"}, p.Base); !errors.Is(err, ErrRefused) {
+	if _, err := f.s.CreateNew(context.Background(), NewReq{Dir: ok, Presets: []string{"no-secrets"}, Command: "broken"}, p.Base); !errors.Is(err, ErrReviewGone) {
 		t.Fatalf("CreateNew of a contract that does not compile = %v", err)
 	}
 }
 
-// TestNewRealCompile: with the machine config and no test compiler, the draft compiles as tego compile --offline
+// TestNewRealCompile: with the machine config and no test compiler, the draft compiles as tego rules check --offline
 // would: a command on the dashboard's PATH compiles, Create makes the preset's folders and writes; a command that is
 // on no PATH is compile's error and nothing is written.
 func TestNewRealCompile(t *testing.T) {
@@ -237,7 +242,7 @@ func TestNewRealCompile(t *testing.T) {
 	if p.OK || !slices.ContainsFunc(p.Diagnostics, func(s string) bool { return strings.HasPrefix(s, "error:") }) {
 		t.Fatalf("a command on no PATH = %+v", p)
 	}
-	if _, err := f.s.CreateNew(context.Background(), bad, p.Base); !errors.Is(err, ErrRefused) {
+	if _, err := f.s.CreateNew(context.Background(), bad, p.Base); !errors.Is(err, ErrReviewGone) {
 		t.Fatalf("CreateNew = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(other, "agent.yaml")); !errors.Is(err, os.ErrNotExist) {
@@ -328,7 +333,7 @@ func TestNewRemovesNoFolderThroughALink(t *testing.T) {
 }
 
 // TestNewFromRunUnderANameYAMLReadsAsAnother: an agent id may be all digits or a word YAML reads as a bool or a null,
-// and name is a string (R3), so the drafted contract writes it quoted, as tego init does: written plain it does not
+// and name is a string (R3), so the drafted contract writes it quoted, as tego rules create does: written plain it does not
 // load, and the dashboard refuses a name its own form accepts. (This fixture's compiler always answers OK, so the
 // test loads the draft itself.)
 func TestNewFromRunUnderANameYAMLReadsAsAnother(t *testing.T) {
@@ -406,7 +411,7 @@ func TestNewFromRun(t *testing.T) {
 
 // TestNewFromRunSaysAddressesMayChange: a watched run's record holds addresses, not names, so the plan drafted from it
 // allows addresses, and its preview, which reads only the entries ("Can connect to 104.20.23.154 on port 443"), must
-// say what tego learn says: a later run can be refused, and how to allow the name instead (Ubuntu guest).
+// say what tego rules learn says: a later run can be refused, and how to allow the name instead (Ubuntu guest).
 func TestNewFromRunSaysAddressesMayChange(t *testing.T) {
 	f := newFixture(t)
 	const run = "r-aaaaaaaa-0000000000001-learnx"

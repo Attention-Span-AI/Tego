@@ -32,8 +32,8 @@ command -v jq >/dev/null 2>&1 || fail "jq is not on PATH; matrix.sh itself refus
 
 repo="$tmp/repo"
 mkdir -p "$repo/test/vm" "$repo/test/e2e" "$repo/test/workloads/build/noop" "$repo/test/workloads/build/cpu" \
-	"$repo/examples" "$repo/internal/runtime/limits/testdata" "$tmp/bin" "$tmp/cache"
-: >"$repo/internal/runtime/limits/testdata/prices.yaml"
+	"$repo/examples" "$repo/internal/pricetable/testdata" "$tmp/bin" "$tmp/cache"
+: >"$repo/internal/pricetable/testdata/prices.yaml"
 cp "$here/matrix.sh" "$here/fwd-run.sh" "$repo/test/vm/"
 # The fetch-kernel.py stand-in: STUB_ROWS is "name:body ..." (default row-a:full), printed as the real --list prints
 # its rows (name, series, kind, body, label) and --body answers; STUB_FETCH_FAIL names a row whose fetch fails.

@@ -395,6 +395,9 @@ type planeFiller struct {
 	prog, clear    *ebpf.Program
 	config, wants  *ebpf.Map
 	rows, execRows *ebpf.Map
+	// blocks is the plane's tego_plane_blocks (ADR 0124, amendment 2026-11-21), which the fill writes a live block's
+	// rows into; nil for a fill adopted from a build that has none.
+	blocks *ebpf.Map
 	// Load is what loading took.
 	Load time.Duration
 	mu   sync.Mutex
@@ -406,11 +409,20 @@ type planeFiller struct {
 // (a tier-2 or fanotify run's slot, the other mode's, a run that died before prepareSlot). It has no rows to clear.
 var errPlaneNoRows = errors.New("plane clear: the slot has no rows map")
 
-// newPlaneFiller loads fill (a fill build, bpf.PlaneFillFor the plane build loaded) over rows and execRows, the
-// plane's tego_plane_rows and tego_plane_exec_rows, which it writes and never owns.
-func newPlaneFiller(fill ebpfbindings.Object, rows, execRows *ebpf.Map, listeners ...*ebpf.Map) (*planeFiller, error) {
-	if len(listeners) != 1 || listeners[0] == nil {
+// fillMaps are the plane's maps a fill build is loaded over and writes, and never owns: tego_plane_rows,
+// tego_plane_exec_rows, tego_plane_listen_rows and tego_plane_blocks.
+type fillMaps struct {
+	Rows, ExecRows, ListenRows, Blocks *ebpf.Map
+}
+
+// newPlaneFiller loads fill (a fill build, bpf.PlaneFillFor the plane build loaded) over m, the plane's row maps.
+func newPlaneFiller(fill ebpfbindings.Object, m fillMaps) (*planeFiller, error) {
+	rows, execRows := m.Rows, m.ExecRows
+	if m.ListenRows == nil {
 		return nil, fmt.Errorf("plane fill: %s requires an owned %s replacement", fill, ebpfbindings.MapPlaneListenRows)
+	}
+	if m.Blocks == nil {
+		return nil, fmt.Errorf("plane fill: %s requires an owned %s replacement", fill, ebpfbindings.MapPlaneBlocks)
 	}
 	start := time.Now()
 	spec, err := ebpfbindings.Load(fill)
@@ -427,12 +439,13 @@ func newPlaneFiller(fill ebpfbindings.Object, rows, execRows *ebpf.Map, listener
 		ebpfbindings.MapPlaneRows:     rows,
 		ebpfbindings.MapPlaneExecRows: execRows,
 	}
-	replacements[ebpfbindings.MapPlaneListenRows] = listeners[0]
+	replacements[ebpfbindings.MapPlaneListenRows] = m.ListenRows
+	replacements[ebpfbindings.MapPlaneBlocks] = m.Blocks
 	if err := spec.LoadAndAssign(&objs, &ebpf.CollectionOptions{MapReplacements: replacements}); err != nil {
 		return nil, fmt.Errorf("plane fill: load %s: %w", fill, err)
 	}
 	return &planeFiller{obj: fill, prog: objs.Fill, clear: objs.Clear, config: objs.Config, wants: objs.Wants,
-		rows: rows, execRows: execRows, Load: time.Since(start)}, nil
+		rows: rows, execRows: execRows, blocks: m.Blocks, Load: time.Since(start)}, nil
 }
 
 // Close releases the programs and the fill's own maps; the plane's row maps and their rows stay.
@@ -522,6 +535,11 @@ func (f *planeFiller) fill(plan *planeFillPlan, table *decide.PlaneRows, opts pl
 		case ebpfbindings.PlaneFillListen:
 			rep.ListenRows++
 		case ebpfbindings.PlaneFillFS:
+			rep.Rows++
+		case ebpfbindings.PlaneFillBlock, ebpfbindings.PlaneFillBlockName, ebpfbindings.PlaneFillBlockDel,
+			ebpfbindings.PlaneFillBlockNameDel:
+			// The live blocks' rows are filled by fillBlocks (planeblocks.go), never by a Prepare plan; one here is
+			// counted as the fallback below counts any unexpected kind.
 			rep.Rows++
 		default:
 			// Preserve the report's fallback for an unexpected entry kind;

@@ -1,0 +1,143 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Builder interiors only. Shell geometry and tokens belong to phone.css. */
+.builder-cols { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:var(--space-4); align-items:start; }
+.builder-cols > *, .builder-edit, .builder-source { min-width:0; }
+.builder-source { margin-bottom:var(--space-4); }
+.builder-edit .seg { display:flex; gap:var(--space-2); }
+.builder-edit [aria-current=true] { border-width:2px; font-weight:var(--weight-semibold); }
+.builder-decision { padding:var(--space-4); border-bottom:1px solid var(--c-border); overflow-wrap:anywhere; display:grid; gap:var(--space-3); }
+.builder-decision p { margin:0; }
+.kd { display:flex; border:0; padding:0; margin:0; gap:var(--space-2); }
+.kd label { display:flex; gap:var(--space-2); align-items:center; min-width:88px; min-height:44px; padding:var(--space-2) var(--space-3); border:1px solid var(--c-control); border-radius:var(--radius); cursor:pointer; }
+.kd label:has(input:checked) { background:var(--c-raised); border-width:2px; }
+.builder-editor { width:100%; min-height:320px; white-space:pre-wrap; overflow-wrap:anywhere; resize:vertical; }
+.builder-lines { padding-left:4ch; margin:var(--space-3) 0; font-size:var(--text-sm); }
+.builder-lines li { white-space:pre-wrap; overflow-wrap:anywhere; min-height:1.5em; padding-inline:var(--space-2); }
+.builder-changed { background:var(--c-raised); border-left:3px solid var(--c-control); }
+.builder-glossary dl { margin:0; }
+.builder-glossary dl > div { padding-block:var(--space-2); border-bottom:1px solid var(--c-border); overflow-wrap:anywhere; }
+.builder-glossary dd { margin:var(--space-1) 0 0; color:var(--c-text2); }
+.builder-phone-note { display:none; }
+.builder-source .input, .builder-source .select { width:100%; }
+.builder-source summary, .builder-edit summary, .builder-yaml summary { cursor:pointer; min-height:44px; }
+.builder-cols .panel, .builder-cols .banner { margin:0; }
+#builder-save, #builder-problems, [id^=builder-line] { scroll-margin-block:var(--space-4); }
+.builder-cols .err, .banner-problems { overflow-wrap:anywhere; }
+@media(max-width:900px) { .builder-cols { grid-template-columns:minmax(0,1fr); } }
+@media(max-width:600px) {
+ .builder-cols { font-size:16px; line-height:24px; }
+ .builder-cols :is(h2,h3,.btn,.input,.select,.field,.lbl,.rp-h,.nw-preset,.kd label,summary) { font-size:16px; }
+ .builder-cols :is(.soft,.hint,.nw-note,.nw-preset .soft,.builder-lines,.nw-legend) { font-size:13px; }
+ .builder-cols .builder-editor { font-size:13px; }
+ .builder-cols .builder-phone-note { display:block; }
+ .builder-source :is(.nw-presets,.frow) { display:flex; flex-direction:column; }
+ .builder-source :is(.field,.nw-preset) { flex:auto; min-width:0; }
+ .builder-source :is(.nw-preset,.field,.input,.btn,.select,summary) { font-size:16px; min-height:44px; }
+ .builder-source :is(.soft,.nw-preset .soft,.nw-legend) { font-size:13px; }
+ .builder-cols :is(a,button,summary), .builder-source :is(a,button,summary) { min-height:44px; }
+
+ .builder-cols .nw-rules li { flex-wrap:wrap; font-size:16px; }
+ .builder-cols .nw-rules .b { font-size:13px; }
+ .builder-cols .cli code { font-size:13px; }
+ .builder-options { min-width:0; }
+}
+@media(forced-colors:active) { .builder-changed,.kd label:has(input:checked) { border:2px solid CanvasText; } }
+
+@media(min-width:901px) { .builder-yaml::details-content { content-visibility:visible; display:block; } }
+.builder-page { min-width:0; overflow-wrap:anywhere; }
+.builder-page .code-i { white-space:normal; overflow-wrap:anywhere; }
+.builder-page .builder-lines code { font-size:inherit; white-space:inherit; background:transparent; padding:0; }
+.builder-edit .seg { align-self:flex-start; padding:var(--space-1); gap:var(--space-1); }
+.builder-edit .seg .btn { border:0; border-radius:var(--radius); }
+.builder-edit .seg [aria-current=true] { background:var(--c-brand); color:var(--c-on-brand); }
+.builder-picker { margin-bottom:var(--space-4); }
+@media(max-width:600px) {
+ .builder-page .code-i, .builder-page .rc-text, .builder-page .cli code { font-size:13px; }
+ .builder-page .rc-raw > summary .soft { font-size:13px; }
+ .builder-page .rc-raw > summary { gap:var(--space-2); }
+ .builder-page .rc-entries li { gap:var(--space-3); }
+ .builder-page .rc-entries .rc-entry { font-size:16px; }
+ .builder-page :is(.rc-g .panel-head h2 .soft,.rc-g .panel-foot .mono,.rc-hint,.rc-when,.rc-hlive,.rc-ack-sm,.rc-why,.rc-blocks,.rc-diags,.rc-lines) { font-size:13px; }
+ .builder-page :is(.rc-acts .btn,.rc-add .btn,.rc-undo .btn,summary,a.link) { min-height:44px; min-width:44px; }
+ .builder-page a.link { display:inline-flex; align-items:center; overflow-wrap:anywhere; }
+ .builder-page :is(.rc-ack,.rc-ack-sm,.rc-nowl) { min-height:44px; }
+ .builder-page .builder-editor { min-height:320px; }
+}
+
+@media(max-width:600px) {
+ .builder-picker :is(.input,.select,.field,.lbl) { font-size:16px; }
+ .builder-page .rc-diags a, .banner-problems a { min-height:44px; display:inline-flex; align-items:center; }
+ .builder-page .rc-entries .rc-acts { margin-left:0; }
+ .builder-page .rc-lines .rc-t { white-space:pre-wrap; overflow-wrap:anywhere; }
+ .builder-page .rc-lines li { white-space:normal; }
+}
+
+@media(max-width:600px) { .builder-page .panel-head h2 { font-size:16px; } }
+
+@media(max-width:600px) {
+ .builder-page .rc-diff { font-size:13px; white-space:pre-wrap; overflow-wrap:anywhere; }
+ .builder-page :is(input,textarea,select,button,summary,a) { scroll-margin-block:96px; }
+ .builder-page :is(.builder-editor,.rc-text) { height:45dvh; max-height:480px; min-height:280px; }
+}
+
+.builder-context,.builder-env { margin-bottom:var(--space-4); }
+@media(max-width:600px) { .builder-page .builder-phone-note { display:block; font-size:13px; } .builder-env summary { min-height:44px; } }
+
+@media(max-width:600px) {
+ .builder-glossary code { font-size:13px; }
+ .builder-source .lm-table, .builder-source .lm-table tbody { display:block; min-width:0; width:100%; }
+ .builder-source .lm-table thead { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); }
+ .builder-source .lm-table tr { display:grid; grid-template-columns:minmax(0,1fr); border-bottom:1px solid var(--c-border); }
+ .builder-source .lm-table :is(th,td) { display:block; width:auto; min-width:0; white-space:normal; overflow-wrap:anywhere; font-size:13px; padding:var(--space-2); }
+ .builder-source .lm-table td:first-of-type::before { content:'Locked: '; font-weight:var(--weight-semibold); }
+ .builder-source .lm-table td:last-of-type::before { content:'Adjustable: '; font-weight:var(--weight-semibold); }
+}
+.builder-dropped:empty { display:none; }
+.builder-dropped { padding-left:var(--space-4); font-size:var(--text-sm); }
+
+@media(max-width:600px) { .builder-source .lm-table .mono { font-size:13px; } }
+
+/* Disclosures keep the sentence beside its marker; only the short hint trails. */
+.builder-page details > summary { justify-content:flex-start; text-align:left; }
+.builder-page details > summary::before { flex:none; }
+.builder-page details > summary > h2 { flex:0 1 auto; }
+.builder-page details > summary > .soft { margin-left:auto; }
+.builder-page .head h1 { font-family:var(--font-display); font-size:var(--text-2xl); line-height:var(--leading-display); font-weight:var(--weight-semibold); letter-spacing:var(--tracking-display); }
+.builder-page :is(.builder-editor,.rc-text) { font-family:var(--font-mono); font-variant-ligatures:none; tab-size:2; white-space:pre; overflow-wrap:normal; overflow:auto; }
+#builder-edit .seg { width:max-content; max-width:100%; justify-self:start; border-radius:var(--radius-lg); border-color:var(--c-control); }
+.builder-head-actions { display:flex; align-items:center; gap:var(--space-2); flex-wrap:wrap; }
+.builder-head-actions .head-more { display:block; }
+.builder-head-actions .head-more > summary { display:inline-flex; min-height:var(--target); padding:var(--space-1) var(--space-3); border:var(--line) solid var(--c-control); border-radius:var(--radius); }
+.builder-head-actions .head-more::details-content { display:block; content-visibility:hidden; }
+.builder-head-actions .head-more[open]::details-content { content-visibility:visible; }
+.builder-page .cli code { overflow-wrap:break-word; }
+.builder-page .head > div:first-child > .btn-primary { margin-top:var(--space-3); }
+.builder-page .sp { display:inline; white-space:normal; }
+.builder-page .sp > * { white-space:normal; overflow:visible; }
+@media(min-width:901px) {
+ .builder-decision { grid-template-columns:minmax(0,1fr) max-content; align-items:center; }
+ .builder-decision > :is(.field,.err,.soft) { grid-column:1 / -1; }
+ .builder-decision .kd { justify-self:end; }
+}
+@media(max-width:600px) {
+ .builder-page .head > div:first-child { flex-basis:100%; }
+ .builder-page .head h1 { font-size:28px; }
+ .builder-head-actions { width:100%; }
+ #builder-edit .seg { display:grid; width:100%; grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+ .builder-page :is(.builder-editor,.rc-text) { font-size:16px; }
+}
+
+/* Line numbers beside the raw editors (static/lines.js, C126): a gutter laid over the textarea's left margin that
+   follows its scrolling, the cursor's line marked, and a status line under the editor. The gutter is out of the
+   layout (absolute), so its many numbers never size the textarea; the script sets the textarea's left margin to the
+   gutter's width. Without the script the editor is the plain textarea. */
+.ln-wrap { display:block; position:relative; width:100%; }
+.ln-gutter { position:absolute; top:0; bottom:0; left:0; box-sizing:border-box; overflow:hidden; text-align:right; user-select:none; pointer-events:none; font-family:var(--font-mono); font-variant-ligatures:none; font-variant-numeric:tabular-nums; color:var(--c-text3); background:var(--c-sunken); border:var(--line) solid var(--c-control); border-right:0; border-radius:var(--radius) 0 0 var(--radius); padding-inline:var(--space-2); }
+.ln-gutter > span { display:block; }
+.ln-gutter > .ln-cur { color:var(--c-text); font-weight:var(--weight-semibold); }
+.ln-wrap > textarea { display:block; box-sizing:border-box; border-radius:0 var(--radius) var(--radius) 0; }
+.ln-wrap.ln-off > .ln-gutter { display:none; }
+.ln-wrap.ln-off > textarea { border-radius:var(--radius); margin-left:0 !important; width:100% !important; }
+.ln-status { display:block; margin-top:var(--space-1); font-size:var(--text-xs); font-variant-numeric:tabular-nums; }
+/* A phone shows the status line and no gutter: the narrow editor keeps its width for the text. */
+@media(max-width:600px) { .ln-gutter { display:none; } .ln-wrap > textarea { border-radius:var(--radius); margin-left:0 !important; width:100% !important; } }

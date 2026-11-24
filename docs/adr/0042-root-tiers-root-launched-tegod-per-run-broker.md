@@ -62,7 +62,7 @@ tier `landlock` (O6).
    Any member can rewrite or lock these without a capability. Worse, `OpenFile` (`hoststate.go:142`) accepts any
    regular file of the name, whoever owns it, so a member can create `slots-<hash>` or a lock before root does and
    root will use it.
-5. **`sudo tego` runs the whole launcher as root for the whole run.** ADR 0031: "At tier 2 the whole binary still runs
+5. **`sudo "$(command -v tego)"` runs the whole launcher as root for the whole run.** ADR 0031: "At tier 2 the whole binary still runs
    as root." That includes the code that parses agent-controlled bytes:
 
    | Package | Non-test lines |
@@ -91,14 +91,14 @@ tier `landlock` (O6).
 
 **(2) The privileged path for this release is a root launcher.**
 
-It is `sudo tego run` on a host whose sudo users are its administrators, or a root launch that names the agent's
+It is `sudo "$(command -v tego)" run` on a host whose sudo users are its administrators, or a root launch that names the agent's
 account ((b)). Users who are not administrators get tier `landlock`. ARCHITECTURE §16, OPERATIONS and SECURITY.md
 state this.
 - **(a) Granting sudo for tego is granting root**, as membership of the docker group is.
   - The launcher runs as root over inputs the invoker controls: contract and profile files, the per-user layer, and
     the argv of the hidden helpers.
   - A sudoers entry limited to tego is not a boundary Tego supports.
-  - A service account never gets one. An agent that escaped its sandbox to that account would inherit root. The one
+  - A service account never gets one. An agent that escaped its run to that account would inherit root. The one
     stated exception (O5): a runner account that is already root-equivalent, on an
     ephemeral or dedicated runner VM, documented as such.
 - **(b) `tego run --run-as <user|uid>` names the agent's account under a root launcher.**
@@ -116,7 +116,7 @@ state this.
     agent that escaped to the target account in an earlier run therefore cannot feed YAML or paths to the next root
     launch.
   - Ledger handover keeps `internal/ledger/handover.go`'s descriptor-relative, `O_NOFOLLOW` discipline.
-  - It is runtime-launch case 36's fix. `sudo tego run --run-as <dedicated agent account>` is the recommended way
+  - It is runtime-launch case 36's fix. `sudo "$(command -v tego)" run --run-as <dedicated agent account>` is the recommended way
     to use the privileged path (OPERATIONS), better than running the agent as the administrator.
 - **(c) Under sudo without `--run-as`, a contract's `setuid: true` (ADR 0033 (2)) is refused** with exit 125 and
   `[setuid-under-sudo]`, naming `--run-as`. The agent then runs as the administrator on the administrator's terminal
@@ -127,7 +127,7 @@ state this.
 **(3) The file-capability copy is not a delivery in this release (O1, O2), and it fails closed.**
 - **(a) A launcher that gained privilege without being root is refused; incidental capabilities are cleared.** At the
   top of `main`, before the child-stage and helper dispatch, when the real uid is not 0 of the initial user namespace:
-  - **refuse** every command but `version`, with exit 125 and `[privileged-path-unsupported]` naming `sudo tego run`
+  - **refuse** every command but `version`, with exit 125 and `[privileged-path-unsupported]` naming a root launch through the checked running-binary path, or the reason no command can be shown
     and this ADR, when any of these holds:
     - `AT_SECURE` is set (`config.DetectSecureExec`: a file-capability or setuid copy);
     - real and effective uid or gid differ;
@@ -391,11 +391,11 @@ capabilities and setuid, not by inherited ambient capabilities. Refusing on it, 
 non-incidental capability, while clearing an incidental ambient set, stops the copy and keeps a unit with
 `AmbientCapabilities=CAP_NET_BIND_SERVICE` working at tier `landlock`, as it does today.
 
-[documented, ADR 0031; code `cmd/tego/main.go:23-41`, `internal/runtime/reap.go` `ReapMain`] `sudo tego` is root for
+[documented, ADR 0031; code `cmd/tego/main.go:23-41`, `internal/runtime/reap.go` `ReapMain`] `sudo "$(command -v tego)"` is root for
 the whole run, and its hidden helpers trust their argv. A restricted sudoers entry is therefore not a boundary. Docker
 documents the same for its group: "only trusted users should be allowed to control your Docker daemon", and the docker
 group is root-equivalent (docs.docker.com/engine/security, read 2026-10-05). Saying so plainly costs nothing and
-prevents the one dangerous configuration: a service account with `sudo tego`, which an escaped agent would inherit.
+prevents the one dangerous configuration: a service account with `sudo "$(command -v tego)"`, which an escaped agent would inherit.
 `--run-as` gives the safe form of the same deployment, and reading nothing from the target's tree stops the confused
 deputy in which an escaped agent feeds the next root launch.
 
@@ -532,12 +532,12 @@ under plain sudo, and `--run-as` restores it safely.
 ## Consequence
 
 - **Root tiers in this release need an administrator.** Tiers 2 and 3 run on hosts the user administers:
-  `sudo tego run`, and `--run-as` a dedicated agent account once it is built. Everyone else gets tier `landlock`.
+  `sudo "$(command -v tego)" run`, and `--run-as` a dedicated agent account once it is built. Everyone else gets tier `landlock`.
 - **The docs stop advertising a path that does not run** (the file-capability copy), say what sudo is, and say that
   the ledger is tamper-evident against the agent, not against the launching user (GAPS C9), until T3.
 - **Migration** (OPERATIONS): a host that installed `packaging/tmpfiles.d/tego.conf`
   must `chmod 0700 /run/tego && chgrp root /run/tego` and remove the line; a `setcap` copy gets exit 125 naming
-  `sudo tego run`. The refusal of `setuid: true` under sudo and `--run-as` are not in this release.
+  a root launch through the checked running-binary path. The refusal of `setuid: true` under sudo and `--run-as` are not in this release.
 - **Privilege separation is a deferred condition.** A long-running root unit keeps the whole launcher as root for days;
   the external review decides T2 with that in view.
 - **ARCHITECTURE §15.7's one-writer-per-host design is withdrawn.** ADRs 0004 and 0026 stand.
@@ -616,6 +616,6 @@ Tests: `TestIdentityUIDMap`, `TestReadUserNamespace`, `TestInitNSRootIsEffective
 `TestUnshareRootIsNotRoot`, `TestRootLauncherRefusesGroupHostState`, `TestFileCapabilityCopyIsRefused`,
 `TestAmbientIncidentalCapabilityRunsLandlock` (`internal/runtime`).
 
-*Amended 2026-11-11 (wording):* in Decision (2)(a), "an agent that escaped its sandbox" means an agent that escaped
+*Amended 2026-11-11 (wording):* Decision (2)(a) describes an agent that escaped
 its run, the processes Tego holds to the contract. Tego does not hide the machine (README, Known limits). The
 decision is unchanged.

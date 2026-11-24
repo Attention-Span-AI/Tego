@@ -57,6 +57,7 @@ class TighteningComparisonTests(unittest.TestCase):
         package = self.root / "pkg/policy/execmatch"
         package.mkdir(parents=True)
         index = "package execmatch\nfunc (ix *Index) Decide(f *Facts) Result {\nif ix.Empty() || !ix.Guarded(f) { return Result{} }; return Result{}\n}\n// firstMatch\n"
+        index += "func NewIndex(rows *Rows, patterns []*Pattern, opts IndexOptions) *Index { return nil }\n"
         if existing_decide:
             index += "func (ix *Index) decide(f *Facts) Result { return Result{} }\n"
         current = {"index.go": index, "current.go": "package execmatch\n", "rows/current.go": "package rows\n"}
@@ -70,8 +71,14 @@ class TighteningComparisonTests(unittest.TestCase):
         (package / "rows/coreutils_test.go").write_text('{"argv0 lt-rm", execmatch.ViaMulticall}\n')
         (package / "tightening_test.go").write_text("if (full.Outcome == execmatch.OutcomeRefused || !full.Final) {}\n")
         for name in ("normalize.go", "loader.go", "interpret.go", "multicall.go", "pattern.go", "match.go", "autocorrect.go"):
-            (package / name).write_text("package execmatch\n")
-            baseline[f"pkg/policy/execmatch/{name}"] = b"package execmatch\n"
+            value = "package execmatch\n"
+            if name == "autocorrect.go":
+                value += "func NewCandidates(names, common []string) *Candidates { return nil }\n"
+            (package / name).write_text(value)
+            baseline[f"pkg/policy/execmatch/{name}"] = value.encode()
+        row_source = "package rows\nfunc Builtin() *execmatch.Rows { return builtin() }\n"
+        (package / "rows/rows.go").write_text(row_source)
+        baseline["pkg/policy/execmatch/rows/rows.go"] = row_source.encode()
         def git_output(command, **_):
             if command[1] == "ls-tree":
                 self.assertIn("selected-baseline", command)
@@ -95,7 +102,8 @@ class TighteningComparisonTests(unittest.TestCase):
         self.assertEqual(replacements[str(package / "rows/current.go")], "")
         for name, expected in baseline.items():
             if not name.endswith("index.go"):
-                self.assertEqual(Path(replacements[str(self.root / name)]).read_bytes(), expected)
+                self.assertEqual(Path(replacements[str(self.root / name)]).read_text(),
+                                 checker.observe_raw_inputs(Path(name), expected.decode()))
         self.assertEqual(replacements[str(package / "tightening_observer.go")], str(package / "testdata/tightening/observer.go.txt"))
 
     def test_overlay_preserves_existing_unguarded_observer_seam(self):
@@ -106,6 +114,49 @@ class TighteningComparisonTests(unittest.TestCase):
         value = Path(replacements[str(package / "index.go")]).read_text()
         self.assertEqual(value.count("func (ix *Index) decide("), 1)
         self.assertEqual(value.count("func (ix *Index) decideObserved("), 1)
+        self.assertIn("func tighteningNewIndex(", value)
+        self.assertNotIn("func NewIndex(", value)
+
+    def test_raw_input_seams_require_exact_constructor_and_builtin_declarations(self):
+        candidates = Path("pkg/policy/execmatch/autocorrect.go")
+        builtin = Path("pkg/policy/execmatch/rows/rows.go")
+        self.assertIn("func tighteningNewCandidates(", checker.observe_raw_inputs(
+            candidates, "func NewCandidates(names, common []string) *Candidates {}"))
+        self.assertIn("execmatch.TighteningBuiltinRows(builtin())", checker.observe_raw_inputs(
+            builtin, "func Builtin() *execmatch.Rows { return builtin() }"))
+        for name in (candidates, builtin):
+            with self.subTest(name=name), self.assertRaisesRegex(RuntimeError, "seam needs review"):
+                checker.observe_raw_inputs(name, "changed declaration")
+
+    def test_old_overlay_hides_only_new_unit_files_not_shared_corpora(self):
+        package, baseline, git_output = self.fixture_sources(existing_decide=True)
+        existing = package / "existing_test.go"
+        existing.write_text("package execmatch_test\n// existing baseline test\n")
+        baseline["pkg/policy/execmatch/existing_test.go"] = existing.read_bytes()
+        current_only = ("parserbounds_test.go", "pattern_separator_test.go",
+                        "terminator_test.go", "rows/parserbounds_test.go")
+        shared = ("round2_corpus_test.go", "tightening_test.go")
+        for name in current_only:
+            (package / name).write_text("package execmatch_test\n// needs a new API\n")
+        (package / shared[0]).write_text("package execmatch_test\nfunc TestRound2ComparisonCorpus(t *testing.T) {}\n")
+        before = {name: (package / name).read_bytes() for name in shared}
+        with mock.patch.object(checker, "ROOT", self.root), mock.patch.object(checker, "PACKAGE", package), \
+                mock.patch.object(checker, "BASE", "selected-baseline"), \
+                mock.patch.object(checker.subprocess, "check_output", side_effect=git_output):
+            old = json.loads(checker.overlay("old", self.root / "old").read_text())["Replace"]
+            new = json.loads(checker.overlay("new", self.root / "new").read_text())["Replace"]
+        for name in current_only:
+            self.assertEqual(old.get(str(package / name)), "", name)
+            self.assertNotIn(str(package / name), new, name)
+        self.assertNotIn(str(existing), old)
+        self.assertNotIn(str(package / shared[0]), old)
+        self.assertNotEqual(old.get(str(package / shared[1])), "")
+        for name, value in before.items():
+            self.assertEqual((package / name).read_bytes(), value)
+        old_tightening = Path(old[str(package / shared[1])]).read_text()
+        self.assertEqual(old_tightening, before[shared[1]].decode().replace(
+            'if (full.Outcome == execmatch.OutcomeRefused || !full.Final)',
+            'if false && (full.Outcome == execmatch.OutcomeRefused || !full.Final)'))
 
     def test_fixture_provenance_expectation_follows_selected_baseline(self):
         for expected in ("ViaArgv0", "ViaMulticall"):
@@ -178,6 +229,38 @@ class TighteningComparisonTests(unittest.TestCase):
     def test_cli_accepts_base_argument(self):
         result = subprocess.run(["python3", str(SCRIPT), "--help"], capture_output=True, text=True, check=True)
         self.assertIn("--base", result.stdout)
+
+    def test_bounded_legs_keep_the_same_exact_corpus_selector(self):
+        package = self.root / "package"
+        package.mkdir()
+        selector = "^Test(Round2ComparisonCorpus|TighteningOnly)$"
+        commands = []
+
+        def overlay(side, destination):
+            destination.mkdir()
+            return destination / "overlay.json"
+
+        def run(command, **kwargs):
+            commands.append(command)
+            return types.SimpleNamespace(returncode=0)
+
+        with mock.patch.dict(os.environ, {"TMPDIR": str(self.root)}), \
+                mock.patch.object(checker, "PACKAGE", package), \
+                mock.patch.object(checker, "BASE", "selected-baseline"), \
+                mock.patch.object(checker, "check_baseline_sources"), \
+                mock.patch.object(checker, "overlay", side_effect=overlay), \
+                mock.patch.object(checker.subprocess, "check_output", return_value=b"selected-baseline\n"), \
+                mock.patch.object(checker.subprocess, "run", side_effect=run), \
+                mock.patch.object(checker, "compact_index", side_effect=RuntimeError("Go legs complete")), \
+                mock.patch("sys.argv", ["checker", "--go", "go-wrapper", "--out", str(self.root / "comparison"), "--run", selector]):
+            with self.assertRaisesRegex(RuntimeError, "Go legs complete"):
+                checker.main()
+        self.assertEqual(len(commands), 2)
+        for command in commands:
+            self.assertEqual(command[command.index("-run") + 1], selector)
+            skipped = command[command.index("-skip") + 1]
+            for name in ("TestRound2ComparisonCorpus", "TestTighteningOnly"):
+                self.assertIsNone(checker.re.search(skipped, name))
 
     def test_go_legs_receive_private_state_paths(self):
         package = self.root / "package"

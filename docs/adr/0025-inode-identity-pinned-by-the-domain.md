@@ -231,3 +231,13 @@ interfaces to evaluate, **not evaluated for this release**, are `FAN_REPORT_FID`
 `FAN_REPORT_MNT`, `name_to_handle_at(2)`, `open_by_handle_at(2)`, and `statx(2)` mount ids (`STATX_MNT_ID`). Their
 availability, portability and sufficiency are not established here. Refusing listener-decided aliases at startup is
 a fail-closed release limit, not an implementation of that later design.
+
+## Note 2026-11-21: live-block rows are pinned by the launcher, not the domain
+
+The rows of a live path, read or write block (ADR 0124, amendment 2026-11-21) are the stated exception to domain
+pinning: a block lands while the run runs, and a Landlock domain cannot grow, so no rule of the run's domain can hold the
+blocked object. The launcher holds an `O_PATH` descriptor of every keyed object for as long as its row exists, and deletes
+the row before it closes the descriptor. A launcher that dies leaves the rows pinned by nothing until the reaper's
+`cgroup.kill` ends the run (`internal/runtime/reap.go`): a row met at an address another inode now has refuses
+(identity-mismatch, (4)), and the blocked object read back in at a new address is not met. Contract rows keep the
+domain's pin.

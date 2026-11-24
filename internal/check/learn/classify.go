@@ -55,8 +55,8 @@ func dangerous(sock string) string {
 	return ""
 }
 
-// Where ADR 0113's built-in refusals refuse every pathname connect of an enforcing run, by their default places for
-// any user (pkg/spec/agent compile_builtin.go's IPCDirs and TegoDirs, kept in step by hand as dangerous is).
+// Suspicious pathname shapes overlap built-in refusals, but a recording does not
+// carry the runtime roots, home or environment-derived entries needed to prove membership.
 var (
 	// muxDirRE is a terminal multiplexer's or editor server's per-user directory: tmux's tmux-<uid> (in /tmp or in
 	// $TMUX_TMPDIR, so anywhere), screen's S-<user> and ~/.screen, Emacs's /tmp/emacs<uid> and Neovim's /tmp/nvim.<user>.
@@ -65,22 +65,21 @@ var (
 	tegoDirRE = regexp.MustCompile(`(^|/)\.tego(/|$)`)
 )
 
-// builtinRefused is why the pathname socket sock is never proposed because a built-in refusal refuses every connect to
-// it in an enforcing run, or "". Compile refuses a net.allow entry there as a contradiction (ADR 0113, agent's
-// builtinRefusedAllows), so a proposal that listed one would not run. A socket under the runtime directory is left out
-// even when this run made it: the run's own runtime directory is a new one each run, and outside it a run cannot make
-// one there at all. Tego's own state directories (Options.StateDirs) hold its ledger's ask and operator sockets.
+// builtinRefused withholds suspicious paths conservatively. It must not reconstruct
+// the enforcing machine's built-ins from the reader's current environment.
+const builtinSocketUncertain = "it may be refused by a built-in rule on the machine where the agent runs; the recording lacks the runtime, home and environment context to tell. Check there with: tego rules check <agent.yaml> (shows that contract's built-in refusals)"
+
 func (l *Learner) builtinRefused(sock string) string {
 	p := path.Clean(sock)
 	switch {
 	case !path.IsAbs(p):
 		return ""
 	case runtimeDirRE.MatchString(p):
-		return "a socket under the user's runtime directory, which builtin.host_ipc refuses in every enforcing run, whether or not the run made it (ADR 0113): the session's own services live there"
+		return "a socket under a runtime-like directory; " + builtinSocketUncertain
 	case muxDirRE.MatchString(p):
-		return "a terminal multiplexer's or editor server's socket, which builtin.host_ipc refuses in every enforcing run (ADR 0113): it types into terminals outside the run"
+		return "a possible terminal multiplexer or editor server socket; " + builtinSocketUncertain
 	case tegoDirRE.MatchString(p) || l.stateConflict(p) != "":
-		return "a socket in tego's own state, which builtin.tego_surface refuses in every enforcing run (ADR 0113)"
+		return "a socket under a state-like path; " + builtinSocketUncertain
 	}
 	return ""
 }

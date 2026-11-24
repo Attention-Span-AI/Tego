@@ -67,7 +67,16 @@ type HeldReads struct {
 	// Empty while the built-in list is off.
 	Names  []NameDenyRule
 	Exempt []NameExemptRule
+	// Aliases are the other names the mount table gives the name rules' scope roots (each Patterns entry's literal base
+	// and each Names scope), each paired with the name it shows (ADR 0011, amended 2026-11-19, round 5): the floor asks
+	// a held read under an alias as the name it shows too, so a file a name rule covers that is made during the run is
+	// refused under every name the table gives it. Empty with a disabled mount probe.
+	Aliases []NameAlias `json:",omitempty"`
 }
+
+// NameAlias is one other name of a name rule's scope root (HeldReads.Aliases): Alias, a directory the mount table shows
+// on the same filesystem instance, shows Original, a directory at or beneath the root.
+type NameAlias struct{ Alias, Original string }
 
 // NestedRead is one deny_read target inside a write entry (HeldReads.Nested).
 type NestedRead struct {
@@ -80,6 +89,8 @@ type NestedRead struct {
 	BuiltIn bool
 	// Pos is where the target was declared; zero for a built-in one.
 	Pos Pos
+	// AliasOf is the target's own path when this is another name the mount table gives it (FSRule.AliasOf).
+	AliasOf string `json:",omitempty"`
 }
 
 // ReadsHeldAt reports whether a run of the table at tier holds its read opens (ADR 0069 D1): fs.reads: held at every
@@ -176,7 +187,7 @@ func (k *compiler) heldReads() {
 			continue
 		}
 		h.Nested = append(h.Nested, NestedRead{Rule: r.RuleName(), Path: r.Path, Resolved: r.Resolved, Write: w.declared,
-			WriteResolved: w.resolved, BuiltIn: r.BuiltIn, Pos: r.Pos})
+			WriteResolved: w.resolved, BuiltIn: r.BuiltIn, Pos: r.Pos, AliasOf: r.AliasOf})
 	}
 	builtIn := k.c.FS == nil || k.c.FS.DenyRead == nil || len(k.c.FS.DenyRead) > 0
 	h.Patterns = k.heldPatterns(builtIn)
@@ -187,8 +198,57 @@ func (k *compiler) heldReads() {
 			h.Exempt = b.nameExempts(h.Names)
 		}
 	}
+	h.Aliases = k.nameAliases(h)
 	k.heldReadsDiagnostics()
 	k.heldGlobNotes()
+}
+
+// nameAliases is HeldReads.Aliases: every other name of each name rule's scope root, by mountAliases' computation
+// (compiler.otherNamesOf, confirmed by device and inode). A root whose other names the table cannot all list refuses
+// the contract, as a deny entry's does (fail closed).
+func (k *compiler) nameAliases(h *HeldReads) []NameAlias {
+	mt, err := k.mountTable()
+	if mt == nil || !mt.probed || err != nil {
+		return nil // a disabled probe adds nothing; an unreadable table refused the contract already (mountAliases)
+	}
+	var roots []string
+	add := func(r string) {
+		if r = filepath.Clean(r); filepath.IsAbs(r) && !slices.Contains(roots, r) {
+			roots = append(roots, r)
+		}
+	}
+	for _, p := range h.Patterns {
+		add(globBase(p.Pattern))
+	}
+	for _, e := range h.Names {
+		for _, s := range e.Scopes {
+			add(s.Canonical)
+		}
+	}
+	slices.Sort(roots)
+	var out []NameAlias
+	doubt, unsure := "", 0
+	for _, r := range roots {
+		ns, why := k.otherNamesOf(mt, r, true)
+		if why != "" {
+			if doubt == "" {
+				doubt = why + " (for " + r + ")"
+			}
+			unsure++
+		}
+		for _, a := range ns {
+			if na := (NameAlias{Alias: a.alias, Original: a.original}); !slices.Contains(out, na) {
+				out = append(out, na)
+			}
+		}
+	}
+	if unsure > 0 {
+		k.ds.errorf(k.cpos, CodeMountWarning, "the mount table cannot list every other name of %d folder%s the deny_read "+
+			"name rules cover: %s; a matching file made during the run could be read under a name no rule covers, so tego "+
+			"refuses to compile them", unsure, plural(unsure, "", "s"), doubt).
+			fix("unmount the mount this message names (its root was deleted or cannot be read, so the files under it show under names the mount table does not list), or run where it is not mounted, then run again")
+	}
+	return out
 }
 
 // heldPatterns is HeldReads.Patterns: RuleTable.DenyReadPatterns, less the built-in home paths' while the built-in
@@ -226,6 +286,9 @@ func (k *compiler) heldReadsDiagnostics() {
 			return
 		}
 		for _, n := range h.Nested {
+			if n.AliasOf != "" {
+				continue // another name nothing refuses is an error (otherNamesEnforced), not a warning
+			}
 			k.ds.warnf(n.Pos, CodeUnenforced, "deny_read %s%s is unenforced in the landlock tier: parent %s%s is writable",
 				n.Path, resolvedNote(n.Path, n.Resolved), n.Write, resolvedNote(n.Write, n.WriteResolved)).
 				fix("pin a root tier, move the secret outside the write entry, or remove fs.reads: direct").only(backend.TierLandlock)
@@ -233,6 +296,9 @@ func (k *compiler) heldReadsDiagnostics() {
 		return
 	}
 	for _, n := range h.Nested {
+		if n.AliasOf != "" {
+			continue // held with the name the contract gave it, which the warning names
+		}
 		k.ds.warnf(n.Pos, CodeHeldReads, "deny_read %s%s lies inside write entry %s%s: at tier landlock the run's reads are held (fs.reads: %s), "+
 			"so the open deputy completes every read open, %s; launch-pinned targets stay refused after rename or hard link; "+
 			"a file put at a protected name later is pinned in turn; a change that cannot be followed refuses held reads until restart",
@@ -307,11 +373,18 @@ func tierPhrase(ts []string) string {
 // they are direct.
 func heldReadsLine(rt *RuleTable) string {
 	h := &rt.Reads
+	// Another name of a target is held with the target, under its rule: the line names each target once.
+	own := make([]NestedRead, 0, len(h.Nested))
+	for _, n := range h.Nested {
+		if n.AliasOf == "" {
+			own = append(own, n)
+		}
+	}
 	targets := func() string {
-		names := make([]string, 0, len(h.Nested))
-		for i, n := range h.Nested {
+		names := make([]string, 0, len(own))
+		for i, n := range own {
 			if i == 3 {
-				names = append(names, "and "+strconv.Itoa(len(h.Nested)-3)+" more")
+				names = append(names, "and "+strconv.Itoa(len(own)-3)+" more")
 				break
 			}
 			names = append(names, n.Path+" in "+n.Write)
@@ -331,7 +404,7 @@ func heldReadsLine(rt *RuleTable) string {
 		return "held at every tier (fs.reads: held); " + HeldReadCost + held +
 			"; launch-pinned targets moved or hard-linked to another name stay refused; a file put at a protected name later is pinned in turn; a change that cannot be followed refuses held reads until restart"
 	case h.Mode == ReadsDirect && len(h.Nested) > 0:
-		return "direct (fs.reads: direct): " + strconv.Itoa(len(h.Nested)) + " deny_read target(s) inside write entries unenforced at tier landlock: " + targets()
+		return "direct (fs.reads: direct): " + strconv.Itoa(len(own)) + " deny_read target(s) inside write entries unenforced at tier landlock: " + targets()
 	case h.Mode == ReadsDirect:
 		return "direct (fs.reads: direct)"
 	case len(h.Nested) > 0 && rt.mayLandAt(backend.TierLandlock):

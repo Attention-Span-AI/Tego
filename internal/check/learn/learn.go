@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/attention-span-ai/tego/internal/check/internal/mirror"
+	"github.com/attention-span-ai/tego/internal/check/mirror"
 	"github.com/attention-span-ai/tego/internal/check/syslookup"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
@@ -179,6 +179,8 @@ type Proposal struct {
 	// the run's resolver itself, and an address kept would admit whatever answers there once the contract is used on
 	// another network. The net section names them in a comment.
 	resolvers []string
+	// withheld is protocol://address:port history, independent of the entries proposed by name.
+	withheld []string
 	// resolversKept are the machine's resolver entries kept in net.allow because no other TCP or UDP entry is left
 	// (keepResolvers). AddressEntries leaves them out: no host name stands for them.
 	resolversKept map[string]bool
@@ -881,7 +883,7 @@ func (l *Learner) proposeExecs(p *Proposal, first string) {
 		case own[e]:
 		case topologyTools[path.Base(e)]:
 			p.Left = append(p.Left, Excluded{Section: "exec", What: record.Printable(e), Count: l.execs[e].n,
-				Why: "it sets up a mount namespace, which a Landlock domain refuses, so it would fail inside the run: an agent's own sandbox (bubblewrap) probes it at start-up, and is better turned off in the agent when tego is the cage"})
+				Why: "it sets up a mount namespace, which a Landlock domain refuses, so it would fail inside the run: an agent's own sandbox (bubblewrap) probes it at start-up, and is better turned off in the agent when tego enforces the contract"})
 		case !path.IsAbs(e) || !plain(e):
 			p.Left = append(p.Left, Excluded{Section: "exec", What: record.Printable(e),
 				Why: "not an absolute plain path (a relative name, or a control or pattern character in it)", Count: l.execs[e].n})

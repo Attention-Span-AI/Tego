@@ -22,12 +22,12 @@ func TestFeed(t *testing.T) {
 		t.Fatalf("no journal: %+v %v", fe, err)
 	}
 	c := f.ref(t, f.contract)
-	a, err := f.s.ApplyChange(ctx, ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"remove", "exec.allow", "cat"}}, AlsoNow: []string{runA2}})
+	a, err := f.applyReviewed(t, ctx, ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"remove", "exec.allow", "cat"}}, AlsoNow: []string{runA2}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	o := f.ref(t, f.other)
-	b, err := f.s.ApplyChange(ctx, ChangeReq{Ref: o.Ref, Base: o.Base, Edits: []Edit{{"add", "fs.deny_read", "./secrets/"}}})
+	b, err := f.applyReviewed(t, ctx, ChangeReq{Ref: o.Ref, Base: o.Base, Edits: []Edit{{"add", "fs.deny_read", "./secrets/"}}})
 	if err != nil {
 		t.Fatal(err)
 	}

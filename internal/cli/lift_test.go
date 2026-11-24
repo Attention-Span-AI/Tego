@@ -13,6 +13,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/liveblock"
+	"github.com/attention-span-ai/tego/internal/testutil"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
@@ -53,8 +54,14 @@ func noTerminal(t *testing.T, term bool, typed string) {
 // live-rule-restored or live-lift-refused (with refused).
 func appendFenceLine(t *testing.T, dir, run string, seq int, why, op, kind, value string, serial uint64, refused string) {
 	t.Helper()
+	appendFenceLineNote(t, dir, run, seq, why, op, kind, value, serial, refused, "")
+}
+
+// appendFenceLineNote is appendFenceLine with the note the launcher's live-rule-lifted line carries.
+func appendFenceLineNote(t *testing.T, dir, run string, seq int, why, op, kind, value string, serial uint64, refused, note string) {
+	t.Helper()
 	c := record.LiveBlockChange{Op: op, Kind: kind, Value: value, Rule: liveblock.FenceRule(liveblock.Kind(kind), value),
-		By: "uid:1000 pid:9 cli", Serial: serial, At: time.Now().UTC(), Refused: refused}
+		By: "uid:1000 pid:9 cli", Serial: serial, At: time.Now().UTC(), Refused: refused, Note: note}
 	cb, err := json.Marshal(c)
 	if err != nil {
 		t.Fatal(err)
@@ -145,18 +152,18 @@ func TestLiftLimitAfterConfirm(t *testing.T) {
 func TestFenceLineReadsOnFromTheChange(t *testing.T) {
 	dir, id := adjustableRun(t)
 	appendFenceLine(t, dir, id, 1, record.GapLiveRuleLifted, record.LiveOpLift, "net", "api.stripe.com:443", 7, "")
-	if _, _, ok := findFenceLine(dir, 7, 0); !ok {
+	if _, _, ok, err := findFenceLine(dir, 7, 0); err != nil || !ok {
 		t.Fatal("from byte 0, the answer is found")
 	}
 	off := ledgerEnd(dir)
 	if off == 0 {
 		t.Fatal("ledgerEnd = 0")
 	}
-	if _, _, ok := findFenceLine(dir, 7, off); ok {
+	if _, _, ok, err := findFenceLine(dir, 7, off); err != nil || ok {
 		t.Error("a line before the offset was taken for the answer")
 	}
 	appendFenceLine(t, dir, id, 2, record.GapLiveRuleRestored, record.LiveOpRestore, "net", "api.stripe.com:443", 7, "")
-	if why, _, ok := findFenceLine(dir, 7, off); !ok || why != record.GapLiveRuleRestored {
+	if why, _, ok, err := findFenceLine(dir, 7, off); err != nil || !ok || why != record.GapLiveRuleRestored {
 		t.Errorf("the line after the offset: %q %v", why, ok)
 	}
 }
@@ -197,12 +204,77 @@ func TestLiftRefusals(t *testing.T) {
 			t.Errorf("an overlay was written: %v", err)
 		}
 	}
-	oldIn := selfInRun
-	selfInRun = func() (bool, error) { return true, nil }
-	t.Cleanup(func() { selfInRun = oldIn })
+	oldIn := selfAnswer
+	selfAnswer = answerGoverned
+	t.Cleanup(func() { selfAnswer = oldIn })
 	code, _, errs = run(t, "lift", id, "read", "/srv/billing", "--yes")
 	if code != identity.ExitFinding || !strings.Contains(errs, "[governed]") {
 		t.Errorf("from inside a run: exit %d stderr %q", code, errs)
+	}
+}
+
+// TestAUserLiftingARootRunIsToldToUseRoot: a run launched with sudo keeps its folder root's until it ends (ADR 0042),
+// so the person's own lift, grant or restore cannot open its lock. It used to say "runtime: open lock file ...:
+// permission denied [io]" and exit 125; it now says the run was launched as root and what to do, exits 1 with
+// [root-run], and loosens nothing. A folder that is the person's own, or a failure that is not a permission refusal,
+// keeps its words and exit 125; and root itself is never told to use root.
+func TestAUserLiftingARootRunIsToldToUseRoot(t *testing.T) {
+	// A root caller is never refused its own run's lock, so as root this runs again as an ordinary uid, which is the
+	// person this test is about (testutil.RerunAsOrdinaryUser).
+	if testutil.RerunAsOrdinaryUser(t) {
+		return
+	}
+	noTerminal(t, false, "")
+	dir, id := adjustableRun(t)
+	// What the person sees of a root-owned 0700 folder: every open inside it is refused, the contract before the lock.
+	if err := os.Chmod(dir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	owner, root := runDirOwner, callerIsRoot
+	t.Cleanup(func() { runDirOwner, callerIsRoot = owner, root })
+
+	runDirOwner = func(string) (int, bool) { return 0, true } // the folder is root's
+	for _, args := range [][]string{
+		{"lift", id, "read", "/srv/billing", "--yes"},
+		{"grant", id, "exec", "/usr/bin/psql", "--yes"},
+		{"restore", id, "read", "/srv/billing"},
+		{"block", id, "net", "example.invalid:443"},
+		{"block", "--list", id},
+		{"mcp", "allow", id, "srv", "tool", "--yes"},
+		{"route", "set", id, "ep", "r1", "--yes"},
+	} {
+		code, out, errs := run(t, args...)
+		if code != identity.ExitFinding || !strings.Contains(errs, "["+codeRootRun+"]") || !strings.Contains(errs, "launched as root") ||
+			!strings.Contains(errs, "with sudo") || strings.Contains(errs, "permission denied") || out != "" {
+			t.Errorf("%s on a root-launched run: exit %d stdout %q stderr %q", args[0], code, out, errs)
+		}
+	}
+	if err := os.Chmod(dir, 0o700); err != nil { // the checks below read the folder as the test, and the person's own case reads it too
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, liveblock.FileName)); !os.IsNotExist(err) {
+		t.Errorf("an overlay was written: %v", err)
+	}
+	if err := os.Chmod(dir, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	runDirOwner = func(string) (int, bool) { return os.Getuid(), true } // the person's own folder: not a root run
+	code, _, errs := run(t, "lift", id, "read", "/srv/billing", "--yes")
+	if code != identity.ExitError || !strings.Contains(errs, "[io]") || !strings.Contains(errs, "permission denied") || strings.Contains(errs, codeRootRun) {
+		t.Errorf("the person's own folder: exit %d stderr %q, want the plain I/O failure, exit 125", code, errs)
+	}
+	runDirOwner = func(string) (int, bool) { return 0, false } // an owner that cannot be told is not claimed
+	code, _, errs = run(t, "lift", id, "read", "/srv/billing", "--yes")
+	if code != identity.ExitError || strings.Contains(errs, codeRootRun) {
+		t.Errorf("an unknown owner: exit %d stderr %q", code, errs)
+	}
+	runDirOwner = func(string) (int, bool) { return 0, true }
+	callerIsRoot = func() bool { return true }
+	code, _, errs = run(t, "lift", id, "read", "/srv/billing", "--yes")
+	if code != identity.ExitError || strings.Contains(errs, codeRootRun) {
+		t.Errorf("root itself: exit %d stderr %q", code, errs)
 	}
 }
 

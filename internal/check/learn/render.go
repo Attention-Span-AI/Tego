@@ -142,6 +142,16 @@ func (p *Proposal) Contract() string {
 		b.WriteString(resolverLeftOut + r + resolverLeftOutWhy + "\n")
 	}
 
+	if len(p.withheld) > 0 {
+		withheld := slices.Clone(p.withheld)
+		slices.Sort(withheld)
+		withheld = slices.Compact(withheld)
+		b.WriteString("\n# History only; this grants no permission and can survive later edits.\nlearn:\n")
+		fmt.Fprintf(&b, "  run: %s\n  withheld:\n", quote(p.Run))
+		for _, endpoint := range withheld {
+			fmt.Fprintf(&b, "    - %s\n", quote(endpoint))
+		}
+	}
 	p.limits(&b)
 	return b.String()
 }
@@ -345,7 +355,7 @@ func (p *Proposal) leftOut() []string {
 		out = append(out, fmt.Sprintf("writes in or around tego's own state directories: %d, never proposed (tego refuses a contract that lets the agent write them).", n))
 	}
 	if n := p.leftCount("exec", ""); n > 0 {
-		out = append(out, fmt.Sprintf("programs started %d times that tego could not run in its cage, that are not programs on this machine now, that are /proc paths, or whose name is not a plain absolute path: listed under exec.allow as observed, not allowed.", n))
+		out = append(out, fmt.Sprintf("programs started %d times that tego could not start under the contract, that are not programs on this machine now, that are /proc paths, or whose name is not a plain absolute path: listed under exec.allow as observed, not allowed.", n))
 	}
 	if n := p.leftCount("net", ""); n > 0 {
 		out = append(out, fmt.Sprintf("connections not proposed: %d, listed under net.allow as observed, not allowed (a dangerous socket, a raw socket, a route probe, a send next to a secret read, or an unrecognised destination).", n))

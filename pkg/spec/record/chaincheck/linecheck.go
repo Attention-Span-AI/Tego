@@ -29,6 +29,9 @@ type LineCheck struct {
 	// minor is the run's revision, its run_start's record_minor, read when Validate is set: a field malformed or
 	// below its revision is refused on any line.
 	minor int
+	// floor is whether that run_start carries the root-only approval floor: with Validate set, an answer must then say
+	// who decided it, and in a run without the floor no answer may claim an actor or a system cause.
+	floor bool
 }
 
 // Add checks data as the run's next line and returns its decoded event, or, for a line of a newer record version,
@@ -85,8 +88,12 @@ func (c *LineCheck) validateAt(e *record.Event) error {
 			return err
 		}
 		c.minor = m
+		c.floor = e.RunStartFloor()
 	}
-	return e.ValidateAt(c.minor)
+	if err := e.ValidateAt(c.minor); err != nil {
+		return err
+	}
+	return e.ValidateFloor(c.floor)
 }
 
 // AfterRunEnd is the finding for a line that follows run_end: line is its number, offset where it starts.

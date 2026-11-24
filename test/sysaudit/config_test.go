@@ -27,7 +27,8 @@ const (
 	envUID  = "TEGO_AUDIT_UID"
 )
 
-// layerFixture writes the three file layers, each in its own 0700 directory, and returns their paths.
+// layerFixture writes user and explicit layers in 0700 directories. The system layer stays at its
+// production path: a user-owned fixture cannot represent root authority over the system hierarchy.
 func layerFixture(t *testing.T) (etc, user, envf, home string) {
 	t.Helper()
 	root := t.TempDir()
@@ -43,10 +44,10 @@ func layerFixture(t *testing.T) (etc, user, envf, home string) {
 		return p
 	}
 	home = filepath.Join(root, "home")
-	return mk("etc", "stop_grace: 9s\n"), mk("home/.tego", ""), mk("envconfig", ""), home
+	return config.EtcPath, mk("home/.tego", ""), mk("envconfig", "stop_grace: 9s\n"), home
 }
 
-// walkLook reports whether c is R14's procfs walk (config.ThroughProc) looking at p, a strict ancestor of one of the
+// walkLook reports whether c is a layer placement or procfs walk looking at p, a strict ancestor of one of the
 // layer paths, by Lstat or Readlink: the walk resolves a layer path a component at a time, as the kernel's open of
 // that layer does, so it looks at no directory the open does not pass through anyway. An open, a stat that follows
 // links, a read or a write of an ancestor is not such a look and stays outside the layers (I10).
@@ -70,7 +71,7 @@ func walkLook(c testutil.Syscall, p string, layers ...string) bool {
 
 // TestConfigLoadSourcesOpensOnlyItsLayers, syscall-audited: loading the three file
 // layers opens, stats and reads each layer file and its directory and no other path: no $HOME, nothing
-// outside the layer paths but the procfs walk's Lstat and Readlink of their ancestors (walkLook), nothing written.
+// outside the layer paths but metadata Lstat and Readlink of their ancestors (walkLook), nothing written.
 func TestConfigLoadSourcesOpensOnlyItsLayers(t *testing.T) {
 	if testutil.InSysTraceChild() {
 		src := config.Sources{Etc: os.Getenv(envEtc), User: os.Getenv(envUser), EnvFile: os.Getenv(envFile)}
@@ -81,7 +82,7 @@ func TestConfigLoadSourcesOpensOnlyItsLayers(t *testing.T) {
 			t.Fatal(err)
 		}
 		if m.StopGrace.Value.String() != "9s" {
-			t.Fatalf("the etc layer was not applied: stop_grace %v", m.StopGrace.Value)
+			t.Fatalf("the explicit layer was not applied: stop_grace %v", m.StopGrace.Value)
 		}
 		return
 	}
@@ -110,7 +111,8 @@ func TestConfigLoadSourcesOpensOnlyItsLayers(t *testing.T) {
 			seen[p] = true
 		}
 	}
-	for _, p := range []string{etc, user, envf} {
+	// The production system layer is optional and may be absent. Both fixture layers must be read.
+	for _, p := range []string{user, envf} {
 		if !seen[p] || !seen[filepath.Dir(p)] {
 			t.Errorf("the audit did not see %s and its directory opened; the trace is not what it audits: %v", p, calls)
 		}
@@ -140,7 +142,7 @@ func throughALink(p string) bool {
 }
 
 // TestConfigLoadReadsNoHome is I10's other half for config.Load itself: for a uid the passwd database does not
-// name, Load looks it up there, finds no per-user layer (E9) and touches nothing under $HOME, and outside the
+// name, no per-user layer is selected (E9), nothing under $HOME is touched, and outside the
 // passwd database opens only the /etc layer and $TEGO_CONFIG with their directories, and looks at their ancestors
 // only by the procfs walk (walkLook: $HOME is one only when the fixture's temporary directory lies under it).
 func TestConfigLoadReadsNoHome(t *testing.T) {
@@ -150,7 +152,7 @@ func TestConfigLoadReadsNoHome(t *testing.T) {
 			t.Fatal(err)
 		}
 		testutil.MarkBegin()
-		_, _, _ = config.Load(uid, false) // the fixture file is not the unknown uid's, so the trust check refuses it
+		_, _, _ = config.LoadMode(uid, false, config.TrustWarn) // the fixture file is not the unknown uid's, so the trust check refuses it
 		testutil.MarkEnd()
 		return
 	}

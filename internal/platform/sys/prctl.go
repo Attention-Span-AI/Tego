@@ -38,6 +38,16 @@ func NoNewPrivs() (bool, error) {
 	return v == 1, nil
 }
 
+// SeccompMode is the calling thread's seccomp mode (prctl PR_GET_SECCOMP): 0 with no filter, 2 with one. A thread
+// in strict mode (1) is killed by the call itself, as by any system call strict mode does not list.
+func SeccompMode() (int, error) {
+	v, err := unix.PrctlRetInt(unix.PR_GET_SECCOMP, 0, 0, 0, 0)
+	if err != nil {
+		return 0, fmt.Errorf("prctl(PR_GET_SECCOMP): %w", err)
+	}
+	return v, nil
+}
+
 // SetDumpable sets the process dumpable flag (prctl PR_SET_DUMPABLE). pidfd_getfd refuses non-dumpable
 // targets without CAP_SYS_PTRACE, and a capability drop resets the flag, so the child stage sets it to 1
 // after dropping capabilities and before publishing its notify fd.
@@ -52,6 +62,33 @@ func Dumpable() (bool, error) {
 		return false, fmt.Errorf("prctl(PR_GET_DUMPABLE): %w", err)
 	}
 	return v == 1, nil
+}
+
+// MakeUndumpable sets the process dumpable flag to 0 and reads it back: the flag a process that holds a secret sets
+// before the secret enters its memory (ADR 0126, "Amendment 2026-11-21: the secret-holding launcher is not
+// dumpable"). While it is 0, /proc/<pid>/{mem,environ,fd,fdinfo,maps,exe,cwd,root,ns/*} refuse every reader that has
+// no CAP_SYS_PTRACE, and so does ptrace, process_vm_readv and pidfd_getfd, whichever Yama's ptrace_scope. An error is
+// a process that could not be made so, or whose flag the read-back still shows set: the caller refuses to go on, since
+// it must not take the secret into a memory another process of the same user can read.
+//
+// The flag is the process's, not the thread's, and is not inherited as 0 by what the process execs: an exec of a
+// readable binary with unchanged credentials sets it to 1 again, so a child of this process is dumpable until it makes
+// itself otherwise. A change of the effective or filesystem ids, or a capability set that is not a subset of the old
+// one, resets it to fs.suid_dumpable (commit_creds), which is 1 on a host that set the sysctl so: a process that
+// changes its credentials after this call, or that must hold the flag whatever it did, calls this again before it takes
+// the next secret.
+func MakeUndumpable() error {
+	if err := SetDumpable(false); err != nil {
+		return err
+	}
+	on, err := Dumpable()
+	if err != nil {
+		return err
+	}
+	if on {
+		return fmt.Errorf("PR_GET_DUMPABLE is still 1 after PR_SET_DUMPABLE 0")
+	}
+	return nil
 }
 
 // ClearAmbientCapabilities empties the calling thread's ambient capability set

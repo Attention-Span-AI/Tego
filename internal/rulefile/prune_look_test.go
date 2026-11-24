@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/platform/sys"
@@ -171,29 +172,35 @@ func TestPruneLooksPastAFileThatDoesNotAnswer(t *testing.T) {
 	}
 }
 
-// TestPrunePrunesInTheBudgetALookLeft: a run start's pass gives the prune what is left of its 2 s, and a file that never
-// answers costs at most half of what is left when the files are looked at: the prune goes on in the other half, and the
-// file that did answer gone has its lines pruned. A wait of lookWait (3 s) spent a run start's budget whole, the prune
-// then stopped at its deadline, and no pass pruned anything while the mount stayed stale.
+// TestPrunePrunesInTheBudgetALookLeft: looks get half the remaining budget, leaving the other half for pruning.
+// The clock advances only while the lookers are blocked, so load cannot spend the pruning half of this test.
 func TestPrunePrunesInTheBudgetALookLeft(t *testing.T) {
 	const budget = 2 * time.Second // a run start's (internal/cli retentionBudget)
-	g, first, second := twoGone(t)
-	staleMount(t, 0, func(name string) bool { return name == first })
-	if lookWait <= budget {
-		t.Fatalf("lookWait is %s: this test needs it longer than its budget", lookWait)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), budget)
-	defer cancel()
-	start := time.Now()
-	p, err := Prune(ctx, g.LedgerRoot, PruneOptions{Before: time.Now().Add(-30 * day)})
-	if !errors.Is(err, ErrNotLooked) || errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("Prune: %v; want ErrNotLooked, the prune done in its budget", err)
-	}
-	if left := contractsLeft(t, g.LedgerRoot); p.Lines != 2 || !slices.Equal(left, []string{first}) {
-		t.Errorf("pruned %+v, lines of %v left; want those of %s pruned in the budget", p, left, second)
-	}
-	if took := time.Since(start); took >= budget {
-		t.Errorf("Prune took %s of a %s budget", took, budget)
+	for _, spent := range []time.Duration{0, budget / 2} {
+		t.Run(spent.String()+" already spent", func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				g, first, second := twoGone(t)
+				staleMount(t, 0, func(name string) bool { return name == first })
+				if lookWait <= budget {
+					t.Fatalf("lookWait is %s: this test needs it longer than its budget", lookWait)
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), budget)
+				defer cancel()
+				time.Sleep(spent) // controlled time: work the caller did before Prune
+				start := time.Now()
+				p, err := Prune(ctx, g.LedgerRoot, PruneOptions{Before: time.Now().Add(-30 * day)})
+				took := time.Since(start) // only Prune, before the journal is read for assertions
+				if want := (budget - spent) / 2; took != want {
+					t.Errorf("Prune used %s of controlled time; want the looks' %s share", took, want)
+				}
+				if !errors.Is(err, ErrNotLooked) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+					t.Errorf("Prune: %v, context: %v; want ErrNotLooked with pruning time left", err, ctx.Err())
+				}
+				if left := contractsLeft(t, g.LedgerRoot); p.Lines != 2 || !slices.Equal(left, []string{first}) {
+					t.Errorf("pruned %+v, lines of %v left; want those of %s pruned in the budget", p, left, second)
+				}
+			})
+		})
 	}
 }
 

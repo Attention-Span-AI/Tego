@@ -3,11 +3,13 @@
 package doctor
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
 	"golang.org/x/sys/unix"
 
+	bpfobj "github.com/attention-span-ai/tego/internal/bpf"
 	"github.com/attention-span-ai/tego/internal/platform/kernelconfig"
 )
 
@@ -262,14 +264,23 @@ func fmodRetAdmittedNow(release string, lsm LSMState) (PlaneEnv, string) {
 	return env, why
 }
 
-// FmodRetRefusedNow is fmodRetAdmittedNow for a caller outside doctor that holds a backend selected in fmod_ret mode
-// (internal/cli's guard, which reuses one prepared backend for many adoptions): "" when this kernel still admits the
-// mode, else why it does not, so the caller selects again.
-func FmodRetRefusedNow() string {
-	var u unix.Utsname
-	if err := unix.Uname(&u); err != nil {
-		return "uname: " + err.Error()
+// planeAdmission captures immutable boot facts, but never the live preemption
+// answer. A prepared handle calls this after waits without rerunning functional
+// probes or changing the selected mode underneath its prepared maps and filter.
+func (r *Report) planeAdmission(mode bpfobj.PlaneMode) func() error {
+	release, lsm := r.Kernel, r.LSM
+	return func() error {
+		env, why := fmodRetAdmittedNow(release, lsm)
+		switch mode {
+		case bpfobj.PlaneFmodRet:
+		case bpfobj.PlaneLSM:
+			why, _ = lsmRecursionRefusal(env)
+		default:
+			return fmt.Errorf("doctor: unknown selected plane mode %q", mode)
+		}
+		if why != "" {
+			return fmt.Errorf("doctor: %s", why)
+		}
+		return nil
 	}
-	_, why := fmodRetAdmittedNow(unix.ByteSliceToString(u.Release[:]), LSMState{Source: LSMSourceNone})
-	return why
 }

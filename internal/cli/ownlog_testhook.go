@@ -28,6 +28,9 @@ func init() {
 		return
 	}
 	ownLogHomeOf = testOwnLogHome(os.Getenv(EnvTestOwnLogHome))
+	// The dashboard's lock (tego-control's dashboardlock_testhook.go) is under the same home, and `tego scan` looks there.
+	testHome := os.Getenv(EnvTestOwnLogHome)
+	dashboardLockHome = func(string) string { return testHome }
 }
 
 // testOwnLogHome is the own-log home resolver of a test build whose EnvTestOwnLogHome holds home: that home, or,

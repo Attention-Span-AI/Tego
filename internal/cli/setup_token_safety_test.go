@@ -20,7 +20,7 @@ func TestLoginCaptureUnlinkedAndCanceled(t *testing.T) {
 	marker := filepath.Join(home, "capture-target")
 	t.Setenv("CAPTURE_TARGET", marker)
 	bin := t.TempDir()
-	script := "#!/bin/sh\nfor last do :; done\nprintf '%s' \"$last\" > \"$CAPTURE_TARGET\"\nprintf '%s\\n' sk-ant-oat01-abcdefghijklmnopqrstuvwxyz > \"$last\"\nexec sleep 120\n"
+	script := "#!/bin/sh\nfor last do :; done\nprintf '%s\\n' \"$last\" > \"$CAPTURE_TARGET\"\nprintf '%s\\n' sk-ant-oat01-abcdefghijklmnopqrstuvwxyz > \"$last\"\nexec sleep 120\n"
 	if err := os.WriteFile(filepath.Join(bin, "script"), []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -30,8 +30,12 @@ func TestLoginCaptureUnlinkedAndCanceled(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { _, err := guideSetupToken(ctx, "claude", home); done <- err }()
 	deadline := time.After(15 * time.Second)
+	var target []byte
 	for {
-		if _, err := os.Stat(marker); err == nil {
+		// The redirection creates the marker before printf fills it. Wait for the
+		// terminating newline so a partial path cannot satisfy the wait.
+		if b, err := os.ReadFile(marker); err == nil && len(b) > 0 && b[len(b)-1] == '\n' {
+			target = b[:len(b)-1]
 			break
 		}
 		select {
@@ -40,7 +44,6 @@ func TestLoginCaptureUnlinkedAndCanceled(t *testing.T) {
 		case <-time.After(time.Millisecond * 5):
 		}
 	}
-	target, _ := os.ReadFile(marker)
 	if !strings.HasPrefix(string(target), "/proc/self/fd/") {
 		t.Errorf("named transcript can survive termination: %s", target)
 	}

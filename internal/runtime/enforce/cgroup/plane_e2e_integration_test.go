@@ -86,6 +86,17 @@ type planeDoctorAnswer struct {
 	Modes []planeModeAnswer `json:"modes"`
 }
 
+// planeProgramRow is the part of a doctor --json program row a failed plane mode is judged by: what each side of
+// the probe answered and whether the hook's program ran, which the mode's one-line detail does not say.
+type planeProgramRow struct {
+	Hook    string `json:"hook"`
+	Plane   string `json:"plane"`
+	Ran     bool   `json:"ran"`
+	Inside  string `json:"inside"`
+	Outside string `json:"outside"`
+	Detail  string `json:"detail"`
+}
+
 // mode is mode m's line, false when doctor gave none.
 func (a planeDoctorAnswer) mode(m string) (planeModeAnswer, bool) {
 	for _, r := range a.Modes {
@@ -128,7 +139,8 @@ func planeDoctor(t *testing.T, bin, pin string) planeDoctorAnswer {
 	}
 	out := stdout.Bytes()
 	var rep struct {
-		Plane *planeDoctorAnswer `json:"plane"`
+		Plane    *planeDoctorAnswer `json:"plane"`
+		Programs []planeProgramRow  `json:"programs"`
 	}
 	if err := json.Unmarshal(out, &rep); err != nil || rep.Plane == nil {
 		t.Fatalf("tego machine check --json under TEGO_TEST_PLANE=%s: %v\n%s", pin, err, out)
@@ -138,6 +150,13 @@ func planeDoctor(t *testing.T, bin, pin string) planeDoctorAnswer {
 		t.Logf("doctor under TEGO_TEST_PLANE=%s selects %s (%s; build %q: %s; answer %s; preemption %q from %s, waived %v): "+
 			"%s mode ok=%v tested=%v faulted=%v: %s (fix: %s)", pin, a.Selected, a.SelectedWhy, a.Build, a.BuildWhy, a.Source,
 			a.Env.Preempt, a.Env.PreemptSource, a.Env.PreemptWaived, m.Mode, m.OK, m.Tested, m.Faulted, m.Detail, m.Fix)
+		// Each failed row of the pinned mode (a row that passed has no detail), so the log names which side of the
+		// probe was wrong: a hook that "failed" with outside=refused is a probe fixture, not the hook.
+		for _, r := range rep.Programs {
+			if r.Plane == pin && r.Detail != "" {
+				t.Logf("  %s: ran=%v inside=%q outside=%q detail=%q", r.Hook, r.Ran, r.Inside, r.Outside, r.Detail)
+			}
+		}
 	}
 	return a
 }

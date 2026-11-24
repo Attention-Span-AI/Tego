@@ -73,9 +73,11 @@ in again (the link opened in another tab sets the same cookie), takes the banner
 (`/static/favicon.svg`, also at `/favicon.ico`, which a browser asks for on a page that links no icon) is the one file
 served without the cookie. The cookie is named per port (`tego_dash_<port>`), so two dashboards on one machine do not sign
 each other out. The `Host` header must be the loopback address and port, so a web page cannot reach the
-dashboard through DNS rebinding. GET and HEAD change nothing; only a POST does (Allow, Deny, Stop, a live block and
-its Remove, a rule change and its Undo, a new agent's rules file), and a POST must carry the session's form token and come from the
-dashboard's own origin. Every response has a strict Content-Security-Policy (no inline script or style,
+dashboard through DNS rebinding. The builder invariant is: a GET or HEAD request never creates, changes or
+removes anything on disk. Every preparation or write, including registry-directory preparation by Preview,
+runs behind the same guarded POST as Save: governed peers are refused, and Origin and CSRF are checked.
+Actions (Allow, Deny, Stop, live blocks, rule changes, Undo and new contracts) use those POST guards.
+Every response has a strict Content-Security-Policy (no inline script or style,
 `frame-ancestors 'none'`), `nosniff` and a same-origin referrer policy. Agent-written text is always escaped.
 
 A request must also come from a socket the user who started the dashboard owns. A token can reach a command line
@@ -120,44 +122,44 @@ that preview. `docs/adr/0123-dashboard-threat-model.md` has the reasoning.
 
 | Page | What it shows |
 |---|---|
-| `/` Overview | The headline says what needs you first ("1 needs you", then "1 run leaked secrets", then "1 High refused" or "1 Medium refused", then "1 run read secrets" for a watched run that read one, then "All quiet"); tiles for Needs you (approvals waiting), Running now, Refused (every refused action, the number Logs shows for `?verdict=refused`, with "N routine": the system lookups and probes the pages count and never list, and a trend line over the last runs) and Record (the ledger check); then **Detections**, a table of refused actions by severity and channel, and **Secrets** (see Charts); the running runs; Waiting on you; the newest runs that are not running (Recent runs, with a **Compare** link; a running run is under Running now) with their Secrets verdict and protection level; and "Newest High and Medium", the newest refused actions that matter, with a link to Detections ("Nothing High or Medium" when there are none). Run lists give a start time from today as the clock alone, and an older one with its day: "Yesterday 21:43", "Oct 26 21:43". It changes in place while a run is live (Live updates): seven regions, so a new line resends only the parts it moved. **Set up, step by step** (added 2026-11-11, ADR 0142) shows the six steps `tego setup` prints, from the same object (`internal/guide`) in the same words (`guide.State.Words`): each step's state in words beside its badge (Done, To do, Waiting, Blocked, Skipped, Not known) and the fact that decided it, the one next step with its command in a copy block, and the not-known lines. With no run yet it is the page's empty state ("No runs yet"), and under it, unfolded, **The first step for any agent**: `tego watch -- <the command that starts your agent>`, which records and refuses nothing, with where its run goes next (left out when the guide's own next step is that one, `record-todo`, so it is not shown twice); with runs it sits under the headline, folded to one line ("Set up: every step is done") once the last step is done. The page never checks the machine itself: the check step reads the check `tego setup` stored in `~/.tego/state/check.json` for this boot and this build, and with none it says "not checked since this machine started", with `tego setup` as the next step. The build is that of the tego a person types (the first `tego` on the dashboard's PATH, else the one beside `tego-control`) with this release's version and commit, so a check stored by a tego of another release or another file is not used. The dashboard has no working folder, so a contract only in a project registry (`.tego/agents` of a folder) is not seen here, where `tego setup` run from that folder sees it. Every fact is shown as text (a stored fix sentence is text a process of your user chose, ADR 0142 (4)); of the guide's text, only the next step's command, which the guide built (`guide.Next.Built`), is offered to copy. The guide is computed again when a run starts or ends, `check.json` changes or the tego a person types is another build (a reinstall), and at most every 15 s otherwise, so a contract just saved can take that long to show. It is computed apart from the request that asked for it, with its own 20 s bound, so a viewer who leaves the page or a live refresh cut short never leaves a half-computed guide for the next viewer; a guide whose bound ran out is shown to that request only and not kept. tego-control started without a guide (a test) keeps the earlier empty state: one next step for any agent, `tego watch -- <the command that starts your agent>`. The empty Runs page has that one too, and names no file the installer does not install (overview_test.go holds it). |
-| `/detections` | Runs whose secrets left first, in the run page's banner and whatever the filters say; then every refused action that is not routine, High first, then newest. Filters by severity and by channel (Files, Programs, Network) are links, so a view is a URL. Low folds under the list. Live: see **Severity and Detections** below. |
+| `/` Overview | The headline and body share one priority: waiting request, record verification failure, recorded leak, sensitive read, then the qualified quiet states when its sources are complete; an incomplete waiting list, record or signal count keeps what is known and says what remains unknown; tiles for Needs you (approvals waiting), Running now, Refused (the complete run refusal aggregates when readable, with a qualified routine count from retained events and a trend line over the last runs) and Record (the ledger check); then **Detections**, a table of refused actions by severity and channel, and **Secrets** (see Charts); the running runs; Waiting on you; the newest runs that are not running (Recent runs, with a **Compare** link; a running run is under Running now) with their Secrets verdict and protection level; and "Newest High and Medium", the newest retained refused actions that matter, with a link to Detections; an empty retained list does not establish that earlier history has none. Run lists give a start time from today as the clock alone, and an older one with its day: "Yesterday 21:43", "Oct 26 21:43". It changes in place while a run is live (Live updates): seven regions, so a new line resends only the parts it moved. **Set up, step by step** (added 2026-11-11, ADR 0142) shows the six steps `tego setup` prints, from the same object (`internal/guide`) in the same words (`guide.State.Words`): each step's state in words beside its badge (Done, To do, Waiting, Blocked, Skipped, Not known) and the fact that decided it, the one next step with its command in a copy block, and the not-known lines. With no run yet it is the page's empty state ("No runs yet"), and under it, unfolded, **The first step for any agent**: `tego watch -- <the command that starts your agent>`, which records and refuses nothing, with where its run goes next (left out when the guide's own next step is that one, `record-todo`, so it is not shown twice); with runs it sits under the headline, folded to one line ("Set up: every step is done") once the last step is done. The page never checks the machine itself: the check step reads the check `tego setup` stored in `~/.tego/state/check.json` for this boot and this build, and with none it says "not checked since this machine started", with `tego setup` as the next step. The build is that of the tego a person types (the first `tego` on the dashboard's PATH, else the one beside `tego-control`) with this release's version and commit, so a check stored by a tego of another release or another file is not used. The dashboard has no working folder, so a contract only in a project registry (`.tego/agents` of a folder) is not seen here, where `tego setup` run from that folder sees it. Every fact is shown as text (a stored fix sentence is text a process of your user chose, ADR 0142 (4)); of the guide's text, only the next step's command, which the guide built (`guide.Next.Built`), is offered to copy. The guide is computed again when a run starts or ends, `check.json` changes or the tego a person types is another build (a reinstall), and at most every 15 s otherwise, so a contract just saved can take that long to show. It is computed within the page request with at most 20 s; leaving the page cancels its helper work. Cancelled or failed guides are not kept for the next viewer. tego-control started without a guide (a test) keeps the earlier empty state: one next step for any agent, `tego watch -- <the command that starts your agent>`. The empty Runs page has that one too, and names no file the installer does not install (overview_test.go holds it). |
+| `/detections` | Runs whose secrets left first, in the run page's banner and whatever the filters say; then the retained refused actions that are not routine, High first, then newest. Counts from incomplete windows say at least; a reader failure says could not read with its reason. Filters by severity and by channel (Files, Programs, Network) are links, so a view is a URL. Low folds under the list. Live: see **Severity and Detections** below. |
 | `/runs/<id>/investigate/<seq>` | One detection in four parts, always in this order: What, How it got there, What else (same run, within 10 s of any of it, so a key read in the middle of a scan is on the scan's page), What now. Allow from now on opens the line page's preview, so nothing changes until Confirm. Keep refused · Next marks it in this browser only (`static/review.js`) and moves on; it records nothing. The address is the group's first line, so it stays good as a live run adds to the group. A row of many ports lists them under What, with a Logs view of each (`group=target`). |
+| `/refusals` | Refusals by hour (C111): one bar for each local hour of the last day (`?span=day`, the default) or week (`?span=week`), from `ledgerview.Snapshot.RefusalBuckets`, the reader behind the Overview's "refused today", so the counts of one day are one number. A bar with refusals links to that hour in Logs; the same hours are a list for the keyboard. A run whose retained events omit part of the period makes the counts "at least" and links its complete record. Reached from Detections' Actions. |
 | `/severity` | A person's own severity rules, above the built-in ones, first match wins. Sorting only: see **Severity and Detections** below. |
 | `/glossary` | One line per word the dashboard uses, with a link to where it shows. Contract and Refused keep the anchors of their older words (`#policy`, `#blocked`). |
 | `/contracts`, `/contracts/new`, `/contracts/change` | 303 to the same page under `/rules`, the query kept: the pages are named Contracts, and their addresses stay `/rules`, where every link, form and printed line points. |
-| `/runs` | Every run read: the running ones first, then the others newest first, 100 to a page with an **Older runs** link (`?before=<run id>`, and **Newest runs** back; the status counts are the whole ledger's), with status (Running, Exit N, Stopped, Lost, or the reason the run ended), a kind label (below, Interactive and Deployed only), its Secrets verdict, start, duration, line, refusal and ask counts and protection level. Chips filter by status, and paging keeps the filter. The Compare chooser lists the newest 50 runs and the pair it starts on. |
+| `/runs` | Every run read: the running ones first, then the others newest first, 100 to a page with an **Older runs** link (`?before=<run id>`, and **Newest runs** back; status, today and match counts cover the runs read and say at least if the run list is incomplete), with status (Running, Exit N, Stopped, Lost, or the reason the run ended), a kind label (below, Interactive and Deployed only), its Secrets verdict, start, duration, line, refusal and ask counts and protection level. Chips filter by status, and paging keeps the filter. The Compare chooser lists the newest 50 runs and the pair it starts on. |
 | `/runs/<id>` | A header line under the status (who started the run, at what time, and its rules version and contract file; a run with no contract file, as under `tego watch`, says "Watched only: nothing was enforced" and links Least privilege); the verdict sentence and the Highlights card (below); on a live run, Pause beside Stop run (it freezes the agent where it stands within a second; until the run's launcher answers, a banner says "Pause asked at 12:03; waiting for the run to confirm it" and the button reads Cancel pause; once the launcher writes its `run-paused` line the status reads Paused, a banner says "Paused by you, from the dashboard at 12:03" and the button becomes Resume; while a request of the run waits for an answer Pause is greyed out with "Answer the waiting request first" under it, since a waiting request cannot be frozen; a pause the launcher could not apply says "The pause did not take", that Tego keeps trying at most 30 s apart until it takes or the run is stopped, and offers Withdraw pause, since the agent is still running; Stop run ends a run within the stop grace (`stop_grace`, 10 s by default); a run whose launcher cannot read a pause (one an older Tego started, an adopted run, or one with no cgroup of its own) offers no Pause at all; Runs and Overview rows read Paused too), Block now above them (a head button jumps to it; kinds Program, Destination, File or folder; it applies to the next action and leaves the contract file unchanged), each block named in words, its path shortened like the rest of the page ("Reads of ~/.config/telemetry" under the run's home, the full path in the value's title), with its state now as a badge and a plain line beside it: "Waiting for the run…" until the run's launcher writes the line confirming it (about half a second), then "In force since line #N"; "Changes refused since line #N" for a path on a run whose reads tego does not see (reads still go through); on a `tego watch` run the panel and its head button read "Mark (recorded only)" and every block "Recorded, not enforced", since a watched run refuses nothing (the panel is its own live region, `r-run-live`, so the badge changes without a reload); a live-blocks file the panel cannot read is said in plain words after "The run's live blocks could not be read:", as the Rules page says it (`rulesview.LiveErrWords`), never Go's error with the run's folder; the run's details folded under one summary line (agent, contract, tier, command, start, end and exit) and its timeline, newest first: one row per refusal (a refused action's mirror line is not shown again), identical refusals folded into one row with a count, paths with their file name kept (bold, `~/` for the run's home), people named instead of `uid:1000 pid:…`, credential-looking command-line values masked, here and on every other list of refusals and answers (a waiting ask's card keeps the text as written; the line page masks its headline, its What line and the rows around it, and keeps the line exactly as written in a closed fold), rows in words ("Run started: <command>", "Asked to read <path>", "Allowed once by alice after 27 s: <path>", "Model traffic not recorded (no model capture for this agent)", "Run paused: the agent is frozen", "Run resumed", "Run ended, exit 0"; a command run through a shell's `-c` reads from the shell on, "… /bin/bash -c <script>"), each under the chip Logs and the line page give that line (an ask **Asked**, an answer the person's **Denied** or **Allowed**, a neutral **Timed out** or **Withdrawn** when no person denied it, or **Answered** when it does not say which, a line nothing decided **Recorded**), and the "record no-price-table" gap left out (Logs keeps every line). The timeline shows 200 rows at a time; "Older rows" pages back by line number (`?before=<seq>`). A live run's timeline adds its new rows at the top (see Live updates). |
 | `/runs/<id>/refusals` | Grouped by default: one row per rule and destination host on any ports, program or path, with its count; the ones that matter first (secrets, contract entries and live blocks, sends next to a secret), the routine ones folded under "Routine (N refusals in M groups: system lookups, retries)". "Every line" (`?view=lines`) lists each refusal with identical ones folded. With nothing refused, both views say the receipt's sentence for the run (`receipt.RefusedSentence`, the one `tego session show` prints under Refused actions): "Nothing was refused.", or, for a run whose refused reads leave no line (`run_start.reads_notified` false at an enforcing tier), "No recorded action was refused; this run does not record refused reads (see Sensitive files read)." |
 | `/runs/<id>/processes` | The run's processes as a tree, rebuilt from each exec line's `exec_id` and `parent_exec_id` (`ledgerview.ProcessTree`): tego's launcher at the root, the agent under it, each process under the one that started it. Each shows its program and command (credentials masked, a shell launcher elided), pid, start time, lines, reads, writes and connects with the hosts it reached, its refusals in red, how many processes are under it, a link to its exec line and to Logs (`run=<id>&where=pid:<pid>`, which counts the same lines); a process that ran several programs, or tried one that was refused, lists each exec on one line ("ran …", "tried … refused ×2 at /usr/bin/x, /bin/x"). The launcher, the agent and its children are open, and so is every branch with a refusal in it; three or more like processes of one parent that started nothing (Codex's `git` calls, refused `lsb_release` calls) fold into one closed line with their count, opened when one of them ran and had something refused. A process that forked and never started a program writes no exec line, so the record does not say who started it: it hangs from the launcher, marked "forked, no exec recorded", and no parent is guessed. A page shows at most 600 processes, breadth first, and says how many it leaves out. The count above the tree reads "N processes · N actions · N refusal notes · N refused": the actions and the refusal notes (the kind=refused line beside each refused action) add up to the run's lines in its header. A live run's tab updates in place, laid out at most once every 5 seconds (`procsHold`), so a busy run's tree is not sent again each second; opened branches stay open. |
-| `/runs/<id>/receipt` | The run's receipt on one screen, the same one `tego session show <run>` prints, from the same builder (`internal/check/receipt`): how it ended and the time it took; tiles for files written, refusals, times it asked, model tokens (and the estimated cost when a price covered them); refusals by rule as bars (tego's built-in refusal of `setsockopt(TCP_ULP)` has a bar of its own, `built in: kernel TLS`, as `tego run`'s summary names it, and the refused list names it so too; a run that does not record refused reads says so there, as `tego session show` does, not "Nothing was refused.", and its Refused tile reads "refused reads not recorded"; each sentence about connections and refusals is the receipt's own, `NoConnectionWords`, `RoutineAlsoWords`, `RefusedWords` and `NoneOverTime`, which `tego session show` prints too) and refusals per minute as a sparkline ("None to show." with none); stall minutes; the refused actions (the first 12) and the files it created, wrote, deleted and renamed (the first 40; a write to `/dev/null`, `/dev/tty` or a pseudo-terminal is no file and is not listed); each ask with its answer; and "What this receipt can vouch for", the fields the ledger could not support in full (a tier that does not record allowed writes, capture off, gap lines that may have lost actions, capture gaps that make the token counts a floor, unpriced responses; a pause, a resume, a live block or a mode tego gave back to the owner of one of its own files is a gap line too but loses nothing, so it is not listed) and, under it, the "Frozen at launch" line naming the directories a `deny_read` froze (`run_start.deny_read_frozen`, GAPS A12; no gap, added 2026-11-11), then the receipt's notes as `tego session show` prints them ("Note: …": an anomaly the pass met, such as a second `run_end`, or how many of its own files' modes tego gave back, whose Logs rows name each file). The dashboard loads no price table, so its cost shows only for responses a table priced in the ledger's own terms: none today. The builder also gives the run's connections, the programs it ran and the sensitive files it read (JSON keys `connections`, `connection_tries`, `system_lookups`, `routine_sockets`, `programs`, `sensitive_reads`; a routine system lookup such as nscd, and a socket call that names no place (an AF_UNSPEC connect, the kernel's netlink socket, which the verdict folds by the same `syslookup.NoPlace`; a refused one counts as a refusal only), are counted apart, never as a place), which `tego session show` prints and this tab shows as Sensitive files read (amber "Read, not refused" on a watched run), Connections and Programs run, each with what happened to its tries. |
-| `/runs/<id>/lines/<seq>` | One ledger line, explained (`ledgerview.Explain`). The headline names the action and its object: "The agent tried to read ~/.config/telemetry/token", "The agent connected to 127.0.0.1:8802", "The agent ran ls" (a path masked, the run's home as `~/`, cut near 80 characters with the whole value in its title; "Line #N: <kind>" on a line no rule is made from). Under it, the line's chip, the one its timeline row and its Logs row show (an ask line **Asked**, an answer line the person's **Denied** or **Allowed**, or **Timed out** or **Withdrawn** when no person denied it), and the line in one sentence with its verdict ("curl (pid 357136, child of sh) tried to read ~/.curlrc; Tego refused it: a read the rules refuse, and the agent got ENOENT"). **What happened**, under the same chip: the action (an exec's whole command from its blob in a fold), the time to the millisecond (UTC in its title), how far into the run and how long after the line before, the run and its contract. **The decision**: the verdict and, on its own row, who decided (a read a person denied reads "Refused: a person said no", decided by that person and the rule that asked; a question nobody answered, "Refused: nobody answered in time"; none on a line recorded as observed under the authority rule, which record v1 names on every action: nothing decided it. A person or a gate such a line names stays: a held open a person allowed is recorded as observed when the object it reached had no name), the rule in words with the contract file and line it is written on, linked to the Rules page group, and its state (enforced, best effort, watched only; "built into Tego" for the secret list; "watched only" on every observed line of a watched run, whose rule is the contract entry it would have matched, and which reads "Watched only · <rule>", or "Watched only" for unmatched, where no contract line is found), the reason, the error the agent got, the refusing mechanism and the tier. **The question** (an ask, its answer, or the action it decided): when it was asked, who answered after how long, the outcome and any file given instead, with links to the ask, the answer and what followed. **Who did it**: the program (path, masked command, pid · tid · cgroup, the line that started it), the programs above it from the run's root ("tego launcher → sh → curl", each linked to its exec line; a process that forked without starting a program reads "forked, no exec recorded"; a deeper chain shows the nearest six and "… N more", linked to the Processes tab), and a Logs link for every line of the process (`run:<id> pid:<pid>`). **Every field**: each key after the envelope, labelled and in words, masked (the authority rule, which record v1 names on every action, reads "no one: recorded only" on a line recorded as observed, which nothing decided; its raw value is in the title; a person or a gate stays as named); a masked value has its own "show unmasked (contains a secret)" fold; a blob field says its size and whether it hashes to its name, shows its text (masked, at most 256 KiB) and offers **Download the exact bytes** (`?blob=<sha>`: only a sha a blob field of this line names, 64 lower-case hex digits, re-checked against its hash before it is sent and again as it streams, so a blob changed in between ends the download short and never arrives whole; streamed as an `application/octet-stream` attachment with `nosniff`; anything else is 400 or 404); a body stored as a splice reads "stored as a splice; not shown here". **Integrity**: "Line #N of M", the line's hash, the line before linked with whether its hash matches, and the run's chain verdict (the run page's cached check); on a run whose chain breaks at a line, a line before the break says it and every line before it hash correctly and where the chain breaks, and the break line says its bytes do not match its id. **The line as written**: one closed fold with the exact bytes and a Copy button (copy.js; without JavaScript the text is plain and selectable), and the terminal twin with its own Copy. Then the lines around it (masked, in the words Logs uses: "Asked to read <path>" under Asked, "Denied by somebody after 77 ms: <path>" under Denied) and the same file, program or destination across runs. The **Act on this** panel (see "Making a rule from a line") is not shown on run_start, run_end, gap, limit and answer lines. |
+| `/runs/<id>/receipt` | The run's receipt on one screen, with recorded totals from the same builder as `tego session show <run>` (`internal/check/receipt`); the dashboard also includes custom sensitive paths from the run's contract copy in its sensitive-read activity list: how it ended and the time it took; tiles for files written, refusals, times it asked, model tokens (and the estimated cost when a price covered them); refusals by rule as bars (tego's built-in refusal of `setsockopt(TCP_ULP)` has a bar of its own, `built in: kernel TLS`, as `tego run`'s summary names it, and the refused list names it so too; a run that does not record refused reads says so there, as `tego session show` does, not "Nothing was refused.", and its Refused tile reads "refused reads not recorded"; each sentence about connections and refusals is the receipt's own, `NoConnectionWords`, `RoutineAlsoWords`, `RefusedWords` and `NoneOverTime`, which `tego session show` prints too) and refusals per minute as a sparkline ("None to show." with none); stall minutes; the refused actions (the first 12) and the files it created, wrote, deleted and renamed (the first 40; a write to `/dev/null`, `/dev/tty` or a pseudo-terminal is no file and is not listed); each ask with its answer; and "What this receipt can vouch for", the fields the ledger could not support in full (a tier that does not record allowed writes, capture off, gap lines that may have lost actions, capture gaps that make the token counts a floor, unpriced responses; a pause, a resume, a live block or a mode tego gave back to the owner of one of its own files is a gap line too but loses nothing, so it is not listed) and, under it, the "Frozen at launch" line naming the directories a `deny_read` froze (`run_start.deny_read_frozen`, GAPS A12; no gap, added 2026-11-11), then the receipt's notes as `tego session show` prints them ("Note: …": an anomaly the pass met, such as a second `run_end`, or how many of its own files' modes tego gave back, whose Logs rows name each file). The dashboard loads no price table, so its cost shows only for responses a table priced in the ledger's own terms: none today. The builder also gives the run's connections, the programs it ran and the sensitive files it read (JSON keys `connections`, `connection_tries`, `system_lookups`, `routine_sockets`, `programs`, `sensitive_reads`; a routine system lookup such as nscd, and a socket call that names no place (an AF_UNSPEC connect, the kernel's netlink socket, which the verdict folds by the same `syslookup.NoPlace`; a refused one counts as a refusal only), are counted apart, never as a place), which `tego session show` prints and this tab shows as Sensitive files read (crimson "Read, not refused" on a watched run), Connections and Programs run, each with what happened to its tries. |
+| `/runs/<id>/lines/<seq>` | One ledger line, explained (`ledgerview.Explain`). The headline names the action and its object: "The agent tried to read ~/.config/telemetry/token", "The agent connected to 127.0.0.1:8802", "The agent ran ls" (a path masked, the run's home as `~/`, cut near 80 characters with the whole value in its title; "Line #N: <kind>" on a line no rule is made from). Under it, the line's chip, the one its timeline row and its Logs row show (an ask line **Asked**, an answer line the person's **Denied** or **Allowed**, or **Timed out** or **Withdrawn** when no person denied it), and the line in one sentence with its verdict ("curl (pid 357136, child of sh) tried to read ~/.curlrc; Tego refused it: a read the rules refuse, and the agent got ENOENT"). **What happened**, under the same chip: the action (an exec's whole command from its blob in a fold), the time to the millisecond (UTC in its title), how far into the run and how long after the line before, the run and its contract. **The decision**: the verdict and, on its own row, who decided (a read a person denied reads "Refused: a person said no", decided by that person and the rule that asked; a question nobody answered, "Refused: nobody answered in time"; none on a line recorded as observed under the authority rule, which record v1 names on every action: nothing decided it. A person or a gate such a line names stays: a held open a person allowed is recorded as observed when the object it reached had no name), the rule in words with the contract file and line it is written on, linked to the Rules page group, and its state (enforced, best effort, watched only; "built into Tego" for the secret list; "watched only" on every observed line of a watched run, whose rule is the contract entry it would have matched, and which reads "Watched only · <rule>", or "Watched only" for unmatched, where no contract line is found), the reason, the error the agent got, the refusing mechanism and the tier. **The question** (an ask, its answer, or the action it decided): when it was asked, who answered after how long, the outcome and any file given instead, with links to the ask, the answer and what followed. **Who did it**: the program (path, masked command, pid · tid · cgroup, the line that started it), the programs above it from the run's root ("tego launcher → sh → curl", each linked to its exec line; a process that forked without starting a program reads "forked, no exec recorded"; a deeper chain shows the nearest six and "… N more", linked to the Processes tab), and a Logs link for every line of the process (`run:<id> pid:<pid>`). **Every field**: each key after the envelope, labelled and in words, masked (the authority rule, which record v1 names on every action, reads "no one: recorded only" on a line recorded as observed, which nothing decided; its raw value is in the title; a person or a gate stays as named); a masked value has its own "show unmasked (contains a secret)" fold; a blob field says its size and whether it hashes to its name, shows its text (masked, at most 256 KiB) and offers **Download the exact bytes** (`?blob=<sha>`: only a sha a blob field of this line names, 64 lower-case hex digits, re-checked against its hash before it is sent and again as it streams, so a blob changed in between ends the download short and never arrives whole; streamed as an `application/octet-stream` attachment with `nosniff`; anything else is 400 or 404); a body stored as a splice reads "stored as a splice; not shown here". **Integrity**: "Line #N of M", the line's hash, the line before linked with whether its hash matches, and the run's chain verdict (the run page's cached check); on a run whose chain breaks at a line, a line before the break says it and every line before it hash correctly and where the chain breaks, and the break line says its bytes do not match its id. **The line as written**: one closed fold with the exact bytes and a Copy button (copy.js; without JavaScript the text is plain and selectable), and the terminal twin with its own Copy. Then the lines around it (masked, in the words Logs uses: "Asked to read <path>" under Asked, "Denied by somebody after 77 ms: <path>" under Denied) and the same file, program or destination across runs. The **What to do about this** panel (see "Making a rule from a line") is not shown on run_start, run_end, gap, limit and answer lines. |
 | `/runs/<id>/least-privilege` | On an enforced run, the smallest change to its contract: the entries granted but never used (`tego drift`), to remove, and the deny and ask entries, always kept; `tego rules learn`'s from-scratch proposal (which keeps none of them) is folded below. On a watched run, the `tego rules learn` proposal. On a run whose verdict is a leak (secrets read next to a send that got through), a red notice tops the tab, and the proposal, on the page and in Download contract, never allows where the secrets went: each such `net.allow` address is a `# NOT allowed: "tcp://...": first reached next to a secret read, so secrets may have gone there` comment, a list left empty reads `allow: []`, and a `# WARNING` line opens the file. A line that names its host and holds its address is matched by the address, for every address the name reached. A destination recorded only by host name cannot be matched to an address entry; the notice then says the proposal may still allow it. |
-| `/logs` | Lines across every run, newest first. Filters (plain GET form): run (the newest 50 runs and the one selected; older runs through the Run facet), agent, kind, verdict, free text, and "hide system lookups". The free text (`q`, which the topbar search and the line page's "All in Logs" links send) is a literal substring, never parsed. A **query** (`where`, the Query box) narrows further in the query language: `verdict:refused kind:exec host:chatgpt.com path:~/.ssh rule:fs.deny_read* pid:4242 run:<id> agent:<name> source:kernel since:15m until:2026-10-27T01:00`, plain words and "quoted phrases" as text, `-` in front to leave a term out (kind, verdict, rule, host, run, agent and words), the same key twice for either value; `path:` is a file or folder and what is in it, by whole names (`path:/a/b` holds `/a/b/c`, not `/a/bc`; ending in `/`, only what is in it); a key it does not know stays a word, and a term it cannot read is left out and named above the chips. Each term is a chip with ×. Beside the rows, **facets** count the matched lines by verdict, kind, host, rule, run and program (top 10 each, "and N more"): a value adds its term (on the query already, it removes it) and its − leaves it out; each count is what the search plus that value matches, and the verdict and run counts each add up to the header's total (the Kind counts also count, under Refused lines, the refusal notes `kind:refused` lists, and the Program counts leave out lines whose program is unknown). `kind:refused` lists the refused lines, the refusal notes (the kind=refused line written beside each refused action) included, as the Kind select's "Refusals" does. The Verdict facet calls a line with no verdict (a run's start and end, a note) "Recorded", as its row's chip does, and the Rule facet counts tego's built-in refusal of kernel TLS (`setsockopt(TCP_ULP, "tls")`) under its own value, "built in: kernel TLS", as the receipt counts it, never under "Not in contract", and `rule:` queries it by that value, while its row's line under the text is the receipt's sentence, not "not on the allowed hosts" (acceptance 2B, 2026-11-11); the Rule facet calls a rule seen only on watched runs (tier observe) "Watched only" ("Watched only · <rule>" for a rule other than unmatched), as their rows do, not the contract's words ("default deny"); a rule seen on watched and enforced runs alike is one value in the rule's words, which By rule splits. Time presets (5 min, 1 hour, 24 hours, Latest run, Any time) replace the time range. **CSV** (`/logs.csv`) downloads the matching lines in the page's words (Rule in words is the rule as the row words it: "Watched only, not enforced" on a watched run's observed line, "Blocked live at … by …" on a live block's refusal; paths in it are written in full), masked as on the page, with a cell that a spreadsheet would read as a formula prefixed by '; **Record (JSONL)** (`/logs.jsonl`) downloads the matching ledger lines byte for byte, not masked (your own ledger, secrets included, as the button says). For one run and no other narrowing it is that run's events file itself, the refusal notes included, so its chain checks; any other search leaves the refusal notes out (unless it asks for kind refused), and the button's title says so and that the download is then not a chain anything can check. Both are oldest first (`order=newest` for the page's order), behind the same checks as the page, and stop at 1,000,000 lines with a last note row. Paged by a cursor ("Older lines"). The header is one sentence: how many lines ("matching lines" when filtered) from how many runs, how many rows they fold into after identical refusals fold, how many a page shows, then the refused and asked counts. An ask line counts as asked (it carries no verdict of its own; it is the line that says Tego asked a person), so Logs and Approvals agree. Rows: What takes most of the width and wraps only after `/` and `:` or at a space, never inside a name (the file name in bold, the full path in the title, the reason in words under it with its code in a title); the Rule column (a path in the rule's words under the run's home reads ~/…, "Never read: ~/.ssh/", the key in its title, as in the run timeline; a watched run's observed line reads "Watched only, not enforced"); and the Line column, "<agent> #N", which opens the line page. An exec line whose argv the ledger moved to a blob shows the command from the blob (see "Read model"). The text search also looks in an ask's or an answer's target and its ask id. Each refusal counts once: the refused action line is shown and counted, its kind=refused mirror is not (the Kind filter "Refusals" lists the mirrors themselves). The Overview's Refused tile is the number this page shows for `?verdict=refused`. A **Process** column names the program the line's process was running and its pid (read from the run's exec lines, see "Read model"; "pid N" alone when no exec line names its program); the program narrows the search to `prog:<name>` and the pid to `pid:<n>`, and a **Program** facet counts them. **Lines / By process / By target / By rule** (`group=`) shows the matched lines gathered: a process is a pid and the program it ran in one run, a target or a rule gathers across runs; By rule keeps the lines that name a rule it did not decide (verdict observed, as every action of a watched run) apart from the lines it decided, as "Watched only · <rule>" ("Watched only" for unmatched) when they are all of watched runs and "Observed · <rule>" otherwise; each group has its lines, its refused lines, its first and last time and its newest line, most lines first (the 200 with the most), and its count opens its lines (a target opens a literal search for it, so it can match a longer target too; a rule opens `rule:<key>` in place of any rule the query asks for (one it leaves out stays), with `verdict:observed` for the lines it only names, and with `-verdict:observed` for the lines it decided when the rule's lines are in two groups). **Views**: Refused only, Refused connections, Secret files, Commands and Asks are links; "Save this view" keeps the page's address under a name in this browser only (localStorage), so a view is its link. With JavaScript (static/logs.js) the page also: follows new lines itself, putting them at the top while you are there, or, lower down, in an "N new rows" pill that brings them in and takes you to the top, where the next lines come in on their own (more than a page of them loads the newest page instead), with a refusal that folds into a shown row moving that row up with its whole count (`GET /logs/rows?<search>&after=<cursor>`); loads older lines in place under the rows, on its own as the Older lines link scrolls into view for up to 10 pages, then on a click (`&before=<cursor>`); opens a row in place (its chevron, a click on the row, or Enter) with the line in a sentence, when, the process and what started it, the verdict, rule (a watched run's observed line "Watched only · <rule>", or "Watched only" for unmatched) and reason, the question it belongs to, its place in the ledger and every other field in words as the line page words them, masked as rows are, with "Open line N" and "Copy the line (JSON)" (exactly as written, secrets included, as its title says; `GET /logs/line?run=<id>&seq=<n>`, built on the line page's `ledgerview.Explain`); and takes `j`/`k` to move through the rows, Enter to open one here, Escape to close it, `o` to open its line page and `/` to go to the query. Without JavaScript the page is the same GET form, links and Older lines page. |
-| `/compare?a=<run>&b=<run>` | Two runs side by side: two stat blocks read from each run's verdict (red "A · Watched, 2 secrets left the machine, id_rsa, token → 127.0.0.1:9821"; green "B · Enforced, 0 left, 4 attempts stopped") with the one-line summary muted under them, each run's header (agent, observed or enforced, started by, rules version, chain), then one table of secret files, destinations, programs and approvals merged by target with each run's verdict in its own column ("Got through" in red, "Stopped" in green; a refused connection that was no send next to a secret, which the run's verdict does not count, reads "Refused" in grey, so a destination's green cells are the sends in the summary's count), each column head naming its run and mode, the attack first (a secret read next to a send, an off-list destination next to a secret, in either run). When each run sent to its own attacker address, those rows merge into one "Where the secrets went" row, each cell naming its run's address. DNS, system sockets and port-65535 probes are counted, not listed; routine rows and each run's background destinations sit behind "Show all"; the summary says what each run read and sent, then its verdict with the run's own count ("2 secrets left (id_rsa, token sent to …)", "Tego refused 4 attempts (2 secret reads and 2 sends to …)"), the number its banner and Runs chip give; each run head gives its refusals and, of them, the ones "against secrets". The Runs page has a two-run chooser, the Overview a link to the last watched run and the enforced run of the same program that started closest to it (else the newest enforced run), and every run page a Compare button that sets the run against the run of the other kind and the same program that started closest to it (`ledgerview.PairOf`, the same run its reference and the Overview name), else the newest run of the other kind (the watched run goes on the left); with no watched run in the ledger the chooser opens on the newest run against the one before it, never one run twice. A watched run's column is read against the enforced run's contract (see Highlights), so its own API is not marked as the attack nor counted as an off-list connection. With fewer than two runs the page says "Compare needs two runs" with the `tego watch` and `tego run` commands instead of the chooser. |
+| `/logs` | Retained lines across the runs read, newest first. The matched, refused, asked, group and facet counts say at least when runs or event windows are incomplete, with a reason and complete-record recovery; a reader failure says could not read. Filters (plain GET form): run (the newest 50 runs and the one selected; older runs through the Run facet), agent, kind, verdict, free text, and "hide system lookups". The free text (`q`, which the topbar search and the line page's "All in Logs" links send) is a literal substring, never parsed. A **query** (`where`, the Query box) narrows further in the query language: `verdict:refused kind:exec host:chatgpt.com path:~/.ssh rule:fs.deny_read* pid:4242 run:<id> agent:<name> source:kernel since:15m until:2026-10-27T01:00`, plain words and "quoted phrases" as text, `-` in front to leave a term out (kind, verdict, rule, host, run, agent and words), the same key twice for either value; `kind:change` asks for the rule changes (a change, an undo, a new rules file) as rows of their own, with no event line unless another kind is named too (`kind:change kind:exec`), and shows none beside a term about lines (a verdict, a word); a search that narrows only by run, agent and time shows them without it, and a window with no event line shows the changes made in it; `path:` is a file or folder and what is in it, by whole names (`path:/a/b` holds `/a/b/c`, not `/a/bc`; ending in `/`, only what is in it); a key it does not know stays a word, and a term it cannot read is left out and named above the chips. Each term is a chip with ×. Beside the rows, **facets** count the matched lines by verdict, kind, host, rule, run and program (top 10 each, "and N more"): a value adds its term (on the query already, it removes it) and its − leaves it out; each count is what the search plus that value matches, and the verdict and run counts each add up to the header's total (the Kind counts also count, under Refused lines, the refusal notes `kind:refused` lists, and the Program counts leave out lines whose program is unknown). `kind:refused` lists the refused lines, the refusal notes (the kind=refused line written beside each refused action) included, as the Kind select's "Refusals" does. The Verdict facet calls a line with no verdict (a run's start and end, a note) "Recorded", as its row's chip does, and the Rule facet counts tego's built-in refusal of kernel TLS (`setsockopt(TCP_ULP, "tls")`) under its own value, "built in: kernel TLS", as the receipt counts it, never under "Not in contract", and `rule:` queries it by that value, while its row's line under the text is the receipt's sentence, not "not on the allowed hosts" (acceptance 2B, 2026-11-11); the Rule facet calls a rule seen only on watched runs (tier observe) "Watched only" ("Watched only · <rule>" for a rule other than unmatched), as their rows do, not the contract's words ("default deny"); a rule seen on watched and enforced runs alike is one value in the rule's words, which By rule splits. Time presets (5 min, 1 hour, 24 hours, Latest run, Any time) replace the time range. A time range set as a span back from now (`since:1h`, a preset or typed) is pinned when it is set: the address is answered with the times it means (`since:2026-10-27T09:05:00`, and `span=1h@…` so the preset stays marked), the page says it in absolute times ("From 2026-10-27 09:05:00 until now") and offers **Move to now**, the same length of time ending now; a refresh, a reload and a copied link show the window that was set. The rule-change rows follow the rule-change journal's revision (`crev` in `/status.json` and `/events`), so a change appears without waiting for a new line. **CSV** (`/logs.csv`) downloads the matching lines in the page's words (its Verdict, Action and Why are the row's, from one set of line words that a test compares for every kind of line; Rule in words is the rule as the row words it: "Watched only, not enforced" on a watched run's observed line, "Blocked live at … by …" on a live block's refusal; paths in it are written in full), masked as on the page, with a cell that a spreadsheet would read as a formula prefixed by '; **Record (JSONL)** (`/logs.jsonl`) downloads the matching ledger lines byte for byte, not masked (your own ledger, secrets included, as the button says). For one run and no other narrowing it is that run's events file itself, the refusal notes included, so its chain checks; any other search leaves the refusal notes out (unless it asks for kind refused), and the button's title says so and that the download is then not a chain anything can check. Both are oldest first (`order=newest` for the page's order), behind the same checks as the page, and stop at 1,000,000 lines with a last note row. Paged by a cursor ("Older lines"). The header is one sentence: how many lines ("matching lines" when filtered) from how many runs, how many rows they fold into after identical refusals fold, how many a page shows, then the refused and asked counts. An ask line counts as asked (it carries no verdict of its own; it is the line that says Tego asked a person), so Logs and Approvals agree. Desktop rows: What wraps between path pieces or words, with breaks inside a name when needed, without a line clamp (the file name in bold, the full path in the title, the reason in words under it with its code in a title). Below 1100 px the summary row keeps who, one outcome and when; its Event destination retains the full target, rule and process context. On desktop, the Rule column (a path in the rule's words under the run's home reads ~/…, "Never read: ~/.ssh/", the key in its title, as in the run timeline; a watched run's observed line reads "Watched only, not enforced"); and the Line column, "<agent> #N", which opens the line page. An exec line whose argv the ledger moved to a blob shows the command from the blob (see "Read model"). The text search also looks in an ask's or an answer's target and its ask id. Each refusal counts once: the refused action line is shown and counted, its kind=refused mirror is not (the Kind filter "Refusals" lists the mirrors themselves). The Overview can use complete refusal aggregates even when this page's `?verdict=refused` count is a lower bound from retained windows. A **Process** column names the program the line's process was running and its pid (read from the run's exec lines, see "Read model"; "pid N" alone when no exec line names its program); the program narrows the search to `prog:<name>` and the pid to `pid:<n>`, and a **Program** facet counts them. **Lines / By process / By target / By rule** (`group=`) shows the matched lines gathered: a process is a pid and the program it ran in one run, a target or a rule gathers across runs; By rule keeps the lines that name a rule it did not decide (verdict observed, as every action of a watched run) apart from the lines it decided, as "Watched only · <rule>" ("Watched only" for unmatched) when they are all of watched runs and "Observed · <rule>" otherwise; each group has its lines, its refused lines, its first and last time and its newest line, most lines first (the 200 with the most), and its count opens its lines (a target opens a literal search for it, so it can match a longer target too; a rule opens `rule:<key>` in place of any rule the query asks for (one it leaves out stays), with `verdict:observed` for the lines it only names, and with `-verdict:observed` for the lines it decided when the rule's lines are in two groups). **Views**: Refused only, Refused connections, Secret files, Commands and Asks are links; "Save this view" keeps the page's address under a name in this browser only (localStorage), so a view is its link. With JavaScript (static/logs.js) the page also: follows new lines itself, putting them at the top while you are there, or, lower down, in an "N new rows" pill that brings them in and takes you to the top, where the next lines come in on their own (more than a page of them loads the newest page instead), with a refusal that folds into a shown row moving that row up with its whole count (`GET /logs/rows?<search>&after=<cursor>`); loads older lines in place under the rows, on its own as the Older lines link scrolls into view for up to 10 pages, then on a click (`&before=<cursor>`); opens a desktop row in place (its chevron, a click on the row, or Enter) with the line in a sentence, when, the process and what started it, the verdict, rule (a watched run's observed line "Watched only · <rule>", or "Watched only" for unmatched) and reason, the question it belongs to, its place in the ledger and every other field in words as the line page words them, masked as rows are, with "Open line N" and "Copy the line (JSON)" (exactly as written, secrets included, as its title says; `GET /logs/line?run=<id>&seq=<n>`, built on the line page's `ledgerview.Explain`); and takes `j`/`k` to move through the rows, Enter to open one here, Escape to close it, `o` to open its line page and `/` to go to the query. Without JavaScript the page is the same GET form, links and Older lines page. |
+| `/compare?a=<run>&b=<run>` | Two runs side by side: two stat blocks read from each run's verdict (red "A · Watched, 2 secrets left the machine, id_rsa, token → 127.0.0.1:9821"; "B · Enforced, 4 attempts stopped" with an explicit recorded-refusal label) with the one-line summary muted under them, each run's header (agent, observed or enforced, started by, rules version, chain), then one table of secret files, destinations, programs and approvals merged by target with each run's verdict in its own column ("Got through" and "Stopped" in distinct labelled warning shapes; a refused connection that was no send next to a secret, which the run's verdict does not count, reads "Refused", so its words distinguish it from the sends in the summary's count), each column head naming its run and mode, the attack first (a secret read next to a send, an off-list destination next to a secret, in either run). When each run sent to its own attacker address, those rows merge into one "Where the secrets went" row, each cell naming its run's address. DNS, system sockets and port-65535 probes are counted, not listed; routine rows and each run's background destinations sit behind "Show all"; the summary says what each run read and sent, then its verdict with the run's own count ("2 secrets left (id_rsa, token sent to …)", "Tego refused 4 attempts (2 secret reads and 2 sends to …)"), the number its banner and Runs chip give; each run head gives its refusals and, of them, the ones "against secrets". The Runs page has a two-run chooser, the Overview a link to the last watched run and the enforced run of the same program that started closest to it (else the newest enforced run), and every run page a Compare button that sets the run against the run of the other kind and the same program that started closest to it (`ledgerview.PairOf`, the same run its reference and the Overview name), else the newest run of the other kind (the watched run goes on the left); with no watched run in the ledger the chooser opens on the newest run against the one before it, never one run twice. A watched run's column is read against the enforced run's contract (see Highlights), so its own API is not marked as the attack nor counted as an off-list connection. With fewer than two runs the page says "Compare needs two runs" with the `tego watch` and `tego run` commands instead of the chooser. |
 | `/rules/new` | **New contract** (below): a project folder, a name and presets (or a finished run to start from), a preview of the rules in sentences with compile's verdict, then Create writes `<dir>/agent.yaml`; a draft from a run is saved by default to the user registry instead (`~/.config/tego/agents/<name>.yaml`, where `tego rules learn --save` saves it). |
-| `/rules` | One run's **Rules in force** in plain sentences (below). `?run=<id>` picks the run (the run page's "Rules version → see the rules" opens its own), `?c=<ref>` a rules file by an opaque ref (the rule service's, the one Change rules takes; an older link's 64-digit ref is redirected to it) and shows its newest run; with neither, the newest run. |
+| `/rules` | One run's **Rules in force** in plain sentences (below). `?run=<id>` picks the run (the run page's "Rules version → see the rules" opens its own), `?c=<ref>` a rules file by an opaque ref (the rule service's, the one Change rules takes; an older link's 64-digit ref is redirected to it) and shows its newest run; with neither, a list of contract files and the agents that used them. |
 | `/machine` | This machine: the highest protection level any run here used ("Up to Basic (Landlock)") or "Watched only so far"; each level with its tier number and the newest run that used it ("Basic · tier 1 · Landlock", then "Last: codex · 07:03", from the snapshot, no ledger read) or what it needs and the command to get it; `tego machine check` to check now; what the newest run's run_start recorded in words, the raw capability ids under a closed "Capability flags (for auditors)". |
-| `/approvals` | Pending asks (an ask line with no answer, in a live run), each a card: "Let codex read this file?", the path read against the run's home (`~/.config/telemetry/token`), how long ago it came and how long the agent waits ("asked 8 s ago · Codex gives up at about 30 s"; past 30 s "Codex has likely given up; Tego refuses it at 5 m", the run's `ask.timeout`), the agent's exact text, the request's line ("line #10", its id in the title), the rule that asked in words ("Your rules ask before any read under …"), **Allow once** and **Deny**, and under **More choices** Allow for this run and Deny for this run (`--always`: later requests for the same operation and target, until the run ends; the contract is not changed), a stand-in file for a held file open, and each answer's terminal twin (`tego approve|deny [run] <ask_id> [--always]`, `tego alternate … --file`). A held open under `fs.ask` asks to write. A held change of a name in an `fs.ask` scope (ADR 0047) says what it changes, with the recorded operation in the words' title: "Let codex delete this?" (unlink: a file, or an empty folder, which the record names the same way), "create a folder at this path?" (mkdir), "rename this?", "make a symbolic link at this path?" (symlink) and "make a hard link of this file?" (link). A rename, a link or a symbolic link shows both its names, each shortened as a path cell is, never cut where one ends: `./src/a.tmp → ./src/a` (a hard link's file, then its new name; a symbolic link's own path, then where it points, as written), in the banner, Waiting on you, Highlights and Answered recently too. Below: **Answered recently** (the people's newest answers: who, what, when; a request nobody answered in time is a neutral "Timed out", not "Denied"; Tego's automatic repeats of a "for this run" answer are left out) and **Never answered** (the open asks of runs that were lost; nothing holds them, so they are not waiting). |
+| `/approvals` | Pending asks (an ask line with no answer, in a live run), each a card: "Let codex read this file?", the path read against the run's home (`~/.config/telemetry/token`), how long ago it came and how long the agent waits ("asked 8 s ago · Codex gives up at about 30 s"; past 30 s "Codex has likely given up; Tego refuses it at 5 m", the run's `ask.timeout`), the agent's exact text, the request's line ("line #10", its id in the title), the rule that asked in words ("Your rules ask before any read under …"), **Allow once** and **Deny**, and under **More choices** Allow for this run and Deny for this run (`--always`: later requests for the same operation and target, until the run ends; the contract is not changed), a stand-in file for a held file open, and each answer's terminal twin (`tego approve|deny [run] <ask_id> [--always]`, `tego alternate … --file`). A held open under `fs.ask` asks to write. A held change of a name in an `fs.ask` scope (ADR 0047) says what it changes, with the recorded operation in the words' title: "Let codex delete this?" (unlink: a file, or an empty folder, which the record names the same way), "create a folder at this path?" (mkdir), "rename this?", "make a symbolic link at this path?" (symlink) and "make a hard link of this file?" (link). A rename, a link or a symbolic link shows both its names, each shortened as a path cell is, never cut where one ends: `./src/a.tmp → ./src/a` (a hard link's file, then its new name; a symbolic link's own path, then where it points, as written), in the banner, Waiting on you, Highlights and Answered recently too. Below: **Answered recently** (at most 200 of the newest answers by people; its history and session totals say at least if this cap or retained windows omit answers, and could not read with the reason after a reader failure: who, what, when; a request nobody answered in time is a neutral "Timed out", not "Denied"; Tego's automatic repeats of a "for this run" answer are left out) and **Never answered** (the open asks of runs that were lost; nothing holds them, so they are not waiting). |
 
 Verdict: above Highlights every run page says in one sentence what happened to its secrets
 (`ledgerview.RunVerdict`, read from the same Signal): red "Secrets left: id_rsa, token sent to 127.0.0.1:45805" when
-a secret was read (observed or allowed) next to a send that got through to a destination off the contract; green
+a secret was read (observed or allowed) next to a send that got through to a destination off the contract; a refusal-labelled
 "Protected: 2 secret reads and 2 sends to 127.0.0.1:43437 refused" when Tego refused a secret read or a send
 next to a secret (each count with its own destination; with several, "3 sends (to A and 1 more)"; the routine lookups
-it also refused are named in the second line only, "4 routine lookups"); otherwise neutral ("No attack attempt was seen in this run", or on a watched run that read a secret
+it also refused are named in the second line only, "4 routine lookups"); otherwise qualified ("No secret read or unexpected send recorded" only when the relevant sources are complete, or on a watched run that read a secret
 with no new destination next to it, "Watched only: 1 secret read, no new destination next to it", whose second line counts the destinations the run did reach:
 a send more than 5 s or 16 lines from the read, or to a host the run already talked to, is not next to it, so the banner never says nothing was sent). Overview and Runs rows carry the same verdict in a Secrets column
-("2 exposed" red, "2 protected" green: both count distinct secrets, and the protected chip's title names the
+("2 exposed" and "2 protected" with distinct state words and shapes: both count distinct secrets, and the protected chip's title names the
 refusals behind it, "2 secrets kept (id_rsa, token); 2 secret reads and 2 sends to … refused"), and Compare's summary
-and run heads print the verdict's refusal count, so a run reads one number on every page. On a watched run whose
-secrets got through or were read, the timeline marks the lines the verdict names: a secret read reads "Secret read"
-and a send to where the secrets went "Sent out", in red; its head says once "Watched only, not enforced", and its
+and run heads print the verdict's refusal count, with the completeness qualification of each page's source. On a watched run whose
+secrets got through or were read, the timeline marks the lines the verdict names: a protected read uses the same Read, not refused or Read allowed chip as Event and Receipt, including the neutral Allowed exception for an allowed own-login read; a send to where the secrets went "Sent out", in red; its head says once "Watched only, not enforced", and its
 quick filter is "Secrets and sends" (`?verdict=leak`) instead of "Refused only". A system lookup socket (nscd, userdb, resolved, the D-Bus buses) and a resolver (a line the engine named `net.resolver`, in any tier, or port 53 on this machine)
 are routine whatever their lines say: never next to a secret, never a send the verdict counts, never where it says
 the secrets went. A real agent asks nscd for each name it resolves, right next to the reads.
 
-Highlights: every run page opens with a card read from the run's lines. **Secrets**: each sensitive path touched
+Highlights: every run page opens with a card read from the run's retained lines. Its event-derived totals, including secret touches, destinations, approvals, programs and routine activity, say at least with a reason and complete-record recovery if older events are omitted; reader failures say could not read. **Secrets**: each sensitive path touched
 (a path under a `deny_read` or `ask_read` entry of the run's contract (an `fs.ask` entry is a folder whose writes
 ask first, not a secret), or a well-known secret path by name,
 `ledgerview.IsSecretPath`, the one detector Highlights and Compare share: under `.ssh/` (not a `.pub`), `.aws/`,
@@ -189,7 +191,7 @@ touched a path under it (a demo's `with/home` next to `with/proj`), else `/home/
 
 Background refusals: a refusal group is background when the contract's default decided it (rule `unmatched`,
 `host-sockets` or `held-unsupported`: no entry names it), it touches no secret, its first refusal is not next to a
-secret touch, and it is a system lookup, a DNS lookup (port 53 on this machine: a resolver the run has is allowed, so a refusal on port 53 of another address is a refused connect), a connect to a remote (not loopback) host the run also reached that no net live block of the run named (by name or address, whatever the port, whatever scope id its connects carry and whenever in the run: a block leaves a refusal the contract already makes under the contract's rule, so the next try on another port of a blocked host says `unmatched`, and it stays a real row), a route probe
+secret touch, and it is a system lookup, a DNS lookup (port 53 on this machine: a resolver the run has is allowed, so a refusal on port 53 of another address is a refused connect), a connect to a remote (not loopback) host the run also reached that no net live block or restored live fence of the run named (by name or address, whatever the port, whatever scope id its connects carry and whenever in the run: a block leaves a refusal the contract already makes under the contract's rule, so the next try on another port of a blocked host says `unmatched`, and it stays a real row), a route probe
 (UDP to port 65535 of a remote host, read from the refused `net` line's protocol: the connect musl's `getaddrinfo`
 makes to each address a lookup returns, to sort them, which sends nothing; a TCP connect to port 65535 is not one;
 each probe target is a group of its own, so a real connect to the same host still counts), or a terminal or standard
@@ -205,34 +207,40 @@ a display fold too: each address and port keeps its line, its Outbound row and i
 the highest severity it holds, and a connect next to a secret read keeps its own row and mark. A group on this machine is
 one port (a rule can name one, and port 53 is a lookup), so `TestPortScanReadsAsOneRow` holds those; a remote host's group
 always held its ports.
-Background is a display fold only: every refusal stays counted, in its group, on the run and in Logs. Overview and
+Background is a display fold only: it does not remove a refusal from its retained group or the complete run refusal aggregate. Logs and Highlights counts remain lower bounds when their event windows are incomplete. Overview and
 Highlights call it "routine" (the word "Background" is also a run's origin); a system lookup or DNS group is never next
 to a secret, so it always folds when the contract's default decided it.
 
 Refusal noise: identical refusals (same run, kind, rule, reason and target) fold into one row with a count.
 Refusals of system lookup sockets (nscd, systemd's userdb and resolved, the D-Bus system bus, a user's D-Bus session
 bus `/run/user/<uid>/bus`) are tagged
-"system lookup" and shown with less emphasis; the logs filter can hide them, and they always stay in every count.
+"system lookup" and shown with less emphasis; the logs filter can hide them; they stay in the complete run refusal aggregate, while event-derived counts cover the retained windows.
 A netlink destination (`family(16)`) is shown as "netlink".
 
 ## Live updates and waiting approvals
 
 While an ask waits, every page shows it: the count is on the Approvals nav item and in the tab title ("(1) Overview
 · Tego"), and a banner names the agent and what it asked for (the path read against the run's home), with Allow once
-and Deny, the same form posts as the Approvals page (session token and Origin checks). Above 640 px the banner floats:
-fixed under the top bar over the content column, it takes no space, so its coming and going moves nothing on the page,
-and while it is up the page holds as much room above its content and scrolls by it, so what it lies over can be scrolled
-into view. A page opened with an ask waiting opens the same way, and room the reader is looking at when the ask goes stays
-until they have scrolled past it; it fades in and out (no motion under reduced motion). It is not rendered on Approvals, nor on a run page that shows its
-own ask card, so it never covers a card's Allow once or Deny; at phone width it sits in the page. An error page (an
+and Deny, the same form posts as the Approvals page (session token and Origin checks). The waiting band is the first
+block of the main column, above the page head, in the page's flow at every width, with scripts on or off. It has the
+full request on Overview and the first waiting request in a compact band on other pages; More opens Approvals and
+shows the known total when more than one request waits. A cut or unreadable waiting source keeps known requests as at least N with its reason; with none known it says it could not tell whether a request is waiting. With an incomplete source, the compact Waiting tab uses N+ or ? with that full sentence in its accessible label and title. The waiting band is not rendered
+on Approvals, nor on a run page that shows its own ask card. No floating copy, reserved room or startup scroll hides
+the page head. The browser's scroll anchoring keeps the reader's place when a request arrives above what they are
+reading. A separate polite live region announces a newly arriving request once; opening another page does not
+announce a request that was already waiting. An error page (an
 address with no page, a run or line that is not in the ledger) shows the banner, the count and the top bar's Live
-word too, as they were when it was answered: it does not follow the live state (a reload shows it again), and a
-ledger it cannot read leaves it "Nothing running" with no banner. Overview's Running
-now and Waiting on you keep the height of one row each when empty, so a run starting and its ask arriving move nothing
-below them. Each ask says how long it is held: "asked 8 s ago · Codex gives up at about 30 s" on a Codex run
-(run_start's harness), "some agents give up after about 30 s" on any other; once 30 s have passed, "Codex has likely
-given up; Tego refuses it at 5 m" (the run's `ask.timeout` from its contract copy, 5 m by default). `live.js` ticks the
-age every second and swaps in the late words when their time comes. A new answer's notice replaces the one before it. Only a live run's asks wait: a run that crashed with an open ask shows no banner and no count
+word too, as they were when the page was rendered: it does not follow the live state (a reload shows it again). If it cannot read the ledger, it shows the reason and keeps global running and waiting coverage unknown. Overview's Running
+now and Waiting on you keep the height of one row each when empty. The full ask cards say how long a request is held: "asked 8 s ago · Codex gives up at about 30 s" on a
+Codex run (run_start's harness), "some agents give up after about 30 s" on any other; once 30 s have passed, "Codex has
+likely given up; Tego refuses it at 5 m" (the run's `ask.timeout` from its contract copy, 5 m by default). `live.js`
+ticks those cards' ages every second and swaps in the late words when their time comes. Above 600 px both bands show an absolute
+asked-at time, a snapshot of how long the request has been held, and the wait note; Overview names the oldest request
+when several wait. Band ages are not rewritten every second, but the give-up note still changes when its time comes.
+The compact band keeps its request while the pointer or keyboard focus is inside it and updates after both leave;
+no timer overrides that hold. At 601 to 640 px the controls can wrap between buttons while each action label stays on
+one line. At 600 px and below they use one three-column row; timing stays on Approvals. A new
+answer's notice replaces the one before it. Only a live run's asks wait: a run that crashed with an open ask shows no banner and no count
 (`/status.json`, Approvals), its page says the request was never answered, and its Highlights say "Never answered
 (run lost)".
 
@@ -284,28 +292,40 @@ side nav with the Approvals count, and the waiting-ask banner; the Overview's he
 its running rows and its other rows (two `<tbody>` of one table) and its paging line; a run's header and ask cards, its Block now panel (`r-run-live`), its Highlights, details and tab counts, and its Refusals, Processes, Receipt,
 Least privilege and Unused tabs; Logs' heading and its facets (its rows follow the run themselves: static/logs.js, see `/logs`; live.js tells it the ledger moved with a `tego:moved` event and re-renders the rows region only where logs.js is not running, at the top of the first page). live.js
 merges each fresh region into the page node by node (rows matched by their key), so the scroll position, focus, open
-`<details>`, a text selection (the region waits until it is gone) and a form you are filling in (left as it is) stay;
-a new row fades in from a soft tint (a still tint with `prefers-reduced-motion`). The tab title carries the waiting
+`<details>`, a text selection (the region waits until it is gone) and a form you are filling in (left as it is) stay.
+The compact request band also waits while hovered or focused. New list rows fade in from a neutral surface tint
+(a still tint with `prefers-reduced-motion`). The request band and its rows keep their own background and text
+colours on arrival, without that highlight. A polite announcement signals newly pending requests; the initial set
+stays quiet, and an unchanged set is not repeated on navigation. A request observed to leave that set and later
+return is announced again. Requests first seen after a filter or tab change are announced too; entering an
+unchanged set stays quiet. The announcement state retains only the last observed pending keys. The tab title
+carries the waiting
 count, "(1) Overview · Tego", even in a background tab. A live run's timeline fetches only
 `GET /runs/<id>/rows?after=<seq>`, the rows after the last line it has (HTML, gzip when the browser takes it), and
 puts them at the top, keeping the newest 200; when the run ends it stops following and drops the rows' *Block this* links.
 Measured on a busy isolated run (~120 lines/s, 55,000 lines) before this change: the page is 161 KB once, then about
 3.8 KB of rows every 2 s (a whole-page refresh was 28 MB).
 
-A clock that follows the wall clock rather than the ledger, a running run's duration so far and an ask's
-"asked 8 s ago", is marked `data-ck`: live.js rewrites its text every second (from `data-since` or `data-ago`), and a
-region's hash leaves its text out, so a region whose only change is a clock is never sent. A full page renders each
-region once: the layout places the HTML it rendered for the hash. A region answer is shared for one second by every
-viewer asking for the same address and regions at the same live state (`web/regioncache.go`); every POST through the
-dashboard drops them, and a run page's answer is also keyed by the files beside its run that the 204 key below
-hashes (its live blocks and pause request, the launcher's pause mark, its stop marker, the rule-change journal). A change no revision
-covers (a rules file edited outside the dashboard) can be missing from an answer rendered up to a second before it,
+A clock that follows the wall clock rather than the ledger, a running run's duration so far or a full ask card's
+"asked 8 s ago", is marked `data-ck`, so a region's hash leaves its text out. Outside the request band, live.js
+rewrites these clocks every second from `data-since` or `data-ago`; a region whose only change is that clock is not
+sent again. The band's held-duration snapshot also uses `data-ck` to leave its text out of the hash, but does not
+tick; the band's asked-at time stays absolute. A full page renders each
+region once: the layout places the HTML it rendered for the hash. A response is served from the shared cache only
+to the peer class it was rendered for. Every region request decides the peer class before consulting either
+shared renders or unchanged-region memos. Governed and uncertain peers neither read nor write shared cache state;
+their handlers render fresh. Person responses keep the one-second cache for the same address, regions and live
+state (`web/regioncache.go`). Builder previews carrying a review identity or acknowledgement are never stored:
+`/rules/new` and `/rules/change/preview` bypass shared caching for every peer. This branch introduces the first
+GET rendering that differs by peer class. Every POST through the dashboard drops shared renders, and a run
+page's answer is also keyed by the files beside its run that the 204 key below hashes (its live blocks and
+pause request, the launcher's pause mark, its stop marker, the rule-change journal). A change no revision covers (a rules file edited outside the dashboard) can be missing from an answer rendered up to a second before it,
 until the page's next update. Measured with one live.js-like viewer per page on a 41-run ledger with
 a run writing 5 lines a second: the Overview sent about 25.5 KB per update, now 4.5 KB (median; 12 KB
 when a refusal moves Newest High and Medium); Runs 66 KB, now 1.7 KB. With 2,000 runs, Runs is 174 KB and 12 ms warm (was
 3.5 MB and about 220 ms).
 
-A run page (its Timeline, Refusals and Receipt tabs) that asks again with the hashes of its last answer gets
+A person's run page (its Timeline, Refusals and Receipt tabs) that asks again with the hashes of its last answer gets
 `204 No Content` without its handler running while nothing it shows has moved: its run's lines and live state, the
 enforced run a watched run is read against, the waiting asks, whether anything runs, its live blocks file (which also
 holds a pause or resume asked), the launcher's mark that it reads a pause, its stop marker, the rule-change journal
@@ -336,7 +356,7 @@ was replaced is read again from the start. Each change makes a new read-only ver
 shares; the timeline, the refusal groups, the Logs fold, the Logs text index and the "Similar" counts are built once
 per version. A kind=refused line that mirrors a refused action is marked as it is read (`ledgerview/pair.go`: by the
 envelope it copies, among the last 4 lines, else the line just before it; the rule `tego measure`, `tego drift` and
-the receipt pair by too, `internal/check/internal/mirror`), and every count and list takes the one
+the receipt pair by too, `internal/check/mirror`), and every count and list takes the one
 rule `Event.Refusal` from that mark, so a run read as it grows counts what one read of the whole file counts. Logs folds each run where it lies and builds only the rows of the page shown. Chain verdicts of ended
 runs are kept by the events file and by the anchor's answer for the run (what `tego events --verify` reads for it in
 chain.log), so the overview no longer re-hashes its newest 20 runs on each load: a look costs one lstat of chain.log
@@ -381,8 +401,7 @@ and 157 ms before). Whether a line's paths name a secret
 parts ask, and the Rules page keeps a run version's scan of the ledger.
 
 Bounds: a request covers at most the newest 100,000 runs (by their ledger file's change time) and 5,000,000 lines
-(`MaxRuns`, `MaxLines`). Full-run summary counters continue beyond the presentation bound; a page that hits
-a bound says so in a banner. Decoded lines are
+(`MaxRuns`, `MaxLines`). Full-run summary counters continue beyond the presentation bound. Each displayed number names its scope and is qualified individually when its source is incomplete; a page-wide banner alone does not establish the meaning of an exact-looking number. Decoded lines are
 kept under an estimated 512 MiB (`MaxResidentBytes`), with space reserved for derived views and indexes.
 Amended 2026-11-03 (M2): decoding itself retains at most 32,768 recent events and 128 MiB estimated per run
 (further limited by `MaxLines`), including active runs. The reader stops at the file size it observed and discards
@@ -397,7 +416,95 @@ allocation/retention bounds, not a process RSS limit: concurrent requests can ho
 More than 32,768 simultaneous pending asks or 8 MiB of estimated pending-request state are labelled as
 truncated. That estimate charges every retained ask string, including `Hold` and `Op`, after event-window
 rotation. Full-history incremental Signal and a
-persistent historical offset index remain unimplemented. The following performance numbers predate this amendment.
+persistent historical offset index remain unimplemented.
+
+### What each number covers
+
+The [number inventory](../internal/control/web/inventory/number_inventory.json) names
+278 quantities, including zero-form sentences, tooltips, spoken labels and the
+waiting count in the document title. There are 26 Overview rows, 10 Runs, 108 Run
+and tab rows, 20 Logs, 9 Detections, 5 Approvals, 9 Contracts, 17 Compare,
+21 Event, 7 Investigate, 9 editor/transaction rows, 7 machine-readiness rows,
+5 MCP, 4 model-route rows, one Glossary, one Severity and 12 shared rows.
+The Vault layer registers its seven rows where that layer is built. Each row names
+its label, source and incomplete form. `quantity`, `quantityWords`,
+`quantityText` and `quantityZero` refuse an unknown inventory ID. Literal markers
+are checked against the same inventory; these helpers alone cannot detect an
+unmarked number written directly into a template.
+
+Sources are eligible run candidates from directories or remembered missing records (`candidates`, exact despite a display cap but unknown after a scan failure), the run list (`runs`), running status (`live`), status-derived groups (`status`), the active run filter (`selection`) and its non-running remainder (`remaining`), decoded full-run counters (`aggregate`),
+run categories that require decoded metadata (`metadata`), retained events (`window`), historical unanswered identities (`unanswered`),
+one run's actionable waiting requests (`pending`) and the global queue (`queue`),
+answer history (`history`), newest-run credential usage (`vault`), strictly
+streamed MCP counts (`mcp`), daily refusal aggregates (`daily`), and the streamed
+Receipt with its own identity limits (`receipt`). `exact` names a complete list,
+configuration value or the explicitly labelled contents of one record. Counts
+within a run row or comparison side follow that run. Even the recovery page for an unreadable ledger root keeps run presence and waiting unknown. Shared top-bar and navigation
+counts always use the global run-list and queue scopes, independently of a page's
+local source. Known directory presence cannot establish that a run lacks a protection tier, MCP declaration or model route when its metadata could not be decoded; those category absences use the decoded-record scope. The central page renderer refuses missing global scopes; New contract and the retired rule receipt use the same global derivation. A sub-template taking a numbers scope must receive it explicitly:
+`numbersOf` refuses a missing scope, including in live-row responses. Complete-record recovery links use the standard button target, including on unreadable-root error pages.
+
+An ordinary quantity is exact for its stated scope, or reads “at least N” with a
+reason and complete-record recovery. Truncation, eviction, omitted runs,
+malformed lines and bounded history/list retention qualify their affected
+sources. An unreadable source replaces ordinary prefix counts from that source with “could not read”. Live-index failures qualify running, waiting and status-dependent selections without suppressing readable event, history or credential counts.
+An absence derived from zero, including Contract and rule hit statements, says
+none was seen in what is retained when its source is incomplete (including the mixed Compare summary), with the same
+reason and recovery. It cannot establish complete absence.
+
+A retained run failure is distinguished from an unlisted candidate failure. The former keeps known presence and qualifies that run’s sources; an unlisted failure takes priority for global uncertainty, even if another listed failure was encountered first (`TestApprovalsEndedMissingRecordCannotHideWaiting`, `TestUnknownCandidateAfterListedFailureCannotClearQueue`).
+
+
+Known actionable requests remain visible after a read failure. One `waitingOf`
+derivation supplies the badge, document title (including live updates), spoken
+text and page sentence. Three known requests with a cut or unreadable source
+read `3+` visually and “at least 3 waiting: <reason>” in words. With none known
+and an incomplete source, the badge/title use `?` and the sentence says “could
+not tell whether a request is waiting: <reason>”. A complete empty queue alone
+permits “Nothing waiting”. Failures of retained, known ended runs do not qualify that
+headline: they cannot hide an actionable request. Waiting identities are kept by
+`runState.take` in `internal/control/ledgerview/cache.go`, separately from the
+retained event window and the 200-answer history; their own budget, malformed
+live records, omitted runs and reader failures still qualify the queue. An unreadable live index preserves previously known waiting requests as a lower bound; a listed run whose directory vanished also prevents an all-clear. After a cold start, an absent index beside unfinished or omitted records keeps waiting unknown; a fresh empty ledger or complete ended history alone does not. Losing a ledger root previously read successfully, even empty, is a global read failure even when its remembered runs ended, because other runs could be missing. Unknown running status is shown as unknown, rather than lost, and those runs are not offered as finished runs. Recovery changes the row revision without requiring another record line.
+
+A missing record is a read failure with reason “its record file is missing” when
+the store previously observed the record file, even empty (it could have gained lines before it vanished), or a last-refusal file or configured
+chain entry supplies evidence of recorded lines. This evidence survives summary
+eviction and removal of the run directory for the store's lifetime. It retains one run ID per observed record source, outside the decoded-window byte budget. An indexed run last known live retains its known waiting requests after its directory and held lock become unreachable; a missing lock in an existing directory still means the run is lost. After restart only the surviving disk evidence
+is available; GAPS C77 records the indistinguishable case. The account-wide chain has no ledger-root field: a chain ID alone cannot locate a vanished, previously unknown run directory in this root. A surviving live-index entry supplies root membership for a vanished directory: a positive chain head then retains that missing recorded run and its count. An account-wide chain ID with no root association still supplies no membership. A genuinely new run
+without such evidence has recorded nothing yet. Unreadable chain evidence leaves recorded history unknown; it is not remembered as positive evidence. Polling a missing file keeps the last immutable prefix without waiting for an active decoder. Non-regular record files also retain a known prefix as a read failure. Chain evidence for missing candidates is read in one batch per scan. Failed candidates are retained ahead of readable candidates at the run-list cap; the banner says “up to”, without promising the newest selection.
+
+Clocks, durations, identifiers, ports and configuration examples have individual
+source-element/attribute exclusions with reasons in the inventory (private Vault
+exclusions live with its test layer). No styling class is exempt. The source test
+requires each exclusion to identify exactly one element/field, and the rendered
+walk fails if an exclusion or inventory row renders nowhere. Exclusions apply only
+to their own text and attributes; child quantities are always inspected. Exit codes and several exact record/configuration
+values are themselves inventoried; no category is silently exempted.
+
+`TestNumberInventoryMatchesTheSource` checks IDs and exact-scope call sites.
+`TestNumberInventoryQualifiesEverySource` checks every row's helper forms.
+`TestNumberInventoryRenderedPages` walks real page, live-region, live-row and
+line-panel responses over complete, truncated, evicted, malformed, unreadable,
+omitted-run and cut-queue fixtures, supplemented by real-template boundary
+fixtures. It inspects text and shown/spoken attributes: title, aria labels and
+descriptions, alt, placeholders, visible input/output/meter/progress values and
+bounds, and deferred visible text. `TestNumberInventoryPageCatalog` requires a
+fixture for each standalone page in the server's page catalog. These are fixture
+and source checks, not a proof of every possible data value or branch.
+`TestNumberCollectorNegativeControls` includes unmarked monospace text, a tooltip
+and a zero-form sentence, plus spoken/value and split-text controls. The P4–P8
+regressions exercise missing files, fragment scopes, global chrome, the independent
+waiting state and both DOM and keyboard order. Chrome checks remain explicitly
+invoked and do not establish human screen-reader speech or another browser engine.
+
+Daily refusal totals use the complete run aggregate only when its minimum and
+maximum refusal timestamps fit the named day. The refusal count tracks whether
+these bounds were seen separately from their values: the RFC3339 zero date is a
+valid timestamp. Invalid or missing timestamps are unreadable records, including
+after window truncation, and are never used as date bounds.
+
+The following performance numbers predate this amendment.
 
 Measured 2026-10-26 on an isolated ledger written by the real ledger writer with a valid chain (`go run
 ./tools/dashgen`: 300 ended runs of 500 lines, one ended run of 200,000 lines and 107 MB, one live run; 350,800
@@ -424,16 +531,16 @@ slow deep in a huge run: its "Act on this" panel asks the rule service, which wa
 reader up to the line (`internal/rulefile.FindIn`), outside the read model.
 
 Logs' facets are counted in the filter's own walk, and each run's counts are kept per run version and filter, so a warm
-page pays only the walk (`TestQueryBudget` with `TEGO_LOGS_BENCH_LEDGER`, the same 350,499-line ledger,
+page pays only the walk (measured once with the former env-gated `TestQueryBudget`, which `go test` now runs on a seeded ledger and holds by counting allocations; on the same 350,499-line ledger,
 query plus facets, in-process, GOMAXPROCS=4): no filter 38 ms the first time, 0.7 ms again; one filter (verdict, kind,
 host, rule prefix, pid, source, a time range, a path under `~`) 10 to 28 ms first and 10 to 19 ms again; the first text
 search of the ledger 104 ms (it builds each run's text index once), later words 9 to 37 ms. A warm `/logs` with its
-facets on the 19,528-line demo ledger takes 17 to 19 ms (`TestLogsWarmBudget` with `TEGO_LOGS_BENCH_DEMO`).
+facets on the 19,528-line demo ledger took 17 to 19 ms when measured once on a copy of it; `TestLogsWarmBudget` now runs in every gate on a seeded ledger and holds that by counting: a warm page of the budget set allocates the same objects and bytes on 9,000 lines and on 36,000.
 
 The program a line's process ran is one forward pass over the run's exec lines (`ledgerview/program.go`), kept per run
 and continued where it stopped when a live run grows, so a live page pays only its new lines. Groups are counted in the
 filter's own walk and kept per run version, filter and grouping like the facets (`ledgerview/group.go`). On a copy
-of the 19,528-line, 5-run demo ledger (`TestLogsWarmBudget`, warm, best of 5, GOMAXPROCS=4,
+of the 19,528-line, 5-run demo ledger (measured then by the env-gated form of `TestLogsWarmBudget`, warm, best of 5, GOMAXPROCS=4,
 before and after measured one after the other on 2026-10-27 over the same copy, twice each; the copy is not kept):
 `/logs` 19 ms (15 ms before the Process column, the program facet and the row panel's hooks; the page is 212 KB, from
 157 KB, most of it the per-row program and pid links), `?verdict=refused` 21 ms (16.5), By process 14 ms, By target of
@@ -479,49 +586,79 @@ s, Overview 3 s after start 1.50 s to 24 ms, `/status.json` during the cold read
 C: 40 runs of 300 lines and a live run): cold Overview 0.23-0.26 s to 0.05-0.07 s; the Ledger tile there may read
 "Verifying…" for about a fifth of a second if the page is opened the moment serve starts.
 
-## Look and feel (2026-10-27)
+## Look and feel (v0.2.0 design system)
 
-One design system covers every page; all of it is CSS in `static/app.css` (the "finish" section at its end) over the
-tokens in `static/tokens.css`, so no page's words or markup changed.
+The shared design system uses the website's brand: `static/tokens.css` holds the colour, size, spacing,
+radius and duration tokens (a test rejects literal colours in the other stylesheets), and `static/app.css` holds
+the shell and components. Legacy page and compatibility rules still contain literal dimensions. Until each
+page is rebuilt on the system, `static/mvp.css` keeps today's page rules, scoped to the old markup, and app.css's
+section 19 fits that markup into the new shell; each rule there names the package that removes it.
 
-- **Type scale.** Page titles 1.5rem semibold (1.25rem on a phone), section titles 0.9375rem, body 0.875rem, labels,
-  badges and table heads 0.75rem. `text-transform` is never used, so what a page shows is its text.
-- **Surfaces.** Panels, stat tiles, ask cards, banners and the top bar share one radius and one soft shadow
-  (`--shadow-1`); tiles show their number at 2rem.
-- **Tables.** A quiet header row (`--c-bg`, semibold `--c-text2`), hairlines between rows, numbers right-aligned in
-  tabular figures; a table that opens or closes its panel keeps the panel's rounded corners.
-- **Nav and controls.** The active nav item carries a 3 px accent bar; focus rings sit inside the rail. Buttons:
-  primary filled, secondary outlined, danger outlined in red, ghost bare, each with a firmer border on hover; inputs
-  and selects take the focus colour on focus. Run tabs show their counts as small pills.
+- **Shell.** Desktop keeps the approved top bar, side rail and ledger geometry. At 600 px and below the
+  in-flow 56 px bar shows the logo and page name. Bottom navigation has Overview, Runs, Approvals with its waiting
+  count, Logs and More. More opens a native page with Agents, Contracts, Detections, This machine, Guide, Glossary
+  and the theme switch. Navigation is 64 px plus the safe inset; the page reserves its space. At heights of 480 px
+  or less it returns to flow. From 601 to 860 px the existing top strip remains; the 861 to 900 px icon rail and
+  wider 216 px rail retain their content budgets. Runs uses three-fact phone rows and a Filter sheet with a native
+  GET fallback. The shared page column wraps unbroken names without changing rail widths. The page packages share their responsive interior components.
+- **Type.** The system text faces; page titles and the wordmark in Anton, the website's headline face, served from the
+  binary (`static/fonts/anton.woff2`, OFL 1.1, 11 KB, a cut of the site's file to Basic Latin, Latin-1 and common
+  punctuation); a title that is data (an agent, a path) stays in the text face. With the font blocked, the wordmark
+  falls back to the system stack. Figures are tabular everywhere.
+- **Surfaces.** Paper and stone grounds, hairlines, one radius; panels lift by a faint shadow. A record tile's value
+  can wrap when the available width changes, including when another tile fits on the same row.
 - **Live updates.** On a desktop the scrollbar gutter is reserved, so a page that grows past one screen as lines
   arrive does not shift sideways.
-- **Contrast.** Every text token clears WCAG AA (4.5:1) on `--c-bg`, `--c-surface` and `--c-sunken`, and every badge
-  colour on its own soft background, in the light theme and both dark blocks (39 pairs per theme, checked by script).
+- **Contrast.** Every text token clears WCAG AA (4.5:1) on `--c-bg`, `--c-surface` and `--c-sunken` in the light theme
+  and both dark blocks, the focus ring 3:1 (theme_test.go, a11y_test.go).
+
+The development tree's shared geometry audit, which has saved fixtures, a configuration
+matrix and per-clipping-ancestor reachability checks, uses rendered text fragments and applicable clipping
+boxes rather than counting empty layout space or ignored inline overflow as lost content.
+The round-2 zero-regression conclusion is withdrawn because
+an inner horizontal scroller could hide outer clipping. Corrected replay results and remaining page findings are
+recorded privately. Hidden native captions and icon-rail Soon
+labels retain their tiny masked boxes and accessible names. Legacy Logs record-line agent labels at 768 px and up also keep
+room for enlarged text while retaining horizontal ellipsis and full-value titles. Legacy Overview and Runs
+command subtitles at those widths also retain room for enlarged text and keep their command tooltips.
+These repairs do not redesign phone layouts.
+The geometry comparator does not establish completeness of the separate full-audit behavior and screenshot records. Chrome checks require an explicit manual run; CI and the private gate
+do not run the Chrome-tagged guards.
 
 ## Signal, approvals and live pages
 
 - **Signal over noise.** Every run page opens with Highlights; the Refusals tab groups by default with the background
   folded. On the supply-chain demo's enforced run 26 of 482 refusals stay in front and 456 fold as background; the
   SSH key (marked "Followed by a connection") and 127.0.0.1:8802 (marked "After a secret read") are the first rows.
-- **Approvals you cannot miss.** A banner on every page but Approvals and the asking run's own page (which shows the
-  ask in full), the count in the tab title and on the nav item, Allow once and Deny in one click.
+- **Approvals you cannot miss.** A waiting band above the page head, in the page's flow at every width, on every page but
+  Approvals and the asking run's own page (which shows the ask in full); the count in the tab title and on the nav item;
+  Allow once and Deny in one click. Above 600 px the band is full on Overview and compact elsewhere. On phones it shows only the oldest request: who wants what, including the target, Allow once, Deny and Details. Timing and the full target remain on Approvals.
 - **Light live pages.** `static/live.js` follows the live state and a live timeline fetches only its new rows (see
   Live updates); no page reloads whole: only the changed regions
   are swapped in place.
 - **Compact rows.** Timeline and Logs rows carry *Block this* (on a live run's allowed program, destination or file:
   a file row fills in kind File or folder with its absolute path, a rename's or a link's first name as the line holds
-  it) and *Make a rule* beside the verdict (the run page's Block now panel shows its terminal twin, `tego block <run> <kind> <value>`, which `static/twin.js` fills in with the form's kind, value and time limit as they are typed or picked, each word quoted as `internal/shellword` quotes one and a value that starts with `-` after `--`, and leaves as placeholders for a path that is not absolute or a value holding a control or an invisible character); Logs cells wrap; the Unused permissions tab says "unknown here" instead of a false "Not in the
+  it) and *Make a rule* beside the verdict (the run page's Block now panel shows its terminal twin, `tego block <run> <kind> <value>`, which `static/twin.js` fills in with the form's kind, value and time limit as they are typed or picked, each word quoted as `internal/shellword` quotes one and a value that starts with `-` after `--`, and leaves as placeholders for a path that is not absolute or a value holding a control or an invisible character); desktop Logs' What text wraps without a line clamp; phone summaries keep who, one outcome and when, with exact technical values at their Event destination; ellipsized facet and record-line agent labels have their full values in titles; the Unused permissions tab says "unknown here" instead of a false "Not in the
   contract" when the contract cannot be recompiled; when the copy does not compile at all (its folder is gone) it
   counts the entries the copy's text declares and says so in one line.
+  The line page's prefilled Logs search signals a subject wider than its input with an ellipsis and keeps the full
+  rendered subject in its title. The input remains editable, with its full value reachable by moving the caret.
+  Overview's Waiting on you rows give ellipsized run/time metadata a title with the displayed label, full run ID and
+  absolute timestamp. Logs' clamped Rule labels keep the complete displayed words and raw rule key, when present,
+  in their titles. Detections names the Investigate column on its header itself, keeping hidden heading text from
+  enlarging the document outside the table's scroller.
 - **Compare.** `/compare?a=&b=` puts an observed run beside an enforced one.
-- **Colours and a dark theme.** One meaning per colour on every page (`static/tokens.css` holds the story): red is High,
-  a sensitive action that got through, or a broken or lost record (`--c-danger`); amber is what needs you, or Medium; grey
-  is Low or routine, and the states that are only states (running, verified, a block in force); green is kept safe and
-  nothing else (`--c-stopped`); links are blue. Every text token clears WCAG AA in both themes (a test checks it). The
-  page follows the system light or dark setting; the Auto / Light / Dark switch in the header overrides it,
+- **Colours and a dark theme.** The shared shell and state chips use the design's meanings (`static/tokens.css` holds
+  the story): orange means a request waiting for a person. Refused is a dashed red outline; a protected read that
+  was allowed is filled red with explicit words and a warning icon, except allowed own-login reads, which stay
+  neutral. Routine actions and current navigation use
+  navy or neutral ink. Routine allowed and passed-through actions and verified states stay neutral and do not
+  claim safety.
+  Light uses paper, white and cool grey; dark uses three navy surface levels. Text and control boundaries are
+  checked against their actual grounds in both themes. Auto follows the device; Light and Dark override it.
+  On phones the single switch is on More; on larger screens it remains in the header.
   `static/theme.js` (loaded in `<head>`, so there is no flash) sets `data-theme` on `<html>` and keeps the choice in
-  `localStorage`. Without script the switch is hidden and the system setting rules. On a phone the "On this computer"
-  badge gives way to the switch (the footer still says it).
+  `localStorage`. Without script the switch is hidden and the system setting rules. Print is always light.
 
 ## How a run was started, Stopped, and the keyboard
 
@@ -545,21 +682,25 @@ tokens in `static/tokens.css`, so no page's words or markup changed.
   can be ticked and one that cannot) and the Saved panel's Undo with its acknowledgement and "Also lift". The skip
   link is the first tab stop and leads to `#main`; every link, button and field has a name (a bare count or "Run"
   link carries an `aria-label`); a group of boxes is a `<fieldset>` whose first child is the `<legend>` naming it; no
-  positive `tabindex`, no autofocus; the approvals banner is `role="alert"` with `aria-live="assertive"` and is the
-  first thing in the page's tab order; Allow comes before Deny, and each of those boxes before the button that sends
-  it; a visible focus ring (`--c-focus`, 3:1 or more on every surface, light and dark) is never removed.
+  positive `tabindex`, no autofocus. The waiting band is a named region after the top bar and navigation in the page's
+  tab order; a separate `#ask-say[aria-live="polite"]` announces when newly pending requests appear. Initial requests
+  stay quiet; an observed removal and return counts as another arrival. Allow comes before
+  Deny, and each of those boxes before the button that sends it; a visible focus ring (`--c-focus`, 3:1 or more on
+  every surface, light and dark) is never removed.
   `web/journey_chrome_test.go` walks it in headless Chrome with Tab and Enter alone, at 390,
   768 and 1440 px wide, light and dark: the Overview's skip link and the nav to Approvals, Allow once there, a run's
   Stop run and its confirm, Deny on the run's waiting request and its Receipt tab, a line's page and a Logs row
   opened in place. Every stop must come after the one before it, sit in the window with its focus ring and not lie
-  wholly under another element (the sticky top bar, the phone's bottom bar, the approvals banner); no page reached
+  wholly under another element (the sticky top bar, the approvals banner); no page reached
   may scroll sideways, log a console error, an uncaught exception or a failed load, or break the Content Security
   Policy; and at 390 px every button-like control must be at least 24 by 24 px (WCAG 2.5.8; the toast's × is now a
-  24 px square). The skip link leaves `<main>` just under the sticky top bar, and on a phone a control Tab brings up
-  stops above the bottom bar. A toast can still lie over a control near the bottom right (across a phone's width,
-  above its bar) for its 6 s: the test logs that and does not fail it. `TestReceiptTabInChrome` holds the Receipt tab
-  of four runs to the same at every width and theme. Chrome is not in CI, so both run by hand (`go test -tags chrome
-  -run 'TestJourneyByKeyboardInChrome|TestReceiptTabInChrome' ./internal/control/web`). No real screen reader and no
+  24 px square). The skip link leaves `<main>` just under the sticky top bar; phone content and focus reserve space above the
+  fixed safe-area bottom navigation, which returns to flow at short heights. A toast can still lie over a control near the bottom right (across a phone's width, above navigation)
+  for its 6 s: the test logs that and does not fail it. `TestReceiptTabInChrome` holds the Receipt tab
+  of four runs to the same at every width and theme. Chrome-tagged tests are in neither CI nor the private
+  `make precommit` gate. They run by hand today (`go test -tags chrome
+  -run 'TestJourneyByKeyboardInChrome|TestReceiptTabInChrome' ./internal/control/web`); the shell's band checks use
+  `-run '^Test(Shell.*|AskBand.*|AskBanner.*|CompactAskHolds)InChrome$'` with the same tag and package. No real screen reader and no
   person has run this journey yet.
 
 ## Rules in force
@@ -572,7 +713,7 @@ and one of its runs: its newest 40, and the run shown when that is older (one re
 read, Can change, Asks you first, Never
 reads, Never changes, Programs, Network, Settings it gets, Limits, Always on) is one table: the rule's sentence, its
 effect (an allowed rule's chip is neutral, not green), how it is enforced when that is an exception (best effort in
-amber, held by tego, not enforced; a rule the operating system enforces in full leaves the cell empty, as the column
+a quiet chip, held by tego, not enforced; a rule the operating system enforces in full leaves the cell empty, as the column
 head says), its hits in this run linking to Logs filtered to its
 ledger rule key (a program entry's key is the name the run's lines give the file it resolved to, so every entry
 naming one file, such as `python3` and the `python3.13` it links to, shows that file's hits; an entry with words
@@ -602,7 +743,7 @@ programs decide a UDP datagram's destination and the row is not listed, though b
 datagram to a relative name, or to a name that leads elsewhere, stays best effort there, as does every one on a kernel
 before 6.7 where no decision plane decides it (enforce-cgroup-observe §5): the page does not show that yet. A last
 line that leaves the agent
-wide open (any address on the network, any program, every variable of the shell) carries an amber Open chip and a
+wide open (any address on the network, any program, every variable of the shell) carries a quiet Open chip with a warning icon and a
 "Narrow this" link to the Change rules form's section (the YAML editor for the environment). Two or more terminal
 device rules (`/dev/null`, `/dev/tty`, `/dev/ptmx`, `/dev/pts/`) fold into one row, "Can change terminal devices
 (4)", whose expander keeps each rule with its line and hits (`rulesview.FoldDevices`). A running run's live blocks come first,
@@ -621,7 +762,7 @@ the run ended before putting in force, and "Was marked (recorded, not refused): 
 A live-blocks file the page cannot read lists nothing and says why in plain words after "The run's live blocks could
 not be read:": damaged or written by a newer Tego, not trusted and why ("live-block.json is a symlink"), not readable
 by this user, or the system's own words for any other error, never Go's error with its prefixes and the run's folder.
-When the rules file changed after the run started, an amber banner says "Saved · from the
+When the rules file changed after the run started, a notice says "Saved · from the
 next run" with each change's sentences from the rule-change journal (a change undone since, and its undo, are left
 out; an undo of an older change reads "Undid: Can never read ./confidential/"), or the time of an edit made outside
 Tego. A file that loads to other rules than the run ran when neither the journal nor its time dates a change (a profile
@@ -642,18 +783,17 @@ the event page's "Act on this", the one place a rule is made from a line; the ol
 terminal. The form takes the project folder (a full path or `~/...`), an agent name (empty: made from the folder's
 name) and either the presets (`no-secrets`, `no-prod`, `repo-only-writes`, ADR 0068) with optional folders it may
 write, hosts it may reach and its command, or a finished run of this ledger whose least-privilege proposal (`tego
-learn`) becomes the draft; after a preview, what the command's agent needs past a chosen preset's promise (`api.anthropic.com:443` under *Only hosts I list*) stands beside that preset's label; when that run leaked secrets, the draft leaves the destinations out as the Least privilege tab does, and a red notice above the preview says which (the server reads them from the run's verdict; no form field sets them). Preview is a GET and writes nothing: it shows the rules in plain sentences (every preset
+learn`) becomes the draft; after a preview, what the command's agent needs past a chosen preset's promise (`api.anthropic.com:443` under *Only hosts I list*) stands beside that preset's label; when that run leaked secrets, the draft leaves the destinations out as the Least privilege tab does, and a red notice above the preview says which (the server reads them from the run's verdict; no form field sets them). The Preview form uses a guarded POST to prepare a missing registry destination before review. Read previews show the rules in plain sentences (every preset
 laid in, no enforcement claim: the run's tier decides that), what `tego rules check --offline` says in that folder, the
 folders Create makes and the YAML (`env.set` values hidden). The folder must exist, be yours, not be writable by every
 user unless sticky, and not be or sit inside the ledger root or `~/.tego`; one that already holds `agent.yaml` is
-refused, never overwritten. Create (a form POST with the session token, carrying the preview's sha256) composes again,
-refuses if the text changed, makes the folders beneath the checked folder opened once with no symbolic link followed
-(`mkdirat`, `openat2 RESOLVE_BENEATH|RESOLVE_NO_SYMLINKS`: a link on the way, there before or swapped in since the
-check, refuses Create and is named, so no folder lands outside the project through a link; a real folder renamed into
-the checked path after the check is not noticed, since Create opens the path again rather than the check's own
-descriptor), compiles again with them in place, and writes `<dir>/agent.yaml` (mode 0644) through
-`internal/rulefile.Create`: the folder pinned as a change pins it, the file moved into place with `renameat2
-RENAME_NOREPLACE`, and one `op: create` journal line. One folder may be made outside the project: for a `claude`
+refused, never overwritten. Create (an authenticated form POST carrying the preview's acknowledgement)
+compiles again and refuses any change to the reviewed bytes, destination kind and canonical path, directory
+device/inode, profile/preset/config dependency digests or compiled output. It makes the retained setup folders
+beneath the checked project folder without following a link. The contract publisher checks the reviewed directory
+identity against its final descriptor, writes and syncs a temporary file there, publishes `<dir>/agent.yaml`
+(mode 0644) without replacing an existing name, then syncs the directory. It rechecks inherited source bytes
+before publication. `internal/rulefile.Create` adds one `op: create` journal line. One folder may be made outside the project: for a `claude`
 command whose writes are restricted, Claude Code's socket folder `/run/user/<uid>/cc-socks/` when it is missing,
 beneath its nearest existing parent, whose path is resolved once with its links followed. When anything after the
 folders fails, Create removes the ones it made, only while empty and the same way, never through a link
@@ -671,8 +811,9 @@ folder and the `tego-agent@<name>` unit find it. It goes through `registry.Save`
 must be an agent id that does not start with `-` and be free from the run's folder (a name a registry already
 resolves, or a file of that name in the folder, is refused with "give another name"), the file must not lie inside one
 of the draft's own `fs.write` entries, the draft is compiled as that file, and the file is created 0600 (its folder
-0700) with `O_EXCL` inside `agents/` opened as an `os.Root`, so it is never written over a file or through a link, and
-an `agents/` that is a link out of the registry is refused. The entry is then resolved from the run's folder as
+0700) by the shared descriptor-relative publisher: every directory component including `agents/` is opened
+without following a link. The complete temporary file is synced and published without replacing a name, then
+the directory is synced. An `agents/` link is refused even when it points within the registry. The entry is then resolved from the run's folder as
 `tego run <name>` will, and removed if that would refuse it. The preview runs the same checks and shows a refusal in
 its problems banner; a save refused at the write goes back to the preview with one line that leads "Not saved" and
 names what failed and where. The saved page shows `cd <run folder> && tego run <name>`. Such an entry is in no change
@@ -703,21 +844,31 @@ list a change may touch (Can change, Asks you before it changes, Asks you before
 change, Programs it may run, Can connect to, Asks you before it connects to), each listing the entries the file
 spells with Remove (and Never allow on an ask entry) and an Add field with a hint for that kind; an entry the file
 spells more than once is listed each time, and Remove or Never allow on it takes every copy, since a copy left would
-keep the rule (the preview's "Why" says so); limits, the command, `env:`, `extends:` and the tier stay terminal edits.
+keep the rule (the preview's "Why" says so). Limits, command, inherited profiles and tier are editable in Full;
+new environment assignment values require a terminal.
 Every button is a GET to the preview, which writes nothing: the change as Before and After sentences with one
-Narrows, Widens or Mixed chip in the panel head (a Mixed change marks each row too), "Applies from the next run of
-this rules file" followed, while an "Also apply now" box is ticked, by
+Narrows, Widens or Mixed chip in the panel head (a Mixed change marks each row too). The chip is the compiled
+comparison's (ADR 0156, 2026-11-21): both texts are compiled and each family of the two tables is ordered, so a pure
+refusal narrows, an entry a profile the contract extends also grants says "No change: the compiled contract allows the
+same", a family the comparison cannot order makes the change Mixed (never Narrows), and a change that cannot be
+compared is not previewed; "Why it narrows" names the families that decided it. "Applies from the next run of
+this rules file" is followed, while an "Apply now" box is ticked, by
 "in force on r-… within about a second" (once none is ticked, "Runs going on now keep the rules they started with"),
-for a narrowing a **Running now** box with "Also apply now to r-…" per running run of that file (ticked; each change
+for a narrowing a **Running now** box with "Apply now to r-…" per running run of that file (ticked; each change
 on that run as **Applies now** with the live block it places, **Recorded only (watched run)** on a `tego watch` run,
 or **Next run** with why it has none: an ask added, a read ask removed, a pattern, a command entry, a widening, or
-another entry that still allows it), the YAML diff and the list changes in keys ("Why it narrows: …") behind a
-toggle, and the terminal twin (the edit by hand, `tego rules check`, and `tego block` for each live block). A widening (or a mixed change) shows an amber box naming what the next run will be able to do and a required
-checkbox, and its Save is never the primary button. The checkbox posts that preview's acknowledgement (an HMAC of
-the change, the text it was made on and the text it writes, under a key that never leaves the dashboard): a Save that
-carries another preview's, or none, writes nothing and shows the change again. Saving (POST `/rules/change`) goes through the rule service and
+another entry that still allows it; under such a run "This run keeps the rules it started with. The change is in force
+the next time the agent starts: stop this run, then start the agent again" and the line that starts it, `tego run
+<contract> -- <command>` from the run's record; the block is journaled as begun before it is placed, and none is placed
+when the journal cannot show it), the YAML diff and the list changes in keys ("Why it narrows: …") behind a
+toggle, and the terminal twin (the edit by hand, `tego rules check`, and `tego block` for each live block). A widening (or a mixed change) shows newly granted rule-family entries and any family whose direction Tego
+cannot classify, followed by a required checkbox and a quiet Save button. Other families may still refuse a
+new family grant. The checkbox posts that preview's acknowledgement: its unique review identity followed by an HMAC binding
+that identity with the reviewed bytes, destination, directory identity, dependency sources and compiled result,
+under a key that never leaves the dashboard. Narrowings carry the same binding in a hidden field. A Save that carries another
+preview's value, or none, writes nothing and shows the change again. Saving (POST `/rules/change`) goes through the rule service and
 opens the Saved page with the result in one line (the flash line): the sentences, each live block with its state on
-its run now, the `.bak`, the diff, and Undo (POST `/rules/revert`, acknowledged when undoing widens). The Saved
+its run now, the `.bak`, the diff, and Undo (POST `/rules/revert`, acknowledged when undoing widens). The Several changes at once form (C125) is the same preview and Save for up to 16 edits (`rules.MaxEdits`): the preview address repeats `op`, `key` and `v` once for each edit (`batch=1` skips a row with no entry), the Save form carries every edit, the service checks them as one text and writes all or none, and the journal holds one entry, so one Undo takes them all back. The two raw editors (Change rules, and Full in New contract) show line numbers beside the text, the cursor's line and a "Line L of N, column C" status, and a diagnostic's "line N" link puts the cursor on that line (C126, `static/lines.js`; a phone shows the status and no gutter). The Saved
 page's headline is "Saved · live now on r-… and from the next run" once every block "Also apply now" placed is in
 force, "Saved · from the next run; putting it in force on r-… now" until then, and "Saved · applies from the next
 run" when nothing was applied now; its **Running now** list says, per block, **Live now** on r-… since line #N (the
@@ -734,7 +885,11 @@ file still holds, each entry with the live blocks it placed ("live on r-…") or
 whole text: Check compiles it as the next run would and lists the compile's problems with links to their lines,
 or shows the diff with the confirmation box and Save; Save writes it as a free edit, which cannot be read as
 narrowing or widening, is always confirmed like a widening (the box is bound to the text that was checked, so a text
-changed after its Check is checked again before it can be saved). Its Check also lists the edit's list changes (each
+changed after its Check is checked again before it can be saved). Its Check (and the saved page, and the one-entry preview)
+names every compiled family the text moves, each with the direction the family comparison ordered it in ("What the
+compiled contract changes"; a family it cannot order says so and is never called narrowing), and the journal's summary of
+a free edit is those families ("free edit: filesystem narrowed, destinations widened"). A rules file edited outside Tego
+is compared the same way with the rules the run ran (`CompareSource`), which the Rules page's banner shows. Its Check also lists the edit's list changes (each
 entry of an editable list the old text has and the new one lacks, or the other way) in the same "Also apply now" box,
 so an edit that removes a program or a write folder can apply now to a running run. In a rules file that sets environment values (`env.set`) the
 editor shows each value as `(value hidden)`, and saving puts each back from the file; a free edit may remove a
@@ -768,7 +923,7 @@ offers Undo, and the event page offers Undo right after a change it saved (below
 direction), so the history says it in words and undoing it goes the other way: undoing a block widens, and is
 acknowledged.
 
-Behind the pages, the rule service (`internal/control/rules`) compiles every change as tego compiles a run
+Behind the pages, the rule service (`internal/control/rules`) compiles every change as tego rules checks a run
 of that contract: the machine's profiles (`internal/profilesrc`, the engine's own source, so a contract that
 `extends:` a profile can be changed), the tier the run ran at (an `auto` contract is not judged at this machine's
 highest tier), the run's command grant, your home, chain anchor and runtime folders, and the folders of the programs
@@ -802,7 +957,7 @@ Each offered block is said in words ("Changes to ./tmp (reads still go through)"
 
 ### Changed since this run started
 
-On a running run whose rules file changed after it started, the Rules page's amber banner becomes the **Changed since
+On a running run whose rules file changed after it started, the Rules page's notice becomes the **Changed since
 this run started** panel. Each change says what it is on that run now: **Live now since line #N** (every live block it
 placed is in force: the launcher's confirming line), **Requested** (placed, not yet confirmed: it turns within about a
 second, with no reload), **Recorded only (watched run)**, or **Next run** with why. A change saved without "Also apply
@@ -861,7 +1016,7 @@ only a whole path is shortened, never a folder of the same name inside another p
 as it is). Picking an action previews the
 change as sentences, before and after ("Asks you before it reads ~/.config/telemetry/" → "Can never read
 ~/.config/telemetry/"), marked **Narrows**, **Widens** or **Mixed**, with "Applies from the next run"; a widening
-also gets an amber box with a required checkbox naming what the next run will be able to do (the service refuses the
+also gets a quiet notice with a required checkbox naming what the next run will be able to do (the service refuses the
 write without that preview's acknowledgement), and its confirm is never the primary button. Allow at a folder level
 is not offered for a write outside the run's folder and your home ("the folder of /dev/null is a system folder: name
 the file"); Block and Ask keep the folder. A
@@ -908,7 +1063,7 @@ page adds the panel **Live contract inside the fence** (`#live-fence`): each fen
 ~/billing-exports", "Connect to api.stripe.com:443", "Run /usr/bin/psql", the last marked best effort), whether it is
 new access or one of the contract's refusals, and its state as the launcher applied it (`ledgerview.FenceRows`, folded
 from `live-rule-lifted`, `live-rule-restored`, `live-lift-expired` and `live-lift-refused`): Refused, "Lifted until Fri
-17:00" or "Lifted for this run" (a grant, new access: "Granted until Fri 17:00", "Granted for this run"). A lift asked but not yet applied still shows Refused; a lift whose limit has passed by
+17:00" or "Lifted for this run" (a grant, new access: "Granted until Fri 17:00", "Granted for this run"). A lift that was given a note shows it on its row ("Note: ..."), in the words `tego lift` prints (`record.LiveNoteShown`); the lift's confirm page has one optional text input for it. A lift asked but not yet applied still shows Refused; a lift whose limit has passed by
 the page's clock shows Refused before the expiry line arrives. Refused rows have **Lift…** (a contract refusal) or
 **Grant…** (new access) with a time limit; lifted rows have **Restore**. The run page shows an "Adjustable" chip beside
 the run's state; a Locked run's page has none. A line under a fence entry (`live.fence[<kind>:<value>]`) reads "Rule in
@@ -957,7 +1112,8 @@ page are byte-identical to before except for Block now's time select and the Mod
 ## MCP tools
 
 `/mcp` (nav "MCP tools" with `--preview` only) is the MCP tools page of ADR 0126 §6, served by `internal/control/mcpact`: per declared server, the tools seen, a live Allow / Ask / Deny switch per tool and its
-calls and refusals. On a Locked run a switch looser than the contract's decision is refused, on the flash and on the
+calls, refusals and asks from a complete streamed run. A reader or payload error shows could not read with its
+reason instead of the counted prefix. On a Locked run a switch looser than the contract's decision is refused, on the flash and on the
 preview (which then has no Confirm and no "until you confirm" line, only a link back to MCP tools): "Not done: this run
 is Locked: loosening applies from its next run." (ADR 0126, "Amendment 2026-11-11: Locked runs"). The preview puts
 "Not done: " before every refusal it shows, as the flash does. A run whose `run_start` cannot be read yet (its first
@@ -1058,26 +1214,26 @@ system-call supervisor, no root". Words that stay as the terminal writes them: t
 
 Small server-side SVG charts tell the story at a glance; every one is laid out in Go (`internal/control/web/charts.go`,
 `ovcharts.go`, `cmpcharts.go`) and written by the `chart` template (`templates/charts.tmpl`, so html/template
-escapes every word), with no script and no library, coloured by the chart tokens (`static/tokens.css`, `--ch-*`:
-green = stopped, red = got through), and hidden from the accessibility tree with its words beside it
+escapes every word), with no script and no library, coloured by the chart tokens (`static/tokens.css`, `--ch-*`) with labels distinguishing
+refused attempts from actions that went through, and hidden from the accessibility tree with its words beside it
 as screen-reader text (the page's svg rule). Each has a fixed height, so a live update never shifts the page. Words
 (legends, end values, counts) wear the text tokens, never a series colour.
 
-The chart tokens are one palette per theme, checked once on that theme's surface, by hand
-(OKLab distance ×100): stopped against got-through is at least 10 under simulated red-green colour blindness in both
-themes (the theme's own green and red edges were 3.8 and 4.9).
+The chart tokens are one palette per theme. The earlier manual OKLab measurements
+predated this palette and do not establish its current colour distinction. Labels
+and the refused shapes retain the outcome without relying on hue alone.
 
 - **Overview.** The Refused tile carries a sparkline of refusals in each of the newest 12 runs (oldest left): the
   line has no axis, so the oldest value sits at its left end, the newest, stronger, at its right with a dot on the
   last point, and a caption names what it counts. With fewer than two runs there is no line, only "Trend after 2
   runs" (a flat line through one point read as a trend). Under the tiles, **Detections** is a table of refused actions
   by severity and channel, each number a link to that part of the Detections page, and beside it **Secrets** is
-  protected (green) against exposed (red), with a sparkline of secrets protected per run ("Protected, last N runs",
+  protected against exposed, each named explicitly, with a sparkline of secrets protected per run ("Protected, last N runs",
   hidden under two runs). Where that panel is narrow (a third of the row, 641 to about 1100 px wide) the caption's
   words wrap and the line goes under them, so it never runs past the panel (at 768 px it made the page scroll
   sideways). Both sit in the tiles' live region.
 - **Compare.** Three bar pairs under the stats, one scale per pair: secrets reached and sends off the list (red),
-  attempts stopped (green, the stats' number). Each row is the run's letter and agent on one line (cut with an
+  attempts stopped (the refusal mark and the stats' number). Each row is the run's letter and agent on one line (cut with an
   ellipsis, the full name on hover), then its bar and count, so a long agent name never wraps beside the bar.
 
 The run page has no chart: its "What happened when" strip and the Overview's "Refusals by kind" bar were removed on
@@ -1107,3 +1263,283 @@ partial receipt. Counts in successfully computed receipts remain exact beyond th
 presentation cap; no disk-backed identity index is provided.
 New refusal pairs append without interleaving; older displaced mirrors remain an
 ambiguous historical counting limit (record v1 writer clarification).
+
+### Phone component contract
+
+At 600 CSS px and below, page packages share `static/phone.css`. A list uses `.phone-list` and a single
+native `.phone-row` link, at least 80 px high. `.phone-who` is one line with an ellipsis and the full name in
+its accessible link text; its destination exposes the full value. One `.b` state chip and `.phone-when`
+make the second line. Time elements keep `datetime`; relative start ages use `data-started` and `data-ck`,
+which live.js updates with `Intl.RelativeTimeFormat`. Do not put a second link or button inside the row.
+
+Runs is the first converted page. Its heading asks “What is running?”; the result count and time frame are
+visible beside Filter and announced politely after a view change. Its original table, headers, keyed rows, and both live tbody regions remain.
+At phone width `.phone-run-cell` provides the one row target; the legacy cells stay on larger screens.
+Tables must become rows rather than horizontal scrollers. Hide supplementary summary facts with
+`.desktop-facts` or `.desktop-only` only when their real detail destination retains them.
+
+Page heads retain existing controls inside native `.head-more` disclosures labelled Actions. Run metadata
+is inside `.head-details`, labelled Run details. These are compact on phones and expose the original layout
+on larger Chrome screens. Browsers without `::details-content` keep usable native disclosures. Form fields,
+request identity and CSRF values are unchanged. Phone helper sentences are hidden; Runs retains its running
+and started-today line. Closed native detail content is excluded by actual visibility, not box size alone. The shared request target
+grid uses a zero-minimum column so Details retains a long final filename without enlarging the viewport.
+
+A `.phone-filter-control` link uses `data-filter-open` and a native GET fallback. `dialog.filter-sheet`
+is the enhancement, labelled by its heading, opened with showModal, closed by Escape or a
+`data-filter-close` button, and returns focus to the opener. Keep the form's existing server field names,
+chosen values and URL parameters. Runs uses `q`, `state`, `period` and `before`; `filters=1` is the native
+filter page. More options links to compare and log search/export. Do not replace real decision POST forms
+with filter or preview GET requests.
+
+The shell owns navigation, header, theme placement, waiting band, page padding, tokens, and system modes.
+Page packages own their interiors and remove their old phone label/value and multi-fact summary rules as
+they convert. The merged Overview, Run/Event, Logs, Detections/Investigate, Approvals, Compare, Contracts,
+machine, glossary, recovery and preview interiors use the same row, filter and disclosure primitives.
+The later agent/setup guide and contract builder packages retain their own scope. Scripted and script-free
+browser proofs cover reachability, long data, target sizes, live merges and exact values.
+
+## Logs and decisions on a phone
+
+Logs shows what happened, one outcome and when. Tap a row for its full target,
+rule and process context. Filter contains search, time ranges, outcomes, grouping,
+facets and exports. A grouped row opens Group details with its exact value,
+counts and first/last times. Filter also works as a normal page without scripts.
+
+Approvals starts with the oldest waiting request and lists the queue in order.
+Details shows the exact target, who asked, why the rule asks, its age and what
+happens when it expires. Allow once lets that request through; Deny refuses it.
+Both buttons stay above phone navigation when a long detail scrolls. More choices
+contains answers for the rest of the run and a stand-in file where supported.
+An answered request shows the recorded outcome and person in place of its buttons.
+
+Compare stacks Run A and Run B under each action. Change the runs contains the
+selectors, and Run details and charts retains the supporting context. Investigate shows the full noticed target first; Detection details retains its
+rule, channel and precise times; the other questions retain the process chain
+and related detections. Both themes use the
+same words and state shapes, including explicit severity words.
+
+
+Contracts opens a list of contract files and the agents that used them. Open a contract
+for the rules used by its selected run. Each rule can open its full sentence, exact target,
+source, enforcement limits and matching events. Contract details keeps the full file
+location and other runs; the exact file and compiled rules stay in native disclosures.
+On a phone the list shows an agent, one state and the age of its latest run. Rule rows
+show the sentence, effect and age of the run whose rules they describe.
+
+This machine shows what past runs recorded. It does not probe the machine: start with
+`tego machine check` to check current readiness. Tap a protection check for its meaning and
+next step, or open Full recorded machine details for complete technical values.
+Glossary has a native search and a term index; its links and all detail disclosures work
+with scripts off. Edit confirmations retain their original server forms and safeguards.
+
+
+## Dashboard consistency
+
+Summary lists keep one native link with who, one state and age. The shared
+responsive table adapter applies below 1100 px, including Runs and contract rules.
+Full exact values remain on their detail destinations. Summary ages use the same
+units before and after enhancement; absolute timestamps remain in the record.
+The Run timeline retains its sequence and clock because it describes ordered events.
+Desktop auto-expansion hides a native disclosure summary only when the browser
+supports `::details-content`; otherwise its summary remains available to open by keyboard.
+
+Overview shows running and refused counts in the desktop ledger tiles. The record
+card keeps those links below desktop width. The heading does not repeat the counts.
+Stop asks a short question and prints the complete agent name in body text.
+Keyboard focus moves transient messages into document flow so they cannot cover
+another control. The request identity and answer protections do not change.
+
+Feature styles load with the page that uses them. Detailed implementation notes
+are in the development tree's `docs/development/dashboard-assets.md`; the shipped
+styles and scripts retain their readable declarations and statements. The font,
+its licence and the same-origin CSP remain unchanged.
+
+
+Dashboard review corrections, 13 November 2026: every waiting-request link carries
+its run and request. If that pair is no longer waiting, Approvals shows the outcome
+or says it cannot find it, with no other request's controls. Overview and Run put
+waiting requests before record failures, recorded leaks and sensitive reads. Quiet
+wording describes what was not seen when the relevant sources are complete; an incomplete source keeps unknown needs explicit and never claims that nothing waits or needs the person. The daily refusal
+number uses complete run totals when all refusal timestamps fall today. Missing
+windows across a date boundary or omitted runs produce an at least count with a reason and links
+to the complete records. Unreadable record lines show could not read with the reason instead of a smaller count. A record with unreadable lines links to its exact JSONL download; other run links open Receipts. Logs warns beside its results when part of a query was left
+out, even with Filter closed. Runs retains Filter and the scoped count on desktop.
+Phone summaries keep who, state and age; technical values stay in details. Only
+Overview permits the compact request sentence two lines. Protected-read chips use
+the same run, contract and row context on Logs, Event, Run and Receipt, including older timeline windows. `TestHistoricalProtectedReadParity` covers an early sensitive read followed by 33,000 routine events for own-login and custom-contract paths. Signal caches
+include the events-file version and reuse live folds only from that same file.
+Older Event windows reject a replaced or rewritten source before and after
+reading, keeping new events out of an older run context; ordinary appends work.
+
+The Receipt tab supplies the run's contract paths to the streaming receipt builder.
+Its sensitive-read activity can therefore include a custom protected path even if
+the event did not name a deciding read rule. The ordinary terminal receipt uses
+ledger names and rule keys alone. Recorded totals and receipt sentences use the
+same builder. Contract entries and their working directory are part of the
+dashboard receipt cache key; this adds no field to the saved record format.
+
+Receipt identity overflow: the terminal receipt, watch footer and dashboard separate
+listed places/programs, other retained identities and attempts beyond the identity
+budget. JSON `connections_more` and `programs_more` count other retained identities;
+`connections_overflow_attempts` and `programs_overflow_attempts` count attempts.
+Repeated attempts to one untracked identity never establish more distinct places or
+programs. The optional fields keep `receipt_v: 1`; old overflowed receipts may fail
+comparison with corrected recomputation. Receipts whose identities all fit the displayed lists retain
+their units and wording.
+
+A root that becomes unreadable or ceases to be a folder keeps requests already read, with the global read-failure reason and the same lower bound in the page, badge and title.
+
+Number-inventory exclusions never exempt descendants. A request card is not an identity field: its individual names, targets and times are audited separately.
+
+Empty receipt activity is audited too: "never asked", "It wrote no file", and the sensitive-file absence sentence have the same source markers as their nonzero forms.
+
+On phones, a complete Approvals count uses the headline and tab. Incomplete waiting status uses one short reason. Full source diagnostics and supplementary complete-record links are in a closed Details and recovery disclosure; desktop retains the fuller presentation.
+
+Zero-branch fixtures also exercise unavailable receipts and proposals, empty rule and configuration lists, unchanged configuration comparisons, empty credentials and uses, setup with no runs, and verification with no lines read. Unknown contract declarations keep their reason and do not become zero unused entries. Static policy instructions and absent individual identity fields are distinct from counted collections.
+
+The short phone reason is also present on Approvals History and Overview. An empty running-state panel on Overview is hidden on phones when the same live-index failure is already explained above; retained running rows remain visible.
+
+Watch-mode sentences that assert zero enforced refusals carry an exact policy source, independent of retained record completeness.
+
+A running dashboard pins the record directory by device and inode. If that pathname names a different directory, including through a link, it says the record folder changed and retains known requests under a global read failure. The replacement live index cannot retire those requests. Putting the original directory back recovers the view. After a dashboard restart, either a link or a real replacement directory becomes the new root: the process reads that directory and cannot remember requests from the moved original. Restarting after the original is restored reads its surviving record normally.
+
+The quantity audit also walks every delivered template's parse tree without choosing a fixture branch. It visits both arms of if, with and range, preserves separate HTML source contexts through shared suffixes, and examines literal text and shown or spoken attributes. Each literal must inherit a quantity source or have an exact-text no-quantity registration with a reason in testdata/no_quantity_texts.json. Missing and stale registrations fail the normal web tests with the template, line and text. The rendered-page collector remains an independent check of dynamic output. Configuration fence absence, complete usage results and watch-mode non-enforcement now carry their sources, including the first-run instructions.
+
+On phones, missing-request recovery during a root failure uses the same single short uncertainty sentence as the waiting list; technical paths remain in closed recovery details. An answered request exposes Answer details as its primary action and keeps Next waiting request under More. These three request-detail states join the light/dark, 360/1280 browser matrix and height comparison.
+
+The public no-quantity registry is extended by the private pages through their existing export hooks. Both registries receive the same stale-text check; dropping the private layer drops only its registrations. No missing-template exemption is used.
+
+The source audit's initial exact-text registrations were reviewed for zero assertions as well as digits. Record-field absence, process-tree coverage, unavailable recovery, pause defaults and fixed policy guarantees now name their sources. The rendered fixture catalogue includes every corrected literal branch, including incomplete process scope and pause states.
+
+Policy guarantees, duration choices and completeness claims carry sources too; being independent of a measured record count is not a reason to register them as no quantity. Registrations describe navigation, ordering, identity placeholders or example syntax. The audit report distinguishes literal text sites from audience attributes.
+
+Decision cards and waiting rows display the complete agent name and requested target. Long hosts, paths and commands wrap after dots and slashes, with a break inside a long segment when needed. Command whitespace is preserved. Waiting rows size to their text rather than a fixed first track. Desktop request banners keep their home and working-directory path display and no longer shorten a long target.
+
+Request sentence forms (this supersedes the previous paragraph's rule for banners and waiting rows). A person is never offered Allow once beside a request they cannot read in full there. A waiting request's sentence (who, what, the target) has two forms. FULL shows every character, wrapped after dots and slashes and never clamped. LONG is used where the sentence passes a bound: the server cuts the target once in the middle with one ellipsis character, keeping what a decision turns on (of a network target its first label and the end of the host with the port, of a file the leading folders and the end with the file name, of a command the program and first arguments and its last characters; each name of a rename is cut on its own), and cuts the agent's name in the middle only when the name alone passes its own bound. Where a banner shows the LONG form it offers one action, Review request, which opens the request's own card on Approvals; that card always shows the FULL form, the exact target whole whatever its length, with Allow once and Deny. The waiting row on Approvals follows the same two forms. The accessible names carry the whole sentence in both forms.
+
+The bounds count characters and are decided by the server (request_forms.go): 112 for a phone and 150 for a wide screen, with 40 and 60 for an agent's name. They were measured in headless Chrome by filling the real banners with host, path and command sentences of every length from 60 to 320 characters under two agent names and counting line boxes: at 320 px the phone banner's 16 px sentence stays within four lines up to 112 to 126 characters, and at 1280 px the wide sentence within two lines up to 166 characters on a page's banner and 154 on Overview's. The markup carries both answers and the style sheets pick by width at 600 px (phone-only, desktop-only); when only the phone form is LONG the quick answers carry desktop-only and Review request phone-only. Between 601 and 1279 px the FULL form can take more lines and never hides text. At 320 by 640 px a FULL sentence of four lines with its one action row makes the banner 174 px high, 27% of the screen: the earlier phone ceilings of a quarter of the screen and of 160 px give way there to this four-line limit, and the earlier one-line banner sentence and one-line waiting row give way to the two forms. TestNoQuickActionsBesideLongRequest walks every template branch: each Allow once is either in the request cards' own form or inside the branch of a requestView's Quick with its QuickClass, and the three banners render the answers only where the same width's sentence is FULL. The safe answer does not depend on a style sheet loading. The phone's cut sentence carries the hidden attribute in the markup whenever the phone form is LONG, and phone.css only reveals it at 600 px and under (.banner-ask .ab-summary[hidden] with !important, which outweighs app.css's [hidden] rule by specificity); the quick form is in the markup only where the wide sentence is FULL, and at 600 px and under phone.css hides it when the phone form is LONG. With phone.css missing, or with no style sheet at all, the cut sentence is therefore not shown, and no Allow once form sits beside a cut sentence at any width; the same holds in the accessibility tree. TestFix7SafeAnswerNeedsNoStyleSheetInChrome loads the pages with phone.css blocked and with every style sheet blocked at 320 and 1280 px and checks the DOM and the accessibility tree. The cut itself never splits a letter from its combining mark (a kept tail drops marks it would start with), a port is at most five digits, a rename's half without a slash is cut as plain text, the accessible name is built from the visible text (control and bidi characters as their U+ literals), and FuzzRequestForms holds all of it against arbitrary agent text.
+
+### Optional setup tour
+
+Open Guide beside help on a desktop, or from More on a phone. Guide opens at the
+first step whose fact is neither Done nor Skipped, using the same stored machine
+check, recorded runs and compiled contracts as `tego setup`. When all steps are
+done or skipped it opens Enforce. All steps shows each fact, its source and its
+tour name. Selecting a step never completes it. Pick completes when the first run
+is recorded. With a saved contract it points directly to Enforce for that first
+run. Watch and Recorded share that run's verified ended-record fact; a skipped
+Watch points to Enforce too. An unknown recording opens Watch's diagnostic step.
+
+Check says to run `tego setup` in your terminal, then reload the stored result.
+Run terminal commands yourself; the page starts no process. A command form with
+marked parts to fill in has no Copy button. Replace each part with the value it
+names; for the watch form, use the command you normally use to start your agent.
+Watch says Step 4 is ready when an ended recording verifies. With scripts on it
+announces a move, waits about two seconds, then moves on; it stays put while focus
+is in the guide. With scripts off, use Reload to check for the run and open the
+next step yourself.
+
+Recorded and Review lead with recorded programs (or the starting command), file
+changes and connections. These short rows point to What the run recorded for full
+values and coverage limits. The first record disclosure opens when the list is
+short. Review describes the action shown: Create contract and a learn command
+create a contract from the run; a compile command checks an existing contract that needs
+fixing, while Create contract can make another. A saved, compiling contract
+offers Enforce its rules without a terminal command. The builder keeps Review
+through both mode links, including the selected mode, preview and save. After
+saving, the facts refresh and Enforce its rules opens the next step. Enforce first
+shows the command, then the ended record and each refusal's line. If a request
+waits for you, the tour shows its count and opens Approvals first, including after
+a contract save. Return through Guide after answering; no decision form is
+duplicated in the frame.
+
+Leave the guide opens the same product page without its frame. Guide returns to
+the current fact-based step. Hide for good is a browser preference submitted with
+the normal form protections; it does not alter any machine fact. Show the guide
+again is available in the frame, More and This machine. A blocked or unknown step,
+or an incomplete machine check, keeps the Overview checklist visible even while
+the preference is hidden. A finished machine receives no Start the guide offer.
+On phones the frame shows the current question, instruction and action; All steps
+holds history and sources, and the named product disclosure holds the full page.
+The scanned agent picker arrives separately.
+
+## Agents evidence
+
+`/agents` reads the saved scan and remembered discoveries, and starts no discovery process. Each recorded row describes one named run, with its id and start time. Checked stage facts and their displayed run fields come from the same checked record; unchecked metadata remains a labelled recorded claim. Unchecked, broken, timed-out or anchor-missing records stop at Recorded and say why and what to do. Contract, Enforced and Verified never transfer from another run. These are facts about that recorded run, not a process running now. `/agents/<identity>` recovers one complete row. `/` uses this view when setup is done; `/overview` always opens Overview. The page is the approved Agents page (`templates/agents.tmpl`): it sits in the main navigation ahead of Overview, each row is one link to its detail, and the guide's Pick step opens it. A row says who (name, and from 601 px up the command identity and folder), how far (the stage word, and for a recorded run the five-stage strip, drawn reached only where that run established the stage) and when. The phone shows those three facts only and puts the list before the scan panel; the other programs, settings and history are folds there. Its three live regions (`r-ag-head`, `r-ag-main`, `r-ag-more`) merge through `live.js`; with scripts off every part is in the page. The detail shows `Recorded run <id> at <time>` or `Seen outside Tego at <time>` with the folder, the command identity and a note that a PATH search, relative path, link or wrapper can spell the same program differently, `Relationship`, the record check and next step always, `RelatedRunIDs` linked, each stage with its fact, source and what cannot be told, and copy buttons for the scan, next and record commands.
+
+Outside scan observations have separate rows with "seen at" time and Record it, and no stage ticks. Matching program path, folder and known uid allow only "may be the same program" words: scans keep no arguments, so they cannot tell. Observations marked inside a Tego run add no row or label and are counted in the footer. Only omission from a usable latest scan means "not seen in the latest scan" with last-seen time. An old, failed or unreadable scan instead explains that state and asks for another scan. Remembered relations use the current recorded-run facts on every load. A busy store lock shows the last committed snapshot without writing and asks for a refresh to retry. The page renders Footer, ScanNotice and DiscoveryNotice visibly outside collapsed details. Discoveries remain for 30 days since last seen; bounded lists state truncation and unsafe remembered state is shown as unreadable without overwriting it. A remembered discovery's detail offers Forget: a fold that is the confirm, then `POST /agents/forget` (the dashboard's session, origin, token and governed-caller checks) drops that one entry through the store's own lock and file checks, refuses a busy or unsafe store, and never changes a run record, a saved scan or a contract. While the latest saved scan still lists the program the next load remembers it again, and the confirmation says so.
+
+Run `tego scan` from the intended project folder, then reload Agents. After five minutes, another boot, unknown freshness or a future time, the scan is historical only. The found list comes from scans. Tego refuses ordinary writes to these files, even with a whole-home grant at tier landlock; this was shown in guest row whole-home-landlock. With the anchor and ledger outside the home, a whole-home grant with direct reads can leave these files readable at landlock; that read case is derived from code and is owed in a guest. The stages shown for a run do not depend on this list. This list never proves that nothing else runs. Same-user programs outside Tego can rewrite both files, too. This is the accepted existing own-state limit in GAPS C52. Modes or links that make either file or the agents directory unreadable show fixed repair steps without changing unsafe state; readable recorded rows remain visible. The record lacks resolved historical own-state write exposure, so this slice has no per-run caution or unconfirmed-after-run state (historical own-state exposure work). Ordinary writes were refused in gproof1 guest5 whole-home-landlock, whole-home-cgroup and whole-home-bpflsm; the external-anchor direct-read case is owed in a guest; see ADR 0145 fix round 2 acceptance and the [Agents user page](user/agents.md). Record it quotes only a safe known folder and leaves your command as a template to fill in. The page never reconstructs a launch command from scan evidence. The footer names unreadable sources and limits. Refused today is an observed local-calendar-day count; incomplete records are labelled as a lower bound.
+
+### Simple and Full contract drafts
+
+New contract can start from a recorded run, presets, or nothing. Simple lists explicit write, program and network
+grants with Keep and Drop. Name it replaces a recorded address with a host name you supply, preserving its port and
+transport. Tego does not guess the name the agent used. Show refused reads states its cost beside the switch.
+A blank draft starts with no grants, retaining the built-in secret refusals. Full edits the same YAML and lists the
+contract keys. The dashboard remembers the view in this browser. Switching views keeps the draft.
+
+Check choices compiles the candidate with the product compiler, no DNS, two child slots and a total deadline.
+A third compile waits briefly, then says “busy, try again”. Compilation checks the file identities, executable
+loaders, inherited profiles and protected paths it needs; these filesystem reads happen in the cancellable child.
+Preset composition and project-folder validation use the same pool for their filesystem metadata probes.
+The deadline bounds compilation and these preflight probes; Save still performs necessary destination checks
+and durable writes. A busy preflight retains the edited draft for retry.
+On desktop the YAML is beside the form; on a phone open YAML and changed lines. Preview retains the exact
+proposal bytes and acknowledgement binding in an authenticated server draft. Save writes those reviewed bytes;
+it never builds the proposal again, for new contracts, raw or structured edits, presets or proposals from a run.
+It revalidates the source digests, destination kind and canonical path, directory device/inode and compilation
+of those exact bytes, then rechecks source bytes at publication. A lost draft (restart, expiry, eviction or another
+session) refuses with “This draft is no longer available; review it again before saving.” Source and review drafts
+share a 64-entry limit, 8 MiB per serialized entry and 32 MiB total. Each entry expires 30 minutes after its own
+creation, with eviction as stated below. Expired entries are removed on the next store access. Failed offline lookups
+supply no resolution timestamp; authority-bearing expiry deadlines remain bound. Hostname grants and approval
+entries therefore keep their review across time while the authenticated draft remains available.
+If an inherited source changes, review the new preview. The final writer
+checks the directory identity against its publishing descriptor. If Check reviewed B after the editor opened at A,
+Save accepts that review only while both the submitted base and current source still match B. It clears the
+historical A-to-B warning after validation without rebuilding; a later change to C requires another review.
+New-contract Full/Simple/Save and raw Full/Simple preserve intentional leading blank lines through native HTML textarea parsing.
+A missing finished-run choice stays marked even when project preflight refuses; the original refusal remains visible.
+Changes to existing files also compare the loaded
+SHA-256 and the old file's identity at replacement. Wider compiled families list “This will newly allow”. Changed
+families the comparison cannot order say “Also review: <family> changed and Tego cannot tell whether it allows more”.
+Both require explicit confirmation. This pure table comparison is not a proof of final decisions across families.
+With scripts, every input invalidates earlier pending previews and disables Save. The YAML editor uses the monospace token with
+wrapping off. Existing and setup-generated environment values stay hidden; new values must be set in a terminal.
+Generated assignments, setup folders and the displayed withheld-destination list stay with an expiring server
+draft bound to this session and destination, so Check, view switches and unchanged Save retain them. The
+withheld list is derived by the server from the run, never taken from posted form fields. Empty posted Full text is refused. Diagnostics redact values from the same
+merged contract that compilation used; failed inherited loads use a safe generic error followed by where each fault lies,
+one line each and never the loader's words: "profile <name> · <file> · line N" for a profile the draft extends, "the draft ·
+line N" for the draft (Edit YAML shows the profile, its file and its line beside each, and links the draft's line). The
+contract check's 503 page ("The contract check could not finish") says which case happened, from the refusal's type: the
+machine is very busy (the checker did not start in time, or was too slow), the check was still working, the checker could
+not start, the request was cancelled, earlier checks are stuck on a location and hold every checker slot, or the location
+does not answer; the status and the advice (reload, then review again, since a submitted save may have reached the file)
+are unchanged. A malformed submitted
+document retains only its parser line number, with its diagnostic message withheld. A configured registry or parent reached through a symbolic link is refused;
+configure its real path instead. If a read preview finds a missing registry directory, Save is withheld until
+the guarded Preview POST prepares it before compilation and binds its identity.
+
+A governed or uncertain reader can preview fresh source with the same redaction and saving unavailable, without a review identity or acknowledgement and without accessing the source/review store; retained composition handles are unavailable from that connection.
+Every save-eligible Preview mints a separate 192-bit identity from the system random source. Its acknowledgement
+carries that identity and binds it with the reviewed bytes and compiled binding. Equal Previews never
+replace each other. Reviews expire exactly 30 minutes after their own creation; reads, Save validation
+and later Previews never extend that lifetime. Save atomically consumes the review after validation and
+before publication, so a replay refuses; a publication failure also requires a new review. The retained
+review is keyed only by its identity and checked against its authenticated session. Identity and
+acknowledgement comparisons use constant time.
+At capacity, insertion evicts the inserting session's oldest entry first, otherwise the global oldest,
+using insertion order to break clock ties. Eviction only loses a review; an old acknowledgement can never
+select a replacement.
+
+Simple offers a 2-hour stop switch, a custom duration, and approval for host/port entries you name. It keeps all
+other destinations refused. A blanket “ask for any new address” rule is not generated: that shorthand is not
+supported by this contract compiler. Use named `net.ask` entries.
+
+*Amended 2026-11-18:* a network fence lifted and restored during a run has the same run-wide Routine
+exception as a live network block. All refusals for its host remain outside Routine, including earlier ones,
+by name or by a recorded address on any port. Lifting alone does not create this exception. The run page
+reads this explanation from `ledgerview.RoutineWords`.

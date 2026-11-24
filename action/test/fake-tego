@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+#
+# fake-tego: a stand-in for the tego CLI in the action's offline tests. It answers the three read commands
+# collect.sh makes with files from $FAKE_TEGO_DATA, which hold real output of a governed run (testdata/README.md).
+# It runs nothing and touches no ~/.tego.
+set -euo pipefail
+d="${FAKE_TEGO_DATA:?}"
+case "$*" in
+"receipt --check "*) cat "$d/check.json" ;;
+"receipt "*" --json") cat "$d/receipt.json" ;;
+"events "*" --verify --json")
+	jq --arg anchor "${FAKE_ANCHOR:-}" 'if $anchor == "" then . else .anchor = $anchor end' "$d/verify.json"
+	[ "$(jq -r .verified "$d/verify.json")" = true ] || exit 1
+	;;
+"events "*" --json --kind run_start") cat "$d/run_start.json" ;;
+*)
+	echo "fake-tego: not faked: $*" >&2
+	exit 2
+	;;
+esac

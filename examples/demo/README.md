@@ -62,7 +62,7 @@ cd examples/demo && ./demo.sh setup            # plants the fake world, starts t
 ```
 Say: "Everything you will see is a stand-in. Nothing real is read, nothing leaves this machine."
 Optional second terminal: `tail -f examples/demo/stage/sink.log` (the sink prints one line per request).
-Each subcommand prints the command it runs before it runs it. `DEMO_STAGE` and `DEMO_PORT` move the stage and the sink.
+Each subcommand prints the command it runs before it runs it. `DEMO_STAGE` and `DEMO_PORT` move the stage and the sink. The contracts that let curl's name lookup through name the nscd socket and the resolver sockets this host has (systemd-resolved's and systemd's user database); `./demo.sh lookup` prints them. A helper the kit starts (the sink, the stand-in sockets) is known by its process, not by a pid number alone (`procid.py`): a pid file naming another program is not trusted and a reset does not end it. What the kit cannot do on every host (a name service it does not know, a system with no `/proc`, a reset with no `python3`) is listed under "What the kit cannot do".
 A stage path holding `'`, `"`, `\`, `|`, `&` or a line break is refused: the kit puts it into the commands it shows
 and into contracts. The kit's own folder and tego's path go into the commands only, so just a `'` or a line break is
 refused there; a kit under a folder such as `R&D` runs with `DEMO_STAGE` set elsewhere (its default stage, inside that
@@ -120,12 +120,12 @@ export CLAUDE_CODE_OAUTH_TOKEN=... # the token it printed (or: export ANTHROPIC_
 Codex signed in with a ChatGPT plan instead of a key: its sign-in listener cannot run inside Tego, so sign in once outside it and copy `auth.json` into a Codex home of its own (never `~/.codex`), then run `contracts/codex-chatgpt.yaml` (fill its two `@@` words; `examples/agents/codex-chatgpt.yaml` says how):
 ```
 mkdir -p ~/.local/share/tego/codex-chatgpt && codex login && cp ~/.codex/auth.json ~/.local/share/tego/codex-chatgpt/auth.json && chmod 600 ~/.local/share/tego/codex-chatgpt/auth.json
-printf 'sandbox_mode = "danger-full-access"\napproval_policy = "never"\ncheck_for_update_on_startup = false\n' > ~/.local/share/tego/codex-chatgpt/config.toml   # Tego is the cage
+printf 'sandbox_mode = "danger-full-access"\napproval_policy = "never"\ncheck_for_update_on_startup = false\n' > ~/.local/share/tego/codex-chatgpt/config.toml   # Tego enforces the contract
 sed -e "s|@@CODEXHOME@@|$HOME/.local/share/tego/codex-chatgpt|g" -e "s|@@CODEXHOST@@|$(dirname "$(readlink -f "$(command -v codex)")")|g" contracts/codex-chatgpt.yaml > ~/codex-chatgpt.filled.yaml
 mkdir -p ~/chatgpt-proj/work/tmp ~/chatgpt-proj/held && cd ~/chatgpt-proj && tego run ~/codex-chatgpt.filled.yaml
 ```
-Say: "The real tools, in a normal terminal. Tego is the cage: they can only do what the contract lines allow."
-The contract lines that make it work: `net.allow: tcp://api.anthropic.com:443` with `capture: off` (Claude Code exits on its first connectivity check if its model traffic is forced through the forwarder), `fs.write` has `/dev/tty` (the full-screen interface), `CLAUDE_CONFIG_DIR` inside the project (so `~/.claude` is never written), `exec.allow: [bash, git]`. For Codex: `capture: forwarder` with `models: openai` (every model call is recorded), Codex's own sandbox switched off in the `config.toml` the kit writes because Tego is the cage, `codex --no-daemon`, `fs.write: ./work/` only and `fs.ask: ./held/` (a write there pauses Codex until you run `tego approve` in a second terminal).
+Say: "The real tools, in a normal terminal. Tego enforces the contract: they can only do what the contract lines allow."
+The contract lines that make it work: `net.allow: tcp://api.anthropic.com:443` with `capture: off` (Claude Code exits on its first connectivity check if its model traffic is forced through the forwarder), `fs.write` has `/dev/tty` (the full-screen interface), `CLAUDE_CONFIG_DIR` inside the project (so `~/.claude` is never written), `exec.allow: [bash, git]`. For Codex: `capture: forwarder` with `models: openai` (every model call is recorded), Codex's own sandbox switched off in the `config.toml` the kit writes because Tego enforces the contract, `codex --no-daemon`, `fs.write: ./work/` only and `fs.ask: ./held/` (a write there pauses Codex until you run `tego approve` in a second terminal).
 No wall limit on `claude-code.yaml` and `codex.yaml`: they set `limits.stall_after: 1h`, not `wall`. `codex-chatgpt.yaml` is the one exception: it records as a short demo does (`record: summary` with `reads: held`, so the dashboard shows what matters) and keeps `wall: 2h`; `examples/agents/codex-chatgpt.yaml` is its long-session form, with `record: full` and `stall_after`. A wall is a hard cap that ends a working session at the minute it expires; `stall_after` ends a run that did nothing for an hour, and typing at the terminal counts as activity. There is no `cost_usd` (it needs a price table, and `no price table` is not printed unless a cost limit is set).
 Expected, not a fault: `tego compile` (the line `demo.sh` runs first) prints `[mount]` for `/dev/pts/` and, for Codex, `[env-runtime-reserved]` (the run replaces `CODEX_HOME` with its own private one). `tego run` itself starts quiet: it prints before the agent starts only what needs you or what means this run enforces less than the contract says (for Codex that is `[env-runtime-reserved]` again, with its `fix:` line, and the answer line below); add `-v` (`tego run -v <contract>`) to see the compile notes there too. The ChatGPT contract (`contracts/codex-chatgpt.yaml`) also compiles with `[held-reads]` and `[wall-hard-cap]` (its `wall: 2h` ends an interactive session at the minute it expires; the long-session form uses `stall_after`). On AppArmor, `tego run` prints one more line before the answer line, not after it: held reads ignore a tighter profile, with its fix.
 Show a refusal: ask the agent to read `~/.ssh/id_rsa` or run `curl example.com`; then `tego status --all` and `tego events <run> --kind refused` in a second terminal.
@@ -235,6 +235,32 @@ These shell checks do not protect against a concurrent same-user process
 replacing path components; the script spec
 states that limit.
 
+## What the kit cannot do (its stated limits)
+
+Each of these is something the kit tells you itself, in the words below, when it applies.
+
+- **A name service it does not know.** The contracts let curl's name lookup through by naming the sockets this host's
+  lookup uses: nscd's (nsncd, which stands in for nscd, serves the same path), systemd-resolved's and systemd's user
+  database, and the socket of each module `/etc/nsswitch.conf` names on its `hosts`, `passwd` and `group` lines among
+  `sss` (sssd), `mdns*` (avahi) and `mymachines` (systemd-machined), when that socket exists. A module that talks to a socket
+  or a server of its own that the kit does not know (`ldap`, `nis`, `winbind`) cannot be named for you, and its lookup can show as
+  a net refusal the scene is not about. `setup`, Act 2 and `./demo.sh lookup` then print, once, for example:
+  `note: /etc/nsswitch.conf names the name service(s) ldap nis, whose socket or server this demo kit does not know. If a scene shows a net refusal for a name lookup that the scene is not about, add that socket or server to net.allow in the contract; the refusals the scene is about are not affected.`
+  A resolver such as dnsmasq answers on a network address, not on a unix socket the C library asks, so there is none to
+  name. A lookup of a name that goes to it is a network lookup, which the contracts' `net.dns.mode: off` refuses; the
+  demo's hosts are literal addresses, so the scenes make none.
+- **Linux only.** The kit knows each helper it starts (the sink, the stand-in sockets) by its process, from `/proc`, and
+  the rules it shows are Linux's. On a system with no readable `/proc` every command but `reset` and `lookup` stops
+  before it makes anything and says: `demo.sh: this demo runs on Linux only: it knows the helpers it starts by their process (the start time and arguments in /proc/<pid>), and this system has no readable /proc. Run it on a Linux machine or in a Linux VM.`
+  (`DEMO_PROC_ROOT` points the check at another folder, for the tests.)
+- **No `python3` at reset.** `python3` starts the sink and runs `procid.py`, which decides whether a pid file still names
+  the helper. A `reset` from a shell where `python3` is not on `PATH` makes the same two checks (the pid file's start time and
+  the helper's own script among the process's arguments) in `sh` alone and ends the helper that passes them, saying:
+  `demo.sh: python3 is not on PATH, so procid.py cannot run; stopping the helpers by the pid files' start time and script with sh alone.`
+  It does not check the sink's listening socket then (reset never did); a pid file that fails either check is left alone,
+  and so is the process it names.
+
+
 ## What the commands are
 
 | Subcommand | Runs |
@@ -253,6 +279,7 @@ states that limit.
 | `ask`, `approve`, `deny` | `tego run stage/c/ask.yaml`; `tego ask <run>` then `tego approve`/`tego deny <run> <ask_id>` |
 | `limits`, `deny-write` | `tego run` of the fork, memory and hooks tricks; `tego events <run> --kind run_end`, `tego status <run>` |
 | `identity`, `doctor`, `features` | `tego events <run> --kind run_start --json`; `tego doctor`; prints the feature map |
+| `lookup` | prints the name-lookup sockets the contracts allow (`DEMO_RESOLVER_ROOT` points the search at a fixture tree; `DEMO_DRY=1` makes a scene print its commands and run none, for the tests that compile the contracts it writes) |
 | `reset` | stops everything (the sink, the stand-in sockets, the model stub, the service), removes generated children of a marked stage |
 
 `go test -tags integration ./examples/demo/` proves Acts 1 to 3, every feature scene that runs without root, a key or a

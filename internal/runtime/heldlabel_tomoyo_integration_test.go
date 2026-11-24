@@ -58,6 +58,17 @@ func TestIntegrationHeldOpenTOMOYO(t *testing.T) {
 		tomoyoCounterWithoutActivation(t, c, actor)
 		return
 	}
+	switch os.Getenv("TEGO_VM_TOMOYO_HALF") {
+	case "enforcing_profile":
+		tomoyoEnforcingProfile(t, c, actor)
+		return
+	case "initializer_counter":
+		tomoyoInitializerCounter(t, c, actor)
+		return
+	case "profile_flip_race":
+		t.Run("profile_flip_race", func(t *testing.T) { tomoyoProfileFlipRace(t) })
+		return
+	}
 	t.Run("cause requires same run", func(t *testing.T) {
 		const cause = "TOMOYO failed fact"
 		log := "level=WARN run=r-other err=\"" + cause + "\"\nlevel=WARN run=r-this err=\"unrelated\"\n"
@@ -156,7 +167,10 @@ func TestIntegrationHeldOpenTOMOYO(t *testing.T) {
 		if w.err != nil {
 			t.Fatalf("%s midrun: %v\n%s", w.tier, w.err, output(w.cmd))
 		}
-		tomoyoResult(t, c, w.cmd, w.path, true)
+		// SEC08b: the loader wrote a profile that enforces nothing (every mode disabled), and the launcher is root, which
+		// can read it: the update the activation counted no longer refuses a held open, whatever domain the supervisor
+		// is in now. tomoyoEnforcingProfile is the same boot with a profile that enforces.
+		tomoyoResult(t, c, w.cmd, w.path, false)
 	}
 	for _, tier := range tiers {
 		t.Run("loaded/"+tier, func(t *testing.T) {
@@ -164,15 +178,19 @@ func TestIntegrationHeldOpenTOMOYO(t *testing.T) {
 			if err := cmd.Run(); err != nil {
 				t.Fatalf("loaded: %v\n%s", err, output(cmd))
 			}
-			tomoyoResult(t, c, cmd, path, true)
-			if !strings.Contains(output(cmd), "on AppArmor") || !strings.Contains(output(cmd), "TOMOYO") {
-				t.Errorf("launch misreports cause:\n%s", output(cmd))
-			}
+			tomoyoResult(t, c, cmd, path, false)
 		})
 	}
 }
 
 func tomoyoRun(t *testing.T, c *crossOwner, actor, tier, phase, mode string) (*exec.Cmd, string) {
+	t.Helper()
+	return tomoyoRunAs(t, c, actor, tier, phase, mode, false)
+}
+
+// tomoyoRunAs is tomoyoRun with the launcher the invoking user when asUser: tier landlock's run, which cannot read
+// TOMOYO's profile.
+func tomoyoRunAs(t *testing.T, c *crossOwner, actor, tier, phase, mode string, asUser bool) (*exec.Cmd, string) {
 	t.Helper()
 	path := filepath.Join(c.f.out, "tomoyo-"+phase+"-"+tier)
 	if err := os.WriteFile(path, []byte("preserve-me"), 0o644); err != nil {
@@ -188,7 +206,7 @@ func tomoyoRun(t *testing.T, c *crossOwner, actor, tier, phase, mode string) (*e
 	if err := os.WriteFile(name, []byte(contract), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cmd := c.command(t, false, "run", name)
+	cmd := c.command(t, asUser, "run", name)
 	cmd.Dir = "/"
 	return cmd, path
 }
@@ -247,8 +265,15 @@ func tomoyoResult(t *testing.T, c *crossOwner, cmd *exec.Cmd, path string, refus
 		if strings.Contains(path, "tomoyo-midrun-") || strings.Contains(path, "tomoyo-counter-") {
 			cause = "TOMOYO's policy has been updated since boot; held file opens are refused on this machine until TOMOYO is unused again after a restart"
 		}
+		if strings.Contains(path, "tomoyo-enforcing-") {
+			cause = "TOMOYO profile /sys/kernel/security/tomoyo/profile enforces"
+		}
 		if runID == "" || !tomoyoOwnLogCause(string(log), runID, cause) {
 			t.Fatalf("TOMOYO own log lacks %q: %s", cause, log)
+		}
+		// A launcher that cannot read the profile says why a root tier would not have been refused.
+		if strings.HasSuffix(path, "-counter-landlock") && !tomoyoOwnLogCause(string(log), runID, "this tier cannot read TOMOYO's profile") {
+			t.Fatalf("TOMOYO own log lacks the sentence of a thread that cannot read the profile: %s", log)
 		}
 		if count != 3 {
 			t.Fatalf("%s: got %d held-label-unavailable refusals, want 3", path, count)
@@ -308,12 +333,46 @@ func tomoyoCounterWithoutActivation(t *testing.T, c *crossOwner, actor string) {
 	if err != nil || string(domain) != "<kernel>" {
 		t.Fatalf("domain=%q: %v", domain, err)
 	}
+	// SEC08b: a launcher that can read the profile (root, the root tiers') proves nothing enforces and is admitted; tier
+	// landlock's, the invoking user, cannot, and keeps the refusal, now with the sentence that says why.
 	for _, tier := range []string{"landlock", "cgroup", "bpflsm"} {
 		t.Run("counter without activation/"+tier, func(t *testing.T) {
 			testutil.RequireTier(t, c.doctorRequire(t, tier), tier)
-			cmd, path := tomoyoRun(t, c, actor, tier, "counter", "--held-label-agent")
+			asUser := tier == "landlock"
+			cmd, path := tomoyoRunAs(t, c, actor, tier, "counter", "--held-label-agent", asUser)
 			if err := cmd.Run(); err != nil {
 				t.Fatalf("counter: %v\n%s", err, output(cmd))
+			}
+			tomoyoResult(t, c, cmd, path, asUser)
+		})
+	}
+}
+
+// tomoyoEnforcingProfile is the same activation as the main test's, in a fresh boot whose loader also defines profile 7
+// in mode enforcing, a profile no domain uses and so denies nothing (the guest keeps running): SEC08b's proof refuses a
+// mode enforcing anywhere in the profile, in every namespace, profile and category, so every tier, root's included,
+// refuses its held opens naming it. The loader writes the line when /vm/tomoyo-enforcing is there (the policy can only
+// be written at activation: afterwards TOMOYO admits writes from its registered managers alone).
+func tomoyoEnforcingProfile(t *testing.T, c *crossOwner, actor string) {
+	if err := os.WriteFile("/vm/tomoyo-enforcing", []byte("1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename("/vm/tomoyo-loader.fixture", "/vm/tomoyo-loader"); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("/vm/tomoyo-trigger").CombinedOutput(); err != nil {
+		t.Fatalf("activate TOMOYO: %v\n%s", err, out)
+	}
+	profile, err := os.ReadFile("/sys/kernel/security/tomoyo/profile")
+	if err != nil || !strings.Contains(string(profile), "7-CONFIG={ mode=enforcing ") {
+		t.Fatalf("the loader did not define the enforcing profile (%v):\n%s", err, profile)
+	}
+	for _, tier := range []string{"landlock", "cgroup", "bpflsm"} {
+		t.Run("enforcing_profile/"+tier, func(t *testing.T) {
+			testutil.RequireTier(t, c.doctorRequire(t, tier), tier)
+			cmd, path := tomoyoRun(t, c, actor, tier, "enforcing", "--held-label-agent")
+			if err := cmd.Run(); err != nil {
+				t.Fatalf("enforcing: %v\n%s", err, output(cmd))
 			}
 			tomoyoResult(t, c, cmd, path, true)
 		})

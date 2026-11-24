@@ -47,6 +47,17 @@ type RuleOrigin struct {
 // rule of a later contract, a run that cannot be read). The view is built at most once per version of the files it
 // reads (see the file comment); o is passed to InForce as is.
 func RuleSource(ctx context.Context, root, run, ruleKey string, o Options) (RuleOrigin, bool) {
+	if remoteView(o) {
+		reply, err := viewCall(ctx, "origin", root, run, ruleKey, "", o)
+		if err != nil {
+			return RuleOrigin{RuleKey: ruleKey, Sentence: err.Error(), EnforcedText: err.Error()}, true
+		}
+		return reply.Origin, reply.Found
+	}
+	return ruleSource(ctx, root, run, ruleKey, o)
+}
+
+func ruleSource(ctx context.Context, root, run, ruleKey string, o Options) (RuleOrigin, bool) {
 	if ruleKey == "" || !ledger.IsRunID(run) {
 		return RuleOrigin{}, false
 	}
@@ -110,7 +121,7 @@ type ruleEntry struct {
 // build reads the run's view and indexes its rules by every rule key they name. It reports whether the view was read
 // whole: no error, and the request not cancelled while it was built.
 func (e *ruleEntry) build(ctx context.Context, root, run string, o Options) bool {
-	v := InForce(ctx, root, run, o)
+	v := inForce(ctx, root, run, o)
 	e.byKey = map[string]RuleOrigin{}
 	e.source = ""
 	if v.Positions == PositionsSource {

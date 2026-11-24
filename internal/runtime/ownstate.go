@@ -47,8 +47,9 @@ import (
 // A root launcher restores no mode: it reads and writes through any (CAP_DAC_OVERRIDE). Its agent cannot take the
 // modes of the run's own directory, which root makes and holds until Close hands it to the user, nor of a runtime
 // directory, since root makes none; what it can take is the user's own state above, which the user's next unprivileged
-// `tego run` restores at its start (and `tego gc` the part of it the config is read from). Nothing restores an earlier
-// run's directory, whoever launched it.
+// `tego run` restores at its start (and `tego gc` the part of it the config is read from). The same run restores, at its
+// start, the run directories of the user's earlier, orphaned and live runs (restoreRunDirs, A48), and gc those of the
+// ledger root it then reads; a run directory of another user's is nobody's to restore here.
 
 // runTreeDepth bounds the walk below a run directory at its end: blobs/ is the only directory the writer makes in it.
 const runTreeDepth = 2
@@ -159,7 +160,77 @@ func RestoreOwnState(s OwnState) ([]ModeRestored, error) {
 	}
 	var out []ModeRestored
 	err := restoreModes(s.paths(), &out)
+	if s.Root != "" {
+		err = errors.Join(err, restoreRunDirs(filepath.Clean(s.Root), &out))
+	}
 	return out, err
+}
+
+// restoreRunDirs gives the owner back their rights on every run directory under the ledger root that the user owns: a
+// live run's, whose agent took it while it ran, an orphan's and an earlier run's (GAPS C52, A48), which no run end
+// restores. Each is looked at by its own handle, opened under the root's: a run directory, and in it the three names
+// tego reads a run through (events.jsonl, its lock file and blobs/), lacking an owner right; when any was restored, the
+// rest of the directory's tree is walked as at a run's end (restoreTree), since a tree taken whole is taken in every
+// level. Only the owner's bits are added, so no mode is widened beyond what tego made the run directory with (0700,
+// 0600), and a group or other bit stays for the checks that judge it. Another user's run directory, a link, and a
+// file that only has a run's name are left alone, as restoreAt leaves them. The root's own mode is restored before.
+func restoreRunDirs(root string, out *[]ModeRestored) error {
+	rd, err := sys.Own(unix.Open(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0))
+	if errors.Is(err, unix.ENOENT) {
+		return nil
+	}
+	if err != nil {
+		return &os.PathError{Op: "open", Path: root, Err: err}
+	}
+	defer func() { _ = rd.Close() }() // an O_PATH descriptor: nothing to report on close
+	names, err := dirNames(rd, root)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, name := range names {
+		if !ledger.IsRunID(name) {
+			continue
+		}
+		path := filepath.Join(root, name)
+		before := len(*out)
+		isDir, err := restoreAt(rd, name, path, needDir, 0, out)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if !isDir {
+			continue
+		}
+		sub, err := rd.Openat(name, unix.O_PATH|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		if err != nil {
+			errs = append(errs, &os.PathError{Op: "open", Path: path, Err: err})
+			continue
+		}
+		var st unix.Stat_t
+		if err := sub.Fstat(&st); err != nil {
+			errs = append(errs, &os.PathError{Op: "fstat", Path: path, Err: err})
+			_ = sub.Close() // an O_PATH descriptor, as above
+			continue
+		}
+		if int(st.Uid) != launcherEUID() { // not the user's: nothing in it is theirs to restore, nor theirs to open
+			_ = sub.Close()
+			continue
+		}
+		for _, e := range []struct {
+			name      string
+			dir, file uint32
+		}{{ledger.EventsFile, 0, needFile}, {ledger.LockFile, 0, needFile}, {ledger.BlobsDir, needDir, 0}} {
+			if _, err := restoreAt(sub, e.name, filepath.Join(path, e.name), e.dir, e.file, out); err != nil {
+				errs = append(errs, err)
+			}
+		}
+		if len(*out) > before {
+			errs = append(errs, restoreBeneath(sub, path, runTreeDepth, needDir, needFile, out))
+		}
+		_ = sub.Close() // an O_PATH descriptor, as above
+	}
+	return errors.Join(errs...)
 }
 
 // restoreModes restores each path in turn, appending what it restored to out.

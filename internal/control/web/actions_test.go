@@ -12,12 +12,14 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/runlock"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
 const own = "http://127.0.0.1:8484"
@@ -168,15 +170,22 @@ func TestHelperLockHolder(t *testing.T) {
 	case <-sig:
 		_, err := os.Stat(filepath.Join(dir, "stop.request"))
 		_ = os.WriteFile(filepath.Join(dir, "got-term"), []byte(fmt.Sprint(err == nil)), 0o600)
+		// Keep the flock descriptor live until the signal has been handled.
+		runtime.KeepAlive(f)
 		os.Exit(0)
 	case <-time.After(60 * time.Second):
+		runtime.KeepAlive(f)
 		os.Exit(7)
 	}
 }
 
 // TestStopThroughHandler: the Stop form, confirmed, places the stop marker and sends SIGTERM to the verified lock
-// holder, as tego stop does, and the page says "stopped" once the lock is free.
+// holder, as tego session stop does, and the page says "stopped" once the lock is free.
 func TestStopThroughHandler(t *testing.T) {
+	testStopThroughHandler(t, config.Builtin())
+}
+
+func testStopThroughHandler(t *testing.T, machine *config.Machine) {
 	root := fixture(t)
 	dir := filepath.Join(root, harmRun)
 	letGo(dir) // the helper is the run's launcher here
@@ -200,10 +209,11 @@ func TestStopThroughHandler(t *testing.T) {
 		}
 	}
 	s := newServer(t, root)
+	s.cfg.Machine = machine
 	c := login(t, s)
 	tok := csrfOf(t, s, c, "/runs/"+harmRun+"/stop")
 	b := follow(t, s, c, post(s, "/runs/"+harmRun+"/stop", url.Values{"csrf": {tok}, "confirm": {"yes"}}, own, own+"/runs/"+harmRun+"/stop", c))
-	if !strings.Contains(b, "Stopped demo-harm") || !strings.Contains(b, "<h1>demo-harm</h1>") {
+	if !strings.Contains(b, "Stopped demo-harm") || !strings.Contains(pageElement(t, b, "class", "object-name"), "demo-harm") {
 		t.Fatalf("stop did not land on the run page with Stopped: %s", b)
 	}
 	if b, err := os.ReadFile(filepath.Join(dir, "got-term")); err != nil || string(b) != "true" {
@@ -222,9 +232,10 @@ func TestRulesShowsContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := newServer(t, root)
+	s.cfg.Machine = nil // this test exercises the raw, uncompiled contract view
 	c := login(t, s)
 	b := do(s, "GET", "/rules?run="+cleanRun, "127.0.0.1:8484", c).Body.String()
-	for _, want := range []string{"name: demo-clean", "&lt;b&gt;x&lt;/b&gt;", "No hash recorded", "not compiled"} {
+	for _, want := range []string{"name: demo-clean", "&lt;b&gt;x&lt;/b&gt;", "Hash not available", "not compiled"} {
 		if !strings.Contains(b, want) {
 			t.Errorf("/rules lacks %q", want)
 		}

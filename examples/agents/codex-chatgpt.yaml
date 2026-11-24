@@ -16,7 +16,7 @@
 #   printf 'sandbox_mode = "danger-full-access"\napproval_policy = "never"\ncheck_for_update_on_startup = false\n' \
 #     > ~/.local/share/tego/codex-chatgpt/config.toml
 # (`CODEX_HOME=~/.local/share/tego/codex-chatgpt codex login` signs in that directory directly, with no copy.) The
-# config.toml turns Codex's own sandbox off, because tego is the cage; `codex --no-daemon` keeps its commands inside it.
+# config.toml turns Codex's own sandbox off, because tego enforces the contract; `codex --no-daemon` keeps its commands inside it.
 #
 # CHANGE: every /home/USER/ below to your home directory, and the codex-code-mode-host entry's directory to
 #   dirname "$(readlink -f "$(command -v codex)")"

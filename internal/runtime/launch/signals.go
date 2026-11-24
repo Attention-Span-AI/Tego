@@ -152,6 +152,14 @@ func Notify() (<-chan os.Signal, func()) {
 	return ch, func() { signal.Stop(ch) }
 }
 
+// NotifyMarked is Notify plus the marker of interrupt provenance on the same channel (fwdint.go), so a process that
+// asks its peer about INT and QUIT can tell the arrivals before its question from the ones after.
+func NotifyMarked() (<-chan os.Signal, func()) {
+	ch := make(chan os.Signal, 16)
+	signal.Notify(ch, append(subscribed(), interruptMarker)...)
+	return ch, func() { signal.Stop(ch) }
+}
+
 // subscribed is HandledSignals less a SIGHUP this process inherited as ignored. nohup ignores SIGHUP
 // before it execs tego; subscribing to it anyway would replace that with a handler, so the hangup started
 // stop_grace and ended the run (129), and the agent, which inherits an ignored disposition across execve but
@@ -296,6 +304,22 @@ func (h *SignalHandler) escalateLocked() {
 	h.outcome.Escalated = true
 }
 
+// NoteStopKill records that a cgroup.kill the handler did not write itself ended a stop: the run's own end
+// of a main process that left processes running writes one after its own stop_grace, timed from the main process's
+// exit, and that can come before this handler's timer, timed from the first stop signal. When a stop signal has been
+// handled, the kill that ended the stop is the escalation however it was written, so this is the one place besides
+// escalateLocked that sets Outcome.Escalated. It reports whether a stop was in progress; with none the kill is not
+// a stop's and the outcome stays as it is.
+func (h *SignalHandler) NoteStopKill() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.outcome.Signal == 0 {
+		return false
+	}
+	h.outcome.Escalated = true
+	return true
+}
+
 // stopTimer stops the stop_grace timer and waits for an escalation already in flight, so nothing is still
 // writing cgroup.kill once Run has returned (§9 "Goroutine ownership"). It must not hold h.mu across the
 // join: escalateLocked takes it.
@@ -331,4 +355,20 @@ func (h *SignalHandler) Forwarded(sig syscall.Signal) int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.forwarded[sig]
+}
+
+// Reraise preserves a waited child's terminating signal at the CLI boundary. os/signal.Reset alone leaves Go's
+// special handlers installed (SIGPIPE and SIGPROF), or restores an inherited ignore. Use the child stage's kernel
+// disposition reset, then fall back to the shell's 128+signal status if the default action lets this process live
+// (SIGURG and SIGCHLD ignore by default). The caller must return the result immediately.
+func Reraise(sig syscall.Signal) int {
+	code := 128 + int(sig)
+	signal.Reset(sig)
+	if sig != syscall.SIGKILL { // SIGKILL has no settable disposition
+		if err := resetSignals([]int{int(sig)}); err != nil {
+			return code
+		}
+	}
+	_ = syscall.Kill(os.Getpid(), sig) // even a failed delivery must retain the child's shell status
+	return code
 }

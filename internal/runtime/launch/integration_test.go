@@ -394,18 +394,11 @@ func TestExecFailures(t *testing.T) {
 	}
 }
 
-// coverDirWarning is the line a -cover build of this test binary prints as it exits with no GOCOVERDIR,
-// which the child stage never has: it starts from an empty environment (wireSpec), so under
-// scripts/coverage.sh a child stage whose execve failed writes it after its own one-line message.
-const coverDirWarning = "warning: GOCOVERDIR not set, no coverage data emitted\n"
-
-// withoutCoverWarning is out without coverDirWarning when this binary is a -cover build, and out as it is
-// otherwise: an uninstrumented child stage that printed the line would be a finding.
+// withoutCoverWarning is out without the coverage runtime's own stderr lines when this binary is a -cover build
+// (the child stage has no GOCOVERDIR: it starts from an empty environment, wireSpec), and out as it is otherwise:
+// an uninstrumented child stage that printed the line would be a finding.
 func withoutCoverWarning(out []byte) []byte {
-	if testing.CoverMode() == "" {
-		return out
-	}
-	return bytes.ReplaceAll(out, []byte(coverDirWarning), nil)
+	return testutil.WithoutCoverageDiagnostics(out)
 }
 
 // landlockRuleset builds an ABI-1 ruleset with the raw wrappers: read+exec everywhere, everything under

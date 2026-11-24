@@ -1,4 +1,4 @@
-# ADR 0063: The Claude Code reason hook: one command for five events, each refusal told exactly once
+# ADR 0063: The Claude Code reason hook: five events, one shared cursor and run context
 
 Status: **accepted 2026-10-24**.
 Implemented 2026-10-24: `tego hook claude-code` (`internal/adapters/claudecode`, dispatched by `cmd/tego` before the
@@ -33,20 +33,22 @@ ledger root, the machine config) would itself be a refusal, which the next hook 
    argv for all of them, in exec form (`args` set: no shell, so no shell needs an exec grant):
    - **SessionStart** prints the run's facts, `reason.HookInstructions(<reason file>)`: Tego enforces the run's
      contract and the run cannot change it; a refusal fails with EACCES or EPERM (a refused command commonly exits
-     126); the reason file's path; and that each refusal is also reported once beside the tool result that follows
-     it or at the end of the turn. It counts the session.
-   - **PostToolUse, PostToolUseFailure, PostToolBatch, Stop** each claim the refusals no hook of the run has shown
+     126); the reason file's path; and how pending refusals become run-scoped hook notes. It counts the session.
+     Amended 2026-11-11: the first SessionStart also claims pending refusals as run context. Later starts preview
+     pending refusals without claiming them, so those previews may repeat (below).
+   - **PostToolUse, PostToolUseFailure, PostToolBatch, Stop** each claim the refusals no hook of the run has claimed
      yet and print them as `reason.Render` text; with nothing new they print nothing and exit 0.
    Wording comes from `pkg/spec/reason` only (Layer 0); the adapter adds none.
 2. **Claim once, under a lock.** The cursor is `hook-state/state.json` beside the reason file:
    `{v: 1, run, cursor, sessions, deliveries, refusals_delivered}`, at most 4 KiB. `cursor` is the highest seq
-   shown; `refusals_delivered` is the reason file's `refusals` at the last claim, which is `File.Since`'s cursor, so
+   claimed; `refusals_delivered` is the reason file's `refusals` at the last claim, which is `File.Since`'s cursor, so
    a cursor older than the ring's oldest entry yields every listed refusal and the count of those no longer listed
    (Render's "N more not listed."). A hook takes `flock(LOCK_EX)` on the hook-state directory (polled, a 2 s
-   budget), reads the reason file and the state, claims, writes the state to `state.json.tmp` and renames it over
-   `state.json`, releases the lock, and only then prints. Of hook processes started at once, each refusal is printed
-   by exactly one. A hook killed between its write and its print loses that note: at most once, and the ledger
-   still holds every refusal.
+   budget), reads the reason file and the state, claims except on later SessionStart previews, writes the state
+   to `state.json.tmp` and renames it over `state.json`, releases the lock, and only then prints. Each refusal is
+   claimed by at most one hook, even when hooks start at once. A hook killed or timed out between its claim and
+   print, or one whose output write fails, can lose that note; the ledger still holds every refusal. A later
+   SessionStart preview can repeat a pending refusal without claiming it.
 3. **Output.** `--mode json` (the default) prints
    `{"hookSpecificOutput":{"hookEventName":<event>,"additionalContext":<text>}}` and exits 0. `--mode stderr`, for a
    hook wired by hand (*amended 2026-10-25, the reason end-to-end test:* this said "for a bare session that drops system
@@ -191,11 +193,12 @@ PostToolBatch, Stop, SubagentStop and PostModelSwitch. The Agent SDK runs the sa
 (`settingSources`, on by default for `query()`), and its own callbacks cover PreToolUse, PostToolUse,
 PostToolUseFailure, UserPromptSubmit, Stop, SubagentStart, SubagentStop, PreCompact, PermissionRequest and
 Notification in both SDKs; PostToolBatch, SessionStart and SessionEnd are TypeScript-only callbacks (in Python only
-as settings-file hooks). Tego uses five: **PostToolUse** and **PostToolUseFailure**, the note beside the result of the
-call that was refused, whichever way that call ended; **PostToolBatch**, the last point before the next model request
-after a parallel batch, one routing case on top of the cursor that makes every event safe; **Stop**, for refusals that
-land after the last tool result (the 10 ms coalescing window, a background process); and **SessionStart**, for the
-facts the notes refer to. The settings file that names them is the Claude Code provisioner's.
+as settings-file hooks). Tego uses five: **PostToolUse** and **PostToolUseFailure**, a run-scoped note beside a tool
+result, whichever way that call ended, without identifying which tool caused the refusals; **PostToolBatch**, the
+last point before the next model request after a parallel batch, sharing the claim-once cursor; **Stop**, for
+refusals that land after the last tool result (the 10 ms coalescing window, a background process); and
+**SessionStart**, for the facts the notes refer to and pending run context. The settings file that names them is
+the Claude Code provisioner's.
 
 ## Rejected options
 
@@ -223,8 +226,10 @@ facts the notes refer to. The settings file that names them is the Claude Code p
 
 ## Consequences
 
-- One argv in the settings serves every event, and refusals reach the model once each, beside the call that caused
-  them, in the sentence `pkg/spec/reason` defines for the code.
+- One argv in the settings serves every event. Refusals are claimed once, after a call, at Stop or at the first
+  SessionStart, in the sentence `pkg/spec/reason` defines for the code. Later SessionStart previews
+  can repeat pending run context. A claim is no acknowledgement of model delivery. Tool and Stop hooks share the
+  run's cursor, so another session's claim can still keep a refusal from the model whose tool caused it.
 - The cursor lives in agent-writable state. A forged cursor only hides refusals from the agent itself; the ledger
   stays authoritative, and the counts the launcher reads from it at run end are labelled `reported_by: hook`.
 - A payload over 1 MiB (a PostToolUse whose tool_response is a large file) gets no note; its refusals stay unclaimed
@@ -365,3 +370,115 @@ path escaped on both the refusal and the merge line.
   `v` and `run` beside the four counters the package named, so a state of another run or format is refused. The
   integration test hands the hook a runtime directory of its own, because the launcher on this base makes no
   hook-state/ yet; the hook's system calls are the same.
+
+## Amendment 2026-11-11: pending refusals at SessionStart, explicit run scope (G8)
+
+The earlier "beside the call that caused them" claim was unsupported. `SessionStart` only counted an event;
+its next tool hook claimed the whole run's backlog, including startup and background work. The file's `pid`
+is the ledger's process/thread-group ID (with producer-specific unknown or thread-ID fallbacks), not a tool or
+conversation ID. The file carries no harness session/tool identity or ancestry. `input.SessionID` and `AgentID`
+are harness identifiers; neither maps to that PID. The Agent SDK uses the same settings hooks. Codex's adapter
+is a placeholder and generic has no reason hook, so neither has a supported reason-hook session.
+
+The goal is to tell a model what the run refused without inventing ownership. Missing an uncertain refusal of
+its own tool is worse than telling an explicitly unassigned refusal. Keep the run-wide locked cursor. In json
+mode the first SessionStart claims its pending report after the run's facts. Later starts, including resume,
+clear, compact and another conversation, preview pending refusals without advancing the shared cursor; these
+previews may repeat until a tool or Stop hook claims them. The label says they were pending when the hook read
+the file. Every note and the setup paragraph explicitly say the scope is the whole run, including startup and
+background work, with tool call and session attribution unavailable. Refusals appearing later stay pending even
+if their timestamp precedes the start or their PID differs. Stderr SessionStart still claims nothing.
+
+Render the setup and note within one 4000-byte budget, reserving the setup's length before listing refusals.
+Refusals left out by the ring or text bound are still counted. State v1 and run_end's reason_delivery keep their
+shape: `deliveries` counts claimed refusal notes, including the first SessionStart; `refusals_delivered` is the
+refusal count at the last claim. Later-start previews leave both counters unchanged and do not advance `cursor`.
+`sessions` still counts start events, not distinct conversations. Claims are no acknowledgement of receipt: a
+hook killed or timed out after claiming but before printing, or whose output write fails, can lose its note. The
+ledger retains the refusal. Delayed publication (GAPS C64) and cross-session claims by tool or Stop hooks remain
+limits. No policy, syscall answer, record schema, dependency or path the hook touches changes.
+
+Rejected:
+
+- Filter by PID or TGID: native tools and background work can share one process, Bash children use another, and
+  neither the hook payload nor file proves ownership. A live process-tree lookup also misses exited children,
+  PID reuse and delayed records, and adds reads outside the hook's documented paths.
+- Silently start the cursor at SessionStart: it can discard an undelivered tool refusal without reporting it.
+- Claim at every SessionStart: rejected because another session can consume the owning tool's pending refusal
+  before its result hook runs, even if that other session received a labelled note. Only the first start claims;
+  later starts preview without advancing the cursor.
+- A locked per-session cursor: it could tell each session every refusal once, but needs larger versioned state,
+  migration and separate counting rules. Deferred in favor of the smaller first-start change; a per-session cursor
+  would still not map refusals to the tool or session that caused them.
+- Use timestamp or duration windows: publication is delayed, and parallel tools overlap (ADR 0061).
+- Invent session IDs in records from the hook's own payload: that payload says when the harness delivered an
+  event, not which process made the refused system call.
+
+Measured on the host with a stand-in hook process per event: startup backlog at SessionStart, a silent first
+allowed tool, overflow counts, the combined context bound, resumed and concurrent conversation IDs, changed PIDs,
+and delayed publication with old timestamps. The original tests checked the note received by the later start,
+not preservation for the owning tool's hook; that omission is corrected in fix round 1. The revised regression
+checks first-start and later-start state plus the owning tool's subsequent claim, with an overlay against the
+reviewed implementation. Actual Claude Code delivery under Tego is owed in a guest; previous real-binary results
+above establish the protocol, not a new run of this amendment. Precise per-tool/per-conversation filtering remains
+unsupported and is disclosed rather than guessed.
+
+## Amendment 2026-11-22: a refusal belongs to the harness that drew it, and a claim is two steps (D46, C64)
+
+This replaces the shared cursor and the
+claim-then-print of the 2026-11-11 amendment, and answers its Rejected item "filter by PID or TGID" with an owner the
+supervisor reads when it refuses the call, not one the hook looks up afterwards.
+
+**Ownership.** When the supervisor refuses a call (an action line with verdict `refused`, or a `refused` line) it reads
+the refused process's `/proc/<pid>/stat` and its ancestors' (at most 16, stopping at pid 1 or an unreadable one) and
+carries the list, `pid:start-ticks` each, nearest first, on the event inside the process (`record.Event.Lineage`, never
+written: no record field, record minor stays 41). The ledger writer puts it in the reason file's entry as the optional
+key `owners` (at most 512 bytes; additive within reason file v1, which keeps `v` 1 and which a reader that does not know
+the key ignores; `spec/reason/v1/reason-file.schema.json`). The hook finds its harness as the nearest ancestor of its
+own process that is not a shell (`sh`, `bash`, `dash`, `zsh`, `ash`, `fish`, `ksh`, `csh`, `tcsh`) and takes an entry
+as its own when the harness's identity is in `owners`. Each hook records its harness in the state (`harnesses`, and
+drops the ones that are gone), and an entry belongs to the *nearest* of the recorded harnesses in its `owners`, so a
+Claude Code started from another's tool owns its own refusals and the outer session does not. An entry
+with no owners (a refusal the root tiers' ring or the fanotify listener wrote, or one whose process had exited before the
+supervisor read it), or whose owners name no recorded harness (a process reparented away from its harness, a session
+that is gone), is nobody's: it keeps one shared cursor and goes to whichever hook claims it first, as every refusal did
+before ownership. A hook that finds no harness (its `/proc` is closed to it, or
+its parent is init) takes every entry above the shared cursor, since a note told to the wrong session beats one told to
+none. State v2 keeps `cursor` (the shared one), `owned` (one cursor for each harness, bounded by the 4 KiB state file:
+the lowest are dropped first) and `pending`.
+
+**Two-step claim.** Under the lock the hook first takes back the pending claims of its harness (any hook, for a claim
+made by a hook with no harness) whose claimer is no longer the process that had that start time, or is older than the
+hook timeout, and offers their entries again with the new ones. It records its own claim (claimer identity, time,
+seqs, not-listed count) in `pending` and moves the cursors, prints, and only when the output was written without
+error takes the lock again, removes the claim and counts the delivery. A hook that dies or fails between the two leaves
+the claim, so delivery is at least once; the possible duplicate is a note printed twice. A pending claim of another
+harness is left for that harness's next hook however old it is, and dropped only when the harness is gone (pid and
+start time no longer name it), never on age (F8). Beyond eight pending claims, or
+a state that cannot fit 4 KiB, the hook prints nothing and the refusals stay unclaimed.
+
+**Words.** The hook says printed and never that the model received a note: a refusal is marked delivered when the hook's
+output was written to the harness without error, Tego cannot see whether the harness passed it to the model, and a hook
+stopped before that point leaves the refusal for the next delivery hook of the same session, which may then tell it
+twice. `deliveries` counts printed claims.
+
+Rejected, one line each:
+- **Hold each answer until its line is written** (GAPS C64's earlier rejection stands: an unanswered thread, a refusal
+  flood cutting the run's allowed calls, more `EINTR`).
+- **Keep the limit and only correct the words:** leaves another session's hook able to take a refusal and a killed hook
+  able to lose one.
+- **Look the refused process up in `/proc` when the hook runs:** the refused process has usually exited, and a reused
+  pid names another process; only the supervisor, right after the answer, still sees it.
+- **One shared cursor with a two-step claim only:** fixes the lost note, not the stolen one.
+- **A model-receipt acknowledgement:** no harness gives one; the claim says printed.
+
+Stated limits: `state.json` is writable by every process of the run, so any of them can raise a cursor or leave a claim
+pending and hide another session's notes: ownership separates honest hooks, nothing more (F5); a session whose hook has
+not run yet has no recorded harness, so a refusal of its tools told by another hook first is told there as shared; a
+refusal with no owners is nobody's; the supervisor lists a process only when it can still read it
+right after the answer; a refusal that left the file's 32-entry list before its session's hook ran is counted as not
+listed once, to whichever hook claimed first; the hook now reads `/proc/<pid>/stat` for its ancestors and a claimer
+(added to the documented paths of (7)). Tested: two sessions in one run, a claimer killed between claim and print,
+a failed print in both modes, the supervisor's stamp, the ledger-to-reason-file carry, and the shell-skipping
+harness lookup (`internal/adapters/claudecode/owner_test.go`, `internal/runtime/supervisor/lineage_test.go`,
+`internal/ledger/reasonfile_test.go`). Not yet proved: a real Claude Code under `tego run` at the three tiers.

@@ -18,10 +18,11 @@ func init() { register(cmdStart) }
 // scripts.
 func cmdStart() Command {
 	return Command{
-		Name:    "start",
-		Summary: "set up your first protected agent, step by step",
-		Usage:   "",
-		Flags:   func(*flag.FlagSet) {},
+		Name:         "start",
+		HoldsSecrets: true,
+		Summary:      "set up your first protected agent, step by step",
+		Usage:        "",
+		Flags:        func(*flag.FlagSet) {},
 		Run: func(ctx context.Context, fs *flag.FlagSet, stdout, stderr io.Writer) int {
 			if fs.NArg() != 0 {
 				message(stderr, "", 0, 0, "tego start: takes no arguments", codeUsage)
@@ -34,7 +35,7 @@ func cmdStart() Command {
 			if refuseSetup(stderr) {
 				return identity.ExitError
 			}
-			return runSetupGuide(ctx, os.Stdin, stdout, stderr, true)
+			return runSetupGuide(rehearseUserScope(ctx, stderr), os.Stdin, stdout, stderr, true)
 		},
 	}
 }

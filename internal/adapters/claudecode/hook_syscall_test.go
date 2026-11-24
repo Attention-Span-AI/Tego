@@ -40,14 +40,16 @@ func buildReleaseTego(t *testing.T) string {
 // every tool call (ADR 0063 (7)); tier landlock's run (TestHookUnderTegoRunIsRefusedNothing) could not see it.
 func TestHookMakesOnlyItsDocumentedSyscalls(t *testing.T) {
 	bin := buildReleaseTego(t)
-	f := newFixture(t)
-	f.refusals(t, 2)
 	nohome := filepath.Join(t.TempDir(), "nohome")
 	if err := os.Mkdir(nohome, 0); err != nil {
 		t.Fatal(err)
 	}
 	for _, event := range []string{"session-start", "post-tool-use-bash", "stop"} {
 		t.Run(event, func(t *testing.T) {
+			// Every event must have a refusal to deliver. SessionStart now
+			// claims pending refusals too, so the audit cannot share its cursor.
+			f := newFixture(t)
+			f.refusals(t, 2)
 			dir := t.TempDir()
 			stdin, err := os.Open(filepath.Join("testdata", "payloads", event+".json"))
 			if err != nil {
@@ -110,6 +112,21 @@ var hookProcSelf = map[string]bool{
 // (internal/runtime/cgroup/cgroup_linux.go).
 var hookCgroupCPU = map[string]bool{"cpu.max": true, "cpu.cfs_quota_us": true, "cpu.cfs_period_us": true}
 
+// isProcStat reports whether p is /proc/<decimal pid>/stat.
+func isProcStat(p string) bool {
+	rest, ok := strings.CutPrefix(p, "/proc/")
+	pid, ok2 := strings.CutSuffix(rest, "/stat")
+	if !ok || !ok2 || pid == "" {
+		return false
+	}
+	for _, c := range pid {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // hookMayName is the documented set of paths the hook's process names (ADR 0063 (7), REASON-CHANNEL §3). A path
 // with a "." or ".." element, or a doubled slash, is none of them: the prefixes below would otherwise admit a way
 // out of the directory they name.
@@ -120,6 +137,8 @@ func hookMayName(p, bin, runDir string) bool {
 	state := filepath.Join(runDir, StateDirName)
 	switch {
 	case p == bin, hookProcSelf[p]:
+		return true
+	case isProcStat(p): // a process's stat line: the hook's harness above it, and whether a claimer is still there (owner.go)
 		return true
 	case strings.HasPrefix(p, "/proc/self/fd/") && !strings.Contains(strings.TrimPrefix(p, "/proc/self/fd/"), "/"):
 		return true
@@ -152,6 +171,7 @@ func TestHookMayNameIsTheDocumentedSet(t *testing.T) {
 		{"/proc/self/cgroup", true},
 		{"/proc/self/mountinfo", true},
 		{"/proc/self/fd/3", true},
+		{"/proc/1234/stat", true},
 		{"/sys/kernel/mm/transparent_hugepage/hpage_pmd_size", true},
 		{"/sys/fs/cgroup/user.slice/cpu.max", true},
 		{"/sys/fs/cgroup/cpu,cpuacct/user.slice/cpu.cfs_quota_us", true},
@@ -164,6 +184,11 @@ func TestHookMayNameIsTheDocumentedSet(t *testing.T) {
 		{"/proc/self/cwd/x", false},
 		{"/proc/self/fd/3/x", false},
 		{"/proc/self/environ", false},
+		{"/proc/1234/environ", false},
+		{"/proc/1234/stat/x", false},
+		{"/proc/self/stat", false},
+		{"/proc//stat", false},
+		{"/proc/12a/stat", false},
 		{"/proc/self/../1/environ", false},
 		{"/sys/fs/cgroup/user.slice/cpu.weight", false},
 		{"/sys/fs/cgroup/../../etc/cpu.max", false},

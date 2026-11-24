@@ -110,6 +110,26 @@
 
 char _license[] SEC("license") = "Dual BSD/GPL";
 
+/* Own stack (ADR 0150). The verifier gives a BPF_PROG_TYPE_KPROBE program whose stack reaches 64 bytes a
+ * per-CPU private stack when the JIT supports one (kernel/bpf/verifier.c bpf_enable_priv_stack,
+ * check_max_stack_depth; 6.13 and later, unchanged in 7.0 and mainline as read 2026-11-12). That is safe for a
+ * kprobe, which runs with preemption off under bpf_prog_active, but a uprobe program is one too, and it runs in
+ * the traced task with migration off and preemption on (kernel/trace/bpf_trace.c uprobe_prog_run). On a kernel
+ * that preempts kernel code (preempt=full, or lazy, Fedora's default), a task preempted inside one of these
+ * programs and a second task on the same CPU entering it share one stack: each overwrites the other's ring
+ * pointer, buffer pointer, lengths and record head. Measured in KVM guests, 32 concurrent runs of one build:
+ * kernel general protection faults and NULL dereferences in __bpf_ringbuf_reserve from tego_ssl_multi_return
+ * (the agent killed), record heads with foreign cgroup ids, holes and lost chunks that end a budgeted run with
+ * reason error; on 6.17 with preempt=full, 17 of 32 runs in one round; with voluntary preemption, none.
+ *
+ * The verifier excludes programs with tail calls from private stacks. Each entry attempts a live tail call
+ * into its empty array, then falls through. This must survive verification regardless of pass order. The loader
+ * checks every loaded or adopted capture program's translated instructions before offering capture.
+ * A program array holds one expected attach type: the six single programs use tego_ssl_ownstk, the multi pair
+ * tego_ssl_ownstkm. Bodies are inline functions so a multi dispatcher attempts just one call per hit.
+ * The ELF test is a cheap first check, not proof of the loaded program's stack choice. */
+#define TEGO_OWN_STACK(ctx, array) bpf_tail_call(ctx, array, 0)
+
 /* BTF anchors: see bpf/cgroup_track.bpf.c. Naming each struct once makes bpf2go emit a Go mirror of it that
  * internal/bpf's hand-written mirrors are asserted against. */
 const struct tego_ev_ssl_chunk *tego_btf_ev_ssl_chunk;
@@ -368,9 +388,7 @@ static __always_inline int tego_ssl_take_scratch(__u64 id, __u64 ssl_ptr, struct
 /* SSL_write(SSL *ssl, const void *buf, int num): the universal entry point Node, libcurl and CPython 3.9
  * call, and the one always hooked when present (R1). num is an int, so it is narrowed before use and a
  * non-positive value is not a call that moved anything. */
-__attribute__((always_inline))
-SEC("uprobe")
-int tego_ssl_write(struct pt_regs *ctx)
+static __always_inline int tego_ssl_write_body(struct pt_regs *ctx)
 {
     __u64 cgroup_id = bpf_get_current_cgroup_id();
     struct tego_run *run = tego_run_lookup(&tego_run_set, cgroup_id);
@@ -394,12 +412,17 @@ int tego_ssl_write(struct pt_regs *ctx)
     return 0;
 }
 
+SEC("uprobe")
+int tego_ssl_write(struct pt_regs *ctx)
+{
+    TEGO_OWN_STACK(ctx, &tego_ssl_ownstk);
+    return tego_ssl_write_body(ctx);
+}
+
 /* SSL_write_ex(SSL *, const void *buf, size_t num, size_t *written) and SSL_write_ex2(SSL *, const void
  * *buf, size_t num, uint64_t flags, size_t *written): the third argument is a size_t in both, and it is the
  * length the caller asked for. Exactly one of the two is ever attached (R2). */
-__attribute__((always_inline))
-SEC("uprobe")
-int tego_ssl_write_ex(struct pt_regs *ctx)
+static __always_inline int tego_ssl_write_ex_body(struct pt_regs *ctx)
 {
     __u64 cgroup_id = bpf_get_current_cgroup_id();
     struct tego_run *run = tego_run_lookup(&tego_run_set, cgroup_id);
@@ -419,11 +442,16 @@ int tego_ssl_write_ex(struct pt_regs *ctx)
     return 0;
 }
 
+SEC("uprobe")
+int tego_ssl_write_ex(struct pt_regs *ctx)
+{
+    TEGO_OWN_STACK(ctx, &tego_ssl_ownstk);
+    return tego_ssl_write_ex_body(ctx);
+}
+
 /* SSL_read(SSL *ssl, void *buf, int num) entry: the buffer is empty now, so only where it is and when the
  * call began are recorded (R3). */
-__attribute__((always_inline))
-SEC("uprobe")
-int tego_ssl_read(struct pt_regs *ctx)
+static __always_inline int tego_ssl_read_body(struct pt_regs *ctx)
 {
     __u64 cgroup_id = bpf_get_current_cgroup_id();
     struct tego_run *run = tego_run_lookup(&tego_run_set, cgroup_id);
@@ -438,11 +466,16 @@ int tego_ssl_read(struct pt_regs *ctx)
     return 0;
 }
 
+SEC("uprobe")
+int tego_ssl_read(struct pt_regs *ctx)
+{
+    TEGO_OWN_STACK(ctx, &tego_ssl_ownstk);
+    return tego_ssl_read_body(ctx);
+}
+
 /* SSL_read_ex(SSL *s, void *buf, size_t num, size_t *readbytes) entry: the length will be at *readbytes,
  * whose address is recorded with the buffer. CPython 3.10+ uses only the _ex calls. */
-__attribute__((always_inline))
-SEC("uprobe")
-int tego_ssl_read_ex(struct pt_regs *ctx)
+static __always_inline int tego_ssl_read_ex_body(struct pt_regs *ctx)
 {
     __u64 cgroup_id = bpf_get_current_cgroup_id();
     struct tego_run *run = tego_run_lookup(&tego_run_set, cgroup_id);
@@ -456,6 +489,13 @@ int tego_ssl_read_ex(struct pt_regs *ctx)
     tego_ssl_enter((__u64)PT_REGS_PARM1(ctx), (__u64)PT_REGS_PARM2(ctx), (__u64)PT_REGS_PARM4(ctx),
                     TEGO_SSL_CALL_READ_EX);
     return 0;
+}
+
+SEC("uprobe")
+int tego_ssl_read_ex(struct pt_regs *ctx)
+{
+    TEGO_OWN_STACK(ctx, &tego_ssl_ownstk);
+    return tego_ssl_read_ex_body(ctx);
 }
 
 /* The shared return probe for both reads. A uretprobe sees no arguments, so the thread's own row in
@@ -474,9 +514,7 @@ int tego_ssl_read_ex(struct pt_regs *ctx)
  * of unknown length, skipped 0: TEGO_SSL_HOLE_STALE when its row is stale, TEGO_SSL_HOLE_NOLENGTH otherwise.
  * A readable *readbytes of 0 is edge case #13's "no data" and emits nothing (#14).
  */
-__attribute__((always_inline))
-SEC("uretprobe")
-int tego_ssl_read_return(struct pt_regs *ctx)
+static __always_inline int tego_ssl_read_return_body(struct pt_regs *ctx)
 {
     __u64 cgroup_id = bpf_get_current_cgroup_id();
     struct tego_run *run = tego_run_lookup(&tego_run_set, cgroup_id);
@@ -543,6 +581,13 @@ int tego_ssl_read_return(struct pt_regs *ctx)
     return 0;
 }
 
+SEC("uretprobe")
+int tego_ssl_read_return(struct pt_regs *ctx)
+{
+    TEGO_OWN_STACK(ctx, &tego_ssl_ownstk);
+    return tego_ssl_read_return_body(ctx);
+}
+
 /* SSL_free(SSL *ssl) entry: the connection this SSL* named is over, which nothing else here can see (R3a).
  * glibc hands a freed SSL_CONNECTION's chunk to the next SSL_new, so without this a new connection at the
  * same address on the same thread continued the old one's framing: after an aborted Content-Length response the
@@ -559,9 +604,7 @@ int tego_ssl_read_return(struct pt_regs *ctx)
  * SSL_free drops a reference, and frees only at the last (SSL_up_ref takes another), so a record can come
  * before the SSL* is really gone; a connection that goes on after it is a new one to the reader, whose first
  * bytes are the rest of a message and are passed over and counted (R18), never paired. */
-__attribute__((always_inline))
-SEC("uprobe")
-int tego_ssl_free(struct pt_regs *ctx)
+static __always_inline int tego_ssl_free_body(struct pt_regs *ctx)
 {
     __u64 cgroup_id = bpf_get_current_cgroup_id();
     struct tego_run *run = tego_run_lookup(&tego_run_set, cgroup_id);
@@ -592,6 +635,13 @@ int tego_ssl_free(struct pt_regs *ctx)
     return 0;
 }
 
+SEC("uprobe")
+int tego_ssl_free(struct pt_regs *ctx)
+{
+    TEGO_OWN_STACK(ctx, &tego_ssl_ownstk);
+    return tego_ssl_free_body(ctx);
+}
+
 /* Fixed operation cookies: bounded userspace offsets select the same existing
  * handlers, which each require both run membership and that run's capture ring.
  * Unknown cookies do nothing, including leaving another read's scratch intact. */
@@ -604,17 +654,18 @@ int tego_ssl_free(struct pt_regs *ctx)
 SEC("uprobe.multi")
 int tego_ssl_multi_enter(struct pt_regs *ctx)
 {
+    TEGO_OWN_STACK(ctx, &tego_ssl_ownstkm);
     switch (bpf_get_attach_cookie(ctx)) {
     case TEGO_SSL_COOKIE_WRITE:
-        return tego_ssl_write(ctx);
+        return tego_ssl_write_body(ctx);
     case TEGO_SSL_COOKIE_WRITE_EX:
-        return tego_ssl_write_ex(ctx);
+        return tego_ssl_write_ex_body(ctx);
     case TEGO_SSL_COOKIE_READ:
-        return tego_ssl_read(ctx);
+        return tego_ssl_read_body(ctx);
     case TEGO_SSL_COOKIE_READ_EX:
-        return tego_ssl_read_ex(ctx);
+        return tego_ssl_read_ex_body(ctx);
     case TEGO_SSL_COOKIE_FREE:
-        return tego_ssl_free(ctx);
+        return tego_ssl_free_body(ctx);
     default:
         return 0;
     }
@@ -623,8 +674,9 @@ int tego_ssl_multi_enter(struct pt_regs *ctx)
 SEC("uretprobe.multi")
 int tego_ssl_multi_return(struct pt_regs *ctx)
 {
+    TEGO_OWN_STACK(ctx, &tego_ssl_ownstkm);
     __u64 cookie = bpf_get_attach_cookie(ctx);
     if (cookie == TEGO_SSL_COOKIE_READ || cookie == TEGO_SSL_COOKIE_READ_EX)
-        return tego_ssl_read_return(ctx);
+        return tego_ssl_read_return_body(ctx);
     return 0;
 }

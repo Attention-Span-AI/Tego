@@ -61,11 +61,12 @@ func TestResolveNamesAndPins(t *testing.T) {
 	want := []string{
 		"tego/no-secrets", "tego/no-secrets@1", "tego/no-prod", "tego/no-prod@1",
 		"tego/repo-only-writes", "tego/repo-only-writes@1",
+		"tego/ci", "tego/ci@1",
 	}
 	if got := (Source{}).Names(); !slices.Equal(got, want) {
 		t.Errorf("Names() = %v, want %v", got, want)
 	}
-	if p := List(); len(p) != 3 || p[0].Name != "no-secrets" || p[1].Name != "no-prod" || p[2].Name != "repo-only-writes" {
+	if p := List(); len(p) != 4 || p[0].Name != "no-secrets" || p[1].Name != "no-prod" || p[2].Name != "repo-only-writes" || p[3].Name != "ci" {
 		t.Errorf("List() = %+v", p)
 	}
 }
@@ -222,6 +223,18 @@ var allowedKeys = map[string]func(any) bool{
 	},
 	"net.allow": func(v any) bool { l, ok := v.([]any); return ok && len(l) == 0 },
 	"fs.write":  func(v any) bool { return reflect.DeepEqual(v, []any{"/dev/null"}) },
+	// CI adds only denials and read notifications, never a grant (ADR 0068 amendment).
+	"env.deny": func(v any) bool {
+		l, ok := v.([]any)
+		for _, n := range l {
+			if s, _ := n.(string); s == "" || strings.ContainsAny(s, "*?[$/{") {
+				return false
+			}
+		}
+		return ok && len(l) > 0
+	},
+	"reason.reads":  equals("on"),
+	"fs.deny_write": func(v any) bool { return reflect.DeepEqual(v, []any{"./.github/"}) },
 }
 
 // TestPresetsNeverLoosen: no revision of any preset sets revision, host_sockets: true, fs.reads: direct or any
@@ -312,7 +325,8 @@ func TestEnvPassNeverWidens(t *testing.T) {
 	names := func(file string) []string {
 		var out []string
 		if env, ok := decode(t, file)["env"].(map[string]any); ok {
-			for _, v := range env["pass"].([]any) {
+			pass, _ := env["pass"].([]any) // ci has env.deny alone, which adds no passed name.
+			for _, v := range pass {
 				out = append(out, v.(string))
 			}
 		}

@@ -40,13 +40,13 @@ func (s *Server) rulePage(w http.ResponseWriter, r *http.Request) {
 }
 
 // ruleGonePost serves POST /rule, which postAllowed has passed: 410 Gone, with the line's page to make the rule on.
-// It reads the form for the link only and calls no service.
+// It reads the form for the link and the global snapshot for shared chrome; it calls no mutation service.
 func (s *Server) ruleGonePost(w http.ResponseWriter, r *http.Request) {
 	var d ruleGone
 	if seq, err := strconv.ParseUint(r.PostForm.Get("seq"), 10, 64); err == nil && runIDShape(r.PostForm.Get("run")) {
 		d.Line = lineAct(r.PostForm.Get("run"), seq)
 	}
-	s.render(w, http.StatusGone, "rule", chrome{Title: "This form is retired", Nav: "runs"}, d)
+	s.render(w, http.StatusGone, "rule", s.chromeFromLedger("This form is retired", "runs"), d)
 }
 
 // runIDShape is the shape of a run id a link may carry: r-, then lower-case letters, digits and dashes.

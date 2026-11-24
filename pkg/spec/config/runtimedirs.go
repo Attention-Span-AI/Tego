@@ -31,8 +31,12 @@ func RuntimeDirBases() []string { return RuntimeDirBasesUnder(LogindRuntimeRoot)
 // LogindRuntimeRoot.
 func RuntimeDirBasesUnder(logindRoot string) []string {
 	uid, _ := InvokingUID()
+	return runtimeDirBases(uid, os.Getenv("XDG_RUNTIME_DIR"), logindRoot)
+}
+
+func runtimeDirBases(uid int, x, logindRoot string) []string {
 	out := []string{filepath.Join(logindRoot, strconv.Itoa(uid))}
-	if x := os.Getenv("XDG_RUNTIME_DIR"); filepath.IsAbs(x) && filepath.Clean(x) != out[0] {
+	if filepath.IsAbs(x) && filepath.Clean(x) != out[0] {
 		out = append(out, filepath.Clean(x))
 	}
 	return out

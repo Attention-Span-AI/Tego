@@ -134,9 +134,14 @@ func sessionStarted(rt *agent.RuleTable, stderr io.Writer, quiet *runTerminal, n
 	return func(s tegoruntime.StartedRun) error {
 		// a line that cannot be written does not end the run
 		if quiet != nil {
-			fmt.Fprintf(stderr, "\n  ✓ Started session %s%s\n      Watch it live: http://127.0.0.1:%d/runs/%s\n\n",
-				sessionName(name, string(s.ID)), quiet.rules, quiet.port, s.ID)
-
+			where := fmt.Sprintf("http://127.0.0.1:%d/runs/%s", quiet.port, s.ID)
+			if quiet.windows {
+				// Inside Tego's Linux on a Windows PC that address reaches WSL's own forwarding, which the dashboard
+				// refuses; the Windows tego command opens the dashboard through its relay (ADR 0123).
+				where = "open it with: tego dashboard (from Windows)"
+			}
+			fmt.Fprintf(stderr, "\n  ✓ Started session %s%s\n      Watch it live: %s\n\n",
+				sessionName(name, string(s.ID)), quiet.rules, where)
 		}
 		if next != nil {
 			return next(s)
@@ -150,6 +155,9 @@ func sessionStarted(rt *agent.RuleTable, stderr io.Writer, quiet *runTerminal, n
 type runTerminal struct {
 	rules string // " · rules ~/.config/tego/agents/x.yaml", or ""
 	port  int    // the dashboard's port
+	// windows is a run in Tego's Linux on a Windows PC, where the dashboard's loopback link does not work from a
+	// Windows browser.
+	windows bool
 }
 
 // quietRun is the runTerminal of a run, nil when it prints what it always has.
@@ -160,13 +168,13 @@ func quietRun(o runOptions, m *config.Machine, src *record.ContractSource, stder
 	if o.cmd != "" || o.verbose || !stderrIsTerminal() {
 		return nil
 	}
-	q := &runTerminal{port: 8484}
+	q := &runTerminal{port: 8484, windows: setupHost() == hostWindows}
 	if m.ServePort.Source.Layer != config.LayerBuiltin && m.ServePort.Value != 0 {
 		q.port = m.ServePort.Value
 	}
 	if src != nil && src.Path != "" {
 		q.rules = " · rules " + record.Printable(tildeHome(src.Path, m.Home))
-		if b, err := os.ReadFile(src.Path); err == nil {
+		if b, err := readRulesPath(src.Path); err == nil {
 			if l := chosenRulesLine.FindSubmatch(b); l != nil {
 				q.rules += " (setup name from file comment: " + strconv.Quote(record.Printable(string(l[1]))) + ")"
 			}
@@ -184,7 +192,7 @@ func (q *runTerminal) ended(stderr io.Writer, name string, sum *endSummary) bool
 	// Keep the existing summary's facts whenever the abbreviated count needs qualification.
 	if sum.err != nil || sum.rc == nil || sum.chain != "chain verified" || sum.recordOff || sum.how != "" ||
 		!sum.rc.Ended || sum.rc.EndReason != record.RunEndExit || sum.rc.ExitCode == nil || *sum.rc.ExitCode != 0 || sum.readsLine() != "" || sum.disclosures() != "" {
-		_, _ = io.WriteString(stderr, sum.text()+sum.readsLine())
+		_, _ = io.WriteString(stderr, fitTerminal(stderr, sum.text()+sum.readsLine()))
 		return false
 	}
 	session := sessionName(name, sum.run)

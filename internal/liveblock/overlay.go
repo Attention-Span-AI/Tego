@@ -4,6 +4,8 @@ package liveblock
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -75,6 +77,11 @@ type Change struct {
 	Until time.Time `json:"until,omitzero"`
 	// MAC is a lift's HMAC under the run's key (LiftMAC); empty on every other op.
 	MAC string `json:"mac,omitempty"`
+	// Note is the text the person who made a lift gave with it (at most MaxNote bytes of printable text, ValidNote):
+	// shown and never interpreted, and inside the lift's MAC (LiftMAC), so it cannot be changed after the lift was
+	// signed. Only a lift carries one, and only a run whose launcher made the mark that it reads one (TakesNote) is
+	// written one: a launcher built before it would check the MAC without the note and refuse the lift.
+	Note string `json:"note,omitempty"`
 }
 
 // Rule is the rule name of the block the change adds or removes, or of the fence entry a lift or a restore names.
@@ -104,11 +111,55 @@ type Overlay struct {
 	// (Validate refuses an op it does not know), records live-block-unreadable and leaves the run running: a pause
 	// it cannot read is never half applied.
 	Paused bool `json:"paused,omitempty"`
+	// Epoch names this file: a random id a writer that wants to tell its own block from another's later asks for
+	// (EnsureEpoch, before it adds), so a file removed and written again is another one though its serials start over at
+	// 1. The writer keeps the Epoch with the serial and instant of its add (Own). A file no such writer has asked for has
+	// none, and is byte for byte what the base build wrote. It is no version: a reader or a writer from before it ignores
+	// the field, and a writer from before it drops it when it rewrites the file, after which no block is shown to be
+	// anyone's (the next writer that asks makes a new Epoch): ownership fails closed, and nothing the older writers did to
+	// the blocks is changed.
+	Epoch string `json:"epoch,omitempty"`
 }
 
 // New is an empty overlay of run.
 func New(run string) *Overlay {
 	return &Overlay{V: Version, Run: run, Blocks: []Entry{}, Changes: []Change{}}
+}
+
+// EnsureEpoch gives the overlay an Epoch when it has none. A writer that will record its add's identity (Own) calls it
+// before the add, in the same Update, so the Epoch is written with the add. It reports whether the overlay has one now
+// (false when no randomness was available: no identity is then kept).
+func (o *Overlay) EnsureEpoch() bool {
+	if o.Epoch == "" {
+		o.Epoch = newEpoch()
+	}
+	return o.Epoch != ""
+}
+
+// newEpoch is a fresh Epoch: 16 random bytes, hex.
+func newEpoch() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "" // no source of randomness: no identity, so no block is shown to be anyone's
+	}
+	return hex.EncodeToString(b[:])
+}
+
+// Own is the identity of one add: the file it was made in (Epoch), its serial there and the instant it was recorded at.
+// A block is a writer's own only while the overlay's newest change for its key is an add with this exact identity.
+// Serials alone are not enough: they start again at 1 in a file that was removed and written again.
+type Own struct {
+	Epoch  string    `json:"epoch,omitempty"`
+	Serial uint64    `json:"serial,omitempty"`
+	At     time.Time `json:"at,omitzero"`
+}
+
+// Known reports whether o names an add: an Epoch, a serial and an instant. An identity that is not Known matches nothing.
+func (o Own) Known() bool { return o.Epoch != "" && o.Serial != 0 && !o.At.IsZero() }
+
+// Is reports whether o and p are the same add. An identity that is not Known is never the same as any.
+func (o Own) Is(p Own) bool {
+	return o.Known() && p.Known() && o.Epoch == p.Epoch && o.Serial == p.Serial && o.At.Equal(p.At)
 }
 
 // Find is the block of kind on value (normalized), if the overlay holds one.
@@ -120,6 +171,50 @@ func (o *Overlay) Find(kind Kind, value string) (Entry, bool) {
 		}
 	}
 	return Entry{}, false
+}
+
+// AddIdentity is the identity (Own) of the add that made the block of kind on value (normalized) the one the overlay
+// holds: the newest change the overlay lists for that key, when it is an add. It is how a caller that placed a block
+// tells its own block from one a person made later with the same key (a lift of it, by hand, and a new add): the
+// serial of each add is its own within a file, and the Epoch tells the files apart. ok is false when the overlay holds
+// no such block, when its newest listed change is not an add (an unblock for a while keeps the block dormant), when the
+// add is no longer listed (the overlay keeps the newest MaxChanges changes), and when the file has no Epoch: in each
+// case the caller cannot show the block is its own and must treat it as not.
+func (o *Overlay) AddIdentity(kind Kind, value string) (Own, bool) {
+	v, err := Normalize(kind, value)
+	if err != nil || o.Epoch == "" {
+		return Own{}, false
+	}
+	if _, held := o.Find(kind, v); !held {
+		return Own{}, false
+	}
+	for i := len(o.Changes) - 1; i >= 0; i-- {
+		if c := o.Changes[i]; c.Kind == kind && c.Value == v && (c.Op == OpAdd || c.Op == OpRemove) {
+			return Own{Epoch: o.Epoch, Serial: c.Serial, At: c.At}, c.Op == OpAdd
+		}
+	}
+	return Own{}, false
+}
+
+// InForce reports whether the overlay holds the block of kind on value (normalized) and it refuses now at c: not past its
+// limit on both clocks (as the launcher judges, Ended) and not dormant under an unblock for a while that has not run
+// out (Begun). A block held and not in force is one an add re-arms, which is then the add's.
+func (o *Overlay) InForce(kind Kind, value string, c Clock) bool {
+	v, err := Normalize(kind, value)
+	if err != nil {
+		return false
+	}
+	e, held := o.Find(kind, v)
+	if !held {
+		return false
+	}
+	if !e.Until.IsZero() {
+		pin, pinned := e.UntilPin(c)
+		if Ended(e.Until, pin, pinned, c) {
+			return false
+		}
+	}
+	return e.From.IsZero() || Begun(e.From, 0, false, c)
 }
 
 // Add adds a block of kind on value, normalized, with no end, recording the change; it reports false (and changes
@@ -267,6 +362,25 @@ func (o *Overlay) RemoveUntil(kind Kind, value, by string, at, until time.Time) 
 	return o.record(Change{Op: OpRemove, Kind: kind, Value: v, By: by, At: at, Until: until}), true, nil
 }
 
+// LastControl is the last pause or resume the overlay lists (the change a launcher answers with a gap line), false when
+// it lists none.
+func (o *Overlay) LastControl() (Change, bool) {
+	for i := len(o.Changes) - 1; i >= 0; i-- {
+		if o.Changes[i].Control() {
+			return o.Changes[i], true
+		}
+	}
+	return Change{}, false
+}
+
+// PauseWaiting reports whether a pause or a resume the overlay asks (asked, with its serial) still waits for its
+// launcher's line: one newer than the launcher's last line (confirmed, the serial that line records) which asks the
+// other state than that line left. This is the one rule `tego status` and the dashboard share for "pausing" and
+// "resuming".
+func PauseWaiting(askedSerial uint64, askedPaused bool, confirmedSerial uint64, confirmedPaused bool) bool {
+	return askedSerial > confirmedSerial && askedPaused != confirmedPaused
+}
+
 // Pause asks for the run to be frozen, recording the change; it reports false (and changes nothing) when the overlay
 // already asks for that.
 func (o *Overlay) Pause(by string, at time.Time) (Change, bool) {
@@ -400,6 +514,8 @@ func (o *Overlay) Validate(run string) error {
 		return fmt.Errorf("%w: %d blocks, more than %d", ErrInvalid, len(o.Blocks), MaxBlocks)
 	case len(o.Changes) > MaxChanges:
 		return fmt.Errorf("%w: %d changes, more than %d", ErrInvalid, len(o.Changes), MaxChanges)
+	case o.Epoch != "" && !lowerHex(o.Epoch, 16, 32):
+		return fmt.Errorf("%w: epoch %q is not 16 to 32 lower-case hex digits", ErrInvalid, o.Epoch)
 	}
 	seen := map[string]bool{}
 	for _, e := range o.Blocks {
@@ -417,6 +533,9 @@ func (o *Overlay) Validate(run string) error {
 			return err
 		}
 		if err := o.timed(e.Key(), e.At, e.Until, e.From); err != nil {
+			return err
+		}
+		if err := pinOf(e); err != nil {
 			return err
 		}
 	}
@@ -442,6 +561,14 @@ func (o *Overlay) Validate(run string) error {
 		}
 		if c.MAC != "" && c.Op != OpLift {
 			return fmt.Errorf("%w: a %s carries no MAC", ErrInvalid, c.Op)
+		}
+		if c.Note != "" {
+			if c.Op != OpLift {
+				return fmt.Errorf("%w: a %s carries no note", ErrInvalid, c.Op)
+			}
+			if err := ValidNote(c.Note); err != nil {
+				return err
+			}
 		}
 		if err := o.timed(fmt.Sprintf("change %d", c.Serial), c.At, c.Until, time.Time{}); err != nil {
 			return err
@@ -475,6 +602,20 @@ func (o *Overlay) timed(what string, at, until, from time.Time) error {
 	case !until.IsZero() && !from.IsZero() && !from.Before(until):
 		return fmt.Errorf("%w: %s refuses again at %s, not before it ends at %s", ErrInvalid, what,
 			from.Format(time.RFC3339Nano), until.Format(time.RFC3339Nano))
+	}
+	return nil
+}
+
+// pinOf checks an entry's kept pin (Entry.Boot, Entry.UntilBoot): none, or both, on an entry with an until, the boot a
+// boot identity and the instant after that boot's start.
+func pinOf(e Entry) error {
+	switch {
+	case e.Boot == "" && e.UntilBoot == 0:
+		return nil
+	case e.Until.IsZero():
+		return fmt.Errorf("%w: %s has a boot-time deadline and no time limit", ErrInvalid, e.Key())
+	case !validBoot(e.Boot) || e.UntilBoot <= 0:
+		return fmt.Errorf("%w: %s has a malformed boot-time deadline", ErrInvalid, e.Key())
 	}
 	return nil
 }
@@ -557,4 +698,17 @@ func normalized(kind Kind, value string) error {
 		return fmt.Errorf("%w: %s value %q is not normalized (%q)", ErrInvalid, kind, value, v)
 	}
 	return nil
+}
+
+// lowerHex reports whether s is lower-case hex of min to max digits.
+func lowerHex(s string, min, max int) bool {
+	if len(s) < min || len(s) > max {
+		return false
+	}
+	for _, r := range s {
+		if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f') {
+			return false
+		}
+	}
+	return true
 }

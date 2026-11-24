@@ -31,7 +31,10 @@ script) and asks only that the file set the isolation variables; `vm/root-suites
 runs and with which variables.
 A Go package whose tests can start a run, a sweep, a gc or
 the tego binary ends its `TestMain` with `os.Exit(testutil.GuardedMain(m))` (or `GuardedLeakCheckMain`), so a test
-that reached the real `~/.tego` or `~/.bash_history` anyway fails the run it does. Under
+that reached the real `~/.tego` or `~/.bash_history` anyway fails the run it does. The guard cannot tell who wrote
+the history file: a shell of yours that exits and saves its history while `go test ./...` runs fails the packages then running
+(one package, or several that overlap in time), once, and the message says to rerun it. That is accepted, since a guard that let `~/.bash_history` change would no
+longer catch a test that writes it (`internal/testutil/realhome.go`). Under
 `go test` the tests run in a re-executed child that the guard checks after, so a panic or the test timeout does not
 skip the check; a binary run directly (as `vm/root-suites.sh` runs its suites) checks in its own process, which a
 panic or the timeout ends first.

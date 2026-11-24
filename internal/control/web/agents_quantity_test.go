@@ -1,0 +1,73 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package web
+
+// The Agents page's share of the number rules (number_inventory_test.go, source_quantity_test.go). Everything it
+// writes from the record or a scan is a name, a path, an id, a time or a sentence the data layer wrote; its own
+// figures are the rows it lists and the counts the data layer states with their qualifying sentence beside them.
+func init() {
+	layerNumberExclusions = append(layerNumberExclusions, []numberExclusion{
+		{ID: "agents.fact", Element: "agents.tmpl: the agf helper <span>", Reason: "Text the record or a saved scan wrote (a name, path, id, command, folder or sentence), shown as written. Digits belong to that named value, not to a count this page made."},
+		{ID: "agents.age", Element: "agents.tmpl: the aga helper <span data-ck>", Reason: "How long ago a time was, in the data layer's words; a clock, kept out of the region's hash."},
+		{ID: "agents.figure", Element: "agents.tmpl: the agn helper <b>", Reason: "A count of the rows this page lists or a count the data layer states with its own qualifying sentence beside it (refusals today and refusals in one recorded run, at least when records are incomplete; other programs seen at scan time)."},
+		{ID: "agents.time", Element: "agents.tmpl: the agt helper <time>", Reason: "A time the record or a saved scan wrote, in the viewer's zone."},
+		{ID: "agents.command", Element: "agents.tmpl: the ag-copy helper <code>", Reason: "A command written for the person to copy; its digits belong to a folder or id it names."},
+	}...)
+	sourceQuantityLayers = append(sourceQuantityLayers, map[string]string{
+		": not shown": "Interface label or instruction; states no measured quantity.",
+		": reached":   "Interface label or instruction; states no measured quantity.",
+		"A matching program path does not show that it was the same run.": "Interface label or instruction; states no measured quantity.",
+		"Agent details": "Interface label or instruction; states no measured quantity.",
+		"Cannot tell:":  "Interface label or instruction; states no measured quantity.",
+		"Fill in the parts in angle brackets before you run this.": "Interface label or instruction; states no measured quantity.",
+		"First seen":             "Interface label or instruction; states no measured quantity.",
+		"Forget it":              "Interface label or instruction; states no measured quantity.",
+		"Forget this sighting":   "Interface label or instruction; states no measured quantity.",
+		"Last seen":              "Interface label or instruction; states no measured quantity.",
+		"Not in the latest scan": "Interface label or instruction; states no measured quantity.",
+		"Not in the latest scan. This is a remembered observation.": "Interface label or instruction; states no measured quantity.",
+		"Not shown":                          "Interface label or instruction; states no measured quantity.",
+		"Open the run":                       "Interface label or instruction; states no measured quantity.",
+		"Possibly related runs":              "Interface label or instruction; states no measured quantity.",
+		"Reached":                            "Interface label or instruction; states no measured quantity.",
+		"Record check":                       "Interface label or instruction; states no measured quantity.",
+		"Record it":                          "Interface label or instruction; states no measured quantity.",
+		"Recorded run":                       "Interface label or instruction; states no measured quantity.",
+		"Refresh saved result":               "Interface label or instruction; states no measured quantity.",
+		"Refused today":                      "Interface label or instruction; states no measured quantity.",
+		"Relationship":                       "Interface label or instruction; states no measured quantity.",
+		"Saved scan":                         "Interface label or instruction; states no measured quantity.",
+		"Scan again, then refresh this page": "Interface label or instruction; states no measured quantity.",
+		"Scan result":                        "Interface label or instruction; states no measured quantity.",
+		"Source:":                            "Interface label or instruction; states no measured quantity.",
+		"Stages":                             "Interface label or instruction; states no measured quantity.",
+		"Stages reached by this named run":   "Interface label or instruction; states no measured quantity.",
+		"This removes only the page's memory of this program. Run records, saved scans and contracts stay as they are. If the latest saved scan still lists it, the next page load remembers it again.": "Interface label or instruction; states no measured quantity.",
+		"What the scan saw": "Interface label or instruction; states no measured quantity.",
+		"Where it was seen": "Interface label or instruction; states no measured quantity.",
+		"command not known": "Interface label or instruction; states no measured quantity.",
+		"seen by scan":      "Interface label or instruction; states no measured quantity.",
+		"Each row is a run Tego recorded or a program your last scan found.": "Interface label or instruction; states no measured quantity.",
+		"Older scan results":                               "Interface label or instruction; states no measured quantity.",
+		"Only a recorded run has a record check.":          "Interface label or instruction; states no measured quantity.",
+		"Settings found":                                   "Interface label or instruction; states no measured quantity.",
+		"Other programs":                                   "Interface label or instruction; states no measured quantity.",
+		"Tego cannot tell whether these are agents.":       "Interface label or instruction; states no measured quantity.",
+		"Not known.":                                       "Interface label or instruction; states no measured quantity.",
+		"The saved scan does not list the other programs.": "Interface label or instruction; states no measured quantity.",
+		"The command is shown as the record or the scan wrote it. The same program can be written in different ways (a PATH search, a relative path, a link or a wrapper script), so Tego cannot tell from two spellings whether they are the same program.": "Interface label or instruction; states no measured quantity.",
+		"No refusals counted today.": "Interface label or instruction; states no measured quantity.",
+		"At least":                   "Interface label or instruction; states no measured quantity.",
+		"today.":                     "Interface label or instruction; states no measured quantity.",
+		"When the scan ran, it saw":  "Interface label or instruction; states no measured quantity.",
+		"other":                      "Interface label or instruction; states no measured quantity.",
+		"running.":                   "Interface label or instruction; states no measured quantity.",
+		"Scanned at":                 "Interface label or instruction; states no measured quantity.",
+		"in this run.":               "Interface label or instruction; states no measured quantity.",
+		"See them in the run":        "Interface label or instruction; states no measured quantity.",
+		"Some of the record could not be read in full, so the real number can be higher.": "Interface label or instruction; states no measured quantity.",
+		"No refusals counted":                        "Interface label or instruction; states no measured quantity.",
+		"What this scan covered and what it did not": "Interface label or instruction; states no measured quantity.",
+		"Not looked at":                              "Interface label or instruction; states no measured quantity.",
+	})
+}

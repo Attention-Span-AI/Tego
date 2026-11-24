@@ -129,7 +129,7 @@ func TestPortScanIsOneDetection(t *testing.T) {
 	}
 
 	o := get(t, s, c, "/")
-	for _, want := range []string{`href="/detections?sev=high">1 High</a> refused`, `aria-label="1 High, Network"`, ">150 ports</span>"} {
+	for _, want := range []string{`href="/detections?sev=high" aria-label="1 High, all channels"`, `aria-label="1 High, Network"`, ">150 ports</span>"} {
 		if !strings.Contains(o, want) {
 			t.Errorf("the Overview lacks %q", want)
 		}
@@ -207,7 +207,7 @@ func TestScanNamesWhatHappenedInIt(t *testing.T) {
 		t.Fatalf("no row for the connect after the read:\n%s", d)
 	}
 	page = get(t, s, c, near[1])
-	if whatElse := page[strings.Index(page, `id="h-else"`):strings.Index(page, `id="h-now"`)]; !strings.Contains(whatElse, `>connect</span> `) || !strings.Contains(whatElse, "127.0.0.1<") {
+	if whatElse := page[strings.Index(page, `id="h-else"`):strings.Index(page, `id="h-now"`)]; !strings.Contains(f3Text(whatElse), "connect 127.0.0.1") {
 		t.Errorf("the send's page does not name the scan around it:\n%s", whatElse)
 	}
 }
@@ -397,7 +397,7 @@ func TestWatchedSecretReadIsNoAllClear(t *testing.T) {
 		}
 	}
 	ov := get(t, s, c, "/")
-	if !strings.Contains(ov, "<h1>1 run read secrets</h1>") || strings.Contains(ov, "All quiet") {
+	if !strings.Contains(ov, "<h1>Sensitive read recorded</h1>") || !strings.Contains(ov, "<span>1 run read secrets</span>") || strings.Contains(ov, "All quiet") {
 		t.Errorf("the Overview's headline:\n%s", ov)
 	}
 	if !strings.Contains(ov, "id_rsa read; no new destination next to it") {
@@ -413,7 +413,7 @@ func TestWatchedSecretReadIsNoAllClear(t *testing.T) {
 	s = newServer(t, detectionsRoot(t, quiet, "observe",
 		[2]string{"fs", `"rule":"unmatched","verdict":"observed","op":"open","path":"/w/proj/main.go"`}))
 	c = login(t, s)
-	if ov := get(t, s, c, "/"); !strings.Contains(ov, "<h1>All quiet</h1>") {
+	if ov := get(t, s, c, "/"); !strings.Contains(ov, "<h1>Nothing needs you</h1>") {
 		t.Errorf("a quiet ledger's headline:\n%s", ov)
 	}
 	if d := get(t, s, c, "/detections"); !strings.Contains(d, "#i-check") {
@@ -498,7 +498,7 @@ func TestRepeatsStayOnDetections(t *testing.T) {
 	if strings.Contains(body, "Routine 50") {
 		t.Error("Detections folds the repeated connect as routine")
 	}
-	if o := get(t, s, c, "/"); !strings.Contains(o, `href="/detections?sev=high">1 High</a> refused`) {
+	if o := get(t, s, c, "/"); !strings.Contains(o, `href="/detections?sev=high" aria-label="1 High, all channels"`) {
 		t.Errorf("the Overview's headline lacks the repeated connect:\n%s", o)
 	}
 }

@@ -6,15 +6,16 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/attention-span-ai/tego/internal/platform/tomoyo"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// loadMachine resolves the machine config once per invocation (R24): the invoking uid after the
+// loadMachine resolves one fresh machine snapshot (R24): the invoking uid after the
 // SUDO_UID rule, AT_SECURE detection, the layer files (machineSources), then config.LoadSources with the
-// caller's trust mode (TrustAbort for run, and for gc, which deletes by the config's retention and ledger root;
-// TrustWarn for compile, doctor and the rest).
+// caller's trust mode: decisions about rules use TrustAbort; observation and stop use TrustWarn
+// and retain an explicitly UNKNOWN baseline on a failed layer (ADR 0144).
 func loadMachine(mode config.TrustMode) (*config.Machine, []config.Diagnostic, error) {
 	uid, _ := config.InvokingUID()
 	secure, err := config.DetectSecureExec()
@@ -28,6 +29,12 @@ func loadMachine(mode config.TrustMode) (*config.Machine, []config.Diagnostic, e
 	}
 	if err == nil && m != nil && machineGuard != nil {
 		err = machineGuard(m)
+	}
+	if err == nil && m != nil {
+		// tomoyo.facts_dir (the administrator's /etc layer only) names where a held open reads TOMOYO's facts. It is set
+		// once here for every command; an unusable value refuses every fact (the setter says why) and is never read
+		// from the kernel's path instead.
+		_ = tomoyo.SetFactsDir(m.TOMOYO.FactsDir.Value) // the refusal is the error SetFactsDir keeps for each fact
 	}
 	return m, append(diags, more...), err
 }

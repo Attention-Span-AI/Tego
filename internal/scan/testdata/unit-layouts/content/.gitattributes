@@ -1,0 +1,4 @@
+# Preserve upstream bytes, including trailing spaces and final blank lines.
+*/root/** -whitespace
+licenses/** -whitespace
+upstream/* -whitespace

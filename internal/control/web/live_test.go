@@ -69,28 +69,32 @@ func appendLine(t *testing.T, root, run, l string) {
 }
 
 // TestAskBanner: while an ask waits, every page but Approvals itself carries the banner with Approve and Deny (the
-// answer form with the session's token), the count is in the title and on the nav item, and the meta refresh is
-// in <noscript> with live.js loaded. With nothing waiting there is no banner and no count.
+// answer form with the session's token), the count is in the title and on the nav item, and explicit native refresh
+// is in <noscript> with live.js loaded. With nothing waiting there is no banner and no count.
 func TestAskBanner(t *testing.T) {
 	got := fakeBroker(t)
 	s := newServer(t, fixture(t))
 	c := login(t, s)
 	for _, p := range []string{"/", "/runs", "/logs", "/runs/" + cleanRun, "/rules"} {
 		b := do(s, "GET", p, "127.0.0.1:8484", c).Body.String()
-		for _, want := range []string{`id="ask-banner"`, "demo-harm is waiting for you", "about 30 s", `<title>(1) `,
-			`name="ask" value="ask-7"`, `value="approve"`, `value="deny"`, `<span class="count" aria-live="polite">1`, `<script src="/static/live.js" defer>`} {
+		liveScript := `<script src="/static/live.js" defer>`
+		if p == "/runs" {
+			liveScript = `<script src="/static/live.js" defer blocking="render">`
+		}
+		for _, want := range []string{`id="ask-banner"`, "demo-harm is waiting for you", `id="ask-say" role="status" aria-live="polite"`, `<title>(1) `,
+			`name="ask" value="ask-7"`, `value="approve"`, `value="deny"`, `aria-label="1 waiting">1`, liveScript} {
 			if !strings.Contains(b, want) {
 				t.Errorf("%s lacks %q", p, want)
 			}
 		}
 	}
 	b := do(s, "GET", "/approvals", "127.0.0.1:8484", c).Body.String()
-	if strings.Contains(b, `id="ask-banner"`) || !strings.Contains(b, "<noscript><meta http-equiv=\"refresh\"") {
-		t.Error("Approvals shows the banner, or its refresh is not in <noscript>")
+	if strings.Contains(b, `aria-labelledby="ask-banner-h"`) || !strings.Contains(b, `<noscript class="manual-refresh">`) {
+		t.Error("Approvals shows the shared banner, or its native refresh is not in <noscript>")
 	}
 	// The asking run's own page shows the ask in full, so the banner does not repeat it; the count stays.
 	b = do(s, "GET", "/runs/"+harmRun, "127.0.0.1:8484", c).Body.String()
-	if strings.Contains(b, `id="ask-banner"`) || !strings.Contains(b, `<title>(1) `) || !strings.Contains(b, `id="ask-7"`) {
+	if strings.Count(b, `id="ask-banner"`) != 1 || !strings.Contains(b, `<title>(1) `) || !strings.Contains(b, `name="ask" value="ask-7"`) {
 		t.Error("the asking run's page repeats its ask in the banner, or lost the count or the ask card")
 	}
 	// Allow once from the banner reaches the broker like the Approvals card does, and the person lands back on the

@@ -421,7 +421,11 @@ func TestLearnWithholdsALeak(t *testing.T) {
 	if code != identity.ExitOK {
 		t.Fatalf("exit %d (stderr %q)", code, errs)
 	}
-	if strings.Contains(out, `- "tcp://`+sink+`"`) {
+	learned, _, loadErr := agent.LoadBytes("learned.yaml", []byte(out), nil)
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if learned.Net == nil || slices.Contains(learned.Net.Allow, "tcp://"+sink) || slices.Contains(learned.Net.Allow, sink) {
 		t.Errorf("the proposal allows the sink:\n%s", out)
 	}
 	if !strings.HasPrefix(out, "# WARNING: this run opened /home/u/.ssh/id_rsa for reading, or tried to, next to a send to "+sink) {

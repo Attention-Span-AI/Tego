@@ -1,0 +1,228 @@
+# SPDX-License-Identifier: Apache-2.0
+# ADR 0143: receipt collection and reporting request only read permissions.
+# A caller adds ci-receipt-sign.yml as a second job only for a signature.
+name: CI receipt
+on:
+  workflow_call:
+    inputs:
+      contract:
+        description: Repository contract extending tego/ci@1.
+        type: string
+        required: true
+      run:
+        description: Command for any AI agent, run in the caller checkout.
+        type: string
+        required: true
+      sign:
+        description: auto, true or false. Eligible public auto and explicit true require sign-consent; private auto remains unsigned.
+        type: string
+        default: 'false'
+      sign-consent:
+        description: 'Signing publishes your organisation, repository and workflow names to a public, permanent Sigstore log. Set exactly: I consent to publish repository and workflow names in the permanent public Sigstore log'
+        type: string
+        default: ''
+      use-sudo:
+        description: Require cgroup rather than landlock. No tier fallback.
+        type: boolean
+        default: false
+      runner:
+        description: ubuntu-24.04 or ubuntu-24.04-arm.
+        type: string
+        default: ubuntu-24.04
+      matrix-key:
+        description: Pass toJSON(matrix) for matrix callers. Canonicalized and hashed.
+        type: string
+        default: single
+      on-refusal:
+        description: warn or fail after upload and reporting.
+        type: string
+        default: warn
+      comment:
+        description: Reserved for separately authorized comment integrations; this workflow has no comment write permission.
+        type: string
+        default: 'false'
+    outputs:
+      handoff:
+        description: Original artifact transport and core digest channels for the optional signer.
+        value: ${{ jobs.report.outputs.handoff }}
+      should-sign:
+        description: True only after eligibility, consent and complete receipt checks.
+        value: ${{ jobs.report.outputs.should-sign }}
+permissions: {}
+env:
+  # Set these repository variables to reviewed literal pins. An unset or malformed
+  # pin refuses before caller code runs. No published ci-preset release is assumed.
+  TEGO_CODE_SHA: ${{ vars.TEGO_CI_ACTION_SHA }}
+  IN_VERSION: ${{ vars.TEGO_CI_VERSION }}
+  IN_RELEASE_COMMIT: ${{ vars.TEGO_CI_RELEASE_SHA }}
+  BASH_ENV: /dev/null
+  ENV: /dev/null
+  GH_HOST: github.com
+jobs:
+  agent:
+    runs-on: ${{ inputs.runner == 'ubuntu-24.04-arm' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      receipt-sha256: ${{ steps.collect.outputs.receipt-sha256 }}
+      receipt-bytes: ${{ steps.collect.outputs.receipt-bytes }}
+      record-sha256: ${{ steps.collect.outputs.record-sha256 }}
+      record-bytes: ${{ steps.collect.outputs.record-bytes }}
+      anchor-sha256: ${{ steps.collect.outputs.anchor-sha256 }}
+      anchor-bytes: ${{ steps.collect.outputs.anchor-bytes }}
+      contract-sha256: ${{ steps.collect.outputs.contract-sha256 }}
+      contract-bytes: ${{ steps.collect.outputs.contract-bytes }}
+      status-sha256: ${{ steps.collect.outputs.status-sha256 }}
+      status-bytes: ${{ steps.collect.outputs.status-bytes }}
+      core-inventory-sha256: ${{ steps.collect.outputs.core-inventory-sha256 }}
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-name: ${{ steps.collect.outputs.artifact-name }}
+      artifact-attempt: ${{ steps.collect.outputs.artifact-attempt }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+      inventory-sha256: ${{ steps.collect.outputs.inventory-sha256 }}
+      matrix-key: ${{ steps.collect.outputs.matrix-key }}
+      run-id: ${{ steps.collect.outputs.run-id }}
+      agent-exit-code: ${{ steps.collect.outputs.agent-exit-code }}
+      prepare-exit: ${{ steps.collect.outputs.prepare-exit }}
+      evidence-exit: ${{ steps.collect.outputs.evidence-exit }}
+      refusals: ${{ steps.collect.outputs.refusals }}
+      verified: ${{ steps.collect.outputs.verified }}
+      pr: ${{ steps.collect.outputs.pr }}
+    steps:
+      - name: validate pins and runner before checkout
+        shell: /bin/bash --noprofile --norc -peuo pipefail {0}
+        env:
+          REQUESTED_RUNNER: ${{ inputs.runner }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          [[ "$TEGO_CODE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 125
+          [[ "$IN_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || exit 125
+          case "$REQUESTED_RUNNER" in ubuntu-24.04 | ubuntu-24.04-arm) ;; *) exit 125 ;; esac
+          [ "$EVENT_NAME" != pull_request_target ] || exit 125
+          [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] && [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ] || exit 125
+      - name: check out pinned Tego code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Attention-Span-AI/Tego
+          ref: ${{ vars.TEGO_CI_ACTION_SHA }}
+          persist-credentials: false
+          path: tego-code
+      - name: check out the event commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          path: caller
+      - id: collect
+        uses: ./tego-code/action
+        with:
+          workspace: caller
+          contract: ${{ inputs.contract }}
+          run: ${{ inputs.run }}
+          tego-version: ${{ vars.TEGO_CI_VERSION }}
+          tego-sha256: ${{ inputs.runner == 'ubuntu-24.04-arm' && vars.TEGO_CI_SHA256_ARM64 || vars.TEGO_CI_SHA256_AMD64 }}
+          use-sudo: ${{ inputs.use-sudo }}
+          matrix-key: ${{ inputs.matrix-key }}
+          sign: ${{ inputs.sign }}
+          comment: ${{ inputs.comment }}
+          on-refusal: ${{ inputs.on-refusal }}
+      - id: upload
+        name: retain the unsigned evidence or doctor diagnostics
+        if: always() && steps.collect.outputs.dir != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.collect.outputs.artifact-name }}
+          path: ${{ steps.collect.outputs.dir }}/evidence/
+          if-no-files-found: error
+          retention-days: 7
+  report:
+    # Fresh comparison and policy selection without OIDC authority.
+    needs: agent
+    if: ${{ !cancelled() && needs.agent.outputs.artifact-id != '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      handoff: ${{ steps.handoff.outputs.value }}
+      should-sign: ${{ steps.verify.outputs.should-sign }}
+      agent-exit-code: ${{ steps.verify.outputs.agent-exit-code }}
+      prepare-exit: ${{ steps.verify.outputs.prepare-exit }}
+      evidence-exit: ${{ steps.verify.outputs.evidence-exit }}
+      run-id: ${{ steps.verify.outputs.run-id }}
+      refusals: ${{ steps.verify.outputs.refusals }}
+      verified: ${{ steps.verify.outputs.verified }}
+    steps:
+      - id: handoff
+        name: retain original artifact channels for an optional signature
+        shell: /bin/bash --noprofile --norc -peuo pipefail {0}
+        env:
+          AGENT_OUTPUTS: ${{ toJSON(needs.agent.outputs) }}
+        run: |
+          value="$(printf '%s' "$AGENT_OUTPUTS" | /usr/bin/jq -ce .)"
+          printf 'value=%s\n' "$value" >>"$GITHUB_OUTPUT"
+      - name: validate the independent code pin
+        shell: /bin/bash --noprofile --norc -peuo pipefail {0}
+        run: |
+          [[ "$TEGO_CODE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 125
+          [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] && [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ] || exit 125
+      - name: check out pinned Tego code only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Attention-Span-AI/Tego
+          ref: ${{ vars.TEGO_CI_ACTION_SHA }}
+          persist-credentials: false
+          path: tego-code
+      - id: verify
+        name: rehash, compare, report, then preserve the exit code
+        shell: /bin/bash --noprofile --norc -peuo pipefail {0}
+        env:
+          CORE_RECEIPT_SHA256: ${{ needs.agent.outputs.receipt-sha256 }}
+          CORE_RECEIPT_BYTES: ${{ needs.agent.outputs.receipt-bytes }}
+          CORE_RECORD_SHA256: ${{ needs.agent.outputs.record-sha256 }}
+          CORE_RECORD_BYTES: ${{ needs.agent.outputs.record-bytes }}
+          CORE_ANCHOR_SHA256: ${{ needs.agent.outputs.anchor-sha256 }}
+          CORE_ANCHOR_BYTES: ${{ needs.agent.outputs.anchor-bytes }}
+          CORE_CONTRACT_SHA256: ${{ needs.agent.outputs.contract-sha256 }}
+          CORE_CONTRACT_BYTES: ${{ needs.agent.outputs.contract-bytes }}
+          CORE_STATUS_SHA256: ${{ needs.agent.outputs.status-sha256 }}
+          CORE_STATUS_BYTES: ${{ needs.agent.outputs.status-bytes }}
+          CORE_INVENTORY_SHA256: ${{ needs.agent.outputs.core-inventory-sha256 }}
+          GH_TOKEN: ${{ github.token }}
+          IN_SHA256: ${{ vars.TEGO_CI_SHA256_AMD64 }}
+          ARTIFACT_ID: ${{ needs.agent.outputs.artifact-id }}
+          ARTIFACT_NAME: ${{ needs.agent.outputs.artifact-name }}
+          ARTIFACT_ATTEMPT: ${{ needs.agent.outputs.artifact-attempt }}
+          ARTIFACT_DIGEST: ${{ needs.agent.outputs.artifact-digest }}
+          MATRIX_SHA256: ${{ needs.agent.outputs.matrix-key }}
+          INVENTORY_SHA256: ${{ needs.agent.outputs.inventory-sha256 }}
+          DO_COMMENT: ${{ inputs.comment == 'true' || (inputs.comment == 'auto' && github.event_name == 'pull_request') }}
+          IN_MATRIX_KEY: ${{ inputs.matrix-key }}
+          IN_ON_REFUSAL: ${{ inputs.on-refusal }}
+          IN_SIGN: ${{ inputs.sign }}
+          IN_SIGN_CONSENT: ${{ inputs.sign-consent }}
+          DEFER_GATE: 'true'
+          TIER_WANTED: ${{ inputs.use-sudo && 'cgroup' || 'landlock' }}
+        run: '"$GITHUB_WORKSPACE/tego-code/action/scripts/verify.sh"'
+      - name: retain the fresh receipt comparison
+        if: always() && steps.verify.outputs.checked-file != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tego-check-${{ github.run_id }}-${{ github.run_attempt }}-${{ needs.agent.outputs.matrix-key }}
+          path: ${{ steps.verify.outputs.checked-file }}
+          if-no-files-found: error
+          retention-days: 7
+      - name: preserve checked agent outcome after upload
+        if: always()
+        shell: /bin/bash --noprofile --norc -peuo pipefail {0}
+        env:
+          AGENT_EXIT: ${{ steps.verify.outputs.agent-exit-code }}
+          PREPARE_EXIT: ${{ steps.verify.outputs.prepare-exit }}
+          EVIDENCE_EXIT: ${{ steps.verify.outputs.evidence-exit }}
+          RUN_ID: ${{ steps.verify.outputs.run-id }}
+          REFUSALS: ${{ steps.verify.outputs.refusals }}
+          VERIFIED: ${{ steps.verify.outputs.verified }}
+          IN_ON_REFUSAL: ${{ inputs.on-refusal }}
+        run: '"$GITHUB_WORKSPACE/tego-code/action/scripts/gate.sh"'

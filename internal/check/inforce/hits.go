@@ -10,17 +10,22 @@ import (
 
 // Count adds the hits of a run's ledger lines to the view: rules yields the rule field of each line, "" for a line
 // with none. A line counts once for every rule whose RuleKey or Covers names it, so every program entry that
-// resolved to one file (cat and its path, python3 and the python3.13 it links to, "git status" and "git diff")
-// shows it, every entry of a tool shows the lines of the helper images compile granted it (git's exec-path git,
-// which an allowed git commit re-runs), and a script command's row the lines of the interpreter its #! line was
+// resolved to one file (cat and its path, python3 and the python3.13 it links to) shows it, every plain entry of a
+// tool shows the lines of the helper images compile granted it (git's exec-path git, which an allowed git commit
+// re-runs), and a script command's row the lines of the interpreter its #! line was
 // granted; a line no rule names and whose rule is "unmatched" counts in Unmatched. A constrained tool's unlisted
-// invocation (exec.args[git]) names no entry and counts nowhere. Count adds to what an earlier call counted.
+// invocation (exec.args[git]) counts on that tool's own row. An exec.allow entry with command words ("git status")
+// is not counted here at all: its lines carry its program's rule like every exec of that program, so CountCommands
+// counts the lines that name the entry. Count adds to what an earlier call counted.
 func (v *View) Count(rules iter.Seq[string]) {
 	index := map[string][]*Rule{}
 	for gi := range v.Groups {
 		g := &v.Groups[gi]
 		for ri := range g.Rules {
 			r := &g.Rules[ri]
+			if r.Invocation != "" {
+				continue
+			}
 			if r.RuleKey != "" {
 				index[r.RuleKey] = append(index[r.RuleKey], r)
 			}
@@ -41,6 +46,23 @@ func (v *View) Count(rules iter.Seq[string]) {
 		}
 		if rule == unmatched {
 			v.Unmatched++
+		}
+	}
+}
+
+// CountCommands adds the hits of the exec.allow entries with command words: counts is, per entry as written, how many
+// allowed exec lines named it in command_rule (command_list allow), the entry that admitted the line, or whose helper
+// closure did. CountCommands adds to what an earlier call counted.
+func (v *View) CountCommands(counts map[string]int) {
+	if len(counts) == 0 {
+		return
+	}
+	for gi := range v.Groups {
+		g := &v.Groups[gi]
+		for ri := range g.Rules {
+			if r := &g.Rules[ri]; r.Invocation != "" {
+				r.Hits += counts[r.Invocation]
+			}
 		}
 	}
 }

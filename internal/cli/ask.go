@@ -16,6 +16,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/askclient"
 	"github.com/attention-span-ai/tego/internal/runlock"
 	"github.com/attention-span-ai/tego/internal/runtime/ask"
+	"github.com/attention-span-ai/tego/pkg/spec/askproto"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -117,7 +118,7 @@ func runAskCommand(ctx context.Context, name, ref, id string, approve, always, a
 		message(errs, "", 0, 0, fmt.Sprintf("tego %s: %q is not an ask id (q- and 32 hex digits); tego ask %s lists the run's pending asks", name, id, ref), codeUsage)
 		return identity.ExitUsage
 	}
-	root, code := askRoot(name, errs)
+	root, ownerOnly, code := askRootWithAuthority(name, errs)
 	if code != identity.ExitOK {
 		return code
 	}
@@ -134,23 +135,32 @@ func runAskCommand(ctx context.Context, name, ref, id string, approve, always, a
 		message(errs, "", 0, 0, "tego "+name+": "+err.Error(), readCode(err))
 		return identity.ExitError
 	}
-	return askAt(ctx, name, runID, dir, id, approve, always, asJSON, alternate, out, errs)
+	return askAt(ctx, name, runID, dir, id, approve, always, asJSON, alternate, out, errs, ownerOnly)
 }
 
 // askRoot is the ledger root the ask commands read, from the machine config as every run command loads it.
 func askRoot(name string, errs io.Writer) (string, int) {
-	m, diagnostics, err := loadMachine(config.TrustWarn)
+	root, _, code := askRootWithAuthority(name, errs)
+	return root, code
+}
+
+func askRootWithAuthority(name string, errs io.Writer) (string, bool, int) {
+	mode := config.TrustWarn
+	if name == "approve" || name == "alternate" {
+		mode = config.TrustAbort
+	}
+	m, diagnostics, err := loadMachine(mode)
 	writeConfigDiagnostics(errs, diagnostics)
 	if err != nil {
 		message(errs, "", 0, 0, "tego "+name+": machine config: "+err.Error(), identity.CodeConfigUntrusted)
-		return "", identity.ExitError
+		return "", false, identity.ExitError
 	}
 	root, err := ledgerRootOf(m)
 	if err != nil {
 		message(errs, "", 0, 0, "tego "+name+": "+err.Error(), codeIO)
-		return "", identity.ExitError
+		return "", false, identity.ExitError
 	}
-	return root, identity.ExitOK
+	return root, m.LocalRoles.Value == config.LocalRolesOwnerOnly, identity.ExitOK
 }
 
 // runAskAll is `tego ask` with no argument: every running run's pending asks, newest run first.
@@ -165,18 +175,22 @@ func runAskAll(ctx context.Context, asJSON bool, out, errs io.Writer) int {
 // runAskByID is ask, approve, deny or alternate given only an ask id: the run is the running one whose broker holds
 // it (findAsk); the exchange is then askAt's, exactly as with the run id given.
 func runAskByID(ctx context.Context, name, id string, approve, always, asJSON bool, alternate string, out, errs io.Writer) int {
-	root, code := askRoot(name, errs)
+	root, ownerOnly, code := askRootWithAuthority(name, errs)
 	if code != identity.ExitOK {
 		return code
 	}
-	return askByIDUnder(ctx, root, name, id, approve, always, asJSON, alternate, out, errs)
+	return askByIDUnder(ctx, root, name, id, approve, always, asJSON, alternate, out, errs, ownerOnly)
 }
 
 // askByIDUnder is runAskByID under the ledger root root.
-func askByIDUnder(ctx context.Context, root, name, id string, approve, always, asJSON bool, alternate string, out, errs io.Writer) int {
+func askByIDUnder(ctx context.Context, root, name, id string, approve, always, asJSON bool, alternate string, out, errs io.Writer, ownerOnly ...bool) int {
 	runID, dir, err := findAsk(ctx, root, id)
 	if err != nil {
 		message(errs, "", 0, 0, "tego "+name+": "+err.Error(), readCode(err))
+		return identity.ExitError
+	}
+	if runID == "" && len(ownerOnly) == 1 && ownerOnly[0] && name != "ask" && os.Geteuid() != 0 {
+		message(errs, "", 0, 0, "tego "+name+": "+askproto.ErrOwnerOnly.Error(), codeIO)
 		return identity.ExitError
 	}
 	if runID == "" {
@@ -184,7 +198,7 @@ func askByIDUnder(ctx context.Context, root, name, id string, approve, always, a
 			"timed out, or its run ended); tego ask lists the pending ones", name, root, id), codeNotFound)
 		return identity.ExitFinding
 	}
-	return askAt(ctx, name, runID, dir, id, approve, always, asJSON, alternate, out, errs)
+	return askAt(ctx, name, runID, dir, id, approve, always, asJSON, alternate, out, errs, ownerOnly...)
 }
 
 // listRunsHint is the next step after a run id that names no run.
@@ -300,7 +314,7 @@ func askAcross(ctx context.Context, root string, asJSON bool, out, errs io.Write
 					suffix = " (truncated; tego ask " + request.AskID + " shows the whole target)"
 				}
 				if _, werr = fmt.Fprintf(out, "%s %s %s %s %s%s%s\n", p.Run, request.AskID, record.Printable(request.Hold),
-					record.Printable(request.Op), record.Printable(request.Target), askTarget2(request.Request), suffix); werr != nil {
+					record.Printable(record.AskOpWord(request.Op, request.Rule)), record.Printable(request.Target), askTarget2(request.Request), suffix); werr != nil {
 					break
 				}
 			}
@@ -315,8 +329,14 @@ func askAcross(ctx context.Context, root string, asJSON bool, out, errs io.Write
 	return identity.ExitOK
 }
 
-func askAt(ctx context.Context, name, runID, dir, id string, approve, always, asJSON bool, alternate string, out, errs io.Writer) int {
-	target, err := askclient.Launcher(dir) // the verified launcher pidfd stays open through the exchange
+// askLauncher is the verified-launcher lookup askAt makes; a variable so a test can stand in a refusal the host cannot
+// produce (a root caller without CAP_SYS_PTRACE).
+var askLauncher = askclient.Launcher
+
+func askAt(ctx context.Context, name, runID, dir, id string, approve, always, asJSON bool, alternate string, out, errs io.Writer, ownerOnly ...bool) int {
+	managed := len(ownerOnly) == 1 && ownerOnly[0] && name != "ask"
+	target, err := askLauncher(dir) // the verified launcher pidfd stays open through the exchange
+	err = askclient.OwnerOnlyError(err, managed)
 	if errors.Is(err, askclient.ErrNoBroker) {
 		// No live launcher holds the run's lock: the run has ended, and every request it held ended with it. Asked
 		// about one request, say what became of it from the ledger (QG-11).
@@ -339,9 +359,15 @@ func askAt(ctx context.Context, name, runID, dir, id string, approve, always, as
 		if id != "" {
 			request, e := ask.DetailFor(ctx, dir, target.PID(), id)
 			err = e
-			if errors.Is(err, ask.ErrNotPending) {
+			ended, recorded := false, false
+			if brokerWentAway(err) {
+				// The run's broker closed as the run ended: what the ledger holds says what became of the request.
+				l := lookAgain(dir, id)
+				ended, recorded = l.ended, l.ended || l.rec.AnswerSeq != 0
+			}
+			if recorded || errors.Is(err, ask.ErrNotPending) {
 				// Answered or timed out already: say how, from the ledger (QG-11).
-				found, werr := writeRecordedAsk(runID, dir, id, false, asJSON, out)
+				found, werr := writeRecordedAsk(runID, dir, id, ended, asJSON, out)
 				if werr != nil {
 					return identity.ExitError
 				}
@@ -356,20 +382,28 @@ func askAt(ctx context.Context, name, runID, dir, id string, approve, always, as
 						Request ask.Request `json:"request"`
 					}{runID, request})
 				} else {
-					_, err = fmt.Fprintf(out, "%s %s %s %s%s\n", request.AskID, record.Printable(request.Hold), record.Printable(request.Op), record.Printable(request.Target), askTarget2(request))
+					_, err = fmt.Fprintf(out, "%s %s %s %s%s\n", request.AskID, record.Printable(request.Hold), record.Printable(record.AskOpWord(request.Op, request.Rule)), record.Printable(request.Target), askTarget2(request))
 				}
 			}
 		} else {
 			pending, e := ask.ListFor(ctx, dir, target.PID())
 			err = e
-			if errors.Is(err, os.ErrNotExist) && !asJSON {
+			if errors.Is(err, os.ErrNotExist) {
 				// No ask socket: the run takes no approvals. Say why, rather than "no pending approvals", which reads
-				// as a run that could hold one (QG-11).
-				_, werr := fmt.Fprintln(out, noApprovals(runID, dir))
-				if werr != nil {
-					return identity.ExitError
+				// as a run that could hold one (QG-11). The JSON form says the same of a run that is not shown to hold
+				// none, and keeps its empty list for one that is.
+				words, none := noApprovalsWords(runID, dir)
+				if !none {
+					// Its start record says it served approvals, or says nothing: it is not shown to hold none.
+					message(errs, "", 0, 0, "tego ask: "+words, codeNotFound)
+					return identity.ExitFinding
 				}
-				return identity.ExitOK
+				if !asJSON {
+					if _, werr := fmt.Fprintln(out, words); werr != nil {
+						return identity.ExitError
+					}
+					return identity.ExitOK
+				}
 			}
 			if errors.Is(err, os.ErrNotExist) {
 				err = nil // no ask socket: the run takes no approvals, so none is pending
@@ -392,7 +426,7 @@ func askAt(ctx context.Context, name, runID, dir, id string, approve, always, as
 						if request.TargetTruncated {
 							suffix = " (truncated; inspect ask_id for full target)"
 						}
-						if _, err = fmt.Fprintf(out, "%s %s %s %s%s%s\n", request.AskID, record.Printable(request.Hold), record.Printable(request.Op), record.Printable(request.Target), askTarget2(request.Request), suffix); err != nil {
+						if _, err = fmt.Fprintf(out, "%s %s %s %s%s%s\n", request.AskID, record.Printable(request.Hold), record.Printable(record.AskOpWord(request.Op, request.Rule)), record.Printable(request.Target), askTarget2(request.Request), suffix); err != nil {
 							break
 						}
 					}
@@ -419,7 +453,7 @@ func askAt(ctx context.Context, name, runID, dir, id string, approve, always, as
 		} else {
 			decision, e = ask.AnswerFor(ctx, dir, target.PID(), id, approve, always)
 		}
-		err = e
+		err = askclient.OwnerOnlyError(e, managed)
 		if err == nil {
 			word := answerWord(decision, always)
 			if alternate != "" {
@@ -435,10 +469,13 @@ func askAt(ctx context.Context, name, runID, dir, id string, approve, always, as
 			}
 		}
 	}
-	if errors.Is(err, os.ErrNotExist) {
-		// The run is live but serves no ask socket: its contract has no ask rule, or it is a watched run.
-		message(errs, "", 0, 0, fmt.Sprintf("tego %s: %s; nothing waits for an answer", name, noApprovals(runID, dir)), codeNotFound)
-		return identity.ExitFinding
+	if err != nil && brokerWentAway(err) {
+		// The run is live by its lock but its broker is not there: it never served approvals (no ask rule, a watched run),
+		// or the run is ending and took its socket, or closed the connection, before its lock was released. Which one is
+		// the run's record's to say, not the error's (N109).
+		w := settleLost(name, runID, dir, id, err)
+		message(errs, "", 0, 0, w.text, w.code)
+		return w.exit
 	}
 	if err != nil {
 		code := codeIO

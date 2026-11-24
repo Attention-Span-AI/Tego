@@ -92,17 +92,18 @@ func liveLines(t *testing.T, r *runner) []record.GapPayload {
 	return got
 }
 
-// TestTimedBlockAndUnblockExpire: on the real clocks, a block with a limit refuses until the instant and an unblock
-// with a limit refuses nothing until it; once both instants pass, the stored Set has stopped and started refusing,
-// and each limit's end has exactly one line, carrying the until that passed, the serial and by of the change that set
-// it, and the rule of the block. (The limits are short, set straight in the file: AddUntil refuses less than a
-// minute.)
-func TestTimedBlockAndUnblockExpire(t *testing.T) {
-	r := pauseRunner(t)
-	b := &liveBlocks{}
-	ctx := context.Background()
-	at := time.Now().UTC().Round(time.Millisecond)
-	end := at.Add(1200 * time.Millisecond)
+// timedFixture writes the overlay of TestTimedBlockAndUnblockExpire (a block that ends at end, an unblock that
+// ends at end, both set at at) and steps the launcher's clocks (liveNow) by hand: wall and BOOTTIME start at at and
+// the boot it fell in, and the returned step moves both to d after at. The limits are short, set straight in the file:
+// AddUntil refuses less than a minute. The returned clock is restored by a t.Cleanup, so a failed assertion leaves
+// nothing behind.
+func timedFixture(t *testing.T, r *runner, at, end time.Time) (step func(d time.Duration)) {
+	t.Helper()
+	real := liveblock.ReadClock()
+	now := liveblock.Clock{Wall: at, Boot: real.Boot, BootID: real.BootID}
+	old := liveNow
+	liveNow = func() liveblock.Clock { return now }
+	t.Cleanup(func() { liveNow = old })
 	updateOverlay(t, r.dir, string(r.id), func(o *liveblock.Overlay) error {
 		o.Blocks = []liveblock.Entry{
 			{Kind: liveblock.KindExec, Value: "/bin/ls", By: "uid:1 pid:2 cli", At: at, Until: end},
@@ -116,55 +117,89 @@ func TestTimedBlockAndUnblockExpire(t *testing.T) {
 		o.Serial = 3
 		return nil
 	})
+	boot0 := real.Boot
+	return func(d time.Duration) { now.Wall, now.Boot = at.Add(d), boot0+d }
+}
+
+// TestTimedBlockAndUnblockExpire: a block with a limit refuses until the instant and an unblock with a limit
+// refuses nothing until it; once both instants pass, the stored Set has stopped and started refusing, and each
+// limit's end has exactly one line, carrying the until that passed, the serial and by of the change that set it, and
+// the rule of the block. No host speed decides it. The launcher's clocks are the test's own (liveNow), and the Set
+// judges a match on the real clock (liveblock's own clock tests step that one), so each side is built so that the real
+// clock cannot disagree with what the test asserts however slow the host is: before the limit, the instants are an
+// hour ahead of the real time and nothing waits for them; after it, they are already behind the real time when the
+// test starts.
+func TestTimedBlockAndUnblockExpire(t *testing.T) {
 	ap := netip.MustParseAddrPort("192.0.2.7:443")
-	r.pollLiveBlocks(ctx, b)
-	if _, ok := b.Load().MatchExec([]string{"/bin/ls"}, liveblock.FileID{}, false, nil); !ok {
-		t.Fatal("a block with a limit to come does not refuse")
-	}
-	if _, ok := b.Load().MatchInet(ap, "", nil); ok {
-		t.Fatal("a block unblocked until a limit to come refuses")
-	}
-	time.Sleep(time.Until(end) + 50*time.Millisecond)
-	r.pollLiveBlocks(ctx, b)
-	r.pollLiveBlocks(ctx, b) // each end is recorded once
-	if _, ok := b.Load().MatchExec([]string{"/bin/ls"}, liveblock.FileID{}, false, nil); ok {
-		t.Fatal("a block past its limit still refuses")
-	}
-	if b.Load().HasExec() {
-		// Has* are structural: an ended block left in would go on refusing every exec the supervisor could not walk.
-		t.Fatal("a block past its limit is still compiled in")
-	}
-	if e, ok := b.Load().MatchInet(ap, "", nil); !ok || e.Rule() != "live.block[net:192.0.2.7:443]" {
-		t.Fatal("a block whose unblock ended does not refuse again")
-	}
-	var whys []string
-	for _, p := range liveLines(t, r) {
-		whys = append(whys, p.Why)
-		c := p.LiveBlock
-		switch p.Why {
-		case record.GapLiveBlockExpired:
-			if c.Op != "expire" || c.Rule != "live.block[exec:/bin/ls]" || !c.Until.Equal(end) || c.Serial != 1 || c.By != "uid:1 pid:2 cli" {
-				t.Errorf("expired line %+v", c)
-			}
-		case record.GapLiveUnblockExpired:
-			if c.Op != "expire" || c.Rule != "live.block[net:192.0.2.7:443]" || !c.Until.Equal(end) || c.Serial != 3 || c.By != "uid:1 pid:4 cli" {
-				t.Errorf("unblock-expired line %+v", c)
-			}
-		case record.GapLiveBlockAdded:
-			if c.Serial == 1 && !c.Until.Equal(end) {
-				t.Errorf("the timed add's line has no until: %+v", c)
-			}
-		case record.GapLiveBlockRemoved:
-			if !c.Until.Equal(end) {
-				t.Errorf("the timed remove's line has no until: %+v", c)
+	ctx := context.Background()
+	t.Run("before the limit", func(t *testing.T) {
+		r := pauseRunner(t)
+		b := &liveBlocks{}
+		at := time.Now().UTC().Round(time.Millisecond)
+		end := at.Add(time.Hour)
+		timedFixture(t, r, at, end)
+		r.pollLiveBlocks(ctx, b)
+		if _, ok := b.Load().MatchExec([]string{"/bin/ls"}, liveblock.FileID{}, false, nil); !ok {
+			t.Fatal("a block with a limit to come does not refuse")
+		}
+		if _, ok := b.Load().MatchInet(ap, "", nil); ok {
+			t.Fatal("a block unblocked until a limit to come refuses")
+		}
+		for _, p := range liveLines(t, r) {
+			if p.Why == record.GapLiveBlockExpired || p.Why == record.GapLiveUnblockExpired {
+				t.Fatalf("a limit that has not come has an end line: %q", p.Why)
 			}
 		}
-	}
-	want := []string{record.GapLiveBlockAdded, record.GapLiveBlockAdded, record.GapLiveBlockRemoved,
-		record.GapLiveBlockExpired, record.GapLiveUnblockExpired}
-	if !slices.Equal(whys, want) {
-		t.Fatalf("lines %q, want %q", whys, want)
-	}
+	})
+	t.Run("after the limit", func(t *testing.T) {
+		r := pauseRunner(t)
+		b := &liveBlocks{}
+		at := time.Now().UTC().Round(time.Millisecond).Add(-10 * time.Second)
+		end := at.Add(1200 * time.Millisecond)
+		step := timedFixture(t, r, at, end)
+		r.pollLiveBlocks(ctx, b)
+		step(1250 * time.Millisecond)
+		r.pollLiveBlocks(ctx, b)
+		r.pollLiveBlocks(ctx, b) // each end is recorded once
+		if _, ok := b.Load().MatchExec([]string{"/bin/ls"}, liveblock.FileID{}, false, nil); ok {
+			t.Fatal("a block past its limit still refuses")
+		}
+		if b.Load().HasExec() {
+			// Has* are structural: an ended block left in would go on refusing every exec the supervisor could not walk.
+			t.Fatal("a block past its limit is still compiled in")
+		}
+		if e, ok := b.Load().MatchInet(ap, "", nil); !ok || e.Rule() != "live.block[net:192.0.2.7:443]" {
+			t.Fatal("a block whose unblock ended does not refuse again")
+		}
+		var whys []string
+		for _, p := range liveLines(t, r) {
+			whys = append(whys, p.Why)
+			c := p.LiveBlock
+			switch p.Why {
+			case record.GapLiveBlockExpired:
+				if c.Op != "expire" || c.Rule != "live.block[exec:/bin/ls]" || !c.Until.Equal(end) || c.Serial != 1 || c.By != "uid:1 pid:2 cli" {
+					t.Errorf("expired line %+v", c)
+				}
+			case record.GapLiveUnblockExpired:
+				if c.Op != "expire" || c.Rule != "live.block[net:192.0.2.7:443]" || !c.Until.Equal(end) || c.Serial != 3 || c.By != "uid:1 pid:4 cli" {
+					t.Errorf("unblock-expired line %+v", c)
+				}
+			case record.GapLiveBlockAdded:
+				if c.Serial == 1 && !c.Until.Equal(end) {
+					t.Errorf("the timed add's line has no until: %+v", c)
+				}
+			case record.GapLiveBlockRemoved:
+				if !c.Until.Equal(end) {
+					t.Errorf("the timed remove's line has no until: %+v", c)
+				}
+			}
+		}
+		want := []string{record.GapLiveBlockAdded, record.GapLiveBlockAdded, record.GapLiveBlockRemoved,
+			record.GapLiveBlockExpired, record.GapLiveUnblockExpired}
+		if !slices.Equal(whys, want) {
+			t.Fatalf("lines %q, want %q", whys, want)
+		}
+	})
 }
 
 // TestExpiryWaitsForBothClocks: with the wall clock stepped past a block's limit but BOOTTIME short of its pin, the
@@ -451,5 +486,171 @@ func TestOverlayReplacedBetweenPolls(t *testing.T) {
 		if unreadable != 1 || added != 1+n {
 			t.Fatalf("n=%d: %d unreadable and %d add lines, want 1 and %d", n, unreadable, added, 1+n)
 		}
+	}
+}
+
+// TestWriterPinHoldsABlockThroughAWallStep: the launcher holds a block by the pin its writer kept with the limit (ADR
+// 0125 decision 4, amendment 2026-11-18), so a wall clock stepped forward before the launcher first reads the block
+// does not end it: it refuses until BOOTTIME reaches the pin, and writes its expiry line then. Pinning at first sight,
+// after the step, put the pin in the past and ended the block at once.
+func TestWriterPinHoldsABlockThroughAWallStep(t *testing.T) {
+	r := pauseRunner(t)
+	b := &liveBlocks{}
+	ctx := context.Background()
+	at := time.Now()
+	updateOverlay(t, r.dir, string(r.id), func(o *liveblock.Overlay) error {
+		_, _, err := o.AddUntil(liveblock.KindPath, "/srv/x", "uid:1 pid:2 cli", at, at.Add(2*time.Hour))
+		return err
+	})
+	o, err := liveblock.Read(r.dir, string(r.id))
+	if err != nil || len(o.Blocks) != 1 {
+		t.Fatalf("overlay %+v, %v", o, err)
+	}
+	e := o.Blocks[0]
+	if e.Boot == "" {
+		t.Log("this machine names no boot, so the writer kept no pin: there is none to hold the block by")
+		return
+	}
+	// First sight: the wall clock is 25 h past the limit, BOOTTIME an hour short of the writer's pin.
+	now := liveblock.Clock{Wall: e.Until.Add(25 * time.Hour), Boot: e.UntilBoot - time.Hour, BootID: e.Boot}
+	old := liveNow
+	liveNow = func() liveblock.Clock { return now }
+	t.Cleanup(func() { liveNow = old })
+	r.pollLiveBlocks(ctx, b)
+	if !b.Load().HasPath() {
+		t.Fatal("a forward wall step ended a block before its BOOTTIME pin: the launcher compiled it out")
+	}
+	// A write at that reading keeps the entry, and the launcher goes on holding it.
+	updateOverlay(t, r.dir, string(r.id), func(o *liveblock.Overlay) error {
+		_, _, err := o.Add(liveblock.KindExec, "/bin/ls", "uid:1 pid:3 cli", time.Now())
+		return err
+	})
+	r.pollLiveBlocks(ctx, b)
+	if !b.Load().HasPath() {
+		t.Fatal("the block left the launcher's Set after a write")
+	}
+	now.Boot = e.UntilBoot // BOOTTIME reaches the pin
+	r.pollLiveBlocks(ctx, b)
+	if b.Load().HasPath() {
+		t.Fatal("the block outlived both clocks")
+	}
+	var whys []string
+	for _, p := range liveLines(t, r) {
+		whys = append(whys, p.Why)
+	}
+	if want := []string{record.GapLiveBlockAdded, record.GapLiveBlockAdded, record.GapLiveBlockExpired}; !slices.Equal(whys, want) {
+		t.Fatalf("lines %q, want %q", whys, want)
+	}
+}
+
+// TestPinAndDoneMapsStayBoundedOverALongRun: a 24/7 run whose live blocks carry a time limit each makes a new
+// limit (so a new pin and a new expiry mark) every time one is placed and ends. The launcher keeps a pin and a mark only
+// while a block of the overlay it last read carries that limit, so over a long run the two maps hold what the overlay
+// holds, not one key per limit ever seen; and each limit's end is still recorded exactly once, so no mark was dropped
+// early (a mark dropped while its ended block is still in the file would write its expiry line again).
+func TestPinAndDoneMapsStayBoundedOverALongRun(t *testing.T) {
+	const limits = 1500
+	ctx := context.Background()
+	r := pauseRunner(t)
+	r.queue = NewQueue(limits * 4)
+	b := &liveBlocks{}
+	at := time.Now().UTC().Round(time.Millisecond).Add(-3 * time.Hour)
+	real := liveblock.ReadClock()
+	now := liveblock.Clock{Wall: at, Boot: real.Boot, BootID: real.BootID}
+	old := liveNow
+	liveNow = func() liveblock.Clock { return now }
+	t.Cleanup(func() { liveNow = old })
+	step := func(d time.Duration) { now.Wall, now.Boot = now.Wall.Add(d), now.Boot+d }
+
+	peakPins, peakDone := 0, 0
+	for i := range limits {
+		end := now.Wall.Add(3 * time.Second)
+		updateOverlay(t, r.dir, string(r.id), func(o *liveblock.Overlay) error {
+			o.Serial++
+			o.Blocks = []liveblock.Entry{{Kind: liveblock.KindExec, Value: "/bin/ls", By: "uid:1 pid:2 cli", At: now.Wall, Until: end}}
+			o.Changes = []liveblock.Change{{Serial: o.Serial, Op: liveblock.OpAdd, Kind: liveblock.KindExec, Value: "/bin/ls",
+				By: "uid:1 pid:2 cli", At: now.Wall, Until: end}}
+			return nil
+		})
+		r.pollLiveBlocks(ctx, b)
+		step(4 * time.Second) // the limit ends
+		r.pollLiveBlocks(ctx, b)
+		r.pollLiveBlocks(ctx, b) // an ended block still in the file: its end is not recorded again
+		peakPins, peakDone = max(peakPins, len(b.pins)), max(peakDone, len(b.done))
+		if i == limits-1 {
+			break
+		}
+	}
+	if peakPins > 2 || peakDone > 2 {
+		t.Errorf("over %d limits the launcher held up to %d pins and %d expiry marks; want what the overlay holds (one)", limits, peakPins, peakDone)
+	}
+	// The overlay is removed: nothing it held is kept.
+	if err := os.Remove(filepath.Join(r.dir, liveblock.FileName)); err != nil {
+		t.Fatal(err)
+	}
+	r.pollLiveBlocks(ctx, b)
+	if len(b.pins) != 0 || len(b.done) != 0 {
+		t.Errorf("after the overlay was removed: %d pins, %d marks, want none", len(b.pins), len(b.done))
+	}
+	expired := 0
+	for _, p := range liveLinesAll(t, r) {
+		if p.Why == record.GapLiveBlockExpired {
+			expired++
+		}
+	}
+	if expired != limits {
+		t.Errorf("%d expiry lines for %d limits: each end is recorded exactly once", expired, limits)
+	}
+}
+
+// TestAnEndedBlockStillListedKeepsItsPinAndMarkWhenTheOverlayChanges: a block whose limit has ended stays in the file a day.
+// While it is listed, another change to the overlay (a second block) is read and pruned against: the ended block's pin
+// and its expiry mark must survive, or its end would be written again and its pin derived anew.
+func TestAnEndedBlockStillListedKeepsItsPinAndMarkWhenTheOverlayChanges(t *testing.T) {
+	ctx := context.Background()
+	r := pauseRunner(t)
+	b := &liveBlocks{}
+	at := time.Now().UTC().Round(time.Millisecond).Add(-time.Hour)
+	end := at.Add(3 * time.Second)
+	real := liveblock.ReadClock()
+	now := liveblock.Clock{Wall: at, Boot: real.Boot, BootID: real.BootID}
+	old := liveNow
+	liveNow = func() liveblock.Clock { return now }
+	t.Cleanup(func() { liveNow = old })
+	updateOverlay(t, r.dir, string(r.id), func(o *liveblock.Overlay) error {
+		o.Serial = 1
+		o.Blocks = []liveblock.Entry{{Kind: liveblock.KindExec, Value: "/bin/ls", By: "uid:1 pid:2 cli", At: at, Until: end}}
+		o.Changes = []liveblock.Change{{Serial: 1, Op: liveblock.OpAdd, Kind: liveblock.KindExec, Value: "/bin/ls", By: "uid:1 pid:2 cli", At: at, Until: end}}
+		return nil
+	})
+	r.pollLiveBlocks(ctx, b)
+	now.Wall, now.Boot = now.Wall.Add(4*time.Second), now.Boot+4*time.Second // the limit ends
+	r.pollLiveBlocks(ctx, b)
+	key := liveblock.DeadlineKey("exec:/bin/ls", end)
+	if _, ok := b.pins[key]; !ok || !b.done[key] {
+		t.Fatalf("before the overlay changes: pin held %v, mark %v", ok, b.done[key])
+	}
+	pin := b.pins[key]
+	// The overlay changes while the ended block is still listed.
+	updateOverlay(t, r.dir, string(r.id), func(o *liveblock.Overlay) error {
+		o.Serial = 2
+		o.Blocks = append(o.Blocks, liveblock.Entry{Kind: liveblock.KindExec, Value: "/bin/cat", By: "uid:1 pid:2 cli", At: now.Wall})
+		o.Changes = append(o.Changes, liveblock.Change{Serial: 2, Op: liveblock.OpAdd, Kind: liveblock.KindExec, Value: "/bin/cat", By: "uid:1 pid:2 cli", At: now.Wall})
+		return nil
+	})
+	now.Wall, now.Boot = now.Wall.Add(time.Second), now.Boot+time.Second // the wall clock moves on
+	r.pollLiveBlocks(ctx, b)
+	r.pollLiveBlocks(ctx, b)
+	if p, ok := b.pins[key]; !ok || p != pin || !b.done[key] {
+		t.Errorf("after it: pin %v (held %v, was %v), mark %v; the ended block is still listed and keeps both", p, ok, pin, b.done[key])
+	}
+	expired := 0
+	for _, p := range liveLinesAll(t, r) {
+		if p.Why == record.GapLiveBlockExpired {
+			expired++
+		}
+	}
+	if expired != 1 {
+		t.Errorf("%d expiry lines for one limit, want 1", expired)
 	}
 }

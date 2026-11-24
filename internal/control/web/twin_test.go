@@ -3,8 +3,6 @@
 package web
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -12,7 +10,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-	"time"
 	"unicode/utf8"
 
 	"github.com/attention-span-ai/tego/internal/shellword"
@@ -167,18 +164,9 @@ func runTwin(t *testing.T, cmd string, steps []twinStep) []twinState {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
-	defer cancel()
-	run := exec.CommandContext(ctx, node, "-e", twinHarness)
-	run.Stdin = bytes.NewReader(in)
-	var stderr bytes.Buffer
-	run.Stderr = &stderr
-	out, err := run.Output()
-	if err != nil {
-		t.Fatalf("node: %v\n%s", err, stderr.String())
-	}
+	out := runNodeHarness(t, node, twinHarness, in)
 	var got []twinState
-	if err := json.Unmarshal(out, &got); err != nil || len(got) != len(steps) {
+	if err := json.Unmarshal([]byte(out), &got); err != nil || len(got) != len(steps) {
 		t.Fatalf("node printed %q for %d steps (%v)", out, len(steps), err)
 	}
 	return got

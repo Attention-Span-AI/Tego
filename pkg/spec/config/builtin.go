@@ -67,6 +67,7 @@ func Builtin() *Machine {
 		BPF: BPFConfig{Linger: Setting[time.Duration]{Value: DefaultBPFLinger, Source: src},
 			RingBudget: Setting[ByteSize]{Value: DefaultRingBudget, Source: src},
 			Plane:      Setting[string]{Value: PlaneAuto, Source: src}},
+		TOMOYO:           TOMOYOConfig{FactsDir: Setting[string]{Source: src}},
 		Resolver:         Setting[ResolverMode]{Value: ResolverMode{Auto: true}, Source: src},
 		DeniedResolved:   Setting[[]netip.Prefix]{Value: []netip.Prefix{}, Source: src},
 		Forwarder:        ForwarderConfig{Listen: Setting[string]{Value: DefaultForwarderListen, Source: src}},

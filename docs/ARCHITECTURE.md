@@ -428,16 +428,21 @@ tier 3 needs one GRUB edit and a restart, which the template does not make (doct
 template already lists `bpf` and needs no edit. `compile` and inode resolution run inside the VM against the
 virtiofs mount, never on the macOS side, and `doctor` runs a mount-identity check (stat two directories, drop caches,
 stat again; refuse enforcement on that mount if the numbers changed or two directories share an inode), because
-virtiofs on Apple's framework has undocumented inode semantics. **Windows**: WSL2 on Microsoft's kernel, which
-ships `CONFIG_BPF_LSM=y`, Landlock, BTF and cgroup v2. Before 6.18.54.1 (WSL 3.0.3, 2026-10-09) its LSM list has no
-`bpf`: the hardened tier needs `wsl --update`, or one line in `.wslconfig` (`kernelCommandLine = lsm=<current list>,bpf`)
-and `wsl --shutdown`, no custom kernel. From 6.18.54.1 the kernel configuration (`CONFIG_LSM`) ends in `bpf` and the
-kernel release notes say "Bpf LSM is enabled by default"; this is read from the configuration, not measured with `tego
-doctor`. The unprivileged tier needs nothing; eBPF inside WSL still needs root.
+virtiofs on Apple's framework has undocumented inode semantics. **Windows**: kernel features alone do not establish WSL availability. A Windows 11 guest with WSL 3.0.5,
+Ubuntu 24.04.5 and kernel 6.18.58.1 measured Landlock ABI 7 and active `bpf`, but its ordinary shell was outside the
+user delegation and in private cgroup and process-id namespaces. The normal user could not read its own service
+manager's namespace links. A rule that needs no such link (the cgroup namespace is owned by the first user
+namespace, pid 1 is in `/init.scope`, and the user's own service manager answers from its exact cgroup; ADR 0100,
+amended 2026-11-18) is built and unit-tested, and its use on WSL is off in an ordinary build until a guest shows
+that an enforcing run refuses WSL's own launcher. So the membership guard still refuses setup and takes no automatic
+scope entry in that layout, with that reason. Root tiers are unavailable outside the kernel's initial process-id namespace: the
+plane uses initial-namespace PID identities. Updating WSL or adding an LSM does not change that precondition.
+WSL launcher, GUI/audio socket, home-alias and Windows-drive acceptance must be measured separately; no WSL support
+claim follows from the feature list or a diagnostic tier alone.
 
 ## 14. Support matrix (verified 2026-09-21; the runtime probes, never trusts a version)
 
-*Note 2026-09-29 (ADR 0024, accepted; probe and step A built, the MATRIX suites not: T11):* a per-row plane mode column (`tego doctor` D7 has the per-hook rows; the fill, load and probe ran on 6.17, RHEL 9.8's 5.14 and AL2023's 6.1): `lsm` where `bpf` is active (Debian 13, RHEL 9/10, AL2023, Fedora), `fmod_ret` on Ubuntu 24.04/25.10 and WSL2 kernels before 6.18.54.1 without a boot change, `fanotify` where neither passes the probe (lockdown=confidentiality below 6.2, unmeasured arm64). The table below is unchanged; the per-mode host-cost table lands with T11's kill tests.
+*Note 2026-09-29 (ADR 0024, accepted; probe and step A built, the MATRIX suites not: T11):* a per-row plane mode column (`tego doctor` D7 has the per-hook rows; the fill, load and probe ran on 6.17, RHEL 9.8's 5.14 and AL2023's 6.1): `lsm` where `bpf` is active (Debian 13, RHEL 9/10, AL2023, Fedora), `fmod_ret` on Ubuntu 24.04/25.10 without a boot change, `fanotify` where neither passes the probe (lockdown=confidentiality below 6.2, unmeasured arm64). The table below is unchanged; the per-mode host-cost table lands with T11's kill tests.
 
 *Note 2026-10-06:* T11's suites are built (TIER3-PLAN §10); the plane mode per row and boot is measured by
 `make vm-matrix` as `cgroup_mode` (TIER3-PLAN §7, test/vm/README.md), and the per-mode costs are enforce-plane §2.18
@@ -462,8 +467,7 @@ link confined to one directory).
 | RHEL 9 / Alma / Rocky 9 | 5.14 + backports | yes | 6 (backported) | all tiers, no edit; full target through ABI 6, missing only post-ABI-6 features (TSYNC, pathname unix, UDP rules), none of which gates a tier |
 | RHEL 10 | 6.12 | yes | 6 | all tiers, no edit |
 | Amazon Linux 2023 default | 6.1 | yes | 2 | tiers 2 and 3 full; tier 1 fs-only (no net rules); `kernel6.12` gives ABI 6 |
-| WSL2, kernel before 6.18.54.1 (WSL 2.9) | 6.18 (6.6 on old installs) | no | 7 (3 on 6.6) | tier 1; tier 3 after `wsl --update` or `.wslconfig kernelCommandLine`; root for eBPF |
-| WSL2, kernel 6.18.54.1 and later (WSL 3.0.3) | 6.18 | yes (from the kernel configuration; not measured) | 7 (not measured) | tier 1; tier 3 with no edit once `tego doctor` shows `bpf`; root for eBPF; untested on real hardware |
+| WSL2, WSL 3.0.5 (Windows guest, 2026-11-17) | 6.18.58.1 | yes, measured | 7, measured | ordinary-shell admission remains refused; root tiers unavailable in its private process-id namespace; containment acceptance remains separate |
 | macOS Lima, Tego's template (Ubuntu 24.04, cloud image release-20260926) | 6.8 | no | 4 | the Ubuntu 24.04 row: tier 1; tier 2 with sudo; tier 3 after the GRUB edit and a restart (the template does not make it) |
 | macOS Lima, Fedora template (Lima's own, not Tego's) | 7.x | yes | 8 | all tiers, no edit |
 | macOS Lima, `template:ubuntu` (Lima's own: 26.04 in Lima 2.2.1, not Tego's) | 7.0 | no | 8 | tier 1; tier 3 after the GRUB edit |
@@ -516,10 +520,10 @@ on builds, near zero on model-bound agents. Targets, not measurements.
 (`internal/bpf`).
 The policy compiler, `pkg/spec/agent`, is not on the list (agent-contract I6). Rules: no third-party dependency beyond cilium/ebpf, go-landlock,
 x/sys, x/net; every reader of another process's memory has a Go fuzz target; no external review has been done yet; the
-privileged path is `sudo tego run` or a file capability (`cap_bpf,cap_perfmon,cap_sys_admin+ep`) on a copy named by
+privileged path is `sudo "$(command -v tego)" run` or a file capability (`cap_bpf,cap_perfmon,cap_sys_admin+ep`) on a copy named by
 the root-owned machine config, never a setuid binary.
 
-*Amended 2026-10-05 (ADR 0042 (2), (3)).* The privileged path in this release is a root launcher: `sudo tego run`
+*Amended 2026-10-05 (ADR 0042 (2), (3)).* The privileged path in this release is a root launcher: `sudo "$(command -v tego)" run`
 on a host whose sudo users are its administrators, or (not built yet) a root launch with `--run-as <user>`.
 Granting sudo for tego is granting root: a sudoers entry limited to tego is not a boundary Tego supports, and a
 service account never gets one. The file-capability copy is not delivered and fails closed: a launcher that gained
@@ -565,7 +569,7 @@ as root in the root tiers, on input the governed agent controls: `dnsbroker` par
 before any upstream work, and parses CONNECT tunnels and WebSocket frames (`websocketFrames`) itself, with HTTP/2
 framing left to the standard library. Both are on the list now, with the policy packages, `ask` named by its path,
 and the packages the other lists already counted; SECURITY.md carries the same list. The policy compiler stays off
-it, as agent-contract I6 states: it makes no mutating syscall, though under `sudo tego run` it runs as root
+it, as agent-contract I6 states: it makes no mutating syscall, though under `sudo "$(command -v tego)" run` it runs as root
 before launch. It joins the list when ADR 0031 (proposed) moves its I/O into `internal/policy/compile`. What the
 list does not yet meet, measured with `go list -deps -tags tegobpf` on 2026-10-05: `dnsbroker` (x/net, x/sys),
 `ask` (x/sys) and the four `pkg/policy` packages (none) keep the dependency rule; `capture/forwarder` does not,

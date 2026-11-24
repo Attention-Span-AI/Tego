@@ -93,6 +93,14 @@ type Entry struct {
 	// Until is when the block ends by itself (ADR 0125 decision 4): from then on it refuses nothing, and the launcher
 	// writes its live-block-expired line. Zero is no end: the rest of the run.
 	Until time.Time `json:"until,omitzero"`
+	// Boot and UntilBoot are Until's pin, kept with it (ADR 0125 decision 4, amendment 2026-11-18): the boot the
+	// write that set the limit ran in (Clock.BootID) and the CLOCK_BOOTTIME instant Until fell at then. The launcher
+	// takes them as its pin and a writer drops the entry by them (UntilPin), so both judge the limit's end on the
+	// same two readings. Both are unset on a block with no limit, on one written by a tego from before them, and
+	// where the boot could not be named: the launcher then pins the limit itself the first time it sees it, and a
+	// writer keeps the entry by the wall clock (Overlay.dropEnded). A reader from before them ignores both.
+	Boot      string        `json:"boot,omitempty"`
+	UntilBoot time.Duration `json:"until_boot,omitempty"`
 	// From is when a dormant block refuses again: an unblock with a time limit keeps the block with From at the
 	// limit, and it refuses nothing before then. On a fence refusal (Fence) it is when a lift with a limit ends. Zero
 	// is a block in force now.
@@ -122,6 +130,15 @@ type Entry struct {
 	// the entry is granted, or the program name an exec.deny entry named), the entry's own value: the refusal then
 	// carries the entry's rule, live.fence[exec:<FenceOf>], never one the fence does not hold. "" otherwise.
 	FenceOf string `json:"-"`
+}
+
+// UntilPin is the BOOTTIME pin of e's until as its writer kept it, usable at c: ok only when e carries one made in c's
+// boot. In another boot the instant counts from a different start and means nothing, and the wall clock judges alone.
+func (e Entry) UntilPin(c Clock) (pin time.Duration, ok bool) {
+	if e.Until.IsZero() || e.Boot == "" || e.Boot != c.BootID {
+		return 0, false
+	}
+	return e.UntilBoot, true
 }
 
 // MatchLink is the Match of an exec block that refuses what the running contract grants under the exec.allow entry

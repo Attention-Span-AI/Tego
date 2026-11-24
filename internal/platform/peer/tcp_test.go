@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -59,6 +60,78 @@ func TestTCPSocketCgroupIsTheMakersCgroup(t *testing.T) {
 	if _, err := TCPSocketCgroup(netip.MustParseAddrPort("127.0.0.1:1"), server); !errors.Is(err, ErrNoSocket) {
 		t.Errorf("a tuple with no socket: %v, want ErrNoSocket", err)
 	}
+}
+
+// TestTCPSocketInfoNamesTheSocketByItsInode: the inode sock_diag reports for a loopback client socket is the number its
+// own descriptor link carries ("socket:[<inode>]"), with the cgroup id TCPSocketCgroup gives, from one lookup (C206).
+func TestTCPSocketInfoNamesTheSocketByItsInode(t *testing.T) {
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	c, err := net.Dial("tcp4", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	client := netip.MustParseAddrPort(c.LocalAddr().String())
+	server := netip.MustParseAddrPort(c.RemoteAddr().String())
+	info, err := TCPSocketInfo(client, server)
+	if errors.Is(err, unix.EPROTONOSUPPORT) || errors.Is(err, unix.ENOENT) || errors.Is(err, ErrNoCgroupID) || errors.Is(err, ErrNoTCPDiag) {
+		t.Skipf("this kernel answers no socket cgroup over sock_diag: %v", err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := TCPSocketCgroup(client, server)
+	if err != nil || id != info.CgroupID {
+		t.Errorf("TCPSocketCgroup %d %v, TCPSocketInfo's cgroup %d", id, err, info.CgroupID)
+	}
+	// This process holds the client socket: its descriptor links name the inode.
+	want := "socket:[" + strconv.FormatUint(info.Inode, 10) + "]"
+	ents, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, e := range ents {
+		if l, err := os.Readlink("/proc/self/fd/" + e.Name()); err == nil && l == want {
+			found = true
+		}
+	}
+	if info.Inode == 0 || !found {
+		t.Errorf("inode %d: no descriptor of this process is %s", info.Inode, want)
+	}
+}
+
+// TestParseDiagInfoReadsTheInode: the last word of the inet_diag_msg is the socket's inode, read with the cgroup id.
+func TestParseDiagInfoReadsTheInode(t *testing.T) {
+	client, server := netip.MustParseAddrPort("127.0.0.1:40000"), netip.MustParseAddrPort("127.0.0.1:8000")
+	ne := binary.NativeEndian
+	body := make([]byte, diagMsgLen, diagMsgLen+16)
+	body[0] = unix.AF_INET
+	putDiagTuple(body[4:], unix.AF_INET, client, server)
+	ne.PutUint32(body[diagMsgLen-4:], 987654)
+	attr := make([]byte, 12)
+	ne.PutUint16(attr[0:], 12)
+	ne.PutUint16(attr[2:], diagAttrCgroupID)
+	ne.PutUint64(attr[4:], 4242)
+	body = append(body, attr...)
+	msg := make([]byte, diagHdrLen, diagHdrLen+len(body))
+	msg = append(msg, body...)
+	ne.PutUint32(msg[0:], uint32(len(msg)))
+	ne.PutUint16(msg[4:], unix.SOCK_DIAG_BY_FAMILY)
+	info, err := parseDiagInfo(msg, unix.AF_INET, client, server)
+	if err != nil || info.Inode != 987654 || info.CgroupID != 4242 {
+		t.Fatalf("%+v %v", info, err)
+	}
+}
+
+// parseDiagCgroup is parseDiagInfo's cgroup id, which the tests below read.
+func parseDiagCgroup(msg []byte, family uint8, client, server netip.AddrPort) (uint64, error) {
+	info, err := parseDiagInfo(msg, family, client, server)
+	return info.CgroupID, err
 }
 
 // TestParseDiagCgroup: the reply's tuple must be the question's, the cgroup id attribute must be whole, and an error

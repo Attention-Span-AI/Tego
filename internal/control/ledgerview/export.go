@@ -12,8 +12,9 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"syscall"
+
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 // Export: every line a Logs search matches, one at a time, with its exact bytes read back from its events file, for
@@ -67,12 +68,21 @@ func (s *Snapshot) Each(f Filter, order Order, fn func(e *Event, raw func() ([]b
 	m := newMatcher(&f)
 	h := &lineHeap{order: order}
 	for _, r := range s.Runs {
-		evs := r.AllEvents()
-		if len(evs) == 0 {
-			continue
-		}
 		rm, ok := m.forRun(r)
 		if !ok {
+			continue
+		}
+		evs := r.AllEvents()
+		for _, refusal := range r.LineErrors {
+			if !fn(&Event{Run: r.ID, off: refusal.Offset}, func() ([]byte, error) { return nil, errors.New(refusal.Reason) }) {
+				return
+			}
+		}
+		if err := r.readError(); err != nil && len(r.LineErrors) == 0 {
+			fn(&Event{Run: r.ID}, func() ([]byte, error) { return nil, err })
+			return
+		}
+		if len(evs) == 0 {
 			continue
 		}
 		nf := r.newestFirst()
@@ -123,11 +133,13 @@ func (s *Snapshot) eachLine(id string, order Order, fn func(e *Event, raw func()
 	}
 	f, err := os.OpenFile(filepath.Join(s.Root, id, "events.jsonl"), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
+		fn(&Event{Run: id}, func() ([]byte, error) { return nil, err })
 		return
 	}
 	defer func() { _ = f.Close() }()
 	fi, err := f.Stat()
 	if err != nil {
+		fn(&Event{Run: id}, func() ([]byte, error) { return nil, err })
 		return
 	}
 	if order == OldestFirst {
@@ -136,13 +148,26 @@ func (s *Snapshot) eachLine(id string, order Order, fn func(e *Event, raw func()
 		for {
 			raw, size, err := boundedLine(br)
 			if err != nil {
+				if !errors.Is(err, io.EOF) {
+					fn(&Event{Run: id, off: off}, func() ([]byte, error) { return nil, err })
+				}
 				return
 			}
 			if raw == nil {
+				if !fn(&Event{Run: id, off: off}, func() ([]byte, error) {
+					return nil, fmt.Errorf("line at byte offset %d: longer than %d bytes", off, maxLineBytes)
+				}) {
+					return
+				}
 				off += size
 				continue
 			}
-			if e, _, ok := decodeLine(raw[:len(raw)-1]); ok {
+			if e, _, decodeErr := decodeLine(raw[:len(raw)-1]); decodeErr != nil {
+				if !fn(&Event{Run: id, off: off}, func() ([]byte, error) { return nil, &rereadRefusal{cause: decodeErr, off: off} }) {
+					return
+				}
+			} else {
+				e.RecordMinor, e.LocalFloor = r.RecordMinor, r.LocalApprovalAuthority != nil
 				e.off = off
 				if !fn(&e, func() ([]byte, error) { return raw[:len(raw)-1], nil }) {
 					return
@@ -151,28 +176,71 @@ func (s *Snapshot) eachLine(id string, order Order, fn func(e *Event, raw func()
 			off += size
 		}
 	}
-	// Reverse downloads walk bounded windows. No offset list proportional to the
-	// ledger size is retained. Each window carries the exact offsets for raw reads.
-	rd := newLineReader(s.Root)
-	defer rd.close()
-	before := ^uint64(0)
-	for {
-		w, err := WindowBefore(s.Root, r, before)
-		if err != nil || len(w.Events) == 0 {
+	// Walk raw frames backwards too: a refused frame must not prevent reporting
+	// other refusals (or valid lines) elsewhere in the same download.
+	eachReverseLine(f, fi.Size(), func(raw []byte, off int64, readErr error) bool {
+		if readErr != nil {
+			return fn(&Event{Run: id, off: off}, func() ([]byte, error) { return nil, readErr })
+		}
+		e, _, err := decodeLine(raw)
+		if err != nil {
+			return fn(&Event{Run: id, off: off}, func() ([]byte, error) { return nil, &rereadRefusal{cause: err, off: off} })
+		}
+		e.off = off
+		e.RecordMinor, e.LocalFloor = r.RecordMinor, r.LocalApprovalAuthority != nil
+		return fn(&e, func() ([]byte, error) { return raw, nil })
+	})
+}
+
+// eachReverseLine retains at most one bounded record plus a read block. Complete
+// oversized frames still yield their starting offset; incomplete tails wait.
+func eachReverseLine(f *os.File, end int64, fn func([]byte, int64, error) bool) {
+	var buf []byte
+	tail, oversized := true, false
+	left := end
+	for left > 0 {
+		lo := max(int64(0), left-exportWindow)
+		chunk := make([]byte, int(left-lo))
+		if _, err := f.ReadAt(chunk, lo); err != nil {
+			fn(nil, lo, err)
 			return
 		}
-		for i := len(w.Events) - 1; i >= 0; i-- {
-			e := &w.Events[i]
-			if !fn(e, func() ([]byte, error) { return rd.read(id, e.off, e.Seq) }) {
+		left = lo
+		buf = append(chunk, buf...)
+		if tail {
+			k := bytes.LastIndexByte(buf, '\n')
+			if k < 0 {
+				buf = nil
+				continue
+			}
+			buf = buf[:k]
+			tail = false
+		}
+		for {
+			k := bytes.LastIndexByte(buf, '\n')
+			if k < 0 && left > 0 {
+				break
+			}
+			raw := buf[k+1:]
+			off := left + int64(k+1)
+			var err error
+			if oversized || len(raw) > maxLineBytes {
+				err = fmt.Errorf("line at byte offset %d: longer than %d bytes", off, maxLineBytes)
+			}
+			if !fn(raw, off, err) {
 				return
 			}
+			oversized = false
+			if k < 0 {
+				return
+			}
+			buf = buf[:k]
 		}
-		before = w.Events[0].Seq
-		if before == 0 {
-			return
+		if len(buf) > maxLineBytes {
+			buf = nil
+			oversized = true
 		}
 	}
-
 }
 
 // linePart is one run's matched lines, in order, and how far Each has given them.
@@ -290,7 +358,11 @@ func (lr *lineReader) read(run string, off int64, seq uint64) ([]byte, error) {
 			size = min(size*4, maxLineBytes+1)
 		}
 	}
-	if !isSeq(line, seq) {
+	e, err := record.Decode(line)
+	if err != nil {
+		return nil, err
+	}
+	if e.Seq != seq {
 		return nil, ErrLineMoved
 	}
 	return line, nil
@@ -307,19 +379,4 @@ func (w *windowFile) window(off int64) ([]byte, bool) {
 		return nil, false
 	}
 	return rest[:k], true
-}
-
-// isSeq reports whether line's envelope (its first "seq" member, which the writer puts before the payload) is seq.
-func isSeq(line []byte, seq uint64) bool {
-	k := bytes.Index(line, []byte(`"seq":`))
-	if k < 0 {
-		return false
-	}
-	rest := line[k+len(`"seq":`):]
-	n := 0
-	for n < len(rest) && rest[n] >= '0' && rest[n] <= '9' {
-		n++
-	}
-	v, err := strconv.ParseUint(string(rest[:n]), 10, 64)
-	return err == nil && v == seq
 }

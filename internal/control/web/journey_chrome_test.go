@@ -31,6 +31,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
 // sweepSizes are the widths the pages are held at, a phone's, a tablet's and a laptop's, each with a common height.
@@ -194,7 +196,7 @@ func TestJourneyByKeyboardInChrome(t *testing.T) {
 	fakeBroker(t) // Allow once and Deny reach a stand-in broker; the fixture's ask stays waiting for the next pass
 	c := placeChrome(t)
 	root := fixture(t)
-	_, addr, _ := liveServer(t, root, 10*time.Second, 30*time.Second)
+	_, addr, _ := liveServerConfig(t, Config{Ledger: root, Machine: config.Builtin()}, 10*time.Second, 30*time.Second)
 	base := "http://" + addr
 	run := "/runs/" + harmRun
 
@@ -212,7 +214,7 @@ func TestJourneyByKeyboardInChrome(t *testing.T) {
 			t.Errorf("the page error collector did not report %q; it has:\n%s", want, got)
 		}
 	}
-	cy.c.call(t, "", "Target.closeTarget", map[string]any{"targetId": cy.target})
+	cy.c.closeTarget(t, cy.target)
 
 	for _, sz := range sweepSizes {
 		w := sz[0]
@@ -232,16 +234,30 @@ func TestJourneyByKeyboardInChrome(t *testing.T) {
 
 			// 2. Approvals: Allow once on the waiting request, then the request's run.
 			toMain(t, tb, "Approvals")
-			tabTo(t, tb, "Approvals", `#ask-7 button[value="approve"]`, 10)
+			if w <= 600 {
+				tabTo(t, tb, "Approvals", `.ap-compact a`, 10)
+				tb.press(t, "Enter")
+				arrive(t, tb, "request details", `location.search.includes('ask=ask-7') && !document.querySelector('.ap-compact')`)
+			}
+			if tb.eval(t, `document.activeElement.matches('#ask-7 button[value="approve"]')`) != "true" {
+				tabTo(t, tb, "Approvals", `#ask-7 button[value="approve"]`, 10)
+			}
 			answerByKey(t, tb, "Approvals", `#ask-7 button[value="approve"]`, "Allowed once")
+			tabTo(t, tb, "Approvals", `#ask-7 .ap-record summary`, 10)
+			tb.press(t, "Enter")
 			tabTo(t, tb, "Approvals", `#ask-7 a[href="`+run+`"]`, 10)
 			tb.press(t, "Enter")
 			arrive(t, tb, "the run page", `location.pathname === "`+run+`"`)
 			pageChecks(t, tb, "the run page", w, "journey-run-"+cfg, "")
 
 			// 3. Stop run, and its confirm, where the waiting request's banner is the first stop in <main>; the run is
-			// not running (no launcher holds its lock), so the stop says so on the run's page.
+			// held by the test process with no launcher identity, so Stop must refuse to signal it.
 			toMain(t, tb, "the run page")
+			if w <= 600 {
+				tabTo(t, tb, "the run page", `details.head-more > summary`, 20)
+				tb.press(t, "Enter")
+				tb.until(t, "run actions open", `document.querySelector('details.head-more').open`)
+			}
 			tabTo(t, tb, "the run page", `main a[href="`+run+`/stop"]`, 20)
 			tb.press(t, "Enter")
 			arrive(t, tb, "the Stop page", `location.pathname === "`+run+`/stop"`)
@@ -250,13 +266,15 @@ func TestJourneyByKeyboardInChrome(t *testing.T) {
 			tabTo(t, tb, "the Stop page", `#ask-banner button[value="approve"]`, 1)
 			tabTo(t, tb, "the Stop page", `form[action="`+run+`/stop"] button[type="submit"]`, 10)
 			tb.press(t, "Enter")
+			toast(t, tb, "the Stop page", "lock is held but names no launcher process")
+			tabTo(t, tb, "the Stop page", `a[href="`+run+`"]`, 5)
+			tb.press(t, "Enter")
 			arrive(t, tb, "the run page after Stop", `location.pathname === "`+run+`"`)
-			toast(t, tb, "the run page after Stop", "nothing to stop")
 
 			// 4. Deny on the run's waiting request, then its Receipt tab, in place.
 			toMain(t, tb, "the run page")
-			tabTo(t, tb, "the run page", `#ask-7 button[value="deny"]`, 20)
-			answerByKey(t, tb, "the run page", `#ask-7 button[value="deny"]`, "Denied")
+			tabTo(t, tb, "the run page", `#ask-banner button[value="deny"]`, 20)
+			answerByKey(t, tb, "the run page", `#ask-banner button[value="deny"]`, "Denied")
 			tabTo(t, tb, "the run page", `nav.tabs a[href="`+run+`/receipt"]`, 30)
 			tb.press(t, "Enter")
 			arrive(t, tb, "the Receipt tab", `location.pathname === "`+run+`/receipt" && !!document.getElementById("h-rc")`)
@@ -268,8 +286,17 @@ func TestJourneyByKeyboardInChrome(t *testing.T) {
 			toMain(t, tb, "the run page")
 			tabTo(t, tb, "the run page", `#tl-rows a[href="`+run+`/lines/1"]`, 60)
 			tb.press(t, "Enter")
+			// A timeline row's details open in place, under the row (run.js), with the focus on the panel: the row's link
+			// stays the link to the line's page for a script-less browser and a new tab. By keyboard the line's own page is
+			// reached through the panel's "Open line 1" link.
+			tb.until(t, "the line's details open in place", `!!document.querySelector("#tl-detail-1 .lx-acts") && document.activeElement === document.getElementById("tl-detail-1")`)
+			tabTo(t, tb, "the line's details", `#tl-detail-1 .lx-acts a[href="`+run+`/lines/1"]`, 30)
+			tb.press(t, "Enter")
 			arrive(t, tb, "the line page", `location.pathname === "`+run+`/lines/1"`)
 			toMain(t, tb, "the line page")
+			tabTo(t, tb, "the line page", `details.event-details > summary`, 30)
+			tb.press(t, "Enter")
+			tb.until(t, "Event details open", `document.querySelector("details.event-details").open`)
 			tabTo(t, tb, "the line page", `details.ev-asis > summary`, 30)
 			tb.press(t, "Enter")
 			tb.until(t, "the line as written", `document.querySelector("details.ev-asis").open`)
@@ -279,11 +306,17 @@ func TestJourneyByKeyboardInChrome(t *testing.T) {
 			tb.c.call(t, tb.session, "Page.navigate", map[string]any{"url": base + "/logs"})
 			arrive(t, tb, "Logs", `location.pathname === "/logs" && document.documentElement.classList.contains("lq-js")`)
 			toMain(t, tb, "Logs")
-			tabTo(t, tb, "Logs", `#lq-rows tr.lq-r .lx-tog`, 60)
-			tb.press(t, "Enter")
-			tb.until(t, "the row opened in place", `!!document.querySelector("tr.lx-row:not([hidden]) .lx-fields")`)
+			if w < 1100 {
+				tabTo(t, tb, "Logs", `#lq-rows tr.lq-r a.phone-row`, 60)
+				tb.press(t, "Enter")
+				arrive(t, tb, "the event from Logs", `/\/runs\/[^/]+\/lines\/\d+$/.test(location.pathname)`)
+			} else {
+				tabTo(t, tb, "Logs", `#lq-rows tr.lq-r .lx-tog`, 60)
+				tb.press(t, "Enter")
+				tb.until(t, "the row opened in place", `!!document.querySelector("tr.lx-row:not([hidden]) .lx-fields")`)
+			}
 			pageChecks(t, tb, "Logs", w, "journey-logs-"+cfg, "")
-			tb.c.call(t, "", "Target.closeTarget", map[string]any{"targetId": tb.target})
+			tb.c.closeTarget(t, tb.target)
 		}
 	}
 	fmt.Println("journey by keyboard in chrome: Tab and Enter alone at 390, 768 and 1440, light and dark; every stop shown with its ring, in order; no page error")
@@ -318,7 +351,7 @@ func TestReceiptTabInChrome(t *testing.T) {
 				arrive(t, tb, r.name+" receipt", `location.pathname === "/runs/`+r.id+`/receipt" && !!document.getElementById("h-rc") && document.querySelector("main").textContent.indexOf(`+strconv.Quote(r.want)+`) >= 0`)
 				pageChecks(t, tb, "the "+r.name+" run's Receipt tab", sz[0], "receipt-"+r.name+"-"+cfg, "section.rc")
 			}
-			tb.c.call(t, "", "Target.closeTarget", map[string]any{"targetId": tb.target})
+			tb.c.closeTarget(t, tb.target)
 		}
 	}
 	fmt.Println("receipt tab in chrome: four runs at 390, 768 and 1440, light and dark; no sideways scroll, no small control, no page error")

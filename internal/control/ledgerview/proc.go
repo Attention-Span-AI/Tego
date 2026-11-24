@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/attention-span-ai/tego/internal/check/askpair"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -55,6 +56,20 @@ type procInfo struct {
 	id, parent string
 	pid        int
 	execs      []int32
+	// start is the process's start time on the boot clock, as its exec_id names it; hasStart is false for an exec_id
+	// that names none.
+	start    uint64
+	hasStart bool
+}
+
+// bootAnchor is what the exec lines up to line index at say of the offset between the boot clock the processes'
+// start times are on and the monotonic clock the lines are stamped by (mono_ns): the machine's suspended time, which
+// only grows. A process starts, then execs: its exec line is stamped no earlier than its start, so each first exec
+// says the offset is at least start - mono_ns; off is the largest of those up to at, an offset the true one is never
+// below. A view that reads a line's time through it never puts a line before the start of a process that had started.
+type bootAnchor struct {
+	at  int32
+	off int64
 }
 
 // execFact is what an exec line says about its process, decoded once per version of the run.
@@ -69,6 +84,7 @@ type lineIndex struct {
 	procs       map[string]*procInfo
 	byPid       map[int][]*procInfo // in the order of their first exec line
 	execs       map[int32]execFact
+	anchors     []bootAnchor // each rise of the offset above, by line index
 	launcherPID int
 	launcherID  string
 	// users maps a uid to the user name run_start recorded for the launcher, the only name the record holds.
@@ -79,6 +95,8 @@ type lineIndex struct {
 
 	mirrorOf   map[int32]int32 // a mirror's index → its action's
 	mirroredBy map[int32]int32 // an action's index → its mirror's
+	// malformed is the words (askpair) for a repeated ask line or an unpaired answer line, by index.
+	malformed map[int32]string
 
 	// treeOnce builds tree, the Processes tab's process tree (proctree.go), from this index.
 	treeOnce sync.Once
@@ -91,8 +109,9 @@ type askEntry struct {
 	askIdx, answerIdx     int32
 	hasAsk, hasAnswer     bool
 	op, target, rule      string
+	name, name2           string
 	hold                  string
-	pid                   int
+	pid, tid              int
 	approved              *bool
 	by, reason, alternate string
 	afterS                float64
@@ -113,21 +132,16 @@ func (r *Run) lineIndexOf() *lineIndex {
 func buildLineIndex(run string, evs []Event) *lineIndex {
 	x := &lineIndex{procs: map[string]*procInfo{}, byPid: map[int][]*procInfo{}, execs: map[int32]execFact{},
 		users: map[string]string{}, asks: map[string]*askEntry{}, askOf: map[int32]string{},
-		mirrorOf: map[int32]int32{}, mirroredBy: map[int32]int32{}}
+		mirrorOf: map[int32]int32{}, mirroredBy: map[int32]int32{}, malformed: map[int32]string{}}
 	// The mirrors are marked as the store takes each line (pair.go); which action each one took is the builder's
-	// state, so it is replayed here with the same rule over the same lines.
+	// state, so it is replayed here, every line through the same pairing in the same order.
 	pair := &runState{}
 	for i := range evs {
 		e := &evs[i]
 		idx := int32(i) //nolint:gosec // a run holds far fewer than 2^31 lines (MaxLines)
-		if e.Mirror {
-			cp := *e
-			pair.b.Events = evs[:i]
-			pair.markMirror(&cp)
-			if cp.Mirror && len(pair.paired) > 0 {
-				a := int32(pair.paired[len(pair.paired)-1]) //nolint:gosec // as idx
-				x.mirrorOf[idx], x.mirroredBy[a] = a, idx
-			}
+		if back, mirrors := pair.foldMirror(e); mirrors && i-1-back >= 0 {
+			a := int32(i - 1 - back) //nolint:gosec // as idx
+			x.mirrorOf[idx], x.mirroredBy[a] = a, idx
 		}
 		switch e.Kind {
 		case string(record.KindRunStart):
@@ -166,16 +180,33 @@ func buildLineIndex(run string, evs []Event) *lineIndex {
 			pi := x.procs[id]
 			if pi == nil {
 				pi = &procInfo{id: id, parent: parent, pid: e.pid}
+				pi.start, pi.hasStart = startOfExecID(id)
+				if pi.hasStart && e.mono > 0 {
+					x.anchor(idx, int64(pi.start)-int64(e.mono)) //nolint:gosec // nanoseconds since boot: far below 2^63
+				}
 				x.procs[id] = pi
 				x.byPid[e.pid] = append(x.byPid[e.pid], pi)
 			}
 			pi.execs = append(pi.execs, idx)
 		case string(record.KindAsk):
+			if e.askRepeat {
+				x.malformed[idx] = askpair.RepeatedWords // no second question: the first ask line opened it (askpair)
+				break
+			}
+			var envelope struct {
+				TID int `json:"tid"`
+			}
+			_ = json.Unmarshal([]byte(e.Raw), &envelope)
 			a := x.ask(e.AskID)
-			a.askIdx, a.hasAsk, a.hold, a.pid = idx, true, e.Op, e.pid
+			a.askIdx, a.hasAsk, a.hold, a.pid, a.tid = idx, true, e.Op, e.pid, envelope.TID
 			a.op, a.target, a.rule = e.askOp, e.askTarget, e.Rule
+			a.name, a.name2 = e.askName, e.askName2
 			x.askOf[idx] = e.AskID
 		case string(record.KindAnswer):
+			if e.answerUnpaired {
+				x.malformed[idx] = askpair.UnpairedWords // it answers nothing (askpair)
+				break
+			}
 			var p struct {
 				Approved  *bool   `json:"approved"`
 				By        string  `json:"by"`
@@ -238,6 +269,40 @@ func plainField(raw, key string) (string, bool) {
 	return v[:j], true
 }
 
+// anchor notes that the offset between the boot clock and the lines' clock is at least off from line index at on; it is
+// kept only when it raises the largest one so far.
+func (x *lineIndex) anchor(at int32, off int64) {
+	if n := len(x.anchors); n > 0 && off <= x.anchors[n-1].off {
+		return
+	}
+	x.anchors = append(x.anchors, bootAnchor{at: at, off: off})
+}
+
+// startedBy reports whether process pi had started when line index at was written (at monotonic time mono), by its
+// start time in its exec_id and the offset the exec lines before that line give. It says false whenever it cannot
+// tell (no start time in the exec_id, no mono_ns, no exec line before the line to read the offset from), so a line is
+// never moved to a process on a guess: the view then reads the line as it did before, by first exec alone.
+func (x *lineIndex) startedBy(pi *procInfo, at int32, mono uint64) bool {
+	if !pi.hasStart || mono == 0 {
+		return false
+	}
+	k := sort.Search(len(x.anchors), func(i int) bool { return x.anchors[i].at > at }) - 1
+	if k < 0 {
+		return false
+	}
+	return int64(pi.start) <= int64(mono)+x.anchors[k].off //nolint:gosec // as in anchor
+}
+
+// startOfExecID is the start time an exec_id (<run>/<pid>/<start>) names.
+func startOfExecID(id string) (uint64, bool) {
+	i := strings.LastIndexByte(id, '/')
+	if i < 0 {
+		return 0, false
+	}
+	n, err := strconv.ParseUint(id[i+1:], 10, 64)
+	return n, err == nil
+}
+
 func (x *lineIndex) ask(id string) *askEntry {
 	a := x.asks[id]
 	if a == nil {
@@ -254,6 +319,14 @@ func (x *lineIndex) consequences(evs []Event, a *askEntry) {
 	end := min(len(evs), int(a.answerIdx)+1+consequenceWindow)
 	for j := int(a.answerIdx) + 1; j < end; j++ {
 		e := &evs[j]
+		if e.Kind == string(record.KindAsk) {
+			next := x.asks[e.AskID]
+			if next != nil && a.tid > 0 && next.pid == a.pid && next.tid == a.tid && next.op == a.op && next.name == a.name && next.name2 == a.name2 && next.rule == a.rule {
+				// One thread can hold only one syscall. A repeated question for
+				// that operation ends this selection's possible consequences.
+				return
+			}
+		}
 		if e.Kind == string(record.KindAsk) || e.Kind == string(record.KindAnswer) || e.Mirror || e.pid != a.pid {
 			continue
 		}
@@ -278,14 +351,18 @@ func (x *lineIndex) consequences(evs []Event, a *askEntry) {
 	}
 }
 
-// procAt is the process pid was at line index at, and the index of the exec line in force for it (-1 when every
+// procAt is the process pid was at line index at (written at monotonic time mono), and the index of the exec line in force for it (-1 when every
 // exec of it up to at was refused; then refused names the newest refused one, else it is -1 too). ok is false when
 // pid made no exec at or before at.
-func (x *lineIndex) procAt(pid int, at int32) (pi *procInfo, exec, refused int32, ok bool) {
+func (x *lineIndex) procAt(pid int, at int32, mono uint64) (pi *procInfo, exec, refused int32, ok bool) {
 	ps := x.byPid[pid]
 	// The newest process of the pid whose first exec is at or before the line: a pid the kernel reused in the run
-	// is a new process with a new exec_id.
+	// is a new process with a new exec_id. A later process of the pid that had already started when the line was
+	// written (startedBy) is the one it belongs to, though it started its program after.
 	k := sort.Search(len(ps), func(i int) bool { return ps[i].execs[0] > at }) - 1
+	for k >= 0 && k+1 < len(ps) && x.startedBy(ps[k+1], at, mono) {
+		k++
+	}
 	if k < 0 {
 		return nil, -1, -1, false
 	}
@@ -345,20 +422,69 @@ func (x *lineIndex) ref(evs []Event, pi *procInfo, exec, refused int32) ProcRef 
 	f := x.execs[i]
 	ref.HasExec, ref.ExecSeq, ref.Path = true, e.Seq, f.path
 	ref.Argv = e.Target
-	ref.Name = programName(f.path, e.Target)
+	ref.Name = programName(e)
 	return ref
 }
 
-// programName is the name a person knows a program by: its path's last element, or the first word of its command
-// line when the line wrote no path.
-func programName(p, argv string) string {
-	if p == "" {
-		p, _, _ = strings.Cut(argv, " ")
-	}
+// programName is the name a person knows a line's program by: the last element of its Program.
+func programName(e *Event) string {
+	p := e.Program()
 	if p == "" {
 		return ""
 	}
 	return path.Base(p)
+}
+
+// recordedCommand is the one reading of a recorded command that every consumer shares (the Block action of a row, the
+// fold key of a program, the comparison, a line's subject, the agent recognition, the names a page shows): its words,
+// one element per argument, so a pathname that holds a space stays one word. They are the arguments as the line
+// recorded them (argv); for a line that recorded a pathname and no arguments (the mirror of a refused start, an exec
+// line whose arguments went to a blob that cannot be read) the pathname alone (p). Only a record too old to carry
+// either field keeps the reading it always had: its joined text (legacy) split at spaces. No consumer splits a
+// command for itself.
+func recordedCommand(p string, argv []string, legacy string) []string {
+	switch {
+	case len(argv) > 0:
+		return argv
+	case p != "":
+		return []string{p}
+	}
+	return strings.Fields(legacy)
+}
+
+// Argv0 is the program of an exec line (or of the mirror of a refused start) as its command names it: the first
+// recorded argument, whole, which is a path or the bare name the agent typed ("git"); the recorded path on a line
+// with no arguments (recordedCommand). "" when the line names none.
+func (e *Event) Argv0() string {
+	words := recordedCommand(e.path, e.argv, e.Target)
+	if len(words) == 0 {
+		return ""
+	}
+	return words[0]
+}
+
+// Program is the pathname of the program an exec line (or the mirror of a refused start) started or tried to start:
+// the path the line recorded, else what its command names it by (Argv0). "" when the line names none.
+func (e *Event) Program() string {
+	if e.path != "" {
+		return e.path
+	}
+	return e.Argv0()
+}
+
+// words is the run's command as run_start recorded it, one element per argument (recordedCommand).
+func (r *Run) words() []string { return recordedCommand("", r.command, r.Command) }
+
+// CommandAgent is the agent the run's command starts (CommandAgent), read from its recorded arguments.
+func (r *Run) CommandAgent() string { return CommandAgent(r.words()) }
+
+// program is the base name of the program the run's command starts: "codex" for ["/usr/bin/codex", "--no-daemon"].
+func (r *Run) program() string {
+	words := r.words()
+	if len(words) == 0 {
+		return ""
+	}
+	return path.Base(words[0])
 }
 
 // pidOfExecID is the pid an exec_id (<run>/<pid>/<start>) names, 0 when it names none.

@@ -145,6 +145,7 @@ func writeSeverityFile(file string, rs []ledgerview.SevRule) error {
 
 // severityData is the Severity page: the person's rules, and a new rule's fields prefilled from Investigate.
 type severityData struct {
+	Numbers        countScopes
 	Rules          []ledgerview.SevRule
 	File           string // the rules file; rules live there and are not part of the record
 	Match, Channel string
@@ -165,6 +166,7 @@ func (s *Server) severity(w http.ResponseWriter, r *http.Request) {
 		Channels: []string{"Files", "Programs", "Network"}, Severities: []string{"High", "Medium", "Low"}, Off: s.cfg.SeverityFile == ""}
 	c := s.chromeOf(snap, "Severity", "rules")
 	if n := s.severityNote(); n != "" {
+		d.Numbers.Aggregate = countScope{Error: n}
 		c.Notes = append(c.Notes, n)
 	}
 	s.render(w, http.StatusOK, "severity", c, d)

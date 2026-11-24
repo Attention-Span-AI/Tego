@@ -4,6 +4,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/askclient"
+	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/platform/dns"
 	"github.com/attention-span-ai/tego/internal/platform/peer"
 	"github.com/attention-span-ai/tego/internal/runscope"
@@ -31,6 +33,28 @@ type askSource interface {
 }
 
 func validateAskRequest(rt *agent.RuleTable, deps Deps) error {
+	if err := validateAskPolicy(rt); err != nil {
+		return err
+	}
+	if rt.AskConfig == nil {
+		return nil
+	}
+	// These depend on the tier actually selected, never the compiler's hint.
+	if rt.HasAskRead() && deps.Enforce.Tier() != backend.TierLandlock {
+		return fmt.Errorf("%w: fs.ask_read holds reads at tier landlock only, and this run is at tier %s", ask.ErrUnavailable, deps.Enforce.Tier())
+	}
+	if deps.Enforce.Tier() == backend.TierObserve {
+		return fmt.Errorf("%w: ask requires enforcement with io_uring and setuid disabled", ask.ErrUnavailable)
+	}
+	if rt.AskConfig.Hold == agent.AskHoldRequest && len(rt.NetAsk) > 0 && rt.Capture != agent.CaptureForwarder {
+		return fmt.Errorf("%w: request holds require authenticated forwarder HTTP policy", ask.ErrUnavailable)
+	}
+	return nil
+}
+
+// validateAskPolicy leaves the selected tier and its capture adaptation to the
+// runtime backstop; every invariant contract/caller refusal can happen earlier.
+func validateAskPolicy(rt *agent.RuleTable) error {
 	declared := rt.Contract != nil && (rt.Contract.FS != nil && (len(rt.Contract.FS.Ask) > 0 || len(rt.Contract.FS.AskRead) > 0) || rt.Contract.Net != nil && len(rt.Contract.Net.Ask) > 0) || rt.HasAskRead()
 	if rt.AskConfig == nil {
 		if declared {
@@ -39,14 +63,7 @@ func validateAskRequest(rt *agent.RuleTable, deps Deps) error {
 		return nil
 	}
 	cfg := rt.AskConfig
-	// Only tier 1's supervisor holds a read: a table that would land elsewhere, compile refuses
-	// already; one that reached here anyway (an --observe run, a hand-built table, a backend chosen after the
-	// compile) does not run with its asks turned into plain refusals, nor into reads nothing holds. Asked first, so
-	// the refusal names what refused it.
-	if rt.HasAskRead() && deps.Enforce.Tier() != backend.TierLandlock {
-		return fmt.Errorf("%w: fs.ask_read holds reads at tier landlock only, and this run is at tier %s", ask.ErrUnavailable, deps.Enforce.Tier())
-	}
-	if deps.Enforce.Tier() == backend.TierObserve || rt.Contract.IOUring || rt.Contract.Setuid {
+	if rt.Contract.IOUring || rt.Contract.Setuid {
 		return fmt.Errorf("%w: ask requires enforcement with io_uring and setuid disabled", ask.ErrUnavailable)
 	}
 	if cfg.MaxPending < 1 || cfg.MaxPending > ask.DefaultMaxPending || time.Duration(cfg.Timeout) <= 0 || time.Duration(cfg.Timeout) > time.Hour {
@@ -78,7 +95,7 @@ func validateAskRequest(rt *agent.RuleTable, deps Deps) error {
 	switch cfg.Hold {
 	case agent.AskHoldConnect, agent.AskHoldFirstWrite:
 	case agent.AskHoldRequest:
-		if len(rt.NetAsk) > 0 && (rt.Capture != agent.CaptureForwarder || rt.HTTP == nil || rt.Contract == nil || len(rt.Contract.Models) == 0) {
+		if len(rt.NetAsk) > 0 && (!canForward(rt) || rt.HTTP == nil || rt.Contract == nil || len(rt.Contract.Models) == 0) {
 			return fmt.Errorf("%w: request holds require authenticated forwarder HTTP policy", ask.ErrUnavailable)
 		}
 	default:
@@ -109,7 +126,7 @@ func inAskCgroup(run, task string) bool {
 // cgroup namespace by peer.Identify, at the connect and again at the packet. Unauthorized, with every ask left
 // pending: a peer in this run's cgroup or below it, and every peer peer.Refuse refuses, which is one inside any
 // run's or adoption's scope or a look-alike of one ([run-member]), one in another or an unreadable cgroup namespace
-// or above this one's root, and every peer while this process is outside the initial cgroup namespace
+// (not one that is hidden only because the peer is undumpable, peer.Peer.Undumpable) or above this one's root, and every peer while this process is outside the initial cgroup namespace
 // ([peer-cgroupns]), where a run's scope above that root could not show.
 func (r *runner) askPeerAuthorize(p ask.Peer) error {
 	_, run := splitCgroupPath(r.cg.Path)
@@ -120,7 +137,7 @@ func (r *runner) askPeerAuthorize(p ask.Peer) error {
 	if p.UID == 0 {
 		owner = 0 // root is served beside the run's owner (ask.Broker's uid rule)
 	}
-	return peer.Refuse(peer.Peer{UID: int(p.UID), PID: p.PID, Cgroup: p.Cgroup, CgroupNS: p.CgroupNS}, owner)
+	return peer.Refuse(peer.Peer{UID: int(p.UID), PID: p.PID, Cgroup: p.Cgroup, CgroupNS: p.CgroupNS, Undumpable: p.Undumpable}, owner)
 }
 
 func (r *runner) askRequest(ctx context.Context, req ask.Request) (ask.Decision, error) {
@@ -172,6 +189,7 @@ func (r *runner) emitAsk(e ask.Event) error {
 		ev.Kind = record.KindAnswer
 		if err := ev.SetPayload(struct {
 			record.AnswerPayload
+			record.AnswerAuthority
 			Approved     bool   `json:"approved"`
 			Op           string `json:"op"`
 			Target       string `json:"target"`
@@ -183,7 +201,7 @@ func (r *runner) emitAsk(e ask.Event) error {
 			// The file a person named in place of the target and its identity (ADR 0057 D1, record_minor 9):
 			// approved false, no answer_reason, and the delivered open's fs line names the file with alternate_for.
 			record.AnswerAlternate
-		}{record.AnswerPayload{AskID: e.Request.AskID, By: e.Decision.By, AfterS: e.Decision.AfterS}, e.Decision.Approved, e.Request.Op, askclient.LedgerTarget(e.Request.Op, e.Request.Target), e.Request.Target2, e.Request.Rule, e.Request.Score, e.Request.GateRule, e.Decision.Reason,
+		}{record.AnswerPayload{AskID: e.Request.AskID, By: e.Decision.By, AfterS: e.Decision.AfterS}, e.Decision.AnswerAuthority, e.Decision.Approved, e.Request.Op, askclient.LedgerTarget(e.Request.Op, e.Request.Target), e.Request.Target2, e.Request.Rule, e.Request.Score, e.Request.GateRule, e.Decision.Reason,
 			record.AnswerAlternate{Alternate: e.Decision.Alternate, AlternateDev: e.Decision.AlternateDev, AlternateIno: e.Decision.AlternateIno}}); err != nil {
 			return err
 		}
@@ -191,7 +209,11 @@ func (r *runner) emitAsk(e ask.Event) error {
 	// This synchronous ledger path is deliberate: a dropped queue line must
 	// never turn into an unrecorded human grant. The writer serializes it with
 	// ordinary events and applies the normal hash chain and write failures.
-	if err := r.writer.RedactStage(r.writer.Append)(ev); err != nil {
+	appendEvent := ledger.Sink(r.writer.Append)
+	if r.localAuthority.OwnerOnly() && e.Kind == "answer" {
+		appendEvent = r.appendLocalAnswer
+	}
+	if err := r.writer.RedactStage(appendEvent)(ev); err != nil {
 		r.ledgerFailed(err)
 		return err
 	}
@@ -302,6 +324,15 @@ func (r *runner) startAsk(ctx context.Context) error {
 	r.askOwner = uint32(uid) // before ask.New, whose socket serves from the start (askPeerAuthorize reads it)
 	cfg := r.rt.AskConfig
 	opts := ask.Options{UID: uint32(uid), Timeout: time.Duration(cfg.Timeout), MaxPending: cfg.MaxPending, Authorize: r.askPeerAuthorize, Emit: r.emitAsk, TimeoutStands: cfg.OnTimeout == agent.AskOnTimeoutRefuseAlways}
+	if r.localAuthority.OwnerOnly() {
+		if !r.localDropKnown || r.localAgentUID == 0 || r.writer == nil {
+			return fmt.Errorf("%w: root-only approval child or record is unknown", ask.ErrUnavailable)
+		}
+		if err := r.localAuthority.Check(); err != nil {
+			return err
+		}
+		opts.OwnerOnly = &ask.OwnerOnlyAuthority{AgentUID: r.localAgentUID, Check: r.localAuthority.Check}
+	}
 	if tell := r.deps.AskPending; tell != nil {
 		id := r.id
 		opts.Pending = func(req ask.Request) { tell(AskPending{Run: id, AskID: req.AskID, Op: req.Op}) }
@@ -374,4 +405,16 @@ func (r *runner) startAskDNS(ctx context.Context, opts dns.Options, tick time.Du
 		}
 	})
 	return set
+}
+
+// appendLocalAnswer validates required attribution on the final redacted shape.
+func (r *runner) appendLocalAnswer(stored *record.Event) error {
+	var a record.AnswerAuthority
+	if err := json.Unmarshal(stored.Payload, &a); err != nil {
+		return err
+	}
+	if (a.Actor == nil) == (a.SystemCause == "") {
+		return fmt.Errorf("runtime: required answer attribution was removed")
+	}
+	return r.writer.AppendSync(stored)
 }

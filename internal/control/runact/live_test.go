@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/liveblock"
+	"github.com/attention-span-ai/tego/internal/runscope"
 )
 
 const liveRun = "r-3f9c2a1b-0dllq06ts7402-l1vexx"
@@ -103,8 +104,8 @@ func TestLiveSerials(t *testing.T) {
 func TestUnblockRefusedInsideARun(t *testing.T) {
 	root, dir := liveDir(t, `"tier":"landlock","command":["sh"]`)
 	holdRunLock(t, dir)
-	defer func(f func() (bool, error)) { selfInRun = f }(selfInRun)
-	selfInRun = func() (bool, error) { return true, nil }
+	defer func(f func() runscope.Answer) { selfAnswer = f }(selfAnswer)
+	selfAnswer = answerGoverned
 	_, err := Block(context.Background(), root, liveRun, "exec", "curl", false)
 	if !errors.Is(err, ErrGoverned) {
 		t.Fatalf("unblock inside a run: %v, want ErrGoverned", err)
@@ -113,14 +114,14 @@ func TestUnblockRefusedInsideARun(t *testing.T) {
 		t.Fatalf("block inside a run refused as governed: %v", err)
 	}
 	// Unknowable (a cgroup namespace): refused as well (it fails closed).
-	selfInRun = func() (bool, error) { return true, errors.New("cgroup namespace") }
-	if in, err := SelfGoverned(); !in || err == nil {
-		t.Fatalf("SelfGoverned on an error: %v %v, want true with the error", in, err)
+	selfAnswer = answerUnknown
+	if a := SelfGoverned(); a.Outside() || !runscope.CouldNotTell(a) {
+		t.Fatalf("SelfGoverned where it cannot tell: %+v, want unknown", a)
 	}
 	if _, err := Block(context.Background(), root, liveRun, "exec", "curl", false); !errors.Is(err, ErrGoverned) {
 		t.Fatalf("unblock from an unknowable cgroup: %v, want ErrGoverned", err)
 	}
-	selfInRun = func() (bool, error) { return false, nil }
+	selfAnswer = answerOutside
 	if _, err := Block(context.Background(), root, liveRun, "exec", "curl", false); err != nil {
 		t.Fatalf("unblock outside a run: %v", err)
 	}

@@ -183,7 +183,7 @@ func WithActivityPublisher(publish func(monoNS uint64)) Option {
 // record.max_run_bytes (record.MinorLedgerCap), a limit which=ledger_bytes. size is called outside the watcher's lock,
 // at each Observe and each Tick, and must not block for long; a ceiling of 0 or less, or a nil size, is none. Observe
 // reads it before the event it observes is written, so a run passes the ceiling by the events its pipeline held
-// then; a line written beside the pipeline (run_start, a run with no events) is caught by the next Tick.
+// then; a line written beside the pipeline (run_start, a run with no events) is caught by the next Tick. The overshoot is not bounded (a refusal is never dropped); the run records it as a gap, why ledger-ceiling-overshoot (runtime.GapLedgerCeilingOvershoot).
 func WithLedgerCeiling(ceiling int64, size func() int64) Option {
 	return func(w *Watcher) {
 		if ceiling > 0 && size != nil {
@@ -551,16 +551,16 @@ func (w *Watcher) repeatBreachLocked() *Breach {
 // Tick has is cgroup.kill, a single write(2) that does not block, and Run's loop is what the
 // context bounds.
 func (w *Watcher) Tick(context.Context) (*Breach, error) {
+	// R4: take the clock before any activity snapshot or callback. A scheduling pause or mutex wait
+	// must not age an old snapshot against a later clock (GAPS C73). Newer stamps are clamped below.
+	now := w.clock.MonoNS()
 	held := w.held != nil && w.held()
-	// The pulled activity is read before the clock, so a stamp the source took before this Tick is never
-	// later than now; one that is anyway (another clock, a bogus value) is clamped to now (AddActivity).
 	pulled := w.pullActivity()
 	var ledgerBytes int64
 	if w.ledgerSize != nil {
 		ledgerBytes = w.ledgerSize()
 	}
 	w.mu.Lock()
-	now := w.clock.MonoNS()
 	if held && w.state.StartMonoNS != 0 && now > w.state.LastEventMonoNS {
 		w.state.LastEventMonoNS = now
 	}

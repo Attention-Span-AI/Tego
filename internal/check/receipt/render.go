@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/attention-span-ai/tego/pkg/spec/askproto"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -67,6 +68,10 @@ func (rc *Receipt) Text(w io.Writer) error {
 	}
 	fmt.Fprintf(&b, "  Outcome: %s\n", rc.Outcome())
 
+	if rc.home == "" && rc.sayNoHome {
+		b.WriteString("  Home folder: this run's record does not name one, so a path under a home folder prints whole, never as ~.\n")
+	}
+	b.WriteString(rc.BaselineText())
 	b.WriteString("\nTime taken\n")
 	fmt.Fprintf(&b, "  %s", Duration(rc.Time.Seconds))
 	if rc.Time.SoFar {
@@ -131,7 +136,17 @@ func (rc *Receipt) Text(w io.Writer) error {
 			}
 			fmt.Fprintf(&b, "    %s  %s %s  %s (%s)\n", timeIn(r.TS, rf.List[0].TS, loc), p(r.Op), p(cutMiddle(rc.shortTarget(r.Target), 70)),
 				p(rc.refusalWords(r)), p(r.Reason))
+			if words := rc.LearnWords(r); words != "" {
+				fmt.Fprintf(&b, "      %s\n", p(words))
+			}
 		}
+	}
+
+	for _, n := range rc.NameBlocks() {
+		fmt.Fprintf(&b, "  %s\n", p(n.words()))
+	}
+	for _, l := range rc.LiftNotes() {
+		fmt.Fprintf(&b, "  %s\n", p(l.words()))
 	}
 
 	b.WriteString("\nRefusals over time\n")
@@ -159,6 +174,9 @@ func (rc *Receipt) Text(w io.Writer) error {
 	b.WriteString("\nTests result\n")
 	fmt.Fprintf(&b, "  %s.\n", capital(rc.Tests.Note))
 
+	if rc.LocalApprovalAuthority != nil {
+		b.WriteString("\nLocal approval authority: root-only\n  Only root may answer once; run the approval as root from a terminal outside any governed run.\n")
+	}
 	a := rc.Asks
 	if len(a.List) > 0 {
 		b.WriteString("\nTimes it asked you" + timesIn(a.List[0].TS, loc) + "\n")
@@ -170,6 +188,9 @@ func (rc *Receipt) Text(w io.Writer) error {
 	} else {
 		fmt.Fprintf(&b, "  It asked %d %s: %d approved, %d denied, %d timed out, %d answered with another file, %d not answered.\n",
 			a.Asked, plural(a.Asked, "time", "times"), a.Approved, a.Denied, a.TimedOut, a.Alternates, a.Unanswered)
+		if rc.LocalApprovalAuthority != nil {
+			b.WriteString("  These are recorded answers. Approval does not establish delivery or operation completion; read the action and refusal lines for the effect.\n")
+		}
 		for i, q := range a.List {
 			if i == maxListed {
 				fmt.Fprintf(&b, "    and %d more\n", len(a.List)-maxListed)
@@ -178,10 +199,14 @@ func (rc *Receipt) Text(w io.Writer) error {
 			ans := q.Answer
 			if ans == "" {
 				ans = "not answered"
+			} else if ans == "approved" && q.Actor != nil {
+				ans = "approval recorded; operation completion is separate"
 			}
 			fmt.Fprintf(&b, "    %s  %s %s  %s", timeIn(q.TS, a.List[0].TS, loc), p(q.Op), p(cutMiddle(rc.shortTarget(q.Target), 60)), ans)
-			if q.By != "" {
-				fmt.Fprintf(&b, " by %s after %ss", p(q.By), strconv.FormatFloat(q.AfterS, 'f', 1, 64))
+			if rc.LocalApprovalAuthority != nil {
+				fmt.Fprintf(&b, "  %s", p(ApprovalIdentity(q.AnswerAuthority)))
+			} else if q.By != "" {
+				fmt.Fprintf(&b, " by %s after %ss", p(askproto.ByWords(q.By)), strconv.FormatFloat(q.AfterS, 'f', 1, 64))
 			}
 			b.WriteString("\n")
 		}
@@ -218,7 +243,7 @@ func (rc *Receipt) Text(w io.Writer) error {
 			if said[g.Field] && g.Why != "" && !strings.HasPrefix(g.Why, "each list stops") {
 				continue
 			}
-			fmt.Fprintf(&b, "  %s: %s.\n", g.Field, p(g.Why))
+			fmt.Fprintf(&b, "  %s (%s): %s.\n", g.Field, g.EffectiveLevel(), p(g.Why))
 			left++
 		}
 		if left == 0 {
@@ -269,6 +294,8 @@ func (rc *Receipt) Outcome() string {
 		return "no end recorded (the run was lost or is still running)"
 	case rc.ExitCode != nil:
 		return "exited with code " + strconv.Itoa(*rc.ExitCode)
+	case rc.EndReason == record.RunEndSignal && rc.Escalated:
+		return "ended by signal " + strconv.Itoa(rc.Signal) + ", then killed by Tego"
 	case rc.EndReason == record.RunEndSignal:
 		return "ended by signal " + strconv.Itoa(rc.Signal)
 	case rc.EndReason == record.RunEndExecFailed:
@@ -551,17 +578,12 @@ func (rc *Receipt) activityText(b *strings.Builder) {
 	if none := rc.NoConnectionWords(); none != "" {
 		fmt.Fprintf(b, "  %s\n", none)
 	} else {
-		n, total := len(rc.Connections)+rc.ConnectionsMore, rc.ConnectionTries
-		fmt.Fprintf(b, "  %d %s to %d %s", total, plural(total, "connection", "connections"), n, plural(n, "place", "places"))
-		if rc.ConnectionsMore > 0 {
-			fmt.Fprintf(b, "; the %d most used are below", len(rc.Connections))
-		}
-		b.WriteString(".\n")
+		fmt.Fprintf(b, "  %s\n", rc.ConnectionSummary())
 		for _, c := range rc.Connections {
 			fmt.Fprintf(b, "    %s  %d  %s\n", p(cutMiddle(c.Destination, 60)), c.Count, verdictWords(c.Verdicts))
 		}
 		if rc.ConnectionsMore > 0 {
-			fmt.Fprintf(b, "    and %d more; tego events %s --kind net lists them all\n", rc.ConnectionsMore, p(rc.Run))
+			fmt.Fprintf(b, "    and %d other identified places; tego events %s --kind net lists every attempt\n", rc.ConnectionsMore, p(rc.Run))
 		}
 		for _, also := range rc.RoutineAlsoWords() {
 			fmt.Fprintf(b, "  %s\n", also)
@@ -575,20 +597,12 @@ func (rc *Receipt) activityText(b *strings.Builder) {
 	if len(rc.Programs) == 0 {
 		b.WriteString("  None recorded.\n")
 	} else {
-		n, starts := len(rc.Programs)+rc.ProgramsMore, 0
-		for _, g := range rc.Programs {
-			starts += g.Count
-		}
-		if rc.ProgramsMore > 0 {
-			fmt.Fprintf(b, "  %d programs; the %d most started are below.\n", n, len(rc.Programs))
-		} else {
-			fmt.Fprintf(b, "  %d %s, started %d %s.\n", n, plural(n, "program", "programs"), starts, plural(starts, "time", "times"))
-		}
+		fmt.Fprintf(b, "  %s\n", rc.ProgramSummary())
 		for _, g := range rc.Programs {
 			fmt.Fprintf(b, "    %s  %d\n", p(cutMiddle(rc.shortPath(g.Path), 70)), g.Count)
 		}
 		if rc.ProgramsMore > 0 {
-			fmt.Fprintf(b, "    and %d more; tego events %s --kind exec lists them all\n", rc.ProgramsMore, p(rc.Run))
+			fmt.Fprintf(b, "    and %d other identified programs; tego events %s --kind exec lists every start\n", rc.ProgramsMore, p(rc.Run))
 		}
 	}
 
@@ -687,4 +701,52 @@ func capital(s string) string {
 		return s
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// ConnectionSummary separates listed identities, unlisted known identities and
+// attempts whose identities the bounded builder could not retain.
+//
+// DatagramSends, when the run sent any, are said apart: of the attempts, how many were UDP datagrams sent and how many
+// only connected (a UDP connect sends nothing).
+func (rc *Receipt) ConnectionSummary() string {
+	if rc.ConnectionsMore == 0 && rc.ConnectionsOverflowAttempts == 0 {
+		n := len(rc.Connections)
+		return fmt.Sprintf("%d %s to %d %s%s.", rc.ConnectionTries, plural(rc.ConnectionTries, "connection", "connections"), n, plural(n, "place", "places"), rc.sendsClause())
+	}
+	s := fmt.Sprintf("%d %s; %d listed %s", rc.ConnectionTries, plural(rc.ConnectionTries, "connection", "connections"), len(rc.Connections), plural(len(rc.Connections), "place", "places"))
+	if rc.ConnectionsMore > 0 {
+		s += fmt.Sprintf("; %d other identified places", rc.ConnectionsMore)
+	}
+	if rc.ConnectionsOverflowAttempts > 0 {
+		s += fmt.Sprintf("; %d connection attempts beyond the identity limit", rc.ConnectionsOverflowAttempts)
+	}
+	return s + rc.sendsClause() + "."
+}
+
+// sendsClause is " (S sent a UDP datagram, C only connected)" for a run that sent datagrams, else "".
+func (rc *Receipt) sendsClause() string {
+	if rc.DatagramSends == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" (%d sent a UDP datagram, %d only connected)", rc.DatagramSends, rc.ConnectionTries-rc.DatagramSends)
+}
+
+// ProgramSummary describes starts of listed programs separately from overflow.
+func (rc *Receipt) ProgramSummary() string {
+	starts := 0
+	for _, p := range rc.Programs {
+		starts += p.Count
+	}
+	if rc.ProgramsMore == 0 && rc.ProgramsOverflowAttempts == 0 {
+		n := len(rc.Programs)
+		return fmt.Sprintf("%d %s, started %d %s.", n, plural(n, "program", "programs"), starts, plural(starts, "time", "times"))
+	}
+	s := fmt.Sprintf("%d listed %s, started %d %s", len(rc.Programs), plural(len(rc.Programs), "program", "programs"), starts, plural(starts, "time", "times"))
+	if rc.ProgramsMore > 0 {
+		s += fmt.Sprintf("; %d other identified programs", rc.ProgramsMore)
+	}
+	if rc.ProgramsOverflowAttempts > 0 {
+		s += fmt.Sprintf("; %d program starts beyond the identity limit", rc.ProgramsOverflowAttempts)
+	}
+	return s + "."
 }

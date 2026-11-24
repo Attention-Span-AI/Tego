@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/check/gaps"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -238,7 +239,7 @@ func TestSweptRunClaimsNothingMissing(t *testing.T) {
 		t.Errorf("a swept run does not say its counts are a minimum:\n%s", out)
 	}
 	_, out, stderr := run(t, "receipt", id, "--json")
-	if !strings.Contains(out, `"record"`) || !strings.Contains(out, "tego knows it missed some actions") {
+	if !strings.Contains(out, `"record"`) || !strings.Contains(out, gaps.MissedWords(1, 0)) {
 		t.Errorf("a swept run's receipt has no record gap:\n%s\n%s", out, stderr)
 	}
 }
@@ -556,5 +557,30 @@ func TestStatusNamedRunWithoutLedgerIsNeverStarted(t *testing.T) {
 	}
 	if !strings.Contains(out, "never started") {
 		t.Errorf("stdout %q does not say never started", out)
+	}
+}
+
+// TestStatusSaysHowToGiveBackATakenRunDirectory (A48): a run whose agent took its directory's owner rights reads as
+// permission denied; the report names the state and the one command, adding the owner's rights only.
+func TestStatusSaysHowToGiveBackATakenRunDirectory(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads through any mode")
+	}
+	root, anchor := summaryHarness(t)
+	id := summaryLedger(t, root, anchor)
+	dir := filepath.Join(root, id)
+	if err := os.Chmod(dir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	code, _, errs := run(t, "status", id)
+	if code == identity.ExitOK || !strings.Contains(errs, "permission denied") ||
+		!strings.Contains(errs, dir+" has mode 0000, which lacks your read, write and search") ||
+		!strings.Contains(errs, "chmod -R u+rwX '"+dir+"'") {
+		t.Errorf("status of a taken run directory: exit %d, stderr %q", code, errs)
+	}
+	code, _, errs = run(t, "status", "--all")
+	if code == identity.ExitOK || !strings.Contains(errs, "chmod -R u+rwX '"+dir+"'") {
+		t.Errorf("status --all with a taken run directory: exit %d, stderr %q", code, errs)
 	}
 }

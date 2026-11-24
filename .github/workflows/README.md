@@ -25,6 +25,7 @@ cancelled.
 | `reproducible` | The release target built twice, at two paths with two build caches; the bytes of `tego` and `tego-control` for linux/amd64 must match |
 | `coverage` | Per-package coverage, uploaded as an artifact (report only) |
 | `deadcode-report` | Every function the shipped binaries cannot reach is classified in `tools/deadcode-allow.txt`; an unclassified one or a stale entry fails the job |
+| `chrome-tests` | The dashboard's tests in a real headless Chrome (`go test -tags chrome`, through `scripts/chrome-tests.sh`); a skip, or a runner without the browser, fails the job |
 
 **`root-suites` runs on every pull request**, a fork's included,
 and on a push to `main`, and the main ruleset requires it, so a change is merged only after the privileged suites

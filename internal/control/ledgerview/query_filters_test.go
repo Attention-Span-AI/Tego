@@ -289,14 +289,51 @@ func TestHostFilterHoldsAScopedLine(t *testing.T) {
 	}
 }
 
+// TestHostFacetKeepsTheZone (A37): fe80::1%2 and fe80::1%3 are two links and can be two machines, so the Host facet counts
+// them as two and a filter that names a zone holds that link's lines alone; a filter with no zone still holds the address
+// on every link, and BlockHostOf, which a comparison with a live block reads, drops the zone (a block is by address).
+func TestHostFacetKeepsTheZone(t *testing.T) {
+	root := t.TempDir()
+	const allow = `"verdict":"allow","rule":"net[tcp://fe80::/10:22]","proto":"tcp","dst":`
+	writeRun(t, root, qRunA,
+		qline(qRunA, "alpha", 0, 0, 100, "run_start", "supervisor", `"tier":"landlock","command":["codex"],"cwd":"/w/x/proj"`),
+		qline(qRunA, "alpha", 1, 1, 101, "net", "supervisor", allow+`"[fe80::1%2]:22"`),
+		qline(qRunA, "alpha", 2, 2, 101, "net", "supervisor", allow+`"[fe80::1%3]:22"`),
+		qline(qRunA, "alpha", 3, 3, 101, "net", "supervisor", allow+`"[fe80::1%3]:23"`))
+	s, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := func(f Filter) (n int) {
+		s.Each(f, OldestFirst, func(*Event, func() ([]byte, error)) bool { n++; return true })
+		return n
+	}
+	for _, tc := range []struct {
+		host string
+		want int
+	}{{"fe80::1%2", 1}, {"fe80::1%3", 2}, {"fe80::1", 3}, {"fe80::1%9", 0}} {
+		if got := count(Filter{Hosts: []string{tc.host}}); got != tc.want {
+			t.Errorf("host filter %q holds %d lines, want %d", tc.host, got, tc.want)
+		}
+	}
+	if got := count(Filter{Not: Exclude{Hosts: []string{"fe80::1%2"}}}); got != 3 {
+		t.Errorf("left out fe80::1%%2 and %d lines stayed, want the run_start and the two lines to fe80::1%%3", got)
+	}
+	for in, want := range map[string]string{"fe80::1%2": "fe80::1", "2001:db8::1": "2001:db8::1", "chatgpt.com": "chatgpt.com", "": ""} {
+		if got := BlockHostOf(in); got != want {
+			t.Errorf("BlockHostOf(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestHostOf(t *testing.T) {
 	for in, want := range map[string]string{
 		"tcp://chatgpt.com:443": "chatgpt.com", "ChatGPT.com:443": "chatgpt.com", "93.184.216.34:443": "93.184.216.34",
 		"[::1]:443": "::1", "::1": "::1", "example.org": "example.org", "unix:/var/run/nscd/socket": "", "family(16)": "",
 		"/etc/passwd": "", "<script>alert(1)</script>": "", "a b": "", "word:thing": "", "": "",
-		// An address as a block holds it and every matcher compares it: unmapped, with no zone.
-		"[2001:db8::1%1]:443": "2001:db8::1", "[2001:db8::1%1]": "2001:db8::1", "2001:db8::1%1": "2001:db8::1",
-		"tcp://[fe80::1%2]:22": "fe80::1", "[::ffff:203.0.113.9]:443": "203.0.113.9", "[2001:DB8::1]:443": "2001:db8::1",
+		// An address is unmapped and keeps its zone (A37): two links are two hosts.
+		"[2001:db8::1%1]:443": "2001:db8::1%1", "[2001:db8::1%1]": "2001:db8::1%1", "2001:db8::1%1": "2001:db8::1%1",
+		"tcp://[fe80::1%2]:22": "fe80::1%2", "[fe80::1%3]:22": "fe80::1%3", "[::ffff:203.0.113.9]:443": "203.0.113.9", "[2001:DB8::1]:443": "2001:db8::1",
 		"a%b.example:443": "a%b.example",
 	} {
 		if got := HostOf(in); got != want {

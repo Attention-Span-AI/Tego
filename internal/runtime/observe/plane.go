@@ -57,6 +57,22 @@ type planeLine struct {
 // deny_read entry at its canonical path, path, is named by that entry (ADR 0043 D8's first choice): an expansion
 // entry compaction dropped from the rows, so the kernel's walk met the name entry instead.
 func (r *Recorder) planeFS(rec *Record, op, path string) (planeLine, bool) {
+	// A live block's refusal (ADR 0124, amendment 2026-11-21): the block's own rule, and the reason the operation's
+	// refusal has (a read's read-denied), as the supervisor names a live block's refusal of what it sees.
+	if id, ok := bpf.PlaneLiveBlockID(rec.RuleIdx); ok {
+		switch bpf.ReasonCode(rec.Reason) {
+		case bpf.ReasonReadDenied:
+			return planeLine{rule: r.liveBlockRule(id), reason: record.ReasonReadDenied}, true
+		case bpf.ReasonWriteOutsideContract, bpf.ReasonDeleteOutsideContract, bpf.ReasonRenameOutsideContract,
+			bpf.ReasonMkdirOutsideContract:
+			return planeLine{rule: r.liveBlockRule(id), reason: decide.OpReason(op)}, true
+		case bpf.ReasonNone, bpf.ReasonPathUnresolved, bpf.ReasonIdentityMismatch, bpf.ReasonExecNotAllowed,
+			bpf.ReasonNetNotAllowed, bpf.ReasonNetHTTP, bpf.ReasonRefer, bpf.ReasonDenyWriteAncestor, bpf.ReasonProcessScope,
+			bpf.ReasonPinMissing, bpf.ReasonPinMismatch, bpf.ReasonPinUnverifiable, bpf.ReasonArgvChanged,
+			bpf.ReasonArgvUnreadable, bpf.ReasonExecTraced:
+			// A block names none of these (a walk that failed closed carries no rule).
+		}
+	}
 	row := int(rec.RuleIdx)
 	if rec.RuleIdx == bpf.PlaneRuleNone {
 		row = -1
@@ -101,6 +117,16 @@ func (r *Recorder) planeFS(rec *Record, op, path string) (planeLine, bool) {
 		// No fs hook of the plane refuses with these.
 	}
 	return planeLine{rule: RuleUnmatched, reason: record.ReasonPathUnresolved}, false
+}
+
+// liveBlockRule is the rule of the live block id (Options.LiveBlockRule), unmatched for one the launcher never gave.
+func (r *Recorder) liveBlockRule(id uint16) string {
+	if r.opts.LiveBlockRule != nil {
+		if rule, ok := r.opts.LiveBlockRule(id); ok {
+			return rule
+		}
+	}
+	return RuleUnmatched
 }
 
 // planeExecRule names an exec entry by bprm_check's rule (an entry's position, or an exec.allow directory's fs row
@@ -237,7 +263,9 @@ func (r *Recorder) handlePlaneAttr(rec *Record) {
 	switch bpf.ReasonCode(rec.Reason) {
 	case bpf.ReasonWriteOutsideContract:
 		reason = record.ReasonWriteOutsideContract
-		if rows, rt := r.planeRows(), r.rules.rt; rows != nil && rec.RuleIdx != bpf.PlaneRuleNone {
+		if id, ok := bpf.PlaneLiveBlockID(rec.RuleIdx); ok {
+			rule = r.liveBlockRule(id) // a live block on changes (ADR 0124, amendment 2026-11-21)
+		} else if rows, rt := r.planeRows(), r.rules.rt; rows != nil && rec.RuleIdx != bpf.PlaneRuleNone {
 			rule = rows.RowName(rt, int(rec.RuleIdx), decide.PlaneProtect, 1)
 		}
 	case bpf.ReasonPathUnresolved:
@@ -320,6 +348,10 @@ func (r *Recorder) handlePlaneSocket(rec *Record) {
 		r.handlePlaneListener(rec)
 		return
 	}
+	if rec.Plane.Hook == bpf.PlaneHookNumber(bpf.PlaneHookSocketRecvmsg) {
+		r.handlePlaneImport(rec)
+		return
+	}
 	reason := record.ReasonNetNotAllowed
 	switch bpf.ReasonCode(rec.Reason) {
 	case bpf.ReasonNetNotAllowed:
@@ -339,6 +371,30 @@ func (r *Recorder) handlePlaneSocket(rec *Record) {
 	// A refused line is no action: it carries rule and reason, never a verdict or an authority (spec/record/v1).
 	ev.Verdict, ev.Authority, ev.Attr = "", "", nil
 	r.setPayload(ev, record.RefusedPayload{Op: "socket", Target: target, Reason: reason, Rule: RuleUnmatched,
+		Mechanism: record.MechanismPlane, DecisionPlane: r.opts.DecisionPlane})
+	r.emit(ev)
+}
+
+// PlaneImportRule is the rule a receive refused for carrying a control buffer names (rule socket-import): ADR 0128's
+// descriptor-import guard under net.assurance: kernel, which no single contract entry states.
+const PlaneImportRule = "socket-import"
+
+// handlePlaneImport records the plane's refusal of a receive carrying a control buffer (socket_recvmsg, ADR 0128): a
+// refused line, op recvmsg, the socket's family, type and protocol, reason net-not-allowed and rule socket-import; a
+// fail-closed refusal (a slot with no header or no scratch value) reads path-unresolved under the unmatched rule, as
+// socket_create's does. The refused receive installed nothing: the guard answers before the protocol's receive.
+func (r *Recorder) handlePlaneImport(rec *Record) {
+	rule, reason := PlaneImportRule, record.ReasonNetNotAllowed
+	if code := bpf.ReasonCode(rec.Reason); code == bpf.ReasonPathUnresolved {
+		rule, reason = RuleUnmatched, record.ReasonPathUnresolved // the plane failed closed
+	} else if code != bpf.ReasonNetNotAllowed {
+		r.gap(GapMalformedRecord, 1) // socket_recvmsg refuses with no other reason
+	}
+	target := record.SocketTriple(rec.Plane.Family, rec.Plane.Type, rec.Plane.Protocol)
+	ev := r.event(rec, record.KindRefused, rule, record.VerdictRefused, reason)
+	// A refused line is no action: it carries rule and reason, never a verdict or an authority (spec/record/v1).
+	ev.Verdict, ev.Authority, ev.Attr = "", "", nil
+	r.setPayload(ev, record.RefusedPayload{Op: "recvmsg", Target: target, Reason: reason, Rule: rule,
 		Mechanism: record.MechanismPlane, DecisionPlane: r.opts.DecisionPlane})
 	r.emit(ev)
 }

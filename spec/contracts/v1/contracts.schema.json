@@ -1,0 +1,488 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tego.dev/spec/contracts/v1/contracts.schema.json",
+  "title": "Tego contracts catalog and compiled view v1",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/list"
+    },
+    {
+      "$ref": "#/$defs/show"
+    }
+  ],
+  "$defs": {
+    "diagnostic": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "error",
+            "warning"
+          ]
+        }
+      },
+      "required": [
+        "file",
+        "line",
+        "code",
+        "message",
+        "severity"
+      ],
+      "additionalProperties": false
+    },
+    "last_run": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^(unknown|r-[0-9a-f]{8}-[0-9a-z]{13}-[0-9a-z]{6})$"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "tier": {
+          "enum": [
+            "observe",
+            "landlock",
+            "cgroup",
+            "bpflsm",
+            "unknown"
+          ]
+        },
+        "contract_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "same_contract": {
+          "enum": [
+            "yes",
+            "no",
+            "unknown",
+            "not-enforced"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "tier",
+        "same_contract"
+      ],
+      "additionalProperties": false
+    },
+    "entry": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "found_in": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "compiles",
+            "invalid",
+            "missing",
+            "unreadable",
+            "unsafe",
+            "incomplete"
+          ]
+        },
+        "contract_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "ambiguous": {
+          "type": "boolean"
+        },
+        "last_run": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/last_run"
+            }
+          ]
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "path",
+        "found_in",
+        "cwd",
+        "state",
+        "ambiguous",
+        "last_run",
+        "diagnostics"
+      ],
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "rule": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "entry": {
+          "type": "string"
+        },
+        "words": {
+          "type": "string"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source"
+          }
+        }
+      },
+      "required": [
+        "key",
+        "words",
+        "sources"
+      ],
+      "additionalProperties": false
+    },
+    "root": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "present",
+            "absent",
+            "unreadable"
+          ]
+        },
+        "problem": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "path",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "list": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "tego.contracts.v1"
+        },
+        "contracts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/entry"
+          }
+        },
+        "roots": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/root"
+          }
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        },
+        "incomplete": {
+          "type": "boolean"
+        },
+        "context": {
+          "type": "string"
+        },
+        "footer": {
+          "type": "string"
+        },
+        "general": {
+          "$ref": "#/$defs/general"
+        }
+      },
+      "required": [
+        "schema",
+        "contracts",
+        "roots",
+        "issues",
+        "incomplete",
+        "context",
+        "footer"
+      ],
+      "additionalProperties": false
+    },
+    "show": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "tego.contracts.show.v1"
+        },
+        "contract": {
+          "$ref": "#/$defs/entry"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rule"
+          }
+        },
+        "table": {
+          "type": "string"
+        },
+        "context": {
+          "type": "string"
+        },
+        "footer": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema",
+        "contract",
+        "rules",
+        "table",
+        "context",
+        "footer"
+      ],
+      "additionalProperties": false
+    },
+    "general": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": [
+            "loaded",
+            "absent",
+            "invalid",
+            "unknown"
+          ]
+        },
+        "scope": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "general_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "note": {
+          "type": "string"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "layer": {
+                "enum": [
+                  "system",
+                  "user"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "state": {
+                "enum": [
+                  "present",
+                  "absent",
+                  "unselected",
+                  "unknown"
+                ]
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "resolved": {
+                "type": "string"
+              },
+              "owner": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "mode": {
+                "type": "string",
+                "pattern": "^[0-7]{4}$"
+              },
+              "walk": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "layer",
+              "state"
+            ],
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "state": {
+                      "const": "present"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "path",
+                    "sha256",
+                    "resolved",
+                    "owner",
+                    "mode",
+                    "walk"
+                  ]
+                }
+              }
+            ]
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "profiles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "builtin",
+                  "dir"
+                ]
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "name",
+              "kind",
+              "sha256"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
+      },
+      "required": [
+        "state",
+        "sources",
+        "profiles",
+        "note"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "loaded"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "name",
+              "scope",
+              "general_hash"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "general_hash"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

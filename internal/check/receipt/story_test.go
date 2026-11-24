@@ -293,7 +293,7 @@ func TestTopTenAndMore(t *testing.T) {
 	}
 	var text bytes.Buffer
 	_ = rc.Text(&text)
-	for _, want := range []string{"91 connections to 13 places; the 10 most used are below.\n", "and 3 more; tego events"} {
+	for _, want := range []string{"91 connections; 10 listed places; 3 other identified places.\n", "and 3 other identified places; tego events"} {
 		if !strings.Contains(text.String(), want) {
 			t.Errorf("text lacks %q:\n%s", want, text.String())
 		}
@@ -312,7 +312,7 @@ func TestTopTenAndMore(t *testing.T) {
 	rc = compute(t, lines, Options{})
 	text.Reset()
 	_ = rc.Text(&text)
-	if want := "\nPrograms run\n  12 programs; the 10 most started are below.\n"; !strings.Contains(text.String(), want) {
+	if want := "\nPrograms run\n  10 listed programs, started 10 times; 2 other identified programs.\n"; !strings.Contains(text.String(), want) {
 		t.Errorf("text lacks %q:\n%s", want, text.String())
 	}
 }
@@ -624,5 +624,43 @@ func TestSensitiveReadsNoteStaysAwayWhenReadsAreKept(t *testing.T) {
 	rc := compute(t, []line{watchedStart(), end(time.Second, 0)}, Options{})
 	if rc.SensitiveReadsNote != "" {
 		t.Errorf("note on a run that records reads: %q", rc.SensitiveReadsNote)
+	}
+}
+
+// Contract context extends sensitive names while preserving actual-read checks.
+func TestSensitiveReadsWithCallerContext(t *testing.T) {
+	const path = "/stage/workpapers/plan.data"
+	obs := record.VerdictObserved
+	fs := func(p record.FSPayload) line {
+		return line{kind: record.KindFS, at: time.Second, verdict: obs, rule: "unmatched", payload: p}
+	}
+	events := []line{watchedStart(),
+		fs(record.FSPayload{Op: record.FSOpen, Path: path}),
+		fs(record.FSPayload{Op: record.FSOpen, Path: path, Flags: 1}),
+		fs(record.FSPayload{Op: record.FSOpen, Path: path, Errno: 2}),
+		fs(record.FSPayload{Op: record.FSOpen, Path: path, Created: true}),
+		end(2*time.Second, 0)}
+	plain := compute(t, events, Options{})
+	if len(plain.SensitiveReads) != 0 {
+		t.Fatal("fixture must require caller context")
+	}
+	rc := compute(t, events, Options{SensitivePath: func(p string) bool { return p == path }})
+	if len(rc.SensitiveReads) != 1 || rc.SensitiveReads[0].Path != path || rc.SensitiveReads[0].Verdicts.Observed != 1 {
+		t.Fatalf("context-sensitive actual reads: %+v", rc.SensitiveReads)
+	}
+}
+
+func TestSensitiveRefusedOnlyWithCallerContext(t *testing.T) {
+	const path = "/stage/workpapers/plan.data"
+	events := []line{watchedStart(),
+		{kind: record.KindRefused, at: time.Second, rule: "unmatched", reason: record.ReasonReadDenied, payload: record.RefusedPayload{Op: record.FSOpen, Target: path, Reason: record.ReasonReadDenied, Rule: "unmatched"}},
+		end(2*time.Second, 0)}
+	plain := compute(t, events, Options{})
+	if len(plain.SensitiveReads) != 0 {
+		t.Fatal("fixture must require caller context")
+	}
+	rc := compute(t, events, Options{SensitivePath: func(p string) bool { return p == path }})
+	if len(rc.SensitiveReads) != 1 || rc.SensitiveReads[0].Path != path || rc.SensitiveReads[0].Verdicts.Refused != 1 {
+		t.Fatalf("context-sensitive refused-only reads: %+v", rc.SensitiveReads)
 	}
 }

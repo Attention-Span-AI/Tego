@@ -89,7 +89,7 @@ func readContracts(ctx context.Context, in *Inputs, rs *runs) *contracts {
 		}
 		c.path = e.Path
 		c.linked = rs.newest(func(r *run) bool { return r.start.ContractSource != nil && r.start.ContractSource.Path == e.Path })
-		cc := nextrun.Context{Contract: e.Path, PATH: in.PATH, Home: in.Home, Anchor: in.Anchor,
+		cc := nextrun.Context{Caller: in.Caller, Contract: e.Path, PATH: in.PATH, Home: in.Home, Anchor: in.Anchor,
 			RuntimeDirs: in.RuntimeDirs, Exe: in.Exe}
 		if r := c.linked; r != nil {
 			cc.Cwd, cc.Tier, cc.RunCommandGrant, cc.RunDir = r.start.Cwd, r.start.Tier, r.start.RunCommandGrant, r.dir

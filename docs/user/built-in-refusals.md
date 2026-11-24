@@ -6,7 +6,7 @@ the record name the responsible rule in `rule`.
 
 | Rule | What it refuses |
 | --- | --- |
-| `builtin.host_ipc` | The session bus, systemd user manager, non-SSH GnuPG agents and other sockets under the invoking user's runtime directory; system D-Bus, X11, and the listed tmux, screen and editor server directories. It also protects those directories from writes and refuses existing FIFOs there. |
+| `builtin.host_ipc` | The session bus, systemd user manager, non-SSH GnuPG agents and other sockets under the invoking user's runtime directory; system D-Bus, X11, the listed tmux, screen and editor server directories, `/run/WSL`, WSLg X11/Wayland directories and `/mnt/wslg/PulseServer`. It also protects those directories from writes and refuses existing FIFOs there. |
 | `builtin.tego_surface` | Tego's control sockets, other runs' runtime sockets, ledger ask/operator sockets, and local TCP connects/binds on configured `serve.port` (default 7433) and legacy dashboard port 8484. |
 | `builtin.other_tty` | Opening another numeric pty slave or virtual console for reading or writing, and importing descriptors with `pidfd_getfd`. The run can reopen its inherited controlling terminal and use ptys it creates through the supervisor's master-based relay. |
 
@@ -52,9 +52,11 @@ configured table and do not change when a server is installed or removed.
 
 ## A contract entry that a built-in overrides
 
-`tego rules check` and `tego run` refuse a `net.allow` `unix:` entry that a built-in refuses, whether by its path or
-by the place it resolves to, with a `contradiction` error. The error names the entry, the built-in rule and ADR 0113.
-Such an entry never admitted anything: every layer decides the built-ins before it reads `net.allow`. Before this
+`tego rules check` and `tego run` refuse a `net.allow` or `net.ask` `unix:` entry that a built-in refuses, whether by its
+path or by the place it resolves to, with a `contradiction` error (a `net.ask` entry never asked anyone: the built-in is
+decided before the ask list, and the socket is refused outright). The error names the entry, the built-in rule and ADR 0113.
+Such an entry never admitted anything: every layer decides the built-ins before it reads `net.allow`. The dashboard's
+"Act on this" offers no Allow and no Ask for a refused line of such a socket, and says why. Before this
 check, the run refused the connect with no word at launch. The SSH-agent sockets and an exact container-daemon socket
 are not refused, as above. `host_sockets: true` beside a `net:` section has no effect, since the section decides every
 unix destination by its own entries. `tego rules check` prints an informational note about it (`redundant-rule`). A
@@ -217,3 +219,14 @@ does not mean compile knows what it mirrors.
 The inherited-terminal exception at canonical `/dev/pts` still uses device major/minor alone. A different devpts
 instance mounted there can reuse the inherited terminal's numbers. Host owners must not replace canonical devpts
 beneath an inherited session; arbitrary terminal aliases are refused, but that canonical-instance ambiguity remains.
+
+
+Enforcing runs omit `WSL_INTEROP` from the final agent environment, including an attempted contract pass or set.
+The invoking shell keeps its own environment. WSL launcher and GUI paths are reserved by the same name and
+identity machinery as other built-ins; this inventory is not itself evidence that a lower Windows-launch layer is
+closed. WSL availability still needs the launcher, GUI, home-alias and Windows-drive guest rows. The launcher row
+matters twice: a program started through it runs outside the run, so until that row is proven Tego treats no WSL
+shell as outside every run, and its commands refuse there with that reason. On WSL a contract cannot give a run the
+launcher either: a `unix:` allow or ask, an `fs.write` or `fs.ask` grant that names `/run/WSL`, a path beneath it or
+one of its sockets by another name, is a compile error that says "a run cannot be given WSL's Windows launcher: a
+program started through it runs outside the run and its rules" and names the entry (ADR 0113, amended 2026-11-19).

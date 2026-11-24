@@ -24,7 +24,7 @@
         "mode": "fmod_ret",
         "ok": true,
         "tested": true,
-        "detail": "30 of 30 hooks load, attach and run, each refused in the scratch cgroup and passed outside it; 16 known answers matched",
+        "detail": "31 of 31 hooks load, attach and run, each refused in the scratch cgroup and passed outside it; 16 known answers matched",
         "scope": "the probe row was met 1 times in the scratch cgroup and 0 times outside it",
         "known": [
           {
@@ -456,6 +456,16 @@
       "decides": true
     },
     {
+      "hook": "lsm/socket_recvmsg",
+      "btf": true,
+      "loaded": false,
+      "attached": false,
+      "plane": "lsm",
+      "function": "bpf_lsm_socket_recvmsg",
+      "arity": 4,
+      "decides": true
+    },
+    {
       "hook": "fmod_ret/security_file_open",
       "object": "decide_rd",
       "btf": true,
@@ -870,6 +880,20 @@
       "plane": "fmod_ret",
       "function": "security_unix_may_send",
       "arity": 2,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_socket_recvmsg",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_socket_recvmsg",
+      "arity": 4,
       "decides": true,
       "ran": true,
       "inside": "refused",

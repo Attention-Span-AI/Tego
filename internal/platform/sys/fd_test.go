@@ -911,3 +911,54 @@ func TestTypedMethods(t *testing.T) {
 		t.Fatalf("Openat on a closed owner = %v, want ErrClosed", err)
 	}
 }
+
+// TestLendAllHoldsEveryOwnerForTheCall: fn gets each owner's number in order, a Close meanwhile waits until fn
+// returns, every lease is back after it (a panic too), and an owner that lends nothing is ErrClosed with fn not run
+// and the leases already taken returned.
+func TestLendAllHoldsEveryOwnerForTheCall(t *testing.T) {
+	a, b := openNull(t), openNull(t)
+	na, nb := numOf(a), numOf(b)
+	want := errors.New("fn's error")
+	err := LendAll([]*FD{a, b, a}, func(nums []int) error {
+		if len(nums) != 3 || nums[0] != na || nums[1] != nb || nums[2] != na {
+			t.Errorf("LendAll lent %v, want [%d %d %d]", nums, na, nb, na)
+		}
+		if err := b.Close(); err != nil {
+			t.Errorf("Close under the lease = %v, want nil (deferred)", err)
+		}
+		if _, err := unix.FcntlInt(uintptr(nb), unix.F_GETFD, 0); err != nil {
+			t.Errorf("b's number was closed while lent: %v", err)
+		}
+		return want
+	})
+	if err != want {
+		t.Fatalf("LendAll = %v, want fn's error", err)
+	}
+	wantClosed(t, nb, "the Close deferred while b was lent")
+	if a.leases() != 0 || b.leases() != 0 {
+		t.Fatalf("leases after LendAll: %d, %d", a.leases(), b.leases())
+	}
+	func() {
+		defer func() { _ = recover() }()
+		_ = LendAll([]*FD{a}, func([]int) error { panic("boom") })
+	}()
+	if got := a.leases(); got != 0 {
+		t.Fatalf("leases after a panicking LendAll = %d, want 0", got)
+	}
+	ran := false
+	if err := LendAll([]*FD{a, b}, func([]int) error { ran = true; return nil }); !errors.Is(err, ErrClosed) || ran {
+		t.Fatalf("LendAll with a closed owner = %v (fn ran %v), want ErrClosed and no call", err, ran)
+	}
+	if got := a.leases(); got != 0 {
+		t.Fatalf("a's lease after the refused LendAll = %d, want 0", got)
+	}
+	if err := LendAll(nil, func(nums []int) error {
+		if len(nums) != 0 {
+			t.Errorf("no owners lent %v", nums)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("LendAll of no owners = %v", err)
+	}
+	_ = a.Close()
+}

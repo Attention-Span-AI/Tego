@@ -50,14 +50,17 @@ func LauncherCheck(runDir string) (l Launcher, cause, err error) {
 		return Alive, nil, nil
 	case errors.Is(err, ErrStale):
 		return Gone, nil, nil
+	case errors.Is(err, ErrNotLockHolder) && LockFree(runDir):
+		return Gone, nil, nil // released while the proof was made: the run ended, as a free lock says
 	}
 	return Unknown, err, nil
 }
 
 // UnknownRecovery is what a person can do about a launcher LauncherCheck could not judge.
 const UnknownRecovery = "make /proc/<pid>/stat of the pid in the run's lock file readable (a procfs mounted hidepid or " +
-	"with restricted access hides it), or run the command in the launcher's pid namespace; until then Tego treats the run " +
-	"as running and never ends or reclaims it on that"
+	"with restricted access hides it), or run the command in the launcher's pid namespace, or as a user with " +
+	"CAP_SYS_PTRACE (a launcher is not dumpable, and only such a caller reads its descriptors; root has it unless a " +
+	"container or a service unit drops it); until then Tego treats the run as running and never ends or reclaims it on that"
 
 // LauncherGone reports whether LauncherOf confirms the launcher gone; unknown and alive are both false.
 func LauncherGone(runDir string) (bool, error) {

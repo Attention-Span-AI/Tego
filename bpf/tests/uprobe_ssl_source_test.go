@@ -158,13 +158,13 @@ func TestCaptureCountsItsOwnDrops(t *testing.T) {
 	// Every function that reserves counts its failure; the read return probe also counts a read that moved
 	// bytes on a connection no row names any more (R5).
 	path := uprobeSSL(t)
-	for _, fn := range []string{"tego_ssl_emit_class", "tego_ssl_hole", "tego_ssl_free", "tego_ssl_read_return"} {
+	for _, fn := range []string{"tego_ssl_emit_class", "tego_ssl_hole", "tego_ssl_free_body", "tego_ssl_read_return_body"} {
 		body := functionBody(t, path, fn)
 		if strings.Contains(body, "bpf_ringbuf_reserve(") != strings.Contains(body, "tego_lost_inc(&tego_capture_lost, run->run_idx)") &&
-			fn != "tego_ssl_read_return" {
+			fn != "tego_ssl_read_return_body" {
 			t.Errorf("%s reserves without counting a failed reserve in tego_capture_lost", fn)
 		}
-		if fn == "tego_ssl_read_return" && !strings.Contains(body, "tego_lost_inc(&tego_capture_lost, run->run_idx)") {
+		if fn == "tego_ssl_read_return_body" && !strings.Contains(body, "tego_lost_inc(&tego_capture_lost, run->run_idx)") {
 			t.Errorf("%s drops a read whose connection it cannot name without counting it", fn)
 		}
 	}

@@ -1,5 +1,46 @@
 # Operations
 
+## Start-up and cold kernel checks (2026-11-17)
+
+At tiers `cgroup` and `bpflsm`, a cold start can take several seconds before the command's first instruction.
+Tego loads and attaches the actual programs its capability answer requires, exercises the decision plane, and
+releases the probe's objects before starting the run. The run then loads programs against its own configured maps.
+On some kernels, releasing a tracing link also waits for a kernel grace period. These checks already shipped in
+v0.1.3. Tier `landlock`, including an explicit root launch at that tier, runs no BPF probe.
+
+Initial five-sample cold medians, measured on 2026-11-17 in idle two-vCPU, 3-GiB KVM kernel guests
+using the repository initramfs and host userland:
+
+| Kernel / root tier | Cold to command entry | Warm, answer and build retained | Host one-minute load |
+| --- | ---: | ---: | ---: |
+| Ubuntu 6.17.0-41 / cgroup | 13.746 s | 0.081 s | 0.98–1.48 |
+| Fedora 7.0.14 / cgroup | 8.207 s | 0.111 s | 1.70–2.24 |
+| Fedora 7.0.14 / bpflsm | 8.846 s | 0.098 s | 1.76–2.06 |
+
+Root landlock medians were 0.032 s and 0.030 s on those kernels; non-root landlock was 0.057 s and
+0.031 s. These are measurements for those guests, not a startup bound. Actual-program verification, the
+run's configured-map load and link removal still cost several seconds. A smaller stand-in or an omitted
+decision exercise would establish less. Sharing loaded programs needs equivalent map configuration,
+resource-failure behavior and ownership; no such handoff is established by this change.
+
+After about one second of an enforcing start, stderr prints `[startup-wait]` if preparation is still pending.
+A fast start prints no wait note, and the timer ends before the command is released. The command keeps stdout.
+Caller and contract prerequisites, the status-file directory and the chain anchor are checked before the kernel
+probe; a request that those checks already refuse does not wait for a capability answer.
+
+Successful root-tier probe answers live in root-owned `/run/tego`. They have no time expiry, but apply only to the
+same boot, kernel, binary and BPF objects, relevant kernel settings, invoking user, capabilities, security labels,
+namespaces and launcher cgroup. Reboot, upgrade or binary replacement, another user or a different service/scope
+cgroup can make another start cold. Unreadable authority facts, an untrusted cache location or a seccomp-filtered
+caller prevent reuse. A launch failure can discard an answer that it reused; capture-unavailable and
+unmetered-budget refusals keep it. A fresh successful probe can leave its new answer after a later launch
+refusal. Early caller/contract refusals neither probe nor update these answers. `tego doctor` always probes afresh.
+
+The answer cache is separate from the default five-minute loaded-build linger. After that build is unloaded,
+a cached capability answer can still be followed by the run's own program loads. A cached answer never exempts
+preparation from checking its actual loads and attachments. Increasing cache scope or substituting a smaller
+stand-in program would change what the capability answer establishes.
+
 ## Machine config
 Normative: `spec/config/v0/README.md` (layers, ceilings vs settings, trust rules; an untrusted or invalid layer stops
 `tego run` with exit 125 `[config-untrusted]`, which replaced 213). Example there.
@@ -79,7 +120,35 @@ both from a release (VERSIONING.md §5), and refuses a pair whose pin does not m
   started with; the raise Go makes inside tego does not carry over. A governed run's agent gets it too, at every tier.
 
 ## Privileged path (ADR 0042, 2026-10-05)
-- **Tiers 2 and 3 need a root launcher.** That is `sudo tego run` on a host whose sudo users are its administrators,
+
+The sudo examples use the reader-shell lookup explained in [INSTALL.md](https://github.com/Attention-Span-AI/Tego/blob/main/docs/INSTALL.md#running-with-sudo).
+AlmaLinux 9.8's sudo `secure_path` is `/sbin:/bin:/usr/sbin:/usr/bin`; neither a home install nor
+`/usr/local/bin` is searched by sudo itself.
+For a service account, install both binaries in that account's `~/.local/bin` (the user templates use
+`%h/.local/bin/tego`), or use a root-owned shared installation and adjust the units' `ExecStart` paths.
+Never point a service account at a copy inside an administrator's private home.
+
+A printed root command also checks the executable and every resolved ancestor up to `/`: owners must be
+root or Tego's effective user. World-writable non-sticky directories and missing metadata give no command.
+Directory group write is allowed for the effective user's private primary group, or a group with no
+members and no passwd primary users, such as an empty Debian staff group. Bounded local passwd/group reads
+and the standard-library account lookup determine membership; only files-only NSS sources establish an empty
+group. When membership is unknown (directory services, unreadable or oversized files), only the effective
+user's primary gid by id is allowed, and the folder must still be owned by that user or root. Known foreign
+local members always refuse. This fallback cannot rule out an unseen account sharing that gid. Non-sticky
+group-writable folders with an access ACL or unavailable ACL metadata also refuse: a named ACL writer need
+not belong to that group. The executable itself must never be group/world writable.
+A sticky ancestor such as `/tmp` protects a child owned by root or that user against rename by other users; it does not protect writable file contents. Install Tego in a folder only root or you
+can write if a hint is withheld. This checks current permissions; root and the effective user remain trusted.
+For root-run Tego, this can conservatively withhold hints for an invoking user's home installation.
+
+A manual `systemd-run --user --scope bash` and Tego's automatic user scope inherit the caller's PATH.
+They do not add `~/.local/bin`. For a command started by `sudo -u`, that is sudo's `secure_path` unless
+explicitly set. A user service receives its user manager's environment, not a login shell's profile.
+The agent template sets `PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin` explicitly; contract
+`env.pass` still decides whether PATH reaches the agent. Name programs outside it by absolute path.
+
+- **Tiers 2 and 3 need a root launcher.** That is `sudo "$(command -v tego)" run` on a host whose sudo users are its administrators,
   or (not built yet) a root unit or cron job that names the agent's account with `--run-as <user>`.
   Users who are not administrators run tier `landlock`; tegod, which would give them the root tiers, is built only
   on ADR 0042's trigger T1.
@@ -88,7 +157,7 @@ both from a release (VERSIONING.md §5), and refuses a pair whose pin does not m
   sudoers entry limited to tego is not a boundary Tego supports, and a service account never gets one: an agent
   that escaped to that account would inherit root. The one exception (FEATURES I9) is a CI runner account that is
   already root-equivalent, on an ephemeral or dedicated runner VM.
-- **Run the agent as a dedicated account with no sudo rights** once `--run-as` lands; until then `sudo tego run`
+- **Run the agent as a dedicated account with no sudo rights** once `--run-as` lands; until then `sudo "$(command -v tego)" run`
   drops the agent to the invoking user with that user's primary group alone, and with that user's `HOME`, `USER` and
   `LOGNAME` where sudo left root's.
 - **Capability or setuid copies of tego are refused.** A launcher that gained privilege without being root (a
@@ -120,7 +189,7 @@ unix socket bound to a path are not recorded either.
 `tego status|events|drift <run>` read it, and the command prints the run id when it ends. The program's own flags
 come after the `--`, untouched, and its exit code is yours.
 
-A recording is not a cage. Observe mode has no rule that refuses, and a process can still ask another service on the
+A recording sets no boundary. Observe mode has no rule that refuses, and a process can still ask another service on the
 machine (`systemd --user`, D-Bus, an SSH or GPG agent) to act for it outside the run; `compile` names the sockets in its
 warnings, which `watch` prints. To confine the command, write a contract (files, programs, connections, limits, `ask`
 scopes) and run `tego watch --boundary agent.yaml -- <command>`, which is `tego run agent.yaml -- <command>`
@@ -153,7 +222,7 @@ A boundary's `fs.ask` and `net.ask` scopes hold the operation (the agent waits) 
 terminal: `tego ask <run>` lists what is held, `tego approve [run] <ask_id>` and `tego deny [run] <ask_id>` answer
 it. That terminal is the person's own, as the run's user (or root, for a run launched with sudo): the run refuses an
 answer from inside any run or adoption, a shell under `tego watch` included, and from another cgroup namespace (a
-container's), and the request stays held. A record-only `tego watch` agent is not a cage, though: it can first move
+container's), and the request stays held. A record-only `tego watch` agent is not confined, though: it can first move
 itself out of its scope, into a cgroup of its own under the person's user service or through `systemd --user`, and
 then answer as the person's own software would. `tego watch --boundary` closes both ways. A model request's target is listed as the ledger records it, its path cut
 to a public route and its query to `?redacted`. The run id may be left out: `tego ask` alone lists the pending asks of every running run under the ledger root,
@@ -162,7 +231,7 @@ one line each led by its run id, and `tego approve <ask_id>`, `tego deny <ask_id
 given, its peer check included). A running run that serves no ask socket (no ask rule in its contract, or a
 watched run) holds no asks: `tego ask` passes over it, `tego ask <run>` says why (`<run> is a watch run, and a
 watch run takes no approvals`, or `<run> takes no approvals: its contract has no ask rule`, exit 0), and an answer
-named to it says the same, `[not-found]`, exit 1. An answer to a run that has ended says `<run> has ended; nothing
+named to it says the same, `[not-found]`, exit 1. That sentence is said only of a run whose start record says it served no approvals; a run whose start record says its broker was available and whose socket is gone (the broker closes as the run ends, a moment before the launcher releases the run's lock) is said to take approvals with no socket now, and an answer that meets that moment, or a connection the broker closed under it, is reported from the ledger: the request's answer line if there is one (`ask: request is no longer pending` when it is another's, or `your answer was recorded on line #N` when it is this command's and only its reply was lost), the run's end if its lock is free by then, and otherwise a failure that says the answer may not have been delivered, never an approval reported as given. An answer to a run that has ended says `<run> has ended; nothing
 waits for an answer` `[not-running]`, exit 1. `tego ask <run> <ask_id>` for a request that no longer waits (answered,
 timed out, or its run ended) prints what the ledger recorded, `<ask_id>: no longer waits: denied by uid:1000 pid:… after
 77 ms, line #18` (`--json`: the record), exit 0. A lone argument that is neither kind says `is neither a run id (r-…)
@@ -313,7 +382,7 @@ at once from the standing answer, a write answered by `deny --always`; all 14 mo
 source=forwarder`, and no address but the forwarder's loopback listener allowed. Nine things a contract and Codex's
 `config.toml` have to say, which Claude Code's do not:
 
-1. **Codex's own sandbox is off, because Tego is the cage.** Its bubblewrap sandbox cannot start inside the Landlock
+1. **Codex's own sandbox is off, because Tego enforces the contract.** Its bubblewrap sandbox cannot start inside the Landlock
    domain: left on, every command the model asks for fails with `error building bubblewrap command: Permission denied
    (os error 13)`, exit 1, and never reaches the shell; Codex does not exit, it gives the model the error. Use
    `sandbox_mode = "danger-full-access"` and `approval_policy = "never"` in `config.toml`, or
@@ -487,6 +556,38 @@ contract and answer from separate `tego` processes (alternate, approve, deny, ti
 with `--always`; `tego run --observe` of such a contract is refused, exit 125). The same five tests pass as root in a
 KVM guest on the test machine's kernel (`test/vm/root-suites.sh`, the agent dropped to the invoking user).
 
+## Rules history and undo (`tego rules history`, `tego rules undo`, 2026-11-23)
+
+`tego rules history <agent | file> [--json]` lists the changes the dashboard and these commands made to a rules file,
+newest first, and `tego rules undo <agent | file> [<id>] [--yes]` gives the text before one of them back. Both are
+tego-control's (tego hands them off: `tego rules history` and `tego-control rules history` are the same command) and
+both go through `rules.Service` (`History`, `Revert`), the reader the dashboard's Change rules page uses, so the
+terminal and the page list the same entries in the same words (`HistoryEntry.What`) and offer Undo on the same entry
+(`HistoryEntry.Undoable`: the file still holds the entry's text and it is not undone). The reference is an agent's name,
+or a rules file's path; only a file a session under this ledger root ran can be named, as on the page.
+
+- The handoff replaces tego in place (`syscall.Exec`): the terminal, the standard input and the environment reach
+  tego-control as they are, which is how `undo` reads the word typed at the terminal (`TestHandoffPassesTheTerminalAndInput`).
+- History prints the newest 20 entries (`--json`: all, version 1, with `what`, `direction`, `undone_by` and `can_undo`).
+- An undo that only narrows (it gives back the text before a widening) needs no confirmation. One that lets the next run
+  do more (it undoes a narrowing, a mixed change or a free edit) prints which change and what it does, and at a terminal
+  asks for `undo` to be typed; anything else exits 1, `[not-confirmed]`, with nothing written. Without a terminal it needs
+  `--yes` and exits 2 without it.
+- A file that holds other text than the change wrote (a later change or an edit by hand) exits 1, `[stale]`, "changed
+  since": the older text would lose the later change. With no `<id>` the newest change the file still holds is undone.
+- From inside a run, or from a process that cannot be shown to be outside every run, an undo that lets the next run do
+  more is refused, exit 1, `[governed]`; an undo that only narrows is not.
+- A guard or I/O failure (a journal or a folder that cannot be read, a rules file or its folder that cannot be written,
+  a rules file the guards refuse, a cancelled write) exits 125 `[io]`, with nothing written. A name or an id that names
+  nothing, too many words, or a change the journal does not hold, exits 2.
+- An older text the compiler no longer accepts is refused, exit 1, `[refused]`, with nothing written. With no change
+  recorded for the file, `tego rules undo` exits 1, `[no-change]`.
+- Ctrl-C at the `Type undo to confirm:` prompt ends it at once, exit 1, `[not-confirmed]`, with nothing written; a word
+  typed after the interrupt is not read.
+- The journal records the undo with the writer `cli` (`RevertReq.Via`; any other word is refused). Version one does not
+  lift the live blocks the undone change placed on running runs: it lists them and the `tego unblock <run> <kind> -- <value>`
+  command that ends each. The dashboard's Undo still offers to lift them.
+
 ## Learning a first contract from a run (`tego rules learn`, 2026-10-06)
 
 `tego rules learn <run> [--save <name> | --out <file>] [--allow-host <host>[:<port>]]... [--reads on|off] [--workspace <dir>]` (FEATURES C9, E65) reads a finished run's ledger, an observe-only
@@ -639,7 +740,14 @@ What it proposes, and what it never does:
   port alone says nothing and tego allows the machine's resolvers itself; a place first reached before the read is not caught, nor a secret
   renamed to a plain name and read there; and it goes by file names and closeness, so it proves nothing either way.
   It can also withhold the agent's own service, when the agent reads its token and calls its service at once on a
-  watched run: add that address back by hand. A watched run is judged on its own here, while the dashboard judges it
+  watched run: add that address back by hand. Which addresses are withheld comes from the
+  recording alone, so two recordings of one agent can withhold different ones: a site that answers from several addresses
+  (an IPv4 and an IPv6 one, or a CDN's rotating set), tried in another order or at another time, puts other addresses
+  within 16 lines and 5 seconds of the secret read (acceptance 3, 2026-11-11: one walk withheld only an IPv6 probe, the
+  next recording `104.20.23.154:443`). `tego learn` over one recording gives the same proposal every time (a test runs
+  it 200 times over a record that reaches many addresses; until 2026-11-11 its warnings and counts did not, for an address two leaks stood for, one
+  by name and one by address: which leak owned the exclusion followed map order; the addresses kept and left out did not change); the learn warning says the set comes from that recording.
+  The receipt of a later run does not yet say that a refused destination was one learn withheld. A watched run is judged on its own here, while the dashboard judges it
   against the enforced run of its pair.
 - Every entry says how many times it was seen. The header says which run it came from, that it is a proposal for a
   person to review, and lists what was left out and why. A refused or failed action in the record is never proposed.
@@ -650,6 +758,34 @@ pattern in it is reported, never copied into a list. The file is YAML `tego rule
 and tego follows symlinks when it compiles. Verified 2026-10-06 against the real Claude Code 2.1.290 and Codex 0.159.2
 start-up ledgers (internal/check/learn/testdata), and by running a script under its own proposal at tier 1: nothing
 refused.
+
+When a learned contract refuses a connect to a destination it withheld,
+`tego receipt` and the dashboard's Receipt tab explain it beside that refusal.
+The sentence says what this run's contract claims: learn withheld the exact
+protocol, address and port after a secret read near a send in the named watched
+run. That is a warning to review, not proof of a leak. Only a default-deny
+connect refusal qualifies; a missing network operation means connect. Bind, listen, sendmsg and accept get no
+such sentence. If you recognize the destination as the agent's own service,
+review the printed `tego rule <run> <seq> --allow` command; `--dry-run`
+shows its change first, and allowing it affects the next run only.
+
+Learn's optional `learn` block is editable history (GAPS C66). A hand edit must
+keep the list sorted in byte order, with one distinct canonical TCP/UDP IP
+endpoint per line, a nonzero port, no zone and a valid source run id. Use
+lower-case compressed IPv6 spelling and write mapped IPv4 addresses as IPv4.
+Keep 1 to 100000 endpoints, or remove the whole `learn` key to omit history.
+An invalid run id or endpoint list stops contract loading: the error names the
+file and line at `learn.run`, `learn.withheld` or `learn.withheld[N]` (zero-based) and says how to fix
+it. A valid edit can add, remove or leave stale history, but it grants and refuses
+nothing. Changing only history changes `contract_hash`, so it no longer matches
+an approval of the old hash. A receipt cannot prove the contract is the proposal
+learn wrote, that its claimed source run exists, or that withholding caused the refusal. Edits after
+launch do not alter the recorded history. Older learned files have only comments
+and get no such sentence; learn the watched run again to write history. Contracts
+read from stdin and generated contracts, including `tego watch -- cmd` without
+`--boundary`, record no source and get no such sentence. A binary predating this
+key refuses it as an unknown contract field.
+
 ## Unattended runs: what to put in the contract (2026-10-06)
 
 A run nobody watches ends in one of four ways: the agent finishes, a limit ends it, the kernel ends it (memory,
@@ -689,7 +825,7 @@ needs a delegated cgroup; a missing controller refuses the run, naming it).
 | Limit | At the limit | Measured here |
 |---|---|---|
 | `wall` | the whole run is killed, 124. A hard cap on elapsed time: the agent working or you typing does not move it; for an interactive session set `stall_after` and leave `wall` off or large | `wall: 12s` ended the run at 12.000 s |
-| `stall_after` | no event for that long: killed, 124. A held ask, a streaming model response and, when the agent's stdin is your terminal, your typing count as activity (seen up to 8 s late: the kernel stamps a terminal's read time once per 8 s, so keep `stall_after` at a minute or more; tego reads no key) | a hung agent was ended 5.49 s after its last event with `stall_after: 5s` |
+| `stall_after` | no event for that long: killed, 124. A held ask, a streaming model response, a request Tego itself is holding on its way to the model (its own approval, route, credential, connect and TLS work: Tego's time, not the agent's silence; the clock restarts when the connection is ready, and a model that then goes silent still stalls the run) and, when the agent's stdin is your terminal, your typing count as activity (seen up to 8 s late: the kernel stamps a terminal's read time once per 8 s, so keep `stall_after` at a minute or more; tego reads no key) | a hung agent was ended 5.49 s after its last event with `stall_after: 5s` |
 | `repeats` | the same tool call from the model that many times in a row: killed, 124 | `repeats: 6` ended a runaway loop at its sixth call; a healthy loop's longest streak was 1 |
 | `tokens` | input plus output tokens of the calls so far, cache tokens excluded: killed, 124 | `tokens: 300` ended at 317, the call that crossed it; the value equals the sum of the ledger's own usage |
 | `cost_usd` | the same, priced: killed, 124 | `cost_usd: 0.002` ended at $0.002127, equal to the ledger's tokens priced by the table |
@@ -819,23 +955,32 @@ live block placed on it), so an agent that runs for weeks keeps the changes its 
 not lift; and each rules file keeps its newest 20 changes still standing while the file is there. A rules file the
 pass cannot look at counts as there: one in a folder you cannot search, or one on a stale mount, which the pass waits
 for at most 3 s and at most half of what is left of its 2 s, looking at the other files meanwhile; it prunes the rest
-of the journal and logs which files it could not look at (`tego gc` says so on stderr). A pass started as root (`sudo
-tego run`, as tiers 2 and 3 are) prunes the invoking user's journal as that user, looking at the rules files as that
+of the journal and logs which files it could not look at (`tego gc` says so on stderr). A pass started as root (`sudo "$(command -v tego)"
+run`, as tiers 2 and 3 are) prunes the invoking user's journal as that user, looking at the rules files as that
 user too: their uid and their group alone (`SUDO_GID`, else their passwd group, the group a root run's agent gets)
-and no capability; a journal of any other user is left to them, which the pass logs. It spends at most 2 s and stops
-between runs, and the next pass goes on from the oldest run left; a journal the budget left unpruned is logged too.
-`tego gc` with no flags is the same pass and counts as one. A removed run's line stays in
+and no capability; a journal of any other user is left to them, which the pass logs. The automatic pass has a
+cooperative 2 s budget, checked between runs and journal pruning operations. Temp cleanup precedes `journal.lock`;
+the budget is checked before taking that lock. Once held, the journal read, filter and rewrite finish as one
+operation, even after expiry, so short passes can commit progress. A blob removal already in progress also finishes.
+A blocked filesystem call can delay return indefinitely, so this is not a hard startup timeout. A deadline in journal
+pruning stops it at the next check and is logged as "pruning incomplete", including the error's own cause; it never
+fails the starting run. A busy lock is named as busy alongside the deadline: the usual lock wait is 3 s, but the
+start's remaining 2 s budget ends that wait sooner. Completed pruning stays committed, the journal stays consistent
+and leftover blobs or locks can wait for the next pass. The next pass goes on from the oldest run left. If run cleanup spends
+the whole budget on every pass, journal pruning can keep being deferred, with a log each time. `tego gc` has no
+startup two-second budget; it reports journal errors on stderr and in JSON and keeps exit 0 for these per-item
+failures. With no flags it is the same pass and counts as one. A removed run's line stays in
 `~/.tego/chain.log` (a line per run, never rewritten), so every run left still verifies, and `tego events <removed
 run> --verify` says its anchored ledger is missing rather than that it never ran. Without `gc_interval` nothing is
 removed unless you run `tego gc`, and with it nothing is removed while no run starts: an agent that runs for weeks
 without a restart makes no pass in that time.
-`examples/systemd/tego-gc.timer` runs the pass once a day whatever starts (its `tego-gc.service` is `tego gc` with no
+With `gc_interval` set, `tego start` and `tego dashboard` also make that timer for you when they start the dashboard (a transient user timer, `tego-gc`, `systemd-run --user`, running `tego gc` with the dashboard's `TEGO_CONFIG`); one that is already active, such as your own copy of the example, is left alone, and a machine with no systemd user manager has none. `examples/systemd/tego-gc.timer` runs the pass once a day whatever starts (its `tego-gc.service` is `tego gc` with no
 flags, so it counts as the start's pass), and makes up a day missed while the user manager was not running
 (`Persistent=true`): give the service the agents' `TEGO_CONFIG` line, then `systemctl --user enable --now
 tego-gc.timer` (2026-11-02; checked on the user manager: the oneshot unit's pass removed an ended run older than
 `retention`, exit 0). A machine config the pass cannot read whole (a layer it cannot open, trust or parse) removes
-nothing: `tego gc` exits 125 `[config-untrusted]` naming the layer, and the unit fails, since the retention and the
-ledger root it removes by may be set in that layer; it gives a layer's mode back first when an agent took it
+nothing: `tego gc` reports baseline UNKNOWN with the layer and cause, returns 125, and sweeps/deletes nothing,
+since that layer may set the retention or ledger root. It gives missing owner mode bits back first when an agent took them
 ("Modes an agent took", below). Size the disk for `retention` days of restarts: for the agent above, 3.5 GB a day.
 
 **While it runs.** `tego events <run> --follow` prints each line as the run appends it, checking the chain as it
@@ -844,8 +989,11 @@ ends.
 
 **In the morning.** `tego session show <run>` (what it did on one screen: files written, refusals by rule, asks, tokens and
 cost, and what the ledger could not cover, which `--json` names by a code a script can match, such as `capture-off`,
-`missed-actions` or `rules-uncertain`, which says a program the run's rules rely on was skipped or its skip counter
-could not be read (ADR 0148);
+`missed-actions`, `messages-dropped` (an MCP message the relay dropped for its size; no action went unrecorded), `model-routes-kept` (the model routes could not be read and the routes read last stayed in force; no action went unrecorded), `ask-repeated` (an ask line repeated an ask id already asked: only the first counts) or `answer-unpaired` (an answer has no open ask: it came before its ask, names an id never asked, or is a second answer, and it is not counted as an answer) or `rules-uncertain`, which says a program the run's rules rely on was skipped or its skip counter
+could not be read (ADR 0148); each gap also carries a `level`, `partial` (the ledger supports part of the field, so a
+count is a floor or an estimate) or `none` (the ledger is silent on the field, so what is shown for it is not evidence), and a
+field with no gap is complete; the receipt, `tego status` and the dashboard say a gap that may have lost actions, a
+capture gap and a missing price in the same words (`spec/receipt/receipt-v1.schema.json` publishes the receipt);
 `--verify` checks the chain too), `tego status <run>` (state, how it ended,
 events, `gaps:` and `live changes:` as the record spells them, `in words:` for what they mean, the same reading as the
 receipt: whether actions may be missing, what is short if not, and what a person changed, and on a lost run that its
@@ -872,7 +1020,10 @@ the D-Bus buses, a DNS lookup) are JSON `system_lookups`. Routine socket calls t
 while it sorts addresses), and the kernel's netlink socket (`family(16)`), where the C library reads the machine's
 addresses. The dashboard's Receipt tab shows both counts. A refused one of either kind is listed under Refused
 actions, and a refused socket call is not counted in `routine_sockets` at all: the supervisor refuses a send to an
-`AF_UNSPEC` address, which reaches the host behind the family word, and a netlink send that is no route query.
+`AF_UNSPEC` address, whose interpretation depends on the socket's domain, and a netlink send that is no route query.
+An observe run continues that `AF_UNSPEC` send instead: an attempted send whose destination and result were not
+established. Its line carries rule `net.unspec-send`; the receipt and dashboard list it as a connection to
+"unread address, AF_UNSPEC send", observed, and never count it as a routine socket call.
 Under a `net:` section tego refuses every `setsockopt(TCP_ULP)`,
 whatever the contract says (ADR 0018 (7)); Python's HTTPS on Ubuntu 24.04 tries kernel TLS so through OpenSSL, is
 refused once, and falls back to OpenSSL's own TLS. The record names that refusal's rule `unmatched`, and it counts in every total and in `--json`'s `by_rule` as the
@@ -884,37 +1035,83 @@ refused.", in the terminal or on the dashboard's Receipt tab: it says "No record
 not record refused reads", and with refusals it adds that a read it refused is not counted.
 
 **Keeping a receipt and checking it later.** `--verify` checks a run against `~/.tego/chain.log`, so it works only
-on the machine and account that ran it; in CI that file goes with the runner. To check a run anywhere later, keep two
-files together: `tego session show <run> --json > receipt.json`, and the run's folder (its `events.jsonl` is enough). The
-JSON receipt carries a `binding` block: the run, its line count, its last line's id (`head`), whether it ended, and
-the size and sha256 of `events.jsonl` (what `sha256sum` prints), plus the tego that made it (`receipt_by`) and its
-`limits`. Later, on any machine, `tego session show --check receipt.json <run folder>` re-walks the record's hash chain to
-the receipt's head, matches the line count, bytes and sha256, and computes the receipt again from the record to
-compare the whole of it, every key and value. It reads no chain.log. Exit 0 is a match (`--json` says `match`, or `match-unended` when the
-record has no `run_end`, which a CI step that wants a whole run refuses), 1 a mismatch naming the check and the field,
-2 usage, 125 could not check. The numbers are compared only by the same tego build that made the receipt: run the
-check with the version in `binding.receipt_by`, or it exits 125. A receipt whose `receipt_by` names no version or no
-commit, or a build that is no exact one (`+dirty`, commit `none`), exits 125 too and says so: no tego can check it. What only the machine that made the receipt can
-give is taken from the receipt, once it is what that tego writes for the record, and named in the `facts` line and
-`--json`'s `not_compared`: the price table's two numbers, `tokens.est_cost_usd` (0 or more dollars, never `-0`, 0 when
-nothing was priced) and `tokens.unpriced_responses` (from 0 to the record's metered responses), taken only when the
-record has a metered response; whether a run whose launcher had no price table carries the `no-price-table` gap; and
-for a record with no `run_end`, `time_taken.seconds`, the clock reading a live run was measured to. The cost's text,
-its coverage gap, `coverage.complete`, the stall and the refusals per minute are made from those again and compared
-like the rest, so `coverage.complete` can follow from a taken number: a receipt whose only gap was its unpriced
-responses still matches with that count set to 0 and its cost text, gap and `coverage.complete` changed to follow, and
-the check names both numbers as taken. Numbers are compared as written, so keep
-the file as `tego session show --json` wrote it: a tool that rewrites `1.5` as `1.50` makes a mismatch. Binding costs `tego session show --json` one more check of every line: on
-a 20,002-line record it took 2.5 to 3 times as long as the receipt alone (0.6 s against 0.2 s). What a match does not
-show: that the record is complete, that the machine or the person who ran it was honest, who ran it, when, or that it
-is the run you expected. Anyone who can write both files can make a pair that matches; nothing is signed.
+on the machine and account that ran it; in CI that file goes with the runner. Keep the JSON receipt and run folder
+together: `tego session show <run> --json > receipt.json`. The record is the folder's `events.jsonl`.
+`tego session show --check receipt.json <run folder> --json` compares these files without reading chain.log.
+
+New receipts retain `receipt_v:1` and use `binding.v:2`. The binding names the run, complete line count, head,
+ended status, record bytes/SHA-256, release version/commit and limits. It also carries the compiled contract hash,
+the recorded capability map, the producer executable hash and a checksum of the receipt itself. That last checksum
+covers every receipt value except its own field, so editing a total without updating the checksum fails before the
+record's totals are recomputed. This is consistency, not authenticity: anyone who edits the receipt alone can
+recompute its checksum. Matching the record still requires the separate facts comparison. The compiled hash is
+separate from the YAML file's hash and does not include runtime/command grants.
+
+A generic comparison returns `match` or `match-unended`, exit 0. `match-unended` means the record has no `run_end`.
+Exit 1 means mismatch, 2 bad usage and 125 that a required check could not run. A missing or unreadable record
+now gives `cannot-check` and exit 125 in generic `--check` too, rather than mismatch and exit 1, unless a separate
+check failed. Older binding-1 receipts still
+check with their original shape and have no receipt checksum; their totals are compared only by `facts`. The
+output's `binding_v` says which version was checked. An unknown binding version returns `cannot-check`, exit 125, never a match. A receipt with no binding cannot be checked this way.
+
+**Requiring a completed run.** Keep the launcher's `run-status.json` too. Request it at launch with
+`tego run agent.yaml --status-file /absolute/protected/run-status.json`; choose a fresh directory outside the agent's
+grants. Its existing parent must be owned by the launcher and mode 0700; the destination must be absent, and no
+path component may be a symlink. Tego writes a new 0600 file and atomically renames it through the held parent
+directory. `--status-file` with `--observe` is a usage error (2), because that mode does not protect the file from
+the agent. With `--service`, every restart using the same path is refused because the destination already exists;
+arrange a fresh path for each run. A failed final write returns 125. Then use `tego session show --check receipt.json <run folder> --require-ended --status-file
+/absolute/protected/run-status.json --json`. Without an explicit `--status-file`, the checker looks in the run folder
+and then its parent. The stricter mode requires `run_end`, complete receipt coverage and a matching status with
+`removed:true,deferred:false`. It checks the run and kernel cgroup ID against the record. An unreadable record
+or an unverified chain/head leaves ended and teardown not checked; unavailable required files give
+`cannot-check`, exit 125 unless a separate check failed. Missing or malformed status also gives `cannot-check`,
+exit 125; an unended record, deferred cleanup or an explicit removal refusal gives `mismatch`, exit 1. If comparison otherwise passes but coverage is false, the result is `incomplete`, exit 1.
+When the receipt was read successfully and its coverage is false, the text starts with **Incomplete** and JSON
+says `coverage_complete:false`. An unreadable receipt makes no coverage or binding-version statement. JSON
+`complete:true` is available only after these ended-only checks pass. A generic match keeps `complete:false`.
+
+The status file is an assertion by the launcher about the scope it owned. The copied file cannot let a later reader
+inspect that earlier machine. A collector on the run's machine still has to confirm that exact scope is absent.
+Pre-scope refusal writes no status. A lost launcher may leave initial `removed:false,deferred:false` status or no
+file; a later end marker alone cannot establish teardown. `removed:true` covers only that scope. It says nothing
+about a process that left the scope or work through an allowed daemon (GAPS A8). An uncertain tier never claims
+confirmed removal. The ten lifecycle checks and expected results are [owed in a guest](../spec/run-status/v1/README.md#guest-lifecycle-checks-owed).
+
+Totals require Linux and the exact release version/commit named by `binding.receipt_by`. A different release,
+missing version/commit or an inexact build (`+dirty`, commit `none`) gives exit 125 for totals comparison. The
+producer executable hash is outside this build identity; another same-release asset may check it. Its hash is
+listed in `not_compared` and must be checked independently against trusted release checksums. Cross-architecture
+execution remains unmeasured.
+
+`facts` computes the receipt again and compares every key and value. It takes only the documented inputs the
+record cannot supply: price-table cost and unpriced-response numbers, the no-price-table state, and a live run's
+clock. Each taken input is validated and listed in `not_compared`; dependent cost text, coverage and timing are
+computed again and compared. A mismatch names the differing field before comparing `binding.receipt_sha256`,
+so a resealed false total reports the total's field. Cost must be nonnegative, never `-0`; the unpriced count cannot exceed the record's
+metered responses. A valid taken price input can change the resulting coverage: setting the only unpriced count
+to zero, then recomputing its dependent fields and receipt checksum, can still match. The check reports that input
+as taken. Preserve JSON number spellings: changing `1.5` to `1.50` is a mismatch. Binding costs
+one more chain walk; a prior 20,002-line measurement was 0.6 s against 0.2 s without binding. These timings were not
+remeasured for binding 2. Full coverage still does not establish complete observation, honest execution, authorship,
+when the run happened or whether it is the expected job. Retain the receipt's tier, read notes, limits and lower bounds.
+
+`tego session show --verify-ci <evidence> --expect <expected.json> --checksums <checksums.txt>` compares retained
+local CI inputs. Supply expectations and release checksums independently of the evidence. This command does
+not authenticate the checksums file or check its signature, and both text and JSON output state that limit.
+A matching checksums digest means only that the given file matches the manifest. Producer and earlier signer
+asset contradictions are mismatches (1); an unavailable checking release, commit or executable identity is
+not checked (125 unless a separate mismatch was found). Before a full `match`, text identities are labelled
+`Expected (not established):`. Bundle and certificate verification remain unavailable, so local consistency
+alone cannot return a full match. Independent expectation/checksum inputs refuse every symlink path component,
+including a symlinked `/home`, with exit 125; use their real, unlinked paths.
 
 ## Finding agents that were not started under Tego (2026-10-06)
 
-`sudo tego agents` lists the agent processes running on this machine: any process a signature names (shipped: `claude`,
+`sudo "$(command -v tego)" agents` lists the agent processes running on this machine: any process a signature names (shipped: `claude`,
 `codex`, `opencode`, `gemini`, each by its program name and by its node entry point), with its pid, parent, program, arguments
 and whether it runs **inside a tego run** (its cgroup is a run's `run-<id>.scope`) or **outside** every one, as an agent
-started in a plain terminal does. `sudo tego agents --follow` goes on listening to the kernel's process events and prints a
+started in a plain terminal does. `sudo "$(command -v tego)" agents --follow` goes on listening to the kernel's process events and prints a
 line when an agent starts and when it exits, until you interrupt it (exit 0); `--children` adds each process an agent starts,
 `--json` writes one JSON object per line. `--signature <rule>` adds a signature, replaces every shipped one of the same name
 or, as `name=`, removes it; the rule is a program name (`mytool`), an absolute path, `name=<argv pattern>`
@@ -952,7 +1149,7 @@ gives 0), and the line says the status is unknown. `argv` is printed as the proc
 
 ## Adopting an agent that is already running (2026-10-06; ADR 0055)
 
-`sudo tego adopt --pid <pid>` governs an agent that was started outside Tego, in any terminal or IDE. A running
+`sudo "$(command -v tego)" adopt --pid <pid>` governs an agent that was started outside Tego, in any terminal or IDE. A running
 process cannot be given a seccomp filter, Landlock or another environment, so this is root's and the kernel's: the
 agent's own process tree, and nothing else, moves into a fresh cgroup,
 `tego.slice/tego-<agent>.slice/adopt-<run id>.scope`, where tier 2's programs record from the kernel every program
@@ -962,10 +1159,21 @@ the agent's tree ends (run_end `exit`). Ctrl-C, SIGTERM, `tego session stop <run
 **release** it: the tree goes back to the cgroup it came from and runs on, unrecorded (run_end `stopped`, naming who
 asked). `tego session stop` and `--release` signal nothing: they leave a release request (`/run/tego/adopted/<run>.release`)
 that this adoption alone answers, so a guard's other adoptions, and the guard, run on. If root moves the tree out by
-hand, the run ends `stopped` and says so. A process the release finds no cgroup to put back in (the one it came from
-and every one above it gone or refusing it) stays in the scope, released and unrecorded, counted by `gap
+hand, the run ends `stopped` and says so. An agent that was the only process of a transient scope (`systemd-run --scope
+agent`, an app launched from a desktop) leaves that scope empty when it moves, and systemd removes it; every cgroup above a
+scope has controllers on for its children and refuses a process of its own, so the release makes a new empty cgroup
+`tego-released-<run id>` under the nearest cgroup above the origin that lets one be made (for a user's scope, the user's own
+`app.slice`) and puts the tree there: no longer in a Tego scope. Under a user manager (the origin was below
+`user@<uid>.service`, as for a desktop launcher or `systemd-run --user --scope`) the leaf is in the user's own part of the
+hierarchy: a logout ends it as it would have, and it stays until that user manager stops (it is the user's `rmdir` to
+make). Where the origin was directly under `user-<uid>.slice` (a session's own scope) or `system.slice` (`sudo
+systemd-run --scope`), the leaf is root's in a root's slice: the user cannot remove it, stopping a user manager does not
+remove it, and a session logout does not reach a process in it (remove it with `rmdir` as root once it is empty). The
+properties of the origin unit (`MemoryMax`, device rules and the like, set with `systemd-run -p`) do not follow the tree
+into the leaf, as they did not follow it into the adoption's scope. A process the release finds no cgroup to put back in, and no place to make one (the one it came from and every one
+above it gone or refusing it, and none lets a cgroup be made) stays in the scope, released and unrecorded, counted by `gap
 adoption-left-in-scope`; the scope and the adoption's record stay with it (the record marked released), `tego agents`
-reports it governed by the ended run and the guard refuses it under `governed`, and `sudo tego adopt --release --pid
+reports it governed by the ended run and the guard refuses it under `governed`, and `sudo "$(command -v tego)" adopt --release --pid
 <pid>` moves it out once a cgroup takes it, then removes both. `--release --pid` acts only on a process in an adoption's
 scope at its own place (`/sys/fs/cgroup/tego.slice/tego-<agent>.slice/adopt-<run>.scope`) that the run's record
 names: a cgroup a user made with an adoption's name in their own subtree is refused, `[adopt-refused]`. A release request answered so is not a failure of the
@@ -1024,7 +1232,7 @@ in every user namespace: mount APIs and mount-namespace creation or installation
 of that capability. Creating a user namespace alone may still succeed but does not permit mounts. This starts
 at the arm; earlier changes and changes by processes outside the run remain outside the guarantee. Each plane
 refusal is a ledger line with `mechanism: plane` (rule `mount-topology` for this capability). It needs a plane mode on this
-machine (`sudo tego machine check`: `decision plane: fmod_ret` or `lsm`); the fanotify fallback cannot refuse a write, so
+machine (`sudo "$(command -v tego)" doctor`: `decision plane: fmod_ret` or `lsm`); the fanotify fallback cannot refuse a write, so
 there the adoption is refused. Every rule that cannot be added to a running process is refused before anything moves,
 each one named: a `net:` section (a socket made before the adoption would not be governed, and the record could not
 tell which), `fs.ask` and `ask`, `env`, `models` and `capture`, the limits an adoption cannot hold (`limits.memory`,
@@ -1099,7 +1307,7 @@ boundary write entry at or inside the owner's `~/.tego` is refused (`contradicti
 deny_read paths made after the guard started (a new `~/.aws`) are covered from its next start: restart the guard
 after setting up a user's credentials.
 
-The guard. `sudo tego agents --follow --adopt --uid <uid>...` adopts each agent the detector reports outside every
+The guard. `sudo "$(command -v tego)" agents --follow --adopt --uid <uid>...` adopts each agent the detector reports outside every
 governed run whose real, effective and saved uid are one listed uid, as it starts (or, when the guard starts, as it
 is found running). Any local user can name a program `claude`, so `--uid` is required, and root's agents are adopted
 only with `--uid 0`; any other agent is reported (`adoption_refused`, with the rule) and left alone. `--boundary` and
@@ -1115,8 +1323,8 @@ If the adopter dies. Its reaper, `tego __adopt-reap` in tego's `helpers.scope`, 
 `orphaned` and removes the scope and the run's kernel state: killing the adopter leaves nothing attached and does not
 kill the agent. If the reaper is gone too, nothing records the agent any more: it stays in the scope, and a boundary's
 plane rows go on refusing what the contract forbids, with no ledger line for those refusals, until it is released.
-`sudo tego adopt --release --pid <pid>` releases it from the adoption's record and writes run_end `orphaned` saying
-who did; so does a root sweep (`sudo tego gc`), whose run_end `orphaned` has no detail and is written only after the
+`sudo "$(command -v tego)" adopt --release --pid <pid>` releases it from the adoption's record and writes run_end `orphaned` saying
+who did; so does a root sweep (`sudo "$(command -v tego)" gc`), whose run_end `orphaned` has no detail and is written only after the
 tree is out. Until then the ledger shows the run as lost (`tego status`), never ended: an unprivileged `tego gc`
 leaves it lost and says only root can release it, and a process no cgroup takes back keeps it lost, record and scope
 kept, for the next try. No sweep ever kills an adoption's scope.
@@ -1128,7 +1336,7 @@ a boundary's plane rows too). Nothing is hidden. `tego adopt --release --pid <pi
 id the scope's `cgroup.threads` lists into the `cgroup.procs` of the cgroup the record's `from` names (a thread's id
 written there moves its whole process; the scope's own `cgroup.procs` leaves out a process whose main thread exited
 outside it), `rmdir` the scope once `cgroup.threads` is empty (its run-set row goes with it), delete the two files, and
-`sudo tego gc --builds` to remove an idle build.
+`sudo "$(command -v tego)" gc --builds` to remove an idle build.
 
 ## Host daemon sockets with no `net:` section (ADR 0070, 2026-10-25)
 A contract with no `net:` section keeps every IP destination but reaches only the unix sockets the run itself bound
@@ -1158,9 +1366,16 @@ abstract, is refused, `rule: host-sockets`, and the line names the socket and, f
   `route-change`. Any other netlink message (another process's port id, a multicast group, generic netlink such
   as nl80211 or ethtool) and an `AF_PACKET` socket are refused `host-sockets`. `host_sockets: true` restores them. A
   `net:` section does not: it refuses other netlink protocols at `socket(2)`, `EPROTONOSUPPORT`, so `ss` and `ethtool`
-  fail there. Under `net.assurance: kernel` the C library's interface lists still fail, since `recvmsg` is refused there:
-  `if_nameindex` and `getifaddrs` return `ENOSYS`, and Node's `os.networkInterfaces()` throws. `getaddrinfo` goes on, and
-  Go's `net.Interfaces`, which reads with `recvfrom`, works.
+  fail there. Under `net.assurance: kernel` the C library's interface lists work wherever a decision plane runs the run
+  (tiers cgroup and bpflsm with `decision_plane` lsm or fmod_ret): the plane's `socket_recvmsg` refuses only a receive on a
+  unix socket that carries a control buffer (`EACCES`, a ledger line, rule `socket-import`), so a route socket's reply is
+  read and no descriptor can be received; a UDP or TCP control receive passes with no line. A run that holds its opens
+  (`fs.reads: held`, or `gate.completion: held`) is no exception since 2026-11-21: its open deputy, which receives with
+  a control buffer, is passed by its identity alone (ADR 0128, amended). A run with no plane (tier landlock, or tier
+  cgroup on the fanotify fallback) keeps the filter's `ENOSYS` for every `recvmsg`: `if_nameindex` and `getifaddrs` return `ENOSYS` and Node's
+  `os.networkInterfaces()` throws there, as before; `tego compile --test` says so under its tiers line. `getaddrinfo`
+  goes on, and Go's `net.Interfaces`, which reads with `recvfrom`, works everywhere. `recvmmsg` and `pidfd_getfd` stay
+  `ENOSYS`. A refused control-bearing `recvmsg` now returns `EACCES`, where the filter answered `ENOSYS`.
 - **The opt-out** `host_sockets: true`, in the top-level contract only (a profile's is ignored,
   `profile-cannot-loosen`), restores the old reach: `compile` warns at the key, naming each well-known daemon socket
   it finds here and what it gives, and run_start records `host_sockets: true`. Prefer the `unix:` entry.
@@ -1199,6 +1414,37 @@ that ignores that variable fails to reach its model rather than spend past its b
 `bpflsm` under `record: summary` or `full`, a run with a model budget whose probes could not start (a capture object
 the kernel refused, a spent `bpf.ring_budget`) is refused `[capture-unavailable]` even though the forwarder runs,
 since that table does not refuse a direct connection; `capture: forwarder` is the fix that needs no probe.
+
+An explicit `capture: uprobe` at either root tier with recording enabled is refused at start if the capture
+programs cannot start, even without a model budget. Each probe now attempts a failed tail call into an empty
+array to avoid a shared private stack on exposed kernels. The loader reads back the loaded instructions and
+requires that call. If it cannot read them or the call is missing, the refusal and `tego doctor` say why. Auto
+keeps the forwarder available, with the budget checks above. This does not remove the other documented capture
+losses. All eight x86-64 kernel rows passed loading, read-back and availability with a disclosed dump-only test
+overlay; the corrected stock check's RHEL 9 and Fedora 7.2 reruns and arm64 acceptance remain owed in a guest.
+The Fedora 7.0 BPF-runtime comparison places the extra call's cost within noise, not zero (ADR 0150).
+
+Host hardening can hide the instructions even after a successful load. Measured on Fedora 7.0.14, read-back worked
+with `net.core.bpf_jit_harden=0` and `kernel.kptr_restrict=1`; setting both to 2 withheld read-back even from root.
+All eight bodies loaded, but the visibility check made uprobe capture unavailable. The error says
+`cannot verify capture stack safety: read translated instructions: instructions: restricted by kernel.kptr_restrict
+and/or net.core.bpf_jit_harden sysctls`. Doctor still offered the bpflsm tier with 27 of 27 required hooks; its
+capture summary said `0 of 6 programs load`, attachment not tested. That count describes availability after
+read-back, not a verifier rejection.
+
+Explicit `capture: uprobe` with `record: full` then exited 125 before the agent started, naming the cause and offering
+`capture: forwarder` with a `models:` endpoint. Raising `bpf.ring_budget` does not remedy this read-back restriction,
+although the generic refusal also mentions ring-budget remedies. With a declared endpoint and no model budget,
+`capture: auto` started the forwarder, exited zero and recorded one count-zero `capture/mechanism-unavailable` gap
+for uprobe. That observation does not establish capture of direct traffic bypassing the forwarder or every budget
+and network-policy combination; the budget checks above still apply.
+
+Keep the hardening settings and use `capture: forwarder` with a declared `models:` endpoint, or relax the blocking
+setting only if the host owner accepts the tradeoff. Tego respects host hardening and never works around it.
+JIT blinding combined with denied pointer visibility can also hide the stream, including missing `CAP_SYSLOG` with
+`kernel.kptr_restrict=1`; that combination was reviewed, not measured here. `kptr_restrict` alone does not imply
+failure for an unblinded program. Missing BPF privileges, denied program-info access, decoding errors or an actual
+lockdown/LSM denial also make the check unavailable; no separate blanket lockdown refusal is assumed.
 
 ## The price table
 `limits.cost_usd` is estimated from the YAML file at the machine config's `prices:` path, `~/.tego/prices.yaml` unless
@@ -1261,7 +1507,7 @@ you or root, not group- or other-writable, in a directory that is not either, an
   way; `tego gc --builds` removes every idle build at once. A removal returns only once the kernel has released the
   build's links (it waits at most 30 s for a program something else still holds), so `gc --builds` and a
   `bpf.linger: 0` run's exit take the kernel's teardown, a few seconds for a build with a plane, and the next run's
-  load does not wait for it. A lock cannot go stale. `sudo tego machine check` lists every build (`--json`'s `builds`):
+  load does not wait for it. A lock cannot go stale. `sudo "$(command -v tego)" doctor` lists every build (`--json`'s `builds`):
   whether a run holds it, how long it has been idle, whether its timer runs (`timer`, `timer_pid`) and so when it
   goes, the memory its programs and maps charge (`memlock_bytes`, the fdinfo `memlock` bpftool shows, each object
   once; `memlock_unreported` counts what the kernel did not report, shown as `n/a`, never 0; the run rings are
@@ -1276,8 +1522,9 @@ you or root, not group- or other-writable, in a directory that is not either, an
   `~/.tego`, `config.yaml` and `tego.log` before it reads the config, and on `chain.log`, the ledger root, `.live` and
   `$XDG_RUNTIME_DIR/tego` before it compiles, warning `[own-state-mode]` for each; every run gives all of these back
   at its end too, and its own run and runtime directories. `tego gc` gives back `~/.tego`, `config.yaml` and
-  `tego.log` before it reads the config too, and deletes nothing by a config it still cannot read whole: it exits 125
-  `[config-untrusted]`, so the daily `tego-gc` unit fails and its journal says why. Only the owner's bits are added,
+  `tego.log` before it reads the config too. If a layer is still unreadable or unsafe, gc reports
+  baseline UNKNOWN and the cause, returns 125 and sweeps/deletes nothing; the daily unit's journal
+  carries the warning. Only the owner's bits are added,
   since someone else could have changed what a directory others can write holds: a `~/.tego` or `config.yaml` made
   group- or other-writable still has every run refused by the config trust check, with its fix (`chmod g-w,o-w`), and
   a `$XDG_RUNTIME_DIR/tego` made so has every run that routes Codex refused, with its own fix (remove it, or export
@@ -1287,31 +1534,39 @@ you or root, not group- or other-writable, in a directory that is not either, an
   lost action. A root launcher restores none (it reads and writes through any mode); its agent can take the modes of
   your own state above, which your next unprivileged `tego run` restores, so if you launch only as root, restore them
   by hand for your own `tego status`, `events` and dashboard. Restore by hand too a link at one of these names (left
-  alone), an earlier run's directory, the directory of a run whose launcher died, `$XDG_RUNTIME_DIR` itself (at mode
+  alone), the directory of a run another user owns, `$XDG_RUNTIME_DIR` itself (at mode
   0 every later run is refused `[run]`: no runtime directory can be made in it), a directory inside a run's runtime
   directory (its `CODEX_HOME`), which otherwise keeps that runtime directory, `auth.json` included, until you log out,
   and the files you write that tego only reads (a `$TEGO_CONFIG` outside `~/.tego`, `prices.yaml`, the profiles and
-  the registry): `chmod 700` a directory, `chmod 600` a file. While a run lives, its agent can still take the modes of
-  its own run directory, which keeps `tego status`, `events` and `stop` out of it until the run ends: stop such a run
-  with Ctrl-C in its terminal or a signal to its launcher.
+  the registry): `chmod 700` a directory, `chmod 600` a file. The run directories of your live, orphaned and earlier
+  runs (each with its `events.jsonl`, lock file and `blobs/`) are given back by your next `tego run` at its start and by
+  `tego gc` (not `--dry-run`), owner bits only. While a run lives, its agent can still take the modes of
+  its own run directory, which keeps `tego status`, `events` and `stop` out of it until the next restore: they say the path, its mode
+  and the one command, `chmod -R u+rwX '<run directory>'`, which adds your own rights only; or stop such a run
+  with Ctrl-C in its terminal or a signal to its launcher. A bad config layer alone does not block those
+  observation/stop commands: they report a degraded load with baseline UNKNOWN and the cause.
+  Compile, check, launch and rule-decision commands refuse the bad layer. Doctor reports its mode
+  problem and repair advice but restores nothing. The decision planes can hold chmod under their
+  applicable deny-write rows; Landlock and fanotify cannot. See ADR 0144's per-mechanism limits.
 - **Another manager's cgroup programs.** A program attached to a cgroup at or above the runs' without
   `BPF_F_ALLOW_MULTI` (`bpftool cgroup attach`'s default) refuses every run's program of that attach type: a root run
-  stops before the agent starts (exit 125, `ErrCgroupAttachConflict`), and `sudo tego machine check` fails the same program's
+  stops before the agent starts (exit 125, `ErrCgroupAttachConflict`), and `sudo "$(command -v tego)" doctor` fails the same program's
   row first. Both name the cause and `bpftool cgroup tree`, which shows the holder; detach it, or attach it again with
   `BPF_F_ALLOW_MULTI`. systemd attaches its own programs that way, so they do not conflict.
 
 ## Tier 3 and the decision plane
 Tier 3 (`bpflsm`) is the kernel decision plane in LSM mode, on top of tier 2 (ADR 0024).
 The same programs also load as `fmod_ret` hooks, which is how tier 2 decides opens, execs and file mutations in the
-kernel where `bpf` is not an active LSM. `sudo tego machine check` says which it is:
+kernel where `bpf` is not an active LSM. `sudo "$(command -v tego)" doctor` says which it is:
 `decision plane: fmod_ret (tier 2 decides opens in the kernel; tier 3 needs bpf in lsm=); build 1a2b3c4d, ...`. The
 build is the first 8 characters of the binary's object hash, the name of its pin directory. Where `bpf` is already
 in `lsm=`, fmod_ret is the pin's doing (`bpf.plane pins fmod_ret`) or LSM mode's failed probe (`tier 3 needs LSM mode
 to pass, see the lsm mode line`, whose detail and fix say why); editing `lsm=` fixes neither.
 
 - **LSM mode by distribution.** `bpf` is already in the boot `lsm=` list on Debian 13, Fedora, RHEL 9 and 10 and
-  Amazon Linux 2023: tier 3 needs no change there. Ubuntu (24.04, 25.10, 26.04) and WSL2 kernels before
-  6.18.54.1 lack it.
+  Amazon Linux 2023: with the other root-tier preconditions, tier 3 needs no LSM change there. Ubuntu
+  (24.04, 25.10, 26.04) lacks it. WSL must first satisfy the initial process-id namespace requirement; the measured
+  WSL 3.0.5 guest does not. Changing its LSM list cannot make root tiers available.
   Doctor's `lsm` line then fails for tier 3 only (tiers 1 and 2 are not affected) and prints one fix built from the live
   list, so no LSM the machine runs is dropped: `update-grub` after editing `GRUB_CMDLINE_LINUX_DEFAULT` in
   `/etc/default/grub` on Debian and Ubuntu, `grubby --update-kernel=ALL --args="lsm=..."` on the RHEL family, Fedora and
@@ -1335,7 +1590,7 @@ to pass, see the lsm mode line`, whose detail and fix say why); editing `lsm=` f
   2, said so on doctor's line; tier 3 never falls back.
 - **Pin layout and gc.** A plane mode's programs, maps, links and fill filler live in
   `/sys/fs/bpf/tego/<bpf_hash>-<mode>/`, next to the build's own `<bpf_hash>/`, where `<bpf_hash>` is 16 hex characters.
-  They are removed with the build: idle for `bpf.linger`, or now with `sudo tego gc --builds`. A build is never removed
+  They are removed with the build: idle for `bpf.linger`, or now with `sudo "$(command -v tego)" gc --builds`. A build is never removed
   while a live run's row names it.
 - **Row caps.** A run's contract becomes rows the kernel walks: at most 4096 file rows (one per keyed inode) and 1024
   exec-map entries (the exec entries, the bare names and one policy row) a run. A contract over either cap is never
@@ -1377,7 +1632,7 @@ charges its size plus its page array in memlock: about 2.1 MB for a 2 MiB ring (
 so about 4.2 MB for a run that captures. `bpf.ring_budget` (default 256 MiB) caps what every live ring of every build
 on the host charges together, about 60 capturing runs at the default size. A run whose record ring would pass it is
 refused, exit 125, naming the budget; one whose capture ring would pass it runs without capture, and is refused
-`[capture-unavailable]` when it has a `tokens`, `cost_usd` or `repeats` budget. `sudo tego machine check` shows, in its
+`[capture-unavailable]` when it has a `tokens`, `cost_usd` or `repeats` budget, or explicitly requests uprobe capture with recording enabled. `sudo "$(command -v tego)" doctor` shows, in its
 tier-2 builds section, how many run rings there are and what they charge against the budget, per build and in all.
 Raise `bpf.ring_budget` for more concurrent runs; raise `record.ringbuf` only if runs report `ringbuf-full` or
 `ring-buffer-drop` gaps (the reader drains every 50 ms and is woken at an eighth full). A run that captures with uprobes needs
@@ -1422,6 +1677,12 @@ every coreutils entry has one. The dashboard's contract check shows it as `tego 
 file's link count and name and runs nothing. List a multi-call file only where every program it holds may run. Where
 the name must bound the program, run at tier cgroup or bpflsm, which needs root. `exec.deny` command rules read
 `coreutils rm` and `busybox rm` (ADR 0048), but not every name form upstream uutils accepts.
+
+`tego machine check` also prints a `note routing:` line (and `--json` a `routing` key) when a routing table holds `local`,
+`broadcast` or `anycast` routes that Tego does not read as this host's: a table that no policy rule the run's own traffic
+can match leads to (Cilium's `local default dev lo table 2004` behind a mark), named by number. It reads the
+policy rules and routes as a run does, unprivileged, and runs nothing. The same line says so when the rules cannot be read.
+Net rules for this host then do not cover a destination only those routes deliver here (GAPS C46).
 
 ## Exec command rules
 `exec.deny`, `exec.ask` and words after a command in `exec.allow` name what a program is asked to do: a whole
@@ -1597,7 +1858,16 @@ What it costs and what it leaves:
   the first policy-update line to equal the exact 49-byte never-updated kernel line, newline included. Both facts are read afresh; no policy observation is retained between checks or runs; no policy
   loader is needed on a stock Debian install with no policy. An observed domain other than `<kernel>` refuses held opens
   on this machine. If TOMOYO securityfs is unreadable, expose readable
-  `/sys/kernel/security/tomoyo/self_domain` and `stat`; there is no TOMOYO contract opt-in. A nonzero or timestamped
+  `/sys/kernel/security/tomoyo/self_domain` and `stat`. Under Docker's default AppArmor profile a bind at
+  `/sys/kernel/security` stays unreadable (ADR 0041's round-three evidence), so bind the host's
+  `/sys/kernel/security/tomoyo` read-only at another path (`-v /sys/kernel/security/tomoyo:/run/tego-tomoyo:ro`) and
+  name it in `/etc/tego/config.yaml` as `tomoyo: {facts_dir: /run/tego-tomoyo}` (a clean absolute path; a user layer's
+  value is ignored with a warning). Tego then reads `self_domain`, `stat` and `profile` there and accepts each only
+  when it is on securityfs, on a read-only mount whose root is TOMOYO's own directory; a writable bind, another
+  securityfs directory (`apparmor/`), a tmpfs copy or a path through a link refuses as before, and `tego doctor` names
+  the path read. Each check reads `/proc/self/mountinfo` too, so a held open costs more there. A container that cannot
+  be given the bind keeps refusing: there is no TOMOYO contract opt-in and no setting that assumes TOMOYO enforces
+  nothing. A nonzero or timestamped
   update line says policy was updated since boot: every held file open on the machine is refused until
   the next restart, even without policy activation (GAPS C75). No host privilege is needed to cause
   this: TOMOYO's built-in initializer rules create a domain and count an update for a program named
@@ -1605,7 +1875,11 @@ What it costs and what it leaves:
   link, from the root of the starting process's mount namespace. A container with a real `/sbin`
   directory, or a local user able to create a user and mount namespace with that layout, can move
   the counter for the whole machine. The refusal returns after a restart if such a program runs
-  again. This fails closed: opens are refused, and nothing is opened that should not be. On Debian
+  again. This fails closed: opens are refused, and nothing is opened that should not be. A root tier (cgroup or bpflsm,
+  launched by root) recovers: its launcher can read TOMOYO's root-only `profile` and admits a held open when the whole
+  profile, read between two reads of the update line, has no mode `enforcing` in any namespace, profile or category
+  (ADR 0041 SEC08b); tier landlock's launcher is the invoking user, cannot read it, and keeps the refusal, whose words
+  then add "a root tier can prove nothing is enforced, and this tier cannot read TOMOYO's profile". On Debian
   12 and 13, `/sbin` is a link into `/usr`, so the host's modprobe is named `/usr/sbin/modprobe` and
   does not match; the counter was measured at zero after boot and module load/unload. For a machine
   that does not use TOMOYO, the lasting remedy is to omit `tomoyo` from the boot `lsm=` list, retaining
@@ -1860,7 +2134,12 @@ a rename or hard link with either end at or under it, which would give the file 
 refused (exit 1, `[reads-unseen]`) on a run whose reads tego does not see, where it would refuse nothing. A `write`
 value is the same, for changes only: an open for writing, a create, an unlink, a rename or link at either end, a
 mkdir, a mknod, a symlink's own name, a truncate and an attribute change; plain reads go on. For every path kind a
-rename of a folder above the block is refused too, so a move cannot carry the blocked files out of its reach. A `path`
+rename of a folder above the block is refused too, so a move cannot carry the blocked files out of its reach. Every
+path, `read` and `write` block also covers the other names the mount table gives its file when the run's launcher
+first sees the block (a bind of the folder or of a folder above it, WSLg's `/mnt/wslg/distro`; ADR 0011, amended
+2026-11-19, round 5), under the block's own rule. **Mounts made after that are not seen**: a bind made after the block
+was added (or, for the contract's own rules, after the run started) shows the file under a name the block does not
+cover, and a block whose other names the mount table could not all list covers those it could, and says so: `tego block` prints a sentence naming the file and the reason, and the run's record gets a `live-block-partial` gap (GAPS C68). A `path`
 or `read` block also refuses a watch of what it covers (inotify, fanotify or dnotify, which would report which of its
 files are opened and changed; supervisor R36), on a run whose reads tego does not see as well; a `write` block refuses
 none. A launcher older than the read and write kinds (a run whose `run_start` has `record_minor` below 24, such as one started
@@ -1870,8 +2149,21 @@ by an older binary) cannot read an overlay holding one: it keeps the blocks it l
 it enforces), the dashboard does the same, and the Rules page offers such a run a path block for an added
 `fs.deny_read` and no write block. After upgrading, rebuild `tego` and `tego-control` together and restart the runs
 that should get read and write blocks. At tier 3 (a run whose `run_start` names `decision_plane` `lsm` or
-`fmod_ret`) the kernel decides many file changes without asking the supervisor, so a `write` block there refuses only
-the changes that still reach it; the Rules page offers no write block on such a run. A
+`fmod_ret`) the kernel decides file changes and reads without asking the supervisor, so the launcher puts each `path`,
+`read` and `write` block in force in the kernel's decision plane too (ADR 0124, amended 2026-11-21), and makes the run
+directory's `live-plane` mark: there a block is **in force** for every change and read the plane decides, a `read`
+block may be placed on a run whose supervisor does not see its reads, and the Rules page offers write blocks. On such
+a run a block follows the file, not its spelling: a hard link made before a block on that file and a file under a
+renamed folder stay blocked (an older hard link to a file inside a blocked folder is not, as at every tier), the rename or removal of a folder or link the block's path runs through is refused, a read block also
+refuses deleting or replacing the blocked file, and a block on a path that does not exist yet refuses making its
+missing name (and the first missing folder above it). A block keeps every object it landed on until it is removed, so
+a file renamed away after the block (by the agent or on the host) stays blocked where it went; each save of a blocked
+file by replace (most editors) keeps the old copy blocked and on disk until the block is removed, and about a thousand
+of them in one run make the block refuse every change of its kind in the run. A descriptor opened for
+writing before the block keeps writing, as everywhere; a write block does not cover a file's timestamps (`touch`) or
+its unprivileged inode flags. While any block is on, a file action more than 64 folders below the root is refused as
+unresolved anywhere in the run (the plane cannot say no block lies above it). A run whose launcher predates the mark says **partly in force** for a `write` or `path` block, naming
+the file changes the kernel decides as not covered, never "in force". A
 block only tightens: removing one removes only what it added, never something the contract
 refuses. A run that has ended is refused (exit 1, `[not-running]`): nothing would enforce the block; for its next run,
 make it a rule of the contract (`tego rule`); `tego unblock` on such a run says its blocks ended with it, and leaves
@@ -1903,8 +2195,10 @@ policy rules look up (`ip route show table local`, and those routes in tables ma
 AnyIP range (`ip route add local 192.0.2.0/24 dev lo`, or the same with `table main`) is one of its own, a broadcast
 address set by hand (`ip addr ... brd`) is one of its broadcast addresses, and a datagram to an IPv6 anycast address
 it joined (a forwarding host joins its subnets' router anycast addresses) is refused as a group datagram is; a block
-on an anycast address refuses that address alone. Such a route in another table, which only a policy rule you add
-(`ip rule`) or a VRF sends lookups to, is not read. Until the tables are first read the interfaces' addresses answer;
+on an anycast address refuses that address alone. Such a route in another table is read when a policy rule you add (`ip rule add from all lookup 100`) leads to its
+table and the run's own traffic can match that rule (no `fwmark` the mask covers, `iif` absent or `lo`, a `uidrange`
+that holds the run's user; an `oif` or VRF rule counts, since an agent can `SO_BINDTODEVICE` a socket), *since 2026-11-22*; one that only a mark leads to (TPROXY's and
+Cilium's tables) is not read, and `tego doctor` names it in a `note routing:` line. Until the tables are first read the interfaces' addresses answer;
 once read, the last reading stays in force while they cannot be read again. The `models[]` guard and a `net.allow`
 host name's resolved-address check read this host the same way. GAPS C46 lists what the reading of this host's
 addresses leaves out.
@@ -1935,7 +2229,11 @@ socket onto the descriptor and rewrite the address. Under a `net:` section, and 
 
 What a block does to the run is said in one word, here and on the dashboard (`tego block --list` prints it beside
 each block, `--json` as `state`): **in force** once the launcher has written the gap line confirming it (about half a
-second after the write), **waiting** until then, **refuses changes only** for a path on a run whose reads tego does not
+second after the write), **partly in force** for a write or path block on a run whose kernel decides file changes and whose launcher
+predates putting blocks in the kernel too (`state` `partly_in_force`: the supervisor refuses what reaches it, the
+kernel's own answers are not covered; a launcher that makes the run directory's `live-plane` mark puts them there, and
+its blocks read **in force**),
+**waiting** until then, **refuses changes only** for a path on a run whose reads tego does not
 see (held reads, `fs.reads: held`, or `record: full` let it refuse reads too), and **recorded, not enforced** on a
 `tego watch` run: a watched run refuses nothing, so a block there is written and marked on each matching line while
 the agent goes on, and `tego block` says so (`recorded, not enforced: run <id> is a tego watch run`, exit 0). A
@@ -1986,8 +2284,15 @@ run can be loosened and tightened again without a restart. A Locked run (the def
 The two modes, and what each one's guarantee is, are compared in docs/adr/0125-locked-and-adjustable-modes.md
 and docs/user/live-modes.md.
 
-- `tego lift <run> <read|net|exec> <value> [--for D | --until T] [--yes]` allows a fence entry that is one of the
-  contract's refusals; `tego grant` is the same request, worded for a fence entry that is new access.
+- `tego lift <run> <read|net|exec> <value> [--for D | --until T] [--note TEXT] [--yes]` allows a fence entry that is
+  one of the contract's refusals; `tego grant` is the same request, worded for a fence entry that is new access.
+- `--note` gives the lift a short text for the record (at most 200 bytes of printable text: no control character, line
+  break or tab). It is signed inside the lift's MAC, so it cannot be changed after the lift was signed, written on the
+  launcher's `live-rule-lifted` line as `live_block.note` (record minor 41), and shown, never acted on, by the
+  terminal, the dashboard's fence row and the receipt. A run whose launcher does not say it reads a note (an older
+  tego, or a run still starting: it makes the mark `live-note` in the run directory) refuses the note in words,
+  `[launcher-too-old]`, exit 1, and nothing is asked; the same lift with no note is never refused for it. A note that
+  is not printable text, or is too long, is exit 2. The dashboard's lift confirm has one optional text input for it.
 - `tego restore <run> <read|net|exec> <value>` refuses the entry again, now. It narrows, so it needs no confirmation,
   and from inside a run it may name only that same run.
 - Before a lift or a grant, the command says what the run will be able to do, for how long, and: "Enforced by
@@ -2016,6 +2321,16 @@ and docs/user/live-modes.md.
   that the saved change would not also make for the next run is not offered as its Live now. The Saved page and the
   line page list the change under "Next run" and link to the run's fence.
 - A lift does not outlive its run: a new run starts with every fence entry refused.
+- **A run launched with sudo is changed live as root.** Its folder is root's until the run ends, so that the
+  agent, which runs as you, cannot reach its chain or its live files (ADR 0042); for the same reason your own `tego
+  lift`, `grant`, `restore`, `block`, `tego mcp` switch or `tego route` choice cannot open it, and your dashboard, which
+  runs as you, cannot lift, grant or block for it (it lists the run and says it could not read it). The changing
+  commands say so (the read-only `tego mcp tools` and `tego route list` still print the plain `[io]` failure):
+  `tego lift: run r-… was launched as root (with sudo), so its folder is root's until the run ends and only root can
+  change it while it runs; repeat this command as root (with sudo), from a terminal outside any run [root-run]`, exit 1, nothing loosened (it used to say `runtime:
+  open lock file …: permission denied [io]` and exit 125). Repeat it with `sudo`; the answers to a held `fs.ask` follow
+  the same rule (above: "or root, for a run launched with sudo"). Whether a person's own dashboard should be able to
+  change a root-launched run is not decided.
 
 ## Pause and resume a running run (`tego session pause`, `tego session resume`)
 
@@ -2110,10 +2425,18 @@ passed (<mode> mode since <rev>; not a merge gate)`. `make precommit` and `.gith
 
 **Parallel full gate.** The steps run in three phases: the static checks (gofmt, the four vets, both golangci-lint
 runs, check-spdx, check-licenses, shellcheck, check-skiplists, check-exits, check-fd, rulecheck, isocheck,
-bpf-objects, the script self-tests, actionlint) concurrently, the lint job (the longest) started first; then the
-unit tests, followed in the same job by the tegotesthooks tests; then the integration tests alone. `TEGO_PRECOMMIT_JOBS` caps the jobs running at once; the default is
-min(nproc/2, GB/2), where GB is the lower of MemAvailable and the least that any of the process's cgroups has left
-(`memory.max` less `memory.current` without its `inactive_file` page cache), never below 1. Every test
+bpf-objects, the script self-tests, actionlint, deadcode-report's ratchet) concurrently, the lint job (the longest)
+started first; then the unit tests, followed in the same job by the tegotesthooks tests; then the integration tests,
+with the browser tests (`-tags chrome`) in a job of their own beside them, and, where `tools/oss/cut_test.py` is, the unrestricted public cut-tree
+target (`scripts/oss-cut-test.sh --discard-tree --jobs N --timeout S`, N the gate's job budget and S `TEGO_PRECOMMIT_OSSCUT_TIMEOUT`, default 2700 seconds; its evidence line in `<scratch>/osscut/evidence.jsonl`) in a third. `TEGO_PRECOMMIT_JOBS` caps the jobs running at once; the default is
+min(nproc/2, GB/2, idle cores/2), where GB is the lower of MemAvailable and the least that any of the process's cgroups has left
+(`memory.max` less `memory.current` without its `inactive_file` page cache), idle cores are the CPUs less the one-minute
+load average, and the result is never below 1. The gate prints a line before the first step that says what each limit
+allowed and which one decided (or that `TEGO_PRECOMMIT_JOBS` did). The browser tests run when `google-chrome` (or
+`$TEGO_CHROME`) is on PATH, with the eleven matrix tests named in `matrix` in scripts/chrome-tests.sh left out unless
+`TEGO_PRECOMMIT_CHROME=full`; a skip in them fails (the three operator tools that need a person's variables are left
+out by name). Without the browser, or with `TEGO_PRECOMMIT_CHROME=0`, the step prints `NOT RUN: <reason>`, the gate
+exits 3 and its last line names what did not run and does not say every step passed. Every test
 pass gets `go test -p <jobs>` and `-count=1`: go test's result cache rechecks only the files the test process itself
 opened, so a test whose verdict comes from a `go build` or `go list` it runs, or from a binary it built (the link
 gate in internal/control, askclient's and capture's import checks, examples/supply-chain-demo,
@@ -2196,6 +2519,39 @@ whose uid has no passwd entry; one with no passwd entry that runs with `AT_SECUR
 `-v` (mirror the log to stderr) and `--log-level` are not built yet: they are global flags `cli.Main` would parse
 before dispatching a command, and until it does the machine config is the only way to set the level.
 
+## What a message shows of the environment
+
+One rule covers every diagnostic, warning, error, log line and dashboard text (its statement in the code is
+`pkg/spec/identity/envtext.go`):
+
+- **Never printed, whatever its length:** the value of an entry of the agent's environment. That is the contract's
+  `env` section (`set` and pass-through entries), a harness entry, a credential, and anything read from another
+  process's environment. The message names the variable. An entry so malformed that its name cannot be told from
+  its value (a secret pasted where a name belongs) is called by its position, and nothing of it is echoed; a bare
+  secret that is itself shaped like a variable name (`ghp_abc123`, with no `=`) cannot be told from a name, and is
+  shown as the name.
+- **Never echoed:** a value that failed validation, of any variable: a run id that is not a run id, a path variable
+  that is not an absolute clean path of printable characters (a `TEGO_CONFIG` of `/etc/x/../config.yaml` is read,
+  and its messages call it `$TEGO_CONFIG`). The message names the variable, says what is wrong, and says how to
+  print the value yourself (`echo $NAME`).
+- **Printed where the message is about it:** a place Tego resolved from a location variable and validated (`HOME`,
+  the XDG folders, `TMPDIR`, `TEGO_CONFIG` and Tego's other path settings, `TMUX_TMPDIR`, `SCREENDIR`, a `PATH`
+  directory), exactly as a place given by a flag or a settings file is printed, and a Tego identifier that passed
+  validation (a run id, a parent run id, the invoking uid). You see which file is malformed and which folder could
+  not be made.
+- **Displays and exports are not diagnostics.** The rule table, the effective settings, merged YAML and JSON show
+  what was asked for. The rule table names an entry whose value comes from the caller's environment and says where
+  it comes from (an inherited `PATH` reads `PATH, inherited from the caller's environment`); a value written in the
+  contract file is shown as the file has it, and the dashboard's editor shows each `env.set` value as
+  `(value hidden)`. The machine forms (`--json`, `--merged`, the saved `contract.yaml`, a sighting's JSON line)
+  carry values: treat their output as you treat the contract file.
+
+An inherited `PATH` is both a pass-through entry and a list of places: the rule table names it only as inherited,
+and an error about a program that was not found lists its directories (`searched: …`), because that message is
+about those places; an `env.set PATH` is never printed.
+
+What protects you is keeping secret-capable values out of messages, not hiding places.
+
 ## Tego's own network traffic
 Past loopback sockets of its own (the self-test, the relays' listeners, the dashboard), exactly these connections and
 no others: DNS lookups of the hosts named in a contract or in `tego block <run> net`, and the queries a cooperating
@@ -2237,3 +2593,119 @@ under the default `record: summary`, a read leaves no line unless the supervisor
 default `fs.reads: auto` turns them on when a `deny_read` target lies inside a write entry), `reason.reads: on`,
 `fs.ask_read` or a read gate. Then a refused read leaves one line (the `deny_read`
 row). It never calls a model and never rewrites what the agent does; it refuses, explains and records.
+
+## Contracts found on this machine
+
+`tego contracts [--json] [-v]` lists contracts in the current and recorded project registries, the configured user
+registry and contract sources of runs in the selected ledger root. Each row gives its offline check result,
+contract hash, last recorded start and tier, and whether that run's canonical contract hash matches today's source.
+The scope footer and consulted roots always appear. `-v` (also `--verbose`) gives full hashes, context and warnings.
+
+`tego contracts show <name|path> [--json] [-v]` shows the selected contract's compiled rules and sources. Names
+across the catalog must be unique. An explicit path skips discovery, but a saturated helper budget can still
+leave that file unchecked. Use a path for an ambiguous name or incomplete discovery. Sources
+include file and line, profiles, presets, built-in defaults and machine-config ceilings. Verbose output includes
+`tego compile`'s table. JSON names `tego.contracts.v1` and `tego.contracts.show.v1`; see
+[the schema](../spec/contracts/v1/README.md) and [the user page](user/contracts.md).
+
+The view writes nothing and adds no rule. It loads machine config with TrustAbort, defers DNS without sending a
+lookup, inspects programs on the caller's PATH without executing them, and prepares no backend. Recorded starts
+are metadata, not chain-verified proof. Missing owner/project context is incomplete. Exit 0 is a complete check,
+1 a contract finding or ambiguity, 2 usage, and 125 unsafe/unreadable input, incomplete discovery or I/O failure.
+The systemd agent example already uses the user registry. No separate deployment/service registry exists on this
+base, and this command never scans arbitrary systemd units or other homes.
+
+The command carries a 60-second deadline; each contract check and registry scan stops waiting after 5 seconds.
+Registry scans, complete source checks and selector walks run in a helper reexecuted from `/proc/self/exe`.
+The caller reaps its short launcher before sending any recorded path. One worker serves sequential checks
+for one command or for every check belonging to a dashboard page, with a replacement after abandonment.
+Guide bootstrap, change-feed and link-reference reads take that page request and session. Credentials are compared
+before each request. The worker retains an empty environment. The caller freezes its identity, homes, runtime bases,
+IPC paths and working-directory facts before dispatch; selected config snapshots, ledger/registry/profile locations,
+anchor and PATH are explicit check inputs. A request without caller context is refused;
+secret-environment warnings use names only. Evaluation time is selected before dispatch. Active resolver settings
+which cannot be reproduced give added hostnames a cannot-tell preview warning; their values never enter the helper
+environment. The next run resolves hosts independently. Frames remain capped at 128 MiB.
+At most 32 workers remain alive per effective uid and network namespace across commands and page requests.
+Abstract Unix socket reservations survive in inherited fd 2 until actual worker exit. Closing a caller's pipes
+cannot release an abandoned worker's shared reservation. Each caller process also has 32 local worker slots.
+Concurrent starts can briefly add 32 short launchers. This finite capacity accommodates 16 healthy commands
+with 16 slots of headroom, rather than refusing ordinary concurrency at the old four-worker limit.
+Reservation squatting can deny service but cannot inject replies. Exhaustion, reservation failure and changed
+post-exec credentials all refuse checks; entries remain incomplete and name the reason. See
+[healthy-machine measurements and the refusal matrix](testing/contracts-helper-cost.md).
+The dashboard routes recorded and user-supplied path work through the same helper from the control binary.
+Unavailable entries remain listed, say `cannot tell: this location does not answer (a disconnected or stuck mount?)`
+(only after the checker reported it was about to touch the location, five seconds passed, and the kernel's counters for
+the checker (`/proc/<pid>/task/<tid>/stat` and `schedstat`, read from the checker's own pid) say it was in uninterruptible
+sleep or mostly asleep, neither waiting for a CPU nor running on one for half of the window; a checker
+that was starved, waiting on a run queue for at least half of the window and not in uninterruptible sleep, is given another
+five seconds, again while it stays starved, to 20 seconds of location time in all for a check or a page, and then says `cannot
+tell: Tego's checker was too slow to finish (the machine is very busy); try again`; a checker that was on a CPU for at least
+half of the window is given the same extra time and says `cannot tell: the check was still working when its time ran out; try
+again` at the cap; where the counters cannot be read (a kernel
+built without `CONFIG_SCHED_INFO` has no `schedstat`) it says `cannot tell: the check did not finish in time (a stuck location,
+or a very busy machine)`; a checker that was blocked in this computer's own disk or journal (the kernel's `wchan` of its
+blocked thread is `jbd2_*`, `ext4_*`, `xfs_log_force*`, `btrfs_commit_transaction*`, `io_schedule*`, `folio_wait_bit*`,
+`wait_on_page_bit*` or `blk_mq_*`) is given the same extra time as a starved one, to 20 seconds in all, and then says `cannot tell:
+this computer's disk did not finish writing in time (the disk is very busy or nearly full); try again`, and a thread blocked in a network or user-space filesystem, in a name
+Tego does not know, or that cannot be read, still gets the mount words; a checker that did not
+start within 30 seconds on a very busy machine says `cannot tell: Tego's checker did not start in time (the machine
+is very busy); try again`, and nothing was asked of the location; a checker that could not start at all says `cannot tell:
+Tego's checker could not start: <reason>`, which also asked nothing; a caller that gave up says `cannot tell: the check was
+cancelled before it finished`; and while every helper slot of this process is held by a check stuck on a location the
+next check refuses at once, in the first words, naming how many earlier checks are stuck, instead of waiting for a slot
+that cannot come free; so does a pool held by other commands' checkers when every one is older than any check can live, 115 seconds: it says
+`N earlier checks are still stuck on a location that does not answer`, and a pool with any younger or unreadable holder keeps the wait). A dashboard page's checks together are bounded by the server's own write deadline less a five second margin (25 seconds of its 30), so a page whose checks wait for a helper slot, a start or a mount is answered with the same words, and its unavailable entries, instead of having its connection closed with no response; the live stream and the commands are not bounded that way. A draft compile is not the location: the helper stops the five seconds while it compiles, the
+compile has its own 30 seconds to start and then its own three (the same counters extend them for a starved compiler child, to
+20 seconds in all), and one that does not finish says `cannot tell whether the new contract compiles: the check did not finish in time (the
+machine is very busy); nothing was written; try again` when its child was starved to the cap, `... did not finish in time;
+nothing was written; try again` when it was not (claiming no cause), `... the compiler is busy with other checks ...` for a
+full compiler slot and `... Tego's compiler could not run ...` for a compiler that could not start, died or returned no
+result, never "does not compile"; and disable changes and trust-dependent actions even when metadata answers but source or profile reads fail.
+The Rules page receives a recorded projection before checking the source: two exchanges share one worker and
+one overall deadline. If the source or profile read blocks until that deadline, the received rules, redacted
+YAML and recorded hits remain visible at copy positions with the unavailable reason. Source comparison is
+absent; source edits and trust-dependent actions stay disabled. All loader diagnostics are checked for
+unavailable causes, including after an ordinary error. Earlier guard refusal reasons remain visible. This
+requires the ledger and copy to answer. The fallback uses recorded text without compiler probes and makes no
+fresh compilation or enforcement claim. Timed-out pipe exchanges leave no handler waiting for recovery.
+A change already submitted can have an uncertain outcome after a timeout; reload after recovery before retrying.
+Late replies are discarded; a worker in a dead mount can remain until recovery. Initial selected config and
+ledger I/O, plus caller identity/current-directory capture, remain synchronous and require responsive locations. Actual dead-mount CLI/dashboard process return,
+helper disappearance after abort, and root/sudo/other-uid checks are a **MERGE BLOCKER**, **owed in a guest**:
+[complete recipe](testing/contracts-stuck-mount.md). A recorded hash is shown
+only if it has the SHA-256 format; unknown tiers are labelled `unknown`. The table's `SAME TEXT AS LAST RUN` compares merged text, not effective rules.
+
+Fix round 5 obtains a known run view before location metadata and catalogue source reads. A catalogue read that blocks
+uses the same overall request budget and cannot discard the recorded view or start a replacement worker
+after that budget expires. A canonical alias that cannot be resolved may still leave the selection unidentified.
+
+
+## Entry diagnostics and process-id namespaces (2026-11-18)
+
+Doctor, `machine check`, setup and start keep the original shell while a short-lived user-scope helper may rehearse
+placement. `--no-scope` on doctor and setup suppresses that helper. Success replaces only the placement check;
+delegation, controllers and atomic cgroup kill must still pass. The stored shell check can say
+`through_user_scope: true`. It neither moves the guide nor changes `as.in_user_cgroup`. A failed rehearsal prints
+its cause and leaves the in-place report's exit unchanged. Run, watch, test and `machine test` use the existing
+handoff; `run --service` retains its own unit. The helper validates the entire environment before readiness, keeps
+the first duplicate name, reports a reason byte and never dispatches a rehearsed command. ADR 0142 records the protocol.
+
+Root tiers require the kernel's initial process-id namespace in addition to root in the initial user namespace.
+Doctor checks that fact before root-tier cache, pin adoption and functional probes, and does not list or sweep
+PID-indexed root state when it cannot establish it. Auto selection can use landlock when its checks pass; an
+explicit cgroup/bpflsm selection refuses. Compile and the run-start compiler name that namespace precondition
+instead of suggesting another build; a genuinely absent build tier keeps the build warning.
+In the WSL 3.0.5 guest the specified trace measured a shell PID of 4058 and BPF TGID of 4299. That explains the LSM plane's descriptor lookup mismatch; fmod_ret also had a separate
+`security_key_permission` known-answer failure. Neither is repaired by hiding a failed functional probe.
+Ordinary WSL admission remains refused. The first proof was stopped on the unreadable manager namespace; the rule
+that replaced it (ADR 0100, amended 2026-11-18) is built and is off on WSL in an ordinary build, where every
+command that needs a proven "outside" answers `[governed]` with the reason that the refusal of WSL's own launcher
+inside a run is not proven yet. Read that line as "not supported yet", not as a fault of the machine. The other
+reasons a person can act on lead their line: no systemd at the top of the cgroup tree, a user session that is not
+up yet, and root. See ARCHITECTURE section 13 and GAPS.
+
+WSL doctor reports retain the measured kernel tier but include four pending containment warnings and return a
+finding instead of readiness. Setup withholds a ready stored tier for that report. `WSL_INTEROP` is omitted from
+enforcing runs; this environment filter alone does not prove launcher containment. See GAPS for the open rows.

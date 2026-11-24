@@ -62,8 +62,9 @@ type Sighting struct {
 	// OutsideGovernedRun is true when the agent runs in no tego run's cgroup: it was not started by `tego run`
 	// or `tego watch`, or it was moved out of the run. It is present on agent_started only.
 	OutsideGovernedRun *bool `json:"outside_governed_run,omitempty"`
-	// RunID is the TEGO_RUN_ID in the process's environment, whether or not its cgroup agrees: an environment
-	// is copied into any child. RunCgroupID is the run its cgroup names. Governed means the second is set.
+	// RunID is the TEGO_RUN_ID in the process's environment when it is a run id (any other value is not carried),
+	// whether or not its cgroup agrees: an environment is copied into any child. RunCgroupID is the run its cgroup
+	// names. Governed means the second is set.
 	RunID       string `json:"run_id,omitempty"`
 	RunCgroupID string `json:"run_cgroup_id,omitempty"`
 	Cgroup      string `json:"cgroup,omitempty"`

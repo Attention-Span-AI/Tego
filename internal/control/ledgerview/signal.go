@@ -3,7 +3,6 @@
 package ledgerview
 
 import (
-	"path"
 	"slices"
 	"sort"
 	"strings"
@@ -24,6 +23,9 @@ const (
 	NearSecretWindow = secretpath.NearSeconds * time.Second
 	NearSecretLines  = secretpath.NearLines
 )
+
+// RoutineWords explains the refusal classifier beside its grouped view.
+const RoutineWords = `Routine means the contract's default refused it (no entry names it), it touches no secret, its first refusal is not within 16 lines and 5 s of a secret touch, and it is a system lookup, a connect to a remote host this run also reached where no live network block in this run named that host and no restored live fence named it (by name or address, on any port, at any time; an address a block by name was enforced on counts as that host, and while a block's addresses are not in the record, one reached under a name the record shows), a route probe to port 65535 of a remote host, or a terminal or standard device. How often it repeats never makes it routine. Every refusal is still counted here and in Logs.`
 
 // defaultRules are the rule keys a decision carries when no entry of the contract named the action.
 var defaultRules = map[string]bool{"unmatched": true, "host-sockets": true, "held-unsupported": true}
@@ -95,6 +97,8 @@ type Dest struct {
 
 // Approval is one ask and what became of it.
 type Approval struct {
+	// Managed distinguishes a recorded answer from a completed operation.
+	Managed                 bool
 	AskID, Op, Target, Rule string
 	TS                      time.Time
 	Seq                     uint64
@@ -143,8 +147,21 @@ type Group struct {
 	// It is what makes such a group High, and its row says it: Subject is then "from → to", and Query from.
 	to string
 	// Why says why a background group is background.
-	Why      string
-	Severity Severity
+	Why string
+	// NameUnknown is set, in plain words, on a net group whose host the run reached with no name beside the address (a
+	// CIDR entry's line names none) while a live block names a host: the block is enforced on the addresses its name
+	// resolved to, and the record does not say which, so it cannot say whether this address is that host. That is a
+	// ledger below record minor 41, a block whose lookup answered no address and a list past its cap; from 41 a block's
+	// line names its addresses and an address among them is BlockName's, not unknown. Such a group is never folded as
+	// "the run also reached this host" (A34). "" otherwise.
+	NameUnknown string
+	// BlockName is set on a net group whose host is an address a live block by name was enforced on (the block's gap
+	// line names its addresses, record minor 41): the name, so the row says the address is that host's, however the
+	// run reached it. "" otherwise. It is the answer NameUnknown cannot give.
+	BlockName string
+	// BlockWords says it in plain words when BlockName is set, for the row's title.
+	BlockWords string
+	Severity   Severity
 	// Hosts is how many addresses a burst's row holds (mergeBursts), 0 for a group of one host. Its Subject is then the
 	// range or the destination the rule names. Query is the text that finds a row's lines when its Subject does not.
 	Hosts int
@@ -271,9 +288,11 @@ const routeProbePort = "65535"
 // RouteProbe reports whether a net line is a route probe: UDP to port 65535 of a remote host. Only UDP: a TCP
 // connect to that port is a real attempt, and the port alone would fold an attacker's beacon there as background.
 // The supervisor refuses a probe a contract does not name (a connected UDP socket's later sends are decided at that
-// connect and nowhere else), so this is a display class only; docs/DASHBOARD.md.
+// connect and nowhere else), so this is a display class only; docs/DASHBOARD.md. A datagram the run sent (op send,
+// GAPS C172) is no probe whatever its port: a probe only connects. A ledger from before the op has none, and keeps the
+// port as the whole test.
 func RouteProbe(e *Event) bool {
-	if e.Kind != "net" || e.Proto != "udp" {
+	if e.Kind != "net" || e.Proto != "udp" || e.Op == "send" {
 		return false
 	}
 	_, dst := splitNet(e.Target)
@@ -310,7 +329,7 @@ func groupSubject(e *Event) (class, subject, port string) {
 		subject, port = netSubject(e.Target)
 		return "net", subject, port
 	case "exec":
-		return "exec", path.Base(e.Target), ""
+		return "exec", programName(e), ""
 	}
 	return "fs", e.Target, ""
 }
@@ -361,7 +380,7 @@ func groupBackground(gs []Group, p *ProgramHit) bool {
 // no secret, its first refusal is not near a secret touch (NearSecretWindow, NearSecretLines), and one of these holds:
 //   - it is a system lookup socket (nscd, systemd's userdb or resolved, the D-Bus system and session buses);
 //   - it is a DNS lookup: a refused connect to port 53 on this machine (dnsGroup);
-//   - it is a connect to a remote host this run also reached (allowed or observed) on some port and no live block of
+//   - it is a connect to a remote host this run also reached (allowed or observed) on some port and no live block or restored fence of
 //     the run names (blocked): the agent is already talking to that host, so the refused port sends nothing to
 //     anyone new (loopback is never folded this way: each local port is a different service). A block keeps a
 //     refusal the contract already makes under the contract's rule (supervisor liveNet), so an agent that goes on to
@@ -382,7 +401,7 @@ func classify(g *Group, reached, probes, blocked map[string]bool) {
 		g.Background, g.Why = true, "a system lookup socket"
 	case dnsGroup(g):
 		g.Background, g.Why = true, "a DNS lookup"
-	case g.Class == "net" && !loopback(g.Subject) && reached[g.Subject] && !blocked[HostOf(g.Subject)]:
+	case g.Class == "net" && !loopback(g.Subject) && reached[g.Subject] && !blocked[BlockHostOf(HostOf(g.Subject))]:
 		g.Background, g.Why = true, "the run also reached this host"
 	case g.Class == "net" && probes[g.Subject]:
 		g.Background, g.Why = true, "a route probe to port 65535"

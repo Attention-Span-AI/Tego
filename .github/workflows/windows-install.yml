@@ -1,0 +1,96 @@
+name: windows install
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'cmd/tego-windows/**'
+      - 'internal/platform/proc/**'
+      - 'scripts/install*'
+      - 'scripts/*windows*'
+      - 'scripts/windows-*'
+      - 'internal/cli/setup*'
+      - 'internal/cli/start.go'
+      - 'internal/cli/dashboard.go'
+      - 'internal/cli/dashboard_relay.go'
+      - 'internal/relaymux/**'
+      - 'internal/platform/winpeer/**'
+      - 'internal/control/web/opencode.go'
+      - 'internal/doctor/**'
+      - '.goreleaser.yaml'
+      - '.github/workflows/windows-install.yml'
+permissions:
+  contents: read
+concurrency:
+  group: windows-install-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  release-fixture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: build this commit as a release-shaped fixture with the real control pin
+        env:
+          TEGO_FIXTURE_VERSION: v0.2.0
+          TEGO_FIXTURE_PUBLIC_COMMIT: ${{ github.sha }}
+        run: |
+          ./scripts/windows-release-fixture.sh "$GITHUB_WORKSPACE/dist/windows-fixture"
+          mkdir -p "$RUNNER_TEMP/windows-release/v0.2.0"
+          cp "$GITHUB_WORKSPACE"/dist/windows-fixture/staged/* "$RUNNER_TEMP/windows-release/v0.2.0/"
+      - name: Linux stand-ins and Windows PowerShell compatibility
+        run: |
+          python3 scripts/fetch-windows-test-tools.py "$RUNNER_TEMP/windows-tools"
+          export TEGO_PWSH="$RUNNER_TEMP/windows-tools/pwsh/pwsh"
+          export PSModulePath="$RUNNER_TEMP/windows-tools/modules"
+          ./scripts/install_windows_test.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-release
+          path: ${{ runner.temp }}/windows-release
+          retention-days: 7
+  windows:
+    needs: release-fixture
+    runs-on: windows-2025
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: windows-release
+          path: ${{ runner.temp }}/windows-release
+      - name: Windows PowerShell 5.1 real install and acceptance
+        if: matrix.shell == 'powershell'
+        shell: powershell
+        env:
+          POWERSHELL_TELEMETRY_OPTOUT: '1'
+        run: ./scripts/windows-hosted-test.ps1
+      - name: PowerShell 7 real install and acceptance
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
+        env:
+          POWERSHELL_TELEMETRY_OPTOUT: '1'
+        run: ./scripts/windows-hosted-test.ps1
+      - name: collect WSL diagnostics after any failure
+        if: failure()
+        shell: pwsh
+        run: |
+          wsl.exe --version
+          wsl.exe --status
+          wsl.exe --list --verbose
+          Get-CimInstance Win32_ComputerSystem | Format-List HypervisorPresent,Model
+          Get-CimInstance Win32_Processor | Format-List VirtualizationFirmwareEnabled
+          wsl.exe -d tego -u root --exec journalctl -b --no-pager -n 200
+          wsl.exe -d tego -u root --exec cat /etc/wsl.conf
+          wsl.exe -d tego -u root --exec cat /proc/self/mountinfo
+          Get-ChildItem $env:LOCALAPPDATA/wsl -ErrorAction Continue

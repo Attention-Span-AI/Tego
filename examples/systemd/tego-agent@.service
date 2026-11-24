@@ -52,6 +52,9 @@ Delegate=yes
 # Relative paths in the contract resolve against this directory.
 WorkingDirectory=%h
 ExecStart=%h/.local/bin/tego run --service %i
+# A user manager does not read the account's shell profile. Keep this PATH explicit.
+# The user-owned folder reaches the agent when its contract includes PATH in env.pass.
+Environment="PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin"
 # A machine config of its own for these agents; otherwise tego reads ~/.tego/config.yaml.
 #Environment=TEGO_CONFIG=%h/.config/tego/always-on.yaml
 StandardInput=null

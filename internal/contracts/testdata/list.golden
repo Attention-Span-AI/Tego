@@ -1,0 +1,10 @@
+Contracts found: 1
+NAME     FILE                  CHECK     CONTRACT HASH  LAST RAN  TIER  SAME TEXT AS LAST RUN
+fixture  <PROJECT>/agent.yaml  compiles  496c8de636f7   never     -     -
+Looked in:
+  ledger: <HOME>/.tego/runs (absent)
+  project: <PROJECT>/agent.yaml (present)
+  project: <PROJECT>/.tego/agents (absent)
+  user: <HOME>/.config/tego/agents (absent)
+Checked offline with today's files and machine config. DNS is deferred; the contract's program is not executed and no backend is probed. PATH is the current caller's, not a recorded run's. Hash equality compares merged contract text, not enforcement or comments.
+These are the contracts Tego found in these registries and runs. Files outside them may be missing. Contracts in folders Tego has never seen are not included. Other users' contracts are not included without root. No other homes are searched.

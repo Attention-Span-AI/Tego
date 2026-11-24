@@ -37,6 +37,8 @@ func (g merger) kept(line int, key, value string, from Provenance) {
 // apply merges d into m: ceilings only lowered (R15), settings last-wins but for the deny list's union and
 // landlock.audit's floor (R16).
 func (g merger) apply(m *Machine, d *layerData) {
+	etcOnly(g, &m.LocalRoles, d.localRoles, "local_roles")
+	m.baseline = g.baseline(m.baseline, d.baseline)
 	if d.version.set {
 		m.Version = d.version.value
 	}
@@ -72,13 +74,14 @@ func (g merger) apply(m *Machine, d *layerData) {
 	etcOnly(g, &m.BPF.Linger, d.bpfLinger, "bpf.linger")
 	etcOnly(g, &m.BPF.RingBudget, d.ringBudget, "bpf.ring_budget")
 	etcOnly(g, &m.BPF.Plane, d.bpfPlane, "bpf.plane")
+	etcOnly(g, &m.TOMOYO.FactsDir, d.tomoyoFactsDir, "tomoyo.facts_dir")
 }
 
 // etcOnly applies a setting of what root does in the kernel from /etc/tego/config.yaml only: record.ringbuf sizes
 // each run's ring and bpf.ring_budget caps them all, both kernel allocations the launcher makes as root, so an
 // invoking user's layer would size or lift what root allocates with nothing to bound it (ADR 0026 (2)); bpf.plane
 // picks which programs decide every host process's opens (ADR 0024 (2)); bpf.linger is how long a build stays
-// attached host-wide after its last run (ADR 0022); privileged_binary names what runs as root; users: is tegod's
+// attached host-wide after its last run (ADR 0022); tomoyo.facts_dir names the files that stand for TOMOYO's policy (ADR 0041); privileged_binary names what runs as root; users: is tegod's
 // authorization, which an invoking user's own layer would otherwise grant itself (ADR 0042 (4)). Elsewhere the
 // value is ignored with a warning.
 func etcOnly[T any](g merger, dst *Setting[T], f field[T], key string) {

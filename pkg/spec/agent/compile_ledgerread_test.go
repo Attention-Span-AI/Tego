@@ -116,6 +116,55 @@ func TestTheHomesTegoIsReadDeniedWhenTheAnchorIsElsewhere(t *testing.T) {
 	}
 }
 
+// External anchors permit a home grant, but the nested read marker must not
+// be mistaken for an exception to the immutable content-write floor.
+func TestExternalAnchorHomeGrantKeepsTegoWritesRefused(t *testing.T) {
+	f := newFixture(t)
+	m := *f.machine
+	m.LedgerRoot.Value = filepath.Join(f.root, "external", "runs")
+	if err := os.MkdirAll(m.LedgerRoot.Value, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	anchor := filepath.Join(f.root, "external", "chain.log")
+	f.file(anchor, "", 0o600)
+	for _, leaf := range []string{"scan/last.json", "agents/discoveries.json"} {
+		path := filepath.Join(f.home, ".tego", leaf)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		f.file(path, "{}", 0o600)
+	}
+	c := f.load("version: 0\nname: a\ncommand: [python]\nnet: {}\nfs:\n  write: [\"~\"]\n  reads: direct\n")
+	rt, ds, err := Compile(c, &m, f.opts(WithChainAnchor(anchor))...)
+	if err != nil {
+		t.Fatalf("compile: %v\n%s", err, render(ds))
+	}
+	nested := false
+	for _, r := range rt.FS {
+		if r.Path == filepath.Join(f.home, ".tego") && r.Kind == FSDenyRead && r.Unenforced {
+			nested = true
+		}
+	}
+	if !nested {
+		t.Fatal("missing nested own-state read deny")
+	}
+	for _, leaf := range []string{"scan/last.json", "agents/discoveries.json"} {
+		path := filepath.Join(f.home, ".tego", leaf)
+		for _, tier := range []backend.Tier{backend.TierLandlock, backend.TierCgroup, backend.TierBPFLSM} {
+			if got := rt.Evaluate(Action{Kind: ActionFSWrite, Path: path}, tier); got.Verdict != VerdictRefused || got.Rule != BuiltinTegoSurface {
+				t.Errorf("%s write at %s = %+v, want builtin refusal", leaf, tier, got)
+			}
+			want := VerdictRefused
+			if tier == backend.TierLandlock {
+				want = VerdictAllow
+			}
+			if got := rt.Evaluate(Action{Kind: ActionFSRead, Path: path}, tier); got.Verdict != want {
+				t.Errorf("%s direct read at %s = %+v, want %s", leaf, tier, got, want)
+			}
+		}
+	}
+}
+
 // TestASharedLedgerRootIsNotDeniedButSaysSo: a ledger root that also holds the project (a data disk, /tmp)
 // cannot be read-denied without denying the agent its own files; compile says the ledger stays readable.
 func TestASharedLedgerRootIsNotDeniedButSaysSo(t *testing.T) {

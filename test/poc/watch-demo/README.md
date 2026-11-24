@@ -14,7 +14,7 @@ touches only its own scratch workspace and one throwaway listener on 127.0.0.1; 
 
 | Run | What it shows |
 |---|---|
-| **A** `tego watch -- bash agent.sh` | No boundary: everything is allowed and **recorded**: the credential read, the `git push`, the connection. A recording is not a cage, and the command says so first. |
+| **A** `tego watch -- bash agent.sh` | No boundary: everything is allowed and **recorded**: the credential read, the `git push`, the connection. A recording sets no boundary, and the command says so first. |
 | **B** `tego watch --boundary boundary.yaml -- bash agent.sh` | The same agent held to a boundary, with a person answering: the credential read, the `git push` and the connection are **denied**, each with the rule that refused it. The write under `held/` **pauses the agent** until the person runs `tego approve --always`; the same write again goes through at once, recorded as `standing:<ask id>`. The other file is answered `tego deny --always`, and its retry is refused at once. |
 | **C** the same boundary, nobody answering | The held write waits `ask.timeout` (5 s here, at most 1 h) and is then **refused** (`ask-timeout`): nobody answering is never a yes. |
 | **D** `tego watch -- bash -i` on a pseudo-terminal | An interactive program works: a real terminal, its size, Ctrl-C stopping the command and not the shell, the exit status. |

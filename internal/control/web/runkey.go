@@ -53,6 +53,10 @@ var memoTabs = map[string]bool{"timeline": true, "refusals": true, "receipt": tr
 // runPageKey is the key of a run page address r asks for its regions: it moves whenever anything the page's regions
 // show may have moved. It reports false for any other address, and for a run the snapshot does not hold.
 func (s *Server) runPageKey(r *http.Request, snap *ledgerview.Snapshot) (string, bool) {
+	// The guide also reads check.json and registries, outside the run key.
+	if tourKey(r.URL.Query().Get("guide")) {
+		return "", false
+	}
 	rest, ok := strings.CutPrefix(r.URL.Path, "/runs/")
 	if !ok || rest == "" {
 		return "", false
@@ -77,7 +81,7 @@ func (s *Server) runPageKey(r *http.Request, snap *ledgerview.Snapshot) (string,
 		fmt.Fprintf(h, "ref:%s:%d\x00", ref.ID, ref.Rev)
 	}
 	// No clock: a running run's duration so far ticks in the browser (data-ck, regions.go), so its page's regions
-	// move only with what the key hashes.
+	// move only with what the key hashes, and with the clock only through a live block's time limit (blockClockKey).
 	// The files beside the run the page reads: its live blocks and pause request (one overlay, written before the
 	// launcher's line confirms them), the launcher's mark that it reads a pause (made once its poll runs, which may
 	// be after the lines around it: until then the page offers no Pause), its stop marker, the rule-change journal
@@ -85,12 +89,36 @@ func (s *Server) runPageKey(r *http.Request, snap *ledgerview.Snapshot) (string,
 	// the chain anchor it is verified against.
 	fmt.Fprintf(h, "stop:%t\x00", runact.Stopping(s.cfg.Ledger, run.ID))
 	statKey(h, filepath.Join(s.cfg.Ledger, run.ID, liveblock.FileName))
+	blockClockKey(h, filepath.Join(s.cfg.Ledger, run.ID), run.ID, s.cfg.Now, func() ledgerview.LiveFacts { return ledgerview.LiveFactsOf(run) })
 	statKey(h, filepath.Join(s.cfg.Ledger, run.ID, liveblock.ControlName))
 	statKey(h, rules.JournalPath(s.cfg.Ledger))
 	if s.cfg.Anchor != "" {
 		statKey(h, s.cfg.Anchor)
 	}
 	return hex.EncodeToString(h.Sum(nil)), true
+}
+
+// blockClockKey writes how each live block with a time limit stands at the clock's now (in force, unblocked for now, ended; the
+// page's own judgment, blockTimeOf), so the key moves when a limit passes: that is no ledger line and no file
+// change. A block with no limit writes nothing. The words of a limit that is still ahead ("until Fri 17:00 CET (in 5
+// minutes)") are in the key, so the region is drawn again when they roll over and a refreshed page never keeps
+// stale ones.
+func blockClockKey(w io.Writer, dir, run string, clock func() time.Time, facts func() ledgerview.LiveFacts) {
+	o, err := liveblock.Read(dir, run)
+	if err != nil {
+		return // no overlay, or one the page cannot read: the file's own stat already moved the key
+	}
+	var now time.Time // read once, and only when a block has a limit: a render seam counts the reads (region_peer_test.go)
+	for i, b := range o.Blocks {
+		if b.From.IsZero() && b.Until.IsZero() {
+			continue
+		}
+		if now.IsZero() {
+			now = clock()
+		}
+		t := blockTimeOf(b, now, facts())
+		_, _ = fmt.Fprintf(w, "block%d:%t:%t:%t:%s\x00", i, t.Ended, t.Dormant, t.Reached, t.Ends)
+	}
 }
 
 // statKey writes what a change to the file at p would move (identity, size, times), or that it is missing.
@@ -138,6 +166,15 @@ func (s *Server) rememberRegions(r *http.Request, key string, fw *fragWriter) {
 // page shows that answer's hashes; else the same address's render at the same live state from the last second, when
 // one is kept (regioncache.go); else the handler's answer (renderRegions), kept for the next ask.
 func (s *Server) serveRegions(w http.ResponseWriter, r *http.Request, have map[string]string) {
+	// Decide the peer before either shared shortcut. Only a known person can reuse
+	// or populate shared renders and unchanged-region memos (ADR 0123).
+	person := s.governed(r) == nil
+	// Builder previews carry per-review credentials. Even a person's preview must
+	// run its handler afresh rather than share another review's identity.
+	if !person || r.URL.Path == "/rules/new" || r.URL.Path == "/rules/change/preview" {
+		s.serveGet(&fragWriter{ResponseWriter: w, have: have}, r)
+		return
+	}
 	// The snapshot and the keys are taken before the handler runs: an answer is never kept under a key newer than
 	// its data.
 	snap, st, ok := s.liveStateOf()
@@ -147,6 +184,10 @@ func (s *Server) serveRegions(w http.ResponseWriter, r *http.Request, have map[s
 		key, keyed = s.runPageKey(r, snap)
 		// A run page's key covers the files beside its run too (its live blocks, its stop marker).
 		ckey = cacheKey(r.URL.Path, r.URL.RawQuery, have, st) + "\x00" + key
+		// The Overview checklist is the one region with a per-browser preference.
+		if guideHidden(r) {
+			ckey += "\x00guide-hidden"
+		}
 	}
 	if keyed && s.regionsUnchanged(r, key, have) {
 		w.WriteHeader(http.StatusNoContent)
@@ -159,7 +200,7 @@ func (s *Server) serveRegions(w http.ResponseWriter, r *http.Request, have map[s
 	case ok && hit:
 		fw.answer(&e)
 	default:
-		s.route(fw, r)
+		s.serveGet(fw, r)
 		if ok && fw.entry != nil && fw.status == http.StatusOK {
 			e := *fw.entry
 			e.at, e.gen = now, gen
@@ -169,4 +210,13 @@ func (s *Server) serveRegions(w http.ResponseWriter, r *http.Request, have map[s
 	if keyed {
 		s.rememberRegions(r, key, fw)
 	}
+}
+
+// serveGet is the handler of a page's GET: the MCP tools and Model routes pages (mcp_tools.go, model_routes.go), else
+// the route table. A region request reaches the same handlers as the page's own load does.
+func (s *Server) serveGet(w http.ResponseWriter, r *http.Request) {
+	if s.mcpGet(w, r) || s.routesGet(w, r) {
+		return
+	}
+	s.route(w, r)
 }

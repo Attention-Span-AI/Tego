@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tego.dev/spec/config/v0/local-authority.schema.json",
+  "title": "System local approval authority selector (ADR 0154)",
+  "description": "The local authority portion extracted from a machine config. The full machine config remains the closed parser vocabulary in README.md. Only the trusted system layer can activate this selector.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["local_roles"],
+  "properties": {"local_roles": {"enum": ["off", "owner_only"]}}
+}

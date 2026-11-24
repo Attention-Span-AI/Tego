@@ -18,7 +18,7 @@ Note 2026-09-30: the stage is cloned into the run cgroup after `pids.max` is wri
 
 Note 2026-09-30 (second): "in the run's cgroup" includes its sub-cgroups. `pids.current` counts the scope hierarchically, and a process of the run can move an orphan into a sub-cgroup of its scope where no Landlock rule covers `/sys/fs/cgroup` (`--observe` with an unprivileged launcher), so the reaper takes a zombie whose cgroup is the run's or a descendant of it, as `cgroup.kill` and `Remove` already do.
 
-Note 2026-09-30 (third): a privileged stage's uid drop sets the supplementary group list to the target gid alone (`setgroups([gid])`); the invoking user's other groups are not carried, so a `sudo tego run` agent lacks the `docker`, `video` or project groups the same command keeps unprivileged. Deliberate and fail-closed: such groups grant through sockets and device nodes what Landlock does not bound.
+Note 2026-09-30 (third): a privileged stage's uid drop sets the supplementary group list to the target gid alone (`setgroups([gid])`); the invoking user's other groups are not carried, so a `sudo "$(command -v tego)" run` agent lacks the `docker`, `video` or project groups the same command keeps unprivileged. Deliberate and fail-closed: such groups grant through sockets and device nodes what Landlock does not bound.
 
 *Amended 2026-10-05 (ADR 0042 (3)):* the second 2026-09-21 note's "a stage re-exec'd from a file-capability
 binary" is conditioned by ADR 0042 (3)(c): such a binary is refused before the stage is dispatched

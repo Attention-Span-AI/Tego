@@ -14,6 +14,12 @@ import (
 // path the run's own rules guard (fs.deny_read, fs.ask_read) is a secret to that run whatever its name (secretRule).
 func IsSecretPath(p string) bool { return secretpath.Is(p) }
 
+// ReadOpen reports whether the selected file operation could read existing bytes.
+// The read model owns the shared receipt classifier; renderers need no check-layer dependency.
+func ReadOpen(op string, flags, errno int, created bool) bool {
+	return secretpath.ReadOpen(op, flags, errno, created)
+}
+
 // secretRule reports whether the rule that decided a file line guards a secret (secretpath.GuardRule).
 func secretRule(rule string) bool { return secretpath.GuardRule(rule) }
 

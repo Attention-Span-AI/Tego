@@ -25,6 +25,10 @@ const (
 	// Partial: a path block the launcher put in force on a run whose supervisor does not see plain read opens, so it
 	// refuses changes (writes, renames, deletes, opens for writing) but a plain read still goes through.
 	Partial State = "partial"
+	// PartlyKernel: a write or path block the launcher put in force on a run whose kernel decision plane decides file
+	// changes itself (Facts.KernelDecidesChanges). The supervisor refuses what still reaches it, but the changes the
+	// plane answers (write opens, creates, deletes, renames, truncates) never do, so the block does not cover them.
+	PartlyKernel State = "partly_in_force"
 	// InForce: the launcher recorded putting the block in force; the supervisor refuses what it names.
 	InForce State = "in_force"
 	// Dormant: a block unblocked for a while (its From is still ahead, ADR 0125 decision 4): it refuses nothing
@@ -41,7 +45,12 @@ const (
 	SentenceRecordedOnly = "Recorded, not enforced: this run is only watched"
 	SentenceWaiting      = "Waiting for the run to put it in force (about a second)"
 	SentencePartial      = "Refuses changes now; reads are not seen in this run"
-	SentenceInForce      = "In force: tego refuses it until the run ends"
+	// SentencePartlyKernel is a write or path block on a run whose kernel decides file changes: what it does not cover
+	// is named, since "In force" would claim the changes the kernel answers too.
+	SentencePartlyKernel = "Partly in force: file changes the kernel decides in this run (writes, creates, deletes, renames) are not covered"
+	// SentencePartlyKernelNoReads is SentencePartlyKernel for a path block on a run that also does not see its reads.
+	SentencePartlyKernelNoReads = "Partly in force: file changes the kernel decides in this run (writes, creates, deletes, renames) are not covered, and reads are not seen"
+	SentenceInForce             = "In force: tego refuses it until the run ends"
 	// SentenceInForceUntil is SentenceInForce for a block with a time limit.
 	SentenceInForceUntil = "In force: tego refuses it until its time limit ends"
 	SentenceDormant      = "Unblocked for a while: it refuses nothing until then"
@@ -51,7 +60,7 @@ const (
 // The kinds Status knows, liveblock's. A write block refuses changes, which the supervisor of an enforcing run sees
 // unless a kernel decision plane decides them (Facts.KernelDecidesChanges: tier 3's plane answers write opens,
 // truncates and the named mutations in the kernel, with no notification, so a write block placed there refuses only
-// what still reaches the supervisor), so it is decided as exec and net are; so is a read block, which is placed only on
+// what still reaches the supervisor, and is said to be partly in force, as a path block there is); so is a read block, which is placed only on
 // a run that sees its reads (runact.Block and `tego block` refuse one elsewhere, since it would refuse nothing there).
 // A read or write block is placed only on a run whose launcher knows those kinds (Facts.NarrowKinds).
 const (
@@ -79,6 +88,11 @@ type Facts struct {
 	// (decision_plane lsm or fmod_ret): there a write open, a truncate or a rename the plane answers never reaches the
 	// supervisor, so a write block cannot be promised to refuse it.
 	KernelDecidesChanges bool
+	// PlaneBlocks is a run whose launcher puts path, read and write blocks in force in its kernel decision plane too (the
+	// run directory's liveblock.PlaneName mark, ADR 0124 amendment 2026-11-21): there the plane refuses the changes, and
+	// the reads, it decides, so such a block is in force on a KernelDecidesChanges run. The ledger does not carry it; a
+	// reader that has the run directory sets it.
+	PlaneBlocks bool
 	// Timed is a run whose launcher reads a time limit on a live block or unblock and records its end
 	// (record.MinorLiveModes, ADR 0125): an older launcher refuses the whole overlay once it holds one.
 	Timed bool
@@ -99,6 +113,10 @@ type Facts struct {
 	StartUnreadable bool
 }
 
+// ReadsDecided reports whether a read block refuses the run's reads: its supervisor sees every read open (ReadsSeen),
+// or its kernel decision plane decides them and its launcher puts blocks in force there (PlaneBlocks).
+func (f Facts) ReadsDecided() bool { return f.ReadsSeen || (f.KernelDecidesChanges && f.PlaneBlocks) }
+
 // NarrowKinds reports whether the run's launcher knows the read and write live blocks (record.MinorLiveControl). An
 // older launcher fails to read an overlay holding one, keeps the blocks it last read and ignores every later change
 // until that block is removed, so such a block is never placed on its run.
@@ -116,6 +134,7 @@ type Result struct {
 //   - an ended run: Ended;
 //   - a watched run: RecordedOnly, since its supervisor continues every action it would refuse;
 //   - a serial the launcher has not confirmed (confirmed < serial): Waiting;
+//   - a write or path block on a run whose kernel decides file changes: PartlyKernel;
 //   - a path block on a run that does not see its reads: Partial;
 //   - otherwise InForce.
 //
@@ -128,6 +147,14 @@ func Status(kind string, f Facts, serial, confirmed uint64) Result {
 		return Result{RecordedOnly, SentenceRecordedOnly}
 	case confirmed < serial:
 		return Result{Waiting, SentenceWaiting}
+	case (kind == KindWrite || kind == KindPath || kind == KindRead) && f.KernelDecidesChanges && f.PlaneBlocks:
+		// The plane refuses what it decides too, reads included (ADR 0124, amendment 2026-11-21).
+		return Result{InForce, SentenceInForce}
+	case (kind == KindWrite || kind == KindPath) && f.KernelDecidesChanges:
+		if kind == KindPath && !f.ReadsSeen {
+			return Result{PartlyKernel, SentencePartlyKernelNoReads}
+		}
+		return Result{PartlyKernel, SentencePartlyKernel}
 	case kind == KindPath && !f.ReadsSeen:
 		return Result{Partial, SentencePartial}
 	}
@@ -141,10 +168,11 @@ func Status(kind string, f Facts, serial, confirmed uint64) Result {
 //   - from set and now before it: Dormant;
 //   - otherwise Status, saying "until its time limit ends" for an in-force block with an until.
 //
-// now is the wall clock of whoever shows the state. The launcher judges each limit on its wall clock and on
-// CLOCK_BOOTTIME, ending a block only when both have passed its until and an unblock as soon as either has passed its
-// from. So after a clock step this may say Expired or Dormant while the run still refuses, never the reverse: every
-// InForce or Partial it gives is one the launcher enforces too (once confirmed).
+// now is the wall clock of whoever shows the state, and it is the only clock this looks at. The launcher judges each
+// limit on its wall clock and on CLOCK_BOOTTIME, ending a block only when both have passed its until and an unblock as
+// soon as either has passed its from, so after a clock step this can say Expired or Dormant for a block the run still
+// refuses, and the reverse. A view that has the run's lines uses StatusRecorded, which takes the launcher's own word;
+// this stays for a caller that has none, and for what StatusRecorded does with a record read only in part.
 func StatusAt(kind string, f Facts, serial, confirmed uint64, now, from, until time.Time) Result {
 	switch {
 	case f.Ended || f.Observe:
@@ -162,7 +190,7 @@ func StatusAt(kind string, f Facts, serial, confirmed uint64, now, from, until t
 }
 
 // Refuses reports whether a block in state s refuses at least part of what it names now.
-func (s State) Refuses() bool { return s == InForce || s == Partial }
+func (s State) Refuses() bool { return s == InForce || s == Partial || s == PartlyKernel }
 
 // FromStart is the facts a run_start payload gives (Ended is left false: run_end says that).
 func FromStart(p *record.RunStartPayload) Facts {

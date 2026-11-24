@@ -186,6 +186,10 @@ func MinOf(c Clock, rounds int, fns ...func()) []time.Duration {
 // others, and every wait that goroutine makes. Where the run-queue delay or the context switches cannot be read (no
 // /proc/thread-self/schedstat: a kernel without CONFIG_SCHED_INFO, a sandbox's /proc), every sample counts on the
 // wall clock and Figure.RunQueue is false: stricter, never looser.
+// A nonblocking sample is additionally bounded by the process CPU charged over it:
+// inner scheduler reads can miss clock-boundary preemption, and wall time can include
+// uncharged steal/IRQ time. This bound keeps all helper CPU; blocked samples retain
+// the whole wall interval. See docs/BENCHMARKS.md, amendment 2026-11-18.
 func MinOfThread(rounds int, fns ...func()) []Figure {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -201,18 +205,23 @@ func MinOfThread(rounds int, fns ...func()) []Figure {
 	}, fns)
 	out := make([]Figure, len(fns))
 	for i, b := range best {
-		// The own time is never under the CPU time: the thread cannot have waited for less than nothing.
-		out[i] = Figure{Wall: b[0], Own: max(b[1], b[2]), CPU: b[2], OnThread: true, RunQueue: rq.ok(),
+		out[i] = Figure{Wall: b[0], Own: ownFigure(b[1], b[2]), CPU: b[2], OnThread: true, RunQueue: rq.ok(),
 			Samples: max(rounds, 1), Blocked: blocked[i]}
 	}
 	return out
 }
 
+// ownFigure is a figure's own time from the fastest own time and the fastest CPU time of its samples: never under the
+// CPU time, since the thread cannot have waited for less than nothing. It is the floor under accountedOwn's
+// subtraction: a run-queue delay read wider than the sample, or wider than the wait the sample had, takes too much out
+// of the wall clock, and the figure then reads the CPU time, never less.
+func ownFigure(own, cpu time.Duration) time.Duration { return max(own, cpu) }
+
 // sample is one sample's figures on the calling thread: blocked says the thread blocked during it, and own is then
 // the wall clock; others is the CPU time the process's other threads had over it.
 type sample struct {
-	wall, own, cpu, others time.Duration
-	blocked                bool
+	wall, own, cpu, others, delay time.Duration
+	blocked                       bool
 }
 
 // threadSample times fn once on the calling thread, which must be locked to its goroutine, as MinOfThread describes:
@@ -233,9 +242,24 @@ func threadSample(rq *runQueue, fn func()) sample {
 	// The process's span holds the thread's, so the thread's work between the two clocks' reads counts as others':
 	// under a microsecond more kept (0.8 µs on the reference box), never less.
 	s := sample{wall: w1 - w0, cpu: c1 - c0, others: max(p1-p0-(c1-c0), 0)}
-	s.blocked = v1 != v0 || !vok0 || !vok1
-	s.own = ownTime(s.wall, q1-q0, s.others, s.blocked)
+	s.blocked = v1 != v0 || !vok0 || !vok1 || !rq.ok()
+	s.delay = q1 - q0
+	s.own = accountedOwn(s, s.delay)
 	return s
+}
+
+// accountedOwn bounds a nonblocking sample by the CPU time charged to this process.
+// The inner schedstat reads can miss a preemption between a scheduler read and a
+// wall-clock read. Steal and separately charged IRQ time also consume wall time
+// without running this thread or adding run-queue delay. None is the code's work.
+// Keeping all other threads' CPU time as the upper bound preserves hand-offs;
+// a sample that blocked still keeps its whole wait, including machine delays.
+func accountedOwn(s sample, delay time.Duration) time.Duration {
+	own := ownTime(s.wall, delay, s.others, s.blocked)
+	if !s.blocked {
+		own = min(own, s.cpu+s.others)
+	}
+	return own
 }
 
 // ownTime is a sample's own time from its wall clock, the run-queue delay over it, the CPU time the process's other

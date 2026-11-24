@@ -31,8 +31,9 @@ type receiptStep struct {
 }
 
 // receiptContract is that agent's contract, with the paths of the actor and of the program it may run to fill in:
-// writes in out/, writes in held/ once a person approves each, those two the only programs, no network, and a hold
-// that outlasts the test's wait for it.
+// writes in out/, writes in held/ once a person approves each, no reads under secret/ (deny_read, which the run records
+// as refused because reason.reads is on: the run tells the supervisor of its read opens, so a refused read has a line),
+// those two the only programs, no network, and a hold that outlasts the test's wait for it.
 const receiptContract = `version: 0
 name: ireceipt
 command: [%q]
@@ -40,6 +41,7 @@ tier: landlock
 fs:
   write: ["./out/"]
   ask: ["./held/"]
+  deny_read: ["./secret/"]
 exec:
   allow: [%q, %q]
 net: {}
@@ -50,6 +52,8 @@ ask:
 limits:
   pids: 64
 record: summary
+reason:
+  reads: on
 `
 
 // TestIntegrationReceiptOfAScriptedRunAtTierLandlock is the receipt end to end (L2-RECEIPT accept 9), unprivileged at
@@ -107,7 +111,8 @@ func TestIntegrationReceiptOfAScriptedRunAtTierLandlock(t *testing.T) {
 
 	proj, progs := filepath.Join(w, "proj"), filepath.Join(w, "bin")
 	out, held := filepath.Join(proj, "out"), filepath.Join(proj, "held", "config")
-	for _, d := range []string{out, filepath.Dir(held), progs} {
+	secret := filepath.Join(proj, "secret", "token")
+	for _, d := range []string{out, filepath.Dir(held), filepath.Dir(secret), progs} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -124,6 +129,7 @@ func TestIntegrationReceiptOfAScriptedRunAtTierLandlock(t *testing.T) {
 		{ID: "new", Op: "create", Path: "out/new.txt"},
 		{ID: "listed", Op: "exec", Path: listed},
 		{ID: "unlisted", Op: "exec", Path: unlisted},
+		{ID: "secret", Op: "read", Path: "secret/token"},
 		{ID: "gone", Op: "create", Path: "out/gone.txt"},
 		{ID: "delete", Op: "unlink", Path: "out/gone.txt"},
 		{ID: "old", Op: "create", Path: "out/old.txt"},
@@ -140,6 +146,7 @@ func TestIntegrationReceiptOfAScriptedRunAtTierLandlock(t *testing.T) {
 		mode os.FileMode
 	}{
 		{held, []byte("ORIGINAL\n"), 0o644},
+		{secret, []byte("not for the agent\n"), 0o600},
 		{actor, actorBytes, 0o755},
 		{listed, actorBytes, 0o755},
 		{unlisted, actorBytes, 0o755},
@@ -185,8 +192,8 @@ func TestIntegrationReceiptOfAScriptedRunAtTierLandlock(t *testing.T) {
 	if runErr != nil {
 		t.Fatalf("tego run: %v", runErr)
 	}
-	// What the agent met, step by step: each one done but the unlisted program's exec, refused EACCES, the held open
-	// done once approved.
+	// What the agent met, step by step: each one done but the unlisted program's exec and the read of secret/token,
+	// both refused EACCES, the held open done once approved.
 	type result struct {
 		ID    string `json:"id"`
 		OK    bool   `json:"ok"`
@@ -195,7 +202,7 @@ func TestIntegrationReceiptOfAScriptedRunAtTierLandlock(t *testing.T) {
 	var results, expected []result
 	for _, s := range steps {
 		r := result{ID: s.ID, OK: true}
-		if s.ID == "unlisted" {
+		if s.ID == "unlisted" || s.ID == "secret" {
 			r = result{ID: s.ID, Errno: int(syscall.EACCES)}
 		}
 		expected = append(expected, r)
@@ -257,8 +264,21 @@ func TestIntegrationReceiptOfAScriptedRunAtTierLandlock(t *testing.T) {
 			Deleted  []string   `json:"deleted"`
 			Renamed  []rcRename `json:"renamed"`
 		} `json:"files"`
-		Programs []rcProgram `json:"programs"`
-		Refusals struct {
+		Programs      []rcProgram `json:"programs"`
+		ReadsNotified *struct {
+			Notified bool   `json:"notified"`
+			Why      string `json:"why"`
+		} `json:"reads_notified"`
+		SensitiveReads []struct {
+			Path     string `json:"path"`
+			Verdicts struct {
+				Observed int `json:"observed"`
+				Allowed  int `json:"allowed"`
+				Refused  int `json:"refused"`
+			} `json:"verdicts"`
+		} `json:"sensitive_reads"`
+		SensitiveReadsUnknown bool `json:"sensitive_reads_unknown"`
+		Refusals              struct {
 			Total  int         `json:"total"`
 			ByRule []rcRule    `json:"by_rule"`
 			List   []rcRefusal `json:"list"`
@@ -305,10 +325,26 @@ func TestIntegrationReceiptOfAScriptedRunAtTierLandlock(t *testing.T) {
 		!slices.Equal(f.Deleted, []string{filepath.Join(out, "gone.txt")}) || !slices.Equal(f.Renamed, renamed) {
 		t.Errorf("files: %+v; want recorded, written %q, deleted out/gone.txt, renamed %+v", f, written, renamed)
 	}
-	refused := rcRefusal{Kind: "exec", Op: "exec", Target: unlisted, Rule: "unmatched", Reason: "exec-not-allowed"}
-	if rf := rc.Refusals; rf.Total != 1 || !slices.Equal(rf.ByRule, []rcRule{{"unmatched", "exec-not-allowed", 1}}) ||
-		!slices.Equal(rf.List, []rcRefusal{refused}) {
-		t.Errorf("refusals: %+v; want the one refused exec of %s, counted once", rf, unlisted)
+	// Two refusals, each counted once: the unlisted program, and the read of secret/token under the contract's deny_read
+	// (C168). The run told the supervisor of its read opens (reason.reads: on), so the refused read has a line, and the
+	// receipt says so in reads_notified and lists the file as a sensitive read that was refused and never succeeded.
+	// The list is in the order the calls were received, which is the script's: the exec first, from the child the actor
+	// starts, then the read. The ledger may hold the read's line first (the exec's line is written after its answer, on
+	// another thread, R23), so the receipt orders by mono_ns (check/receipt byReceipt), never by the ledger's position.
+	refusedExec := rcRefusal{Kind: "exec", Op: "exec", Target: unlisted, Rule: "unmatched", Reason: "exec-not-allowed"}
+	readRule := "fs.deny_read[./secret/]" // the contract's own spelling of the entry
+	refusedRead := rcRefusal{Kind: "fs", Op: "open", Target: secret, Rule: readRule, Reason: "read-denied"}
+	if rf := rc.Refusals; rf.Total != 2 || !slices.Equal(rf.ByRule, []rcRule{{readRule, "read-denied", 1}, {"unmatched", "exec-not-allowed", 1}}) ||
+		!slices.Equal(rf.List, []rcRefusal{refusedExec, refusedRead}) {
+		t.Errorf("refusals: %+v; want the refused exec of %s and the refused read of %s, each counted once", rf, unlisted, secret)
+	}
+	// reason.reads records the refused reads, not the allowed ones, so the receipt still says its list of sensitive reads
+	// may be short (sensitive_reads_unknown): a file the agent read and was allowed to may be missing from it.
+	if rn := rc.ReadsNotified; rn == nil || !rn.Notified || rn.Why != "reason" || !rc.SensitiveReadsUnknown {
+		t.Errorf("reads_notified %+v, sensitive_reads_unknown %v: want the refused reads notified (reason) and the allowed ones still unknown", rc.ReadsNotified, rc.SensitiveReadsUnknown)
+	}
+	if sr := rc.SensitiveReads; len(sr) != 1 || sr[0].Path != secret || sr[0].Verdicts.Refused != 1 || sr[0].Verdicts.Allowed != 0 || sr[0].Verdicts.Observed != 0 {
+		t.Errorf("sensitive_reads: %+v; want %s refused once and never read", sr, secret)
 	}
 	// The agent and the listed program, each once; the unlisted program is not among them: a refused exec never ran.
 	programs := slices.SortedFunc(slices.Values(rc.Programs), func(a, b rcProgram) int { return strings.Compare(a.Path, b.Path) })
@@ -323,7 +359,7 @@ func TestIntegrationReceiptOfAScriptedRunAtTierLandlock(t *testing.T) {
 
 	// tego run's end summary is the same builder's (runsummary.go), over the same ledger.
 	for _, want := range []string{
-		fmt.Sprintf("tego run: %s ended (exited with code 0) · tier landlock · refused 1 (", runID),
+		fmt.Sprintf("tego run: %s ended (exited with code 0) · tier landlock · refused 2 (", runID),
 		fmt.Sprintf(" · asked 1 (1 approved, 0 denied) · wrote %d files · chain verified\n", len(written)),
 		// This test reads tego run's stderr through a pipe, which keeps the wording of v0.1.3.
 		"  more: tego receipt " + runID + "\n",

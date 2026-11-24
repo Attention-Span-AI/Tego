@@ -5,7 +5,7 @@
 set -eu
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root"
-license_files="LICENSE NOTICE THIRD_PARTY_NOTICES.txt LICENSES/GPL-2.0-only.txt LICENSES/BSD-2-Clause.txt LICENSES/LGPL-2.1-only.txt LICENSES/Lucide.txt"
+license_files="LICENSE NOTICE THIRD_PARTY_NOTICES.txt LICENSES/GPL-2.0-only.txt LICENSES/BSD-2-Clause.txt LICENSES/LGPL-2.1-only.txt LICENSES/Lucide.txt LICENSES/Anton.txt"
 for file in $license_files; do
 	[ -s "$file" ] || { echo "check-licenses: missing $file" >&2; exit 1; }
 done
@@ -53,11 +53,14 @@ printf '%s\n' "$files" | sort -u | while IFS='|' read -r moddir f; do
 	*) echo "check-licenses: THIRD_PARTY_NOTICES.txt lacks $(basename "$moddir")/${f#"$moddir"/}" >&2; exit 1 ;;
 	esac
 done
-text=$(tr -s '[:space:]' ' ' <LICENSES/Lucide.txt | sed 's/^ //; s/ $//')
-case "$notices" in
-*"$text"*) ;;
-*) echo "check-licenses: THIRD_PARTY_NOTICES.txt lacks LICENSES/Lucide.txt" >&2; exit 1 ;;
-esac
+# The licences of the assets tego-control embeds (the dashboard's icons and its headline font) are reproduced too.
+for asset in LICENSES/Lucide.txt LICENSES/Anton.txt; do
+	text=$(tr -s '[:space:]' ' ' <"$asset" | sed 's/^ //; s/ $//')
+	case "$notices" in
+	*"$text"*) ;;
+	*) echo "check-licenses: THIRD_PARTY_NOTICES.txt lacks $asset" >&2; exit 1 ;;
+	esac
+done
 # Every file a binary embeds must say what it is under: an SPDX header of ours, or a line in the notices. An asset
 # copied in from elsewhere otherwise ships with no credit, which the walk above cannot see: it reads Go modules only.
 # Exempt: BPF objects (NOTICE gives their terms), the project's own contracts and tables (a header would land in a

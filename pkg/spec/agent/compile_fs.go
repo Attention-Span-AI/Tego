@@ -213,7 +213,10 @@ func (b *fsBuilder) tegoOwn(ledger string, writes []writePath) {
 			own = append(own, p)
 		}
 	}
-	needed := []string{k.resolve(filepath.Dir(k.rt.ContractPath)), k.resolve(k.o.cwd), k.resolve(k.o.home)}
+	needed := []string{k.resolve(filepath.Dir(k.rt.ContractPath)), k.resolve(k.o.cwd)}
+	if k.o.home != "" {
+		needed = append(needed, k.resolve(k.o.home))
+	}
 	for _, w := range writes {
 		needed = append(needed, w.resolved)
 	}
@@ -360,7 +363,7 @@ func (b *fsBuilder) writes(entries []string, ledger string) []writePath {
 	// only agents/ and skills/ are read, and a registry: set wide (~) would otherwise refuse every entry beneath it.
 	var ownDirs []struct{ name, path string } // an entry strictly inside one of these is refused too
 	if k.m != nil {
-		for _, l := range k.m.Layers {
+		for _, l := range k.machineLayerPaths() {
 			targets = append(targets, k.r10Target("the machine config", l,
 				"narrow the entry, or move the machine config's layer file ("+config.EnvConfigVar+", ~/.tego/config.yaml) outside it"))
 		}
@@ -486,7 +489,7 @@ func (b *fsBuilder) writes(entries []string, ledger string) []writePath {
 					fix("name the directory instead: fs.write: [%s] covers everything beneath it", globFreeDir(p))
 				continue
 			}
-			if missing := firstMissing(p); missing != p {
+			if missing := firstMissing(p); missing != p && !slices.Contains(k.o.plannedDirectories, p) {
 				k.ds.errorf(pos, CodePathMissing, "fs.write %q: parent %s does not exist (run creates only the entry itself)", raw, missing).
 					fix("mkdir -p %s", filepath.Dir(p))
 				continue
@@ -832,9 +835,21 @@ func (b *fsBuilder) declared(entries []string, key string, kind FSKind, writes [
 	for i, raw := range entries {
 		pos := k.pos(key + "." + strconv.Itoa(i))
 		p := k.abs(raw)
+		if e := k.baselineMember(baselineIndex(key, i)); e != nil {
+			if e.State == config.LayerAbsent {
+				b.absentBaseline(e, writes)
+				continue
+			}
+			// Baseline values retain their kernel walk. Cleaning before a symlink
+			// followed by '..' would silently hold a different object.
+			p, _ = WalkedPath(e.Expanded)
+		}
 		// A file whose own name holds a glob character ("lit[1].txt") is that file, not a pattern: an entry
 		// naming it read as a glob that matched nothing, and the file stayed readable.
 		_, literalErr := os.Lstat(p)
+		if kind == FSDenyRead {
+			k.namePredictionUnavailable(p, literalErr)
+		}
 		if hasGlobMeta(p) && literalErr != nil {
 			// filepath.Glob has no recursive **: "g/**/s.json" matched one directory level, silently, and a
 			// file two levels down stayed readable. Refused rather than read as something it is not.
@@ -845,6 +860,11 @@ func (b *fsBuilder) declared(entries []string, key string, kind FSKind, writes [
 			}
 			if b.globs == nil {
 				b.globs = newGlobBudget()
+			}
+			// A watch grants and withholds nothing; only a deny_read expansion decides a root tier's answers.
+			b.globs.cut = nil
+			if kind == FSDenyRead {
+				b.globs.cut = k.namePredictionUnavailable
 			}
 			matches, stop, err := b.globs.expand(p)
 			if err != nil {
@@ -915,6 +935,9 @@ func (b *fsBuilder) globCut(pos Pos, key, raw string, kind FSKind, stop globStop
 
 func (b *fsBuilder) addDeclared(p, raw string, pos Pos, kind FSKind, writes []writePath) {
 	r := FSRule{Path: p, Kind: kind, Raw: raw, Pos: pos, Resolved: b.k.resolve(p)}
+	if kind == FSDenyRead {
+		b.k.walkCut(p)
+	}
 	// A deny of / has no parent to enumerate, and would deny the run everything. Judged
 	// on the resolved path, so a symlink to / is refused as / is; the Landlock backstop fails closed on the same.
 	if kind == FSDenyRead && filepath.Clean(r.Resolved) == "/" {
@@ -934,8 +957,12 @@ func (b *fsBuilder) addDeclared(p, raw string, pos Pos, kind FSKind, writes []wr
 func (b *fsBuilder) builtIn(writes []writePath) {
 	have := b.denyReadPaths()
 	for _, rel := range builtInDenyRead {
+		if b.k.o.home == "" {
+			break
+		}
 		p := filepath.Join(b.k.o.home, rel)
 		if _, err := os.Stat(p); err != nil {
+			b.k.namePredictionUnavailable(p, err)
 			b.absentBuiltIn(p, writes)
 			continue
 		}
@@ -953,7 +980,7 @@ func (b *fsBuilder) builtIn(writes []writePath) {
 			topWrites[r.Resolved] = true
 		}
 	}
-	envs, cut, late, unread := envFiles(roots, end)
+	envs, cut, late, unread := envFiles(roots, end, b.k.namePredictionUnavailable)
 	unresolved := 0
 	for i, p := range envs {
 		if time.Now().After(end) {
@@ -961,6 +988,7 @@ func (b *fsBuilder) builtIn(writes []writePath) {
 			break
 		}
 		res := b.k.resolve(p)
+		b.k.walkCut(p)
 		if topWrites[res] && b.envWriteDrop(p, res) {
 			continue
 		}
@@ -1029,6 +1057,8 @@ func (b *fsBuilder) addBuiltInResolved(p, resolved string, writes []writePath, h
 	r := FSRule{Path: p, Kind: FSDenyRead, BuiltIn: true, Resolved: resolved}
 	if fi, err := os.Lstat(r.Resolved); err == nil {
 		b.meta(&r, fi, r.Resolved, Pos{})
+	} else {
+		b.k.namePredictionUnavailable(r.Resolved, err)
 	}
 	b.unenforced(&r, writes)
 	b.rules = append(b.rules, r)
@@ -1067,6 +1097,7 @@ func (b *fsBuilder) absentBuiltIn(p string, writes []writePath) {
 	if res == "" || !filepath.IsAbs(res) {
 		return
 	}
+	b.k.walkCut(res) // the place's walk: absentAt stops at a directory it may not search
 	at, ok := absentAt(res)
 	if !ok {
 		return
@@ -1121,6 +1152,8 @@ func (b *fsBuilder) unenforced(r *FSRule, writes []writePath) {
 func (b *fsBuilder) metaDeclared(r *FSRule, pos Pos) {
 	if fi, err := os.Lstat(r.Resolved); err == nil {
 		b.meta(r, fi, r.Resolved, pos)
+	} else if r.Kind == FSDenyRead {
+		b.k.namePredictionUnavailable(r.Resolved, err)
 	}
 }
 
@@ -1277,7 +1310,11 @@ func envScanRoots(contractPath, cwd string) []string {
 // the error: a .env file in it is missed as surely as one past the budget. As the deny-write search's
 // unlisted, a directory that is gone or no longer a directory is not one, and neither is another user's
 // directory the operator cannot open, since the agent, running as the operator, cannot list it either.
-func envFiles(roots []string, end time.Time) (out []string, cut, late bool, unread []string) {
+//
+// failed, when not nil, is told every directory that could not be listed, with the error: an offline root-tier
+// prediction passes compiler.namePredictionUnavailable, since root lists another user's directory too and finds the
+// .env files and links in it (ADR 0043, amendment 2026-11-18, review finding 2).
+func envFiles(roots []string, end time.Time, failed func(path string, err error)) (out []string, cut, late bool, unread []string) {
 	type dir struct {
 		path  string
 		depth int
@@ -1305,6 +1342,9 @@ func envFiles(roots []string, end time.Time) (out []string, cut, late bool, unre
 			break
 		}
 		es, more, err := listDir(d.path, left)
+		if err != nil && failed != nil {
+			failed(d.path, err)
+		}
 		if err != nil && envDirUnread(d.path, err) {
 			unread = append(unread, d.path+" ("+listErrText(err)+")")
 		}
@@ -1406,7 +1446,7 @@ func (k *compiler) denyReadUnderExecDirs() {
 			dir := dirs[j]
 			d := dir.declared
 			r.Unenforced = true
-			if k.mayLand(backend.TierLandlock) {
+			if k.mayLand(backend.TierLandlock) && r.AliasOf == "" { // another name is refused instead (otherNamesEnforced)
 				// Both paths as declared, each with its target when a symlink takes it elsewhere
 				// (E8): the check compared resolved paths, and naming only the declared ones showed
 				// the author two paths that look disjoint.

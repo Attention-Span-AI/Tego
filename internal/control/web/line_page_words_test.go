@@ -23,7 +23,7 @@ import (
 // does, a person's no reads as one, the Saved notice makes no future claim, and a deep line of
 // a long run is read by its offset, never by a scan from line 0 (QG-2, QG-1).
 
-var h1Re = regexp.MustCompile(`(?s)<h1>(.*?)</h1>`)
+var h1Re = regexp.MustCompile(`(?s)<h1(?:\s[^>]*)?>(.*?)</h1>`)
 
 // headline is the page's h1 with its tags dropped.
 func headline(t *testing.T, page string) (text, raw string) {
@@ -35,32 +35,31 @@ func headline(t *testing.T, page string) (text, raw string) {
 	return strings.TrimSpace(regexp.MustCompile(`<[^>]+>`).ReplaceAllString(m[1], "")), m[1]
 }
 
-// TestR9F1HeadlineNamesItsObject: the h1 of a refused read, an allowed connection and a program run each end in what
-// they acted on (a path with its folder, host:port, the program's name), with the whole value in the title.
+// TestHeadlineNamesItsObject holds the plain outcome question and the exact
+// target in the primary Event facts, including the run-start fallback heading.
 func TestHeadlineNamesItsObject(t *testing.T) {
 	s, c, _, proj := askServer(t)
 	for _, tc := range []struct {
 		seq       string
-		want      string
 		wantTitle string
 	}{
-		{"3", "The agent tried to read …/proj/vault/token", filepath.Join(proj, "vault", "token")},
-		{"4", "The agent ran git", "/usr/bin/git"},
-		{"5", "The agent connected to api.example.com:443", "api.example.com:443"},
+		{"3", filepath.Join(proj, "vault", "token")},
+		{"4", "/usr/bin/git"},
+		{"5", "api.example.com:443"},
 	} {
 		page := do(s, "GET", "/runs/"+actRun+"/lines/"+tc.seq, "127.0.0.1:8484", c).Body.String()
-		text, raw := headline(t, page)
-		// A long folder is elided in the middle, as Highlights does; the start and the file name stay.
-		// The temporary folder's name ends in a random number of 9 or 10 digits, so the folder is either just short
-		// enough to show whole or just too long; both forms are right, and the test failed about one run in five.
-		lead, end, elided := strings.Cut(tc.want, "…")
-		whole := elided && text == lead+tc.wantTitle
-		if elided && !whole && !(strings.HasPrefix(text, lead) && strings.HasSuffix(text, end) && strings.Contains(text, "…")) || !elided && text != tc.want {
-			t.Errorf("line %s: h1 %q, want %q", tc.seq, text, tc.want)
+		got, _ := headline(t, page)
+		expected := "What happened?"
+		if tc.seq == "3" {
+			expected = "Why was this refused?"
 		}
-		if !strings.Contains(raw, `class="ev-h-target" title="`+tc.wantTitle+`"`) {
-			t.Errorf("line %s: the target carries no title with the whole value: %s", tc.seq, raw)
+		if got != expected {
+			t.Errorf("line %s: heading %q, want %q", tc.seq, got, expected)
 		}
+		if !strings.Contains(f3Text(page), tc.wantTitle) {
+			t.Errorf("line %s lost full detail target %q", tc.seq, tc.wantTitle)
+		}
+
 	}
 	// A line no rule is made from keeps "Line #N: <kind>".
 	page := do(s, "GET", "/runs/"+actRun+"/lines/0", "127.0.0.1:8484", c).Body.String()
@@ -322,7 +321,7 @@ func TestHeldLiveBlockAfterUndo(t *testing.T) {
 	v.Set("csrf", s.csrf)
 	follow(t, s, c, post(s, line, v, own, "", c))
 	page := do(s, "GET", line, "127.0.0.1:8484", c).Body.String()
-	mustContain(t, "the panel after the Undo", page, "ev-held", "Blocked live on this run", `title="exec:git"`,
+	mustContain(t, "the panel after the Undo", page, "ev-held", "Blocked live on this run", `title="Program git"`,
 		`href="/runs/`+actRun+`#block">Remove it on the run page`)
 	if strings.Contains(page, `id="act-block"`) {
 		t.Error("the panel offers Block now for a block already in place")

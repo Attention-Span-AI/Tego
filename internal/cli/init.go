@@ -72,7 +72,7 @@ func cmdInit() Command {
 		Flags: func(fs *flag.FlagSet) {
 			fs.StringVar(&name, "name", "", "agent id for the starter contract (default: the directory name)")
 			fs.BoolVar(&force, "force", false, "replace an agent.yaml that tego rules create did not write")
-			fs.StringVar(&preset, "preset", "", "write a contract from presets, a comma list of no-secrets, no-prod, repo-only-writes")
+			fs.StringVar(&preset, "preset", "", "write a contract from presets, a comma list of no-secrets, no-prod, repo-only-writes, ci")
 			fs.Func("write", "with --preset or --agent: a folder the agent may write (repeatable)", func(v string) error { writes = append(writes, v); return nil })
 			fs.Func("allow-host", "with --preset or --agent: a host[:port] or @group the agent may reach (repeatable)", func(v string) error { hosts = append(hosts, v); return nil })
 			fs.StringVar(&agentKind, "agent", "", "write a contract for claude-code or codex (API key); --list shows setup commands")
@@ -163,7 +163,7 @@ func runInitLive(dir, name string, force bool, po *setup.Options, live agent.Liv
 	var env setup.CheckEnv
 	if po != nil {
 		// The contract is composed for the project directory with its symlinks resolved, as the dashboard's check
-		// resolves it: setup.Create opens that with no symlink followed, so a link swapped into its path after this
+		// resolves it: setup.CreateContext opens that with no symlink followed, so a link swapped into its path after this
 		// is refused, never followed out of the project.
 		if po.Dir, err = filepath.EvalSymlinks(abs); err != nil {
 			message(stderr, abs, 0, 0, "tego init: "+err.Error(), codeIO)
@@ -362,10 +362,10 @@ func errorsOnly(ds []agent.Diagnostic) []agent.Diagnostic {
 // chain anchor), so a contract init writes compiles as compile would compile it. A machine config that cannot be read
 // is Tego's own error, as it is for compile.
 func initCheckEnv(stderr io.Writer) (setup.CheckEnv, int) {
-	m, cds, err := loadMachine(config.TrustWarn)
+	m, cds, err := loadMachine(config.TrustAbort)
 	writeConfigDiagnostics(stderr, cds)
 	if err != nil {
-		message(stderr, "", 0, 0, "tego init: machine config: "+err.Error(), config.CodeUntrusted)
+		configRefused(stderr, "tego init", err)
 		return setup.CheckEnv{}, identity.ExitError // R25: Tego's own error (I/O on a config layer)
 	}
 	opts := []agent.CompileOption{agent.WithPATH(os.Getenv("PATH")), agent.WithClock(time.Now), agent.WithTiers(builtTiers()...)}

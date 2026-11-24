@@ -17,7 +17,7 @@ import (
 func TestIntegrationPlaneBuildMemlockIsBpftoolsSum(t *testing.T) {
 	requireRealPrepare(t)
 	mode, build := hostPlane(t)
-	checkBuildMemlock(t, "memlockplane", PlaneSetup{Mode: mode, Build: build},
+	checkBuildMemlock(t, "memlockplane", PlaneSetup{Mode: mode, Build: build, RecheckAdmission: testPlaneAdmission},
 		func(b *Backend, rt *agent.RuleTable, run *Run) {
 			rt.Contract = &agent.Contract{}
 			rows, err := decide.CompilePlane(rt)

@@ -38,10 +38,9 @@ cells:
     op: read
     path: pub/alias/tmp/x
     canon: work/secret/tmp/x
+    # ADR 0011, amended 2026-11-19 (round 4): compile applies the deny entry to this other name the mount table gives
+    # its file, so tier landlock refuses it too (was E32 (ii)'s recorded limitation). Root-guest run of this cell owed.
     want:
-      landlock: allow
-      root: refused fs.deny_read[./work/secret/]
+      all: refused fs.deny_read[./work/secret/]
     no_compile: compile --test answers names and sees no mount; the alias is the deny_read's inode only in the run's namespace
-    exception: 'enforce-landlock E32 (ii): a deny_read target''s content reached through a bind mount beneath a granted sibling is readable through that name at tier landlock (recorded limitation; compile warns on mount points)'
-    exception_at: landlock
     source: 'ADR 0011 (2026-11-11 amendments); enforce-cgroup-observe §6 item 24; spec/record/v1 (one line per action)'

@@ -115,7 +115,7 @@ func newCLIBroker(t *testing.T, id string, emit func(ask.Event) error) (string, 
 // newCLIBrokerIn is newCLIBroker for the run id under the ledger root root.
 func newCLIBrokerIn(t *testing.T, root, id string, emit func(ask.Event) error) (string, *ask.Broker) {
 	t.Helper()
-	dir := newCLIRunIn(t, root, id)
+	dir := newCLIRunServing(t, root, id, true)
 	broker, err := ask.New(dir, ask.Options{UID: uint32(os.Getuid()), Timeout: 5 * time.Second, Authorize: func(ask.Peer) error { return nil }, Emit: emit})
 	if err != nil {
 		t.Fatal(err)
@@ -126,7 +126,11 @@ func newCLIBrokerIn(t *testing.T, root, id string, emit func(ask.Event) error) (
 
 // newCLIRunIn is a running run under root whose launcher is this test process and that serves no ask socket, as a run
 // whose contract has no ask rule, or a watched run, serves none.
-func newCLIRunIn(t *testing.T, root, id string) string {
+func newCLIRunIn(t *testing.T, root, id string) string { return newCLIRunServing(t, root, id, false) }
+
+// newCLIRunServing is newCLIRunIn for a run whose start record says whether its broker served approvals
+// (capabilities.ask): true for a run a test then gives a broker, false for a run whose contract has no ask rule.
+func newCLIRunServing(t *testing.T, root, id string, serves bool) string {
 	t.Helper()
 	dir := filepath.Join(root, id)
 	w, err := ledger.Open(dir, record.RunRef{ID: id, Agent: "test"}, ledger.WithAnchor(nopAnchor{}))
@@ -134,6 +138,10 @@ func newCLIRunIn(t *testing.T, root, id string) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = w.Abandon() })
+	if err = w.WriteRunStart(record.RunStartPayload{Command: []string{"true"}, Cwd: "/", Tier: "landlock", RecordMinor: record.MinorLearn,
+		Capabilities: map[string]bool{"ask": serves}}); err != nil {
+		t.Fatal(err)
+	}
 	start, err := tegoruntime.StartBootNS(os.Getpid())
 	if err != nil {
 		t.Fatal(err)

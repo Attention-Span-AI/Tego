@@ -20,6 +20,8 @@ import (
 	"github.com/attention-span-ai/tego/internal/platform/proc"
 	"github.com/attention-span-ai/tego/internal/platform/startphase"
 	"github.com/attention-span-ai/tego/internal/platform/tomoyo"
+	"github.com/attention-span-ai/tego/internal/runtime/enforce"
+	"github.com/attention-span-ai/tego/internal/selfbin"
 
 	"github.com/attention-span-ai/tego/internal/runtime/cgroup"
 
@@ -43,9 +45,19 @@ func (r *runner) startChild(ctx context.Context) error {
 	if err := r.launcher.SetSubreaper(); err != nil {
 		return fmt.Errorf("runtime: %w", err)
 	}
+	if r.localAuthority.OwnerOnly() {
+		if err := localEnforcing(recordsOnly(r.handle)); err != nil {
+			return err
+		}
+	}
 	spec, err := r.childSpec()
 	if err != nil {
 		return err
+	}
+	if r.localAuthority.OwnerOnly() {
+		if err := localDrop(spec.Privileged, spec.TargetUID, spec.Setuid); err != nil {
+			return err
+		}
 	}
 	deputyEnd := -1
 	if r.wantsDeputy() {
@@ -80,6 +92,11 @@ func (r *runner) startChild(ctx context.Context) error {
 		return fmt.Errorf("runtime: notify fd: %w", r.stagePidsCap(err))
 	}
 	r.notifyFD = fd
+	if r.localAuthority.OwnerOnly() {
+		// WaitNotifyFD accepted the trusted stage report after dropCredentials.
+		// The per-thread stage drops before reporting and before the ack/exec.
+		r.localAgentUID, r.localDropKnown = uint32(spec.TargetUID), true
+	}
 	if deputyEnd >= 0 {
 		// The stage reported only once the deputy said hello, or once it reported the deputy did not start, so the
 		// hello (or the report) is already on the socket: the timeout only bounds a stage that closed it unwritten.
@@ -92,6 +109,9 @@ func (r *runner) startChild(ctx context.Context) error {
 		} else {
 			r.deputy = c
 			r.keepDeputy()
+			if err := r.exemptDeputy(); err != nil {
+				return err
+			}
 			if r.deps.Warn != nil {
 				state, err := doctor.ReadLSMState()
 				r.warnHeldLabel([]byte(strings.Join(state.Modules, ",")), err)
@@ -99,6 +119,22 @@ func (r *runner) startChild(ctx context.Context) error {
 		}
 	}
 	return r.arm()
+}
+
+// exemptDeputy names the open deputy to the run's decision plane before the run is armed (ADR 0128, amended
+// 2026-11-21): under net.assurance: kernel the plane's socket_recvmsg refuses every control-bearing receive in the run's
+// cgroup but the deputy's, whose request sockets and dirfds come that way. Its pid and the start time keepDeputy read
+// are the pair; the handle writes them only where the run's slot is flagged (enforce.DeputyExempter). A pair that
+// cannot be written refuses the run: its filter already left recvmsg to the plane, which would refuse the deputy.
+func (r *runner) exemptDeputy() error {
+	ex, ok := r.handle.(enforce.DeputyExempter)
+	if !ok {
+		return nil
+	}
+	if err := ex.ExemptDeputy(r.deputy.PID(), r.deputyStart/proc.NanosPerTick); err != nil {
+		return fmt.Errorf("runtime: %w", err)
+	}
+	return nil
 }
 
 // deputyHelloTimeout bounds the launcher's read of the open deputy's hello after the stage has reported.
@@ -206,7 +242,7 @@ func heldLabelWarningFor(by string, lsm []byte, err, tomoyoErr error) string {
 	if err == nil && tomoyoErr != nil {
 		note := fmt.Sprintf("TOMOYO: held file opens are refused on this machine (%v)", tomoyoErr)
 		if strings.Contains(tomoyoErr.Error(), "/sys/kernel/security/tomoyo/") {
-			note += "; expose readable /sys/kernel/security/tomoyo so its authority facts can be checked"
+			note += "; expose readable /sys/kernel/security/tomoyo so its authority facts can be checked, or in a container bind the host's /sys/kernel/security/tomoyo read-only at another path and name it in /etc/tego/config.yaml tomoyo.facts_dir"
 		}
 		notes = append(notes, note)
 	}
@@ -350,9 +386,16 @@ func (r *runner) childSpec() (launch.ChildSpec, error) {
 		cwd = wd
 	}
 	env := r.harnessEnv(r.agentEnv())
+	if err := r.rt.ValidateBaselineEnv(env); err != nil {
+		return launch.ChildSpec{}, fmt.Errorf("runtime: final child environment: %w", err)
+	}
+	command := resolveCommand(r.rt, r.cmd)
+	if err := r.rt.ValidateBaselineCommand(command); err != nil {
+		return launch.ChildSpec{}, fmt.Errorf("runtime: final child command: %w", err)
+	}
 	spec := launch.ChildSpec{
 		RunID: string(r.id), AgentID: string(r.agentID),
-		Command: resolveCommand(r.rt, r.cmd), Env: env, Dir: cwd,
+		Command: command, Env: env, Dir: cwd,
 		Stdin: r.deps.Stdio.In, Stdout: r.deps.Stdio.Out, Stderr: r.deps.Stdio.Err,
 		Handle: r.handle, LandlockFlags: r.landlockFlags(),
 	}
@@ -384,7 +427,7 @@ func (r *runner) agentEnv() []string {
 		ForwarderVars: r.forwarderVars(),
 	}.Apply(buildEnv(r.rt, r.agentBaseEnv()))
 	env = r.dnsBrokerEnv(env)
-	return guardedResolverEnv(r.rt, r.tier(), env)
+	return withoutWindowsInterop(r.tier(), guardedResolverEnv(r.rt, r.tier(), env))
 }
 
 // dropTarget is the uid and gid a root launch's child drops to (privilegedTarget of the invoking user).
@@ -426,8 +469,12 @@ func dropsNetAdmin(rt *agent.RuleTable) bool {
 // per-path grants do not mediate.
 func privilegedTarget(uid int, viaSudo bool, sudoGID string, primaryGID func(int) (int, error)) (int, int, error) {
 	if !viaSudo || uid <= 0 {
-		return 0, 0, fmt.Errorf("%w: run it as `sudo tego run`, or as the unprivileged user the "+
-			"agent should run as", ErrPrivilegedTarget)
+		command, why := selfbin.Sudo("run", func() (string, string) { return selfbin.Named(os.Executable) })
+		if why != "" {
+			command = why
+		}
+		return 0, 0, fmt.Errorf("%w: from your login shell, run it as root (%s), or as the unprivileged user the "+
+			"agent should run as", ErrPrivilegedTarget, command)
 	}
 	if gid, ok := parseID(sudoGID); ok {
 		return uid, gid, nil

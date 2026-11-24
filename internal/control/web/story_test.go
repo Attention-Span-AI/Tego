@@ -157,7 +157,7 @@ func TestStoryOverviewRunsLogs(t *testing.T) {
 
 	ov := get(t, s, c, "/")
 	for _, want := range []string{
-		"1 needs you", ">2 exposed<", ">2 protected<", ">Compare</a>",
+		"1 request needs you", ">2 exposed<", ">2 protected<", ">Compare</a>",
 		"/compare?a=" + leftRun + "&amp;b=", " routine</span>",
 		// The Recent refusals keep the file name: ~/.ssh/id_rsa, not the start of its folder.
 		`<b class="sp-b">id_rsa</b>`, `<b class="sp-b">token</b>`,

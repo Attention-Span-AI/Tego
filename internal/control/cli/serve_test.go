@@ -11,11 +11,63 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/attention-span-ai/tego/internal/handoff"
+	"github.com/attention-span-ai/tego/internal/runlock"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
+
+func TestServeUsesOneMachineSnapshot(t *testing.T) {
+	first, second := config.Builtin(), config.Builtin()
+	first.Home, second.Home = filepath.Join(t.TempDir(), "first-home"), filepath.Join(t.TempDir(), "second-home")
+	for _, home := range []string{first.Home, second.Home} {
+		if err := os.Mkdir(home, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first.LedgerRoot.Value, second.LedgerRoot.Value = t.TempDir(), t.TempDir()
+	oldLoader, oldAnchor := loadMachineSnapshot, anchorPath
+	var loads atomic.Int32
+	loadMachineSnapshot = func(config.Sources, string, int, config.TrustMode) (*config.Machine, []config.Diagnostic, error) {
+		if loads.Add(1) == 1 {
+			return first, nil, nil
+		}
+		return second, nil, nil
+	}
+	anchorPath = machineAnchorPath
+	t.Cleanup(func() { loadMachineSnapshot, anchorPath = oldLoader, oldAnchor })
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var so, se syncBuffer
+	done := make(chan int, 1)
+	go func() { done <- cmdServe().Run(ctx, []string{"--addr", "127.0.0.1:0"}, &so, &se) }()
+	for end := time.Now().Add(5 * time.Second); !strings.Contains(se.String(), "chains:") && time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+	}
+	cancel()
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Fatalf("serve: %d %s", code, se.String())
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("serve did not stop")
+	}
+	if loads.Load() != 1 || !strings.Contains(se.String(), "ledger: "+first.LedgerRoot.Value) ||
+		!strings.Contains(se.String(), filepath.Join(first.Home, ".tego", "chain.log")) || strings.Contains(se.String(), second.Home) {
+		t.Fatalf("startup mixed machine snapshots: loads=%d %s", loads.Load(), se.String())
+	}
+	s := ruleService(t.TempDir(), "/chain.log", first, false)
+	if s.Machine != first || !slices.Contains(s.Refuse, first.LedgerRoot.Value) || slices.Contains(s.Refuse, second.LedgerRoot.Value) || loads.Load() != 1 {
+		t.Fatalf("rule service reloaded or mixed its snapshot: loads=%d roots=%v", loads.Load(), s.Refuse)
+	}
+}
 
 // TestServeSummarySaysWhatItStarts: serve starts the dashboard and nothing else (ADR 0100's control service is not
 // built), so the line both binaries' usage gives it names the dashboard and promises no control service.
@@ -57,7 +109,7 @@ func TestServeListensOnIPv6Loopback(t *testing.T) {
 	}
 	_ = probe.Close()
 	old := anchorPath
-	anchorPath = func() (string, error) { return filepath.Join(t.TempDir(), "chain.log"), nil }
+	anchorPath = func(*config.Machine, bool) (string, error) { return filepath.Join(t.TempDir(), "chain.log"), nil }
 	t.Cleanup(func() { anchorPath = old })
 	t.Setenv("TEGO_CONFIG", "")
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // the severity file serve reads, kept out of the real ~/.config
@@ -114,7 +166,7 @@ func TestServeSaysWhatItServes(t *testing.T) {
 	}
 	anchor := filepath.Join(t.TempDir(), "chain.log")
 	old := anchorPath
-	anchorPath = func() (string, error) { return anchor, nil }
+	anchorPath = func(*config.Machine, bool) (string, error) { return anchor, nil }
 	t.Cleanup(func() { anchorPath = old })
 	t.Setenv("TEGO_CONFIG", "")
 
@@ -138,6 +190,14 @@ func TestServeSaysWhatItServes(t *testing.T) {
 	if len(lines) != 1 || !strings.HasPrefix(lines[0], "Tego dashboard: http://127.0.0.1:") {
 		t.Errorf("stdout %q: want the URL line alone", so.String())
 	}
+	// The dashboard records the program it runs by the sum of its own bytes: what a later tego compares (D1).
+	self, err := handoff.SelfSum()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := handoff.RecordedProgram([]byte(se.String())); !ok || got != self {
+		t.Errorf("stderr records program %q (%v), want this program's sum %s:\n%s", got, ok, self, se.String())
+	}
 	for _, want := range []string{"  ledger: " + ledger + " (from --ledger), 3 runs\n", "  chains: checked against " + anchor + "\n"} {
 		if !strings.Contains(se.String(), want) {
 			t.Errorf("stderr lacks %q:\n%s", want, se.String())
@@ -145,15 +205,15 @@ func TestServeSaysWhatItServes(t *testing.T) {
 	}
 }
 
-// TestServeFactsNameASkippedConfig: under a TEGO_CONFIG that tego skipped, which serve starts on only with --ledger
-// (TestServeRefusesASkippedConfig), the facts name the ledger as --ledger's and print the skipped layer's diagnostic;
+// TestServeFactsNameASkippedConfig: startup names the actual selected ledger and the unknown
+// config cause, including when --ledger supplies the root.
 // a missing anchor says the runs show unverified; a config that is read is named as the origin of ledger_root.
 func TestServeFactsNameASkippedConfig(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "nope.yaml")
 	t.Setenv("TEGO_CONFIG", missing)
-	mr := loadMachineReport()
-	if mr.err != nil {
-		t.Fatal(mr.err)
+	mr := loadMachineReport(config.TrustWarn)
+	if mr.err != nil || mr.m == nil || mr.m.BaselineKnown() {
+		t.Fatal("bad config lost degraded snapshot", mr.err)
 	}
 	var b strings.Builder
 	writeServeFacts(&b, serveFacts{root: "/srv/ledger", flagLedger: true, machine: mr, anchorErr: errors.New("no home")})
@@ -172,7 +232,7 @@ func TestServeFactsNameASkippedConfig(t *testing.T) {
 	// ledger_root.
 	t.Setenv("TEGO_CONFIG", "")
 	b.Reset()
-	writeServeFacts(&b, serveFacts{root: "/srv/ledger", machine: loadMachineReport(), anchor: "/a/chain.log"})
+	writeServeFacts(&b, serveFacts{root: "/srv/ledger", machine: loadMachineReport(config.TrustWarn), anchor: "/a/chain.log"})
 	if out := b.String(); !strings.HasPrefix(out, "  ledger: /srv/ledger (from ") || strings.Contains(out, "(from --ledger)") ||
 		strings.Contains(out, "(from TEGO_CONFIG") {
 		t.Errorf("no --ledger and no TEGO_CONFIG:\n%s", out)
@@ -188,7 +248,7 @@ func TestServeFactsNameASkippedConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("TEGO_CONFIG", cfg)
-	mr = loadMachineReport()
+	mr = loadMachineReport(config.TrustWarn)
 	b.Reset()
 	writeServeFacts(&b, serveFacts{root: filepath.Join(dir, "l"), machine: mr, anchor: "/a/chain.log"})
 	if out := b.String(); !strings.Contains(out, "(from TEGO_CONFIG "+cfg+")") {
@@ -196,47 +256,41 @@ func TestServeFactsNameASkippedConfig(t *testing.T) {
 	}
 }
 
-// TestServeRefusesASkippedConfig (CO-P5): a TEGO_CONFIG that tego skipped (untrusted, or missing) and no --ledger make
-// serve exit 125 with the layer's reason code and the fix, before it listens, rather than serve the default ledger;
-// with --ledger the ledger is named outright and serve starts.
-func TestServeRefusesASkippedConfig(t *testing.T) {
+// TestServeStartsDegradedWithASkippedConfig: read pages and stop remain available after any
+// layer failure. The startup facts state the actual ledger and UNKNOWN baseline with the cause.
+func TestServeStartsDegradedWithASkippedConfig(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.Chmod(dir, 0o700); err != nil {
+	bad := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(bad, []byte("version: 0\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	untrusted := filepath.Join(dir, "tego.yaml")
-	if err := os.WriteFile(untrusted, []byte("version: 0\nledger_root: "+filepath.Join(dir, "l")+"\n"), 0o600); err != nil {
+	if err := os.Chmod(bad, 0o666); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(untrusted, 0o664); err != nil {
-		t.Fatal(err)
-	}
-	for cfg, code := range map[string]string{untrusted: "[config-untrusted]", filepath.Join(dir, "nope.yaml"): "[config-invalid]"} {
-		t.Setenv("TEGO_CONFIG", cfg)
+	old := anchorPath
+	anchorPath = func(*config.Machine, bool) (string, error) { return filepath.Join(dir, "chain.log"), nil }
+	t.Cleanup(func() { anchorPath = old })
+	for _, path := range []string{bad, filepath.Join(dir, "missing.yaml")} {
+		t.Setenv("TEGO_CONFIG", path)
+		ctx, cancel := context.WithCancel(t.Context())
 		var so, se syncBuffer
-		got := cmdServe().Run(t.Context(), []string{"--addr", "127.0.0.1:0"}, &so, &se)
-		errs := se.String()
-		if got != exits[codeIO] || so.String() != "" || !strings.Contains(errs, code) ||
-			!strings.Contains(errs, "TEGO_CONFIG "+cfg+" was skipped (") || !strings.Contains(errs, "--ledger DIR") {
-			t.Errorf("%s: exit %d stdout %q stderr %q, want 125 %s naming the file and the fix", cfg, got, so.String(), errs, code)
+		done := make(chan int, 1)
+		go func() { done <- cmdServe().Run(ctx, []string{"--addr", "127.0.0.1:0"}, &so, &se) }()
+		for end := time.Now().Add(5 * time.Second); !strings.Contains(se.String(), "chains:") && time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+		}
+		cancel()
+		if code := <-done; code != 0 || !strings.HasPrefix(so.String(), "Tego dashboard: ") || !strings.Contains(se.String(), "baseline UNKNOWN") || !strings.Contains(se.String(), path) {
+			t.Fatalf("%s: %d %q %q", path, code, so.String(), se.String())
 		}
 	}
+}
 
-	// --ledger names the ledger, so the skipped config changes nothing served: serve starts.
-	t.Setenv("TEGO_CONFIG", untrusted)
-	old := anchorPath
-	anchorPath = func() (string, error) { return filepath.Join(dir, "chain.log"), nil }
-	t.Cleanup(func() { anchorPath = old })
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	var so, se syncBuffer
-	done := make(chan int, 1)
-	go func() { done <- cmdServe().Run(ctx, []string{"--addr", "127.0.0.1:0", "--ledger", dir}, &so, &se) }()
-	for end := time.Now().Add(5 * time.Second); !strings.Contains(se.String(), "chains:") && time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
-	}
-	cancel()
-	if code := <-done; code != 0 || !strings.HasPrefix(so.String(), "Tego dashboard: ") {
-		t.Errorf("--ledger with a skipped config: exit %d stdout %q stderr %q", code, so.String(), se.String())
+func TestServeDoesNotNameOtherLayerFailureAsEnvSkip(t *testing.T) {
+	r := machineReport{m: config.Builtin(), diags: []config.Diagnostic{{Code: config.CodeBaselineUnknown, Message: "baseline UNKNOWN: etc layer could not be read: wrong owner"}}}
+	var out strings.Builder
+	writeServeFacts(&out, serveFacts{root: "/srv/ledger", machine: r})
+	if !strings.Contains(out.String(), "etc layer") || strings.Contains(out.String(), "TEGO_CONFIG") {
+		t.Fatal(out.String())
 	}
 }
 
@@ -256,4 +310,47 @@ func (s *syncBuffer) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.b.String()
+}
+
+// TestServeHoldsTheDashboardLockWhileItServes: the dashboard is non-dumpable, so the scan cannot read its program file;
+// it holds the dashboard's lock (runlock.HoldDashboard) from the moment it serves, so the scan can name it, and frees it
+// when it stops.
+func TestServeHoldsTheDashboardLockWhileItServes(t *testing.T) {
+	m := config.Builtin()
+	m.Home = filepath.Join(t.TempDir(), "home")
+	if err := os.Mkdir(m.Home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	m.LedgerRoot.Value = t.TempDir()
+	oldLoader, oldAnchor, oldHome := loadMachineSnapshot, anchorPath, dashboardLockHome
+	loadMachineSnapshot = func(config.Sources, string, int, config.TrustMode) (*config.Machine, []config.Diagnostic, error) {
+		return m, nil, nil
+	}
+	anchorPath = machineAnchorPath
+	dashboardLockHome = machineLockHome // the package's TestMain keeps none; the product's rule is the machine's home
+	t.Cleanup(func() { loadMachineSnapshot, anchorPath, dashboardLockHome = oldLoader, oldAnchor, oldHome })
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var so, se syncBuffer
+	done := make(chan int, 1)
+	go func() { done <- cmdServe().Run(ctx, []string{"--addr", "127.0.0.1:0"}, &so, &se) }()
+	for end := time.Now().Add(5 * time.Second); !strings.Contains(se.String(), "chains:") && time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+	}
+	if pid, ok := runlock.DashboardPID(m.Home); !ok || pid != os.Getpid() {
+		cancel()
+		t.Fatalf("while serving, DashboardPID = %d, %v; want this process %d (stderr %q)", pid, ok, os.Getpid(), se.String())
+	}
+	cancel()
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Fatalf("serve: %d %s", code, se.String())
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("serve did not stop")
+	}
+	if pid, ok := runlock.DashboardPID(m.Home); ok {
+		t.Fatalf("after serve stopped DashboardPID = %d, true; want none", pid)
+	}
 }

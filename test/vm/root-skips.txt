@@ -8,9 +8,10 @@
 #
 # An entry whose reason starts "untagged:" is allowed only in the plain build of a package whose tests load the
 # BPF objects, which root-suites.sh runs beside its -tags tegobpf build: those tests need the objects, and the
-# tagged build runs them. Every other entry is allowed in every suite.
+# tagged build runs them. An optional row=ROW field restricts an entry to that exact matrix row; without a named
+# row the entry allows nothing. Entries without that field apply on every row in the applicable build.
 #
-# <package> <test> # <why it skips as root>
+# <package> <test> [row=ROW] # <why it skips as root>
 
 # Host LSM policy tests.
 internal/runtime TestIntegrationHeldOpenRespectsAppArmor # AppArmor-specific policy test: only skips when AppArmor is absent from the boot LSM list
@@ -23,15 +24,12 @@ internal/platform/sys TestInheritedHelper # helper process for TestInheritedKind
 internal/platform/sys TestCloseInheritedFromHelper # helper process for TestCloseInheritedFrom
 internal/cli TestStopLockHolderHelper # helper process that holds a run's lock as the stand-in launcher for the stop tests
 internal/control/web TestHelperLockHolder # helper process that holds a run's lock as the stand-in launcher for the dashboard Stop tests
-internal/control/web TestTwinJSWritesOnlyChanges # runs static/twin.js under node; skips where node is not installed (a KVM guest of the kernel matrix has none)
-internal/control/web TestTwinJSQuotesAsGo # runs static/twin.js under node; skips where node is not installed (a KVM guest of the kernel matrix has none)
-internal/control/web TestTwinJSWritesWhatTheFormDoes # runs static/twin.js under node; skips where node is not installed (a KVM guest of the kernel matrix has none)
-internal/control/web TestLiveRegionsRetryQuietRevision # runs static/live.js under node; skips where node is not installed (a KVM guest of the kernel matrix has none)
 internal/runtime TestLockHolderHelper # helper process that holds a run's lock for the sweep reclaim test
 internal/runtime TestHeldFileHolderHelper # helper process that holds a file for the adoption held-file count's root test
 internal/runtime TestOutlivesLauncherHelper # helper process for TestIntegrationEnforcementOutlivesItsLauncher
 internal/watch/adopt TestNoPathChrootHelper # helper process for TestIntegrationNoPathChrootedHolder
 internal/runtime TestOtherCgroupNamespaceRefusedHelper # helper process for TestOtherCgroupNamespaceRefused (an answer from a cgroup namespace of its own)
+internal/runtime TestUndumpableAnswerHelper # helper process for TestUndumpableOperatorIsServedAnAgentIsNot (an answer from a process that made itself undumpable, as the dashboard does)
 internal/watch/watcher TestThreadKilledAloneHelper # helper process for TestIntegrationAThreadKilledAloneGivesNoSignal
 internal/runtime/enforce/cgroup TestBPFEdgesHelper # helper process only
 internal/runtime/enforce/cgroup TestBuildLockHelper # helper process for the build-lock tests
@@ -45,7 +43,11 @@ internal/runtime/enforce/landlock TestStrictRouteHelper # helper process for Tes
 internal/runtime/enforce/cgroup TestNetLinksHelper # helper process only
 internal/runtime/enforce/cgroup TestSlotHelper # helper process for the slot-table tests
 internal/runtime/enforce/cgroup TestUnixHelper # helper process only
-internal/runscope TestInRunInACgroupNamespaceHelper # helper process for TestInRunInACgroupNamespace (InRun inside a cgroup namespace of its own)
+
+# Deliberate skips: a test that makes its own step call t.Skip, in every environment.
+internal/runtime/enforce/cgroup TestConcurrentSetupWatchdogLifecycle/build_skips/setup # skips by design in every environment: the test makes the compiler step call t.Skip to prove the watchdog is never armed before the build finishes; not an environment limit
+internal/runtime/enforce/cgroup TestConcurrentSetupWatchdogLifecycle/tier_skips/setup # skips by design in every environment: the test makes the tier check call t.Skip to prove the watchdog is released when setup leaves early; not an environment limit
+internal/platform/peer TestSelfInANamespaceOfItsOwnHelper # helper process for TestSelfInANamespaceOfItsOwn (the run-membership rule inside a cgroup namespace of its own)
 
 # Tests of the unprivileged answer: root gets another one, which the root tests beside them check.
 internal/runtime/supervisor TestLookupInOneIsTheComponentWalks # root holds the DAC capabilities, so an image walk checks the task's search permission itself and never asks lookupInOne (ADR 0048 C8); the unprivileged unit and integration steps run it
@@ -59,9 +61,13 @@ internal/platform/sys TestClearCapabilities # clearing capabilities as root woul
 internal/platform/sys TestClearProcessCapabilitiesReachesEveryThread # clearing every thread's capabilities as root would strip the test process; the privpath root tests (internal/runtime) cover it
 internal/platform/sys TestRunAsRefusesWhatItCannotTake # root can take any ids; the refusal is the unprivileged path
 internal/ledger TestHandOverRunUnprivileged # the unprivileged half; the integration suite's root tests cover the privileged one
+internal/platform/peer TestProbeTheRealUserManager # root has no user manager in the guest (no /run/user/0/systemd/private); the unprivileged unit step, which runs in the runner user's manager, holds the row
+internal/platform/peer TestProbeListener # a kernel below 6.5 (RHEL 9's 5.14, AL2023's 6.1) has no SO_PEERPIDFD: the test asserts the rule's answer there (unknown, no-peer-pidfd, no fallback) and skips the reads that need the pidfd
 internal/platform/peer TestPeerInsideRealRunIsGoverned # as root, tego run launches a privileged run whose agent runs as the invoking user; the unprivileged integration step runs this shape
+internal/platform/peer TestUndumpablePeerInsideRealRunIsGoverned # as root, tego run launches a privileged run whose agent runs as the invoking user; the unprivileged integration step runs this shape
 internal/runtime TestCodexIsRoutedThroughItsOwnCodexHome # a root launcher writes no CODEX_HOME: its runtime directory is not the agent's
 internal/runtime TestCodexConfigUnderDenyReadIsNotCopied # a root launcher writes no CODEX_HOME, so there is no copy to withhold; needs an unprivileged uid
+internal/runtime TestCodexEnvironmentDiagnosticHidesValue # a root launcher returns before it reads the user's Codex settings, so the diagnostic that must hide the environment value is never written; needs an unprivileged uid (the unprivileged unit run covers it)
 internal/runtime TestTheCodexHomeGrantReachesPrepare # a root launcher writes no CODEX_HOME: its runtime directory is not the agent's
 internal/runtime TestWatchedAgentCannotAnswer # a watch from a root launcher picks a root tier, which this test's binary carries no objects for; TestAdoptedAgentCannotAnswer is root's agent outside a contract
 internal/runtime TestTheCodexHomeGrantNeedsTheDirectoryTheRunMade # a root launcher writes no CODEX_HOME: its runtime directory is not the agent's
@@ -120,6 +126,7 @@ internal/cli TestRunLeavesALayerOthersCouldWriteToTheTrustCheck # a root launche
 internal/cli TestGCGivesTheLayerBackBeforeItReadsIt # root reads the config through any mode and gc as root restores none; the unprivileged unit run covers it
 internal/cli TestGCDryRunGivesNoModeBack # root reads a mode-0 layer, so there is no refusal to stage; the unprivileged unit run covers it
 internal/cli TestUnstatableRunIsIONotUsage # root searches a 0000 ledger root, so stat never fails; the unit run covers it
+internal/cli TestRootPredictionUnknownWhereTheDenyWriteSearchIsCutShort # root lists the mode-0311 folder the test cuts the deny-write search short with, so it is told root's own answer; the case is a non-root user's, which the unprivileged unit run covers
 internal/ledger TestGCKeepsARunWhoseStateCannotBeRead # root reads a 0000 file; this case needs an unprivileged uid
 internal/ledger TestGCRetainsUnknownStateBeforeRemoval # root reads a 0000 file; this case needs an unprivileged uid (the unit run covers it)
 internal/ledger TestGCKeepsAnUnreadableRunWhoseLockIsHeld # root reads a 0000 file; this case needs an unprivileged uid
@@ -142,7 +149,6 @@ internal/handoff TestHandoffMemfdNoexecOnTheKernel # a kernel without vm.memfd_n
 internal/runtime/enforce/cgroup TestDistinctMountsSeparatesThisHostsMountsOfOneDevice # needs two reachable mounts of one device, which a host may not have
 internal/runtime/observe TestIntegrationKernelRecordCapturesOpenSSL30 # needs TEGO_OPENSSL30_LIB, a directory holding an OpenSSL 3.0 libssl.so.3, which neither the runner nor the guest has
 internal/runtime/observe TestIntegrationKernelRecordCapturesTheAnthropicSDK # needs TEGO_ANTHROPIC_SITE, an Anthropic SDK site directory (test/e2e/pydeps.sh), which neither the runner nor the guest has
-internal/control/web TestLogsWarmBudget # opt-in: measures only a demo-shaped ledger directory named in TEGO_LOGS_BENCH_DEMO, which neither the runner nor the guest has
 internal/bpf TestPlaneLoadsAndAttaches/decide_pr/lsm # LSM mode needs bpf in the active LSM list, which a hosted runner and TEGO_VM_LSM=kernel lack; the default guest boot runs it
 internal/bpf TestPlaneLoadsAndAttaches/decide_rd/lsm # the same, for the bpf_rdonly_cast build
 internal/bpf TestPlaneLoadsAndAttaches/decide_rd # a kernel without bpf_rdonly_cast in BTF (AL2023 6.1) cannot load the rd build; the pr build runs there
@@ -174,6 +180,8 @@ internal/bpf TestReaderBuildsLoadOnThisKernel/probe # lockdown=confidentiality (
 internal/bpf TestObjectsLoadOnThisKernel/cgroup_net/tego_cg_connect_unix # a kernel below 6.7 (RHEL 9 5.14, AL2023 6.1, Ubuntu 24.04 6.8) has no BPF_CGROUP_UNIX_CONNECT attach type, and the backend does not load the program there
 internal/bpf TestObjectsLoadOnThisKernel/cgroup_net/tego_cg_sendmsg_unix # a kernel below 6.7 has no BPF_CGROUP_UNIX_SENDMSG attach type, and the backend does not load the program there
 internal/bpf TestObjectsLoadOnThisKernel/trace_proc/tego_file_truncate # a kernel below 6.2 (AL2023 6.1) has no security_file_truncate, and the backend does not load the program there
+internal/bpf TestObjectsLoadOnThisKernel/trace_proc/tego_uring_bind_result # below Linux 6.11 only, kernel BTF has no io_bind; a backport must load, and absence at or above 6.11 fails
+internal/bpf TestObjectsLoadOnThisKernel/trace_proc/tego_uring_listen_result # below Linux 6.11 only, kernel BTF has no io_listen; a backport must load, and absence at or above 6.11 fails
 internal/bpf TestAttachTargetsResolve/tego_file_truncate # a kernel below 6.2 (AL2023 6.1) has no security_file_truncate to resolve
 internal/bpf TestPlaneAttachTargetsResolve/bpf_lsm_file_truncate # a kernel below 6.2 (AL2023 6.1) has no file_truncate hook; the plane loads without this optional hook there
 internal/bpf TestPlaneAttachTargetsResolve/security_file_truncate # a kernel below 6.2 (AL2023 6.1) has no file_truncate hook; the plane loads without this optional hook there
@@ -316,11 +324,17 @@ internal/cli TestIntegrationAdoptBoundaryRefusesThroughThePlane # untagged: a bo
 internal/cli TestIntegrationAdoptReleaseCommand # untagged: an adoption records from tier 2's trace programs, which only the tegobpf build carries
 internal/cli TestAdoptEnvCleanupEndsTheAgentsBackgroundJobs # untagged: the adoption tests' environment builds and uses the tegobpf tego binary, which only the tegobpf build carries
 internal/cli TestIntegrationAdoptSkipIsRecordedAtOnce # skips only without the tegobpf build or python3, where no fmod_ret plane decides an adoption, or where no skip could be made (a kernel that does not preempt kernel code); on fedora-7.0 and fedora-7.2 every one of those fails instead
+internal/cli TestIntegrationGuardBoundaryRechecksLiveFmodRetAdmission # only a disposable KVM kernel with writable PREEMPT_DYNAMIC voluntary/full modes may run the live mode mutation
+internal/cli TestIntegrationGuardBoundaryUsesOwnersHome # only a disposable KVM guest may install the temporary passwd-home fixture
+internal/cli TestAdoptionRecorderPreparedHandleObserved # only a disposable KVM guest with root, bpffs and cgroup v2 may prepare the real recording-only adoption backend
 internal/cli TestIntegrationGuardAdoptsAnAgentAsItStarts # untagged: the guard's adoptions record from tier 2's trace programs, which only the tegobpf build carries
 internal/cli TestIntegrationAdoptBoundaryRefusesThroughThePlaneWatcher # untagged: a boundary adoption requires the embedded decision plane
 internal/cli TestIntegrationAdoptAppliesPidsAndCPUCeilings # untagged: a boundary adoption is held by the decision plane, which only the tegobpf build carries
 internal/cli TestIntegrationAdoptRefusesATreeOverItsPidsCeiling # untagged: a boundary adoption is held by the decision plane, which only the tegobpf build carries
-internal/runtime/enforce/cgroup TestPlaneRunBtrfsSubvolumeInodeIdentity # untagged: the plane's runs belong to the tegobpf suite, whose run needs only the btrfs module root-suites.sh loads (VM_MODULES)
+internal/runtime/enforce/cgroup TestPlaneRunBtrfsSubvolumeInodeIdentity # untagged: the plane's runs belong to the tegobpf suite; every full matrix row except RHEL 9 requires the Btrfs fixture
+internal/runtime/enforce/cgroup TestPlaneRunBtrfsSubvolumeInodeIdentity/cgroup@lsm row=rhel-9 # mount and /proc/filesystems confirm no btrfs driver on RHEL 9; every other full matrix row requires it
+internal/runtime/enforce/cgroup TestPlaneRunBtrfsSubvolumeInodeIdentity/bpflsm@lsm row=rhel-9 # mount and /proc/filesystems confirm no btrfs driver on RHEL 9; every other full matrix row requires it
+internal/runtime/enforce/cgroup TestPlaneRunBtrfsSubvolumeInodeIdentity/cgroup@fmod_ret row=rhel-9 # mount and /proc/filesystems confirm no btrfs driver on RHEL 9; every other full matrix row requires it
 internal/runtime/enforce/cgroup TestPlaneExecCommandRulesEndToEnd # untagged: the plane's runs belong to the tegobpf suite
 internal/runtime/enforce/cgroup TestPlaneExecMissWritesNoLine # untagged: the plane's runs belong to the tegobpf suite
 internal/runtime/enforce/cgroup TestPlaneExecMissObserveRace # untagged: the plane's runs belong to the tegobpf suite
@@ -338,6 +352,7 @@ internal/runtime/enforce/cgroup TestTierRunEndsWithItsMainProcess/bpflsm # the s
 internal/runtime TestDNSBrokerOrphanCleanupOnRealKernel/bpflsm # the same, for the orphan cleanup
 
 internal/runtime TestIntegrationHeldCompletionAtRootTier/bpflsm # the same, for ADR 0041's held completion at tier bpflsm
+internal/runtime TestIntegrationDenyReadSnapshotAtRootTiers/bpflsm # the same, for the frozen deny_read snapshot at tier bpflsm
 internal/runtime TestIntegrationHeldOpenRespectsAppArmor/bpflsm # tier bpflsm needs bpf in the boot LSM list
 
 internal/runtime TestIntegrationHeldReadsAtRootTier/bpflsm # the same, for ADR 0069's held reads at tier bpflsm
@@ -375,10 +390,25 @@ internal/runtime/enforce/cgroup TestPlaneAdoptedProcessCannotChangeMountTopology
 internal/runtime TestRootMCPRelayGate/bpflsm # the gate at tier bpflsm needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and VM_BOOTS' default-lsm boot lack
 internal/runtime TestRootMCPRelayGate/cgroup # a kernel with no plane mode at tier cgroup: the run is the fanotify fallback, which hands no exec to a plane, so the gate has no plane path to prove
 internal/runtime TestRootAskMutation/bpflsm # the fs.ask mutation at tier bpflsm needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and VM_BOOTS' default-lsm boot lack (doctor --require bpflsm says so); the lsm-bpf boot runs it
+internal/runtime TestRootStrictInterfaceLists/bpflsm/lsm # tier bpflsm needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out (ADR 0128's amendment); the lsm-bpf boot runs it
+internal/runtime TestRootStrictInterfaceLists/bpflsm/fmod_ret # tier bpflsm decides in the plane's lsm mode wherever bpf is an active LSM, so this machine never runs it in fmod_ret mode, and with bpf absent there is no tier bpflsm at all (ADR 0128's amendment)
+internal/runtime TestRootStrictInterfaceLists/cgroup/lsm # the plane's lsm mode needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out; fmod_ret mode runs either way (ADR 0128's amendment)
+internal/runtime TestRootStrictInterfaceLists/control:_no_plane_keeps_the_filter's_answer # below 6.7 the unix destination hooks of tier cgroup are the plane's, so a run on the fanotify fallback has no kernel network assurance to start under (ADR 0128's amendment)
+internal/runtime TestRootStrictImportStillClosed/bpflsm/lsm # tier bpflsm needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out (ADR 0128's amendment); the lsm-bpf boot runs it
+internal/runtime TestRootStrictImportStillClosed/bpflsm/fmod_ret # tier bpflsm decides in the plane's lsm mode wherever bpf is an active LSM, so this machine never runs it in fmod_ret mode, and with bpf absent there is no tier bpflsm at all (ADR 0128's amendment)
+internal/runtime TestRootStrictImportStillClosed/cgroup/lsm # the plane's lsm mode needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out; fmod_ret mode runs either way (ADR 0128's amendment)
+internal/runtime TestRootStrictImportStillClosed/control:_no_plane_answers_every_recvmsg_ENOSYS # below 6.7 the unix destination hooks of tier cgroup are the plane's, so a run on the fanotify fallback has no kernel network assurance to start under (ADR 0128's amendment)
+internal/runtime TestRootStrictHeldOpens/fs.reads:_held/bpflsm/lsm # tier bpflsm needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out (ADR 0128's amendment); the lsm-bpf boot runs it
+internal/runtime TestRootStrictHeldOpens/fs.reads:_held/bpflsm/fmod_ret # tier bpflsm decides in the plane's lsm mode wherever bpf is an active LSM, so this machine never runs it in fmod_ret mode, and with bpf absent there is no tier bpflsm at all (ADR 0128's amendment)
+internal/runtime TestRootStrictHeldOpens/fs.reads:_held/cgroup/lsm # the plane's lsm mode needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out; fmod_ret mode runs either way (ADR 0128's amendment)
+internal/runtime TestRootStrictHeldOpens/gate.completion:_held/bpflsm/lsm # tier bpflsm needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out (ADR 0128's amendment); the lsm-bpf boot runs it
+internal/runtime TestRootStrictHeldOpens/gate.completion:_held/bpflsm/fmod_ret # tier bpflsm decides in the plane's lsm mode wherever bpf is an active LSM, so this machine never runs it in fmod_ret mode, and with bpf absent there is no tier bpflsm at all (ADR 0128's amendment)
+internal/runtime TestRootStrictHeldOpens/gate.completion:_held/cgroup/lsm # the plane's lsm mode needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out; fmod_ret mode runs either way (ADR 0128's amendment)
+internal/runtime TestRootLiveBlockInPlane/bpflsm/lsm # tier bpflsm needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out (ADR 0124's amendment of 2026-11-21); the lsm-bpf boot runs it
+internal/runtime TestRootLiveBlockInPlane/bpflsm/fmod_ret # tier bpflsm decides in the plane's lsm mode wherever bpf is an active LSM, so this machine never runs it in fmod_ret mode, and with bpf absent there is no tier bpflsm at all (ADR 0124's amendment of 2026-11-21)
+internal/runtime TestRootLiveBlockInPlane/cgroup/lsm # the plane's lsm mode needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out; fmod_ret mode runs either way (ADR 0124's amendment of 2026-11-21)
 internal/runtime TestRootRouteChangesRefused/bpflsm # a root agent at tier bpflsm needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out; tier cgroup runs either way (ADR 0128)
-internal/runtime TestIntegrationNodeInterfaces # a guest has no node (kvm-run.sh HOST_PKGS); the tier-1 step runs it on the runner, and TestIntegrationRouteQueries runs the same calls from python3 here (ADR 0128)
 internal/runtime/enforce/cgroup TestCompactedTableStaysAtBPFLSM/bpflsm # tier bpflsm needs the plane's lsm mode: bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and the default-lsm boot lack (the lsm-bpf boot runs it)
-internal/runtime TestIntegrationDeclaredServers/node # no node in the guest image; the python server's cell runs
 
 # What a matrix row's own kernel does not have, from each test's own condition, which keys on the ABI or the kernel it
 # names, so a newer kernel never takes the skip. TestIntegrationDeclaredPort was seen skipping in an al2023 guest (6.1,
@@ -419,3 +449,41 @@ internal/cli TestGuideHandoffBoundary/* # requires an available pseudo-terminal
 internal/cli TestGuideChildrenStop/* # requires an available pseudo-terminal
 internal/cli TestGuideDumbInterrupt/* # requires an available pseudo-terminal
 internal/runtime TestIntegrationHeldOpenTOMOYO # needs the dedicated root TOMOYO activation guest; held-label-tests.sh requires this test without skips
+internal/runtime TestIntegrationTOMOYOProfileProofDifferential # needs the dedicated root TOMOYO guest booted for the differential (TEGO_VM_TOMOYO_HALF=differential); held-label-tests.sh requires this test without skips
+
+# tego uninstall refuses to run as root (it removes one person's install); the unprivileged integration and unit steps run these.
+internal/cli TestUninstallAsksOnlyInATerminalOrWithYes # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallCopiedExampleUnitsAreRemovedOnlyWithTheServices # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallEditsThroughALinkWithoutReplacingIt # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallFishFileOfOurOwnGoesWhenOnlyTheLineWasInIt # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallKeepsThePathLineWhileOtherProgramsNeedIt # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallListsWhatItWillRemoveAndAsksOnce # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallProgramsAreRemovedOnlyWhenTheyAreTegos # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallQuestionsDefaultToNoForServicesAndRecords # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallRecordsAndServicesOnlyOnTheirOwnYes # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallRefusesRootAndAnUnknownHome # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallRefusesToDeleteRecordsWhileASessionRuns # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallRemovesOnlyTheExactPathLine # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallReportsAUnitItCouldNotStopAndGoesOn # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallScriptFlagsAnswerTheOtherTwoQuestions # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallStopsTheUnitsTheRetentionTimerMakes # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallSystemInstallNamesSudoCommandsAndTouchesNothing # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallTwiceIsSafe # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallWorksWithoutTheUnitsOrTheServiceManager # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallYesKeepsRecordsContractsAndAgentServices # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallRealEnvironmentIsRefusedInATestBuild # a build without tegotesthooks has no guard to test, and the removal refuses root; the unprivileged tegotesthooks step runs it
+internal/cli TestUninstallSystemUnitNamesAreOneShellWord # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallStopsEveryInstanceOfATemplateItRemovesNotTheTemplate # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallRemovesTheGuidesDropInAndItsEmptyFolderWithTheServices # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallOneFailedStopIsReportedTheRestIsDoneAndTheExitSaysSo # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallNeverFollowsALinkedDropInFolder # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallLeavesAndNamesFilesTheGuideDidNotNameInTheDropInFolder # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallKeepsADropInTheGuideNamesButThePersonChanged # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestUninstallDropInFolderWithoutACopiedTemplateStillGoes # the removal refuses to run as root; the unprivileged steps run it
+internal/cli TestStatusSaysHowToGiveBackATakenRunDirectory # root reads through any mode, so a taken run directory cannot be provoked; the unprivileged steps run it
+internal/cli TestLocalRolesCLIRefusesSameUID # as root the caller is the owner-only deciding role, so there is no other uid to refuse; the unprivileged steps run it
+internal/control/web TestLocalRolesDashboardRealBrokerRefusesNonRoot # the witness is this process's own kernel credentials, which as root are the deciding role's, so the broker refuses nobody; the unprivileged steps run it
+internal/control/web TestLocalRolesDashboardRealBrokerRefusesPolicyDrift # the witness is this process's own kernel credentials, which as root are the deciding role's; the unprivileged steps run it
+internal/platform/sys TestMakeUndumpableHelper # helper process for TestMakeUndumpable
+internal/ledger TestModeAdviceNamesTheStateAndTheOneCommand # root reads through any mode, so the mode that advice names cannot be provoked; the unprivileged steps run it
+internal/runtime TestPlaneBlocksRefuseWholeWhatTheyCannotKey # root opens a mode-0 folder's child, so the class the block cannot key is not provoked; the unprivileged steps run it

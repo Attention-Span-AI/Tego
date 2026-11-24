@@ -39,7 +39,7 @@ func stored(t *testing.T, f *guidetest.Fixture) *guide.State {
 // next step and the not-known lines (testdata/<fixture>.json; -update rewrites them).
 func TestFixturesGolden(t *testing.T) {
 	want := map[string]string{
-		guidetest.Fresh: guide.RuleRecordTodo, guidetest.NotReady: guide.RuleCheckBlocked, guidetest.Outside: guide.RuleCheckOutside,
+		guidetest.Fresh: guide.RuleRecordTodo, guidetest.NotReady: guide.RuleCheckBlocked, guidetest.Outside: guide.RuleRecordTodo,
 		guidetest.Recording: guide.RuleRecordWaiting, guidetest.HalfDone: guide.RuleRecordDone,
 		guidetest.ContractMade: guide.RuleContractDone, guidetest.Finished: guide.RuleEnforceDone,
 		guidetest.Tampered: guide.RuleEnforceUnverified, guidetest.HandWritten: guide.RuleEnforceDone,

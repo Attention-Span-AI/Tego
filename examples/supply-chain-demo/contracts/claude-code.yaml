@@ -18,7 +18,7 @@
 #   ANTHROPIC_API_KEY); both are passed, nothing is stored in this file. Claude Code's /login is not used: it needs
 #   claude.ai, which net.allow leaves out.
 # - CLAUDE_CONFIG_DIR is this side's own folder, writable because Claude Code keeps its session there. Its own
-#   permission prompts are off in that folder's settings.json (setup writes it): tego is the cage.
+#   permission prompts are off in that folder's settings.json (setup writes it): tego enforces the contract.
 # - The cc-socks folder under your runtime folder is writable because Claude Code makes a socket there.
 version: 0
 name: supply-chain-claude-code

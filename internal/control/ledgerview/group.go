@@ -3,6 +3,7 @@
 package ledgerview
 
 import (
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -224,7 +225,7 @@ func groupRun(r *Run, rm *runMatch, by string, sens Sensitive) *runGroups {
 				g.keyless++
 				continue
 			}
-			key = e.Target
+			key = TargetKey(e)
 		case GroupRule:
 			// verdict:observed names these lines in a query (verdictOf), so the group is the lines it lists.
 			observed = e.Rule != "" && verdictOf(e) == string(record.VerdictObserved)
@@ -239,7 +240,7 @@ func groupRun(r *Run, rm *runMatch, by string, sens Sensitive) *runGroups {
 			case GroupProcess:
 				row.PID, row.Program = e.pid, programAt(names, of, idx)
 			case GroupTarget:
-				row.Target = e.Target
+				row.Target = key
 			case GroupRule:
 				// One run's lines of a group are all of its tier: a watched run's observed lines are all watched.
 				row.Rule, row.Observed, row.Watched = logsRule(e), observed, observed && WatchedLine(r, e)
@@ -260,6 +261,40 @@ func groupRun(r *Run, rm *runMatch, by string, sens Sensitive) *runGroups {
 		}
 	}
 	return g
+}
+
+// TargetKey is the identity a line has in a By target group: what it names, in one spelling. Two spellings of one path
+// (/w/a, /w//a, /w/./a/) are one target, as are a host written in capitals and one with a trailing dot; an ask and its
+// answer name the file they were about, not the question's words (read /w/a, ask-3 by me), so they group with the
+// lines that touched it. A line that names no target has "". A command line (exec) is kept as written: its words are
+// the target, and cleaning them would change what was run.
+func TargetKey(e *Event) string {
+	t := e.Target
+	if (e.Kind == "ask" || e.Kind == "answer") && e.askTarget != "" {
+		if e.askOp == "exec" {
+			return e.askTarget
+		}
+		t = e.askTarget
+	}
+	switch e.Kind {
+	case "exec":
+		return t
+	case "net":
+		if i := strings.Index(t, " ("); i > 0 && strings.HasSuffix(t, ")") {
+			return strings.TrimSuffix(strings.ToLower(t[:i]), ".") + t[i:]
+		}
+		return t
+	}
+	if e.Op == "exec" {
+		return t // a refused start names the program's pathname
+	}
+	parts := strings.Split(t, " → ") // a rename or link names two paths
+	for i, p := range parts {
+		if strings.HasPrefix(p, "/") {
+			parts[i] = path.Clean(p)
+		}
+	}
+	return strings.Join(parts, " → ")
 }
 
 // ruleGroupKey is the group key of rule's lines: those it decided, or (observed) those that name it but that nothing

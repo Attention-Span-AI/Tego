@@ -58,13 +58,15 @@ func TestReadingCommandsStopOnTheFirstSignal(t *testing.T) {
 	refused := events.Filter{Kinds: []record.Kind{record.KindRefused, record.KindGap, record.KindLimit}}
 	for name, call := range map[string]func(*bytes.Buffer, *bytes.Buffer) int{
 		"events": func(out, errs *bytes.Buffer) int {
-			return runEvents(ctx, string(id), events.Filter{}, false, false, out, errs)
+			return runEvents(ctx, string(id), events.Filter{}, false, false, false, out, errs)
 		},
 		"events --json": func(out, errs *bytes.Buffer) int {
-			return runEvents(ctx, string(id), events.Filter{}, false, true, out, errs)
+			return runEvents(ctx, string(id), events.Filter{}, false, true, false, out, errs)
 		},
-		"events --last": func(out, errs *bytes.Buffer) int { return runEvents(ctx, string(id), refused, true, false, out, errs) },
-		"measure":       func(out, errs *bytes.Buffer) int { return runMeasure(ctx, string(id), false, out, errs) },
+		"events --last": func(out, errs *bytes.Buffer) int {
+			return runEvents(ctx, string(id), refused, true, false, false, out, errs)
+		},
+		"measure": func(out, errs *bytes.Buffer) int { return runMeasure(ctx, string(id), false, out, errs) },
 	} {
 		var out, errs bytes.Buffer
 		code := call(&out, &errs)

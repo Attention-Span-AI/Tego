@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/attention-span-ai/tego/pkg/spec/config"
@@ -119,5 +120,18 @@ func TestTestBuildRefusesTheRealTegoDirectoryWithNoPasswdHome(t *testing.T) {
 	}
 	if err := testIsolationError(unnamed(filepath.Join(scratch, "ledger")), nil, "", ""); err != nil {
 		t.Errorf("an absolute root of its own with no passwd home and no $HOME was refused: %v", err)
+	}
+}
+
+// TestIsolationMessageNamesPlaces: a test path setting that is a place is printed with its variable; a value that is
+// not an absolute clean path is not echoed (rules (b) and (c) of pkg/spec/identity envtext.go).
+func TestIsolationMessageNamesPlaces(t *testing.T) {
+	if got := testPathSetting(EnvTestChainAnchor, "/srv/qz/chain.log"); got != EnvTestChainAnchor+"=/srv/qz/chain.log" {
+		t.Errorf("a place is not printed: %q", got)
+	}
+	for _, v := range []string{"qz-relative", "/srv/../qz-unclean", ""} {
+		if got := testPathSetting(EnvTestOwnLogHome, v); strings.Contains(got, "qz-") || !strings.Contains(got, "echo $"+EnvTestOwnLogHome) {
+			t.Errorf("testPathSetting(%q) = %q", v, got)
+		}
 	}
 }

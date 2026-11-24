@@ -223,6 +223,35 @@ type planerdTegoPlaneBind struct {
 	Pad2    uint32
 }
 
+type planerdTegoPlaneBlockRow struct {
+	_            structs.HostLayout
+	I_ino        uint64
+	I_generation uint32
+	S_dev        uint32
+	FromNs       uint64
+	NameKey      uint64
+	Gen          uint32
+	IdRead       uint16
+	IdWrite      uint16
+	IdGuard      uint16
+	Flags        uint8
+	SelfQ        uint8
+	BeneathQ     uint8
+	Pad          uint8
+	Pad2         uint16
+}
+
+type planerdTegoPlaneBlockState struct {
+	_         structs.HostLayout
+	Gen       uint32
+	On        uint32
+	Names     uint32
+	Over      uint32
+	OverRead  uint16
+	OverWrite uint16
+	Pad       uint32
+}
+
 type planerdTegoPlaneCounts struct {
 	_          structs.HostLayout
 	Mismatch   uint64
@@ -335,21 +364,23 @@ type planerdTegoPlaneRow struct {
 }
 
 type planerdTegoPlaneSlot struct {
-	_         structs.HostLayout
-	Gen       uint32
-	Flags     uint32
-	FsRows    uint32
-	ExecRows  uint32
-	Nleads    uint8
-	Nprefixes uint8
-	LeadLen   [8]uint8
-	PrefixLen [4]uint8
-	MinLen    uint8
-	Pad       uint8
-	Lead      [8]uint64
-	PidnsDev  uint64
-	PidnsIno  uint64
-	Pad2      [16]uint8
+	_           structs.HostLayout
+	Gen         uint32
+	Flags       uint32
+	FsRows      uint32
+	ExecRows    uint32
+	Nleads      uint8
+	Nprefixes   uint8
+	LeadLen     [8]uint8
+	PrefixLen   [4]uint8
+	MinLen      uint8
+	Pad         uint8
+	Lead        [8]uint64
+	PidnsDev    uint64
+	PidnsIno    uint64
+	DeputyTgid  uint32
+	DeputyPad   uint32
+	DeputyStart uint64
 }
 
 type planerdTegoPlaneUnix struct {
@@ -428,6 +459,8 @@ const (
 	planerdMapTegoNetCidr               = "tego_net_cidr"
 	planerdMapTegoNetControl            = "tego_net_control"
 	planerdMapTegoNetExact              = "tego_net_exact"
+	planerdMapTegoPlaneBlockStates      = "tego_plane_block_states"
+	planerdMapTegoPlaneBlocks           = "tego_plane_blocks"
 	planerdMapTegoPlaneCounters         = "tego_plane_counters"
 	planerdMapTegoPlaneExecArmed        = "tego_plane_exec_armed"
 	planerdMapTegoPlaneExecPins         = "tego_plane_exec_pins"
@@ -476,6 +509,7 @@ const (
 	planerdProgTegoFmrSocketConnect     = "tego_fmr_socket_connect"
 	planerdProgTegoFmrSocketCreate      = "tego_fmr_socket_create"
 	planerdProgTegoFmrSocketListen      = "tego_fmr_socket_listen"
+	planerdProgTegoFmrSocketRecvmsg     = "tego_fmr_socket_recvmsg"
 	planerdProgTegoFmrSocketSendmsg     = "tego_fmr_socket_sendmsg"
 	planerdProgTegoFmrUnixMaySend       = "tego_fmr_unix_may_send"
 	planerdProgTegoLsmBpf               = "tego_lsm_bpf"
@@ -506,8 +540,10 @@ const (
 	planerdProgTegoLsmSocketConnect     = "tego_lsm_socket_connect"
 	planerdProgTegoLsmSocketCreate      = "tego_lsm_socket_create"
 	planerdProgTegoLsmSocketListen      = "tego_lsm_socket_listen"
+	planerdProgTegoLsmSocketRecvmsg     = "tego_lsm_socket_recvmsg"
 	planerdProgTegoLsmSocketSendmsg     = "tego_lsm_socket_sendmsg"
 	planerdProgTegoLsmUnixMaySend       = "tego_lsm_unix_may_send"
+	planerdVarTegoBtfBlockMapRow        = "tego_btf_block_map_row"
 	planerdVarTegoBtfEvExecHeld         = "tego_btf_ev_exec_held"
 	planerdVarTegoBtfEvExecKill         = "tego_btf_ev_exec_kill"
 	planerdVarTegoBtfEvPlane            = "tego_btf_ev_plane"
@@ -519,6 +555,8 @@ const (
 	planerdVarTegoBtfPinMapKey          = "tego_btf_pin_map_key"
 	planerdVarTegoBtfPinMapRow          = "tego_btf_pin_map_row"
 	planerdVarTegoBtfPlaneBind          = "tego_btf_plane_bind"
+	planerdVarTegoBtfPlaneBlockRow      = "tego_btf_plane_block_row"
+	planerdVarTegoBtfPlaneBlockState    = "tego_btf_plane_block_state"
 	planerdVarTegoBtfPlaneCounts        = "tego_btf_plane_counts"
 	planerdVarTegoBtfPlaneDecision      = "tego_btf_plane_decision"
 	planerdVarTegoBtfPlaneExecRow       = "tego_btf_plane_exec_row"
@@ -603,6 +641,7 @@ type planerdProgramSpecs struct {
 	TegoFmrSocketConnect     *ebpf.ProgramSpec `ebpf:"tego_fmr_socket_connect"`
 	TegoFmrSocketCreate      *ebpf.ProgramSpec `ebpf:"tego_fmr_socket_create"`
 	TegoFmrSocketListen      *ebpf.ProgramSpec `ebpf:"tego_fmr_socket_listen"`
+	TegoFmrSocketRecvmsg     *ebpf.ProgramSpec `ebpf:"tego_fmr_socket_recvmsg"`
 	TegoFmrSocketSendmsg     *ebpf.ProgramSpec `ebpf:"tego_fmr_socket_sendmsg"`
 	TegoFmrUnixMaySend       *ebpf.ProgramSpec `ebpf:"tego_fmr_unix_may_send"`
 	TegoLsmBpf               *ebpf.ProgramSpec `ebpf:"tego_lsm_bpf"`
@@ -633,6 +672,7 @@ type planerdProgramSpecs struct {
 	TegoLsmSocketConnect     *ebpf.ProgramSpec `ebpf:"tego_lsm_socket_connect"`
 	TegoLsmSocketCreate      *ebpf.ProgramSpec `ebpf:"tego_lsm_socket_create"`
 	TegoLsmSocketListen      *ebpf.ProgramSpec `ebpf:"tego_lsm_socket_listen"`
+	TegoLsmSocketRecvmsg     *ebpf.ProgramSpec `ebpf:"tego_lsm_socket_recvmsg"`
 	TegoLsmSocketSendmsg     *ebpf.ProgramSpec `ebpf:"tego_lsm_socket_sendmsg"`
 	TegoLsmUnixMaySend       *ebpf.ProgramSpec `ebpf:"tego_lsm_unix_may_send"`
 }
@@ -641,62 +681,67 @@ type planerdProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type planerdMapSpecs struct {
-	TegoActivity        *ebpf.MapSpec `ebpf:"tego_activity"`
-	TegoBindExact       *ebpf.MapSpec `ebpf:"tego_bind_exact"`
-	TegoCaptureEvents   *ebpf.MapSpec `ebpf:"tego_capture_events"`
-	TegoCaptureLost     *ebpf.MapSpec `ebpf:"tego_capture_lost"`
-	TegoCaptureMiss     *ebpf.MapSpec `ebpf:"tego_capture_miss"`
-	TegoEvents          *ebpf.MapSpec `ebpf:"tego_events"`
-	TegoLost            *ebpf.MapSpec `ebpf:"tego_lost"`
-	TegoNetBinds        *ebpf.MapSpec `ebpf:"tego_net_binds"`
-	TegoNetCidr         *ebpf.MapSpec `ebpf:"tego_net_cidr"`
-	TegoNetControl      *ebpf.MapSpec `ebpf:"tego_net_control"`
-	TegoNetExact        *ebpf.MapSpec `ebpf:"tego_net_exact"`
-	TegoPlaneCounters   *ebpf.MapSpec `ebpf:"tego_plane_counters"`
-	TegoPlaneExecArmed  *ebpf.MapSpec `ebpf:"tego_plane_exec_armed"`
-	TegoPlaneExecPins   *ebpf.MapSpec `ebpf:"tego_plane_exec_pins"`
-	TegoPlaneExecRows   *ebpf.MapSpec `ebpf:"tego_plane_exec_rows"`
-	TegoPlaneListenRows *ebpf.MapSpec `ebpf:"tego_plane_listen_rows"`
-	TegoPlaneNameRows   *ebpf.MapSpec `ebpf:"tego_plane_name_rows"`
-	TegoPlanePathBuf    *ebpf.MapSpec `ebpf:"tego_plane_path_buf"`
-	TegoPlanePinKeys    *ebpf.MapSpec `ebpf:"tego_plane_pin_keys"`
-	TegoPlaneRecorded   *ebpf.MapSpec `ebpf:"tego_plane_recorded"`
-	TegoPlaneRows       *ebpf.MapSpec `ebpf:"tego_plane_rows"`
-	TegoPlaneScratch    *ebpf.MapSpec `ebpf:"tego_plane_scratch"`
-	TegoPlaneSlots      *ebpf.MapSpec `ebpf:"tego_plane_slots"`
-	TegoPlaneUnixPolicy *ebpf.MapSpec `ebpf:"tego_plane_unix_policy"`
-	TegoReasonMap       *ebpf.MapSpec `ebpf:"tego_reason_map"`
-	TegoRunSet          *ebpf.MapSpec `ebpf:"tego_run_set"`
-	TegoTrackingFailed  *ebpf.MapSpec `ebpf:"tego_tracking_failed"`
-	TegoUnixApprovals   *ebpf.MapSpec `ebpf:"tego_unix_approvals"`
-	TegoUnixNames       *ebpf.MapSpec `ebpf:"tego_unix_names"`
+	TegoActivity         *ebpf.MapSpec `ebpf:"tego_activity"`
+	TegoBindExact        *ebpf.MapSpec `ebpf:"tego_bind_exact"`
+	TegoCaptureEvents    *ebpf.MapSpec `ebpf:"tego_capture_events"`
+	TegoCaptureLost      *ebpf.MapSpec `ebpf:"tego_capture_lost"`
+	TegoCaptureMiss      *ebpf.MapSpec `ebpf:"tego_capture_miss"`
+	TegoEvents           *ebpf.MapSpec `ebpf:"tego_events"`
+	TegoLost             *ebpf.MapSpec `ebpf:"tego_lost"`
+	TegoNetBinds         *ebpf.MapSpec `ebpf:"tego_net_binds"`
+	TegoNetCidr          *ebpf.MapSpec `ebpf:"tego_net_cidr"`
+	TegoNetControl       *ebpf.MapSpec `ebpf:"tego_net_control"`
+	TegoNetExact         *ebpf.MapSpec `ebpf:"tego_net_exact"`
+	TegoPlaneBlockStates *ebpf.MapSpec `ebpf:"tego_plane_block_states"`
+	TegoPlaneBlocks      *ebpf.MapSpec `ebpf:"tego_plane_blocks"`
+	TegoPlaneCounters    *ebpf.MapSpec `ebpf:"tego_plane_counters"`
+	TegoPlaneExecArmed   *ebpf.MapSpec `ebpf:"tego_plane_exec_armed"`
+	TegoPlaneExecPins    *ebpf.MapSpec `ebpf:"tego_plane_exec_pins"`
+	TegoPlaneExecRows    *ebpf.MapSpec `ebpf:"tego_plane_exec_rows"`
+	TegoPlaneListenRows  *ebpf.MapSpec `ebpf:"tego_plane_listen_rows"`
+	TegoPlaneNameRows    *ebpf.MapSpec `ebpf:"tego_plane_name_rows"`
+	TegoPlanePathBuf     *ebpf.MapSpec `ebpf:"tego_plane_path_buf"`
+	TegoPlanePinKeys     *ebpf.MapSpec `ebpf:"tego_plane_pin_keys"`
+	TegoPlaneRecorded    *ebpf.MapSpec `ebpf:"tego_plane_recorded"`
+	TegoPlaneRows        *ebpf.MapSpec `ebpf:"tego_plane_rows"`
+	TegoPlaneScratch     *ebpf.MapSpec `ebpf:"tego_plane_scratch"`
+	TegoPlaneSlots       *ebpf.MapSpec `ebpf:"tego_plane_slots"`
+	TegoPlaneUnixPolicy  *ebpf.MapSpec `ebpf:"tego_plane_unix_policy"`
+	TegoReasonMap        *ebpf.MapSpec `ebpf:"tego_reason_map"`
+	TegoRunSet           *ebpf.MapSpec `ebpf:"tego_run_set"`
+	TegoTrackingFailed   *ebpf.MapSpec `ebpf:"tego_tracking_failed"`
+	TegoUnixApprovals    *ebpf.MapSpec `ebpf:"tego_unix_approvals"`
+	TegoUnixNames        *ebpf.MapSpec `ebpf:"tego_unix_names"`
 }
 
 // planerdVariableSpecs contains global variables before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type planerdVariableSpecs struct {
-	TegoBtfEvExecHeld     *ebpf.VariableSpec `ebpf:"tego_btf_ev_exec_held"`
-	TegoBtfEvExecKill     *ebpf.VariableSpec `ebpf:"tego_btf_ev_exec_kill"`
-	TegoBtfEvPlane        *ebpf.VariableSpec `ebpf:"tego_btf_ev_plane"`
-	TegoBtfExecArmed      *ebpf.VariableSpec `ebpf:"tego_btf_exec_armed"`
-	TegoBtfListenMapKey   *ebpf.VariableSpec `ebpf:"tego_btf_listen_map_key"`
-	TegoBtfListenMapRow   *ebpf.VariableSpec `ebpf:"tego_btf_listen_map_row"`
-	TegoBtfNameMapRow     *ebpf.VariableSpec `ebpf:"tego_btf_name_map_row"`
-	TegoBtfPinKeyval      *ebpf.VariableSpec `ebpf:"tego_btf_pin_keyval"`
-	TegoBtfPinMapKey      *ebpf.VariableSpec `ebpf:"tego_btf_pin_map_key"`
-	TegoBtfPinMapRow      *ebpf.VariableSpec `ebpf:"tego_btf_pin_map_row"`
-	TegoBtfPlaneBind      *ebpf.VariableSpec `ebpf:"tego_btf_plane_bind"`
-	TegoBtfPlaneCounts    *ebpf.VariableSpec `ebpf:"tego_btf_plane_counts"`
-	TegoBtfPlaneDecision  *ebpf.VariableSpec `ebpf:"tego_btf_plane_decision"`
-	TegoBtfPlaneExecRow   *ebpf.VariableSpec `ebpf:"tego_btf_plane_exec_row"`
-	TegoBtfPlaneListenKey *ebpf.VariableSpec `ebpf:"tego_btf_plane_listen_key"`
-	TegoBtfPlaneListenRow *ebpf.VariableSpec `ebpf:"tego_btf_plane_listen_row"`
-	TegoBtfPlaneNameCfg   *ebpf.VariableSpec `ebpf:"tego_btf_plane_name_cfg"`
-	TegoBtfPlaneNameRow   *ebpf.VariableSpec `ebpf:"tego_btf_plane_name_row"`
-	TegoBtfPlaneRow       *ebpf.VariableSpec `ebpf:"tego_btf_plane_row"`
-	TegoBtfPlaneSlot      *ebpf.VariableSpec `ebpf:"tego_btf_plane_slot"`
-	TegoBtfPlaneUnix      *ebpf.VariableSpec `ebpf:"tego_btf_plane_unix"`
+	TegoBtfBlockMapRow     *ebpf.VariableSpec `ebpf:"tego_btf_block_map_row"`
+	TegoBtfEvExecHeld      *ebpf.VariableSpec `ebpf:"tego_btf_ev_exec_held"`
+	TegoBtfEvExecKill      *ebpf.VariableSpec `ebpf:"tego_btf_ev_exec_kill"`
+	TegoBtfEvPlane         *ebpf.VariableSpec `ebpf:"tego_btf_ev_plane"`
+	TegoBtfExecArmed       *ebpf.VariableSpec `ebpf:"tego_btf_exec_armed"`
+	TegoBtfListenMapKey    *ebpf.VariableSpec `ebpf:"tego_btf_listen_map_key"`
+	TegoBtfListenMapRow    *ebpf.VariableSpec `ebpf:"tego_btf_listen_map_row"`
+	TegoBtfNameMapRow      *ebpf.VariableSpec `ebpf:"tego_btf_name_map_row"`
+	TegoBtfPinKeyval       *ebpf.VariableSpec `ebpf:"tego_btf_pin_keyval"`
+	TegoBtfPinMapKey       *ebpf.VariableSpec `ebpf:"tego_btf_pin_map_key"`
+	TegoBtfPinMapRow       *ebpf.VariableSpec `ebpf:"tego_btf_pin_map_row"`
+	TegoBtfPlaneBind       *ebpf.VariableSpec `ebpf:"tego_btf_plane_bind"`
+	TegoBtfPlaneBlockRow   *ebpf.VariableSpec `ebpf:"tego_btf_plane_block_row"`
+	TegoBtfPlaneBlockState *ebpf.VariableSpec `ebpf:"tego_btf_plane_block_state"`
+	TegoBtfPlaneCounts     *ebpf.VariableSpec `ebpf:"tego_btf_plane_counts"`
+	TegoBtfPlaneDecision   *ebpf.VariableSpec `ebpf:"tego_btf_plane_decision"`
+	TegoBtfPlaneExecRow    *ebpf.VariableSpec `ebpf:"tego_btf_plane_exec_row"`
+	TegoBtfPlaneListenKey  *ebpf.VariableSpec `ebpf:"tego_btf_plane_listen_key"`
+	TegoBtfPlaneListenRow  *ebpf.VariableSpec `ebpf:"tego_btf_plane_listen_row"`
+	TegoBtfPlaneNameCfg    *ebpf.VariableSpec `ebpf:"tego_btf_plane_name_cfg"`
+	TegoBtfPlaneNameRow    *ebpf.VariableSpec `ebpf:"tego_btf_plane_name_row"`
+	TegoBtfPlaneRow        *ebpf.VariableSpec `ebpf:"tego_btf_plane_row"`
+	TegoBtfPlaneSlot       *ebpf.VariableSpec `ebpf:"tego_btf_plane_slot"`
+	TegoBtfPlaneUnix       *ebpf.VariableSpec `ebpf:"tego_btf_plane_unix"`
 }
 
 // planerdObjects contains all objects after they have been loaded into the kernel.
@@ -719,35 +764,37 @@ func (o *planerdObjects) Close() error {
 //
 // It can be passed to loadPlanerdObjects or ebpf.CollectionSpec.LoadAndAssign.
 type planerdMaps struct {
-	TegoActivity        *ebpf.Map `ebpf:"tego_activity"`
-	TegoBindExact       *ebpf.Map `ebpf:"tego_bind_exact"`
-	TegoCaptureEvents   *ebpf.Map `ebpf:"tego_capture_events"`
-	TegoCaptureLost     *ebpf.Map `ebpf:"tego_capture_lost"`
-	TegoCaptureMiss     *ebpf.Map `ebpf:"tego_capture_miss"`
-	TegoEvents          *ebpf.Map `ebpf:"tego_events"`
-	TegoLost            *ebpf.Map `ebpf:"tego_lost"`
-	TegoNetBinds        *ebpf.Map `ebpf:"tego_net_binds"`
-	TegoNetCidr         *ebpf.Map `ebpf:"tego_net_cidr"`
-	TegoNetControl      *ebpf.Map `ebpf:"tego_net_control"`
-	TegoNetExact        *ebpf.Map `ebpf:"tego_net_exact"`
-	TegoPlaneCounters   *ebpf.Map `ebpf:"tego_plane_counters"`
-	TegoPlaneExecArmed  *ebpf.Map `ebpf:"tego_plane_exec_armed"`
-	TegoPlaneExecPins   *ebpf.Map `ebpf:"tego_plane_exec_pins"`
-	TegoPlaneExecRows   *ebpf.Map `ebpf:"tego_plane_exec_rows"`
-	TegoPlaneListenRows *ebpf.Map `ebpf:"tego_plane_listen_rows"`
-	TegoPlaneNameRows   *ebpf.Map `ebpf:"tego_plane_name_rows"`
-	TegoPlanePathBuf    *ebpf.Map `ebpf:"tego_plane_path_buf"`
-	TegoPlanePinKeys    *ebpf.Map `ebpf:"tego_plane_pin_keys"`
-	TegoPlaneRecorded   *ebpf.Map `ebpf:"tego_plane_recorded"`
-	TegoPlaneRows       *ebpf.Map `ebpf:"tego_plane_rows"`
-	TegoPlaneScratch    *ebpf.Map `ebpf:"tego_plane_scratch"`
-	TegoPlaneSlots      *ebpf.Map `ebpf:"tego_plane_slots"`
-	TegoPlaneUnixPolicy *ebpf.Map `ebpf:"tego_plane_unix_policy"`
-	TegoReasonMap       *ebpf.Map `ebpf:"tego_reason_map"`
-	TegoRunSet          *ebpf.Map `ebpf:"tego_run_set"`
-	TegoTrackingFailed  *ebpf.Map `ebpf:"tego_tracking_failed"`
-	TegoUnixApprovals   *ebpf.Map `ebpf:"tego_unix_approvals"`
-	TegoUnixNames       *ebpf.Map `ebpf:"tego_unix_names"`
+	TegoActivity         *ebpf.Map `ebpf:"tego_activity"`
+	TegoBindExact        *ebpf.Map `ebpf:"tego_bind_exact"`
+	TegoCaptureEvents    *ebpf.Map `ebpf:"tego_capture_events"`
+	TegoCaptureLost      *ebpf.Map `ebpf:"tego_capture_lost"`
+	TegoCaptureMiss      *ebpf.Map `ebpf:"tego_capture_miss"`
+	TegoEvents           *ebpf.Map `ebpf:"tego_events"`
+	TegoLost             *ebpf.Map `ebpf:"tego_lost"`
+	TegoNetBinds         *ebpf.Map `ebpf:"tego_net_binds"`
+	TegoNetCidr          *ebpf.Map `ebpf:"tego_net_cidr"`
+	TegoNetControl       *ebpf.Map `ebpf:"tego_net_control"`
+	TegoNetExact         *ebpf.Map `ebpf:"tego_net_exact"`
+	TegoPlaneBlockStates *ebpf.Map `ebpf:"tego_plane_block_states"`
+	TegoPlaneBlocks      *ebpf.Map `ebpf:"tego_plane_blocks"`
+	TegoPlaneCounters    *ebpf.Map `ebpf:"tego_plane_counters"`
+	TegoPlaneExecArmed   *ebpf.Map `ebpf:"tego_plane_exec_armed"`
+	TegoPlaneExecPins    *ebpf.Map `ebpf:"tego_plane_exec_pins"`
+	TegoPlaneExecRows    *ebpf.Map `ebpf:"tego_plane_exec_rows"`
+	TegoPlaneListenRows  *ebpf.Map `ebpf:"tego_plane_listen_rows"`
+	TegoPlaneNameRows    *ebpf.Map `ebpf:"tego_plane_name_rows"`
+	TegoPlanePathBuf     *ebpf.Map `ebpf:"tego_plane_path_buf"`
+	TegoPlanePinKeys     *ebpf.Map `ebpf:"tego_plane_pin_keys"`
+	TegoPlaneRecorded    *ebpf.Map `ebpf:"tego_plane_recorded"`
+	TegoPlaneRows        *ebpf.Map `ebpf:"tego_plane_rows"`
+	TegoPlaneScratch     *ebpf.Map `ebpf:"tego_plane_scratch"`
+	TegoPlaneSlots       *ebpf.Map `ebpf:"tego_plane_slots"`
+	TegoPlaneUnixPolicy  *ebpf.Map `ebpf:"tego_plane_unix_policy"`
+	TegoReasonMap        *ebpf.Map `ebpf:"tego_reason_map"`
+	TegoRunSet           *ebpf.Map `ebpf:"tego_run_set"`
+	TegoTrackingFailed   *ebpf.Map `ebpf:"tego_tracking_failed"`
+	TegoUnixApprovals    *ebpf.Map `ebpf:"tego_unix_approvals"`
+	TegoUnixNames        *ebpf.Map `ebpf:"tego_unix_names"`
 }
 
 func (m *planerdMaps) Close() error {
@@ -763,6 +810,8 @@ func (m *planerdMaps) Close() error {
 		m.TegoNetCidr,
 		m.TegoNetControl,
 		m.TegoNetExact,
+		m.TegoPlaneBlockStates,
+		m.TegoPlaneBlocks,
 		m.TegoPlaneCounters,
 		m.TegoPlaneExecArmed,
 		m.TegoPlaneExecPins,
@@ -788,27 +837,30 @@ func (m *planerdMaps) Close() error {
 //
 // It can be passed to loadPlanerdObjects or ebpf.CollectionSpec.LoadAndAssign.
 type planerdVariables struct {
-	TegoBtfEvExecHeld     *ebpf.Variable `ebpf:"tego_btf_ev_exec_held"`
-	TegoBtfEvExecKill     *ebpf.Variable `ebpf:"tego_btf_ev_exec_kill"`
-	TegoBtfEvPlane        *ebpf.Variable `ebpf:"tego_btf_ev_plane"`
-	TegoBtfExecArmed      *ebpf.Variable `ebpf:"tego_btf_exec_armed"`
-	TegoBtfListenMapKey   *ebpf.Variable `ebpf:"tego_btf_listen_map_key"`
-	TegoBtfListenMapRow   *ebpf.Variable `ebpf:"tego_btf_listen_map_row"`
-	TegoBtfNameMapRow     *ebpf.Variable `ebpf:"tego_btf_name_map_row"`
-	TegoBtfPinKeyval      *ebpf.Variable `ebpf:"tego_btf_pin_keyval"`
-	TegoBtfPinMapKey      *ebpf.Variable `ebpf:"tego_btf_pin_map_key"`
-	TegoBtfPinMapRow      *ebpf.Variable `ebpf:"tego_btf_pin_map_row"`
-	TegoBtfPlaneBind      *ebpf.Variable `ebpf:"tego_btf_plane_bind"`
-	TegoBtfPlaneCounts    *ebpf.Variable `ebpf:"tego_btf_plane_counts"`
-	TegoBtfPlaneDecision  *ebpf.Variable `ebpf:"tego_btf_plane_decision"`
-	TegoBtfPlaneExecRow   *ebpf.Variable `ebpf:"tego_btf_plane_exec_row"`
-	TegoBtfPlaneListenKey *ebpf.Variable `ebpf:"tego_btf_plane_listen_key"`
-	TegoBtfPlaneListenRow *ebpf.Variable `ebpf:"tego_btf_plane_listen_row"`
-	TegoBtfPlaneNameCfg   *ebpf.Variable `ebpf:"tego_btf_plane_name_cfg"`
-	TegoBtfPlaneNameRow   *ebpf.Variable `ebpf:"tego_btf_plane_name_row"`
-	TegoBtfPlaneRow       *ebpf.Variable `ebpf:"tego_btf_plane_row"`
-	TegoBtfPlaneSlot      *ebpf.Variable `ebpf:"tego_btf_plane_slot"`
-	TegoBtfPlaneUnix      *ebpf.Variable `ebpf:"tego_btf_plane_unix"`
+	TegoBtfBlockMapRow     *ebpf.Variable `ebpf:"tego_btf_block_map_row"`
+	TegoBtfEvExecHeld      *ebpf.Variable `ebpf:"tego_btf_ev_exec_held"`
+	TegoBtfEvExecKill      *ebpf.Variable `ebpf:"tego_btf_ev_exec_kill"`
+	TegoBtfEvPlane         *ebpf.Variable `ebpf:"tego_btf_ev_plane"`
+	TegoBtfExecArmed       *ebpf.Variable `ebpf:"tego_btf_exec_armed"`
+	TegoBtfListenMapKey    *ebpf.Variable `ebpf:"tego_btf_listen_map_key"`
+	TegoBtfListenMapRow    *ebpf.Variable `ebpf:"tego_btf_listen_map_row"`
+	TegoBtfNameMapRow      *ebpf.Variable `ebpf:"tego_btf_name_map_row"`
+	TegoBtfPinKeyval       *ebpf.Variable `ebpf:"tego_btf_pin_keyval"`
+	TegoBtfPinMapKey       *ebpf.Variable `ebpf:"tego_btf_pin_map_key"`
+	TegoBtfPinMapRow       *ebpf.Variable `ebpf:"tego_btf_pin_map_row"`
+	TegoBtfPlaneBind       *ebpf.Variable `ebpf:"tego_btf_plane_bind"`
+	TegoBtfPlaneBlockRow   *ebpf.Variable `ebpf:"tego_btf_plane_block_row"`
+	TegoBtfPlaneBlockState *ebpf.Variable `ebpf:"tego_btf_plane_block_state"`
+	TegoBtfPlaneCounts     *ebpf.Variable `ebpf:"tego_btf_plane_counts"`
+	TegoBtfPlaneDecision   *ebpf.Variable `ebpf:"tego_btf_plane_decision"`
+	TegoBtfPlaneExecRow    *ebpf.Variable `ebpf:"tego_btf_plane_exec_row"`
+	TegoBtfPlaneListenKey  *ebpf.Variable `ebpf:"tego_btf_plane_listen_key"`
+	TegoBtfPlaneListenRow  *ebpf.Variable `ebpf:"tego_btf_plane_listen_row"`
+	TegoBtfPlaneNameCfg    *ebpf.Variable `ebpf:"tego_btf_plane_name_cfg"`
+	TegoBtfPlaneNameRow    *ebpf.Variable `ebpf:"tego_btf_plane_name_row"`
+	TegoBtfPlaneRow        *ebpf.Variable `ebpf:"tego_btf_plane_row"`
+	TegoBtfPlaneSlot       *ebpf.Variable `ebpf:"tego_btf_plane_slot"`
+	TegoBtfPlaneUnix       *ebpf.Variable `ebpf:"tego_btf_plane_unix"`
 }
 
 // planerdPrograms contains all programs after they have been loaded into the kernel.
@@ -845,6 +897,7 @@ type planerdPrograms struct {
 	TegoFmrSocketConnect     *ebpf.Program `ebpf:"tego_fmr_socket_connect"`
 	TegoFmrSocketCreate      *ebpf.Program `ebpf:"tego_fmr_socket_create"`
 	TegoFmrSocketListen      *ebpf.Program `ebpf:"tego_fmr_socket_listen"`
+	TegoFmrSocketRecvmsg     *ebpf.Program `ebpf:"tego_fmr_socket_recvmsg"`
 	TegoFmrSocketSendmsg     *ebpf.Program `ebpf:"tego_fmr_socket_sendmsg"`
 	TegoFmrUnixMaySend       *ebpf.Program `ebpf:"tego_fmr_unix_may_send"`
 	TegoLsmBpf               *ebpf.Program `ebpf:"tego_lsm_bpf"`
@@ -875,6 +928,7 @@ type planerdPrograms struct {
 	TegoLsmSocketConnect     *ebpf.Program `ebpf:"tego_lsm_socket_connect"`
 	TegoLsmSocketCreate      *ebpf.Program `ebpf:"tego_lsm_socket_create"`
 	TegoLsmSocketListen      *ebpf.Program `ebpf:"tego_lsm_socket_listen"`
+	TegoLsmSocketRecvmsg     *ebpf.Program `ebpf:"tego_lsm_socket_recvmsg"`
 	TegoLsmSocketSendmsg     *ebpf.Program `ebpf:"tego_lsm_socket_sendmsg"`
 	TegoLsmUnixMaySend       *ebpf.Program `ebpf:"tego_lsm_unix_may_send"`
 }
@@ -911,6 +965,7 @@ func (p *planerdPrograms) Close() error {
 		p.TegoFmrSocketConnect,
 		p.TegoFmrSocketCreate,
 		p.TegoFmrSocketListen,
+		p.TegoFmrSocketRecvmsg,
 		p.TegoFmrSocketSendmsg,
 		p.TegoFmrUnixMaySend,
 		p.TegoLsmBpf,
@@ -941,6 +996,7 @@ func (p *planerdPrograms) Close() error {
 		p.TegoLsmSocketConnect,
 		p.TegoLsmSocketCreate,
 		p.TegoLsmSocketListen,
+		p.TegoLsmSocketRecvmsg,
 		p.TegoLsmSocketSendmsg,
 		p.TegoLsmUnixMaySend,
 	)

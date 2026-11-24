@@ -38,6 +38,9 @@ func TestSelftestRefusesAnUntrustedConfigLayer(t *testing.T) {
 			t.Errorf("stderr lacks %q:\n%s", want, stderr)
 		}
 	}
+	if strings.Count(stderr, "machine config untrusted:") != 1 || strings.Count(stderr, "chmod g-w,o-w") != 1 {
+		t.Errorf("refusal printed repeatedly: %q", stderr)
+	}
 	if stdout != "" {
 		t.Errorf("printed a report: %q", stdout)
 	}

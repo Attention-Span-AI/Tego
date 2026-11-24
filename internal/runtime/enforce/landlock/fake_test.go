@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/attention-span-ai/tego/internal/testutil"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
@@ -265,15 +266,8 @@ func dynamicELF(t *testing.T, path, interp string) {
 // path than the one Prepare held.
 func tempDir(t testing.TB) string {
 	t.Helper()
-	base, err := os.MkdirTemp("", "ll-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.RemoveAll(base); err != nil {
-			t.Error(err)
-		}
-	})
+	// Beneath it a unix socket fixture (the longest a test binds is other/elsewhere.sock) must fit sun_path, whatever TMPDIR is.
+	base := testutil.SunPathDir(t, "ll-", len("/r/other/elsewhere.sock"))
 	// Keep a parent to clean up roots a test renames to a sibling, as t.TempDir does.
 	dir := filepath.Join(base, "r")
 	if err := os.Mkdir(dir, 0o777); err != nil {
@@ -286,18 +280,8 @@ func tempDir(t testing.TB) string {
 	return d
 }
 
-// shortTempDir keeps socket fixtures below sockaddr_un's path bound without
-// moving them out of TMPDIR when testing's name-based directory is too long.
+// shortTempDir keeps socket fixtures below sockaddr_un's path bound: beneath TMPDIR when that leaves room, else /tmp.
 func shortTempDir(t *testing.T) string {
 	t.Helper()
-	d, err := os.MkdirTemp("", "ll")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(d) })
-	d, err = filepath.EvalSymlinks(d)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return d
+	return testutil.SunPathDir(t, "ll", len("/other/elsewhere.sock"))
 }

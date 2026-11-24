@@ -136,6 +136,12 @@ func (rt *RuleTable) NeedsOpenDeputy() bool {
 	return rt.GateOpensHeld() || rt.ReadsHeld()
 }
 
+// NeedsOpenDeputyAt is NeedsOpenDeputy for a run of the table at tier t, whatever tier the table is placed at: the
+// question compile --test asks about the root tiers while its table is Landlock's.
+func (rt *RuleTable) NeedsOpenDeputyAt(t backend.Tier) bool {
+	return rt.GateOpensHeld() || rt.ReadsHeldAt(t)
+}
+
 // GateOpensHeld reports whether the gate's escalating fs opens are held (gate.completion: held, ADR 0041 Stage B): what
 // takes the gate's open cells out of the best-effort list. Held reads complete read opens the same way, but the
 // cells stay listed unless the gate chose held completion, never counted as enforced on a reading of the run's
@@ -238,6 +244,9 @@ func (rt *RuleTable) BestEffortCellsRun(tier backend.Tier, planeMode string, dep
 // (ADR 0071): each is its own best-effort cell.
 func (rt *RuleTable) denyWriteKinds() (builtIn, user bool) {
 	for i := range rt.DenyWrite {
+		if rt.HasBaselineDenyWriteAt(rt.DenyWrite[i].Canonical()) && !rt.DenyWrite[i].Unenforced {
+			continue
+		}
 		if rt.DenyWrite[i].BuiltinRule != "" && !rt.DenyWrite[i].Unenforced {
 			continue
 		}
@@ -335,6 +344,9 @@ func (rt *RuleTable) BestEffortCellsFor(a Action, got EvalResult, tier backend.T
 func (rt *RuleTable) denyWriteCell(rule string) string {
 	for i := range rt.DenyWrite {
 		if r := &rt.DenyWrite[i]; rule != "" && r.RuleName() == rule {
+			if rt.HasBaselineDenyWriteAt(r.Canonical()) && !r.Unenforced {
+				return ""
+			}
 			if !r.IsDeclaredDenyWrite() {
 				return BestEffortDenyWrite
 			}

@@ -45,17 +45,17 @@ func historyAck(t *testing.T, s *Service, ref, id string) string {
 	return ""
 }
 
-// TestAckIsDeterministicAndBound: the same preview gives the same Ack (no nonce, no clock: a live region re-rendered
-// on every revision keeps its HTML), and a different change, base or key gives another. A widening confirmed with
-// the Ack of another preview writes nothing; the matching one writes; a narrowing needs none.
-func TestAckIsDeterministicAndBound(t *testing.T) {
+// TestBuilderAckIsUniqueAndBound: each Preview has its own identity, including
+// equal proposals. A different change, base or key also gives another acknowledgement. A widening confirmed with
+// the Ack of another preview writes nothing; the matching one writes. Builder narrowings carry their hidden binding.
+func TestBuilderAckIsUniqueAndBound(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	c := f.ref(t, f.contract)
 	git := ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"add", "exec.allow", "git"}}}
 	curl := ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"add", "exec.allow", "curl"}}}
 	a1, a2 := changeAck(t, f.s, git), changeAck(t, f.s, git)
-	if a1 != a2 || len(a1) != 64 {
+	if a1 == a2 || len(reviewIdentity(a1)) != 48 || len(a1) != 113 {
 		t.Fatalf("two previews of one change: %q and %q", a1, a2)
 	}
 	curlAck := changeAck(t, f.s, curl)
@@ -86,9 +86,9 @@ func TestAckIsDeterministicAndBound(t *testing.T) {
 	if again := changeAck(t, f.s, ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"add", "exec.allow", "curl"}}}); again == curlAck {
 		t.Fatal("an Ack outlived its base")
 	}
-	// A narrowing carries no Ack and is written.
-	if _, err := f.s.ApplyChange(ctx, ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"remove", "exec.allow", "cat"}}}); err != nil {
-		t.Fatalf("a narrowing without an Ack: %v", err)
+	// A narrowing carries its review binding without an explicit confirmation checkbox.
+	if _, err := f.applyReviewed(t, ctx, ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"remove", "exec.allow", "cat"}}}); err != nil {
+		t.Fatalf("a narrowing with its review binding: %v", err)
 	}
 }
 
@@ -98,7 +98,7 @@ func TestRevertAckNamesTheEntry(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	c := f.ref(t, f.contract)
-	a, err := f.s.ApplyChange(ctx, ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"remove", "exec.allow", "cat"}}})
+	a, err := f.applyReviewed(t, ctx, ChangeReq{Ref: c.Ref, Base: c.Base, Edits: []Edit{{"remove", "exec.allow", "cat"}}})
 	if err != nil {
 		t.Fatal(err)
 	}

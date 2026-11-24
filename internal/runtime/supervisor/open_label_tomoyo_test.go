@@ -17,11 +17,16 @@ import (
 func TestOpenLabelTOMOYO(t *testing.T) {
 	t.Cleanup(tomoyo.SetLoaderOmissionForTest(func() string { return "" }))
 	const neverUpdated = "Policy update:                                 0"
+	// A counter an unprivileged process moved, and a root-readable profile with nothing enforcing in it, or one that
+	// enforces (SEC08b): the admission or the refusal is TOMOYO's own, and another LSM's check still runs after it.
+	moved := fmt.Sprintf("Policy %-30s %10d (Last: 2026/11/19 12:00:00)", "update:", 3)
+	const quiet = "PROFILE_VERSION=20150505\n0-COMMENT=x\n0-CONFIG={ mode=disabled grant_log=no reject_log=yes }\n"
+	const loud = quiet + "1-CONFIG={ mode=enforcing grant_log=no reject_log=yes }\n"
 	for _, syscallList := range []bool{false, true} {
 		for _, tc := range []struct {
-			name, domain, stat, missing, want string
-			differs                           bool
-			level, opener                     string
+			name, domain, stat, missing, want, profile string
+			differs                                    bool
+			level, opener                              string
 		}{
 			{name: "Debian stock", domain: "<kernel>", stat: neverUpdated},
 			{name: "label terminators", domain: "<kernel>\n\x00", stat: neverUpdated},
@@ -30,6 +35,10 @@ func TestOpenLabelTOMOYO(t *testing.T) {
 			{name: "oversized domain", domain: strings.Repeat("x", 64*1024+1), stat: neverUpdated, want: "TOMOYO self_domain"},
 			{name: "unreadable domain", missing: "/sys/kernel/security/tomoyo/self_domain", stat: neverUpdated, want: "tomoyo/self_domain"},
 			{name: "counter changed", domain: "<kernel>", stat: "Policy update:                                 1", want: "TOMOYO's policy has been updated since boot"},
+			{name: "counter changed, profile proves nothing enforces", domain: "<kernel> /usr/bin/tego", stat: moved, profile: quiet},
+			{name: "counter changed, profile enforces", domain: "<kernel>", stat: moved, profile: loud, want: "enforces"},
+			{name: "counter changed, profile proof does not mask AppArmor", domain: "<kernel>", stat: moved, profile: quiet,
+				opener: "different (enforce)\n", want: "apparmor /attr/", differs: true},
 			{name: "AppArmor still checks depth", domain: "<kernel>", stat: neverUpdated, level: "1\n", want: "AppArmor complete stack visibility"},
 			{name: "AppArmor still compares labels", domain: "<kernel>", stat: neverUpdated, opener: "different (enforce)\n", want: "apparmor /attr/", differs: true},
 			{name: "prefix missing", domain: "<kernel>", stat: "Policy violation: 0", want: "TOMOYO stat"},
@@ -45,6 +54,10 @@ func TestOpenLabelTOMOYO(t *testing.T) {
 						return []byte("lockdown,capability,landlock,yama,apparmor,tomoyo,bpf,ipe,ima,evm"), nil
 					case "/sys/kernel/security/tomoyo/self_domain":
 						return []byte(tc.domain), nil
+					case "/sys/kernel/security/tomoyo/profile":
+						if tc.profile != "" {
+							return []byte(tc.profile), nil
+						}
 					case "/sys/kernel/security/tomoyo/stat":
 						return []byte(tc.stat + "\nPolicy violation in enforcing mode: 0\n"), nil
 					case "/sys/kernel/security/apparmor/.ns_level":

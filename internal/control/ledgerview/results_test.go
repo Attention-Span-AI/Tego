@@ -281,7 +281,7 @@ func TestReceiptKeptPerRunVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := loadReceipt(t.Context(), root, run)
+	want, err := readReceipt(t.Context(), root, run, Sensitive{}, Pricing{})
 	if err != nil {
 		t.Fatal(err)
 	}

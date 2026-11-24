@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/attention-span-ai/tego/internal/testutil"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
@@ -159,14 +160,7 @@ func TestDeclaredGrantOnADenyNode(t *testing.T) {
 	alias := filepath.Join(root, "bin", "tool")
 	link(t, tool, alias)
 	// Its own short directory: sun_path holds 108 bytes, and t.TempDir's names are long.
-	sockDir, err := os.MkdirTemp("", "ey")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(sockDir) })
-	if sockDir, err = filepath.EvalSymlinks(sockDir); err != nil { // as tempDir, for the entry it is held under
-		t.Fatal(err)
-	}
+	sockDir := testutil.SunPathDir(t, "ey", len("/agent.sock")) // resolved, as tempDir, for the entry it is held under
 	sock := filepath.Join(sockDir, "agent.sock")
 	l, err := net.Listen("unix", sock)
 	if err != nil {

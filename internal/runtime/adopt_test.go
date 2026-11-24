@@ -242,6 +242,8 @@ func (h *adoptHost) Freeze(dir string, frozen bool) error {
 	return nil
 }
 
+func (h *adoptHost) Make(dir string) error { return os.Mkdir(dir, 0o755) }
+
 func (h *adoptHost) Exists(dir string) bool {
 	_, err := os.Stat(dir)
 	return err == nil
@@ -373,9 +375,11 @@ type adoptBackend struct {
 	// keyed is what the handle's PlaneKeyed reports (the files the plane's fill wrote the fs rows at), with keyedOK.
 	keyed   []enforce.PlaneKeyed
 	keyedOK bool
-	// onArm, when set, is called by the handle's Arm, before it arms.
-	onArm  func()
-	mounts func() (*agent.MountTable, error)
+	// onAttach and onArm run before the handle records each lifecycle operation.
+	onAttach  func()
+	onArm     func()
+	mounts    func() (*agent.MountTable, error)
+	admission func() error
 }
 
 func (b *adoptBackend) Tier() backend.Tier        { return backend.TierCgroup }
@@ -388,8 +392,8 @@ func (b *adoptBackend) Prepare(_ context.Context, rt *agent.RuleTable, ref enfor
 	if rt.Tier != backend.TierCgroup {
 		return nil, fmt.Errorf("table at tier %s", rt.Tier)
 	}
-	b.handle = &adoptHandle{plane: b.plane, ref: ref, keyed: b.keyed, keyedOK: b.keyedOK, onArm: b.onArm,
-		attachErr: b.attachErr, armErr: b.armErr}
+	b.handle = &adoptHandle{plane: b.plane, ref: ref, keyed: b.keyed, keyedOK: b.keyedOK, onAttach: b.onAttach, onArm: b.onArm,
+		attachErr: b.attachErr, armErr: b.armErr, admission: b.admission}
 	if b.mounts != nil {
 		b.handle.mounts, b.handle.mountErr = b.mounts()
 	}
@@ -409,10 +413,19 @@ type adoptHandle struct {
 	attached, armed, detached, closed int
 	keyed                             []enforce.PlaneKeyed
 	keyedOK                           bool
+	onAttach                          func()
 	onArm                             func()
 	attachErr, armErr                 error
 	mounts                            *agent.MountTable
 	mountErr                          error
+	admission                         func() error
+}
+
+func (h *adoptHandle) RecheckAdmission() error {
+	if h.admission != nil {
+		return h.admission()
+	}
+	return nil
 }
 
 func (h *adoptHandle) MountTable() (*agent.MountTable, error) { return h.mounts, h.mountErr }
@@ -422,6 +435,9 @@ func (h *adoptHandle) PlaneKeyed() ([]enforce.PlaneKeyed, bool) { return h.keyed
 func (h *adoptHandle) LandlockRuleset() (int, bool)                { return -1, false }
 func (h *adoptHandle) SeccompFilter() ([]bpf.RawInstruction, bool) { return nil, false }
 func (h *adoptHandle) Attach(uint64) error {
+	if h.onAttach != nil {
+		h.onAttach()
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.attached++

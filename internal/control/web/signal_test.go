@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -51,7 +52,7 @@ func TestRunHighlightsAndGroupedRefusals(t *testing.T) {
 	c := login(t, s)
 
 	body := get(t, s, c, "/runs/"+run)
-	hl := body[strings.Index(body, `id="h-hl"`):strings.Index(body, "run-facts")]
+	hl := pageElement(t, body, "aria-labelledby", "h-hl")
 	for _, want := range []string{
 		`class="sev sev-High"`, "400 routine", "/w/home/.ssh/id_rsa", "Never read",
 		"127.0.0.1:8802", "After a secret read", "chatgpt.com:443", "In contract", "Routine · 1 host",
@@ -86,11 +87,72 @@ func TestRunHighlightsAndGroupedRefusals(t *testing.T) {
 	}
 }
 
+// get is a page as the words tests read it: each bare number marker (numbers.go) is replaced by its words, which
+// keep any "at least" or "could not read" qualification. getRaw keeps the markers, for the number inventory tests.
 func get(t *testing.T, s *Server, c *http.Cookie, path string) string {
 	t.Helper()
-	w := do(s, "GET", path, "127.0.0.1:8484", c)
+	return unmarked(getRaw(t, s, c, path))
+}
+
+func getRaw(t *testing.T, s *Server, c *http.Cookie, path string) string {
+	t.Helper()
+	w := doRaw(s, "GET", path, "127.0.0.1:8484", c)
 	if w.Code != http.StatusOK {
 		t.Fatalf("%s: %d %s", path, w.Code, w.Body.String())
 	}
 	return w.Body.String()
+}
+
+func TestRestoredFenceRefusalOutsideRoutineFold(t *testing.T) {
+	root := t.TempDir()
+	const run = "r-aaaaaaaa-0000000000003-fencer"
+	t0 := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
+	extras := []struct{ kind, body string }{
+		{"run_start", `"tier":"cgroup","command":["agent"],"cwd":"/w/proj","live_mode":"adjustable","live_fence":{"sha256":"0a0a","entries":[{"kind":"net","value":"api.stripe.com:443","source":"new","rule":"live.fence[net:api.stripe.com:443]"}]}`},
+		{"gap", `"what":"enforce","why":"live-rule-lifted","live_block":{"op":"lift","kind":"net","value":"api.stripe.com:443","rule":"live.fence[net:api.stripe.com:443]"}`},
+		{"net", `"rule":"live.fence[net:api.stripe.com:443]","verdict":"allow","host":"api.stripe.com","dst":"203.0.113.10:443","proto":"tcp"`},
+		{"gap", `"what":"enforce","why":"live-rule-restored","live_block":{"op":"restore","kind":"net","value":"api.stripe.com:443","rule":"live.fence[net:api.stripe.com:443]"}`},
+		{"refused", `"rule":"unmatched","reason":"net-not-allowed","op":"net","target":"203.0.113.10:8443"`},
+		{"refused", `"rule":"held-unsupported","reason":"fs-gate","op":"open","target":"/dev/tty"`},
+		{"run_end", `"reason":"exit","exit_code":0`},
+	}
+	var lines []string
+	for seq, e := range extras {
+		lines = append(lines, line(run, "agent", seq, t0.Add(time.Duration(seq)*time.Minute), e.kind, e.body))
+	}
+	if err := os.MkdirAll(filepath.Join(root, run), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, run, "events.jsonl"), []byte(strings.Join(lines, "")), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s := newServer(t, root)
+	body := get(t, s, login(t, s), "/runs/"+run+"/refusals")
+	rf := body[strings.Index(body, `id="h-rf"`):]
+	host, routine := strings.Index(rf, "203.0.113.10"), strings.Index(rf, `id="bg"`)
+	if host < 0 || routine < 0 || host > routine {
+		t.Fatalf("restored fence refusal at %d, routine fold at %d", host, routine)
+	}
+}
+
+// numberMarkerSpan is the "quantity" template's own markup (layout.tmpl): a span with only the marker and a title.
+var pathTokenSpan = regexp.MustCompile(`<span class="path-token"(?: data-number-exclude="layout.path-token")?>([^<]*)</span>`)
+
+var numberMarkerSpan = regexp.MustCompile(`<span data-number="[a-z0-9.-]+"(?: title="[^"]*")?>([^<]*)</span>`)
+
+// unmarked replaces each bare number marker span by its words.
+var auditOnlyAttribute = regexp.MustCompile(` data-number-(?:exclude(?:-[a-z-]+)?|title|aria-label|aria-description|alt|placeholder|value)="[^"]*"`)
+var bareAuditSpan = regexp.MustCompile(`(?s)<span data-number-exclude="(?:highlights.specific-1|procs.explicit-8|layout.duration-ended|event.integrity-line|approvals.request-agent)">(.*?)</span>`)
+var auditNumberAttribute = regexp.MustCompile(` data-number="[^"]*"`)
+var titleNumberAttribute = regexp.MustCompile(`(<title) data-number="[^"]*"`)
+
+func unmarked(body string) string {
+	// Leaf identity wrappers do not change the path words these older markup assertions compare.
+	body = pathTokenSpan.ReplaceAllString(body, "$1")
+	body = numberMarkerSpan.ReplaceAllString(body, "$1")
+	body = bareAuditSpan.ReplaceAllString(body, "$1")
+	body = auditOnlyAttribute.ReplaceAllString(body, "")
+	body = auditNumberAttribute.ReplaceAllString(body, "")
+	body = titleNumberAttribute.ReplaceAllString(body, "$1")
+	return body
 }

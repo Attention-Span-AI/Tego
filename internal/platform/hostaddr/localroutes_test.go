@@ -35,6 +35,11 @@ func seqOf(typ uint8) uint32 {
 	return 0
 }
 
+// parseStd is parseLocalTable under the kernel's default rules alone: only tables local, main and default are looked up.
+func parseStd(b []byte, seq uint32, typ uint8, t *LocalTable) (bool, error) {
+	return parseLocalTable(b, seq, typ, &reachable{}, map[uint32]bool{}, t)
+}
+
 func nlMsg(typ, flags uint16, seq uint32, body []byte) []byte {
 	m := make([]byte, unix.NLMSG_HDRLEN, align4(unix.NLMSG_HDRLEN+len(body)))
 	ne := binary.NativeEndian
@@ -105,7 +110,7 @@ func dump(rs ...route) []byte {
 // parseDump parses b as the whole answer to the dump of route type typ into t, failing the test unless it ends there.
 func parseDump(t *testing.T, typ uint8, b []byte, into *LocalTable) {
 	t.Helper()
-	if end, err := parseLocalTable(b, seqOf(typ), typ, into); !end || err != nil {
+	if end, err := parseStd(b, seqOf(typ), typ, into); !end || err != nil {
 		t.Fatalf("the dump of type %d: end %v, %v", typ, end, err)
 	}
 }
@@ -142,7 +147,7 @@ func TestParseLocalTable(t *testing.T) {
 		route{typ: unix.RTN_LOCAL, table: local, dst: "fe80::1/128", flags: f},
 	), done(seqOf(unix.RTN_LOCAL), 0)...)
 	var tab LocalTable
-	if end, err := parseLocalTable(first, seqOf(unix.RTN_LOCAL), unix.RTN_LOCAL, &tab); end || err != nil {
+	if end, err := parseStd(first, seqOf(unix.RTN_LOCAL), unix.RTN_LOCAL, &tab); end || err != nil {
 		t.Fatalf("first datagram: end %v, %v", end, err)
 	}
 	parseDump(t, unix.RTN_LOCAL, second, &tab)
@@ -249,12 +254,12 @@ func TestParseLocalTableRefuses(t *testing.T) {
 		"bytes after the last message":         append(good.msg(), 1, 2, 3),
 	} {
 		var tab LocalTable
-		if _, err := parseLocalTable(b, seq, unix.RTN_LOCAL, &tab); err == nil {
+		if _, err := parseStd(b, seq, unix.RTN_LOCAL, &tab); err == nil {
 			t.Errorf("%s: read %+v, want an error", name, tab)
 		}
 	}
 	var tab LocalTable
-	if _, err := parseLocalTable(errMsg, seq, unix.RTN_LOCAL, &tab); !errors.Is(err, unix.EINVAL) {
+	if _, err := parseStd(errMsg, seq, unix.RTN_LOCAL, &tab); !errors.Is(err, unix.EINVAL) {
 		t.Errorf("the kernel's error is not the one returned: %v", err)
 	}
 }
@@ -331,7 +336,7 @@ func FuzzParseLocalTable(f *testing.F) {
 	f.Fuzz(func(t *testing.T, which uint8, b []byte) {
 		i := int(which) % len(localTableTypes)
 		var tab LocalTable
-		if _, err := parseLocalTable(b, uint32(i+1), localTableTypes[i], &tab); err != nil {
+		if _, err := parseStd(b, uint32(i+1), localTableTypes[i], &tab); err != nil {
 			return
 		}
 		for _, ps := range [][]netip.Prefix{tab.Local, tab.Broadcast, tab.Anycast} {

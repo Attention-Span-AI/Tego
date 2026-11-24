@@ -1,8 +1,13 @@
 # Combined released-matcher comparison
 
-The release comparison checks both matcher fix families against private released
-commit `70a9e8c56`. The 20 production files under `internal/baseline` differ only
-in their import prefix. Verify every source byte with:
+The ordinary comparison builds both matcher fix families against the committed
+20-file matcher under `internal/baseline`. Its provenance names the original
+released commit `70a9e8c56`; the stored source differs only in its import prefix.
+Ordinary tests build that snapshot without needing the original history. The
+optional source-byte verification and long overlay runner below require that
+historical commit locally and stop if it is absent. A fresh public export may
+not contain that historical object. Where it is available, verify every source
+byte with:
 
 ```sh
 python3 test/execmatchdiff/prepare.py --verify
@@ -12,7 +17,7 @@ Run ordinary tests with your Go command. `GO_CHECK` stands for it below; it may
 name a wrapper that runs Go under the host's memory and CPU limits:
 
 ```sh
-"$GO_CHECK" test -p 1 -count=1 -v ./test/execmatchdiff
+go test -p 1 -count=1 -v ./test/execmatchdiff
 ```
 
 The bounded separator matrix visits every named command and alias, plain and
@@ -88,7 +93,7 @@ in-process CLI overlay and use its testhook tags:
 
 ```sh
 python3 test/execmatchdiff/conformance.py "$CONFORMANCE_SCRATCH"
-"$GO_CHECK" test -p 1 -race -count=1 -tags tegobpf,tegotesthooks \
+go test -p 1 -race -count=1 -tags tegobpf,tegotesthooks \
   -overlay "$CONFORMANCE_SCRATCH/overlay.json" ./test/conformance
 ```
 

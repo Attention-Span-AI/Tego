@@ -249,6 +249,12 @@ func runStatusSelected(ctx context.Context, runID, agentName string, all, asJSON
 		return identity.ExitOK
 	}
 	pauses := runPauses(root, snaps)
+	for id, pause := range pauses {
+		if pause.Error != "" {
+			message(stderr, "", 0, 0, "tego status: "+id+": "+pause.Error, codeIO)
+			bad++
+		}
+	}
 	if err := writeStatus(stdout, snaps, pauses, asJSON, all || runID == ""); err != nil {
 		message(stderr, "", 0, 0, "tego status: "+err.Error(), codeIO)
 		return identity.ExitError

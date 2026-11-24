@@ -12,7 +12,7 @@ import (
 	"golang.org/x/net/html"
 )
 
-// The keyboard and accessibility floor of the main journey (Overview, a run, a line's "Act on this" with what it shows
+// The keyboard and accessibility floor of the main journey (Overview, a run, a line's "What to do about this" with what it shows
 // on a live run, Approvals Allow and Deny): every page is parsed and checked for the attributes a keyboard or
 // screen-reader user depends on. It is a floor, not an audit: a real screen reader and a human pass are still owed.
 
@@ -245,25 +245,49 @@ func checkPage(t *testing.T, label, body string) {
 		t.Errorf("%s: the first tab stop is %q, want the skip link to #main", label, v)
 	}
 	if b := byID["ask-banner"]; b != nil {
-		if v, _ := attr(b, "aria-live"); v != "assertive" && v != "polite" {
-			t.Errorf("%s: the approvals banner has no aria-live", label)
+		if v, _ := attr(b, "role"); v != "region" {
+			t.Errorf("%s: the ask band is not a named region", label)
 		}
-		if v, _ := attr(b, "aria-atomic"); v != "true" {
-			t.Errorf("%s: the approvals banner is not aria-atomic, a screen reader would read a fragment", label)
-		}
-		// The banner is before the page's own content in the tab order, so a waiting ask is the first thing reached.
-		var first *html.Node
-		walk(byID["main"], func(n *html.Node) {
-			if first == nil && focusable(n) {
-				first = n
+		regionName, _ := attr(b, "aria-label")
+		if ids, _ := attr(b, "aria-labelledby"); ids != "" {
+			var parts []string
+			for _, id := range strings.Fields(ids) {
+				if heading := byID[id]; heading != nil {
+					parts = append(parts, text(heading))
+				} else {
+					t.Errorf("%s: ask band names a missing label %q", label, id)
+				}
 			}
-		})
-		inBanner := false
-		for p := first; p != nil; p = p.Parent {
-			inBanner = inBanner || p == b
+			regionName = strings.Join(parts, " ")
 		}
-		if !inBanner {
-			t.Errorf("%s: the approvals banner is not the first thing in <main>'s tab order", label)
+		if strings.TrimSpace(regionName) == "" {
+			t.Errorf("%s: the ask band's accessible region name is empty", label)
+		}
+		if say := byID["ask-say"]; say == nil {
+			t.Errorf("%s: missing polite ask region", label)
+		} else if v, _ := attr(say, "aria-live"); v != "polite" {
+			t.Errorf("%s: new asks are not polite", label)
+		}
+		// The shared band is before the page's own content in the tab order, so a waiting ask is the first thing
+		// reached. Approvals' own band (ap-compact) is the page's content: its answers come before the queue's.
+		if class, _ := attr(b, "class"); strings.Contains(class, "ap-compact") {
+			if !bandPrecedesQueue(doc) {
+				t.Errorf("%s: both band answers must precede the first queue link in document/tab order", label)
+			}
+		} else {
+			var first *html.Node
+			walk(byID["main"], func(n *html.Node) {
+				if first == nil && focusable(n) {
+					first = n
+				}
+			})
+			inBanner := false
+			for p := first; p != nil; p = p.Parent {
+				inBanner = inBanner || p == b
+			}
+			if !inBanner {
+				t.Errorf("%s: the approvals banner is not first in main's tab order", label)
+			}
 		}
 	}
 }
@@ -312,7 +336,7 @@ func TestJourneyPagesAreKeyboardAndReaderUsable(t *testing.T) {
 	for _, p := range []string{"/runs/" + detailRun + "/lines/2", "/runs/" + detailRun + "/lines/2?a=block", "/runs/" + detailRun + "/lines/3?a=allow&cmd=1"} {
 		body := get(t, ds, dc, p)
 		checkPage(t, p, body)
-		if !strings.Contains(body, `id="act"`) || !strings.Contains(body, "Act on this") {
+		if !strings.Contains(body, `id="act"`) || !strings.Contains(body, "What to do about this") {
 			t.Errorf("%s: no Act on this section", p)
 		}
 	}

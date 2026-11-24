@@ -3,6 +3,7 @@
 package runtime
 
 import (
+	"bytes"
 	"errors"
 	"log/slog"
 	"os"
@@ -293,5 +294,42 @@ func TestUserCodexConfig(t *testing.T) {
 	}
 	if _, err := userCodexConfig([]string{identity.EnvCodexHome + "=" + fifo}, noPasswdUID); err == nil {
 		t.Fatal("a FIFO was read as a config.toml")
+	}
+}
+
+func TestCodexEnvironmentDiagnosticHidesValue(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root launchers do not copy Codex settings")
+	}
+	for _, variable := range []string{"HOME", identity.EnvCodexHome} {
+		for _, value := range []string{"QZ", "private-environment-value-that-is-long"} {
+			home := filepath.Join(t.TempDir(), value)
+			dir := home
+			if variable == "HOME" {
+				dir = filepath.Join(home, ".codex")
+			}
+			path := filepath.Join(dir, codexConfigFile)
+			// A directory cannot be copied as a regular config.toml, and a refused config must not be copied either.
+			if err := os.MkdirAll(path, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			for _, denied := range []bool{false, true} {
+				rt := &agent.RuleTable{}
+				if denied {
+					rt.FS = []agent.FSRule{{Kind: agent.FSDenyRead, Path: path}}
+				}
+				var log bytes.Buffer
+				r := &runner{rt: rt, runtimeDir: t.TempDir(), log: slog.New(slog.NewTextHandler(&log, nil)), deps: Deps{
+					Environ: []string{variable + "=" + home}, Capture: []source.Source{&fakeLoopback{name: "forwarder", vars: map[string]string{envOpenAIBaseURL: "http://127.0.0.1:41001/v1"}}},
+				}}
+				if err := r.writeCodexHome(); err != nil {
+					t.Fatal(err)
+				}
+				text := log.String()
+				if !strings.Contains(text, variable) || strings.Contains(text, value) {
+					t.Errorf("codex environment log: %s", text)
+				}
+			}
+		}
 	}
 }

@@ -5,6 +5,7 @@ package askclient
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -164,6 +165,24 @@ func Answer(ctx context.Context, dir string, expectedPID int, id string, approve
 	return answer(ctx, dir, expectedPID, cmd, nil)
 }
 
+type viaKey struct{}
+
+// ViaOf is the word WithVia put in ctx, "" when none.
+func ViaOf(ctx context.Context) string {
+	v, _ := ctx.Value(viaKey{}).(string)
+	return v
+}
+
+// WithVia is ctx carrying where the person answers (askproto.ViaDashboard, ViaDashboardRelay): the answers sent with
+// it say so, and the run records the answer as given there (by "uid:1000 pid:77 dashboard") and not as the answering
+// program's own. A value askproto.ValidVia refuses is not carried.
+func WithVia(ctx context.Context, via string) context.Context {
+	if via == "" || !askproto.ValidVia(via) {
+		return ctx
+	}
+	return context.WithValue(ctx, viaKey{}, via)
+}
+
 // Alternate answers one held file open with an alternate (ADR 0057): file, which the caller opened when the person
 // named it, by named, with no symbolic link on the way, is passed to the broker as a descriptor, and the supervisor
 // reopens that descriptor, as the agent, in place of the target. The caller keeps file and closes it. With always
@@ -182,7 +201,15 @@ func Alternate(ctx context.Context, dir string, expectedPID int, id, named strin
 }
 
 func answer(ctx context.Context, dir string, expectedPID int, cmd askproto.Command, file Descriptor) (askproto.Decision, error) {
+	via := ViaOf(ctx)
+	cmd.Via = via
 	r, e := Call(ctx, dir, expectedPID, cmd, file)
+	if via != "" && errors.Is(e, askproto.ErrProtocol) {
+		// A run started by a tego from before the field refuses an unknown key as a protocol error and acts on nothing:
+		// the same answer without it is the answer that run understands (it records the answer without the word).
+		cmd.Via = ""
+		r, e = Call(ctx, dir, expectedPID, cmd, file)
+	}
 	if e != nil {
 		return askproto.Decision{}, e
 	}

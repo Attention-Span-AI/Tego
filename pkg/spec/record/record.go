@@ -10,7 +10,8 @@ import (
 // Version is the run record schema version written by this binary.
 const Version = 1
 
-// Minor is the revision of v1's optional fields this binary writes, recorded as run_start's record_minor. It
+// Minor is the highest revision of v1's optional fields this binary supports writing. Nonempty baseline records
+// select MinorBaseline; no-baseline launches retain MinorLearn and their previous bytes. record_minor
 // tells a reader what the absence of an optional field means: absent from a ledger at or past the revision that
 // added it, the field was not needed; absent from an older one, the writer did not know it. A ledger with no
 // record_minor is revision 0.
@@ -88,15 +89,62 @@ const Version = 1
 //	   carries side when it is a model host's side traffic and tool_results when derive read the tool results it
 //	   reports
 //	30 run_start's deny_read_frozen names the directories a deny_read's enumeration listed once at launch, in whose
-//	   listing a name made later is no sibling the Landlock ruleset grants (GAPS A12;
-//	   it took 30, and run_end.stopped_by moved from 30 to 35)
+//	   listing a name made later is no sibling the Landlock ruleset grants
+//	31 run_start.contract_source.learn carries the compiled contract's account of destinations learn withheld
+//	   after a secret read near a send (ADR 0016, 2026-11-11)
+//	32 reserved deployment payload (writer remains absent)
+//	33 reserved secrets/vault/redactions payloads (writers remain absent)
+//	34 reserved shares payload (writer remains absent)
+//	35 reserved stopped_by payload (writer remains absent)
+//	36 reserved answer.principal (unsupported revision here)
+//	37 local approval roles: run_start.local_approval_authority and the typed actor or system_cause on an answer (ADR 0154);
+//	   a minimum, not an exclusive revision: those fields validate at every supported revision from 37 on, 41 included
+//	38 reserved business-rule lines (unsupported revision here)
+//	39 machine baseline evidence, dual hashes and effective contract (ADR 0144)
+//	40 run_start.applied_limits: the cgroup limits an adoption actually wrote (A52)
+//	41 every launch and adoption writes it from run_start on (ADR 0157): it includes everything 39 and 40 allow; run_start.home
+//	   is the home directory the run resolved; a live or restored net block by name carries on its gap line the addresses
+//	   it was enforced on (live_block.addrs, addrs_more); a lift's gap line may carry the person's note (live_block.note)
 //
-// A revision is the next free number in the build that merges it, whatever number a plan expected, so a build writes
-// 1 to Minor and every one of them (TestRecordMinorsAreContiguous, spec/record/v1/README.md "Revisions").
+// A revision is the next free number in the build that merges it, whatever number a plan expected. Readers support
+// revisions 1 through 35, MinorLocalRoles, MinorBaseline, MinorAppliedLimits and MinorEveryLaunch. Revisions 36 and 38 belong to
+// other branches and are unsupported here, just like revisions above Minor. A revision at or above MinorBaseline carries a baseline
+// block only where the ledger is at MinorBaseline itself or its writer had a baseline to record (BaselineRecorded).
 //
-// 31 to 35 are reserved record revisions (MinorDeployment, MinorSecrets, MinorShares, MinorStoppedBy; 31 is reserved),
-// declared and validated ahead of their writers: Minor reaches each only when the package that writes its field merges.
-const Minor = MinorDenyReadFrozen
+// Revisions 32 through 35 are declared and validated ahead of their writers. Supporting them in the reader
+// does not enable their writers. Every launch and adoption writes MinorEveryLaunch from run_start on, since a live
+// network block can come at any time after run_start and the revision it needs must be declared there (ADR 0157); the
+// revisions 31, 39 and 40 that earlier builds chose per payload stay readable and keep their meaning.
+const Minor = MinorEveryLaunch
+
+// MinorEveryLaunch is the revision every launch and adoption writes (ADR 0157). It is a superset of MinorBaseline and
+// MinorAppliedLimits: it allows everything they allow (a baseline block when the run had one, applied_limits when an
+// adoption wrote a limit), and adds two fields: run_start.home, the home directory the run resolved, and
+// live_block.addrs with live_block.addrs_more on the gap line of a live or restored net block by name, the addresses
+// the block was enforced on. A ledger below it says neither. Older builds refuse it as an unsupported revision.
+const MinorEveryLaunch = 41
+
+// MinorLocalRoles is the local approval authority revision (ADR 0154): run_start.local_approval_authority names the
+// root-only approval floor a run started under, and an answer carries the typed actor or system_cause that decided
+// it. It is the minimum, not the revision a run carries: a run writing that payload carries the revision its launch
+// writes when that is higher, which is MinorEveryLaunch for every launch now (ADR 0157), and the fields validate there too.
+const MinorLocalRoles = 37
+
+// MinorAppliedLimits is the first revision whose run_start may carry applied_limits: the kernel limits (cpu.max,
+// cpu.weight, pids.max) a boundary adoption wrote into its scope, as written, which the contract's and the machine
+// config's limits block does not say (a launched run's run_start has no such field). Written only by an adoption that
+// wrote one; a launch and a record-only adoption keep their revision and their bytes.
+const MinorAppliedLimits = 40
+
+// MinorBaseline is the first revision carrying complete machine baseline evidence.
+const MinorBaseline = 39
+
+// MinorPrincipal reserves answer.principal for team approval identity; no writer exists.
+const MinorPrincipal = 36
+
+// MinorLearn is the first revision carrying contract_source.learn. Absence in an
+// older record says nothing about whether learn withheld a destination.
+const MinorLearn = 31
 
 // MinorDenyReadFrozen is the first revision whose run_start writes deny_read_frozen for every run whose Landlock
 // ruleset enumerated a deny_read target's ancestors: the directories listed once at launch,
@@ -192,7 +240,6 @@ const MinorHeldReads = 18
 // Event.ValidateAt and the payloads' ValidateFields refuse a field in a ledger below its revision [below-minor], so no
 // writer can put one in a ledger whose record_minor does not say it knew the field.
 //
-//	31 reserved; no field is defined, so no constant
 //	32 run_start.deployment
 //	33 run_start.secrets, run_start.vault and every line's redactions
 //	34 run_start.shares
@@ -422,6 +469,20 @@ type Attribution struct {
 	Method     string `json:"method"`     // tool_id | tid | time | none
 }
 
+// ModelStep is the model step the line is tied to, and whether it is tied to one. It is tied exactly when the
+// line carries an attribution whose method names a step (tool_id, tid or time): a line with no attribution (a kind
+// that never carries one) and a line stamped {unattributed, none} are tied to no step, and their step number is not
+// 0, which an action before the first model request has. Every reader of "the step of this line" (the CLI's events
+// --step and the dashboard's step: search) goes through this one function, so they cannot disagree. The step is the
+// writer's counting of model requests, never a join to one request line (retries and side traffic break that count),
+// and the method says how likely the tie is (R8).
+func (e *Event) ModelStep() (step int, ok bool) {
+	if e == nil || e.Attr == nil || e.Attr.Method == MethodNone || e.Attr.Confidence == ConfidenceUnattributed {
+		return 0, false
+	}
+	return e.Attr.Step, true
+}
+
 // RunRef identifies the run a ledger Writer or Reader is bound to; supplied once at Open and stamped on every
 // event so per-event callers never repeat it.
 type RunRef struct {
@@ -462,4 +523,15 @@ type Event struct {
 	// concurrent turns are two threads to derive's step attribution and
 	// sequential turns one. It is never written; the attribution derive stamps from it is.
 	Lane uint64 `json:"-"`
+	// Lineage is, on a refused line the supervisor wrote, the refused process and its ancestors as the reason file's
+	// owners string ("pid:start-ticks,..." from the process up, bounded), so the reason channel can tell which
+	// harness's call it was refusing. It is never written to the ledger (no record minor carries it): it travels with
+	// the event inside the process to the reason file and names nothing else. Empty for every other source.
+	Lineage string `json:"-"`
+}
+
+// SupportsMinor reports revisions whose meanings this build understands. The
+// allocation registry reserves the intervening revisions for other features.
+func SupportsMinor(minor int) bool {
+	return minor >= 0 && (minor <= MinorStoppedBy || minor == MinorLocalRoles || minor == MinorBaseline || minor == MinorAppliedLimits || minor == MinorEveryLaunch)
 }

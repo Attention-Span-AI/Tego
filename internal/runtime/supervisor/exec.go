@@ -172,7 +172,10 @@ func (l *Loop) recordExec(n *notif, dirfd int32, pathAddr, argvAddr uint64, flag
 	// entry (fenceExecRule), never by the contract rule a plane would match (ADR 0125 decision 9).
 	// And so does a running MCP relay: the handover returns before mcpRelayGate, so a plane that decides the run's execs
 	// would otherwise run a relayed server the agent started around its shim (ADR 0126 §4 "The gate").
-	if !anonRefused && !c.pol.Rules.Gate.Has(gate.Exec) && c.cmds == nil && !c.blocks().HasExec() && !c.fenceHasExec() && l.mcpRelayed == nil && l.kernelExecHandoff != nil && l.kernelExecHandoff() {
+	// And so does an image the deny_read snapshot refuses (snapshotRead): the ruleset's file_open refuses its exec open
+	// before the plane's bprm hook could name it, so the refusal and its line are this loop's, as at tier landlock.
+	snapshotRefused := ierr == nil && !img.fileless() && l.snapshotRefuses != nil && l.snapshotRefuses(imageWhere(name, img, true))
+	if !anonRefused && !snapshotRefused && !c.pol.Rules.Gate.Has(gate.Exec) && c.cmds == nil && !c.blocks().HasExec() && !c.fenceHasExec() && l.mcpRelayed == nil && l.kernelExecHandoff != nil && l.kernelExecHandoff() {
 		l.handOverExec(n, r, c, name, raw, argvAddr, img, ierr == nil, !unreadable, fileless, dropped)
 		return
 	}
@@ -188,7 +191,7 @@ func (l *Loop) recordExec(n *notif, dirfd int32, pathAddr, argvAddr uint64, flag
 	d := c.decideExec(name, q.path, img, ierr, unmatched)
 	// The kernel's exec open needs READ_FILE: an image beneath a name the deny_read enumeration did not grant at launch
 	// is one the ruleset refuses, so it is refused here, never recorded allow (snapshotRead).
-	if ierr == nil && d.verdict == record.VerdictAllow && !img.fileless() && l.snapshotRefuses != nil && l.snapshotRefuses(imageWhere(name, img, true)) {
+	if snapshotRefused && d.verdict == record.VerdictAllow {
 		d = execDecision{rule: ruleDenyReadSnapshot, verdict: record.VerdictRefused, reason: record.ReasonReadDenied, answer: respErrno(refusalErrno)}
 	}
 	if c.cmds != nil && ierr != nil && d.answer.cont {

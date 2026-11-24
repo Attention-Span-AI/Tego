@@ -65,9 +65,13 @@ type startFunc struct {
 // command is started through the functions above or not at all (lint refuses exec.Cmd's own Start, Run, Output
 // and CombinedOutput), so its callers are not sites. An unexported function that makes one of these starts is
 // followed too, though no lint rule can name it (followedStartFuncs).
+// The dashboard's Check, Compose and ProjectDirectory share one bounded launcher;
+// listing all three exported wrappers keeps their callers under the same review.
 var startFuncs = []startFunc{
 	{pkg: modulePath + "/internal/platform/proc", name: "proc", funcs: []string{"Start"}},
 	{pkg: modulePath + "/internal/handoff", name: "handoff", funcs: []string{"Spawn"}, home: "internal/handoff"},
+	{pkg: modulePath + "/internal/control/draftcompile", name: "draftcompile", funcs: []string{"Check", "Compose", "ProjectDirectory"},
+		home: "internal/control/draftcompile"},
 	{pkg: modulePath + "/internal/runtime/cgroup", name: "cgroup", funcs: []string{"StartHelper", "StartHelperExec"},
 		home: "internal/runtime/cgroup"},
 }
@@ -117,6 +121,75 @@ type startSite struct {
 // function of its own that makes the start is followed from then on (followedStartFuncs): its row is guarded, and
 // each function that calls it is a row too, with the relation of its own.
 var startSites = []startSite{
+	{file: "cmd/tego-windows/main_windows.go", fn: "startWindowsCommand", call: "proc.Start", n: 1, rel: guarded, when: "native Windows launcher links no fanotify code"},
+	{file: "cmd/tego-windows/main_windows.go", fn: "child", call: "tego-windows.startWindowsCommand", n: 1, rel: beforeArm, when: "native Windows command and removal hold no marks"},
+	{file: "cmd/tego-windows/startup_windows.go", fn: "startLinuxReady", call: "tego-windows.startWindowsCommand", n: 1, rel: beforeArm, when: "fixed Windows bootstrap holds no marks and carries no caller arguments"},
+	{file: "cmd/tego-windows/dashboard_windows.go", fn: "dashboardOpenInfo", call: "tego-windows.startWindowsCommand", n: 1, rel: beforeArm, when: "the dashboard relay's fixed open-line helper (wsl.exe with fixed arguments) in the native Windows launcher, which links no fanotify code"},
+	{file: "cmd/tego-windows/dashboard_windows.go", fn: "startHidden", call: "tego-windows.startWindowsCommand", n: 1, rel: beforeArm, when: "the hidden dashboard relay (this program in its relay mode) in the native Windows launcher, which links no fanotify code"},
+	{file: "cmd/tego-windows/dashboard_windows.go", fn: "openBrowser", call: "tego-windows.startWindowsCommand", n: 1, rel: beforeArm, when: "the person's default browser at the one-time open link, through Windows' URL handler, in the native Windows launcher, which links no fanotify code"},
+	{file: "cmd/tego-windows/relay_windows.go", fn: "relayMain", call: "tego-windows.startWindowsCommand", n: 1, rel: beforeArm, when: "the dashboard relay's one long-lived wsl.exe child, with fixed arguments, in the native Windows launcher, which links no fanotify code"},
+	{file: "internal/contracts/process.go", fn: "startHelper", call: "proc.Start", n: 1, rel: guarded, when: "bounded own-image filesystem session; ErrArmed refuses starts while fanotify is armed"},
+	{file: "internal/contracts/process.go", fn: "exchange", call: "contracts.startHelper", n: 1, rel: beforeArm, when: "shared offline session transport before engine preparation; ErrArmed remains fail closed"},
+	{file: "internal/contracts/process.go", fn: "launchWorker", call: "proc.Start", n: 1, rel: guarded, when: "private filesystem launcher; ErrArmed remains fail closed"},
+	{file: "internal/contracts/process.go", fn: "HelperMain", call: "contracts.launchWorker", n: 1, rel: beforeArm, when: "early private dispatch before any CLI setup or engine prepare"},
+
+	{file: "internal/cli/runscope.go", fn: "executeUserScope", call: "proc.Start", n: 1, rel: guarded, when: "shared scope entry before command startup; ErrArmed remains fail closed"},
+	{file: "internal/cli/runscope.go", fn: "scopeExec", call: "cli.executeUserScope", n: 1, rel: beforeArm, when: "injected scope runner called before command startup, run state and arming"},
+	{file: "internal/control/draftcompile/compile.go", fn: "Check", call: "proc.Start", n: 1, rel: guarded,
+		when: "the bounded dashboard child launcher; callers declare their arming order, and proc.Start refuses ErrArmed while this process holds marks"},
+	{file: "internal/control/draftcompile/compose.go", fn: "Compose", call: "draftcompile.Check", n: 1, rel: guarded,
+		when: "preset composition shares the bounded child launcher; callers declare when they compose"},
+	{file: "internal/control/draftcompile/directory.go", fn: "ProjectDirectory", call: "draftcompile.Check", n: 1, rel: guarded,
+		when: "project path validation shares the bounded child launcher; callers declare when they validate"},
+	{file: "internal/control/rules/check.go", fn: "Service.check", call: "draftcompile.Check", n: 1, rel: guarded,
+		when: "the dashboard contract checker; its callers run in tego-control without fanotify marks"},
+	{file: "internal/control/rules/check.go", fn: "Service.relaxes", call: "draftcompile.Check", n: 1, rel: guarded,
+		when: "the dashboard compiled read-relaxation checker; its callers run in tego-control without fanotify marks"},
+	{file: "internal/control/rules/change.go", fn: "Service.planEdits", call: "draftcompile.Check", n: 1, rel: guarded,
+		when: "the dashboard shared edit snapshot; its callers run in tego-control without fanotify marks"},
+	{file: "internal/control/rules/new.go", fn: "Service.fromPresets", call: "draftcompile.Compose", n: 1, rel: guarded,
+		when: "the dashboard preset composer; its caller runs in tego-control without fanotify marks"},
+	{file: "internal/control/rules/new.go", fn: "Service.projectDir", call: "draftcompile.ProjectDirectory", n: 1, rel: guarded,
+		when: "the dashboard project preflight; its caller runs in tego-control without fanotify marks"},
+	{file: "internal/control/rules/review.go", fn: "Service.newSnapshot", call: "draftcompile.Check", n: 1, rel: guarded,
+		when: "the dashboard new-contract snapshot; its callers run in tego-control without fanotify marks"},
+	{file: "internal/control/rules/review.go", fn: "Service.compareSnapshots", call: "draftcompile.Check", n: 1, rel: guarded,
+		when: "the dashboard contract comparison snapshot; its caller runs in tego-control without fanotify marks"},
+	{file: "internal/control/rules/review.go", fn: "Service.verifySources", call: "draftcompile.Check", n: 1, rel: guarded,
+		when: "the dashboard publication dependency check; its callers run in tego-control without fanotify marks"},
+	{file: "internal/control/rules/change.go", fn: "Service.PlanChange", call: "rules.planEdits", n: 1, rel: beforeArm,
+		when: "dashboard planning runs in tego-control, which holds no fanotify group"},
+	{file: "internal/control/rules/change.go", fn: "Service.planEdits", call: "rules.check", n: 1, rel: guarded,
+		when: "dashboard planning runs in tego-control, which holds no fanotify group"},
+	{file: "internal/control/rules/change.go", fn: "Service.planEdits", call: "rules.relaxes", n: 1, rel: guarded,
+		when: "dashboard planning runs in tego-control, which holds no fanotify group"},
+	{file: "internal/control/rules/change.go", fn: "Service.apply", call: "rules.verifySources", n: 1, rel: beforeArm,
+		when: "dashboard publication runs in tego-control, which holds no fanotify group"},
+	{file: "internal/control/rules/act.go", fn: "Service.ActOn", call: "rules.check", n: 2, rel: beforeArm,
+		when: "dashboard rule actions run in tego-control, which holds no fanotify group"},
+	{file: "internal/control/rules/revert.go", fn: "Service.Revert", call: "rules.check", n: 1, rel: beforeArm,
+		when: "dashboard revert runs in tego-control, which holds no fanotify group"},
+	{file: "internal/control/rules/new.go", fn: "Service.CreateNew", call: "rules.verifySources", n: 1, rel: beforeArm,
+		when: "dashboard project publication runs in tego-control, which holds no fanotify group"},
+	{file: "internal/control/rules/new.go", fn: "Service.DescribeNew", call: "rules.newSnapshot", n: 1, rel: beforeArm,
+		when: "dashboard contract display runs in tego-control, which holds no fanotify group"},
+	{file: "internal/control/rules/new.go", fn: "Service.planNew", call: "rules.projectDir", n: 1, rel: beforeArm,
+		when: "dashboard preflight runs in tego-control, which holds no fanotify group"},
+	{file: "internal/control/rules/new.go", fn: "Service.planNew", call: "rules.fromPresets", n: 1, rel: beforeArm,
+		when: "dashboard preset planning runs in tego-control, which holds no fanotify group"},
+	{file: "internal/control/rules/new.go", fn: "Service.planNew", call: "rules.newSnapshot", n: 1, rel: beforeArm,
+		when: "dashboard new-contract planning runs in tego-control, which holds no fanotify group"},
+	{file: "internal/control/rules/reviewdraft.go", fn: "Service.savedNew", call: "rules.projectDir", n: 1, rel: beforeArm,
+		when: "dashboard save preflight validates the retained proposal destination in tego-control without fanotify marks"},
+	{file: "internal/control/rules/reviewdraft.go", fn: "Service.savedNew", call: "rules.newSnapshot", n: 1, rel: beforeArm,
+		when: "dashboard save recompiles the retained proposal in tego-control without fanotify marks"},
+	{file: "internal/control/rules/new.go", fn: "Service.saveNew", call: "rules.verifySources", n: 1, rel: beforeArm,
+		when: "dashboard registry publication runs in tego-control, which holds no fanotify group"},
+	{file: "internal/control/rules/compare.go", fn: "Service.newlyAllows", call: "rules.compareSnapshots", n: 1, rel: beforeArm,
+		when: "dashboard compiled comparison runs in tego-control, which holds no fanotify group"},
+	{file: "internal/control/rules/source_compare.go", fn: "Service.CompareSource", call: "rules.compareSnapshots", n: 1, rel: beforeArm,
+		when: "dashboard comparison of a run's saved contract with the file now runs in tego-control, which holds no fanotify group"},
+
 	{
 		file: "internal/doctor/planeexecpin.go", fn: "exercisePlaneExecPin", call: "doctor.startPinGate", n: 1, rel: beforeArm,
 		when: "the exec pin cell's gates, cloned into its scratch cgroup by doctor before the cell arms it, before Prepare in a " +
@@ -721,7 +794,7 @@ func startSiteProblems(refs []startRef, sites []startSite) []string {
 
 // TestEveryProcessStartSiteIsListed is ADR 0021 (6) made mechanical, and the second guard beside lint. Under (3) no
 // process starts while this process holds fanotify marks, so every start in non-test code goes through proc.Start,
-// directly or through cgroup.StartHelper and StartHelperExec, the one wrapper over it; and (6) conditions E70, which
+// directly or through the reviewed cgroup, handoff and dashboard wrappers; and (6) conditions E70, which
 // starts privileged commands, on a helper forked before the marks. Nothing but review stopped a start from a
 // supervisor's ask handler, the shape E70 would take, and at run time that fails closed only with ErrArmed, once a
 // run has met the refusal. The lint rule in .golangci.yml now refuses a start from a file it does not name; this
@@ -912,18 +985,19 @@ func TestFollowedStartFuncsComeFromTheRows(t *testing.T) {
 		got[sf.home] = follows{sf.funcs, sf.methods}
 	}
 	for home, want := range map[string]follows{
-		"a/b":                     {[]string{"wrap", "bind"}, []string{"begin"}},
-		"a/c":                     {[]string{"run"}, nil},
-		"internal/runtime/cgroup": {[]string{"StartHelper", "StartHelperExec"}, nil},
-		"internal/handoff":        {[]string{"Spawn"}, nil},
-		"":                        {[]string{"Start"}, nil},
+		"a/b":                           {[]string{"wrap", "bind"}, []string{"begin"}},
+		"a/c":                           {[]string{"run"}, nil},
+		"internal/runtime/cgroup":       {[]string{"StartHelper", "StartHelperExec"}, nil},
+		"internal/handoff":              {[]string{"Spawn"}, nil},
+		"internal/control/draftcompile": {[]string{"Check", "Compose", "ProjectDirectory"}, nil},
+		"":                              {[]string{"Start"}, nil},
 	} {
 		if g := got[home]; !slices.Equal(g.funcs, want.funcs) || !slices.Equal(g.methods, want.methods) {
 			t.Errorf("followed in %q: functions %q, methods %q, want %q and %q", home, g.funcs, g.methods, want.funcs, want.methods)
 		}
 	}
-	if len(got) != 5 {
-		t.Errorf("followed in %d directories, want the two the rows add and the three startFuncs holds: %v", len(got), got)
+	if len(got) != 6 {
+		t.Errorf("followed in %d directories, want the two the rows add and the four startFuncs holds: %v", len(got), got)
 	}
 	if after := fmt.Sprintf("%+v", startFuncs); after != before {
 		t.Errorf("followedStartFuncs changed startFuncs: %s, was %s", after, before)

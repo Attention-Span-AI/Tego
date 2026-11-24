@@ -25,7 +25,10 @@ tomoyo)
  case "$row" in
  ubuntu-25.10) export TEGO_VM_LSM=capability,landlock,yama,apparmor,tomoyo,bpf,ima,evm ;;
  debian-13) export TEGO_VM_LSM=kernel ;;
- *) echo 'TOMOYO kernel must be ubuntu-25.10 or debian-13' >&2; exit 2 ;;
+ # Debian 12's 6.1.0-50-amd64, cached by hand under ~/.cache/tego-vm/kernel (bpf/README.md): TOMOYO is built in and off in
+ # its default lsm=, so the list names it. It is no matrix row, so it boots through kvm-run.sh itself.
+ debian-12-6.1) export TEGO_VM_LSM=capability,landlock,yama,tomoyo,bpf TEGO_VM_KERNEL=6.1.0-50-amd64 TEGO_VM_LOCKDOWN=${TEGO_VM_LOCKDOWN:-none} ;;
+ *) echo 'TOMOYO kernel must be ubuntu-25.10, debian-13 or debian-12-6.1' >&2; exit 2 ;;
  esac
  export TEGO_VM_APPEND='TOMOYO_trigger=/vm/tomoyo-trigger TOMOYO_loader=/vm/tomoyo-loader'
  ;;
@@ -82,16 +85,42 @@ if [ "$mode" = tomoyo ]; then
 fi
 runner=()
 [ -z "${VM_RUNNER:-}" ] || runner=("$VM_RUNNER")
-TEGO_VM_MEM=${TEGO_VM_MEM:-3G} "${runner[@]}" "$here/run-in-vm.sh" "$row" --sudo --timeout 600 \
- --status "$out/guest.status" --log "$out/guest.console" --dmesg "${files[@]}" \
- --env TEGO_VM_PREBUILT=/vm/prebuilt -- /bin/bash /vm/held-label-guest.sh "$mode"
-grep -qx 'guest 0' "$out/guest.status"
+# boot NAME [env...]: one fresh boot of the row's kernel running the guest script, its status in $out/NAME.status.
+boot() {
+ local name=$1; shift
+ local envs=(--env TEGO_VM_PREBUILT=/vm/prebuilt)
+ for e in "$@"; do envs+=(--env "$e"); done
+ if [ "$row" = debian-12-6.1 ]; then
+  TEGO_VM_MEM=${TEGO_VM_MEM:-3G} "${runner[@]}" "$here/kvm-run.sh" --sudo --timeout 600 \
+   --status "$out/$name.status" --log "$out/$name.console" --dmesg "${files[@]}" "${envs[@]}" -- /bin/bash /vm/held-label-guest.sh "$mode"
+ else
+  TEGO_VM_MEM=${TEGO_VM_MEM:-3G} "${runner[@]}" "$here/run-in-vm.sh" "$row" --sudo --timeout 600 \
+   --status "$out/$name.status" --log "$out/$name.console" --dmesg "${files[@]}" "${envs[@]}" -- /bin/bash /vm/held-label-guest.sh "$mode"
+ fi
+ grep -qx 'guest 0' "$out/$name.status"
+}
+# TEGO_VM_TOMOYO_BOOTS names the TOMOYO boots to make, in order: main (activation), counter (a counted write, no loader),
+# enforcing (a profile that enforces), initializer (an unprivileged process moves the counter), flip (a profile mode
+# toggled while the proof reads it) and differential (the proof against what the kernel enforces).
+boots=${TEGO_VM_TOMOYO_BOOTS:-main counter enforcing initializer flip differential}
+has() { case " $boots " in *" $1 "*) return 0 ;; esac; return 1; }
+if [ "$mode" != tomoyo ]; then
+ boot guest
+fi
 
-# A fresh second boot proves that a counted update alone refuses: no loader runs.
 if [ "$mode" = tomoyo ]; then
- TEGO_VM_MEM=${TEGO_VM_MEM:-3G} "${runner[@]}" "$here/run-in-vm.sh" "$row" --sudo --timeout 600 \
-  --status "$out/counter.status" --log "$out/counter.console" --dmesg "${files[@]}" \
-  --env TEGO_VM_PREBUILT=/vm/prebuilt --env TEGO_VM_TOMOYO_COUNTER_ONLY=1 \
-  -- /bin/bash /vm/held-label-guest.sh "$mode"
- grep -qx 'guest 0' "$out/counter.status"
+ # The first boot activates the policy loader; each other boot is fresh.
+ if has main; then boot guest; fi
+ # A fresh boot proves that a counted update alone no longer refuses a root tier: no loader runs.
+ if has counter; then boot counter TEGO_VM_TOMOYO_COUNTER_ONLY=1; fi
+ # SEC08b: a boot whose loader also defines a profile in mode enforcing: every tier refuses, the root tiers' included,
+ # which can otherwise prove nothing enforces.
+ if has enforcing; then boot enforcing TEGO_VM_TOMOYO_HALF=enforcing_profile; fi
+ # SEC08b / C75: an unprivileged process in a user and mount namespace of its own moves the counter by starting
+ # /sbin/modprobe; no loader runs. The root tiers admit, tier landlock (the invoking user) refuses with the new sentence.
+ if has initializer; then boot initializer TEGO_VM_TOMOYO_HALF=initializer_counter; fi
+ # A registered manager toggles a profile category between permissive and enforcing while the proof reads it.
+ if has flip; then boot flip TEGO_VM_TOMOYO_HALF=profile_flip_race; fi
+ # The proof against what the kernel enforces, random profile states, in a domain whose profile the states set.
+ if has differential; then boot differential TEGO_VM_TOMOYO_HALF=differential; fi
 fi

@@ -3,10 +3,7 @@
 package forwarder
 
 import (
-	"bufio"
-	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/netip"
@@ -176,71 +173,13 @@ var procNetTCP = []string{"/proc/net/tcp", "/proc/net/tcp6"}
 // are in the table — the listener's own accepted socket is the row with those two reversed — so the pair
 // has to match in that order, not as an unordered set.
 func peerSocketInode(peer, local netip.AddrPort) (uint64, error) {
-	for _, name := range procNetTCP {
-		f, err := os.Open(name)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				continue // a kernel built without IPv6 has no tcp6 table
-			}
-			return 0, fmt.Errorf("%w: open %s: %w", ErrPeer, name, err)
-		}
-		inode, found, err := scanTCPTable(f, peer, local)
-		_ = f.Close()
-		if err != nil {
-			return 0, err
-		}
-		if found {
-			return inode, nil
-		}
-	}
-	return 0, fmt.Errorf("%w: no socket for %s -> %s in the kernel's tcp table", ErrPeer, peer, local)
+	return tcpTables.lookup(peer, local)
 }
 
 // tcpTableInodeField is the index of the inode column in a /proc/net/tcp row, counting the leading "sl:"
 // as column 0: sl, local_address, rem_address, st, tx_queue:rx_queue, tr:tm->when, retrnsmt, uid,
 // timeout, inode (proc(5), net/ipv4/tcp_ipv4.c get_tcp4_sock).
 const tcpTableInodeField = 9
-
-// scanTCPTable reads one /proc/net/tcp-shaped table, returning the inode of the row that is the peer's
-// side of this connection.
-func scanTCPTable(r io.Reader, peer, local netip.AddrPort) (uint64, bool, error) {
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
-	sc.Scan() // the column header
-	for sc.Scan() {
-		fields := strings.Fields(sc.Text())
-		if len(fields) <= tcpTableInodeField {
-			continue
-		}
-		rowLocal, ok := parseProcAddrPort(fields[1])
-		if !ok {
-			continue
-		}
-		rowRemote, ok := parseProcAddrPort(fields[2])
-		if !ok {
-			continue
-		}
-		if rowLocal != peer || rowRemote != local {
-			continue
-		}
-		inode, err := strconv.ParseUint(fields[tcpTableInodeField], 10, 64)
-		if err != nil {
-			return 0, false, fmt.Errorf("%w: tcp table inode %q: %w", ErrPeer, fields[tcpTableInodeField], err)
-		}
-		if inode == 0 {
-			// An orphaned socket, closed by its process and lingering in FIN_WAIT2 or TIME_WAIT, has no inode. No
-			// process holds it, and every descriptor that is not a socket also reads as inode 0, so 0 would match
-			// any process of the run.
-			return 0, false, fmt.Errorf("%w: the socket for %s -> %s has no inode: no process holds it", ErrPeer,
-				peer, local)
-		}
-		return inode, true, nil
-	}
-	if err := sc.Err(); err != nil {
-		return 0, false, fmt.Errorf("%w: read tcp table: %w", ErrPeer, err)
-	}
-	return 0, false, nil
-}
 
 // parseProcAddrPort reads one "address:port" cell of a /proc/net/tcp row.
 //

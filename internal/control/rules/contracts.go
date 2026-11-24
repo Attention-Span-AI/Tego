@@ -3,6 +3,7 @@
 package rules
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -16,6 +17,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/attention-span-ai/tego/internal/control/pathcheck"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/rulefile"
 	"github.com/attention-span-ai/tego/internal/runlock"
@@ -35,6 +37,9 @@ type ContractRef struct {
 	Ref string
 	// Path is the contract's path as its newest run recorded it, for display only.
 	Path string
+	// Aliases are the other spellings of that file the runs recorded (a linked folder on its way), newest first: runs of
+	// every spelling are counted under this one ref, and a person is told so rather than shown one path alone.
+	Aliases []string
 	// Agent is the contract's name:, else its file name.
 	Agent string
 	// Runs is how many runs here ran it; LastRun the newest of them and LastAt its start.
@@ -169,7 +174,7 @@ func (s *Service) startOf(id string) (start, bool) {
 	if st, ok := s.cache[id]; ok {
 		return st, true
 	}
-	st, err := readStart(filepath.Join(s.Ledger, id))
+	st, err := readStartAt(filepath.Join(s.Ledger, id), !s.ledgerOnly)
 	if err != nil || st.Run == "" {
 		return start{}, false
 	}
@@ -209,7 +214,9 @@ func rootKey(d *os.File) (string, time.Time, bool) {
 }
 
 // readStart reads run_start from the run directory dir.
-func readStart(dir string) (start, error) {
+func readStart(dir string) (start, error) { return readStartAt(dir, true) }
+
+func readStartAt(dir string, resolve bool) (start, error) {
 	var st start
 	r, err := ledger.OpenReader(dir)
 	if err != nil {
@@ -231,7 +238,10 @@ func readStart(dir string) (start, error) {
 		st = start{Run: e.Run, At: e.TS, Cwd: p.Cwd, Tier: p.Tier, Grant: p.RunCommandGrant}
 		if p.ContractSource != nil && filepath.IsAbs(p.ContractSource.Path) {
 			st.Contract = filepath.Clean(p.ContractSource.Path)
-			st.Resolved = resolvedPath(st.Contract)
+			st.Resolved = st.Contract
+			if resolve {
+				st.Resolved = resolvedPath(st.Contract)
+			}
 			st.Ref = refOf(st.Resolved)
 		}
 		return st, nil
@@ -241,7 +251,16 @@ func readStart(dir string) (start, error) {
 
 // resolvedPath is p with its directory's symlinks resolved, as rulefile pins it and the journal spells it; p itself
 // when the directory does not resolve.
-func resolvedPath(p string) string {
+func resolvedPath(p string) string { return resolvedPathContext(context.Background(), p) }
+
+func resolvedPathContext(ctx context.Context, p string) string {
+	if !pathcheck.InHelper() {
+		var out string
+		if err := pathcheck.Call(ctx, "control.resolve", p, &out); err != nil {
+			return p
+		}
+		return out
+	}
 	if d, err := filepath.EvalSymlinks(filepath.Dir(p)); err == nil {
 		return filepath.Join(d, filepath.Base(p))
 	}
@@ -254,16 +273,27 @@ func refOf(p string) string {
 	return hex.EncodeToString(h[:])[:16]
 }
 
+// RefLexical names a spelling already resolved by the bounded helper.
+func RefLexical(path string) string {
+	if !filepath.IsAbs(path) {
+		return ""
+	}
+	return refOf(filepath.Clean(path))
+}
+
 // Ref is the ref Contracts lists (ContractRef.Ref) for the runs that recorded path as their contract_source: path
 // cleaned, its folder's symlinks resolved as readStart resolves them, then refOf; "" when path is not absolute (a run
 // of a generated contract records none). The Rules page names a run's rules file by it without asking the service, so
 // its chooser and its links to Change rules name a file as the service does, two spellings of it through a linked
 // folder alike.
-func Ref(path string) string {
+func Ref(path string) string { return RefContext(context.Background(), path) }
+
+// RefContext names a recorded source using the request's cancellation and helper.
+func RefContext(ctx context.Context, path string) string {
 	if !filepath.IsAbs(path) {
 		return ""
 	}
-	return refOf(resolvedPath(filepath.Clean(path)))
+	return refOf(resolvedPathContext(ctx, filepath.Clean(path)))
 }
 
 // contractInfo is a contract of the bounded set with the newest run's context.
@@ -285,6 +315,14 @@ func (c *contractInfo) context(s *Service) CheckContext {
 // run ran yet (createdHere), each with whether the dashboard may change it. This is the whole set a change can name: a
 // file no run here recorded and the dashboard did not create is never offered, whatever a request says.
 func (s *Service) Contracts() ([]ContractRef, error) {
+	if s.remote() {
+		out, err := remoteService[[]ContractRef](s, unclassified(), "Contracts", struct{}{})
+		if err != nil {
+			return s.unavailableContracts(err), nil
+		}
+		return out, nil
+	}
+
 	cs, err := s.contracts()
 	if err != nil {
 		return nil, err
@@ -313,6 +351,9 @@ func (s *Service) contracts() ([]*contractInfo, error) {
 			c = &contractInfo{ContractRef: ContractRef{Ref: st.Ref, Path: st.Contract, LastRun: st.Run, LastAt: st.At}, newest: st}
 			byRef[st.Ref] = c
 			out = append(out, c)
+		}
+		if st.Contract != c.Path && !slices.Contains(c.Aliases, st.Contract) {
+			c.Aliases = append(c.Aliases, st.Contract)
 		}
 		c.Runs++
 		if (listed == nil || listed[st.Run]) && s.isLive(filepath.Join(s.Ledger, st.Run)) {
@@ -367,8 +408,8 @@ const maxReadMemo = 256
 
 // readView is the contract at path's view, read through every write guard once for each version of the file. A
 // rules page or line page that refreshes while an agent runs used to repeat the guarded read of every contract
-// about once a second. The key is the file's identity, size, mode, owner and times and its folder's identity, mode
-// and owner, so a write (rulefile replaces by rename: a new inode), an edit in place, or a folder whose owner or mode
+// about once a second. The key is the file's identity, size, mode, owner and times and its folder's and every
+// ancestor's identity, mode and owner, so a write (rulefile replaces by rename: a new inode), an edit in place, or a folder whose owner or mode
 // changed reads again. The view only fills the page; every plan and every write reads the file through the guards itself, so a
 // stale view can at most show an old base, which the write then refuses as changed.
 func (s *Service) readView(path string) contractView {
@@ -384,7 +425,7 @@ func (s *Service) readView(path string) contractView {
 	var v contractView
 	f, err := s.writer().Read(path)
 	if err != nil {
-		v.why = err.Error()
+		v.why = pathcheck.LocationError(err).Error()
 	} else {
 		v = contractView{writable: true, base: f.SHA256, agent: agentName(f.Text, path)}
 	}
@@ -401,8 +442,8 @@ func (s *Service) readView(path string) contractView {
 
 // fileIdentity is a key that changes whenever the file at path or what the guards check of its folder may have:
 // the file's device, inode, size, mode, owner and modification and change times (not followed), and its folder's
-// device, inode, mode and owner (followed, and not followed, so a retargeted folder link shows). It reports false
-// when the file cannot be looked at, which is never memoized.
+// device, inode, mode and owner (followed, and not followed, so a retargeted folder link shows), and the same of every
+// folder above it, not followed. It reports false when the file cannot be looked at, which is never memoized.
 func fileIdentity(path string) (string, bool) {
 	var b strings.Builder
 	for i, p := range []string{path, filepath.Dir(path), filepath.Dir(path)} {
@@ -419,6 +460,19 @@ func fileIdentity(path string) (string, bool) {
 		fmt.Fprintf(&b, "%d:%d:%o:%d|", st.Dev, st.Ino, st.Mode, st.Uid)
 		if i == 0 { // a folder's times move with every file made in it (a .bak, a sibling's rename): not kept
 			fmt.Fprintf(&b, "%d:%d.%d:%d.%d|", st.Size, st.Mtim.Sec, st.Mtim.Nsec, st.Ctim.Sec, st.Ctim.Nsec)
+		}
+	}
+	// Every folder above that one, not followed: a link made of one (the guards refuse a contract reached through a
+	// link, Guard.NoSymlinks), a folder replaced or its mode or owner changed leaves the file's and its own folder's
+	// identity as they were and still changes what the guards say.
+	for p := filepath.Dir(filepath.Dir(path)); ; p = filepath.Dir(p) {
+		var st syscall.Stat_t
+		if err := syscall.Lstat(p, &st); err != nil {
+			return "", false
+		}
+		fmt.Fprintf(&b, "%d:%d:%o:%d|", st.Dev, st.Ino, st.Mode, st.Uid)
+		if p == filepath.Dir(p) {
+			break
 		}
 	}
 	return b.String(), true
@@ -443,7 +497,7 @@ func (s *Service) createdHere(seen map[string]*contractInfo) []*contractInfo {
 		if _, ok := seen[ref]; ok {
 			continue
 		}
-		if _, err := os.Lstat(e.Contract); err != nil {
+		if _, err := os.Lstat(e.Contract); errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 			continue
 		}
 		st := start{At: e.At, Contract: e.Contract, Resolved: e.Contract, Ref: ref, Cwd: filepath.Dir(e.Contract)}
@@ -499,7 +553,8 @@ func agentName(text []byte, path string) string {
 // guard is where a contract the dashboard writes may not be: the ledger root it serves (which also journals each
 // write), tego's home, and Service.Refuse (the machine's ledger root, tego's home under the machine's home).
 func (s *Service) guard() rulefile.Guard {
-	g := rulefile.DefaultGuard(s.Ledger)
+	g := rulefile.Guard{LedgerRoot: s.Ledger, Refuse: append([]string{}, s.callerContext().GuardHomes...)}
+	g.NoSymlinks = true
 	g.Refuse = append(g.Refuse, s.Refuse...)
 	return g
 }

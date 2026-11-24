@@ -5,6 +5,7 @@ package ledgerview
 import (
 	"encoding/json"
 	"maps"
+	"net/netip"
 	"slices"
 	"sort"
 	"strings"
@@ -84,8 +85,17 @@ type signalFold struct {
 	// controls can stand for an address per line, and scanning the list for each line took 2 s at 40,000.
 	destAddrs map[groupPart]bool
 	reached   map[string]bool // hosts the run reached (allowed or observed)
-	// liveHosts are the hosts a net live block named at any time in the run, and the addresses one refused (HostOf's form).
+	// reachedNamed are the reached hosts that a line reached under a name (its target carried one): for these the
+	// record ties a name to the address. One reached only without (a CIDR entry's line names no host) has no name the
+	// record can match a block by name to (A34).
+	reachedNamed map[string]bool
+	// liveHosts are the hosts a net live block or restored fence named at any time in the run, and the addresses one refused (HostOf's form).
 	liveHosts map[string]bool
+	// nameAddrs is what each host name a net live block or restored fence put in force named, by name (HostOf's form),
+	// recorded of the addresses it was enforced on (record minor 41, live_block.addrs; BlockHostOf's form, the zone
+	// dropped as a block holds none). A name here with blind set, or a name in liveHosts with no entry, is one whose
+	// resolution the record does not say (a ledger below 41, a lookup that answered none, a list past its cap).
+	nameAddrs map[string]*nameAddrs
 	probes    probeSet
 	groups    map[string]int
 	groupL    []Group
@@ -103,7 +113,7 @@ type signalFold struct {
 
 func newSignalFold(s Sensitive) *signalFold {
 	return &signalFold{sens: compileSensitive(s), secrets: map[string]int{}, dests: map[string]int{},
-		destAddrs: map[groupPart]bool{}, reached: map[string]bool{}, liveHosts: map[string]bool{}, groups: map[string]int{},
+		destAddrs: map[groupPart]bool{}, nameAddrs: map[string]*nameAddrs{}, reached: map[string]bool{}, reachedNamed: map[string]bool{}, liveHosts: map[string]bool{}, groups: map[string]int{},
 		groupTargets: map[groupPart]bool{}, groupPorts: map[groupPart]bool{}, asks: map[string]int{}, blocks: map[string]int{}, programs: map[string]int{}}
 }
 
@@ -248,8 +258,14 @@ func (f *signalFold) take(e *Event) {
 			d.sends = append(d.sends, touchAt{e.Seq, e.TS})
 			h, _ := hostPort(dst)
 			f.reached[h] = true
+			if name != "" && name != h {
+				f.reachedNamed[h] = true
+			}
 		}
 	case "ask":
+		if e.askRepeat {
+			return // a repeated ask id is malformed and no second question (askpair); the first ask opened it
+		}
 		a := Approval{AskID: e.AskID, Op: e.askOp, Target: e.askTarget, Rule: e.Rule, TS: e.TS, Seq: e.Seq}
 		if _, seen := f.asks[e.AskID]; !seen {
 			f.asks[e.AskID] = len(f.approvals)
@@ -260,10 +276,11 @@ func (f *signalFold) take(e *Event) {
 		}
 	case "answer":
 		i, ok := f.asks[e.AskID]
-		if !ok {
-			return
+		if !ok || e.answerUnpaired {
+			return // an answer that pairs with no ask is malformed and answers nothing (askpair)
 		}
 		a := &f.approvals[i]
+		a.Managed = record.AnswerAuthorityOf(json.RawMessage(e.Raw), e.RecordMinor, e.LocalFloor).Actor != nil
 		a.State = "denied"
 		if strings.HasSuffix(e.Target, ", approved") {
 			a.State = "approved"
@@ -278,24 +295,72 @@ func (f *signalFold) take(e *Event) {
 	case "refused":
 		f.refused(e)
 	case "gap":
-		if !strings.HasSuffix(e.Target, record.GapLiveBlockAdded) {
+		if !strings.HasSuffix(e.Target, record.GapLiveBlockAdded) && !strings.HasSuffix(e.Target, record.GapLiveRuleRestored) {
 			return
 		}
 		var p record.GapPayload
 		if json.Unmarshal([]byte(e.Raw), &p) == nil && p.LiveBlock != nil && p.LiveBlock.Kind == record.LiveKindNet {
 			f.liveHost(p.LiveBlock.Value)
+			f.noteAddrs(p.LiveBlock)
 		}
 	}
+}
+
+// nameAddrs is a host name's recorded addresses (signalFold.nameAddrs).
+type nameAddrs struct {
+	// addrs are the addresses a line named, BlockHostOf's form.
+	addrs map[string]bool
+	// blind is set when some line that put the name in force named no address or said there were more than it named:
+	// the record then cannot clear an address of being the name's.
+	blind bool
+}
+
+// noteAddrs takes the addresses a net block or restored fence entry by name was enforced on from its line. A block by
+// address records none and is no name.
+func (f *signalFold) noteAddrs(c *record.LiveBlockChange) {
+	name := HostOf(c.Value)
+	if name == "" {
+		return
+	}
+	if _, err := netip.ParseAddr(name); err == nil {
+		return
+	}
+	n := f.nameAddrs[name]
+	if n == nil {
+		n = &nameAddrs{addrs: map[string]bool{}}
+		f.nameAddrs[name] = n
+	}
+	if len(c.Addrs) == 0 || c.AddrsMore > 0 {
+		n.blind = true
+	}
+	for _, a := range c.Addrs {
+		n.addrs[BlockHostOf(HostOf(a))] = true
+	}
+}
+
+// addrName is the name, first in byte order, whose recorded addresses include host (HostOf's form), "" for none.
+func (f *signalFold) addrName(host string) string {
+	if host == "" || len(f.nameAddrs) == 0 {
+		return ""
+	}
+	host = BlockHostOf(host)
+	best := ""
+	for name, n := range f.nameAddrs {
+		if n.addrs[host] && (best == "" || name < best) {
+			best = name
+		}
+	}
+	return best
 }
 
 // liveHost notes the host dst names, if it names one (a unix socket does not), as under a live block.
 func (f *signalFold) liveHost(dst string) {
 	if h := HostOf(dst); h != "" {
-		f.liveHosts[h] = true
+		f.liveHosts[BlockHostOf(h)] = true
 	}
 }
 
-// blocked is what classify keeps out of "the run also reached this host": every host a net live block of this run named,
+// blocked is what classify keeps out of "the run also reached this host": every host a net live block or restored fence of this run named,
 // whenever in the run, and the addresses a named one was reached at (a refused connect names no host), all in HostOf's
 // form, so a scope id on the agent's connects is no way around a block that holds none. A group folds lines from before
 // a block and after it, so a block's time is not read: the group shows, which is the safe way to err.
@@ -307,11 +372,70 @@ func (f *signalFold) blocked() map[string]bool {
 	for i := range f.outbound {
 		if d := &f.outbound[i]; f.liveHosts[strings.ToLower(d.Name)] {
 			for _, a := range d.Addrs {
-				out[HostOf(a)] = true
+				out[BlockHostOf(HostOf(a))] = true
 			}
 		}
 	}
+	blind := f.nameBlock() != ""
+	for h := range f.reached {
+		if f.reachedNamed[h] {
+			continue
+		}
+		// An address the run reached with no name is a live-blocked host when a name block's recorded addresses include
+		// it (that name resolved to it), and the record cannot clear it of a block by name that recorded none (A34).
+		if blind || f.addrName(HostOf(h)) != "" {
+			out[BlockHostOf(HostOf(h))] = true
+		}
+	}
 	return out
+}
+
+// nameBlock is a host name (not an address) a net live block or restored fence of this run named and whose resolution
+// the record does not say, "" when there is none; the first in byte order, so the answer does not depend on the order of
+// the lines. A block by name is enforced on the addresses the name resolved to when the block was put. From record minor
+// 41 its line names them (nameAddrs); below it, for a lookup that answered none and for a list past its cap, the record
+// does not (A34): of an address reached with no name beside it, it cannot say whether the name was it.
+func (f *signalFold) nameBlock() string {
+	best := ""
+	for h := range f.liveHosts {
+		if _, err := netip.ParseAddr(h); err == nil {
+			continue
+		}
+		if n := f.nameAddrs[h]; n != nil && !n.blind {
+			continue
+		}
+		if best == "" || h < best {
+			best = h
+		}
+	}
+	return best
+}
+
+// nameUnknown is the plain sentence for a net group the record cannot clear of a block by name: its host was reached
+// with no name (a CIDR entry), and a block by name exists, so neither "the run also reached this host" nor "no block
+// covers it" is known. "" for every other group.
+func (f *signalFold) nameUnknown(g *Group, name string) string {
+	if name == "" || g.Class != "net" || g.Background || loopback(g.Subject) || !f.reached[g.Subject] || f.reachedNamed[g.Subject] {
+		return ""
+	}
+	return "a block on " + name + " may cover this address: the record does not say which addresses that name was"
+}
+
+// blockWords is the sentence a row's title says for a group whose address is a blocked name's, "" with no name.
+func blockWords(name string) string {
+	if name == "" {
+		return ""
+	}
+	return "this address is one a live block on " + name + " was enforced on: the record names it among that name's addresses"
+}
+
+// blockName is the name of a live block whose recorded addresses include this net group's host, when the host is an
+// address and not that name itself: the row says "this address is <name>'s", which the record shows from revision 41.
+func (f *signalFold) blockName(g *Group) string {
+	if g.Class != "net" || loopback(g.Subject) {
+		return ""
+	}
+	return f.addrName(HostOf(g.Subject))
 }
 
 // refused folds one refused line into its group, and into its destination, program, secret or live block.
@@ -383,7 +507,7 @@ func (f *signalFold) refused(e *Event) {
 // nothing the fold changes later.
 func (f *signalFold) finish(r *Run) *RunSignal {
 	out := &RunSignal{
-		agent:     CommandAgent(r.Command),
+		agent:     r.CommandAgent(),
 		rules:     f.sens.rules,
 		Secrets:   slices.Clone(f.secretL),
 		Outbound:  slices.Clone(f.outbound),
@@ -424,13 +548,16 @@ func (f *signalFold) finish(r *Run) *RunSignal {
 	}
 	touches := f.touches[:len(f.touches):len(f.touches)]
 	near := func(seq uint64, ts time.Time) bool { return nearOne(touches, seq, ts) }
-	probes, blocked := f.probes.targets(), f.blocked()
+	probes, blocked, nameBlock := f.probes.targets(), f.blocked(), f.nameBlock()
 	for i := range out.Groups {
 		g := &out.Groups[i]
 		// A system lookup (nscd, userdb, the D-Bus buses) or a DNS lookup is what the C library does around any
 		// connect: it carries none of the run's data, so it is never "next to a secret", however close it comes.
 		g.NearSecret = g.Class == "net" && !g.SystemLookup && !dnsGroup(g) && near(g.FirstSeq, g.First)
 		classify(g, f.reached, probes, blocked)
+		g.NameUnknown = f.nameUnknown(g, nameBlock)
+		g.BlockName = f.blockName(g)
+		g.BlockWords = blockWords(g.BlockName)
 		g.Severity = groupSeverity(g, out.agent, out.rules)
 		if out.sev == nil {
 			out.sev = map[string]Severity{}

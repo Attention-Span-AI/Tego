@@ -5,13 +5,14 @@ package rules
 import (
 	"context"
 
+	"github.com/attention-span-ai/tego/internal/registry"
 	"github.com/attention-span-ai/tego/internal/rulefile"
 )
 
 // Writer is the authority the rule service writes contracts through: a guarded read, a guarded replace with a base
 // hash and a journal line, a revert from the journal, and the journal line of what "also apply now" did. Today it is
-// localWriter, internal/rulefile in this process, the code `tego rule` writes through. A helper child granted the
-// contracts directory alone could sit behind this same seam.
+// localWriter, internal/rulefile in the bounded filesystem helper, the code `tego rule` writes through.
+// The service process sends the complete guarded operation through its private pipe.
 type Writer interface {
 	// Read reads the contract at path through every guard and writes nothing.
 	Read(path string) (*rulefile.File, error)
@@ -56,4 +57,15 @@ func (s *Service) writer() Writer {
 		return s.Writer
 	}
 	return localWriter{s.guard()}
+}
+
+// boundWriter keeps the reviewed destination identity through the final descriptor open.
+func (s *Service) boundWriter(id registry.DirectoryIdentity, before func() error) Writer {
+	if s.Writer != nil {
+		return s.Writer
+	} // Injected writers are test or external authority seams.
+	g := s.guard()
+	g.ExpectedDirectory = &id
+	g.BeforePublish = before
+	return localWriter{g}
 }

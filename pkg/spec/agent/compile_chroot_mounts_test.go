@@ -13,8 +13,10 @@ import (
 // TestCompileCapturedChrootMountTables replays the tables a process really sees in a chroot, after pivot_root, in
 // systemd-nspawn and in bubblewrap (testdata/chroot-mountinfo, captured in a guest) through the 19 baseline contracts.
 // A table without a row at / exists only where the process's root is not a mount's root (a chroot into a plain
-// folder): there every write and ask grant is refused, as it was by the per-path analysis before the one reader
-// (it refused the same 17 contracts, because / itself has no row and every walk starts there). A chroot whose root is a mount point, pivot_root and bubblewrap list their root at / and accept all 19.
+// folder): it cannot be read as one snapshot, so every contract is refused (ADR 0011, amended 2026-11-19, round 5: with
+// no table compile cannot list the other names of the files the rules deny, and fails closed); the 17 with a write or
+// ask grant were refused before that too, because / itself has no row and every walk starts there. A chroot whose root
+// is a mount point, pivot_root and bubblewrap list their root at / and accept all 19.
 // nspawn's three unlinked-root rows are valid; their old names do not establish aliases.
 func TestCompileCapturedChrootMountTables(t *testing.T) {
 	refusedAll := []string{
@@ -23,13 +25,14 @@ func TestCompileCapturedChrootMountTables(t *testing.T) {
 		"preset__no-prod", "preset__no-secrets", "preset__repo-only-writes",
 		"variant__bpflsm-open", "variant__cgroup-all", "variant__deny-list-exec", "variant__landlock-unix", "variant__reads-direct",
 		"variant__grant-devshm", "variant__grant-home", "variant__grant-project", "variant__grant-tmp",
+		"testdata__good__bom-crlf.yaml", "testdata__good__minimal.yaml",
 	}
 	var layouts []mountLayout
 	for _, c := range []struct {
 		name     string
 		accepted int
 	}{
-		{"chroot-dir", 2}, {"chroot-dir-proc-only", 2}, {"chroot-selfbind", 19}, {"chroot-own-fs", 19},
+		{"chroot-dir", 0}, {"chroot-dir-proc-only", 0}, {"chroot-selfbind", 19}, {"chroot-own-fs", 19},
 		{"pivot-root", 19}, {"nspawn", 19}, {"bwrap", 19},
 	} {
 		data, err := os.ReadFile(filepath.Join("testdata", "chroot-mountinfo", c.name+".mountinfo"))
@@ -38,7 +41,7 @@ func TestCompileCapturedChrootMountTables(t *testing.T) {
 		}
 		rows := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
 		var refused []string
-		if c.accepted == 2 {
+		if c.accepted == 0 {
 			refused = slices.Clone(refusedAll)
 		}
 		layouts = append(layouts, mountLayout{name: "captured " + c.name, refused: refused, accepted: c.accepted,

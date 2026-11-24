@@ -206,7 +206,7 @@ func TestParseRefuses(t *testing.T) {
 	}
 }
 
-// TestDescribe: an instant as a limit, in the location's words, with how far away it is.
+// TestDescribe: an instant as a limit, in the location's words and naming its zone, with how far away it is.
 func TestDescribe(t *testing.T) {
 	loc := berlin(t)
 	now := time.Date(2026, 10, 28, 17, 0, 0, 0, loc)
@@ -214,16 +214,16 @@ func TestDescribe(t *testing.T) {
 		t    time.Time
 		want string
 	}{
-		{now.Add(72 * time.Hour), "until Sat 31 Oct 17:00 (in 3 days)"},
-		{now.Add(45 * time.Minute), "until Wed 28 Oct 17:45 (in 45 minutes)"},
-		{now.Add(61 * time.Second), "until Wed 28 Oct 17:01:01 (in 2 minutes)"},
-		{now.Add(2*time.Hour + 30*time.Second), "until Wed 28 Oct 19:00 (in 2 hours)"},
-		{now.Add(time.Minute), "until Wed 28 Oct 17:01 (in 1 minute)"},
-		{now.Add(5 * time.Hour), "until Wed 28 Oct 22:00 (in 5 hours)"},
-		{now.Add(24 * time.Hour), "until Thu 29 Oct 17:00 (in 24 hours)"},
-		{now.Add(49 * 24 * time.Hour), "until Wed 16 Dec 17:00 (in 7 weeks)"},
-		{now.Add(80 * 24 * time.Hour), "until Sat 16 Jan 2027 17:00 (in 11 weeks)"},
-		{now.Add(-time.Minute), "until Wed 28 Oct 16:59 (passed)"},
+		{now.Add(72 * time.Hour), "until Sat 31 Oct 17:00 CET (in 3 days)"},
+		{now.Add(45 * time.Minute), "until Wed 28 Oct 17:45 CET (in 45 minutes)"},
+		{now.Add(61 * time.Second), "until Wed 28 Oct 17:01:01 CET (in 2 minutes)"},
+		{now.Add(2*time.Hour + 30*time.Second), "until Wed 28 Oct 19:00 CET (in 2 hours)"},
+		{now.Add(time.Minute), "until Wed 28 Oct 17:01 CET (in 1 minute)"},
+		{now.Add(5 * time.Hour), "until Wed 28 Oct 22:00 CET (in 5 hours)"},
+		{now.Add(24 * time.Hour), "until Thu 29 Oct 17:00 CET (in 24 hours)"},
+		{now.Add(49 * 24 * time.Hour), "until Wed 16 Dec 17:00 CET (in 7 weeks)"},
+		{now.Add(80 * 24 * time.Hour), "until Sat 16 Jan 2027 17:00 CET (in 11 weeks)"},
+		{now.Add(-time.Minute), "until Wed 28 Oct 16:59 CET (passed)"},
 	} {
 		if got := Describe(tc.t, now, loc); got != tc.want {
 			t.Errorf("Describe(%v) = %q, want %q", tc.t, got, tc.want)

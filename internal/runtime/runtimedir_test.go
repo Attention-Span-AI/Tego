@@ -3,9 +3,11 @@
 package runtime
 
 import (
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -44,5 +46,40 @@ func TestRootRunMakesNoRuntimeDir(t *testing.T) {
 	}
 	if os.Geteuid() == 0 && r.runtimeDir != "" {
 		t.Fatalf("as root: runtime dir %q, want none", r.runtimeDir)
+	}
+}
+
+// TestRuntimeFolderMessages: the runtime folder a message is about is printed, as a place given by a flag is: the
+// person must see which folder is unsafe or could not be read (rule (c) of pkg/spec/identity envtext.go). A value
+// that failed validation is not echoed: a relative XDG_RUNTIME_DIR, a parent run that is not a run id (rule (b)).
+func TestRuntimeFolderMessages(t *testing.T) {
+	base := filepath.Join(t.TempDir(), "qz-runtime")
+	if err := os.Mkdir(base, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(base, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(base, "absent")
+	for name, err := range map[string]error{
+		"a base others can write":   privateRuntimeDirs(base),
+		"a folder others can write": privateRuntimeDirs("", base),
+		"a base that is not there":  privateRuntimeDirs(missing),
+	} {
+		if err == nil || !strings.Contains(err.Error(), base) {
+			t.Errorf("%s: the message does not name the folder %s: %v", name, base, err)
+		}
+	}
+	if err := privateRuntimeDirs(missing); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the cause is lost: %v", err)
+	}
+	for name, got := range map[string]string{
+		"a relative XDG_RUNTIME_DIR":        unsetOr("qz-relative"),
+		"a relative socket folder":          checkClaudeSocketPath("qz-relative").Error(),
+		"a parent run that is not a run id": validIdentity(Deps{ParentRun: "qz-not-a-run"}).Error(),
+	} {
+		if strings.Contains(got, "qz-") || !strings.Contains(got, "echo $") {
+			t.Errorf("%s: the value was echoed, or the message does not say how to print it: %s", name, got)
+		}
 	}
 }

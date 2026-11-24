@@ -901,6 +901,11 @@ func (c *fileCheck) admitted(x *ast.CallExpr) (string, bool) {
 		return trap, true
 	case trap == "SYS_IOCTL":
 		req, ok := c.constName(arg(2))
+		if ok && req == "NS_GET_USERNS" {
+			// The owner of a namespace file. The request takes no argument and the kernel opens its result
+			// close-on-exec (open_related_ns), so there are no flags for F9 to read: the trap is named apart.
+			return "SYS_IOCTL NS_GET_USERNS", true
+		}
 		return trap, ok && req == "TIOCGPTPEER"
 	case trap == "SYS_BPF":
 		cmd, ok := c.constName(arg(1))

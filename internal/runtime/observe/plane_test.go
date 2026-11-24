@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/attention-span-ai/tego/internal/bpf"
 	"github.com/attention-span-ai/tego/internal/policy/decide"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
@@ -378,5 +380,100 @@ func TestPlaneTruncatedNameCountsOnlyPathTruncated(t *testing.T) {
 	g := gapCount(r.Gaps())
 	if g[GapDirUnresolved] != 0 || g[GapPathTruncated] != 3 {
 		t.Errorf("gaps %+v, want three path-truncated and no dir-unresolved", r.Gaps())
+	}
+}
+
+// TestRecorderNamesAControlBearingReceiveRefusal (ADR 0128): the plane's socket_recvmsg refusal is one refused line,
+// op recvmsg, the socket's triple, reason net-not-allowed, rule socket-import, mechanism plane; the fail-closed
+// refusal (no slot header, no scratch value) reads path-unresolved under the unmatched rule. Both pass the ledger's own
+// validation, and are kept under record: off, as every refusal is.
+func TestRecorderNamesAControlBearingReceiveRefusal(t *testing.T) {
+	for _, mode := range []agent.RecordMode{agent.RecordFull, agent.RecordOff} {
+		t.Run(string(mode), func(t *testing.T) {
+			f := newFixture(t)
+			rt, _ := planeTable(f)
+			rt.Record = mode
+			f.rules = rt
+			recv := func(mono uint64, reason bpf.ReasonCode, rule uint32) []byte {
+				return planeOwnSample(sample{PID: 50, TID: 50, MonoNS: mono, Start: 900, Reason: uint8(reason)}, KindPlaneSocket,
+					hookNumber(t, "socket_recvmsg"), rule, 0, 0, "", unix.AF_UNIX, unix.SOCK_DGRAM, 0)
+			}
+			_, sink := runRecorder(t, f, Options{FlushInterval: time.Hour, DecisionPlane: record.DecisionPlaneLSM},
+				recv(1, bpf.ReasonNetNotAllowed, bpf.PlaneRuleSocketImport),
+				recv(2, bpf.ReasonPathUnresolved, bpf.PlaneRuleSocketImport))
+			refused := sink.byKind(record.KindRefused)
+			if len(refused) != 2 {
+				t.Fatalf("%d refused lines, want 2: %+v", len(refused), refused)
+			}
+			for i, want := range []struct {
+				rule   string
+				reason record.Reason
+			}{{PlaneImportRule, record.ReasonNetNotAllowed}, {RuleUnmatched, record.ReasonPathUnresolved}} {
+				ev := refused[i]
+				p := payload[record.RefusedPayload](t, ev)
+				if ev.Rule != want.rule || ev.Reason != want.reason || p.Op != "recvmsg" || p.Target != "AF_UNIX SOCK_DGRAM protocol 0" ||
+					p.Mechanism != record.MechanismPlane || p.DecisionPlane != record.DecisionPlaneLSM || p.Rule != want.rule {
+					t.Errorf("line %d: %s %s %+v, want rule %s reason %s op recvmsg", i, ev.Rule, ev.Reason, p, want.rule, want.reason)
+				}
+				if err := ev.Validate(); err != nil {
+					t.Errorf("a line the ledger would refuse: %v: %+v", err, ev)
+				}
+			}
+		})
+	}
+}
+
+// TestRecorderNamesALiveBlockRefusal (ADR 0124, amendment 2026-11-21): a plane refusal whose rule carries
+// bpf.PlaneRuleLiveBlock is named by the launcher's rule for that block (SetLiveBlockRule), with the operation's own
+// reason: an fs line (the plane's own sample of a hook a recorder fexit wraps), a read (read-denied) and an attribute
+// change. An id the launcher never gave names unmatched. Every line passes the ledger's validation.
+func TestRecorderNamesALiveBlockRefusal(t *testing.T) {
+	f := newFixture(t)
+	rt, _ := planeTable(f)
+	f.rules = rt
+	di, ok := statDevIno(f.out)
+	if !ok {
+		t.Fatal("could not stat the write directory")
+	}
+	rule := "live.block[write:" + filepath.Join(f.out, "blk") + "]"
+	readRule := "live.block[path:" + filepath.Join(f.out, "rd") + "]"
+	tag := func(id uint16) uint32 { return uint32(bpf.PlaneRuleLiveBlock | id) }
+	s := func(mono uint64, k Kind, hook string, reason bpf.ReasonCode, r uint32, name string) []byte {
+		return planeOwnSample(sample{PID: 50, TID: 50, MonoNS: mono, Start: 900, Reason: uint8(reason)}, k,
+			hookNumber(t, hook), r, di.Dev, di.Ino, name, 0, 0, 0)
+	}
+	names := func(id uint16) (string, bool) {
+		switch id {
+		case 3:
+			return rule, true
+		case 4:
+			return readRule, true
+		}
+		return "", false
+	}
+	_, sink := runRecorder(t, f, Options{FlushInterval: time.Hour, DecisionPlane: record.DecisionPlaneLSM, LiveBlockRule: names},
+		s(1, KindPlaneFS, "path_unlink", bpf.ReasonDeleteOutsideContract, tag(3), "blk"),
+		s(2, KindPlaneFS, "file_open", bpf.ReasonReadDenied, tag(4), "rd"),
+		s(3, KindPlaneAttr, "path_chmod", bpf.ReasonWriteOutsideContract, tag(3), "blk"),
+		s(4, KindPlaneFS, "path_rename", bpf.ReasonRenameOutsideContract, tag(9), "blk"),
+	)
+	fs := sink.byKind(record.KindFS)
+	if len(fs) != 4 {
+		t.Fatalf("%d fs lines, want 4: %+v", len(fs), fs)
+	}
+	for i, want := range []struct {
+		rule   string
+		reason record.Reason
+	}{
+		{rule, record.ReasonDeleteOutsideContract}, {readRule, record.ReasonReadDenied},
+		{rule, record.ReasonWriteOutsideContract}, {RuleUnmatched, record.ReasonRenameOutsideContract},
+	} {
+		ev := fs[i]
+		if ev.Verdict != record.VerdictRefused || ev.Rule != want.rule || ev.Reason != want.reason {
+			t.Errorf("line %d: %s %s %s, want refused %s %s", i, ev.Verdict, ev.Rule, ev.Reason, want.rule, want.reason)
+		}
+		if err := ev.Validate(); err != nil {
+			t.Errorf("line %d the ledger would refuse: %v", i, err)
+		}
 	}
 }

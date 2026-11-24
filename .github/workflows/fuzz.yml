@@ -145,3 +145,28 @@ jobs:
           path: ${{ matrix.target.pkg }}/testdata/fuzz/
           if-no-files-found: ignore
           retention-days: 30
+
+  # The staged read's differential (ADR 0048 (3)): every row's vocabulary pairs and seeded vectors, 6.5 million prefix
+  # decisions, none of which may be a final decision that does not refuse where the whole vector is refused. It is
+  # skipped unless TEGO_STAGED_DIFF is set, so no push or gate runs it; this is its bounded schedule, nightly beside the
+  # fuzz targets. It took 34 s and 250 MB on the development box (one test, no parallelism), so the cap below is generous.
+  staged-read-differential:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      # -v for the logged counts and the whole-vector hash; -timeout under the job's so a hang names the test. A
+      # skip would pass with nothing decided, so the run must print the decision count line, and the count must be
+      # positive: an emptied corpus logs "0 prefix decisions" and differs from nothing.
+      - name: staged read differential
+        env:
+          TEGO_STAGED_DIFF: '1'
+        run: |
+          set -euo pipefail
+          go test -count=1 -timeout 15m -run '^TestStagedReadDifferential$' -v ./pkg/policy/execmatch/rows/ | tee staged-diff.log
+          grep -qE ' [1-9][0-9]* prefix decisions; Final and not refused while the whole vector is refused: 0; other Final non-refusals that differ: 0;' staged-diff.log

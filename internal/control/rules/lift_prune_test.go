@@ -37,27 +37,27 @@ func TestUndoAfterPruneLiftsNoBlockAnotherChangeHolds(t *testing.T) {
 			lf.live[run] = true
 			ctx := context.Background()
 			c := lf.ref(t, lf.contract)
-			h, err := lf.s.ApplyChange(ctx, ChangeReq{Ref: c.Ref, Base: c.Base,
+			h, err := lf.applyReviewed(t, ctx, ChangeReq{Ref: c.Ref, Base: c.Base,
 				Edits: []Edit{{"add", "fs.deny_write", "./out/"}}, AlsoNow: []string{run}})
 			if err != nil || h.ID == "" || len(h.Live) != 1 || !h.Live[0].OK {
 				t.Fatalf("the older change: %+v %v", h, err)
 			}
 			for i := range rulefile.KeepChanges + 1 {
 				c = lf.ref(t, lf.contract)
-				if a, err := lf.s.ApplyChange(ctx, ChangeReq{Ref: c.Ref, Base: c.Base,
+				if a, err := lf.applyReviewed(t, ctx, ChangeReq{Ref: c.Ref, Base: c.Base,
 					Edits: []Edit{{"add", "fs.deny_read", fmt.Sprintf("./d%d/", i)}}}); err != nil || a.ID == "" {
 					t.Fatalf("change %d: %+v %v", i, a, err)
 				}
 			}
 			c = lf.ref(t, lf.contract)
-			e, err := lf.s.ApplyChange(ctx, ChangeReq{Ref: c.Ref, Base: c.Base,
+			e, err := lf.applyReviewed(t, ctx, ChangeReq{Ref: c.Ref, Base: c.Base,
 				Edits: []Edit{{"remove", "fs.write", "./out/"}}, AlsoNow: []string{run}})
 			if err != nil || e.ID == "" {
 				t.Fatalf("the newer change: %+v %v", e, err)
 			}
 			block := "write:" + filepath.Join(lf.proj, "out")
-			if !slices.Contains(lf.overlay[run], block) {
-				t.Fatalf("the overlay of %s is %v, want %s placed", run, lf.overlay[run], block)
+			if !slices.Contains(lf.keys(run), block) {
+				t.Fatalf("the overlay of %s is %v, want %s placed", run, lf.keys(run), block)
 			}
 			if _, cur := lf.current(t); cur.ID != e.ID || len(cur.Lift) != 0 {
 				t.Fatalf("before the Prune, the Undo of the newer change offers %+v", cur.Lift)
@@ -75,9 +75,9 @@ func TestUndoAfterPruneLiftsNoBlockAnotherChangeHolds(t *testing.T) {
 			}
 			cr := lf.ref(t, lf.contract)
 			r, err := lf.s.Revert(ctx, RevertReq{ID: e.ID, Base: cr.Base, Ack: cur.Ack, Lift: true})
-			if err != nil || len(r.Lifted) != 0 || len(lf.lifts) != 0 || !slices.Contains(lf.overlay[run], block) {
+			if err != nil || len(r.Lifted) != 0 || len(lf.lifts) != 0 || !slices.Contains(lf.keys(run), block) {
 				t.Errorf("an Undo asked to lift: %+v, %v; lifts %v, overlay %v; want %s still on %s", r, err, lf.lifts,
-					lf.overlay[run], block, run)
+					lf.keys(run), block, run)
 			}
 		})
 	}

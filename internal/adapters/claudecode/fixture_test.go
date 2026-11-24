@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -175,4 +176,12 @@ func context(t testing.TB, stdout, event string) string {
 		t.Errorf("hookEventName %q, want %q", o.HookSpecificOutput.HookEventName, event)
 	}
 	return o.HookSpecificOutput.AdditionalContext
+}
+
+// sameState reports whether two states are equal (a State holds a map and a slice, so == does not compile).
+// sameState compares two states without the harnesses they name: a hook under go test finds the test binary's real
+// ancestor as its harness, which the expected states do not know.
+func sameState(a, b State) bool {
+	a.Harnesses, b.Harnesses = nil, nil
+	return reflect.DeepEqual(a, b)
 }

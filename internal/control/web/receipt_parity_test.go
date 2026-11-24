@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	htmlnode "golang.org/x/net/html"
+
 	"github.com/attention-span-ai/tego/internal/check/receipt"
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
 )
@@ -188,12 +190,12 @@ func TestLogsSaysTheKernelTLSRefusalAsTheReceiptDoes(t *testing.T) {
 	if kind == "" || !strings.HasPrefix(words, "built in, no rule allows it: kernel TLS") {
 		t.Fatalf("the receipt's kind %q, words %q", kind, words)
 	}
-	var text strings.Builder
-	if err := rc.Text(&text); err != nil {
+	var rendered strings.Builder
+	if err := rc.Text(&rendered); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(text.String(), words) {
-		t.Fatalf("tego session show does not print %q:\n%s", words, text.String())
+	if !strings.Contains(rendered.String(), words) {
+		t.Fatalf("tego receipt does not print %q:\n%s", words, rendered.String())
 	}
 	s := newServer(t, root)
 	c := login(t, s)
@@ -218,10 +220,19 @@ func TestLogsSaysTheKernelTLSRefusalAsTheReceiptDoes(t *testing.T) {
 	if want[kind] != 2 || want[ruleName("unmatched")] != 1 {
 		t.Fatalf("the receipt's groups: %v", want)
 	}
-	for label, n := range want {
-		facet := `<span class="lq-l">` + html.EscapeString(label) + `</span><span class="lq-n">` + strconv.Itoa(n) + `</span>`
-		if !strings.Contains(page, facet) {
-			t.Errorf("the Rule facet does not count %q %d as the receipt does", label, n)
+	for label, count := range want {
+		found := false
+		walk(parseHTML(t, "Logs facets", page), func(n *htmlnode.Node) {
+			cls, _ := attr(n, "class")
+			if cls != "lq-l" || text(n) != label {
+				return
+			}
+			title, _ := attr(n, "title")
+			next := n.NextSibling
+			found = next != nil && text(next) == strconv.Itoa(count) && strings.Contains(title, label)
+		})
+		if !found {
+			t.Errorf("the Rule facet does not retain %q and count %d as the receipt does", label, count)
 		}
 	}
 	// By rule gathers them apart from the default deny, under the same words.

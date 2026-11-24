@@ -292,7 +292,13 @@ func TestCompileRefusesWritesOverTegosOtherNames(t *testing.T) {
 	t.Run("a mount table it cannot read", func(t *testing.T) {
 		missing := WithMountInfo(filepath.Join(f.root, "no-such-mountinfo"))
 		wantRefused(t, f, f.load(writeSection(out)), "the mount table cannot be read whole", WithOwnBinaries(exe), missing)
-		f.compile(f.load("version: 0\nname: a\ncommand: [python]\n"), WithOwnBinaries(exe), missing) // no write entry, nothing to show
+		// No write entry: still refused, since compile cannot list the other names of what the rules deny (round 5).
+		_, ds, err := Compile(f.load("version: 0\nname: a\ncommand: [python]\n"), f.machine, f.opts(WithOwnBinaries(exe), missing)...)
+		if err == nil || !slices.ContainsFunc(ds, func(d Diagnostic) bool {
+			return d.Code == CodeMountWarning && d.Severity == SeverityError && strings.Contains(d.Message, "the mount table cannot be read whole")
+		}) {
+			t.Errorf("no write entry, unread table: %v\n%s", err, render(ds))
+		}
 	})
 }
 

@@ -1,0 +1,589 @@
+{
+  "SPDX-License-Identifier": "Apache-2.0",
+  "fields": [
+    {
+      "Key": "version",
+      "Meaning": "The contract format version."
+    },
+    {
+      "Key": "name",
+      "Meaning": "The name used to start this agent."
+    },
+    {
+      "Key": "revision",
+      "Meaning": "An optional name for this version of the contract."
+    },
+    {
+      "Key": "extends",
+      "Meaning": "Profile names merged in order before this contract; at most eight."
+    },
+    {
+      "Key": "command",
+      "Meaning": "The program and its arguments."
+    },
+    {
+      "Key": "fs",
+      "Meaning": "File read, write and approval rules."
+    },
+    {
+      "Key": "fs.write",
+      "Meaning": "Files and folders it may change."
+    },
+    {
+      "Key": "fs.ask",
+      "Meaning": "Files or folders whose changes need your approval."
+    },
+    {
+      "Key": "fs.deny_read",
+      "Meaning": "Files it may never read; absent keeps built-in secret refusals."
+    },
+    {
+      "Key": "fs.ask_read",
+      "Meaning": "Files or folders whose reads need your approval; Basic protection only."
+    },
+    {
+      "Key": "fs.watch",
+      "Meaning": "File paths whose changes Tego records."
+    },
+    {
+      "Key": "fs.deny_write",
+      "Meaning": "Files or folders it must not change inside a writable area."
+    },
+    {
+      "Key": "fs.assurance",
+      "Meaning": "Whether protected writes require kernel decisions or may use disclosed best effort."
+    },
+    {
+      "Key": "fs.reads",
+      "Meaning": "Hold read opens automatically when needed, always hold them, or use direct reads."
+    },
+    {
+      "Key": "fs.apparmor_assume_root_namespace",
+      "Meaning": "Administrator assertion of root AppArmor namespace visibility; accepts hidden-ancestor risk."
+    },
+    {
+      "Key": "net",
+      "Meaning": "Destination, listener, DNS and network budget rules."
+    },
+    {
+      "Key": "net.assurance",
+      "Meaning": "Whether network rules require kernel decisions or may use disclosed best effort."
+    },
+    {
+      "Key": "net.allow",
+      "Meaning": "Destinations it may reach."
+    },
+    {
+      "Key": "net.ask",
+      "Meaning": "Named destinations that need your approval; these add no ordinary connection grant."
+    },
+    {
+      "Key": "net.http",
+      "Meaning": "Request paths and methods allowed through declared model forwarders."
+    },
+    {
+      "Key": "net.http[]",
+      "Meaning": "One host and its allowed HTTP requests."
+    },
+    {
+      "Key": "net.http[].host",
+      "Meaning": "The model forwarder host this request rule covers."
+    },
+    {
+      "Key": "net.http[].allow",
+      "Meaning": "HTTP request paths the forwarder may pass."
+    },
+    {
+      "Key": "net.http[].methods",
+      "Meaning": "HTTP methods the forwarder may pass."
+    },
+    {
+      "Key": "net.listen",
+      "Meaning": "Addresses and ports where the agent may listen."
+    },
+    {
+      "Key": "net.ingress",
+      "Meaning": "Peer addresses allowed to reach declared listeners."
+    },
+    {
+      "Key": "net.ingress[]",
+      "Meaning": "One allowed peer and the listener it may reach."
+    },
+    {
+      "Key": "net.ingress[].from",
+      "Meaning": "The incoming peer address or address range."
+    },
+    {
+      "Key": "net.ingress[].to",
+      "Meaning": "The declared listener the peer may reach."
+    },
+    {
+      "Key": "net.limits",
+      "Meaning": "Limits on connections, traffic and datagrams; zero permits none."
+    },
+    {
+      "Key": "net.limits.connections",
+      "Meaning": "Maximum run-owned network connections."
+    },
+    {
+      "Key": "net.limits.pending_connects",
+      "Meaning": "Maximum connections waiting to finish connecting."
+    },
+    {
+      "Key": "net.limits.bytes",
+      "Meaning": "Maximum network traffic in bytes."
+    },
+    {
+      "Key": "net.limits.datagrams_per_second",
+      "Meaning": "Maximum network datagrams per second."
+    },
+    {
+      "Key": "net.dns",
+      "Meaning": "How the agent sends DNS requests."
+    },
+    {
+      "Key": "net.dns.mode",
+      "Meaning": "The DNS transport and resolution mode."
+    },
+    {
+      "Key": "net.dns.allow",
+      "Meaning": "DNS names the chosen mode may resolve."
+    },
+    {
+      "Key": "net.dns.types",
+      "Meaning": "DNS record types the chosen mode permits."
+    },
+    {
+      "Key": "net.dns.max_stale",
+      "Meaning": "How long an old DNS answer remains usable; at most 24 hours."
+    },
+    {
+      "Key": "net.dns.max_parallel",
+      "Meaning": "Maximum simultaneous DNS requests."
+    },
+    {
+      "Key": "net.dns.cache",
+      "Meaning": "Maximum cached DNS answers."
+    },
+    {
+      "Key": "net.proxy",
+      "Meaning": "Extra protocols and bounds on declared model forwarders."
+    },
+    {
+      "Key": "net.proxy.http2",
+      "Meaning": "Allow HTTP/2 on declared model listeners."
+    },
+    {
+      "Key": "net.proxy.websocket",
+      "Meaning": "WebSocket upgrade requests the forwarder may pass."
+    },
+    {
+      "Key": "net.proxy.websocket[]",
+      "Meaning": "One host and its allowed WebSocket upgrades."
+    },
+    {
+      "Key": "net.proxy.websocket[].host",
+      "Meaning": "The host this WebSocket rule covers."
+    },
+    {
+      "Key": "net.proxy.websocket[].allow",
+      "Meaning": "Request paths allowed to upgrade to WebSocket."
+    },
+    {
+      "Key": "net.proxy.websocket[].methods",
+      "Meaning": "HTTP methods allowed for WebSocket upgrades."
+    },
+    {
+      "Key": "net.proxy.connect",
+      "Meaning": "Destinations allowed for opaque CONNECT tunnels."
+    },
+    {
+      "Key": "net.proxy.max_streams",
+      "Meaning": "Maximum simultaneous proxy streams."
+    },
+    {
+      "Key": "net.proxy.max_tunnel_bytes",
+      "Meaning": "Maximum bytes in one opaque tunnel."
+    },
+    {
+      "Key": "net.proxy.max_frame_bytes",
+      "Meaning": "Maximum size of one proxy protocol frame."
+    },
+    {
+      "Key": "net.proxy.tunnel_idle",
+      "Meaning": "How long an idle tunnel may stay open."
+    },
+    {
+      "Key": "net.proxy.tunnel_wall",
+      "Meaning": "Maximum total lifetime of a tunnel."
+    },
+    {
+      "Key": "exec",
+      "Meaning": "Program images and command argument rules."
+    },
+    {
+      "Key": "exec.allow",
+      "Meaning": "Programs or command patterns it may run."
+    },
+    {
+      "Key": "exec.deny",
+      "Meaning": "Command patterns it must never run."
+    },
+    {
+      "Key": "exec.ask",
+      "Meaning": "Reserved command approval patterns; matching commands are currently refused."
+    },
+    {
+      "Key": "exec.privileged",
+      "Meaning": "Reserved privileged program list; nonempty values are currently rejected."
+    },
+    {
+      "Key": "exec.anonymous",
+      "Meaning": "Allow anonymous program images such as memfd; weakens the default refusal."
+    },
+    {
+      "Key": "exec.assurance",
+      "Meaning": "Whether program decisions must be held by the kernel or may use best effort."
+    },
+    {
+      "Key": "env",
+      "Meaning": "Environment variable names, refusals and assignments."
+    },
+    {
+      "Key": "env.pass",
+      "Meaning": "Variable names passed from the launching environment."
+    },
+    {
+      "Key": "env.deny",
+      "Meaning": "Variable names it must not inherit."
+    },
+    {
+      "Key": "env.mask",
+      "Meaning": "Reserved variable masking list; nonempty values are currently rejected."
+    },
+    {
+      "Key": "env.set",
+      "Meaning": "Explicit environment assignments; values stay hidden here and are set in a terminal."
+    },
+    {
+      "Key": "mcp",
+      "Meaning": "Declared local or HTTP MCP servers and optional tool rules."
+    },
+    {
+      "Key": "models",
+      "Meaning": "Model provider endpoints Tego may forward and record."
+    },
+    {
+      "Key": "credentials",
+      "Meaning": "Vault credentials injected by the forwarder at explicitly allowed endpoints."
+    },
+    {
+      "Key": "credentials[]",
+      "Meaning": "One vault credential and the endpoints that may receive it."
+    },
+    {
+      "Key": "credentials[].name",
+      "Meaning": "The vault entry name; its secret value never enters this page."
+    },
+    {
+      "Key": "credentials[].env",
+      "Meaning": "The agent variable that receives a stand-in for the credential."
+    },
+    {
+      "Key": "credentials[].allow",
+      "Meaning": "Allowed model hosts and ports for this credential; omitted ports mean 443."
+    },
+    {
+      "Key": "credentials[].base_url_env",
+      "Meaning": "A variable the launcher sets to this credential's model forwarder URL."
+    },
+    {
+      "Key": "limits",
+      "Meaning": "Run budgets, bounded by the machine's ceilings."
+    },
+    {
+      "Key": "limits.cpu",
+      "Meaning": "Maximum CPU usage in cores."
+    },
+    {
+      "Key": "limits.cpu_weight",
+      "Meaning": "Relative CPU scheduling weight, from 1 to 10000."
+    },
+    {
+      "Key": "limits.memory",
+      "Meaning": "Maximum memory using IEC units, such as 512MiB."
+    },
+    {
+      "Key": "limits.memory_high",
+      "Meaning": "Memory threshold where the kernel starts reclaiming and slowing allocations."
+    },
+    {
+      "Key": "limits.pids",
+      "Meaning": "Maximum processes and threads."
+    },
+    {
+      "Key": "limits.tokens",
+      "Meaning": "Model token budget where capture can count usage."
+    },
+    {
+      "Key": "limits.cost_usd",
+      "Meaning": "Estimated model cost budget in US dollars where prices are available."
+    },
+    {
+      "Key": "limits.wall",
+      "Meaning": "Maximum run duration, such as 2h."
+    },
+    {
+      "Key": "limits.stall_after",
+      "Meaning": "How long without a recorded action before the run is called stalled."
+    },
+    {
+      "Key": "limits.repeats",
+      "Meaning": "Repeated-action threshold used to report a loop."
+    },
+    {
+      "Key": "record",
+      "Meaning": "How much of the run is recorded."
+    },
+    {
+      "Key": "tier",
+      "Meaning": "The protection mechanism requested for this run."
+    },
+    {
+      "Key": "capture",
+      "Meaning": "How Tego records model traffic."
+    },
+    {
+      "Key": "io_uring",
+      "Meaning": "Permit io_uring, giving up restrictions that depend on ordinary system calls."
+    },
+    {
+      "Key": "keyring",
+      "Meaning": "Permit access to the kernel keyring."
+    },
+    {
+      "Key": "ipc",
+      "Meaning": "Permit System V interprocess communication."
+    },
+    {
+      "Key": "setuid",
+      "Meaning": "Permit setuid privilege changes at root protection tiers; rejected at Basic."
+    },
+    {
+      "Key": "harness",
+      "Meaning": "The agent integration Tego provisions, or auto detection."
+    },
+    {
+      "Key": "reason",
+      "Meaning": "Settings for the explanation channel."
+    },
+    {
+      "Key": "reason.reads",
+      "Meaning": "Record refused reads at Basic; on slows every file open by about 17 microseconds."
+    },
+    {
+      "Key": "host_sockets",
+      "Meaning": "Permit host sockets that could reach services outside the agent's rules."
+    },
+    {
+      "Key": "keep_descendants",
+      "Meaning": "Keep running after the main program exits until its remaining processes exit."
+    },
+    {
+      "Key": "live",
+      "Meaning": "Whether rules stay fixed or may be loosened within an explicit fence while the run lives."
+    },
+    {
+      "Key": "live.mode",
+      "Meaning": "locked fixes grants at launch; adjustable permits explicit fenced grants at root tiers."
+    },
+    {
+      "Key": "live.fence",
+      "Meaning": "At most 64 explicit entries that start refused and may later be granted."
+    },
+    {
+      "Key": "live.fence.read",
+      "Meaning": "An exact fs.deny_read entry that may be opened while the run lives."
+    },
+    {
+      "Key": "live.fence.net",
+      "Meaning": "A host or IP and port that may be allowed while the run lives."
+    },
+    {
+      "Key": "live.fence.exec",
+      "Meaning": "An absolute program path that may be allowed while the run lives."
+    },
+    {
+      "Key": "gate",
+      "Meaning": "Rules that score an action before it completes; scores may tighten its decision."
+    },
+    {
+      "Key": "gate.rules",
+      "Meaning": "Scoring rules applied to the configured action kinds."
+    },
+    {
+      "Key": "gate.thresholds",
+      "Meaning": "Score bands: below allow permits, through ask requests approval, above ask refuses."
+    },
+    {
+      "Key": "gate.thresholds.allow",
+      "Meaning": "The first score that requires approval; lower scores may proceed."
+    },
+    {
+      "Key": "gate.thresholds.ask",
+      "Meaning": "The highest score that may ask; higher scores are refused."
+    },
+    {
+      "Key": "gate.completion",
+      "Meaning": "Whether file-open scoring uses copied names or completes held opens."
+    },
+    {
+      "Key": "prompt",
+      "Meaning": "Reserved prompt field; nonempty values are currently rejected."
+    },
+    {
+      "Key": "skills",
+      "Meaning": "Reserved skill list; nonempty values are currently rejected."
+    },
+    {
+      "Key": "visibility",
+      "Meaning": "Reserved visibility list; nonempty values are currently rejected."
+    },
+    {
+      "Key": "docker",
+      "Meaning": "Reserved Docker settings; nonempty values are currently rejected."
+    },
+    {
+      "Key": "containers",
+      "Meaning": "Reserved container settings; nonempty values are currently rejected."
+    },
+    {
+      "Key": "ask",
+      "Meaning": "Approval timing, hold point and capacity rules."
+    },
+    {
+      "Key": "ask.hold",
+      "Meaning": "Hold a connection, its first write, or an HTTP request for approval."
+    },
+    {
+      "Key": "ask.timeout",
+      "Meaning": "How long approval waits; at most one hour, then the request is refused."
+    },
+    {
+      "Key": "ask.max_pending",
+      "Meaning": "Maximum approval requests waiting at once."
+    },
+    {
+      "Key": "ask.on_timeout",
+      "Meaning": "Refuse only this request or leave a standing refusal for its retries."
+    },
+    {
+      "Key": "mcp[]",
+      "Meaning": "One named MCP server, using either a command or a URL."
+    },
+    {
+      "Key": "mcp[].name",
+      "Meaning": "The server name shown to the agent."
+    },
+    {
+      "Key": "mcp[].command",
+      "Meaning": "The program and arguments for a local stdio MCP server."
+    },
+    {
+      "Key": "mcp[].url",
+      "Meaning": "The URL of an HTTP MCP server."
+    },
+    {
+      "Key": "mcp[].tools",
+      "Meaning": "Route this server through the MCP relay with per-tool rules."
+    },
+    {
+      "Key": "mcp[].tools.allow",
+      "Meaning": "Exact tool names it may call; an empty list allows none."
+    },
+    {
+      "Key": "mcp[].tools.deny",
+      "Meaning": "Exact tool names it must never call."
+    },
+    {
+      "Key": "mcp[].tools.ask",
+      "Meaning": "Exact tool names whose calls need your approval."
+    },
+    {
+      "Key": "models[]",
+      "Meaning": "One model provider endpoint and its optional alternative routes."
+    },
+    {
+      "Key": "models[].provider",
+      "Meaning": "The model provider name."
+    },
+    {
+      "Key": "models[].host",
+      "Meaning": "The upstream model server host."
+    },
+    {
+      "Key": "models[].port",
+      "Meaning": "The upstream model server port."
+    },
+    {
+      "Key": "models[].routes",
+      "Meaning": "Alternative backends a person may select while the run lives."
+    },
+    {
+      "Key": "models[].routes[]",
+      "Meaning": "One named alternative model backend."
+    },
+    {
+      "Key": "models[].routes[].name",
+      "Meaning": "The route name a person chooses; direct is reserved."
+    },
+    {
+      "Key": "models[].routes[].host",
+      "Meaning": "The alternative backend host."
+    },
+    {
+      "Key": "models[].routes[].port",
+      "Meaning": "The alternative backend port."
+    },
+    {
+      "Key": "models[].routes[].tls",
+      "Meaning": "Verify TLS by default; plaintext is allowed only for a loopback backend."
+    },
+    {
+      "Key": "learn",
+      "Meaning": "Editable history of destinations omitted from a learned contract; it grants no permission and proves no leak."
+    },
+    {
+      "Key": "learn.run",
+      "Meaning": "The recorded run named by this editable learning history."
+    },
+    {
+      "Key": "learn.withheld",
+      "Meaning": "Sorted exact TCP or UDP endpoints omitted when this contract was learned; this history is separate from its permission rules."
+    },
+    {
+      "Key": "mcp[].business_rules",
+      "Meaning": "Pins business restrictions and their trusted worker; this build refuses business-bearing launches until the trusted admission route exists."
+    },
+    {
+      "Key": "mcp[].business_rules.version",
+      "Meaning": "The business bundle format version; the reserved launch configuration accepts version 1."
+    },
+    {
+      "Key": "mcp[].business_rules.topology",
+      "Meaning": "The required trusted-stdio-worker-v1 admission topology; it is not yet implemented by this build."
+    },
+    {
+      "Key": "mcp[].business_rules.worker_digest",
+      "Meaning": "The lowercase SHA-256 of the intended trusted worker manifest."
+    },
+    {
+      "Key": "mcp[].business_rules.bundle_sha256",
+      "Meaning": "The lowercase SHA-256 of the exact canonical business bundle bytes."
+    },
+    {
+      "Key": "mcp[].business_rules.bundle_json",
+      "Meaning": "Canonical business v1 JSON for this MCP server, without a trailing newline; it cannot establish a trusted worker by itself."
+    }
+  ]
+}

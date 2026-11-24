@@ -16,6 +16,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/check/receipt"
 	"github.com/attention-span-ai/tego/internal/check/secretpath"
 	"github.com/attention-span-ai/tego/internal/check/syslookup"
+	"github.com/attention-span-ai/tego/internal/ledger/runstart"
 	"github.com/attention-span-ai/tego/internal/liveblock"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -45,18 +46,22 @@ func IsSystemLookup(target string) bool { return syslookup.IsSocket(target) }
 
 // Event is one ledger line, flattened for display.
 type Event struct {
-	Seq       uint64
-	TS        time.Time
-	Run       string
-	Agent     string
-	Kind      string
-	Source    string
-	Rule      string
-	Verdict   string
-	Authority string
-	Reason    string
-	Op        string
-	Target    string
+	// RecordMinor is read exactly from this run's run_start; zero means not recorded.
+	RecordMinor int
+	// LocalFloor is whether that run_start carries the root-only approval floor; an answer is shown as root's only then.
+	LocalFloor bool
+	Seq        uint64
+	TS         time.Time
+	Run        string
+	Agent      string
+	Kind       string
+	Source     string
+	Rule       string
+	Verdict    string
+	Authority  string
+	Reason     string
+	Op         string
+	Target     string
 	// Proto is a net line's protocol (tcp, udp, unix, raw, http), empty on other lines.
 	Proto string
 	// Host is the network host a net line or a refused connection names, lower-cased: the line's host when the
@@ -72,11 +77,23 @@ type Event struct {
 	askName, askName2 string
 	// SystemLookup is a refusal of one of SystemLookupSockets.
 	SystemLookup bool
+	// Step and StepMethod are the line's model step as the record states it (record.Event.ModelStep, the one reader the
+	// CLI's events --step uses too): StepMethod is the attribution's method ("tool_id", "tid", "time" or "none") and ""
+	// on a line that carries no attribution (only exec, fs, net and mcp lines do); Step is meaningful only when
+	// ModelStep says the line is tied to one. Step 0 is an action before the first model request.
+	Step       int
+	StepMethod string
+	stepTied   bool
 	// off is the line's byte offset in its events file (Line reads it back from there).
 	off int64
 	// Mirror is a kind=refused line that mirrors a refused action of its run (pair.go): the same refusal as that
 	// action's line, so no count counts it again.
 	Mirror bool
+	// Malformed is askpair's words for an ask line whose ask id was asked before and for an answer line that pairs with
+	// no ask: malformed lines, which the read model shows and no count, page or fold takes as a question or an answer.
+	// askRepeat and answerUnpaired say which; both are false, and Malformed is "", for every other line.
+	Malformed                 string
+	askRepeat, answerUnpaired bool
 	// write is a mirror whose action changes a file (pair).
 	write bool
 	// to is what a mirror's rename or link would have replaced: its action's second name, which a mirror does not carry
@@ -88,6 +105,10 @@ type Event struct {
 	// path is an exec line's program path (payload path), which its Target (the argv) may name only relatively; the
 	// Logs query's path: key reads it.
 	path string
+	// argv is an exec line's arguments, or a run_start's command, one element per argument as recorded (from the
+	// line, or from its blob within the bound resolveBlob keeps). Target joins them with spaces for display and
+	// search; whatever names the program reads these (Program, recordedCommand), never the joined text.
+	argv []string
 	// blob is the sha of the argv (exec) or command (run_start) the writer moved to a blob, from decode until the
 	// Store reads it (resolveBlob); argvMissing marks a line whose blob could not be read, so its row says so.
 	blob        string
@@ -98,6 +119,11 @@ type Event struct {
 	// unlink, a failed open.
 	readNothing bool
 }
+
+// ModelStep is the model step the line is tied to and whether it is tied to one: the same answer record.Event.ModelStep
+// gives the CLI's events --step, so Logs' step:N and that flag select the same lines. A line carrying no attribution and
+// a line stamped unattributed are tied to none.
+func (e *Event) ModelStep() (step int, ok bool) { return e.Step, e.stepTied }
 
 // ArgvMissing reports whether the line's command went to a blob (argv_blob, command_blob) that could not be read
 // back: its Target is then the program's path alone.
@@ -120,6 +146,9 @@ func (e *Event) AskTarget() string { return e.askTarget }
 // PID is the process the line's envelope names (0 when it names none).
 func (e *Event) PID() int { return e.pid }
 
+// ByteOffset is the position of this line in its run's events file.
+func (e *Event) ByteOffset() int64 { return e.off }
+
 // Refused reports whether the line records a refusal: a refused line, or an action whose verdict is refused.
 func (e *Event) Refused() bool {
 	return e.Kind == string(record.KindRefused) || e.Verdict == string(record.VerdictRefused)
@@ -134,34 +163,62 @@ func WatchedLine(r *Run, e *Event) bool {
 
 // Run is one run's summary, and its lines when they were loaded.
 type Run struct {
-	ID        string
-	Agent     string
-	Contract  string
-	Tier      string
-	Command   string
-	Cwd       string
-	Start     time.Time
-	End       time.Time
-	Last      time.Time // the newest line's time
-	Ended     bool
-	Live      bool // listed in <root>/.live, its lock held (Store.liveRuns), and no run_end read
+	// RecordMinor is the revision run_start recorded; local approval attribution is shown only when it and the payload agree (ADR 0154).
+	RecordMinor int
+	// LocalApprovalAuthority is the root-only approval floor the run started under, when its run_start names one.
+	LocalApprovalAuthority *record.LocalApprovalAuthority `json:"local_approval_authority,omitempty"`
+
+	ID       string
+	Agent    string
+	Contract string
+	Tier     string
+	// Command is the run's command joined with spaces, for display and search; command is the same command one
+	// element per argument, as run_start recorded it, which names the program (Run.CommandAgent, SameProgram).
+	Command string
+	command []string
+	Cwd     string
+	Start   time.Time
+	End     time.Time
+	Last    time.Time // the newest line's time
+	Ended   bool
+	Live    bool // listed in <root>/.live, its lock held (Store.liveRuns), and no run_end read
+	// LiveError is why an unfinished run’s liveness could not be established.
+	LiveError string
 	EndReason string
 	ExitCode  int
 	Signal    int
 	Lines     int // lines read
 	Refusals  int // refusals: refused actions and refused lines that mirror none (Event.Refusal)
-	Asks      int // ask lines
+	// RefusalFirst and RefusalLast bound every counted refusal timestamp, even when
+	// the event window is truncated or evicted. They let a date-scoped view use
+	// Refusals only when that whole aggregate belongs to its period. Refusals > 0
+	// establishes that bounds were seen; the zero time is a valid recorded date.
+	RefusalFirst, RefusalLast time.Time
+	Asks                      int // ask lines
+	// StepLines counts the lines the record ties to a model step (Event.ModelStep), over the whole run as the other
+	// counters are: zero for a run with no model capture, whose actions are all stamped unattributed. The timeline
+	// shows model-step headers only when it is not zero.
+	StepLines int
 	Kinds     map[string]int
 	Events    []Event
 	Pending   []Ask
-	// Cut means Events covers only a bounded part of the run; summary counters are complete.
+	// Cut means Events covers only a bounded part of the run. Summary counters
+	// cover decoded records; Bad and ReadError qualify their completeness.
 	Cut bool
 	// PendingCut reports more simultaneous unanswered asks than the bounded display can retain.
 	PendingCut bool
 	// Bad counts malformed lines and unsupported record kinds.
 	Bad int
+	// StartError is the refusal reason for invalid run-start metadata.
+	StartError string
+	// LineErrors retains every complete line refused during Store refresh.
+	LineErrors []LineRefusal
+	// ReadError is a refusal encountered while rereading retained ledger bytes or the last events-file read failure.
+	// Cached counters remain available but cannot claim completeness until a real read succeeds.
+	ReadError string
 	// Identity and policy, from run_start: who started the run, where, under which exact contract and build.
 	User, Host, Kernel, TegoVersion, ContractHash, Harness, Capture string
+	EffectiveHash, BaselineSHA256                                   string
 	UID                                                             int
 	// Stdin is the kind of the run's standard input (record.Stdio*) and Deployment the name in its reserved deployment
 	// block, each as run_start recorded it and empty when it did not. Origin is derived from them only.
@@ -185,6 +242,8 @@ type Run struct {
 	// state changed); LastSeq is the seq of its newest line read. See the package doc, "Revisions".
 	Rev     uint64
 	LastSeq uint64
+	// routes is the model-route index the read model folds from every line (routes.go): RouteFacts.
+	routes routeIndex
 	// st is the run's cache entry (nil for a Run built for the line bound); memo its per-version derived views.
 	st   *runState
 	memo *runMemo
@@ -192,6 +251,14 @@ type Run struct {
 	// verdict cache and Line's offset read take, so neither looks at a runState another request may be reading.
 	lastID string
 	file   fileID
+	// planeMarked is the run directory's liveblock.PlaneName mark as of this version (LiveFacts.PlaneBlocks).
+	planeMarked bool
+}
+
+// LineRefusal retains a rejected line's position and decoder reason without treating it as an event.
+type LineRefusal struct {
+	Offset int64
+	Reason string
 }
 
 // The values of Origin: how the run was started, read from run_start and from nothing else.
@@ -224,20 +291,23 @@ func (r *Run) OriginWord() string {
 }
 
 // State is the run's status word: running, lost (no run_end, and no live entry or no process holding its lock) or
-// ended.
+// ended, or unknown when the live source could not be read.
 func (r *Run) State() string {
 	switch {
 	case r.Ended:
 		return "ended"
 	case r.Live:
 		return "running"
+	case r.LiveError != "":
+		return "unknown"
 	default:
 		return "lost"
 	}
 }
 
-// Duration is end-start for an ended run, now-start for a running one, and for a lost run, which recorded no end, the
-// time from its start to its newest line: all the record can say, and it stops growing as a lost run does.
+// Duration is end-start for an ended run, now-start for a known running one, and
+// the recorded span to the newest line for a lost run or unknown running state.
+// That recorded span does not establish an unknown run’s actual end.
 func (r *Run) Duration(now time.Time) time.Duration {
 	if r.Start.IsZero() {
 		return 0
@@ -254,19 +324,28 @@ func (r *Run) Duration(now time.Time) time.Duration {
 // Ask is an ask line with no answer line for its ask_id, in a run that has not ended. Only a live run's asks are
 // waiting on a person (Snapshot.Pending); a lost run's were never answered and nothing holds them any more.
 type Ask struct {
-	Run    string
-	Agent  string
-	AskID  string
-	Hold   string
-	TS     time.Time
-	Seq    uint64
-	Op     string
-	Target string
-	Rule   string
+	OwnerOnly bool `json:"owner_only,omitempty"`
+	Run       string
+	Agent     string
+	AskID     string
+	Hold      string
+	TS        time.Time
+	Seq       uint64
+	Op        string
+	Target    string
+	Rule      string
 }
 
 // Snapshot is one bounded scan of a ledger root.
 type Snapshot struct {
+	// LiveError qualifies running and actionable-queue status, independently of readable records.
+	LiveError string
+	// ReadErrorListed means ReadError names a retained Run with its own failure scope,
+	// so it cannot erase known run-list presence or qualify an ended run’s actionable queue.
+	ReadErrorListed bool
+	// ReadError names the first unlisted failure, or a retained failure when every
+	// failed candidate is listed. Per-run ReadError always retains each listed reason.
+	ReadError string
 	Root      string
 	Runs      []*Run // newest start first
 	TotalRuns int    // run directories found
@@ -305,16 +384,16 @@ func validRunID(id string) bool {
 
 // liveSet is the names the root's live index (<root>/.live) lists: the runs whose launcher took their lock and has
 // not seen them end, and those of launchers that died first, which only their lock tells apart (Store.liveRuns).
-func liveSet(root string) map[string]bool {
+func liveSet(root string) (map[string]bool, error) {
 	out := map[string]bool{}
 	ents, err := os.ReadDir(filepath.Join(root, ".live"))
 	if err != nil {
-		return out
+		return out, err
 	}
 	for _, e := range ents {
 		out[e.Name()] = true
 	}
-	return out
+	return out, nil
 }
 
 // add counts one line into the summary. ev.Mirror is already set (runState.markMirror), so a refused action and the
@@ -322,38 +401,42 @@ func liveSet(root string) map[string]bool {
 func (r *Run) add(ev Event) {
 	if ev.Refusal() {
 		r.Refusals++
+		if r.Refusals == 1 || ev.TS.Before(r.RefusalFirst) {
+			r.RefusalFirst = ev.TS
+		}
+		if r.Refusals == 1 || ev.TS.After(r.RefusalLast) {
+			r.RefusalLast = ev.TS
+		}
 		if ev.SystemLookup {
 			r.SysRefusals++
 		}
 	}
 	r.Lines++
+	r.routes.take(&ev)
 	kind := ev.Kind
 	if !record.Kind(kind).Valid() {
 		kind = "unknown"
 		r.Bad++
 	}
 	r.Kinds[kind]++
+	if ev.stepTied {
+		r.StepLines++
+	}
 	if r.Agent == "" {
 		r.Agent = ev.Agent
 	}
 	switch ev.Kind {
 	case string(record.KindRunStart):
 		r.Start = ev.TS
+		start := record.Event{Kind: record.KindRunStart, Payload: json.RawMessage(ev.Raw)}
+		r.RecordMinor, _ = start.RunStartMinor() // a malformed revision carries no authority
 		var p struct {
-			Tier           string   `json:"tier"`
-			Command        []string `json:"command"`
-			Cwd            string   `json:"cwd"`
-			ContractSource struct {
-				Path string `json:"path"`
-			} `json:"contract_source"`
-			User         string `json:"launcher_user"`
-			UID          int    `json:"launcher_uid"`
-			Host         string `json:"host"`
-			Kernel       string `json:"kernel"`
-			TegoVersion  string `json:"tego_version"`
-			ContractHash string `json:"contract_hash"`
-			Capture      string `json:"capture"`
-			Harness      struct {
+			User        string `json:"launcher_user"`
+			Host        string `json:"host"`
+			Kernel      string `json:"kernel"`
+			TegoVersion string `json:"tego_version"`
+			Capture     string `json:"capture"`
+			Harness     struct {
 				Name string `json:"name"`
 			} `json:"harness"`
 			Stdio struct {
@@ -366,10 +449,20 @@ func (r *Run) add(ev Event) {
 			ReadsNotified *record.ReadsNotified `json:"reads_notified"`
 		}
 		_ = json.Unmarshal([]byte(ev.Raw), &p)
+		r.LocalApprovalAuthority = record.ValidatedLocalApprovalAuthority(start.Payload)
 		// ev.Target is the command too, read back from its blob when the writer moved it to one (resolveBlob).
-		r.Tier, r.Command, r.Cwd, r.Contract = p.Tier, ev.Target, p.Cwd, p.ContractSource.Path
-		r.User, r.UID, r.Host, r.Kernel, r.TegoVersion = p.User, p.UID, p.Host, p.Kernel, p.TegoVersion
-		r.ContractHash, r.Capture, r.Harness = p.ContractHash, p.Capture, p.Harness.Name
+		metadata, metadataErr := runstart.Project([]byte(ev.Raw))
+		if metadataErr != nil {
+			r.Bad++
+			r.refuseStart(metadataErr)
+			break
+		}
+		r.StartError = ""
+		r.command = ev.argv
+		r.Tier, r.Command, r.Cwd, r.Contract = metadata.Tier, ev.Target, metadata.Cwd, metadata.Contract
+		r.User, r.UID, r.Host, r.Kernel, r.TegoVersion = p.User, metadata.UID, p.Host, p.Kernel, p.TegoVersion
+		r.EffectiveHash, r.BaselineSHA256 = metadata.EffectiveHash, metadata.BaselineSHA256
+		r.ContractHash, r.Capture, r.Harness = metadata.ContractHash, p.Capture, p.Harness.Name
 		r.Stdin, r.Deployment = p.Stdio.Stdin, p.Deployment.Name
 		reads, said := p.Capabilities[string(backend.CapRecordReads)]
 		r.ReadsUnrecorded = said && !reads
@@ -382,7 +475,9 @@ func (r *Run) add(ev Event) {
 	case string(record.KindRunEnd):
 		r.end(ev)
 	case string(record.KindAsk):
-		r.Asks++
+		if !ev.askRepeat { // a repeated ask id is malformed and is no second question (askpair)
+			r.Asks++
+		}
 	}
 	if r.Start.IsZero() {
 		r.Start = ev.TS
@@ -390,6 +485,7 @@ func (r *Run) add(ev Event) {
 	if ev.TS.After(r.Last) {
 		r.Last = ev.TS
 	}
+	ev.RecordMinor, ev.LocalFloor = r.RecordMinor, r.LocalApprovalAuthority != nil
 	r.Events = append(r.Events, ev)
 }
 
@@ -408,35 +504,36 @@ func (r *Run) end(ev Event) {
 
 // payload is the union of the payload keys a view shows.
 type payload struct {
-	Op       string   `json:"op"`
-	Path     string   `json:"path"`
-	Path2    string   `json:"path2"`
-	Flags    int      `json:"flags"`
-	Created  bool     `json:"created"`
-	Errno    int      `json:"errno"`
-	Dst      string   `json:"dst"`
-	Host     string   `json:"host"`
-	Proto    string   `json:"proto"`
-	Method   string   `json:"method"`
-	Argv     []string `json:"argv"`
-	Target   string   `json:"target"`
-	Target2  string   `json:"target2"` // a held fs mutation's second name (ADR 0047): shown after " → "
-	AskID    string   `json:"ask_id"`
-	AskRule  string   `json:"ask_rule"`
-	Hold     string   `json:"hold"`
-	By       string   `json:"by"`
-	Approved *bool    `json:"approved"`
-	Name     string   `json:"name"`
-	Tool     string   `json:"tool"`
-	What     string   `json:"what"`
-	Why      string   `json:"why"`
-	Which    string   `json:"which"`
-	Value    float64  `json:"value"`
-	Ceiling  float64  `json:"ceiling"`
-	Reason   string   `json:"reason"`
-	ExitCode int      `json:"exit_code"`
-	Command  []string `json:"command"`
-	Tier     string   `json:"tier"`
+	Op         string   `json:"op"`
+	Path       string   `json:"path"`
+	Path2      string   `json:"path2"`
+	Flags      int      `json:"flags"`
+	Created    bool     `json:"created"`
+	Errno      int      `json:"errno"`
+	SyscallRet int64    `json:"syscall_ret"`
+	Dst        string   `json:"dst"`
+	Host       string   `json:"host"`
+	Proto      string   `json:"proto"`
+	Method     string   `json:"method"`
+	Argv       []string `json:"argv"`
+	Target     string   `json:"target"`
+	Target2    string   `json:"target2"` // a held fs mutation's second name (ADR 0047): shown after " → "
+	AskID      string   `json:"ask_id"`
+	AskRule    string   `json:"ask_rule"`
+	Hold       string   `json:"hold"`
+	By         string   `json:"by"`
+	Approved   *bool    `json:"approved"`
+	Name       string   `json:"name"`
+	Tool       string   `json:"tool"`
+	What       string   `json:"what"`
+	Why        string   `json:"why"`
+	Which      string   `json:"which"`
+	Value      float64  `json:"value"`
+	Ceiling    float64  `json:"ceiling"`
+	Reason     string   `json:"reason"`
+	ExitCode   int      `json:"exit_code"`
+	Command    []string `json:"command"`
+	Tier       string   `json:"tier"`
 	// ArgvBlob and CommandBlob name the blob an argv or a command too long for the line went to (blobargv.go).
 	ArgvBlob    string `json:"argv_blob"`
 	CommandBlob string `json:"command_blob"`
@@ -455,6 +552,10 @@ func fromRecord(e *record.Event) Event {
 	ev := Event{Seq: e.Seq, TS: e.TS, Run: e.Run, Agent: e.Agent, Kind: string(e.Kind), Source: string(e.Source),
 		Rule: e.Rule, Verdict: string(e.Verdict), Authority: string(e.Authority), Reason: string(e.Reason),
 		Raw: string(e.Payload), mono: e.MonoNS, pid: e.PID}
+	ev.Step, ev.stepTied = e.ModelStep()
+	if e.Attr != nil {
+		ev.StepMethod = e.Attr.Method
+	}
 	var p payload
 	if len(e.Payload) > 0 {
 		_ = json.Unmarshal(e.Payload, &p)
@@ -462,7 +563,7 @@ func fromRecord(e *record.Event) Event {
 	switch e.Kind {
 	case record.KindFS:
 		ev.Op, ev.Target = fsOp(p), p.Path
-		ev.readNothing = !secretpath.ReadOpen(p.Op, p.Flags, p.Errno, p.Created)
+		ev.readNothing = p.SyscallRet < 0 || !secretpath.ReadOpen(p.Op, p.Flags, p.Errno, p.Created)
 		if p.Path2 != "" {
 			ev.Target += " → " + p.Path2
 		}
@@ -471,7 +572,7 @@ func fromRecord(e *record.Event) Event {
 		if p.Op != "" {
 			ev.Op = p.Op
 		}
-		ev.Target = DisplayDst(p.Dst)
+		ev.Target = syslookup.PlaceOf(DisplayDst(p.Dst), e.Rule) // an observed AF_UNSPEC attempt: destination and result were not established
 		if p.Host != "" {
 			ev.Target = p.Host + " (" + ev.Target + ")"
 		}
@@ -481,13 +582,20 @@ func fromRecord(e *record.Event) Event {
 		}
 		ev.SystemLookup = IsSystemLookup(p.Dst)
 	case record.KindExec:
+		ev.argv = p.Argv
 		ev.Op, ev.Target, ev.path = "exec", strings.Join(p.Argv, " "), p.Path
 		if ev.Target == "" {
 			ev.Target, ev.blob = p.Path, p.ArgvBlob
 		}
 	case record.KindRefused:
 		ev.Op, ev.Target = p.Op, DisplayDst(p.Target)
-		if strings.HasPrefix(string(e.Reason), "net-") { // a refused connection; other refusals name paths and programs
+		if p.Op == "exec" {
+			// Refusal mirrors record an executable pathname, never argv.
+			ev.path = p.Target
+		}
+		// A refused connection names a host: by its reason (net-*), or by its operation, which a first delivery a person
+		// denied (ask-denied) or that timed out has with a reason of its own. Other refusals name paths and programs.
+		if strings.HasPrefix(string(e.Reason), "net-") || netRefusalOps[p.Op] {
 			ev.Host = HostOf(p.Target)
 		}
 		ev.SystemLookup = IsSystemLookup(p.Target)
@@ -511,6 +619,7 @@ func fromRecord(e *record.Event) Event {
 			ev.Target += map[bool]string{true: ", approved", false: ", not approved"}[*p.Approved]
 		}
 	case record.KindRunStart:
+		ev.argv = p.Command
 		ev.Op, ev.Target = "start", strings.Join(p.Command, " ")
 		if len(p.Command) == 0 {
 			ev.blob = p.CommandBlob
@@ -534,11 +643,15 @@ func fromRecord(e *record.Event) Event {
 	return ev
 }
 
+// netRefusalOps are the operations of a refused line whose target is a destination, whatever its reason.
+var netRefusalOps = map[string]bool{"connect": true, "first_write": true, "send": true, "net": true}
+
 // HostOf is the host a destination names, lower-cased: "chatgpt.com" for tcp://chatgpt.com:443 or chatgpt.com:443,
-// "93.184.216.34" for 93.184.216.34:443, "::1" for [::1]:443. An address reads as a live block holds it and every
-// matcher compares it (liveblock.Normalize, decide.Unmapped), unmapped and with no zone: a line keeps the scope id its
-// connect passed, the agent's to choose and ignored by the kernel on all but a link-local address, and a block on
-// 2001:db8::1 refuses [2001:db8::1%1] as well. A line's Target still says what the agent wrote. A unix socket, a netlink
+// "93.184.216.34" for 93.184.216.34:443, "::1" for [::1]:443. An address is unmapped and keeps its zone: fe80::1%2 and
+// fe80::1%3 are two links, so they can be two machines, and the Host facet and a filter tell them apart (A37). What
+// compares an address against a live block does not: the kernel ignores the scope id on all but a link-local address and
+// a block holds none (liveblock.Normalize, decide.Unmapped), so a block on 2001:db8::1 refuses [2001:db8::1%1] as well, and
+// BlockHostOf is the form that comparison reads. A line's Target still says what the agent wrote. A unix socket, a netlink
 // family, a path and text that is not a host (spaces, slashes, markup) name none: "".
 func HostOf(dst string) string {
 	if i := strings.Index(dst, "://"); i > 0 {
@@ -557,12 +670,25 @@ func HostOf(dst string) string {
 		host = dst[1 : len(dst)-1]
 	}
 	if a, err := netip.ParseAddr(host); err == nil {
-		return a.Unmap().WithZone("").String()
+		return a.Unmap().String()
 	}
 	if strings.Contains(host, ":") {
 		return "" // a word with a colon, or host:port with a bad port: not a destination
 	}
 	return strings.ToLower(host)
+}
+
+// BlockHostOf is HostOf's answer as a live block holds it: the same host with no zone. A block's enforcement is by
+// address, whatever scope id a connect passed, so a reading that asks whether a block covers a host asks with this form;
+// a block on fe80::1 covers fe80::1%2 and fe80::1%3 alike (fail closed), while the facet keeps them two.
+func BlockHostOf(host string) string {
+	if !strings.Contains(host, ":") && (host == "" || host[0] < '0' || host[0] > '9') {
+		return host // no address starts with anything but a digit or has no colon: a name, and ParseAddr's error would cost an allocation
+	}
+	if a, err := netip.ParseAddr(host); err == nil {
+		return a.WithZone("").String()
+	}
+	return host
 }
 
 func fsOp(p payload) string {
@@ -585,4 +711,10 @@ func askNames(target, target2 string) string {
 		return target
 	}
 	return target + " → " + target2
+}
+
+// refuseStart retains the decoder's reason and invalidates earlier baseline claims.
+func (r *Run) refuseStart(err error) {
+	r.StartError = err.Error()
+	r.EffectiveHash, r.BaselineSHA256 = "", ""
 }

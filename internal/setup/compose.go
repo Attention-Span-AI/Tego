@@ -200,6 +200,8 @@ func Compose(o Options) (*Result, error) {
 		// Create must walk these names even when they already exist, checking them again before compile.
 		res.makeDir(filepath.Join(o.Dir, state), state)
 		res.makeDir(filepath.Join(o.Dir, state, "tmp"), state+"tmp/")
+		// The agent's own state folder is generated, as its temporary folder inside it is: both want the line.
+		res.Ignore = append(res.Ignore, strings.TrimPrefix(state, "./"))
 	}
 
 	// fs.write: the --write folders, then (when writes are restricted at all) the folders the markers imply and TMPDIR.
@@ -351,7 +353,28 @@ func Compose(o Options) (*Result, error) {
 	if has("repo-only-writes") && !(o.AgentNeeds && len(agentNeedsOf(o, commandArgv(command)).writes) > 0) {
 		res.Notes = append(res.Notes, "  repo-only-writes: an agent that keeps state in your home (Claude Code's ~/.claude) needs --write for that folder too")
 	}
+	res.Ignore = tidyIgnore(res.Ignore)
 	return res, nil
+}
+
+// tidyIgnore is the .gitignore lines once each, in the order they were first wanted, without a line a listed folder
+// above it already covers (".tego/claude/tmp/" beside ".tego/claude/"), so what a page names and what init adds are
+// the shortest list that ignores every generated folder.
+func tidyIgnore(lines []string) []string {
+	var out []string
+	for _, l := range lines {
+		covered := false
+		for _, o := range lines {
+			if o != l && strings.HasSuffix(o, "/") && strings.HasPrefix(l, o) {
+				covered = true
+				break
+			}
+		}
+		if !covered && !slices.Contains(out, l) {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 // render writes the contract: a header saying what each preset promises and what is always on, then each section
@@ -820,10 +843,17 @@ func DashboardScope(machine *config.Machine, ledger string) (root, scope string,
 		missing = append(missing, filepath.Base(at))
 		at = filepath.Dir(at)
 	}
+	// Machine's baseline and layer digests are private fields. Snapshot retains
+	// them so two different loaded configurations cannot share a reuse proof.
+	var snapshot *config.Snapshot
+	if machine != nil {
+		selected := machine.Snapshot()
+		snapshot = &selected
+	}
 	data, err := json.Marshal(struct {
-		Machine *config.Machine
+		Machine *config.Snapshot
 		Ledger  string
-	}{machine, root})
+	}{snapshot, root})
 	if err != nil {
 		return "", "", err
 	}

@@ -25,7 +25,7 @@ func TestLandlockAuditIsAnOptIn(t *testing.T) {
 
 	for _, bad := range []string{"landlock:\n  audit: on\n", "landlock:\n  audit: true\n", "landlock:\n  quiet: yes\n"} {
 		src := layers(t, trustedDir(t), "", "", bad)
-		_, diags, err := LoadSources(src, "/home/test", os.Getuid(), TrustAbort)
+		_, diags, err := fixtureLoad(src, "/home/test", os.Getuid(), TrustAbort)
 		if err == nil {
 			t.Errorf("%q loaded (diags %v)", bad, diags)
 			continue

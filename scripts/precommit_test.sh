@@ -26,6 +26,14 @@ if [ -f tools/oss/export.py ]; then
 		{ echo "FAIL: private gate does not run the export tests"; fail=1; }
 fi
 
+if [ -f tools/oss/cut_test.py ]; then
+	grep -q 'pc_add integration osscut .*step oss_cut_test' scripts/precommit.sh ||
+		{ echo "FAIL: the full gate does not run the unrestricted public cut-tree target (scripts/oss-cut-test.sh)"; fail=1; }
+	# shellcheck disable=SC2016 # the pattern is the script's own text, $GO unexpanded
+	grep -q '^oss_cut_test() { GO="$GO" ./scripts/oss-cut-test.sh --discard-tree --jobs "$PC_JOBS" --timeout "${TEGO_PRECOMMIT_OSSCUT_TIMEOUT:-[0-9][0-9]*}"; }' scripts/precommit.sh ||
+		{ echo "FAIL: oss_cut_test is not the unrestricted target (no --base, no --package) under the gate's job budget (--jobs \"\$PC_JOBS\") and an overall alarm (--timeout)"; fail=1; }
+fi
+
 # 1b. every tracked *_test.sh is named by CI (a test no job runs guards nothing).
 for t in $(./scripts/tree-files.sh | tr '\0' '\n' | grep '_test\.sh$'); do
 	grep -q -- "$t" "$ci" || { echo "FAIL: $t is tracked but $ci does not run it"; fail=1; }
@@ -135,8 +143,11 @@ fresh_tests() {
 	done
 }
 # shellcheck disable=SC2016 # Match the script's literal text.
-grep -vE '^[[:space:]]*#' scripts/gated-test.sh | grep -qF '"${GO:-go}" test -count=1 -json "$@"' ||
+grep -vE '^[[:space:]]*#' scripts/gated-test.sh | grep -qF '"${GO:-go}" test -count=1 -json ' ||
 	{ echo "FAIL: scripts/gated-test.sh's go test does not run with -count=1"; fail=1; }
+# shellcheck disable=SC2016 # Match the script's literal text.
+grep -vE '^[[:space:]]*#' scripts/gated-test.sh | grep -qF -- '-timeout "${TEGO_TEST_TIMEOUT:-30m}" "$@"' ||
+	{ echo "FAIL: scripts/gated-test.sh's go test does not give the package alarm an explicit bound, before the caller's ARGS"; fail=1; }
 # shellcheck disable=SC2016 # Match the script's literal text.
 while IFS= read -r l; do
 	fresh_tests "$l" || { echo "FAIL: scripts/precommit.sh or its runner runs go test without -count=1: $l"; fail=1; }
@@ -248,7 +259,15 @@ done < <(sed -n 's/^\([A-Za-z0-9_-]*\):.*##.*/\1/p' Makefile)
 # 15. the unit tests only a -tags tegotesthooks build compiles run in precommit and in CI's
 #     build-test over the same packages: every package with a test file behind that tag is named by both, as a whole
 #     word: ./internal/runtime/enforce/landlock/ does not name ./internal/runtime/enforce/ (it once passed for it).
-for pkg in $(grep -rl --include='*_test.go' 'go:build.*tegotesthooks' internal | xargs -n1 dirname | sort -u); do
+hook_test_packages() {
+	local f
+	while IFS= read -r f; do
+		case "$f" in archive/*) continue ;; esac
+		# A negated tag is a production-only boundary test, not a hook-only test.
+		grep -qE '^//go:build.*[[:space:](&|]tegotesthooks([[:space:])&|]|$)' "$f" && dirname "$f"
+	done < <(./scripts/tree-files.sh | tr '\0' '\n' | grep '_test\.go$') | sort -u
+}
+for pkg in $(hook_test_packages); do
 	for f in scripts/precommit.sh "$ci"; do
 		grep -qE -- "-tags tegotesthooks.* \./${pkg//./\\.}/( |\$)" "$f" ||
 			{ echo "FAIL: $f does not run ./$pkg/ with -tags tegotesthooks, which holds tests only that tag compiles"; fail=1; }
@@ -501,6 +520,37 @@ if (
 ) >"$rt/phase.out" 2>&1; then
 	echo "FAIL: runner passed a run with a step of an unknown phase: $(cat "$rt/phase.out")"; fail=1
 fi
+# A step that cannot run is reported as NOT RUN with its reason, the verdict names it and never says every step
+# passed, and the run exits 3 (no failure, no full gate); a failed step still wins with 1.
+notrun_out="$(
+	PC_JOBS=2 PC_TMP="$rt/notrun"
+	mkdir "$PC_TMP"
+	# shellcheck source=scripts/precommit-runner.sh
+	. ./scripts/precommit-runner.sh
+	pc_add static a "a-ok" step true
+	pc_add static - "c-chrome" notrun "no google-chrome on this machine"
+	pc_add tests b "b-ok" step true
+	pc_run static
+	pc_run tests
+	pc_finish
+	echo "rc=$?"
+)"
+grep -qE '^c-chrome +NOT RUN: no google-chrome on this machine$' <<<"$notrun_out" || { echo "FAIL: runner did not report the step that could not run: $notrun_out"; fail=1; }
+grep -q 'every step passed' <<<"$notrun_out" && { echo "FAIL: runner said every step passed over a step that did not run: $notrun_out"; fail=1; }
+grep -q 'NOT RUN: c-chrome (no google-chrome on this machine)' <<<"$notrun_out" || { echo "FAIL: the verdict does not name the step that did not run: $notrun_out"; fail=1; }
+grep -qx 'rc=3' <<<"$notrun_out" || { echo "FAIL: runner did not exit 3 over a step that did not run: $notrun_out"; fail=1; }
+notrun_fail_out="$(
+	PC_JOBS=1 PC_TMP="$rt/notrunfail"
+	mkdir "$PC_TMP"
+	# shellcheck source=scripts/precommit-runner.sh
+	. ./scripts/precommit-runner.sh
+	pc_add static - "c-chrome" notrun "no google-chrome on this machine"
+	pc_add static b "b-fail" step false
+	pc_run static
+	pc_finish 2>&1
+	echo "rc=$?"
+)"
+grep -qx 'rc=1' <<<"$notrun_fail_out" || { echo "FAIL: a failed step did not win over a step that did not run: $notrun_fail_out"; fail=1; }
 # shellcheck disable=SC2329 # called by name, through pc_add
 nargs() { echo "$# [$1] [$2]"; }
 args_out="$(
@@ -535,7 +585,7 @@ default_jobs_with() (
 	# shellcheck disable=SC2034 # read by default_jobs, which the next line defines
 	PC_SYSROOT=$1
 	eval "$(sed -n '/^default_jobs() {/,/^}/p' scripts/precommit.sh)"
-	default_jobs
+	default_jobs 2>"${2:-/dev/null}"
 )
 cgleaf="$rt/sys/sys/fs/cgroup$(sed -n 's/^0:://p' /proc/self/cgroup)"
 mkdir -p "$cgleaf" "$rt/sys/proc"
@@ -551,6 +601,28 @@ want_jobs=$(($(nproc) / 2))
 echo "inactive_file $((8 * gib))" >"$cgleaf/memory.stat"
 got_jobs="$(default_jobs_with "$rt/sys")"
 [ "$got_jobs" = "$want_jobs" ] || { echo "FAIL: default_jobs took $got_jobs job(s) with 8 GB of inactive page cache, want $want_jobs"; fail=1; }
+# The one-minute load average limits the job count too (a gate that starts on a busy machine took half its cores on
+# top of the work already there): idle cores/2, never below 1; a load that cannot be read is no limit. The gate's log
+# line says what each limit allowed and which one decided.
+ncpu=$(nproc)
+if [ "$ncpu" -ge 4 ]; then
+	echo "$((ncpu - 2)).50 0.00 0.00 1/100 1" >"$rt/sys/proc/loadavg"
+	[ "$(default_jobs_with "$rt/sys" "$rt/why")" = 1 ] || { echo "FAIL: default_jobs took more than 1 job with $((ncpu - 2)).5 of $ncpu cpus busy"; fail=1; }
+	grep -q 'load .* the lowest decides: load$' "$rt/why" || { echo "FAIL: default_jobs did not name the load as the limit: $(cat "$rt/why")"; fail=1; }
+	echo "0.00 0.00 0.00 1/100 1" >"$rt/sys/proc/loadavg"
+	[ "$(default_jobs_with "$rt/sys" "$rt/why")" = "$want_jobs" ] || { echo "FAIL: default_jobs took fewer than $want_jobs job(s) on an idle machine"; fail=1; }
+	grep -q 'one-minute load 0.00 (allows ' "$rt/why" || { echo "FAIL: default_jobs's line does not show the load: $(cat "$rt/why")"; fail=1; }
+	echo "$((ncpu + 8)).00 0.00 0.00 1/100 1" >"$rt/sys/proc/loadavg"
+	[ "$(default_jobs_with "$rt/sys")" = 1 ] || { echo "FAIL: default_jobs took more than 1 job with the load above the cpu count"; fail=1; }
+fi
+echo "unreadable" >"$rt/sys/proc/loadavg"
+[ "$(default_jobs_with "$rt/sys" "$rt/why")" = "$want_jobs" ] || { echo "FAIL: an unreadable load changed the job count"; fail=1; }
+grep -q 'one-minute load unknown (allows no limit)' "$rt/why" || { echo "FAIL: default_jobs did not say the load was unknown: $(cat "$rt/why")"; fail=1; }
+rm -f "$rt/sys/proc/loadavg"
+# precommit.sh logs the choice: what each limit allowed (or that TEGO_PRECOMMIT_JOBS decided), before any step.
+for logged in 'the lowest decides' "as TEGO_PRECOMMIT_JOBS says"; do
+	grep -q "$logged" scripts/precommit.sh || { echo "FAIL: precommit.sh does not log what decided the job count ('$logged')"; fail=1; }
+done
 # An interrupt stops what a running step started, not only the job's shell (go test and golangci-lint kept running
 # after Ctrl-C): pc_stop from the EXIT trap, as precommit.sh sets it.
 pidf="$rt/sleep.pid"
@@ -603,6 +675,25 @@ done < <(grep -l 'golangci' scripts/*_test.sh test/vm/*_test.sh test/e2e/*_test.
 for fn in gated_unit gated_integration hooks_test; do
 	grep -qE "^$fn\(\) \{.* -count=1 " scripts/precommit.sh || { echo "FAIL: precommit.sh's $fn does not pass -count=1"; fail=1; }
 done
+# 21c2. the tegotesthooks step gives go test's package alarm the same explicit bound as gated-test.sh (an aggregate over
+#       every test of a package, not a per-test bound; the default 10 minutes killed internal/cli's binary under load).
+# shellcheck disable=SC2016 # Match the script's literal text.
+grep -qE '^hooks_test\(\) \{.* -timeout "\$\{TEGO_TEST_TIMEOUT:-30m\}" ' scripts/precommit.sh ||
+	{ echo "FAIL: precommit.sh's hooks_test does not give the package alarm an explicit bound"; fail=1; }
+# 21c3. the browser tests (-tags chrome) run in the full gate and in CI through one script, and a missing browser is
+#       reported, never a pass: the gate adds the step as `notrun` when google-chrome is absent or the step is turned
+#       off, and the script itself fails (not skips, not passes) without a browser.
+grep -qE '^[[:space:]]*pc_add integration chrome .* step chrome_tests$' scripts/precommit.sh ||
+	{ echo "FAIL: precommit.sh's full gate does not run the browser tests"; fail=1; }
+grep -qE '^[[:space:]]*pc_add integration - "chrome tests \(-tags chrome\)" notrun "no ' scripts/precommit.sh ||
+	{ echo "FAIL: precommit.sh does not report the browser tests as NOT RUN when there is no browser"; fail=1; }
+grep -qF './scripts/chrome-tests.sh' "$ci" || { echo "FAIL: $ci does not run scripts/chrome-tests.sh"; fail=1; }
+rt_chrome="$(mktemp)"
+if TEGO_CHROME=no-such-browser-for-the-test ./scripts/chrome-tests.sh >"$rt_chrome" 2>&1; then
+	echo "FAIL: scripts/chrome-tests.sh passed with no browser"; fail=1
+fi
+grep -q 'cannot run' "$rt_chrome" || { echo "FAIL: scripts/chrome-tests.sh did not say why it could not run: $(cat "$rt_chrome")"; fail=1; }
+rm -f "$rt_chrome"
 # 21d. scoped mode runs check-licenses (a Go-only change can link a new third-party package) and prints a note when
 #      the shell linter is missing; the tegotesthooks tests share the unit job (after it, never beside it).
 scoped_fn="$(sed -n '/^add_scoped() {/,/^}/p' scripts/precommit.sh)"
@@ -614,8 +705,7 @@ grep -qE '^[[:space:]]*pc_add tests unit "unit tests \(-tags tegotesthooks\)" st
 #      derives it from go list; a hard-coded list would leave a new one out).
 hooks_listed="$(grep -E '^[[:space:]]*pc_add tests unit "unit tests \(-tags tegotesthooks\)"' scripts/precommit.sh |
 	grep -oE '\./[A-Za-z0-9_/.-]+/' | sed 's#^\./##; s#/$##' | sort -u | tr '\n' ' ')"
-hooks_tree="$(./scripts/tree-files.sh | tr '\0' '\n' | grep '_test\.go$' |
-	while IFS= read -r f; do grep -qE '^//go:build .*tegotesthooks' "$f" && dirname "$f"; done | sort -u | tr '\n' ' ')"
+hooks_tree="$(hook_test_packages | tr '\n' ' ')"
 [ -n "$hooks_tree" ] && [ "$hooks_listed" = "$hooks_tree" ] ||
 	{ echo "FAIL: precommit.sh tests -tags tegotesthooks in '$hooks_listed', but those test files are in '$hooks_tree'"; fail=1; }
 

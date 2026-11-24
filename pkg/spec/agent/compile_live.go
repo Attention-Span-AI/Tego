@@ -172,7 +172,10 @@ func (k *compiler) relatedAny(declared, v string) bool {
 // profile's deny_read or exec.deny entry is a floor the contract cannot remove (merge.go: a contract's deny_read: []
 // cannot disable a profile's entries), so neither can its fence.
 func (k *compiler) declaredByProfile(key string) string {
-	if p, ok := k.c.origins[key]; ok && p.File != k.top {
+	if e := k.baselineMember(key); e != nil {
+		return "machine baseline " + e.Sources[0].String()
+	}
+	if p, class, ok := k.c.Origin(key); ok && class == OriginProfile {
 		return p.File
 	}
 	return ""
@@ -276,6 +279,11 @@ func (k *compiler) liveRead(raw string, pos Pos) (LiveEntry, []int, bool) {
 			}
 			switch {
 			case !glob && k.resolve(dv) == v:
+				if entry := k.baselineMember("fs.deny_read." + strconv.Itoa(i)); entry != nil {
+					k.baselineConflict(entry, "live.fence.read", "a live fence cannot lift this baseline read refusal", pos)
+					ok = false
+					continue
+				}
 				if file := k.declaredByProfile("fs.deny_read." + strconv.Itoa(i)); file != "" {
 					k.ds.errorf(pos, CodeLiveFenceEntry, "live.fence.read %q names fs.deny_read %q, which the profile %s declares; a profile's refusal is never part of a fence", raw, d, file).
 						fix("remove the entry; lift a profile's refusal by changing the profile, from the next run")
@@ -284,6 +292,11 @@ func (k *compiler) liveRead(raw string, pos Pos) (LiveEntry, []int, bool) {
 				}
 				deny = append(deny, i)
 			case k.relatedAny(dv, v):
+				if entry := k.baselineMember("fs.deny_read." + strconv.Itoa(i)); entry != nil {
+					k.baselineConflict(entry, "live.fence.read", "a live fence overlaps this baseline read refusal", pos)
+					ok = false
+					continue
+				}
 				k.ds.errorf(pos, CodeLiveFenceEntry, "live.fence.read %q lies inside or around fs.deny_read %q; a read entry names one deny_read entry exactly", raw, d).
 					fix("name that deny_read entry itself: %s", d)
 				ok = false
@@ -525,6 +538,10 @@ func (k *compiler) liveExec(cp *Contract, raw string, pos Pos) (LiveEntry, []int
 				continue
 			}
 			if file := k.declaredByProfile("exec.deny." + strconv.Itoa(i)); file != "" {
+				if entry := k.baselineMember("exec.deny." + strconv.Itoa(i)); entry != nil {
+					k.baselineConflict(entry, "live.fence.exec", "a live fence cannot lift this baseline exec refusal", pos)
+					return e, nil, false
+				}
 				k.ds.errorf(pos, CodeLiveFenceEntry, "live.fence.exec %q names exec.deny %q, which the profile %s declares; a profile's refusal is never part of a fence", raw, d, file).
 					fix("remove the entry; lift a profile's refusal by changing the profile, from the next run")
 				return e, nil, false

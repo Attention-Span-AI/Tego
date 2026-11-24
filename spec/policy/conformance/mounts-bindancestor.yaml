@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # A detached part beneath a parent whose write grant reaches the same directory through another bind. Root tiers
 # refuse startup before either mutation or read; the listener stores no alias path that a mutation could change.
+# At tier landlock the run starts and the held reads decide (ADR 0069): the file read through the moved bind is the
+# deny_read target's inode, so it is refused; where the supervisor's pins could not follow the exchange of two
+# directories it latches held-read-identity-unknown and refuses every held read (fail closed). Measured in an Ubuntu
+# 25.10 guest (kernel 6.17, 2026-11-19); the cells said allow under E32 (ii) until then.
 version: 2
 name: mounts-bindancestor
 contract: |
@@ -44,13 +48,11 @@ cells:
     op: read
     path: view/b/alias/key
     canon: secret/deep/key
+    # The renamed bind is still secret/deep's inode: the held-read pin of that identity refuses it by the rule.
     want:
-      landlock: allow
-      root: refused fs.deny_read[./secret/]
+      all: refused fs.deny_read[./secret/]
     no_compile: startup is decided from the mount topology, which compile --test does not make
-    exception: 'enforce-landlock E32 (ii): a bind beneath a readable sibling remains readable at tier landlock'
-    exception_at: landlock
-    source: 'ADR 0011 (listener startup refusal); ADR 0025 (detached parts); enforce-landlock E32 (ii)'
+    source: 'ADR 0011 (listener startup refusal); ADR 0025 (detached parts); ADR 0069 (held reads)'
   - name: exchange-parent-through-bind
     op: exchange
     path: edit/c
@@ -63,10 +65,10 @@ cells:
     op: read
     path: view/d/alias/key
     canon: secret/deep/key
+    # RENAME_EXCHANGE of two directories, one holding a bind: the pins cannot follow it and latch (ADR 0069), so the
+    # supervisor refuses under held-read-identity-unknown, not under the rule; the file is the denied one either way.
     want:
-      landlock: allow
+      landlock: refused held-read-identity-unknown
       root: refused fs.deny_read[./secret/]
     no_compile: startup is decided from the mount topology, which compile --test does not make
-    exception: 'enforce-landlock E32 (ii): a bind beneath a readable sibling remains readable at tier landlock'
-    exception_at: landlock
-    source: 'ADR 0011 (listener startup refusal); ADR 0025 (detached parts); enforce-landlock E32 (ii)'
+    source: 'ADR 0011 (listener startup refusal); ADR 0025 (detached parts); ADR 0069 (held reads)'

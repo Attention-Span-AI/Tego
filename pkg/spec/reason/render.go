@@ -18,8 +18,27 @@ const MaxRenderBytes = 4000
 // never taken from the file's text, so every string an agent chose is quoted whatever wrote the file. A field the
 // file holds cut (Cut) is quoted as the file holds it, so a sentence's "… (N bytes)" is the length of the field in
 // the file: the real length is in the field's own "…(N bytes)" and the file's text, words of the file that Render
-// does not take (an agent's own string can end the same way). Nothing to tell is "".
+// does not take (an agent's own string can end the same way). Every note states its run scope and unavailable
+// tool/session attribution. Nothing to tell is "".
 func Render(entries []Entry, notListed uint64) string {
+	return render(entries, notListed, MaxRenderBytes, true)
+}
+
+// RenderSessionStart states the run's facts and reports pending refusals at
+// SessionStart. Pending does not mean startup: a resumed or parallel session may
+// find another session's tool refusals here. Reserve room for the facts before
+// rendering, so the text bound never cuts off the count of unlisted refusals.
+func RenderSessionStart(reasonPath string, entries []Entry, notListed uint64) string {
+	text := HookInstructions(reasonPath)
+	if len(entries) == 0 && notListed == 0 {
+		return text
+	}
+	text += "\n\nRefusals pending when this SessionStart hook read the reason file:\n"
+	return text + render(entries, notListed, MaxRenderBytes-len(text), false)
+}
+
+// render's budget excludes setup text. Include scope unless setup already states it.
+func render(entries []Entry, notListed uint64, budget int, includeScope bool) string {
 	total := notListed + uint64(len(entries))
 	if total == 0 {
 		return ""
@@ -41,6 +60,9 @@ func Render(entries []Entry, notListed uint64) string {
 	}
 	var b strings.Builder
 	b.WriteString("Tego, this run's access control, refused " + count(total, "action", "actions") + ":\n")
+	if includeScope {
+		b.WriteString(scopeNote + "\n")
+	}
 	// Room is kept for the closing line whenever anything after a line would be left out; its count is at most
 	// total, so total's length is room enough.
 	left, remaining, reserve := notListed, uint64(len(entries)), len(moreLine(total))
@@ -50,7 +72,7 @@ func Render(entries []Entry, notListed uint64) string {
 			s = "- x" + strconv.FormatUint(l.n, 10) + " " + l.text + "\n"
 		}
 		remaining -= l.n
-		room := MaxRenderBytes - b.Len() - len(s)
+		room := budget - b.Len() - len(s)
 		if remaining+left > 0 {
 			room -= reserve
 		}

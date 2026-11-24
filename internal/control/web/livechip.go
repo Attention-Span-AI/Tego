@@ -65,7 +65,7 @@ func liveChipOf(b liveblock.Entry, v liveView) liveChip {
 	}
 	// A block with a time limit is judged at now (livestatus.StatusAt): an unblock for a while refuses nothing until
 	// its From, and a block past its Until refuses nothing, though the overlay keeps it for a while.
-	st := v.Facts.StatusAt(string(b.Kind), serial, now, b.From, b.Until)
+	st := v.Facts.StatusAt(string(b.Kind), b.Value, serial, now, b.From, b.Until)
 	c := liveChip{State: st.State, Sentence: st.Sentence}
 	since := ""
 	if st.Since > 0 {
@@ -83,8 +83,10 @@ func liveChipOf(b liveblock.Entry, v liveView) liveChip {
 		c.Label, c.Class, c.Note = "Ended by its time limit", "b-done", "Its time limit passed at "+limitAt(b.Until)+", so it refuses nothing."
 	case ledgerview.LivePartial:
 		c.Label, c.Class, c.Note = "Changes refused"+since, "b-besteffort", "Edits are refused; this run's reads are not seen, so reading it still works."
+	case ledgerview.LivePartlyKernel:
+		c.Label, c.Class, c.Note = "Partly in force"+since, "b-besteffort", "Refuses what this run's supervisor sees. File changes the kernel decides in this run (writes, creates, deletes, renames) are not covered."
 	case ledgerview.LiveWaiting:
-		c.Label, c.Class, c.Note = "Waiting for the run…", "b-waiting", "The run picks up a new block within about a second."
+		c.Label, c.Class, c.Note = "Waiting for the run…", "b-neutral", "The run picks up a new block within about a second."
 	case ledgerview.LiveRecordedOnly:
 		c.Label, c.Class, c.Note = "Recorded, not enforced", "b-observed", "This run is only watched: matching actions are recorded, not stopped."
 	default: // ledgerview.LiveEnded
@@ -93,11 +95,21 @@ func liveChipOf(b liveblock.Entry, v liveView) liveChip {
 	return c
 }
 
-// limitAt is a time limit's instant in this machine's zone, as a chip's note says it: "Fri 31 Oct 17:00".
+// limitAt is a time limit's instant in this machine's zone, naming it, as a chip's note says it: "Fri 31 Oct 17:00 CET".
 func limitAt(t time.Time) string {
 	lt := t.Local()
 	if lt.Year() != time.Now().Year() {
-		return lt.Format("Mon 2 Jan 2006 15:04")
+		return lt.Format("Mon 2 Jan 2006 15:04 MST")
 	}
-	return lt.Format("Mon 2 Jan 15:04")
+	return lt.Format("Mon 2 Jan 15:04 MST")
+}
+
+// blockValueOf is the value of the block named by key ("exec:/bin/ls"): e's own when the overlay still lists it, else
+// what follows the kind in the key. The launcher's lines about a block's time limit name it by this value.
+func blockValueOf(key string, e liveblock.Entry) string {
+	if e.Value != "" {
+		return e.Value
+	}
+	_, v, _ := strings.Cut(key, ":")
+	return v
 }

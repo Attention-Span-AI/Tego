@@ -1,2 +1,3 @@
 Tego, this run's access control, refused 40 actions:
+Scope: whole run, including startup and background work; tool call and session attribution unavailable.
 - x40 Tego refused open "/home/u/proj/.env": files under that path are not readable in this run (rule fs.deny_read[**/.env]).

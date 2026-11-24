@@ -1,0 +1,83 @@
+{
+  "id": "l22-member-bound-before-duplicate",
+  "group": "limits",
+  "pins": [
+    "B053",
+    "W016"
+  ],
+  "why": "W016/B053: 65 repeated syntactic pairs exceed the member bound before duplicate detection; map folding must not hide them.",
+  "bundle": {
+    "version": 1,
+    "adapter": "square.refund.v1",
+    "server": "square",
+    "rules": [
+      {
+        "id": "cap",
+        "kind": "per_call",
+        "currency": "USD",
+        "limit": "10000"
+      },
+      {
+        "id": "currencies",
+        "kind": "currencies",
+        "codes": [
+          "USD"
+        ]
+      }
+    ]
+  },
+  "bundle_wire_hex": null,
+  "request": {
+    "adapter": "square.refund.v1",
+    "call_hex": "7b2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a312c2278223a317d",
+    "contract_bundle_digest": "762086c3104e609f82fb5c5bbb9dc077417803897248181a048adf6b74c7b6f9",
+    "contract_verdict": "allow",
+    "evaluator_status": "ready",
+    "request_id": "1",
+    "run_id": "run1",
+    "server": "square",
+    "state": {
+      "bundle_digest": "762086c3104e609f82fb5c5bbb9dc077417803897248181a048adf6b74c7b6f9",
+      "epoch": "e1",
+      "revision": "0",
+      "run_id": "run1",
+      "seen_keys": [],
+      "server": "square",
+      "status": "ready",
+      "totals": []
+    },
+    "tool_source": "contract",
+    "topology": "exclusive",
+    "version": 1
+  },
+  "request_wire_hex": null,
+  "expected": {
+    "adapter": "square.refund.v1",
+    "bundle_digest": "762086c3104e609f82fb5c5bbb9dc077417803897248181a048adf6b74c7b6f9",
+    "business": {
+      "verdict": "deny",
+      "rule_id": "$adapter",
+      "condition": "input.limit"
+    },
+    "asks": [],
+    "call_digest": "67dd87d83dfeeaedc3c6108dce7b4e7e47820ce5b689a453a88bf7e82a0db41c",
+    "facts": null,
+    "final": {
+      "verdict": "deny",
+      "source": "business",
+      "condition": "input.limit"
+    },
+    "record": {
+      "coverage": "unknown",
+      "delivery": "not_attempted",
+      "remote_outcome": "unknown",
+      "required": true,
+      "stage": "evaluated"
+    },
+    "request_id": "1",
+    "reservation": null,
+    "run_id": "run1",
+    "server": "square",
+    "version": 1
+  }
+}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/check/drift"
 	"github.com/attention-span-ai/tego/internal/check/learn"
+	"github.com/attention-span-ai/tego/internal/control/pathcheck"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/pkg/policy/execmatch"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
@@ -82,6 +83,13 @@ func proposal(ctx context.Context, root, anchor, id string) (*learn.Proposal, er
 // Learn is the Least privilege tab of run id under the ledger root root, the chain anchor at anchor. It is kept per
 // run while the run and the anchor are the same (cache.go) and is shared: a caller must not modify it.
 func Learn(ctx context.Context, root, anchor, id string) *Learned {
+	if !pathcheck.InHelper() {
+		reply, err := viewCall(ctx, "learn", root, id, "", anchor, Options{})
+		if err != nil {
+			return &Learned{Err: err.Error()}
+		}
+		return reply.Learned
+	}
 	if !ledger.IsRunID(id) {
 		return &Learned{Err: "not a run id"}
 	}
@@ -132,6 +140,13 @@ type Drifted struct {
 // contract copy, the anchor, the machine config and PATH are the same (cache.go) and is shared: a caller must not
 // modify it.
 func Drift(ctx context.Context, root, id string, o Options) *Drifted {
+	if remoteView(o) {
+		reply, err := viewCall(ctx, "drift", root, id, "", "", o)
+		if err != nil {
+			return &Drifted{Unknown: true, Err: err.Error()}
+		}
+		return reply.Drifted
+	}
 	if !ledger.IsRunID(id) {
 		return driftRun(ctx, root, id, o)
 	}
@@ -140,7 +155,7 @@ func Drift(ctx context.Context, root, id string, o Options) *Drifted {
 
 // driftRun is Drift uncached.
 func driftRun(ctx context.Context, root, id string, o Options) *Drifted {
-	c := Load(ctx, root, id, o)
+	c := load(ctx, root, id, o)
 	v := &Drifted{NoContract: c.Missing}
 	if c.Compiled == nil && !c.Missing {
 		v.Unknown, v.Contract = true, c.Err

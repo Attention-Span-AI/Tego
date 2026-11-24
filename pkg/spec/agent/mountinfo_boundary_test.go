@@ -103,7 +103,7 @@ func TestLayerClosureKeepsUnreadableLiveCandidate(t *testing.T) {
 	if _, _, ok := table.lookup(candidate); ok {
 		t.Fatal("unsearchable candidate acquired an identity")
 	}
-	_, _, unseen, _ := layerClosure(table, []string{"/host/layers/private/lower"})
+	_, _, unseen, _ := layerClosure(table, []string{"/host/layers/private/lower"}, nil)
 	if !strings.Contains(unseen, candidate) || !strings.Contains(unseen, "permission denied") {
 		t.Fatalf("unreadable live candidate disappeared: %q", unseen)
 	}

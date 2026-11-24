@@ -29,9 +29,9 @@ def check(ok, message):
 
 
 def all_exited(owner):
-    deadline = time.monotonic() + .5
+    deadline = time.monotonic() + owned.HANG_GUARD
     while time.monotonic() < deadline and not all(owner.exited(pid) for pid in owner.refs):
-        time.sleep(.01)
+        time.sleep(.01)  # ends when the last process has; the deadline only guards a hang
     return all(owner.exited(pid) for pid in owner.refs)
 
 
@@ -43,7 +43,7 @@ with tempfile.TemporaryDirectory(prefix='tego-fwd-test.', dir='/tmp') as name:
                                     'fixture', str(here / 'fwd-run.sh')],
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
-            owner.proc.communicate(timeout=5)
+            owner.proc.communicate(timeout=owned.HANG_GUARD)
             check(owner.proc.returncode == 7, 'fwd_run returns the actual step status')
             check(all_exited(owner), 'status case has exited before fixture cleanup')
         finally:
@@ -81,11 +81,11 @@ with tempfile.TemporaryDirectory(prefix='tego-fwd-test.', dir='/tmp') as name:
                         raise RuntimeError('unrelated child was admitted for fixture cleanup')
                     check(not unrelated.exited(unrelated.proc.pid), 'unrelated matching sleep remains live')
                     owner.send(sig)
-                    owner.proc.communicate(timeout=5)
+                    owner.proc.communicate(timeout=owned.HANG_GUARD)
                     check(owner.proc.returncode == 143, mode + ' ' + sig.name + ': script exits 143')
                     check(all_exited(owner), mode + ' ' + sig.name + ': step and child actually exited')
                     if mode == 'lock':
-                        result = subprocess.run(['flock', '-n', str(lock), 'true'], timeout=2)
+                        result = subprocess.run(['flock', '-n', str(lock), 'true'], timeout=owned.HANG_GUARD)
                         check(result.returncode == 0, sig.name + ': lock released')
                 finally:
                     owner.close()

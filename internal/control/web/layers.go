@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+
+	"github.com/attention-span-ai/tego/internal/control/ledgerview"
 )
 
 // A layer is a set of dashboard pages kept in files of their own (a handler file, its templates and stylesheet), which
@@ -23,6 +25,14 @@ type layer struct {
 	// RouteNote is a sentence the layer adds to the Model routes page and its check page, after the core's words on
 	// what a route carries. What a layer does to a request is the layer's to promise, so a build without it says none.
 	RouteNote string
+	// Attention are the items the layer adds to the Overview's attention list, after the core's own conditions. It reads
+	// what the Overview has read (d) and says nothing of what is not there: a build without the layer has the core's items.
+	Attention func(s *Server, snap *ledgerview.Snapshot, d *overviewData) []attentionItem
+	// Links are the links the layer adds to a core page's Actions menu, by the page's template name (layerLinks).
+	Links map[string][]navEntry
+	// Glossary are the words the layer adds to the Glossary page (allGlossaryTerms), so a build without the layer
+	// defines and links none of them.
+	Glossary []layerTerm
 }
 
 // navEntry is one entry of the Preview nav. Key is the page's chrome Nav value.
@@ -92,5 +102,26 @@ func layerNav() []navEntry {
 		out = append(out, l.Nav...)
 	}
 	slices.SortStableFunc(out, func(a, b navEntry) int { return cmp.Compare(a.Order, b.Order) })
+	return out
+}
+
+// layerAttention is what this build's layers add to the Overview's attention list, in the order the layers registered.
+func (s *Server) layerAttention(snap *ledgerview.Snapshot, d *overviewData) []attentionItem {
+	var out []attentionItem
+	for _, l := range layers {
+		if l.Attention != nil {
+			out = append(out, l.Attention(s, snap, d)...)
+		}
+	}
+	return out
+}
+
+// layerLinks are the links this build's layers add to the Actions menu of the core page whose template is named
+// template (the template function of the same name), empty when none does.
+func layerLinks(template string) []navEntry {
+	var out []navEntry
+	for _, l := range layers {
+		out = append(out, l.Links[template]...)
+	}
 	return out
 }

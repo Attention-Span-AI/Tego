@@ -1,0 +1,153 @@
+{
+  "receipt_v": 1,
+  "run": "r-3f9c2a1b-0dllq06ts7400-k7m2pq",
+  "agent": "fixture",
+  "tier": "landlock",
+  "capture": "off",
+  "command": [
+    "sh",
+    "agent.sh"
+  ],
+  "cwd": "/p",
+  "started": "1970-01-01T00:16:40Z",
+  "finished": "1970-01-01T00:16:44Z",
+  "ended": true,
+  "end_reason": "exit",
+  "exit_code": 0,
+  "time_taken": {
+    "seconds": 4
+  },
+  "files": {
+    "recorded": true,
+    "written": [
+      "/p/out/a.txt"
+    ],
+    "created": [],
+    "deleted": [],
+    "renamed": []
+  },
+  "refusals": {
+    "total": 1,
+    "by_rule": [
+      {
+        "rule": "fs.write[./out/]",
+        "reason": "write-outside-contract",
+        "count": 1
+      }
+    ],
+    "list": [
+      {
+        "seq": 2,
+        "ts": "1970-01-01T00:16:42Z",
+        "kind": "fs",
+        "op": "open",
+        "target": "/home/u/.bashrc",
+        "rule": "fs.write[./out/]",
+        "reason": "write-outside-contract",
+        "minute": 0
+      }
+    ]
+  },
+  "refusals_over_time": {
+    "bucket_s": 60,
+    "counts": [
+      1
+    ]
+  },
+  "stall": {
+    "recorded": true,
+    "note": "model traffic was not captured, so time spent waiting on the model counts as quiet",
+    "threshold_s": 300,
+    "minutes": 0,
+    "windows": 0
+  },
+  "tests": {
+    "recorded": false,
+    "note": "not recorded: no ledger line records a tests result yet"
+  },
+  "asks": {
+    "asked": 0,
+    "approved": 0,
+    "denied": 0,
+    "timed_out": 0,
+    "alternates": 0,
+    "unanswered": 0,
+    "wait_s": 0,
+    "list": []
+  },
+  "tokens": {
+    "recorded": false,
+    "note": "not recorded: model traffic capture was off for this run",
+    "model_calls": 0,
+    "metered": 0,
+    "in": 0,
+    "out": 0,
+    "cache_read": 0,
+    "cache_write": 0,
+    "est_cost_usd": 0,
+    "unpriced_responses": 0
+  },
+  "connections": [
+    {
+      "destination": "pypi.org:443",
+      "count": 1,
+      "verdicts": {
+        "observed": 0,
+        "allowed": 1,
+        "refused": 0
+      }
+    }
+  ],
+  "connection_tries": 1,
+  "programs": [],
+  "sensitive_reads": [],
+  "sensitive_reads_note": "this run did not record the files it was allowed to read (record: full records them); a refused read may be missing too",
+  "sensitive_reads_unknown": true,
+  "coverage": {
+    "complete": false,
+    "gaps": [
+      {
+        "field": "tokens",
+        "code": "capture-off",
+        "why": "not recorded: model traffic capture was off for this run"
+      },
+      {
+        "field": "stall",
+        "code": "model-time-unseen",
+        "why": "model traffic was not captured, so time spent waiting on the model counts as quiet"
+      }
+    ]
+  },
+  "lines": 5,
+  "binding": {
+    "v": 1,
+    "chain": {
+      "run": "r-3f9c2a1b-0dllq06ts7400-k7m2pq",
+      "lines": 5,
+      "head": "5a80a0561af89f108f4c7b91963197733151d7c16d6b49f541ec87627fa0e0c3",
+      "ended": true,
+      "bytes": 2503,
+      "sha256": "724f9b7312a1e8bbb7df66d405a3bb3d2f08aeadf9d4f60ef77137c071874426",
+      "torn_bytes": 0,
+      "newer_lines": 0
+    },
+    "receipt_by": {
+      "tego_version": "v0.1.2",
+      "commit": "0123456789abcdef0123456789abcdef01234567"
+    },
+    "limits": [
+      {
+        "code": "launching-user-can-rewrite",
+        "why": "the user who started the run can rewrite this record and its receipt together, so a pair that matches can still have been made up"
+      },
+      {
+        "code": "tail-not-synced",
+        "why": "lines are not synced to disk during the run, so a crash can lose the last ones and nothing counts them"
+      },
+      {
+        "code": "no-signature",
+        "why": "no key vouches for this receipt or its record: the binding says which record the receipt was computed from, not who made either"
+      }
+    ]
+  }
+}

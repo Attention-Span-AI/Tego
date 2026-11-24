@@ -9,6 +9,7 @@ import (
 	"time"
 	_ "time/tzdata" // a machine with no zone database still has America/New_York
 
+	"github.com/attention-span-ai/tego/internal/check/gaps"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -103,7 +104,7 @@ func TestRestoredModesAreANoteNotALostAction(t *testing.T) {
 	// Beside a gap that did lose actions, that gap alone makes the counts a floor.
 	lines = pausedAndBlockedRun(restored(8*time.Second, "/home/u/.tego"),
 		line{kind: record.KindGap, at: 9 * time.Second, payload: record.GapPayload{What: record.GapRecord, Why: "channel-full"}})
-	if got := coverageFields(compute(t, lines, Options{}))["record"]; !strings.HasPrefix(got, "1 gap line: tego knows it missed some actions") {
+	if got := coverageFields(compute(t, lines, Options{}))["record"]; got != gaps.MissedWords(1, 0) {
 		t.Errorf("record = %q, want the one lost-action line", got)
 	}
 }
@@ -121,14 +122,14 @@ func TestLostActionsStillCount(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			rc := compute(t, pausedAndBlockedRun(line{kind: record.KindGap, at: 8 * time.Second, payload: c.gap}), Options{})
-			if got := coverageFields(rc)["record"]; !strings.HasPrefix(got, "1 gap line: tego knows it missed some actions") {
+			if got := coverageFields(rc)["record"]; got != gaps.MissedWords(1, 0) {
 				t.Errorf("record = %q, coverage %+v", got, rc.Coverage)
 			}
 		})
 	}
 	// A gap line whose payload does not decode counts, the conservative reading.
 	rc := compute(t, pausedAndBlockedRun(line{kind: record.KindGap, at: 8 * time.Second, payload: map[string]any{"what": 7}}), Options{})
-	if !strings.HasPrefix(coverageFields(rc)["record"], "1 gap line") {
+	if coverageFields(rc)["record"] != gaps.MissedWords(1, 0) {
 		t.Errorf("an undecodable gap is not counted: %+v", rc.Coverage)
 	}
 }
@@ -137,12 +138,12 @@ func TestPriceGapIsACostNote(t *testing.T) {
 	// A model response that carried no token counts: a model call with no cost the receipt could compute.
 	call := line{kind: record.KindSSLResponse, at: 8 * time.Second, payload: map[string]any{"request_seq": 1, "status": 200,
 		"parser_version": "1", "model": "m", "latency_ms": 1}}
-	for _, why := range []string{gapNoPriceTable, gapPriceVersion} {
+	for _, why := range []string{record.GapNoPriceTable, record.GapPriceTableVersion} {
 		gap := line{kind: record.KindGap, at: 8 * time.Second, payload: record.GapPayload{What: record.GapRecord, Why: why}}
 		lines := pausedAndBlockedRun(gap, call)
 		lines[0] = start("forwarder", true)
 		f := coverageFields(compute(t, lines, Options{}))
-		if _, ok := f["record"]; ok || f["tokens.est_cost_usd"] != "no price table: the cost is not estimated" {
+		if _, ok := f["record"]; ok || f["tokens.est_cost_usd"] != gaps.PriceWords(true) {
 			t.Errorf("%s: coverage = %v", why, f)
 		}
 		// With prices of its own the receipt prices what it can, so the run's missing table is no cost note.
@@ -161,7 +162,7 @@ func TestPriceGapIsACostNote(t *testing.T) {
 	}
 	// An unpriced model's gap is neither a lost action nor a second cost note.
 	lines := pausedAndBlockedRun(line{kind: record.KindGap, at: 8 * time.Second,
-		payload: record.GapPayload{What: record.GapRecord, Why: gapUnpricedModel}})
+		payload: record.GapPayload{What: record.GapRecord, Why: record.GapUnpricedModel}})
 	lines[0] = start("forwarder", true)
 	if f := coverageFields(compute(t, lines, Options{Prices: flatPrices{}})); len(f) != 0 {
 		t.Errorf("unpriced-model: coverage = %v", f)
@@ -173,7 +174,7 @@ func TestCaptureGapMakesTokensAFloor(t *testing.T) {
 	lines := pausedAndBlockedRun(gap)
 	lines[0] = start("forwarder", true)
 	f := coverageFields(compute(t, lines, Options{}))
-	if _, ok := f["record"]; ok || f["tokens.capture"] != "1 capture gap line: model traffic tego could not read, so the token counts are a floor" {
+	if _, ok := f["record"]; ok || f["tokens.capture"] != gaps.CaptureWords(1) {
 		t.Errorf("coverage = %v", f)
 	}
 	// Tokens not recorded: the tokens note already says so, and no capture note repeats it.
@@ -260,5 +261,32 @@ func TestTextPrintsTimesInTheReadersZone(t *testing.T) {
 	b.Reset()
 	if err := rc.JSON(&b); err != nil || !strings.Contains(b.String(), "2026-10-27T13:49:03Z") {
 		t.Errorf("json: %v\n%s", err, b.String())
+	}
+}
+
+// TestUnreadableModelRoutesAreNotAMissedAction: the forwarder keeps the routes it read last when it cannot
+// read the overlay, so no action went unrecorded; the receipt says what happened and does not call it a missed action.
+func TestUnreadableModelRoutesAreNotAMissedAction(t *testing.T) {
+	gap := line{kind: record.KindGap, at: 8 * time.Second, payload: record.GapPayload{What: record.GapEnforce, Why: record.GapModelRouteUnreadable}}
+	rc := compute(t, pausedAndBlockedRun(gap), Options{})
+	var got string
+	for _, g := range rc.Coverage.Gaps {
+		switch g.Field {
+		case "record":
+			t.Errorf("an unreadable route overlay reads as a missed action: %+v", g)
+		case "record.routes":
+			if g.Code != CodeModelRoutesKept {
+				t.Errorf("code %q", g.Code)
+			}
+			got = g.Why
+		}
+	}
+	for _, want := range []string{"model routes", "read last", "not applied", "no action went unrecorded"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("coverage %q lacks %q", got, want)
+		}
+	}
+	if strings.Contains(got, "missed") {
+		t.Errorf("coverage %q says missed", got)
 	}
 }

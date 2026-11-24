@@ -115,8 +115,19 @@ type pauseState struct {
 	stopping bool
 }
 
-// held is the budget watcher's held hook (limits.WithHeld): an ask awaiting its person, or a pause.
-func (r *runner) held() bool { return r.askWaiting() || r.pause.held.Load() }
+// held is the budget watcher's held hook (limits.WithHeld): an ask awaiting its person, a pause, or a request of the
+// agent's that Tego itself holds while it connects to the model (RequestHolder).
+func (r *runner) held() bool { return r.askWaiting() || r.pause.held.Load() || r.holdingRequest() }
+
+// holdingRequest reports that a capture source holds an agent's request inside Tego.
+func (r *runner) holdingRequest() bool {
+	for _, s := range r.captureSources() {
+		if h, ok := s.(RequestHolder); ok && h.HoldingRequest() {
+			return true
+		}
+	}
+	return false
+}
 
 // applyControl applies one pause or resume from the overlay and records it.
 func (r *runner) applyControl(ctx context.Context, c liveblock.Change) {

@@ -127,7 +127,7 @@ func validateCredentials(ds *diags, c *Contract) {
 func validateCredentialEnv(ds *diags, c *Contract, cr Credential, pos Pos, envs map[string]int, i int) {
 	switch {
 	case !envNameRE.MatchString(cr.Env):
-		ds.errorf(pos, CodeSchema, "credential %q env %q must match ^[A-Za-z_][A-Za-z0-9_]*$", cr.Name, cr.Env)
+		ds.errorf(pos, CodeSchema, "credential %q env: %s", cr.Name, envNameProblem(cr.Env))
 		return
 	case strings.HasPrefix(cr.Env, "TEGO_"):
 		ds.errorf(pos, CodeEnvRuntimeReserved, "credential %q env %s is reserved for Tego", cr.Name, cr.Env).
@@ -156,7 +156,8 @@ func validateCredentialEnv(ds *diags, c *Contract, cr Credential, pos Pos, envs 
 func validateCredentialBaseURLEnv(ds *diags, c *Contract, cr Credential, pos Pos) {
 	switch {
 	case !envNameRE.MatchString(cr.BaseURLEnv):
-		ds.errorf(pos, CodeSchema, "credential %q base_url_env %q must match ^[A-Za-z_][A-Za-z0-9_]*$", cr.Name, cr.BaseURLEnv)
+		ds.errorf(pos, CodeSchema, "credential %q base_url_env: %s", cr.Name, envNameProblem(cr.BaseURLEnv))
+		return
 	case strings.HasPrefix(cr.BaseURLEnv, "TEGO_"):
 		ds.errorf(pos, CodeEnvRuntimeReserved, "credential %q base_url_env %s is reserved for Tego", cr.Name, cr.BaseURLEnv)
 	case cr.BaseURLEnv == cr.Env:

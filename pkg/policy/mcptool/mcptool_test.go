@@ -99,3 +99,51 @@ func TestRefusalBytes(t *testing.T) {
 		t.Fatalf("string id = %s", s)
 	}
 }
+
+// TestWithinContract: a live switch a Locked run keeps is one no looser than the contract's decision (the writers'
+// comparison, Loosens); a looser one is dropped, so the contract decides.
+func TestWithinContract(t *testing.T) {
+	r := Rules{Deny: []string{"delete_file"}, Ask: []string{"write_file"}}
+	for _, c := range []struct{ tool, live, want string }{
+		{"delete_file", "", ""},
+		{"delete_file", Deny, Deny},
+		{"delete_file", Ask, ""},
+		{"delete_file", Allow, ""},
+		{"write_file", Deny, Deny},
+		{"write_file", Ask, Ask},
+		{"write_file", Allow, ""},
+		{"read_file", Deny, Deny},
+		{"read_file", Ask, Ask},
+		{"read_file", Allow, Allow},
+		{"read_file", "bogus", "bogus"}, // not a decision: Decide ignores it, as it does for an Adjustable run
+	} {
+		if got := WithinContract(r, c.live, "files", c.tool); got != c.want {
+			t.Errorf("%s live %q: %q, want %q", c.tool, c.live, got, c.want)
+		}
+	}
+	// A server with an allow list denies the tools not on it: allow to one of them is a loosening.
+	list := Rules{Allow: []string{"read_file"}}
+	if got := WithinContract(list, Allow, "files", "other"); got != "" {
+		t.Errorf("allow of a tool the allow list leaves out: %q", got)
+	}
+	// Whatever it keeps, Decide with it never gives more than the contract.
+	for _, tool := range []string{"delete_file", "write_file", "read_file"} {
+		for _, live := range []string{"", Allow, Ask, Deny} {
+			got := Decide(r, WithinContract(r, live, "s", tool), "s", tool).Decision
+			if Loosens(Contract(r, "s", tool).Decision, got) {
+				t.Errorf("%s with live %q decided %s, looser than the contract", tool, live, got)
+			}
+		}
+	}
+}
+
+func TestRefusalBecause(t *testing.T) {
+	got := string(RefusalBecause(json.RawMessage(`7`), "files", "read_file", "mcp[files].relay", ReasonDenied, "another message of this batch has the same id"))
+	want := `{"jsonrpc":"2.0","id":7,"error":{"code":-32001,"message":"Tego refused the MCP tool read_file on files: another message of this batch has the same id","data":{"tego":{"rule":"mcp[files].relay","reason":"mcp-tool-denied"}}}}`
+	if got != want {
+		t.Fatalf("RefusalBecause =\n%s\nwant\n%s", got, want)
+	}
+	if s := string(RefusalBecause(nil, "s", "", "r", ReasonDenied, "x")); !strings.Contains(s, `"id":null`) || !strings.Contains(s, "Tego refused the message on s: x") {
+		t.Fatalf("no tool, no id: %s", s)
+	}
+}

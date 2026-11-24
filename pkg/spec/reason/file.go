@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -26,6 +28,9 @@ const (
 	// chose, up to the ledger's 2 MiB line). A longer one is cut to this length, the cut saying how long it was
 	// (Cut); the ledger line keeps it whole.
 	MaxFieldBytes = 4096
+	// MaxOwnersBytes bounds an entry's owners string: whole identities are kept, nearest first, up to this many bytes
+	// (sixteen identities of a 7-digit pid and a 12-digit start time take about 350).
+	MaxOwnersBytes = 512
 	// tightFieldBytes is the cut a single refusal gets when its fields at MaxFieldBytes still do not fit the file
 	// (each byte of a field can take six in JSON): eight fields twice at 512 bytes, escaped, fit.
 	tightFieldBytes = 512
@@ -40,7 +45,8 @@ var (
 
 // Entry is one refusal of the file's recent list. Its fields are a fixed list (TestEntryFieldsAreTheListedOnes): the
 // refused line's seq, ts and pid, its payload's op, target, reason and rule, the sentence Text makes of them, and the
-// payload's mechanism and command rule when set. No other ledger field is copied, so a common field a later record
+// payload's mechanism and command rule when set, and the owners string when the writer knew the refused process's
+// ancestry. No other ledger field is copied, so a common field a later record
 // minor adds never reaches the file by accident.
 type Entry struct {
 	Seq          uint64        `json:"seq"`
@@ -54,6 +60,38 @@ type Entry struct {
 	Mechanism    string        `json:"mechanism,omitempty"`
 	CommandRule  string        `json:"command_rule,omitempty"`
 	CommandMatch string        `json:"command_match,omitempty"`
+	// Owners is the refused process and its ancestors, "pid:start-ticks" each, comma-separated, nearest first, as the
+	// supervisor read them when it refused the call (ADR 0063 amendment, D46). A harness's hook takes the entry as its
+	// own when its harness's identity is in the list; an entry with none (the writer did not know: a refusal the
+	// root tiers' ring or the fanotify listener wrote) is nobody's in particular and goes to any session once. The
+	// file's v stays 1: a reader that does not know the key ignores it.
+	Owners string `json:"owners,omitempty"`
+}
+
+// Nearest is the first of e's owners, nearest the refused process first, that is one of recorded, "" when none is: the
+// harness whose session the refusal belongs to when sessions nest (a Claude Code started from another's tool is nearer
+// to the refused process than the one that started it).
+func (e Entry) Nearest(recorded []string) string {
+	for rest := e.Owners; rest != ""; {
+		var o string
+		o, rest, _ = strings.Cut(rest, ",")
+		if o != "" && slices.Contains(recorded, o) {
+			return o
+		}
+	}
+	return ""
+}
+
+// cutOwners is o with the identities that do not fit MaxOwnersBytes left off its end, whole.
+func cutOwners(o string) string {
+	if len(o) <= MaxOwnersBytes {
+		return o
+	}
+	o = o[:MaxOwnersBytes]
+	if i := strings.LastIndexByte(o, ','); i >= 0 {
+		return o[:i]
+	}
+	return ""
 }
 
 // File is last-refusal.json, v1. Its top level is the latest refusal: the keys the file had before v1 (op, target,
@@ -91,6 +129,8 @@ type Refusal struct {
 	TS      time.Time
 	PID     int
 	Payload record.RefusedPayload
+	// Owners is the refused process's lineage (Entry.Owners), "" when unknown.
+	Owners string
 	// full is, for each payload string Cut cut, its length before the cut (0 for one not cut), so a later cut, the
 	// tight form's or the sentence's, states the field's real length and not the cut copy's.
 	full fieldLens
@@ -192,7 +232,7 @@ func build(run string, refusals uint64, recent []Refusal, n int) *File {
 		}
 		f.Recent[i] = Entry{Seq: r.Seq, TS: r.TS.UTC(), PID: r.PID, Op: p.Op, Target: p.Target, Reason: p.Reason,
 			Rule: p.Rule, Text: text(p.Reason, p.Op, p.Target, p.Rule, l.op, l.target, l.rule), Mechanism: p.Mechanism,
-			CommandRule: p.CommandRule, CommandMatch: p.CommandMatch}
+			CommandRule: p.CommandRule, CommandMatch: p.CommandMatch, Owners: cutOwners(r.Owners)}
 		if i == len(recent)-1 {
 			f.Seq, f.TS, f.PID, f.Text = r.Seq, r.TS.UTC(), r.PID, f.Recent[i].Text
 			f.Op, f.Target, f.Reason, f.Rule = p.Op, p.Target, p.Reason, p.Rule

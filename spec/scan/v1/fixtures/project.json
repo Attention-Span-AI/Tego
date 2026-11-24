@@ -1,0 +1,225 @@
+{
+  "schema": "tego.scan/1",
+  "tego": "dev",
+  "catalog": "c2",
+  "started_at": "2026-11-11T21:00:00Z",
+  "finished_at": "2026-11-11T21:00:01Z",
+  "boot_id": "01234567-89ab-cdef-0123-456789abcdef",
+  "mode": "basic",
+  "as": {
+    "uid": 1000,
+    "recipient_uid": 1000,
+    "root": false
+  },
+  "project": "/home/person/project",
+  "status": "ok",
+  "check": "not-requested",
+  "counts": {
+    "running": 1,
+    "in_run": 0,
+    "outside_run": 1,
+    "membership_unknown": 0,
+    "installed": 1,
+    "settings": 1,
+    "project": 1,
+    "other": 1,
+    "exited_during_scan": 0,
+    "kernel_threads": 0,
+    "unreadable_programs": 0
+  },
+  "other_listed": true,
+  "rules": [
+    {
+      "id": "claude-native",
+      "name": "claude",
+      "origin": "catalog"
+    },
+    {
+      "id": "other-interpreter",
+      "name": "other-interpreter",
+      "origin": "catalog"
+    },
+    {
+      "id": "dep-langgraph",
+      "name": "langgraph",
+      "origin": "catalog"
+    }
+  ],
+  "items": [
+    {
+      "id": "i-1",
+      "kind": "process",
+      "name": "claude",
+      "evidence": [
+        {
+          "rule_id": "claude-native",
+          "source_id": "s-1",
+          "fact": "exe-name"
+        }
+      ],
+      "detail": {
+        "pid": 10,
+        "ppid": 1,
+        "uid": 1000,
+        "start_ticks": "123",
+        "exe": "/usr/bin/claude",
+        "cwd": "/home/person/project",
+        "membership": "outside-run",
+        "run_id": null,
+        "unit": null,
+        "container": null
+      },
+      "caveats": []
+    },
+    {
+      "id": "i-2",
+      "kind": "program",
+      "name": "claude",
+      "evidence": [
+        {
+          "rule_id": "claude-native",
+          "source_id": "s-2",
+          "fact": "path"
+        }
+      ],
+      "detail": {
+        "path": "/usr/bin/claude",
+        "target": null,
+        "mtime": "2026-11-11T21:00:00Z",
+        "file_type": "executable"
+      },
+      "caveats": []
+    },
+    {
+      "id": "i-3",
+      "kind": "settings",
+      "name": "claude",
+      "evidence": [
+        {
+          "rule_id": "claude-native",
+          "source_id": "s-3",
+          "fact": "settings-path"
+        }
+      ],
+      "detail": {
+        "path": "/home/person/.claude",
+        "target": null,
+        "mtime": "2026-11-11T21:00:00Z",
+        "file_type": "directory"
+      },
+      "caveats": []
+    },
+    {
+      "id": "i-4",
+      "kind": "other_program",
+      "name": "other-interpreter",
+      "evidence": [
+        {
+          "rule_id": "other-interpreter",
+          "source_id": "s-4",
+          "fact": "interpreter"
+        }
+      ],
+      "detail": {
+        "pid": 11,
+        "ppid": 1,
+        "uid": 1000,
+        "start_ticks": "123",
+        "exe": "/usr/bin/python3",
+        "cwd": "/home/person/project",
+        "membership": "outside-run",
+        "run_id": null,
+        "unit": null,
+        "container": null
+      },
+      "caveats": []
+    },
+    {
+      "id": "project-langgraph",
+      "kind": "project",
+      "name": "langgraph",
+      "evidence": [
+        {
+          "rule_id": "dep-langgraph",
+          "source_id": "source-project",
+          "fact": "dependency"
+        }
+      ],
+      "detail": {
+        "path": "/home/person/project/requirements.txt",
+        "dependency": "dep-langgraph"
+      },
+      "caveats": [
+        "declaration-only"
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "id": "s-1",
+      "kind": "A",
+      "locator": "/proc/10",
+      "state": "read",
+      "read": 1,
+      "not_read": 0,
+      "reason": "none"
+    },
+    {
+      "id": "s-2",
+      "kind": "B",
+      "locator": "/usr/bin/claude",
+      "state": "read",
+      "read": 1,
+      "not_read": 0,
+      "reason": "none"
+    },
+    {
+      "id": "s-3",
+      "kind": "C",
+      "locator": "/home/person/.claude",
+      "state": "read",
+      "read": 1,
+      "not_read": 0,
+      "reason": "none"
+    },
+    {
+      "id": "s-4",
+      "kind": "A",
+      "locator": "/proc/11",
+      "state": "read",
+      "read": 1,
+      "not_read": 0,
+      "reason": "none"
+    },
+    {
+      "id": "source-project",
+      "kind": "F",
+      "locator": "/home/person/project/requirements.txt",
+      "state": "read",
+      "read": 1,
+      "not_read": 0,
+      "reason": "none"
+    }
+  ],
+  "not_looked_at": [
+    "other-users",
+    "containers-unattributed",
+    "mcp-deferred",
+    "units-deferred",
+    "project-parents",
+    "project-children",
+    "project-alternates",
+    "project-includes",
+    "between-scans",
+    "libraries",
+    "remote-agents",
+    "unknown-names",
+    "environment",
+    "memory",
+    "source-code",
+    "network"
+  ],
+  "limits": [],
+  "unreadable_program_pids": [],
+  "unreadable_programs_warning": "Tego cannot tell whether these are agents; any program can make itself unreadable."
+}

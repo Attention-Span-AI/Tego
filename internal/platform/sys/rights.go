@@ -54,3 +54,41 @@ func ReceiveRights(oob []byte) ([]*FD, error) {
 	}
 	return owned, nil
 }
+
+// ReceivePidfds owns the SCM_PIDFD handles delivered by recvmsg with
+// MSG_CMSG_CLOEXEC. They are sender handles, distinct from SCM_RIGHTS alternates.
+// Malformed or duplicate handles are the caller's protocol decision; on a parse
+// error every handle already found is closed.
+func ReceivePidfds(oob []byte) ([]*FD, error) {
+	var owned []*FD
+	fail := func(err error) ([]*FD, error) {
+		for _, f := range owned {
+			_ = f.Close()
+		}
+		return nil, err
+	}
+	for rest := oob; len(rest) > 0; {
+		hdr, data, remainder, err := unix.ParseOneSocketControlMessage(rest)
+		if err != nil {
+			return fail(err)
+		}
+		rest = remainder
+		if hdr.Level != unix.SOL_SOCKET || hdr.Type != unix.SCM_PIDFD {
+			continue
+		}
+		// Take every whole number before refusing a malformed shape. recvmsg
+		// has already installed them; rejecting only the first would leak the rest.
+		for i := 0; i+4 <= len(data); i += 4 {
+			seal()
+			f, err := newFD(int(int32(binary.NativeEndian.Uint32(data[i:]))), 0, false)
+			if err != nil {
+				return fail(err)
+			}
+			owned = append(owned, f)
+		}
+		if len(data) != 4 {
+			return fail(errors.New("SCM_PIDFD payload is not one descriptor"))
+		}
+	}
+	return owned, nil
+}

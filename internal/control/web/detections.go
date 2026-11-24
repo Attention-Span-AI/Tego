@@ -33,6 +33,8 @@ type leakRow struct {
 // filters keep, High first; and the counts the filter chips show. Watched says some run read secrets with only a
 // recorder in the way: no check mark stands over that, whatever was blocked.
 type detectionsData struct {
+	FilterPage bool
+	FilterURL  string
 	Leaks      []leakRow
 	Watched    bool
 	Sev, Ch    string // the filters: "" (High and Medium, Low folded), high, medium or low; "" or a channel
@@ -204,5 +206,9 @@ func (s *Server) detections(w http.ResponseWriter, r *http.Request) {
 	if n := s.severityNote(); n != "" {
 		c.Notes = append(c.Notes, n)
 	}
+	d.FilterPage = r.URL.Query().Get("filters") == "1"
+	q = r.URL.Query()
+	q.Set("filters", "1")
+	d.FilterURL = "/detections?" + q.Encode()
 	s.render(w, http.StatusOK, "detections", c, d)
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/attention-span-ai/tego/internal/platform/peer"
 	"github.com/attention-span-ai/tego/internal/runscope"
 	"github.com/attention-span-ai/tego/internal/testutil"
 )
@@ -24,7 +25,7 @@ func TestMain(m *testing.M) {
 // is on no allowlist, so scripts/skipgate.sh still fails a CI job that hits it.
 func outsideEveryRun(t *testing.T) {
 	t.Helper()
-	if in, err := runscope.InRun(); in {
-		t.Skipf("this test runs inside a tego run's cgroup, or cannot show it does not (%v): the dashboard refuses its changes", err)
+	if a := peer.Self(); !a.Outside() {
+		t.Skipf("this test runs inside a tego run's cgroup, or cannot show it does not (%s): the dashboard refuses its changes", runscope.Why(a))
 	}
 }

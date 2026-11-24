@@ -3,11 +3,12 @@
 package cli
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -47,6 +48,7 @@ func (sealedProfiles) Resolve(name string) (string, []byte, error) {
 // the hash the run recorded, the directory relative entries resolved against, and the command the run was
 // given on its command line, which that run's table granted beside the contract (agent.WithRunCommand).
 type runOrigin struct {
+	start        *record.RunStartPayload
 	contractHash string
 	cwd          string
 	// runCommand is run_start.run_command_grant, the absolute path the run granted; a ledger written before
@@ -69,7 +71,7 @@ func readRunOrigin(r *ledger.Reader) (runOrigin, error) {
 		if err := e.DecodePayload(&p); err != nil {
 			return runOrigin{}, fmt.Errorf("decode run_start: %w", err)
 		}
-		o := runOrigin{contractHash: p.ContractHash, cwd: p.Cwd, runCommand: p.RunCommandGrant}
+		o := runOrigin{start: &p, contractHash: p.ContractHash, cwd: p.Cwd, runCommand: p.RunCommandGrant}
 		// A ledger at or past MinorRunCommandGrant omits run_command_grant on purpose: the run execs the
 		// contract's own command, or a declared entry covered it, and nothing is granted. Only an older one,
 		// whose writer did not record the grant, falls back to the command it ran.
@@ -112,7 +114,7 @@ func readCopy(path string) ([]byte, error) {
 	} else if !st.Mode().IsRegular() {
 		return nil, fmt.Errorf("%s: %w", path, agent.ErrNotAFile)
 	}
-	data, err := io.ReadAll(io.LimitReader(f, agent.MaxContractSize+1))
+	data, err := config.ReadRulesFile(context.Background(), f, path, agent.MaxContractSize+1)
 	if err != nil {
 		return nil, err
 	}

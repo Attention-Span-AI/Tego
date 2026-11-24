@@ -76,6 +76,29 @@ func refuse(f string, a ...any) error {
 	return fmt.Errorf("%w: "+f, append([]any{ErrRefused}, a...)...)
 }
 
+// notFinished is what a compiler's refusal says about itself when the compile did not finish (it ran out of time, or
+// its caller gave up): nobody knows whether the contract compiles. The check is typed, never a substring: the
+// package that makes the error (internal/contracts) is not one this package may import.
+type notFinished interface{ NotFinishedWords() string }
+
+// NotFinishedWords is the words of a compile refusal that is not a compile error, and whether err is one.
+func NotFinishedWords(err error) (string, bool) {
+	var nf notFinished
+	if errors.As(err, &nf) {
+		return nf.NotFinishedWords(), true
+	}
+	return "", false
+}
+
+// compileRefusal is the refusal for a text the compiler did not accept: a contract that does not compile says so,
+// and a compile that did not finish says that, in its own words. Neither wrote anything.
+func compileRefusal(err error) error {
+	if words, ok := NotFinishedWords(err); ok {
+		return refuse("%s; nothing was written; try again", words)
+	}
+	return refuse("the new contract does not compile, so nothing was written: %v", err)
+}
+
 // Apply makes the rule: the changes the action needs, made to the text, compiled by req.Check.
 func Apply(req Request) (*Result, error) {
 	if req.Event == nil {
@@ -129,7 +152,7 @@ func Apply(req Request) (*Result, error) {
 	}
 	if req.Check != nil {
 		if err := req.Check(text); err != nil {
-			return nil, refuse("the new contract does not compile, so nothing was written: %v", err)
+			return nil, compileRefusal(err)
 		}
 	}
 	parts := make([]string, len(p.changes))
@@ -160,7 +183,7 @@ func sentences(top *yaml.Node, text []byte, r resolver, changes []Change) []Sent
 			continue
 		}
 		s, _ := describe(plannedChange{Change: c}, before, now)
-		if !slices.Contains(out, s) {
+		if !slices.ContainsFunc(out, func(o Sentence) bool { return o.Before == s.Before && o.After == s.After && o.Direction == s.Direction }) {
 			out = append(out, s)
 		}
 	}
@@ -476,6 +499,10 @@ func (p *planner) reopenedBetween(rd, s string) bool {
 // beneath the scope go, so a write there is outside the contract again (none lies beneath a write entry: an ask
 // there never asks, ADR 0057 D3, so a write grant covering the scope is answered with a deny_write instead); a
 // narrower scope adds a deny_write, which is kept from every approval inside the ask scope (SEMANTICS §2, ADR 0071).
+// writeEntryNote qualifies the effect of a refusal of writes: this file's literal fs.write entries are checked, but a
+// write entry of a profile the contract extends, or a pattern, is not visible here, and the nearest entry decides.
+const writeEntryNote = " (a write entry beneath it, in a profile this contract extends, still allows its own subtree)"
+
 func (p *planner) neverWrite(s, what, e string) (string, error) {
 	r := p.resolve(e)
 	if r == "" {
@@ -484,7 +511,7 @@ func (p *planner) neverWrite(s, what, e string) (string, error) {
 	for _, w := range list(p.top, "fs.write") {
 		if within(s, p.resolve(w)) {
 			p.add("fs.deny_write", p.spell(s))
-			return "refuse writes to " + what, nil
+			return "refuse writes to " + what + writeEntryNote, nil
 		}
 	}
 	if within(s, r) && s != r {
@@ -496,10 +523,19 @@ func (p *planner) neverWrite(s, what, e string) (string, error) {
 			return "", err
 		}
 	}
+	// An fs.write entry beneath the scope decides its own subtree before any ask or refusal at the scope (the
+	// nearest entry wins), so dropping the asks above it cannot refuse what it allows: the effect said below would not
+	// be true of the next run. Say so and let the person name the entry they mean.
+	for _, w := range list(p.top, "fs.write") {
+		if rw := p.resolve(w); rw != "" && rw != s && within(rw, s) {
+			return "", refuse("the entry fs.write[%s] beneath %s still allows its own subtree after the asks go, so this would not "+
+				"refuse every write under %s: name the entry you mean (%s), or remove that write entry first", w, what, what, w)
+		}
+	}
 	if p.dropUnder("fs.ask", s) == 0 {
 		return "", refuse("no fs.ask entry of this file lies at or beneath %s; %s was decided by %s", s, p.t.Path, p.t.Rule)
 	}
-	return "refuse writes to " + what + " without asking you first", nil
+	return "refuse writes to " + what + " without asking you first" + writeEntryNote, nil
 }
 
 func (p *planner) planWrite() (string, error) {

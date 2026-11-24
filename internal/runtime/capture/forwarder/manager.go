@@ -33,6 +33,9 @@ type Manager struct {
 	listeners []*Listener
 	// routes is the run's model routes (ADR 0127), nil when no models[] entry declares one.
 	routes *router
+	// loadRoots is what Start runs in the background to load the system trust roots; nil is loadSystemRoots. A test
+	// sets it to make the load slow.
+	loadRoots func()
 
 	mu      sync.Mutex
 	started bool
@@ -113,6 +116,9 @@ func NewManager(models []agent.ModelEndpoint, opts Options) (*Manager, error) {
 	}
 	// One router for the run: a person's route change names an endpoint, whichever listener its requests arrive on.
 	routes := newRouter(models, opts.Logger)
+	if routes != nil {
+		routes.adjustable = opts.Adjustable
+	}
 	m.routes = routes
 	pinned := pinnedListen(opts.Listen)
 	for i, model := range models {
@@ -200,6 +206,22 @@ func (m *Manager) SetStreamActivity(fn func(monoNS uint64)) {
 	}
 }
 
+// HoldingRequest reports that some listener holds an agent's request inside Tego: read, not yet sent on, its upstream
+// connection not yet ready (runtime.RequestHolder, limits.WithHeld). While it does, the run's stall check does not
+// count the wait as the agent's silence, since Tego's own approval, route, credential, connect and TLS work is what the
+// agent waits for; a model that is silent once the request is sent still stalls the run.
+func (m *Manager) HoldingRequest() bool {
+	m.mu.Lock()
+	ls := m.listeners
+	m.mu.Unlock()
+	for _, l := range ls {
+		if l.holding.Load() > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // Start binds the run and serves every listener, returning as soon as the goroutines are running
 // (source.Source). Each stops on ctx cancellation or Stop, whichever comes first.
 func (m *Manager) Start(ctx context.Context, run source.RunRef, sink source.Sink) error {
@@ -224,6 +246,10 @@ func (m *Manager) Start(ctx context.Context, run source.RunRef, sink source.Sink
 	}
 	m.started = true
 	m.mu.Unlock()
+
+	// The first handshake to the model reads the system trust roots from disk; start that now, off this path, so the
+	// agent's first request finds them loaded (or waits on the load in progress) and nothing here waits for it.
+	preloadRoots(m.loadRoots)
 
 	var wg sync.WaitGroup
 	for _, l := range m.listeners {

@@ -264,13 +264,19 @@ func (h *Handle) fillPlane(rt *agent.RuleTable) error {
 		h.pinOff = err.Error()
 		pin = nil
 	}
+	// ADR 0128 (amended): a net.assurance: kernel run whose plane reports socket_recvmsg attached has that hook refuse
+	// a receive carrying a control buffer, and the filter (preparePlaneFilter) leaves recvmsg to it
+	// (landlock.Handle.recvmsgInPlane makes the same choice, so the two stay in step). A run that starts the open deputy,
+	// which receives its request sockets and dirfds that way inside the run's cgroup, is flagged too: the launcher writes
+	// the deputy's identity into the slot before Arm (ExemptDeputy), and the hook passes it alone (amendment 2026-11-21).
+	importsDenied := rt.NetworkAssurance() == agent.NetAssuranceKernel && h.plane.hooks()[ebpfbindings.PlaneHookSocketRecvmsg]
 	rep, err := h.plane.fill(planeFillRequest{Slot: h.slot, Gen: h.gen, Rows: h.planeRows, Held: held,
 		ListenHeld: listenHeld, KeyringAllowed: rt.Contract != nil && rt.Contract.Keyring,
-		Exec: execPolicyOf(rt), Unix: unixPol, Net: netPolicyOf(rt), Pin: pin})
+		Exec: execPolicyOf(rt), Unix: unixPol, Net: netPolicyOf(rt), Pin: pin, ImportsDenied: importsDenied})
 	if err != nil {
 		return fmt.Errorf("cgroup: fill the decision plane's rows: %w", err)
 	}
-	h.planeKeyed, h.planeFilled = rep.Keyed, true
+	h.planeKeyed, h.planeFilled, h.importsFlagged = rep.Keyed, true, importsDenied
 	if pin != nil {
 		if err := h.openPins(pin); err != nil {
 			return fmt.Errorf("cgroup: open the slot's exec pin map: %w", err)
@@ -280,6 +286,49 @@ func (h *Handle) fillPlane(rt *agent.RuleTable) error {
 	if h.run.Log != nil {
 		h.run.Log.Debug("decision plane filled", "mode", string(h.planeMode), "fs_rows", rep.Rows,
 			"exec_rows", rep.ExecRows, "cleared", rep.Cleared, "fill", rep.Fill, "check", rep.Check)
+	}
+	return nil
+}
+
+// ErrDeputyNotExempt is an open deputy whose identity could not be written into the run's slot. Its run's filter has
+// already left recvmsg to the plane, so the run is refused before it is armed: the hook would refuse every receive the
+// deputy makes, and so every held open.
+var ErrDeputyNotExempt = errors.New("cgroup: the open deputy could not be exempted from the descriptor-import guard")
+
+// ExemptDeputy is ADR 0128's amendment of 2026-11-21: it writes the run's open deputy, pid in this launcher's pid
+// namespace and startTicks its start time in USER_HZ ticks since boot (/proc/<pid>/stat field 22), into the run's slot
+// header, so the plane's socket_recvmsg passes the deputy's control receives and refuses every other task's. It must be
+// called after the deputy's hello and before Arm, when no hook decides for the run. A run whose slot is not flagged
+// (no kernel assurance, no plane, no hook) needs nothing and gets nothing. A launcher in a time namespace with a boot
+// offset reads start times shifted from the kernel's, so it cannot name the deputy: that, and any other failure, is
+// ErrDeputyNotExempt.
+func (h *Handle) ExemptDeputy(pid int, startTicks uint64) error {
+	h.netMu.Lock()
+	defer h.netMu.Unlock()
+	if h.plane == nil || !h.importsFlagged {
+		return nil
+	}
+	if h.armed || h.detached {
+		return fmt.Errorf("%w: run %s is already armed or detached", ErrDeputyNotExempt, h.run.ID)
+	}
+	if pid <= 0 || startTicks == 0 {
+		return fmt.Errorf("%w: no pid or start time (%d, %d)", ErrDeputyNotExempt, pid, startTicks)
+	}
+	if err := BootOffsetZero(); err != nil {
+		return fmt.Errorf("%w: %w", ErrDeputyNotExempt, err)
+	}
+	dev, ino, err := launcherPidns()
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrDeputyNotExempt, err)
+	}
+	p, ok := h.plane.(interface {
+		setDeputy(slot, gen, tgid uint32, start, pidnsDev, pidnsIno uint64) error
+	})
+	if !ok {
+		return fmt.Errorf("%w: the plane cannot name a deputy", ErrDeputyNotExempt)
+	}
+	if err := p.setDeputy(h.slot, h.gen, uint32(pid), startTicks, dev, ino); err != nil {
+		return fmt.Errorf("%w: %w", ErrDeputyNotExempt, err)
 	}
 	return nil
 }
@@ -385,6 +434,17 @@ func planeCounts(c ebpfbindings.PlaneCounts) []PlaneCount {
 func (h *Handle) preparePlaneFilter() error {
 	if h.plane == nil || h.inherited == nil {
 		return nil
+	}
+	if imp, ok := h.inherited.(interface {
+		PlaneImportsFilter(hooks map[string]bool) ([]bpf.RawInstruction, bool, error)
+	}); ok {
+		prog, left, err := imp.PlaneImportsFilter(h.plane.hooks())
+		if err != nil {
+			return fmt.Errorf("cgroup: assemble the filter the decision plane's receive hook leaves: %w", err)
+		}
+		if left {
+			h.importsFilter, h.importsInPlane = prog, true
+		}
 	}
 	pf, ok := h.inherited.(interface {
 		PlaneFilter(hooks map[string]bool) ([]bpf.RawInstruction, []string, error)

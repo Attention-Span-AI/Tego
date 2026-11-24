@@ -446,3 +446,21 @@ func TestRunJoinsTheStopGraceEscalation(t *testing.T) {
 			"is still to come, after the run's worker set was joined", n)
 	}
 }
+
+// TestNoteStopKillMarksOnlyAStop: a cgroup.kill written by someone other than the handler (the run's end of a main
+// process that left processes running) is the escalation when a stop signal had been handled, and nothing when none
+// had. It writes no kill itself, and the handler's own timer later finds the escalation done.
+func TestNoteStopKillMarksOnlyAStop(t *testing.T) {
+	h, _, killer := newHandler(t, false, time.Hour, nil)
+	if h.NoteStopKill() || h.Outcome().Escalated {
+		t.Fatalf("no stop signal was handled, yet the kill was taken for a stop's: %+v", h.Outcome())
+	}
+	h.Handle(syscall.SIGINT)
+	if !h.NoteStopKill() || !h.Outcome().Escalated {
+		t.Fatalf("a stop was in progress, yet the kill was not recorded: %+v", h.Outcome())
+	}
+	h.Escalate()
+	if n := killer.count(); n != 0 {
+		t.Fatalf("the handler wrote cgroup.kill %d times after the escalation was recorded, want none", n)
+	}
+}

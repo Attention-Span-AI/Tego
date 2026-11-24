@@ -83,13 +83,14 @@ func LoadTables() ([]Fixture, []DeferredCell, error) {
 
 // table is one file of schema v2: one fixture.
 type table struct {
-	Version  int
-	Name     string
-	Contract string
-	Dirs     []string
-	Files    map[string]string
-	Scripts  map[string]string
-	Actors   []string
+	Version       int
+	Name          string
+	Contract      string
+	ContractError *ContractError `yaml:"contract_error"`
+	Dirs          []string
+	Files         map[string]string
+	Scripts       map[string]string
+	Actors        []string
 	// ExecOnlyActors: Fixture.ExecOnlyActors.
 	ExecOnlyActors []string `yaml:"exec_only_actors"`
 	Links          map[string]string
@@ -124,6 +125,8 @@ type table struct {
 		Keyring bool
 		// HostSockets: the contract says host_sockets: true (SEMANTICS §1, ADR 0070).
 		HostSockets bool `yaml:"host_sockets"`
+		// NetAssuranceKernel: the contract says net.assurance: kernel (ADR 0128).
+		NetAssuranceKernel bool `yaml:"net_assurance_kernel"`
 		// Reads: the contract's fs.reads (ADR 0069), "" for the default.
 		Reads string
 		// Names: Model.Names.
@@ -175,6 +178,7 @@ var ops = map[string]bool{
 	OpMapExecRIE: true, OpMprotectExec: true, OpMprotectRIE: true, OpExecmod: true, OpExecmem: true,
 	OpChown: true, OpSetxattr: true, OpSetfacl: true, OpMknod: true, OpRaceSymlinkRead: true, OpRaceSymlinkWrite: true,
 	OpRaceArgvExec: true, OpPtraceAttach: true, OpPtraceTraceme: true, OpKeyctl: true, OpAddKey: true, OpRequestKey: true, OpBPF: true,
+	OpRecvFD: true,
 }
 
 func parseTable(data []byte) (Fixture, []string, []DeferredCell, error) {
@@ -194,12 +198,22 @@ func parseTable(data []byte) (Fixture, []string, []DeferredCell, error) {
 	case len(doc.Cells) == 0:
 		return Fixture{}, nil, nil, fmt.Errorf("no cells")
 	}
+	if e := doc.ContractError; e != nil {
+		if (e.Stage != "load" && e.Stage != "compile") || e.Code == "" || e.Contains == "" || strings.TrimSpace(e.Why) == "" {
+			return Fixture{}, nil, nil, fmt.Errorf("contract_error needs stage load or compile, code, contains and why")
+		}
+		for _, c := range doc.Cells {
+			if strings.TrimSpace(c.NoCompile) == "" {
+				return Fixture{}, nil, nil, fmt.Errorf("contract_error requires no_compile on every cell")
+			}
+		}
+	}
 	m := doc.Model
-	fx := Fixture{Name: doc.Name, Contract: doc.Contract, Dirs: doc.Dirs, Files: doc.Files, Scripts: doc.Scripts,
+	fx := Fixture{Name: doc.Name, Contract: doc.Contract, ContractError: doc.ContractError, Dirs: doc.Dirs, Files: doc.Files, Scripts: doc.Scripts,
 		Actors: doc.Actors, ExecOnlyActors: doc.ExecOnlyActors, Links: doc.Links, HardLinks: doc.HardLinks, Fifos: doc.Fifos, Net: doc.Listeners, ThirdPartyDeny: doc.ThirdPartyDeny,
 		Model: Model{Write: m.Write, DenyRead: m.DenyRead, ExecAllow: m.ExecAllow, NetDeclared: m.NetDeclared,
 			NetAllow: m.NetAllow, NetRuntime: m.NetRuntime, DenyWrite: m.DenyWrite, DenyWriteDeclared: m.DenyWriteDeclared, ExecDeny: m.ExecDeny, ExecAnonymous: m.ExecAnonymous,
-			ExecAllowCommands: m.ExecAllowCommands, Keyring: m.Keyring, HostSockets: m.HostSockets,
+			ExecAllowCommands: m.ExecAllowCommands, Keyring: m.Keyring, HostSockets: m.HostSockets, NetAssuranceKernel: m.NetAssuranceKernel,
 			Reads: m.Reads, PlaneCannotHold: m.PlaneCannotHold, ListenerRefuses: m.ListenerRefuses}, Later: doc.Later}
 	for i, mt := range doc.Mounts {
 		where := fmt.Sprintf("mounts[%d]", i)
@@ -230,6 +244,9 @@ func parseTable(data []byte) (Fixture, []string, []DeferredCell, error) {
 	}
 	if says := slices.Contains(strings.Split(doc.Contract, "\n"), "host_sockets: true"); says != m.HostSockets {
 		return Fixture{}, nil, nil, fmt.Errorf("model.host_sockets is %v, but the contract's host_sockets: true is %v", m.HostSockets, says)
+	}
+	if says := netAssuranceKernel(doc.Contract); says != m.NetAssuranceKernel {
+		return Fixture{}, nil, nil, fmt.Errorf("model.net_assurance_kernel is %v, but the contract's net.assurance: kernel is %v", m.NetAssuranceKernel, says)
 	}
 	names := map[string]bool{}
 	for _, c := range doc.Cells {
@@ -411,6 +428,23 @@ func (w *tableWant) UnmarshalYAML(n *yaml.Node) error {
 		return fmt.Errorf("line %d: verdict %q is neither %s nor %s", n.Line, w.Verdict, Allow, Refused)
 	}
 	return nil
+}
+
+// netAssuranceKernel reports whether the contract's top-level net: section says assurance: kernel: an indented
+// `assurance: kernel` line between `net:` and the next top-level key (fs.assurance is another section's).
+func netAssuranceKernel(contract string) bool {
+	in := false
+	for _, l := range strings.Split(contract, "\n") {
+		switch {
+		case l == "net:":
+			in = true
+		case l != "" && l[0] != ' ' && l[0] != '#':
+			in = false
+		case in && strings.TrimSpace(l) == "assurance: kernel":
+			return true
+		}
+	}
+	return false
 }
 
 // variantMakers derive a fixture from a table's: the same cells and expectations under a contract that changes

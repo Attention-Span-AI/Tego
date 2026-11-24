@@ -56,8 +56,9 @@ func (r *Report) addMountWarnings(uid int) {
 
 func protectedMountWarnings(mt *agent.MountTable, home string) []string {
 	var warnings []string
-	const wholeTree = "; for compiled deny_read entries covering this content, tier cgroup without a decision plane refuses " +
-		"to start; tiers cgroup and bpflsm with a decision plane can hold whole-tree aliases when the remaining contract can be held"
+	const wholeTree = "; tier landlock applies each compiled deny entry to the second place too; for compiled deny_read " +
+		"entries covering this content, tier cgroup without a decision plane refuses to start; tiers cgroup and bpflsm with " +
+		"a decision plane can hold whole-tree aliases when the remaining contract can be held"
 	homeAliases := mt.Of(home).Aliases
 	_, _, homeUncertainty := mt.AliasDetails(home)
 	if homeUncertainty != "" {

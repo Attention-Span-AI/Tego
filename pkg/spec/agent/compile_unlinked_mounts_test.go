@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -278,10 +279,13 @@ func TestCompileUnlinkedPopulatedDirectory(t *testing.T) {
 				t.Errorf("%s %s admitted populated unlinked directory: %v\n%s", field, grant, err, render(ds))
 			}
 		}
-		// The uncertainty is local to grants reaching the directory.
+		// An unrelated grant is refused too since round 5: the unlinked directory root on the device leaves the other
+		// names of every deny entry there uncertain, and compile fails closed (ADR 0011, amended 2026-11-19).
 		_, ds, err := Compile(f.load(strings.Replace(writeSection(filepath.Join(f.project, "work")), "write:", field+":", 1)), f.machine, f.opts(WithMountInfo(mi))...)
-		if err != nil {
-			t.Errorf("unrelated grant refused: %v\n%s", err, render(ds))
+		if err == nil || !strings.Contains(render(ds), "cannot list every other name") || !strings.Contains(render(ds), "has an unlinked directory root") ||
+			!strings.Contains(render(ds), strconv.Quote(point)) || !strings.Contains(render(ds), "unmount the mount this message names") {
+			// Z1: the refusal names the mount, says why, and says what to do.
+			t.Errorf("unrelated grant beside an unlinked directory root: %v\n%s", err, render(ds))
 		}
 	}
 }

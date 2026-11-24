@@ -22,7 +22,7 @@ func init() {
 		return
 	}
 	p := os.Getenv(envTestChainAnchor)
-	anchorPath = func() (string, error) {
+	anchorPath = func(*config.Machine, bool) (string, error) {
 		if p == "" {
 			return "", errors.New("this binary is built with tegotesthooks and " + envTestChainAnchor + " is not set")
 		}

@@ -57,7 +57,7 @@ func TestNoRootRunWithoutReadsSaysSo(t *testing.T) {
 	c := login(t, s)
 
 	run := get(t, s, c, "/runs/"+gapNoRoot)
-	for _, want := range []string{`<p class="vt">No attack seen in the record</p>`, `<p class="vs">File reads not recorded</p>`, gap, fix} {
+	for _, want := range []string{`<p class="vt">No secret read or unexpected send in the saved record</p>`, `<p class="vs">File reads not recorded</p>`, gap, fix} {
 		if !strings.Contains(run, want) {
 			t.Errorf("the run page lacks %q", want)
 		}
@@ -90,7 +90,7 @@ func TestNoRootRunWithoutReadsSaysSo(t *testing.T) {
 
 	for _, id := range []string{gapFull, gapOldLine} {
 		body := get(t, s, c, "/runs/"+id)
-		if !strings.Contains(body, `<p class="vt">No attack seen</p>`) || !strings.Contains(body, "No secrets touched") || strings.Contains(body, "record: full</code>") {
+		if !strings.Contains(body, `<p class="vt">No secret read or unexpected send recorded</p>`) || !strings.Contains(body, "No secrets touched") || strings.Contains(body, "record: full</code>") {
 			t.Errorf("run %s, whose run_start does not say reads went unrecorded, lost its words", id)
 		}
 	}
@@ -137,7 +137,7 @@ func TestMachineKernelDecidesAtTierOne(t *testing.T) {
 	s := newServer(t, fixture(t))
 	body := get(t, s, login(t, s), "/machine")
 	if strings.Contains(body, `title="Basic and watched runs decide no file or program in a kernel plane">Nothing</span>`) ||
-		!strings.Contains(body, ">Files and programs (Landlock)</span>") {
+		!strings.Contains(body, ">Files and programs (Landlock)</dd>") {
 		t.Errorf("This machine says the kernel decides nothing for a tier landlock run:\n%s", body)
 	}
 }
@@ -155,9 +155,9 @@ func TestEmptyPagesGiveANextStep(t *testing.T) {
 		"/detections":         "What Tego refuses a run under a contract (<span class=\"mono\">tego run</span>) shows here.",
 		"/approvals":          "A contract can ask you before a file change or a connection; those requests wait here for your answer.",
 		"/logs":               "Every line a run records shows here; <span class=\"mono\">tego watch -- &lt;command&gt;</span> starts one.",
-		"/rules":              "Make one from presets or from a finished run with New contract.",
+		"/rules":              `Make one from presets or from a finished run.</p><a class="btn btn-primary" href="/rules/new">New contract</a>`,
 		"/rules/change":       `Make one with <a class="link" href="/rules/new">New contract</a>; once it is written, its rules can be changed here.`,
-		"/rules/new?mode=run": "Record one first: <span class=\"mono\">tego watch -- &lt;the command that starts your agent&gt;</span>",
+		"/rules/new?mode=run": "To record a run: <span class=\"mono\">tego watch -- &lt;the command that starts your agent&gt;</span>",
 	} {
 		body := get(t, s, c, path)
 		if !strings.Contains(body, want) {

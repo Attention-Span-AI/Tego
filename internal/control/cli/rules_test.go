@@ -69,12 +69,13 @@ func TestRulesUsesDashboardView(t *testing.T) {
 	}
 	t.Setenv("TEGO_CONFIG", cfg)
 	old := anchorPath
-	anchorPath = func() (string, error) { return ledger.DefaultAnchorPath(dir), nil }
+	anchorPath = func(*config.Machine, bool) (string, error) { return ledger.DefaultAnchorPath(dir), nil }
 	t.Cleanup(func() { anchorPath = old })
-	m, _, err := loadMachine()
-	if err != nil {
-		t.Fatal(err)
+	mr := loadMachineReport(config.TrustWarn)
+	if mr.err != nil {
+		t.Fatal(mr.err)
 	}
+	m := mr.m
 	want := rulesview.InForce(context.Background(), root, id, rulesview.Options{Machine: m, Anchor: ledger.DefaultAnchorPath(dir), Profiles: profilesrc.Chain(m)})
 	for _, args := range [][]string{{"rules", id, "--json"}, {"rules", "--json", "abcdef"}, {"rules", "--last", "--json"}} {
 		code, out, errs := run(t, user, args...)

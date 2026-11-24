@@ -296,3 +296,28 @@ func TestWireDeputyFD(t *testing.T) {
 		}
 	}
 }
+
+func TestChildEnvironmentDiagnosticNamesVariableWithoutValue(t *testing.T) {
+	for _, value := range []string{"QZ", "private-environment-value-that-is-long"} {
+		s := validSpec()
+		s.Env = []string{"LAUNCH_TOKEN=" + value + "\x00"}
+		err := s.Validate()
+		if !errors.Is(err, ErrSpec) || !strings.Contains(err.Error(), "LAUNCH_TOKEN") || !strings.Contains(err.Error(), "NUL") || strings.Contains(err.Error(), value) {
+			t.Errorf("child environment diagnostic: %v", err)
+		}
+	}
+}
+
+// TestEnvEntryMessages: an entry with no name to tell from its value is called by its position, and nothing of it is
+// echoed (rule (a) of pkg/spec/identity envtext.go).
+func TestEnvEntryMessages(t *testing.T) {
+	for _, entry := range []string{"sk-live-qz\x00", "=sk-live-qz\x00", "1BAD=sk-live-qz\x00"} {
+		s := validSpec()
+		s.Env = []string{"OK=1", entry}
+		err := s.Validate()
+		if !errors.Is(err, ErrSpec) || !strings.Contains(err.Error(), "environment entry 2 contains NUL (the entry is not shown)") ||
+			strings.Contains(err.Error(), "qz") || strings.Contains(err.Error(), "BAD") {
+			t.Errorf("child entry %q: %v", entry, err)
+		}
+	}
+}

@@ -3,6 +3,7 @@
 package guide
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/shellword"
@@ -24,6 +26,9 @@ const maxRuns = 2000
 // run is what the guide reads of one run folder: its run_start and whether it ended.
 type run struct {
 	id, dir string
+	stamp   recordStamp
+	first   [32]byte
+	started time.Time
 	start   record.RunStartPayload
 	// state is ledger.Reader.State: ended, running, lost or empty.
 	state ledger.RunState
@@ -84,6 +89,10 @@ func readRuns(root string) (*runs, error) {
 // readRun reads one run folder: its state from the lock and the last line, and its first line, which must be
 // run_start. A run with no complete line yet is nil.
 func readRun(dir, id string) (*run, error) {
+	before, err := pathStamp(filepath.Join(dir, ledger.EventsFile))
+	if err != nil {
+		return nil, err
+	}
 	rd, err := ledger.OpenReader(dir)
 	if err != nil {
 		return nil, err
@@ -98,13 +107,23 @@ func readRun(dir, id string) (*run, error) {
 		return nil, nil
 	}
 	r := &run{id: id, dir: dir, state: st}
-	for e, err := range rd.Iter() {
+	for raw, err := range rd.Lines() {
+		var e *record.Event
+		if err == nil {
+			e, err = record.Decode(raw)
+		}
 		if err != nil {
 			return nil, err
 		}
 		if e.Kind != record.KindRunStart {
 			return nil, fmt.Errorf("%s: the first line is %s, not run_start", dir, e.Kind)
 		}
+		after, err := pathStamp(filepath.Join(dir, ledger.EventsFile))
+		if err != nil || before != after {
+			return nil, fmt.Errorf("record changed during discovery")
+		}
+		r.stamp, r.first = before, sha256.Sum256(raw)
+		r.started = e.TS
 		if err := e.DecodePayload(&r.start); err != nil {
 			return nil, fmt.Errorf("%s: run_start: %w", dir, err)
 		}

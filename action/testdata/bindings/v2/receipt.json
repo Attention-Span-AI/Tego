@@ -1,0 +1,198 @@
+{
+  "receipt_v": 1,
+  "run": "r-5cd05e60-0dmrm463r69xq-kpyavw",
+  "agent": "k2-worker",
+  "tier": "landlock",
+  "capture": "off",
+  "command": [
+    "/usr/bin/python3",
+    "-u",
+    "k2-worker/worker.py"
+  ],
+  "cwd": "/home/tego",
+  "started": "2026-11-10T14:49:05.644340333Z",
+  "finished": "2026-11-10T14:49:05.681329029Z",
+  "ended": true,
+  "end_reason": "exit",
+  "exit_code": 0,
+  "time_taken": {
+    "seconds": 0.036988843
+  },
+  "files": {
+    "recorded": true,
+    "written": [
+      "/home/tego/k2-worker/result.json"
+    ],
+    "created": [],
+    "deleted": [],
+    "renamed": []
+  },
+  "refusals": {
+    "total": 1,
+    "by_rule": [
+      {
+        "rule": "fs.deny_read[~/k2-secret.txt]",
+        "reason": "read-denied",
+        "count": 1
+      }
+    ],
+    "list": [
+      {
+        "seq": 69,
+        "ts": "2026-11-10T14:49:05.676995332Z",
+        "kind": "fs",
+        "op": "open",
+        "target": "/home/tego/k2-secret.txt",
+        "rule": "fs.deny_read[~/k2-secret.txt]",
+        "reason": "read-denied",
+        "minute": 0
+      }
+    ]
+  },
+  "refusals_over_time": {
+    "bucket_s": 60,
+    "counts": [
+      1
+    ]
+  },
+  "stall": {
+    "recorded": true,
+    "note": "model traffic was not captured, so time spent waiting on the model counts as quiet",
+    "threshold_s": 300,
+    "minutes": 0,
+    "windows": 0
+  },
+  "tests": {
+    "recorded": false,
+    "note": "not recorded: no ledger line records a tests result yet"
+  },
+  "asks": {
+    "asked": 0,
+    "approved": 0,
+    "denied": 0,
+    "timed_out": 0,
+    "alternates": 0,
+    "unanswered": 0,
+    "wait_s": 0,
+    "list": []
+  },
+  "tokens": {
+    "recorded": false,
+    "note": "not recorded: model traffic capture was off for this run",
+    "model_calls": 0,
+    "metered": 0,
+    "in": 0,
+    "out": 0,
+    "cache_read": 0,
+    "cache_write": 0,
+    "est_cost_usd": 0,
+    "unpriced_responses": 0
+  },
+  "connections": [],
+  "connection_tries": 0,
+  "programs": [
+    {
+      "path": "/usr/bin/python3",
+      "count": 1
+    }
+  ],
+  "sensitive_reads": [
+    {
+      "path": "/home/tego/k2-secret.txt",
+      "verdicts": {
+        "observed": 0,
+        "allowed": 0,
+        "refused": 1
+      }
+    }
+  ],
+  "reads_notified": {
+    "notified": true,
+    "why": "record-full"
+  },
+  "coverage": {
+    "complete": false,
+    "gaps": [
+      {
+        "field": "tokens",
+        "code": "capture-off",
+        "level": "none",
+        "why": "not recorded: model traffic capture was off for this run"
+      },
+      {
+        "field": "stall",
+        "code": "model-time-unseen",
+        "level": "partial",
+        "why": "model traffic was not captured, so time spent waiting on the model counts as quiet"
+      }
+    ]
+  },
+  "lines": 74,
+  "binding": {
+    "v": 2,
+    "receipt_sha256": "fb8f3ffee6a8d4ed9be74298e49a02a1480ee731aaefb6789d74068b40cb420f",
+    "contract_hash": "9bc51d9305575273e74713c53bc0150dcf05c630bf8e4e35e28395a110a87abd",
+    "capabilities": {
+      "ask": false,
+      "capture.model_traffic": false,
+      "containers.adopted": false,
+      "containers.namespace_sandbox": false,
+      "exec.command_argv": false,
+      "exec.deny": true,
+      "fs.deny_chmod": false,
+      "fs.deny_delete_rename_mkdir_chmod_mknod": true,
+      "fs.deny_read": true,
+      "fs.deny_read.created_later": false,
+      "fs.deny_read.moved": false,
+      "fs.deny_read.nested": false,
+      "fs.deny_write": true,
+      "fs.protected_write_targets": false,
+      "gate.exec_completion": false,
+      "gate.fs_mutation_completion": false,
+      "gate.fs_open_completion": false,
+      "gate.net_completion": true,
+      "log.allowed_with_rule": true,
+      "net.deny_host_port": true,
+      "net.host_sockets_refused": false,
+      "net.http_rules": false,
+      "net.socket_families": true,
+      "net.tcp_destination_kernel": false,
+      "net.udp_by_destination": false,
+      "net.udp_by_port_kernel": false,
+      "net.unix": true,
+      "net.unix_abstract_scope": false,
+      "net.unix_destination_kernel": false,
+      "record.exec_open_connect": true,
+      "record.reads_mmap_chmod": true
+    },
+    "binary_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "chain": {
+      "run": "r-5cd05e60-0dmrm463r69xq-kpyavw",
+      "lines": 74,
+      "head": "a48c6844922d6ea567be6d901561116d2b79255471b10ef3851464867443f6a8",
+      "ended": true,
+      "bytes": 42521,
+      "sha256": "5aee3ab81ad0b0e38a0734e754ceafb9d3d2a35b449b11e5da0eff7b6531cb82",
+      "torn_bytes": 0,
+      "newer_lines": 0
+    },
+    "receipt_by": {
+      "tego_version": "v0.1.2",
+      "commit": "0123456789abcdef0123456789abcdef01234567"
+    },
+    "limits": [
+      {
+        "code": "launching-user-can-rewrite",
+        "why": "the user who started the run can rewrite this record and its receipt together, so a pair that matches can still have been made up"
+      },
+      {
+        "code": "tail-not-synced",
+        "why": "lines are not synced to disk during the run, so a crash can lose the last ones and nothing counts them"
+      },
+      {
+        "code": "no-signature",
+        "why": "This JSON carries no signature. A CI signature is a detached bundle checked separately."
+      }
+    ]
+  }
+}

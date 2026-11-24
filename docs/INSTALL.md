@@ -1,20 +1,20 @@
 # Install
 
-Tego runs on Linux. On macOS and Windows it runs inside a Linux VM. Each has a one-command install, below; building from
+Tego runs on Linux. On macOS it runs in a Linux VM; on Windows it runs in its own WSL2 distribution. Each has a one-command install, below; building from
 source is the other way.
 
 | System | Install | Tested on |
 |---|---|---|
 | Linux | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | The published v0.1.1 as a new user, tier landlock: AlmaLinux 9.8, Ubuntu 24.04 and 26.04.1, Debian 13, Fedora 44, Amazon Linux 2023 ([details](TIERS.md#the-published-release-as-a-new-user)) |
 | macOS | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | By hand on an Apple silicon Mac, through to a Claude Code session; in CI on GitHub's hosted macOS 15 runners when a pull request changes the installer or the Mac setup ([details](#macos)) |
-| Windows | `wsl --install -d Ubuntu-24.04`, then the Linux line inside Ubuntu | Not run on Windows yet |
+| Windows (from the next release) | `irm https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.ps1 \| iex` | Windows 11 Enterprise evaluation, build 26300.9457 under KVM; WSL 3.0.5.0. The guide's WSL blocker was lifted by the rule's switch-on (below); the ordinary build passed the six beginner steps there (below), from a local mirror, unsigned, without a real mouse or HTTPS release; the browser dashboard opens |
 
 ## Requirements
 
 | | |
 |---|---|
-| Operating system | Linux, amd64 or arm64. macOS and Windows have no native build: Tego runs inside a Linux VM there (below). |
-| Kernel | Tier 1 (no root) needs Landlock ABI 2 or newer, which is Linux 5.19 or later or a backport such as RHEL 9's 5.14, and cgroup v2 with a subtree delegated to your user. The oldest kernels the project tests are 6.1 and RHEL 9's 5.14. Ubuntu 22.04's stock 5.15 has Landlock ABI 1, so no tier runs on it. Tiers 2 and 3 need root, and tier 3 needs `bpf` in the boot LSM list. [TIERS.md](TIERS.md) has the table. |
+| Operating system | Linux, amd64 or arm64. The engine runs in a Linux VM on macOS and a WSL2 distribution on Windows (below); their host commands enter Linux. |
+| Kernel | Tier 1 (no root) needs Landlock ABI 2 or newer, which is Linux 5.19 or later or a backport such as RHEL 9's 5.14, and cgroup v2 with a subtree delegated to your user. The oldest kernels the project tests are 6.1 and RHEL 9's 5.14. Ubuntu 22.04's stock 5.15 has Landlock ABI 1, so no tier runs on it. Tiers 2 and 3 need root and the kernel's initial process-id namespace, and tier 3 needs `bpf` in the boot LSM list. [TIERS.md](TIERS.md) has the table. |
 | To install a release | `curl` and `sha256sum` (or `shasum`). With `cosign`, or a `gh` that is logged in, on `PATH`, the installer also checks who published the release. |
 | To build | `git`, `make` and Go 1.27 (CI builds with 1.27.4). You do not need clang: the compiled BPF objects are committed. |
 
@@ -32,9 +32,11 @@ Both require this repository's release workflow at the selected tag; without eit
 that only the checksum was checked, and how to get cosign
 ([Sigstore's install page](https://docs.sigstore.dev/cosign/system_config/installation/)) or log `gh` in (`gh auth login`). It runs the new `tego` before it replaces anything, and it needs no root. It ends
 with the next steps: the `export PATH` line if `~/.local/bin` is not on your `PATH` yet, over SSH the
-`systemd-run --user --scope bash` line, then one next command: `tego start` when the installed `tego` has it, else
+`systemd-run --user --scope bash` line (automatic entry is built, with SSH validation owed in a guest), a line that
+a service account needs its own copy (below), then one next command: `tego start` when the installed `tego` has it, else
 `tego setup`, else `tego doctor`. The installer does not change your `PATH`, so until you run that line, or log in again, the shell
-answers `tego: command not found`. For the default folder the line is `export PATH="/home/<you>/.local/bin:$PATH"`,
+answers `tego: command not found`; for that reason the next command names `tego` by its full path while the folder is not
+on your `PATH` (and as a bare `tego` once it is), so it runs in the shell you are in. For the default folder the line is `export PATH="/home/<you>/.local/bin:$PATH"`,
 with your own home folder. Ubuntu's `~/.profile` adds `~/.local/bin` at login; elsewhere, add the line to your shell's
 profile.
 
@@ -128,12 +130,12 @@ it; the built-in secret paths refer to the VM home and do not protect secrets in
 an agent can also change Mac files there, subject to its contract. Existing VMs keep their mounts: stop and edit
 one to set `mounts: []` if it was created with an older template.
 
-`limactl shell` logs in over SSH, which starts outside your user's cgroup, so for a run start a shell in it first:
+`limactl shell` logs in over SSH. Automatic entry is built; validation is **owed in a guest**. Keep the manual path:
 
 ```sh
 limactl shell tego
-systemd-run --user --scope bash
 cd ~
+systemd-run --user --scope bash
 tego test
 ```
 
@@ -178,25 +180,195 @@ with stand-ins for Homebrew, Lima, SSH and the browser.
 
 ## Windows
 
-Tego runs in WSL2, which runs a real Linux kernel. In PowerShell opened as administrator:
+The Windows installer is in the repository and comes with the next release. The latest release, v0.1.3, does not have it: until then run `wsl --install -d Ubuntu-24.04` in PowerShell and the Linux line in Ubuntu.
+
+Tego keeps AI agents inside rules. It needs Linux; the installer sets up **Tego's Linux, inside Windows**.
+WSL (Windows Subsystem for Linux) is the Windows feature that runs Linux. Allow about 5 to 10 minutes for
+first setup, about 500 MB of downloads, and at least 5 GB free disk space.
+
+**Preview limitation:** Windows and WSL are not fully qualified. The default WSL configuration (a private cgroup
+namespace) used to refuse the guide's safety check; since the run-membership rule was switched on for WSL
+(ADR 0100), setup and the four steps proceed where WSL shows two of its marks. A Windows 11 guest ran the ordinary
+build, installed with the one line from release assets, through all six beginner steps (install, `tego start`, a
+supervised run with its refusals, `tego dashboard`, approving a held request in the browser, and uninstall); what
+that did and did not prove is listed under "Tested on" below. Where WSL shows one mark only the refusal stays. If the installer ends with “The guide is not ready on this WSL setup”, it
+leaves the verified command for diagnostics and removal, reports the refusal and prints one next command. Do not
+change machine-wide WSL settings to bypass it. `tego dashboard` opens the dashboard in your browser (below).
+
+To inspect this path, open PowerShell from Start (Windows PowerShell 5.1 or PowerShell 7) and paste:
 
 ```powershell
-wsl --install -d Ubuntu-24.04
+irm https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.ps1 | iex
 ```
 
-Restart if Windows asks you to, then open Ubuntu, create your user, and run the Linux line there. `tego machine check` says
-which tier WSL2 gives you. Tier 3 needs `bpf` in the boot LSM list. Microsoft's WSL kernel lists it by default from
-6.18.54.1 (WSL 3.0.3 and later), so on an older install run `wsl --update` and `wsl --shutdown` in PowerShell. Where you
-cannot update, put the `lsm=` value from `sudo "$(command -v tego)" machine check` under `[wsl2]` in `%UserProfile%\.wslconfig`
-as `kernelCommandLine = lsm=<the list doctor printed>`, then run `wsl --shutdown`. Ubuntu 24.04's WSL image runs
-systemd already (its `/etc/wsl.conf` has `[boot]` `systemd=true`).
+Before Windows asks for administrator permission, the installer explains why it needs to enable or update WSL.
+Choose Yes in that Windows prompt. It reads back the elevated step's result. If a restart is needed, save your
+work, restart Windows, open PowerShell again, and paste the same line. After installing Linux, the installer
+checks both available protection and whether the guide can run. On the guest as first measured, before the rule was switched on, it ended with “The guide is not ready on this WSL
+setup” and the full Windows command for `setup --json`, which reported the cgroup-namespace refusal; where the guide
+can run, the next step is:
 
-[scripts/install-wsl.ps1](../scripts/install-wsl.ps1) does the same two steps: it installs Ubuntu-24.04 if WSL has no
-such distribution, and otherwise runs the Linux line inside it. Download it, read it, then run
-`powershell -ExecutionPolicy Bypass -File install-wsl.ps1`.
+```powershell
+tego start
+```
 
-**Tested on** nothing yet: neither the steps nor the script have been run on Windows. That the 6.18.54.1 kernel lists
-`bpf` is read from Microsoft's kernel configuration, not from a run of `tego machine check`.
+The intended four steps choose your agent, login, project and rules. Choose the test project for the first run. In the
+Ready panel, copy the command beginning with `cd` and press Enter. The sample's poisoned dependency tries to
+read a fake secret; Tego should refuse that read and keep the record. Then type `tego session list` and
+`tego session show --last`. Type `exit` to return to Windows.
+
+For a saved installer file, read it first, then run `powershell.exe -ExecutionPolicy Bypass -File .\install.ps1`.
+`-Yes` or `$env:TEGO_YES='1'` accepts installation questions. These never consent to removal or to changing Linux
+windows and sound for all installations. Without a terminal and without install consent, the installer prints the manual
+next step and stops.
+A declined step says what was kept. Running the one line leaves no installer functions, switches or preference
+changes in the PowerShell session; the command path is intentionally updated.
+
+### What is installed
+
+The engine remains Linux-only. The host command is a native **tego.exe**, built for Windows x64 and arm64 and
+listed in the release checksums. Its checksum is checked before placement under `%LocalAppData%\Tego\bin`.
+It starts the system's `wsl.exe` by absolute path and carries arguments as base64 UTF-8 JSON, without cmd.exe or
+PowerShell in the argument path. Standard input goes to Linux and command exit statuses return without added
+repair messages. The Windows executable is currently unsigned; release-checksum authentication and Windows
+executable signing are separate things.
+
+The installer imports the pinned Ubuntu **24.04.5 point release**, checks its SHA-256, and creates only the `tego`
+distribution. Your existing Linux installations and default-distribution choice are kept. The normal `tego` user
+has uid and gid **26743**, outside the usual first-user 1000, with no sudo grant. Provisioning is repeatable.
+The checked Linux installer runs as that user; commands enter the systemd user manager's scope. A private
+native startup client waits for that scope before
+passing through the person's command; it closes when the command ends. A systemd scope alone does not resolve
+the private-cgroup-namespace refusal of a build from before the rule was switched on; the rule decides now (above).
+`tego doctor` shows the measured checks and remaining Windows reach.
+
+The requested minimum is Windows build **19044** and WSL **2.6.3**. This is an implementation floor, not a claim
+that every version, architecture or PC has been tested. See the exact tested-on statement below.
+
+`tego` without arguments enters the home or last project's shell. `tego shell` accepts shell arguments too.
+The banner identifies Tego's Linux, inside Windows, and says how to return. Projects live there. To copy your
+project, open File Explorer and paste `\\wsl$\tego\home\tego` in its address bar, then drag the project folder in.
+Use `~/my-app` in the guide, or paste the Explorer path itself, with or without its surrounding quotes.
+A Windows drive path such as `C:\code\app` gets the same copy instructions.
+
+### Dashboard connection
+
+`tego dashboard` in PowerShell or cmd starts the dashboard inside Tego's Linux and opens it in your default
+browser at `http://[::1]:8484/` (the dashboard's own port), signed in by a link that works once, within a minute.
+A small hidden helper, the dashboard relay (`tego.exe` itself, with no window), carries your browser's
+connections into Tego's Linux. The first `tego dashboard` starts it; later ones reuse it, after checking that it is
+yours and that it reaches your dashboard. It admits only programs running as your own Windows account:
+connections from other Windows accounts are refused, and programs inside WSL cannot reach it. Its log is
+`%LOCALAPPDATA%\Tego\relay.log`.
+
+- `tego dashboard --stop` ends the relay. It also ends when you sign out of Windows, when Tego's Linux stops, and
+  before the installer updates or removes Tego. The next `tego dashboard` starts a new one.
+- While the relay runs it keeps Tego's Linux, and so the dashboard, running, also after you close the window.
+- In a shell inside Tego's Linux, `tego dashboard` starts the dashboard but cannot open a Windows browser: type
+  `exit`, then run `tego dashboard` in Windows.
+- `http://127.0.0.1:8484` does not work from Windows: WSL's own forwarding answers there, and the dashboard refuses
+  connections it cannot trace to your Linux user. No Host, peer, token, cookie or governed check is relaxed.
+- WSL **mirrored networking** (`networkingMode=mirrored` in `.wslconfig`) is not supported for the browser
+  dashboard: WSL then reserves the dashboard's port on Windows, so the relay cannot listen there. `tego dashboard`
+  says so and opens nothing; the terminal commands still work.
+- Answering a held request with Allow once in the browser works on the ordinary build where WSL shows two of its marks:
+  in the Windows guest the held write continued within seconds of the click, with no "unauthorized peer". A guest on
+  a build from before the rule was switched on, or a distribution that shows one mark, still refuses it ("Not done:
+  unauthorized peer"). The record names the answer as given in the dashboard by the signed-in person (see `tego
+  session show`), not as the dashboard's own process.
+
+### Windows host reach
+
+All WSL2 distributions of one Windows account share **one Linux kernel, loopback network and numeric user-id
+space**. Root in any of those distributions is root over that kernel. The distinctive Tego uid reduces accidental
+identity overlap; it does not protect against that root user. This differs from the Mac's separate Linux VM.
+
+| Channel | Default here | Remaining reach |
+| --- | --- | --- |
+| Windows drive mounts and fstab | Off in `/etc/wsl.conf` | Root can re-enable or mount them. The normal user has no sudo grant. |
+| Windows programs | Interop off | Kernel-wide binfmt and base init sockets can still exist. Their presence alone does not prove Windows execution works. |
+| Windows PATH | Off | Doctor examines the environment the command actually receives. |
+| Cross-distribution `/mnt/wsl` | Open | Other distributions can publish files and sockets accessible to Tego's user. |
+| Linux GUI/audio (WSLg) | No common sockets found in the measured provisioned distribution | An ordinary `/mnt/wslg` directory is not a socket. Other WSL versions/configurations may expose GUI/audio sockets; doctor reports actual socket nodes, without claiming access was tested. |
+| Windows network services | Not established closed | Reach depends on the actual Windows firewall, listener and networking mode; NAT or mirrored mode is not a blanket isolation boundary. |
+| DrvFs VM sockets | Not established closed | Automount and interop settings do not prove direct unprivileged protocol access is closed. A contract's `net:` section refuses new AF_VSOCK sockets; this does not cover absent `net:` or inherited descriptors. |
+| GPU | Settings off | Doctor reports `/dev/dxg` if present; the settings alone do not prove device isolation. |
+| Explorer/editor access into Linux | Available | Windows can deliberately edit `\\wsl$\tego`; this grants no Linux-to-Windows drive mount. |
+
+The default install keeps `%UserProfile%\.wslconfig`. Only the separately named **-DisableWslg** switch turns off
+Linux windows and sound for **all** your Linux installations. Choose that only if you do not use their GUI apps.
+`-Yes` and `TEGO_YES=1` never select it. The step comes after the command is installed, preserves unrelated
+settings and a backup, and is optional: a refused or failed edit does not block installation. The installer never
+stops your other Linux installations to apply it. Save their work and restart them yourself if you opt in.
+Global `networkingMode=none` also prevents the agent's network access; it is not selected by this installer.
+[Known limits](GAPS.md#wsl2-host-reach) names the remaining channels.
+
+### Repair and removal
+
+Rerun the same installer to repair a missing command or engine. It checks startup settings first and restarts
+Tego's distribution only if those settings changed; it asks explicitly before that stop. A normal repair keeps
+running sessions alive. Registration ownership is checked against Tego's installation folder, so a missing
+marker can be repaired. A conflicting installation is kept, with an explicit diagnostic/removal command.
+
+Keep a Windows `tego` command or Linux shell attached while work runs. In the measured guest, with no Windows
+`wsl.exe` clients, WSL stopped a live detached supervised user unit within **23.21 seconds**; its receipt ended
+by signal 15 after 22.4 seconds. Linger does not keep the distribution alive. Unattended lifetime is an open limit.
+
+To stop Tego's Linux, type `wsl --terminate tego` in Windows. Save your work first.
+
+To remove Tego, its projects and all run records, type `tego uninstall`. Enter means **no**. To explicitly consent
+on that invocation:
+
+```powershell
+tego uninstall -Yes
+```
+
+A saved installer also accepts `-Uninstall -Yes`. An install-time `TEGO_YES=1` does not answer removal.
+WSL itself and your other Linux installations remain. Tego's installation folder and command-path entry are
+removed. The running native command exits before a short cleanup process deletes its executable.
+Later edits to global settings are kept with an explanation.
+
+### Arguments at the Windows shell boundary
+
+The native command preserves the arguments it receives. A shell can change them before starting any native
+program. Quote metacharacters in cmd.exe, and use the shell's normal literal-string syntax in PowerShell.
+
+| Shell measured | What reaches a native program |
+| --- | --- |
+| cmd.exe, delayed expansion off; UTF-8 CRLF batch with `chcp 65001` | Quoted `&`, `|`, `<`, `>`, `^`, `!`, empty strings, spaces, dashes, colon switches and non-ASCII survived. `%VAR%` expanded even inside quotes. Unquoted metacharacters remain cmd.exe syntax. Embedded quotes required native-command escaping. The tested CRLF batch fixture preserved a 20,000-character argument on this build. |
+| Windows PowerShell 5.1 | Its native binder dropped the empty string and removed the embedded quotes in `say "hi"`; the same happened to an ordinary native reference program. The remaining hostile arguments, including 20,000 characters, survived. UTF-8 script files need a BOM for literal non-ASCII text in this shell. |
+| PowerShell 7.7.0, default native argument mode | The whole vector survived, including embedded quotes, the empty string and 20,000 characters. |
+
+**Tested on:** a Windows 11 Enterprise evaluation guest under KVM on the developers' machine, build
+**26300.9457**, WSL **3.0.5.0**, kernel **6.18.58.1-1**, Windows PowerShell **5.1.26100.9444**.
+PowerShell **7.7.0** ran the complete argument matrix. Fresh release-shaped files from committed source
+proved the manual test project's supervised refusal and session views, stdin/status, Ctrl-C, and closed Windows
+program/drive/PATH controls against the person's ordinary Ubuntu. They also exposed the guide blocker described above, which the rule's switch-on (ADR 0100) later lifted.
+A later guest round (same build) opened the dashboard in Edge from PowerShell 5.1, PowerShell 7 and cmd through the
+relay, with one relay reused by all three, a second Windows account refused and no Linux connection reaching it. Defender real-time protection was on; the unsigned executable ran without a detected threat,
+prompt or block in that run. A cold native command returned silent exit 37 in 18.41 seconds. Binary stdin/status
+and real-console Ctrl-C were checked from cmd.exe and both PowerShell editions.
+
+**The ordinary build, end to end (2026-11-19).** On the same guest (WSL 3.0.5.0, Windows PowerShell 5.1, Edge 157,
+Defender real-time protection on), the ordinary release build, not a test build, installed from release assets with the
+documented one line, with every question asked and answered (the Windows restart and a second paste of the same line
+included), then passed all six steps: `tego start` reached the Ready panel with the test project, the sample run was
+refused twice (the secret read and the send) and `tego session show --last` said so, `tego dashboard` opened Edge on the
+Overview signed in and showed both runs and their refusals, a held write was approved with Allow once in the browser
+and the run continued, and `tego uninstall` removed Tego, its projects, records and the Windows command and left no
+process, listener, scheduled task or Run key. On a base that already had WSL, PowerShell 7.7.0 installed, ran the guide,
+had the sample run refused twice and uninstalled, and cmd installed (the installer started from cmd through PowerShell)
+and ran the guide. The 37 proof rows ran on the ordinary build: 34 passed and 3 stayed unknown (the console-window shell
+kind, two rows, which nothing could drive, and the FUSE namespace-file forgery, which is not scripted); none failed.
+
+This did **not** prove: a real keyboard and a mouse click (keys went in as keyboard events and Allow once was a click sent
+through the browser's debugging port); a signed executable (it is unsigned, so Windows' SmartScreen was not exercised);
+a real HTTPS release (the files came from a local HTTP mirror with the test switches, so no publisher or signature
+check ran); ARM64; Windows 10; a domain-managed PC or Windows Home; PowerShell 7 and cmd on a PC with no WSL yet (the
+restart path was walked from PowerShell 5.1 only); Windows Terminal or an editor's terminal; Claude Code or Codex (the
+runs used a sample project and a fixture rules file); WSL's mirrored networking, which is not supported for the browser
+dashboard; and Tego's Linux staying up unattended around the clock. Executable certificate signing remains an owner
+decision.
 
 ## Run in a container
 
@@ -295,14 +467,64 @@ A value in angle brackets is your own build's. A build from a checkout with no r
 release prints its tag, such as `tego=v0.1.2`. The `control_sha256=` line is the hash built into `tego`, and
 `tego-control version` prints the same hash as `sha256`.
 
+## A service account
+
+The shipped user units use `%h/.local/bin/tego`. Install both binaries as the service account there,
+or place them in a root-owned shared directory and change the units' `ExecStart` paths to match.
+The agent unit sets `PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin`; it does not read a shell profile.
+That user-owned folder also reaches the agent when its contract passes `PATH` through `env.pass`.
+A manual or automatic user scope inherits its caller's PATH, including sudo's `secure_path` after
+`sudo -u`; it adds no binary directories. In the account's scope shell, add its `~/.local/bin` to PATH.
+
+A bare Tego program name after sudo is looked up through sudo's own `PATH` (`secure_path` in the sudoers file), not
+yours. That path has no `~/.local/bin`, so the installer's copy is not found, and AlmaLinux 9.8's has no `/usr/local/bin`
+either (`sudo: tego: command not found`, measured). A copy in the administrator's home does not help: on Ubuntu 24.04 a
+new home is mode 0750 and the service account cannot enter it. Install tego as the account, into its own
+`~/.local/bin`. Before the setup command below, put the installed folder on the service account's login-shell
+`PATH` in its `~/.profile`. The explicit `sh -lc` reads that profile even if the account's configured shell is `nologin`:
+
+```sh
+sudo -u svc -H sh -c 'curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh | sh'
+sudo -u svc -H sh -lc 'exec "$(command -v tego)" setup'
+```
+
+(`svc` is the account. The login shell needs that account's installed Tego on `PATH`.) Every line that
+`tego setup` and the other commands print for you to type with `sudo` then names that copy by its full path, quoted, and
+a command that must run in a folder uses a shell as the account, changes folder there, and executes that checked binary.
+That form needs a sudoers grant that lets you run a shell as the account; a grant for the `tego`
+binary alone refuses it, Tego cannot read the policy, and its line says it may be refused (then run the command from a
+shell opened as the account). If the running `tego` cannot be named safely (its path is unreadable, no longer the running
+file, holds a control or invisible character, or is not executable by the account), the `next:` line says so and gives no
+command. Tego also withholds a command if the file or a resolved ancestor is owned by someone other than root or the
+process's effective account. Files refuse group/world write; non-sticky folders refuse world write.
+A sticky directory such as `/tmp` is allowed when its next child has a trusted owner: another user cannot rename that child there. The file itself must still refuse writes by
+other users. Install Tego in a folder only root or you can write if this check refuses the path.
+Directory group write is allowed for the effective user's private primary group, or a group with no
+members and no passwd primary users, such as an empty Debian staff group. Bounded local passwd/group reads
+and the standard-library account lookup determine membership; only files-only NSS sources establish an empty
+group. When membership is unknown (directory services, unreadable or oversized files), only the effective
+user's primary gid by id is allowed, and the folder must still be owned by that user or root. Known foreign
+local members always refuse. This fallback cannot rule out an unseen account sharing that gid. Non-sticky
+group-writable folders with an access ACL or unavailable ACL metadata also refuse: a named ACL writer need
+not belong to that group. The executable itself must never be group/world writable.
+In the account's own scope shell the lines stay `tego ...`, so `~/.local/bin` must be on that shell's `PATH`
+(measured on AlmaLinux 9.8: it is, with the account's home made by `useradd --create-home`).
+[setup.md](user/setup.md) ("A user with no user manager") gives the whole order.
+
 ## Running with sudo
 
-Tiers 2 and 3 need a root launcher, so you run `sudo tego run ...`. `sudo` may use a fixed `PATH` that does not include
-`~/.local/bin`. If it says `command not found`, give it the full path:
+The command form used throughout these docs is:
 
 ```sh
 sudo "$(command -v tego)" machine check
 ```
+
+Your shell resolves `command -v tego` before sudo starts. Put your installed copy on that shell's `PATH` first;
+this works for any install folder and does not depend on sudo's `secure_path`. Check that the lookup names the
+copy you intend to run. This is a choice made by the reader's shell. A command Tego itself prints instead names
+and checks the currently running binary by its absolute path; it does not perform this PATH lookup.
+
+Tiers 2 and 3 need a root launcher, so use the same form with `run` and its arguments.
 
 The launcher is root, and the agent runs as you, with your `HOME`, `USER` and `LOGNAME`. It has `sudo`'s `PATH`, so give a
 program installed under your home by its full path in `command:`.
@@ -330,14 +552,19 @@ in the boot LSM list. That is a fact about the machine, not a fault in the insta
 `inet_diag` and `tcp_diag` modules when Tego first asks, and the line warns only if they cannot load
 (`sudo modprobe tcp_diag`).
 
-**Over SSH.** Every run, one that only records included, starts in a cgroup your user can place a process in. A login
-over SSH or on a console, or a service, starts outside `user@<uid>.service` and cannot, so the machine check's cgroup check
-fails, and `tego run`, `tego watch` and `tego test` exit 125. Start a shell in your user's cgroup first:
-`systemd-run --user --scope bash`. In a terminal, `tego start`, `tego setup`, `tego machine check` and those three commands end with that
-command as their `next:` line when this is the only thing missing, and then you run `tego setup` (or the command again)
-in the new shell. If `systemd-run --user` cannot reach your user manager (after `su` or `sudo -u`, with no
-`XDG_RUNTIME_DIR`), the line says why and names no command; log in as yourself instead. If the check says your user has
-no delegated cgroup, it prints the fix.
+**Over SSH.** Automatic user-scope entry is built for `tego run`, `tego watch` and `tego test` when the current
+shell cannot place a run and the user manager answers. SSH and console validation is **owed in a guest** on
+Ubuntu 24.04, AlmaLinux 9.8 and Fedora 44. Keep the previously checked manual path available:
+
+```sh
+systemd-run --user --scope bash
+tego setup
+```
+
+After a committed handoff, Tego prints `tego: opened a user scope for this run` once. Setup and doctor still check
+the original shell. Missing systemd-run, manager refusal or a ten-second startup timeout refuses the run before
+run state and keeps the existing `next:` advice; startup cancellation exits 130 without that advice. Tego never
+enables lingering. `tego run --service` keeps its unit. [user/setup.md](user/setup.md) has the account and lifetime details.
 
 This is `sudo "$(command -v tego)" machine check` on a fresh Ubuntu 24.04 cloud image, with your build's own values in angle
 brackets. The table is cut after five rows here; yours prints in full. `(>= 5.14.0)` on the `kernel` line is the oldest
@@ -411,11 +638,58 @@ third-party notices that `NOTICE` refers to. `install.sh` prints where that arch
 
 ## Uninstall
 
+`tego uninstall` is in the repository and comes with the next release. The latest release, v0.1.3, does not have it.
+
+### Linux
+
 ```sh
-rm ~/.local/bin/tego ~/.local/bin/tego-control
+tego uninstall
 ```
 
-Tego's data is in `~/.tego` (runs, the chain anchor, config). Remove it only if you no longer need the records. `tego gc` sweeps orphans and expires old runs.
+It shows what it will remove and asks once (`[Y/n]`). It removes:
+
+- the user units `tego start` and `tego dashboard` made: `tego-dashboard`, and the clean-up timer and job `tego-gc`;
+- the installed `tego`, and the `tego-control` beside it when it is the one that `tego` was built with. Both are
+  checked by name and by content first, and a program in a source checkout (a `go.mod` beside it) is left alone;
+- the line `tego start` added to `~/.bashrc` to load your saved agent sign-ins, and the installer's `PATH` line in a
+  shell start-up file if one exists. Only that exact line goes, after a copy of the file named `<file>.tego-backup`
+  beside it; the `PATH` line stays while `~/.local/bin` still holds other files;
+- the dashboard's log, the guide's installer log, your saved sign-ins (`~/.config/tego/agent.env`) and the last-project
+  note.
+
+It keeps, and asks about separately, each defaulting to **no**:
+
+- **your records and contracts**: `~/.tego` (runs, chain anchor, logs, config) and `~/.config/tego` (your agents'
+  contracts). They are the proof of what your agents did, so deleting them is a second question of its own, and it
+  refuses while a session is still running;
+- **services you set up**: `tego-agent@<name>` instances, their planned restarts and the example unit files you copied
+  into `~/.config/systemd/user`. It lists them and never stops one without your yes.
+
+For a script, `tego uninstall --yes` answers the first question only. `--stop-agents` and `--delete-records` answer the
+other two. Run twice, it finds nothing more to do, and it works when the dashboard or the units are already gone.
+
+If Tego was installed for the whole machine (files owned by root in `/usr/local/bin`, `/etc/tego`, units in
+`/etc/systemd/system`, or a `tego` in a folder you cannot write), `tego uninstall` does not use `sudo` for you. It
+prints the exact `sudo` lines to type. If you moved your records with `ledger_root`, delete that folder yourself.
+
+### macOS
+
+Run `tego uninstall` in your Mac terminal. The Mac command runs it on the Mac, before the VM is asked. It lists and asks
+once, then removes the `tego` command in `~/.local/bin`, the `PATH` line the installer added (with a backup beside the
+file, and only while `~/.local/bin` holds nothing else), the dashboard's tunnel, and Tego inside the VM (the Linux steps
+above, answered `--yes`). The VM `tego`, with your records and contracts inside it, stays unless you answer yes to a
+second question (default no) or pass `--delete-records`; it is deleted only when its Lima template carries the
+installer's marker. Lima and Homebrew stay: `brew uninstall lima` removes Lima when you no longer need it.
+
+What is proven: the Mac command's shell code runs against stand-ins for Lima and SSH (`scripts/install_mac_test.sh`:
+the lists, the answers, `--yes`, a second run, the exact `PATH` line, a VM that is gone or not Tego's). It has not run
+against a real Lima VM on a Mac; whether Lima keeps the installer's marker in the instance's `lima.yaml` (which decides
+whether the VM may be deleted) is unproven there.
+
+### Windows
+
+`tego uninstall` in PowerShell removes Tego's Linux and everything in it, records included ([Repair and
+removal](#repair-and-removal)).
 
 ## Containers
 

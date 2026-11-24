@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # The root-only tests CI's root-suites job must see pass (scripts/skipgate.sh --must-pass): each skips
-# wherever it is not root, so a skip in that job means the job stopped testing what it exists for. Every one
+# wherever it is not root, so a skip in that job means the job stopped testing what it exists for. Historical entries
 # passed as root in a KVM guest set up as a hosted runner is (test/vm/README.md: VM_CGROUP=service,
 # TEGO_VM_LSM=kernel, TEGO_VM_LOCKDOWN=none), and none needs BPF LSM or a delegated cgroup. They are the
 # root-only tests of the four packages review round 1 (P2) found no root run reached; the other privileged
@@ -49,9 +49,11 @@ internal/runtime TestIntegrationRootStopMarkerFollowsNoLink # a root stop places
 
 # The root-only tests test/integration-skips.txt lets the unprivileged step skip, which only the no-failure rule
 # held here until review round 5 (P1): scripts/check-skiplists.sh now requires each such skip to be named in this
-# list or in test/vm/root-skips.txt. Each passed as root in both of its package's builds in a KVM guest, the
-# default one and the runner-like one above.
+# list or in test/vm/root-skips.txt. Historical entries passed as root in both of their package's builds in a KVM
+# guest, the default one and the runner-like one above. The capture invariant passed eight x86-64 rows with a dump-only
+# overlay; corrected stock reruns and arm64 acceptance remain owed in a guest.
 internal/doctor TestIntegrationAsRoot # D6's functional probe, D7's program loads and D8's fanotify round trip, as root
+internal/doctor TestCaptureStackInvariantOnThisKernel # eight x86-64 rows pass with dump-only overlay; corrected stock reruns owed in a guest: all eight capture bodies load and retain a live tail call; production capture remains offered, with no root skip allowed
 internal/doctor TestTestHookWithoutAProbeCgroup # reaching the attach step needs a program the kernel loaded
 internal/runtime/enforce/cgroup TestPlaceRingOnARealOuter # a ring outer and its rings need CAP_BPF
 internal/runtime/enforce/cgroup TestRunMembersMatchesProc # a cgroup of the root hierarchy
@@ -136,6 +138,7 @@ internal/bpf TestTrackingFailureEmittedWithRecordOff # failed descendant map ins
 internal/runtime/enforce/cgroup TestNetworkControlsOnRealKernel # listener ingress, accepted reservation, release and source refusal
 internal/runtime/enforce/cgroup TestNetworkListenAutobindOnRealKernel # empty and exact ephemeral listener admission
 internal/runtime/enforce/cgroup TestNetworkImportedListenOnRealKernel # outside-created socket cannot bypass the governed listener policy
+internal/runtime/enforce/cgroup TestNetworkListenWithoutNetListenOnRealKernel # a TCP listen, a ring's included, is refused under a net: section with no net.listen; unix and no-net: listens are not (D28)
 internal/runtime/enforce/cgroup TestNetworkExpiryOnRealKernel # expiry boundary and an independent grant without a userspace refresh
 internal/runtime/enforce/cgroup TestConnectApprovalOnRealKernel # exact destination and cookie one-shot credit, consumption and revocation
 internal/runtime/enforce/cgroup TestNetworkDatagramAndByteLimitsOnRealKernel # actual packet limits and monotonic counters for both address families
@@ -233,8 +236,8 @@ test/conformance TestJudgeCatchesAMutatedContract # a mutated contract (write an
 # CONF-SPACES (ADR 0017 space 2, ADR 0032): the AT_EXECVE_CHECK detector and the never-set regression, at tier landlock and tier cgroup.
 test/conformance TestExecveCheckDetector # ADR 0032's revisit condition is detected on the row: each interpreter's honouring of SECBIT_EXEC_RESTRICT_FILE, n/a below 6.14, at each tier the root run offers
 test/conformance TestChildNeverSetsExecRestrictBits # the agent's securebits 8-11 are clear at tier landlock and tier cgroup
-# CONF-SPACES (ADR 0017 space 5, v73 gates-1): the btrfs subvolume cell runs in every root run of the tegobpf suite; its untagged: skip in root-skips.txt is the plain build's only.
-internal/runtime/enforce/cgroup TestPlaneRunBtrfsSubvolumeInodeIdentity # two btrfs subvolumes' equal inode numbers keep distinct plane rows, agreeing with compile, model, kernel and ledger; mounts an embedded image, needs only the btrfs module root-suites.sh loads (VM_MODULES)
+# CONF-SPACES (ADR 0017 space 5, v73 gates-1): every full matrix row except RHEL 9 requires the Btrfs fixture in the tegobpf suite. Only RHEL 9 may use the three row-scoped nested capability skips.
+internal/runtime/enforce/cgroup TestPlaneRunBtrfsSubvolumeInodeIdentity # two btrfs subvolumes' equal inode numbers keep distinct plane rows, agreeing with compile, model, kernel and ledger; mounts an embedded image with a built-in or loaded Btrfs driver; only RHEL 9 may lack it
 
 # enforce-plane §10.1 cold attribution (perf-cold C1): each program's BPF_LOG_STATS parses and matches verified_insns (5.16+).
 internal/bpf TestLoadStatsMatchKernel # loading trace_proc with the verifier's statistics needs CAP_BPF
@@ -320,6 +323,11 @@ internal/cli TestIntegrationExitWatchGivesTheStatusOfAProgramAThreadRan # an ado
 # Approval for file changes (ADR 0047): a mutation in an fs.ask scope is asked, then made by the supervisor on pinned names.
 internal/runtime TestRootMCPRelayGate # ADR 0126 §4 where a plane decides a run's execs: a relayed server started around its shim is refused and never runs, and a start through the shim has one exec and one mcp line, the recorder's; a subtest skips where its mode is missing
 internal/runtime TestRootAskMutation # ADR 0047 at tier cgroup from a root launcher: an approved rename in an fs.ask scope made by the supervisor as the agent, one human line; a denial moves nothing; a rename across entries EXDEV unasked
+internal/runtime TestRootStrictInterfaceLists # ADR 0128's amendment, from a root launcher under net.assurance: kernel: glibc's if_nameindex and getifaddrs and Node's os.networkInterfaces() work at tiers cgroup and bpflsm in each plane mode the boot offers, with no refused line (the plane's socket_recvmsg admits a receive with no control buffer); with no plane they fail ENOSYS as before
+internal/runtime TestRootStrictImportStillClosed # ADR 0128's amendment: under net.assurance: kernel an outside process's descriptor and pidfd cannot be received: recvmsg with a control buffer (plain or MSG_PEEK) is EACCES with a ledger line and no new /proc/self/fd entry, with none it takes the data with MSG_CTRUNC, recvmmsg and pidfd_getfd are ENOSYS, and int 0x80 is ENOSYS or ends the process
+internal/runtime TestRootStrictHeldOpens # ADR 0128's amendment, held opens: a run with fs.reads: held or gate.completion: held under net.assurance: kernel still gets its held opens at tiers cgroup and bpflsm in each plane mode the boot offers (the open deputy's own recvmsg with a control buffer is not refused), the agent's SCM_RIGHTS receive is still refused with no new descriptor, and no recvmsg line is refused
+internal/runtime TestRootLiveBlockInPlane # ADR 0124's amendment (A35-L): a live write block reaches the mutations the kernel plane decides at tiers cgroup and bpflsm
+internal/runtime TestIntegrationDenyReadSnapshotAtRootTiers # ADR 0069 amendment (C45, E31): a frozen read and an exec of a late image are refused with the deny-read-snapshot line at tiers cgroup and bpflsm
 internal/runtime TestRootRouteChangesRefused # ADR 0128 at tier cgroup from a root launcher: a setuid-root program under setuid: true and a net: section changes nothing on any path, its bounding set has no CAP_NET_ADMIN, and with no net: section the same probe's unaddressed change lands
 
 # Attribution (capture-derive R42): actions tied to the reply that asked for them.
@@ -348,11 +356,17 @@ internal/runtime TestIntegrationAdoptFreezesTopologyAtMigration # the runtime ar
 internal/runtime TestRootBuiltinRefusals # ADR 0113: immutable IPC, control and tty refusals at cgroup and bpflsm
 internal/runtime/enforce/cgroup TestPlaneRunIOUringListenerOutcomes # ADR 0113: root ring opt-in refuses startup
 internal/runtime/enforce/cgroup TestRootBuiltinRefusalsPeer # ADR 0113: the native peer closes explicitly allowed hard-link and symlink datagram aliases
+internal/cli TestRootRetentionStampOfAnotherOwnerIsReplaced # a stamp a root pass left, owned by root, does not cost the user every later retention pass
 
 # Row-scoped entries (row=ROW) hold a test to a pass on that row only: root-suites.sh checks them on a run of every
 # package on the row, and on a run of named packages on the row for the packages it ran. Elsewhere the test keeps the
-# skips root-skips.txt allows it.
+# skips root-skips.txt allows it. check-skiplists.sh validates the row against fetch-kernel.py --list and requires
+# a direct full-package dispatch for that row in vm-matrix.yml; a typo or an unscheduled obligation fails validation.
 internal/cli TestIntegrationAdoptSkipIsRecordedAtOnce row=fedora-7.0 # ADR 0148's adoption proof: fedora-7.0's 7.0 kernel preempts kernel code, so with the tegobpf build and python3 an adoption's skip is made and must be recorded at once (passed there on both boots, 2026-11-12); vm-matrix's row job runs internal/cli there for it
 # The bindalias acceptance probe must release an actual unanswered kernel permission open and join its owner.
 test/conformance TestFanotifyProbeCancellationClosesGroup/pending_permission/debian-13 row=debian-13 # real pending fanotify cancellation, all four orders 200 times, with thread/fd/goroutine and independent second-opener checks
 test/conformance TestFanotifyProbeCancellationClosesGroup/pending_permission/fedora-7.0 row=fedora-7.0 # same kernel-lifetime proof on Fedora's preemptible kernel, on both boots
+internal/cli TestScanAdvancedDropEveryThread # actual scan credential drop reaches retained and newly created threads, verified through every proc task status
+internal/doctor TestIntegrationProbeProcessExitDropsProgramsAndLinks # a probe process releases all programs and links on success, failure, panic and signals; pinned-program negative control
+
+internal/platform/hostaddr TestIntegrationPolicyRuleTables # policy rules and routes added as root in a network namespace: a table a rule leads to is this host's, one behind a mark is named (GAPS C46, D30)

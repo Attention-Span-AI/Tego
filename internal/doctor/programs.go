@@ -17,6 +17,7 @@ import (
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/asm"
 	"github.com/cilium/ebpf/btf"
+	"github.com/cilium/ebpf/features"
 	"github.com/cilium/ebpf/link"
 	"golang.org/x/sys/unix"
 
@@ -340,7 +341,21 @@ func probeHooks(root bool, uid int, kernel Version, tier, capture []hook) (Resul
 	}
 	if len(capture) > 0 {
 		lib := systemLibSSL(libsslDirs())
+		var stackErr error
+		if bpfobj.Available() && features.HaveBPFLinkUprobeMulti() == nil {
+			stackErr = captureDispatcherStacks(func(name string) (*ebpf.Program, bool, error) {
+				return loadHookProgram(hook{object: bpfobj.ObjectUprobeSSL, program: name}, spec, bpfobj.Load)
+			})
+		}
 		for _, h := range capture {
+			if stackErr != nil {
+				out := HookResult{Hook: h.Name, Object: string(h.object), Capture: true, Detail: stackErr.Error()}
+				if lib.err == nil {
+					out.Target = lib.path
+				}
+				results = append(results, out)
+				continue
+			}
 			results = append(results, testCaptureHook(h, spec, lib, bpfobj.Load))
 		}
 	}
@@ -691,6 +706,10 @@ func testCaptureHook(h hook, kernelBTF *btf.Spec, lib libTarget, load objectLoad
 		return out
 	}
 	defer func() { _ = prog.Close() }()
+	if detail := captureStackDetail(h.program, prog, standIn); detail != "" {
+		out.Detail = detail
+		return out
+	}
 	out.Loaded = true
 	if lib.err != nil {
 		out.LoadOnly = true
@@ -729,6 +748,48 @@ func testCaptureHook(h hook, kernelBTF *btf.Spec, lib libTarget, load objectLoad
 	out.Detail = fmt.Sprintf("attach not tested: %s exports none of %s", lib.path, strings.Join(h.symbols, ", "))
 	return out
 }
+
+// A stand-in has no capture body and cannot establish its stack invariant.
+// Doctor still labels it as a stand-in; actual capture uses the checked object.
+func captureStackDetail(name string, prog *ebpf.Program, standIn bool) string {
+	if !standIn {
+		if err := checkCaptureStack(name, prog); err != nil {
+			return err.Error()
+		}
+	}
+	return ""
+}
+
+// Optional dispatchers that cannot load leave the production six-program
+// fallback available. If both load, a read-back refusal must also be visible in
+// doctor, even when the six individual programs retain their calls.
+func captureDispatcherStacks(load func(string) (*ebpf.Program, bool, error)) error {
+	programs := make(map[string]*ebpf.Program, 2)
+	defer func() {
+		for _, p := range programs {
+			_ = p.Close()
+		}
+	}()
+	for _, name := range []string{bpfobj.ProgSSLMultiEnter, bpfobj.ProgSSLMultiReturn} {
+		p, standIn, err := load(name)
+		if p != nil {
+			programs[name] = p
+		}
+		if err != nil || standIn {
+			return nil
+		}
+		// A nil program is only used by host tests; real loading refuses it.
+		programs[name] = p
+	}
+	for name, p := range programs {
+		if err := checkCaptureStack(name, p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var checkCaptureStack = bpfobj.CheckCaptureStack
 
 // captureUprobeOptions scopes a capture row's attach to doctor's own pid (R27 D7). Unscoped, the uprobe PMU
 // places the breakpoint in every process on the host that maps the library, live agents included, for the

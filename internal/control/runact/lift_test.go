@@ -13,6 +13,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/liveblock"
+	"github.com/attention-span-ai/tego/internal/runscope"
 )
 
 // adjustableStart is a run_start of an Adjustable run at record minor 26 whose fence lists a read that is new access
@@ -24,9 +25,9 @@ var adjustableStart = `"tier":"cgroup","command":["sh"],"record_minor":26,"fs_re
 
 func outsideRun(t *testing.T) {
 	t.Helper()
-	old := selfInRun
-	selfInRun = func() (bool, error) { return false, nil }
-	t.Cleanup(func() { selfInRun = old })
+	old := selfAnswer
+	selfAnswer = answerOutside
+	t.Cleanup(func() { selfAnswer = old })
 }
 
 // TestBlockUntil: a time limit is refused on a run whose launcher predates it (record_minor 25), held to its bounds,
@@ -76,19 +77,16 @@ func TestBlockUntil(t *testing.T) {
 // and with no key; a restore is refused for a Locked run and outside the fence, but not inside a run.
 func TestLiftRefusals(t *testing.T) {
 	ctx := context.Background()
-	defer func(f func() (bool, error)) { selfInRun = f }(selfInRun)
+	defer func(f func() runscope.Answer) { selfAnswer = f }(selfAnswer)
 	root, dir := liveDir(t, adjustableStart)
 	holdRunLock(t, dir)
-	for _, in := range []func() (bool, error){
-		func() (bool, error) { return true, nil },
-		func() (bool, error) { return true, errors.New("cgroup namespace") },
-	} {
-		selfInRun = in
+	for _, in := range []func() runscope.Answer{answerGoverned, answerUnknown, func() runscope.Answer { return runscope.Answer{} }} {
+		selfAnswer = in
 		if _, err := Lift(ctx, root, liveRun, "read", "/srv/exports", time.Time{}, "cli"); !errors.Is(err, ErrGoverned) {
 			t.Fatalf("a lift inside a run: %v, want ErrGoverned", err)
 		}
 	}
-	selfInRun = func() (bool, error) { return false, nil }
+	selfAnswer = answerOutside
 	if _, err := Lift(ctx, root, liveRun, "read", "/srv/exports", time.Time{}, "cli"); !errors.Is(err, ErrNoKey) {
 		t.Fatalf("a lift with no key: %v, want ErrNoKey", err)
 	}
@@ -138,7 +136,7 @@ func TestLiftAndRestoreWrite(t *testing.T) {
 	if err != nil || l.Word != WordLiftAsked || l.Source != "deny" || l.Serial != 2 {
 		t.Fatalf("Lift of a contract refusal = %+v, %v", l, err)
 	}
-	selfInRun = func() (bool, error) { return true, nil }
+	selfAnswer = answerGoverned
 	r, err := Restore(ctx, root, liveRun, "read", "/srv/exports", "cli")
 	if err != nil || r.Word != WordRestoreAsked || r.Serial != 3 {
 		t.Fatalf("Restore inside a run = %+v, %v", r, err)
@@ -163,16 +161,16 @@ func TestLiftAndRestoreWrite(t *testing.T) {
 // operator's block: a re-add with a limit of a block held with no end leaves it as it was, and only a longer limit
 // lengthens one.
 func TestGovernedBlockCannotShorten(t *testing.T) {
-	defer func(f func() (bool, error)) { selfInRun = f }(selfInRun)
-	selfInRun = func() (bool, error) { return false, nil }
+	defer func(f func() runscope.Answer) { selfAnswer = f }(selfAnswer)
+	selfAnswer = answerOutside
 	ctx := context.Background()
 	root, dir := liveDir(t, `"tier":"landlock","command":["sh"],"record_minor":26`)
 	holdRunLock(t, dir)
 	if _, err := BlockUntil(ctx, root, liveRun, "exec", "/usr/bin/curl", true, time.Time{}, "cli"); err != nil {
 		t.Fatal(err)
 	}
-	selfInRun = func() (bool, error) { return true, nil }
-	b, err := BlockUntil(ctx, root, liveRun, "exec", "/usr/bin/curl", true, time.Now().Add(61*time.Second), "cli")
+	selfAnswer = answerGoverned
+	b, err := BlockUntil(ctx, root, liveRun, "exec", "/usr/bin/curl", true, time.Now().Add(5*time.Minute), "cli")
 	if err != nil || b.Word != "already blocked" || !b.Until.IsZero() || b.Serial != 1 {
 		t.Fatalf("a governed re-add with a limit = %+v, %v; want the operator's block left with no end", b, err)
 	}

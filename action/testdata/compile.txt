@@ -1,0 +1,84 @@
+contract  /home/tego/k2/k2-worker.yaml
+hash      9bc51d9305575273e74713c53bc0150dcf05c630bf8e4e35e28395a110a87abd
+tier      landlock
+capture   off
+record    full
+harness   generic (auto, from the contract's command)
+limits    cpu=unbounded cpu_weight=unbounded memory=unbounded memory_high=unbounded pids=unbounded tokens=unbounded cost_usd=unbounded wall=unbounded stall_after=unbounded repeats=unbounded
+fs        32 entries
+  KIND        PATH                                      ACCESS     MOUNT           FS        DEV    NOTES
+  implicit    /home/tego/.tego/runs                     -          -               -         -      missing
+  implicit    /home/tego/k2/k2-worker.yaml              -          /               ext4      253:1  -
+  implicit    /sys/fs/cgroup                            -          /sys/fs/cgroup  cgroup2   0:28   mount-point
+  implicit    /sys/fs/bpf                               -          /sys/fs/bpf     bpf       0:30   mount-point
+  write       /home/tego/k2-worker                      write-set  /               ext4      253:1  -
+  write       /dev/null                                 write-set  /dev            devtmpfs  0:5    -
+  deny_read   /home/tego/k2-secret.txt                  -          /               ext4      253:1  -
+  deny_read   /home/tego/.ssh                           -          /               ext4      253:1  built-in
+  deny_read   /home/tego/.tego                          -          /               ext4      253:1  built-in
+  deny_read   /run/user/1000/systemd/inaccessible/fifo  -          -               -         -      built-in
+  deny_read   /run/user/1000/systemd/units              -          -               -         -      built-in
+  deny_read   /run/user/1000/systemd/inaccessible/dir   -          -               -         -      built-in
+  deny_write  /run/user/1000                            -          -               -         -      built-in
+  deny_write  /tmp/tmux-1000                            -          -               -         -      built-in
+  deny_write  /run/screen/S-tego                        -          -               -         -      built-in
+  deny_write  /var/run/screen/S-tego                    -          -               -         -      built-in
+  deny_write  /home/tego/.screen                        -          -               -         -      built-in
+  deny_write  /tmp/emacs1000                            -          -               -         -      built-in
+  deny_write  /tmp/nvim.tego                            -          -               -         -      built-in
+  deny_write  /tmp/.X11-unix                            -          -               -         -      built-in
+  deny_write  /home/tego/.tego                          -          -               -         -      built-in
+  deny_write  /run/user/1000/tego                       -          -               -         -      built-in
+  deny_write  /run/dbus/system_bus_socket               -          -               -         -      built-in
+  deny_write  /var/run/dbus/system_bus_socket           -          -               -         -      built-in
+  deny_write  /run/docker.sock                          -          -               -         -      built-in
+  deny_write  /var/run/docker.sock                      -          -               -         -      built-in
+  deny_write  /run/podman/podman.sock                   -          -               -         -      built-in
+  deny_write  /var/run/podman/podman.sock               -          -               -         -      built-in
+  deny_write  /run/containerd/containerd.sock           -          -               -         -      built-in
+  deny_write  /var/run/containerd/containerd.sock       -          -               -         -      built-in
+  deny_write  /run/user/1000/docker.sock                -          -               -         -      built-in
+  deny_write  /run/user/1000/podman/podman.sock         -          -               -         -      built-in
+exec      1 entries
+  SOURCE              ENTRY             PATH              KIND    INTERP                       VERDICT
+  command,exec.allow  /usr/bin/python3  /usr/bin/python3  binary  /lib64/ld-linux-x86-64.so.2  allow
+exec: images restricted (allow, set by k2-worker.yaml), 0 command rules
+net       0 entries
+  RULE  PROTO  TARGET  ADDRESSES  TTL  VERDICT
+env       pass=PATH,HOME,LANG deny=- set=-
+path      /home/tego/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
+machine   the machine config in force, each value with the file and line it came from
+  ceiling tier=auto  (built-in)
+  ceiling capture=auto  (built-in)
+  setting serve.port=7433  (built-in)
+  setting ledger_root=/home/tego/.tego/runs  (built-in)
+  setting retention=30d  (built-in)
+  setting gc_interval=0s  (built-in)
+  setting stop_grace=10s  (built-in)
+  ceiling limits.cpu=unbounded  (built-in)
+  ceiling limits.cpu_weight=unbounded  (built-in)
+  ceiling limits.memory=unbounded  (built-in)
+  ceiling limits.memory_high=unbounded  (built-in)
+  ceiling limits.pids=unbounded  (built-in)
+  ceiling limits.tokens=unbounded  (built-in)
+  ceiling limits.cost_usd=unbounded  (built-in)
+  ceiling limits.wall=unbounded  (built-in)
+  ceiling limits.stall_after=unbounded  (built-in)
+  ceiling limits.repeats=unbounded  (built-in)
+  setting ask.timeout=5m  (built-in)
+  setting ask.notify=cli,desktop  (built-in)
+  setting record.ringbuf=2MiB  (built-in)
+  ceiling record.max_run_bytes=unbounded  (built-in)
+  setting bpf.linger=5m  (built-in)
+  setting bpf.ring_budget=256MiB  (built-in)
+  setting bpf.plane=auto  (built-in)
+  setting resolver=auto  (built-in)
+  setting denied_resolved_addresses=[]  (built-in)
+  setting forwarder.listen=127.0.0.1:0  (built-in)
+  setting prices=/home/tego/.tego/prices.yaml  (built-in)
+  setting profiles=/home/tego/.tego/profiles  (built-in)
+  setting registry=/home/tego/.config/tego  (built-in)
+  setting log.level=info  (built-in)
+  setting landlock.audit=off  (built-in)
+  setting privileged_binary=  (built-in)
+  setting users={}  (built-in)

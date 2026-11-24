@@ -3,13 +3,9 @@
 package cli
 
 import (
-	"bufio"
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 
 	"github.com/attention-span-ai/tego/internal/check/status"
@@ -43,6 +39,7 @@ type pauseFact struct {
 	// cause): such a run reads as its derived state with "(launcher unknown)", and a line under the table says which
 	// check failed and what to do. "" when the launcher was judged.
 	LauncherUnknown string
+	Error           string
 }
 
 // scopeFact is what a run's own scope says now (cgroup.events): Known says it could be read (a scope that is no
@@ -216,64 +213,34 @@ func writeLauncherUnknown(w io.Writer, snaps []*status.Snapshot, pauses map[stri
 	return nil
 }
 
-// readPause is run's pause from its directory: the last pause line in the ledger and the overlay's last pause or
-// resume request.
+// readPause is run's pause from its directory: the pause the ledger's pause lines leave (record.PausedAfter, the
+// fold the dashboard reads too) and the overlay's last pause or resume request.
 func readPause(dir, run string) pauseFact {
-	why, confirmed := lastPauseLine(filepath.Join(dir, ledger.EventsFile))
-	p := pauseFact{Paused: why == record.GapRunPaused || why == record.GapResumeFailed}
+	sc := scanPauseLines(filepath.Join(dir, ledger.EventsFile))
+	confirmed := sc.confirmed
+	p := pauseFact{Paused: sc.paused}
+	if sc.err != nil {
+		p.Error = sc.err.Error()
+	}
 	o, err := liveblock.Read(dir, run)
 	if err != nil {
 		return p // no overlay (never paused or blocked), or one that cannot be read: the ledger's word stands
 	}
-	var asked uint64
-	for _, c := range o.Changes {
-		if c.Control() {
-			asked = c.Serial
-		}
-	}
-	if asked > confirmed && o.Paused != p.Paused {
+	asked, _ := o.LastControl()
+	if liveblock.PauseWaiting(asked.Serial, o.Paused, confirmed, p.Paused) {
 		p.Pending = map[bool]string{true: pendPause, false: pendResume}[o.Paused]
 	}
 	return p
 }
 
-// lastPauseLine is the why and overlay serial of the last gap line in the ledger at path that records a pause or a
-// resume (record.GapPayload.LiveControl, what=enforce); "" and 0 when there is none or the file cannot be read.
-func lastPauseLine(path string) (why string, serial uint64) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", 0
-	}
-	defer func() { _ = f.Close() }() // read-only
-	rd := bufio.NewReaderSize(f, 64<<10)
-	for {
-		line, err := rd.ReadSlice('\n')
-		if errors.Is(err, bufio.ErrBufferFull) {
-			// A line longer than the buffer: a blob-split field keeps live_control lines short, so it is not one.
-			if _, err := skipLine(rd); err != nil {
-				return why, serial
-			}
-			continue
-		}
-		if err != nil {
-			return why, serial // no complete line left: one still being written is not read
-		}
-		if !bytes.Contains(line, []byte(`"live_control"`)) {
-			continue
-		}
-		e, err := record.Decode(bytes.TrimSuffix(line, []byte("\n")))
-		if err != nil || e.Kind != record.KindGap {
-			continue
-		}
-		var p record.GapPayload
-		if e.DecodePayload(&p) != nil || p.What != record.GapEnforce || p.LiveControl == nil {
-			continue
-		}
-		switch p.Why {
-		case record.GapRunPaused, record.GapRunResumed, record.GapPauseFailed, record.GapResumeFailed:
-			why, serial = p.Why, p.LiveControl.Serial
-		}
-	}
+// scanPauseLines reads the ledger at path through its last gap line that records a pause or a resume
+// (record.GapPayload.LiveControl, what=enforce): the scan holds that line's why and overlay serial, whether the lines
+// leave the run paused (record.PausedAfter) and every line it could not read. Its why is "" and its serial 0 when
+// there is no such line or the file cannot be read.
+func scanPauseLines(path string) controlScan {
+	sc := controlScan{path: path}
+	sc.next()
+	return sc
 }
 
 // writeLostPaused says, under the table, what is known of a lost run whose last recorded state was paused: that

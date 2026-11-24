@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/attention-span-ai/tego/internal/askclient"
 	"github.com/attention-span-ai/tego/internal/control/runact"
 	"github.com/attention-span-ai/tego/pkg/spec/askproto"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -21,6 +22,7 @@ type sent struct {
 	approve, always bool
 	file            string
 	calls           int
+	via             string // where the answer says the person gave it (askclient.WithVia)
 }
 
 // fakeBroker replaces the broker calls for one test and records what reaches them.
@@ -29,8 +31,9 @@ func fakeBroker(t *testing.T) *sent {
 	got := &sent{}
 	oldA, oldB := answerAsk, alternateAsk
 	t.Cleanup(func() { answerAsk, alternateAsk = oldA, oldB })
-	answerAsk = func(_ context.Context, _, run, id string, approve, always bool) (runact.Answered, error) {
+	answerAsk = func(ctx context.Context, _, run, id string, approve, always bool) (runact.Answered, error) {
 		got.calls++
+		got.via = askclient.ViaOf(ctx)
 		got.approve, got.always = approve, always
 		d := askproto.Decision{AskID: id, Approved: approve, Always: always}
 		if !approve {
@@ -134,5 +137,43 @@ func TestNewAnswersNeedPostChecks(t *testing.T) {
 	}
 	if got.calls != 0 {
 		t.Errorf("a refused request reached the broker %d times", got.calls)
+	}
+}
+
+// An answer given in the dashboard says so to the run (the word after the uid and pid in the answer line's by), so the
+// record reads as the signed-in person's answer and not the dashboard process's own; a browser that reached the
+// dashboard at [::1] while it listens on 127.0.0.1 came through the relay.
+func TestAnswerSaysItCameThroughTheDashboard(t *testing.T) {
+	got := fakeBroker(t)
+	s := newServer(t, fixture(t))
+	c := login(t, s)
+	tok := csrfOf(t, s, c, "/approvals")
+	w := post(s, "/approvals/answer", url.Values{"csrf": {tok}, "run": {harmRun}, "ask": {testAsk}, "decision": {"approve"}}, own, own+"/approvals", c)
+	follow(t, s, c, w)
+	if got.via != askproto.ViaDashboard {
+		t.Errorf("an answer from the dashboard's own address carried via %q, want %q", got.via, askproto.ViaDashboard)
+	}
+	relay := &http.Request{Host: "[::1]:" + strings.TrimPrefix(own[strings.LastIndex(own, ":"):], ":")}
+	if via := s.answerVia(relay); via != askproto.ViaDashboardRelay {
+		t.Errorf("a browser at [::1] reaching a dashboard on %s carried via %q, want %q", own, via, askproto.ViaDashboardRelay)
+	}
+	if via := s.answerVia(&http.Request{Host: strings.TrimPrefix(own, "http://")}); via != askproto.ViaDashboard {
+		t.Errorf("the dashboard's own Host carried via %q", via)
+	}
+}
+
+// TestAnswerOfAnsweredRequestSaysSo: a click that lands on a request answered, timed out or ended in the meantime is
+// told so in plain words, not left with nothing.
+func TestAnswerOfAnsweredRequestSaysSo(t *testing.T) {
+	fakeBroker(t)
+	answerAsk = func(context.Context, string, string, string, bool, bool) (runact.Answered, error) {
+		return runact.Answered{}, askproto.ErrNotPending
+	}
+	s := newServer(t, fixture(t))
+	c := login(t, s)
+	tok := csrfOf(t, s, c, "/approvals")
+	b := follow(t, s, c, post(s, "/approvals/answer", url.Values{"csrf": {tok}, "run": {harmRun}, "ask": {testAsk}, "decision": {"approve"}, "always": {"yes"}}, own, own+"/approvals", c))
+	if !strings.Contains(b, "this request is no longer waiting: it was answered, timed out, or its run ended") {
+		t.Errorf("no plain line for an answered request: %.300s", b)
 	}
 }

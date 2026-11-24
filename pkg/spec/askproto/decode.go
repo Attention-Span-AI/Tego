@@ -47,6 +47,8 @@ func DecodeCommand(data []byte) (Command, error) {
 			err = json.Unmarshal(value, &c.Remember)
 		case "alternate":
 			err = json.Unmarshal(value, &c.Alternate)
+		case "via":
+			err = json.Unmarshal(value, &c.Via)
 		default:
 			return Command{}, ErrProtocol
 		}
@@ -66,15 +68,15 @@ func DecodeCommand(data []byte) (Command, error) {
 	}
 	switch c.Action {
 	case ActionList:
-		if seen["ask_id"] || seen["approve"] || seen["remember"] || seen["alternate"] {
+		if seen["ask_id"] || seen["approve"] || seen["remember"] || seen["alternate"] || seen["via"] {
 			return Command{}, ErrProtocol
 		}
 	case ActionDetail:
-		if !ValidID(c.AskID) || c.Approve != nil || c.Remember != nil || c.Alternate != nil {
+		if !ValidID(c.AskID) || c.Approve != nil || c.Remember != nil || c.Alternate != nil || seen["via"] {
 			return Command{}, ErrProtocol
 		}
 	case ActionAnswer:
-		if !ValidID(c.AskID) || c.Approve == nil {
+		if !ValidID(c.AskID) || c.Approve == nil || !ValidVia(c.Via) || (seen["via"] && c.Via == "") {
 			return Command{}, ErrProtocol
 		}
 		// An alternate is never an approval of the target, and is a path that can be one at all.
@@ -103,6 +105,10 @@ func DecodeResponse(data []byte) (Response, error) {
 	}
 	if r.Error != "" {
 		switch r.Code {
+		case CodeApprovalPolicyChanged:
+			return r, ErrApprovalPolicyChanged
+		case CodeOwnerOnly:
+			return r, ErrOwnerOnly
 		case CodeNotPending:
 			return r, ErrNotPending
 		case CodeNotRememberable:
@@ -131,6 +137,10 @@ func DecodeResponse(data []byte) (Response, error) {
 // CodeUnavailable for every other error.
 func Code(err error) string {
 	switch {
+	case errors.Is(err, ErrApprovalPolicyChanged):
+		return CodeApprovalPolicyChanged
+	case errors.Is(err, ErrOwnerOnly):
+		return CodeOwnerOnly
 	case errors.Is(err, ErrNotPending):
 		return CodeNotPending
 	case errors.Is(err, ErrNotRememberable):

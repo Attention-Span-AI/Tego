@@ -3,59 +3,28 @@
 package inforce
 
 import (
-	"path"
-	"strconv"
 	"strings"
 
+	"github.com/attention-span-ai/tego/internal/check/compiledview"
 	"github.com/attention-span-ai/tego/internal/check/livestatus"
 )
 
-// The copy. Sentences have no subject (the page's heading names the agent), say what happens in everyday words, and
-// name no engine part: a reader who has never seen a contract should understand each line.
+var (
+	groupCopy = compiledview.GroupCopy
+	isDir     = compiledview.IsDir
+	netTarget = compiledview.NetTarget
+)
 
-// groupCopy is each group's heading and lede.
-var groupCopy = map[string][2]string{
-	GroupRead:        {"Can read", "Files the agent can open and read."},
-	GroupChange:      {"Can change", "Files and folders the agent can create, edit or delete."},
-	GroupAsk:         {"Asks you first", "The agent waits until you answer on the dashboard."},
-	GroupNeverRead:   {"Never reads", "Files the agent can never open, whatever it tries."},
-	GroupNeverChange: {"Never changes", "Files the agent can never edit or delete, even inside a folder it can change."},
-	GroupPrograms:    {"Programs", "The programs the agent can start."},
-	GroupNetwork:     {"Network", "Where the agent can connect."},
-	GroupEnv:         {"Settings it gets", "Environment variables the agent starts with, by name. Values are never shown here."},
-	GroupLimits:      {"Limits", "When the run is stopped or slowed down."},
-	GroupLive:        {"Blocked live now", "Blocks you added while the agent runs. They end with the run."},
-	GroupAlwaysOn:    {"Always on", "Protections every run gets, written in no rules file."},
-}
-
-// How a rule is enforced, or why not in full.
+const textLive = "Refused by tego until the run ends"
 const (
-	textKernel       = "Enforced by the operating system"
-	textTegoConnect  = "Enforced: tego checks each connection"
-	textTegoRequest  = "Enforced: tego checks each request before it leaves"
-	textGate         = "Enforced: tego scores each action before it happens"
-	textTegoRead     = "Enforced: tego checks each read"
-	textHeld         = "Enforced: tego holds the action until you answer"
-	textBestEffort   = "Best effort: tego refuses it, but a program built to race tego could get past"
-	textHeldBest     = "Best effort: tego holds the action until you answer, but a program built to race tego could get past"
-	textShadowed     = "Not enforced for this run: it lies inside a folder the agent can change"
-	textObserve      = "Not enforced: this run only watches"
-	textAskReadTier  = "Refused without asking: this run cannot pause a read to ask you"
-	textEnvRemoved   = "Enforced: other variables are removed before the agent starts"
-	textLive         = "Refused by tego until the run ends"
-	textTegoCommands = "Best effort: tego checks the words of each command it starts"
-	textDatagram     = "Best effort: tego checks each datagram's address, but sends one it allows by the agent's own call, which a program built to race tego could redirect"
-
 	// An ended run's live block (EndedLiveRule), by what it did while the run ran. None says it refuses anything now,
 	// and only a block the run put in force is said to have refused.
-	textEndedInForce = "Ended with the run: tego refused it while it was in force"
-	textEndedPartial = "Ended with the run: tego refused changes while it was in force; reads were not seen in this run"
-	textEndedMarked  = "Ended with the run: this run was only watched, so it recorded what matched and refused nothing"
-	textEndedNever   = "Ended with the run before the run put it in force: it refused nothing"
-	textEnded        = "Ended with the run"
-
-	textExecAskReserved     = "Always refused: asking before a program runs is not supported yet"
-	textExecAskReservedBest = "Always refused, best effort: asking before a program runs is not supported yet, and tego checks the words of each command it starts"
+	textEndedInForce      = "Ended with the run: tego refused it while it was in force"
+	textEndedPartial      = "Ended with the run: tego refused changes while it was in force; reads were not seen in this run"
+	textEndedPartlyKernel = "Ended with the run: tego refused part of it while it was in force; the file changes the kernel decided were not covered"
+	textEndedMarked       = "Ended with the run: this run was only watched, so it recorded what matched and refused nothing"
+	textEndedNever        = "Ended with the run before the run put it in force: it refused nothing"
+	textEnded             = "Ended with the run"
 )
 
 // liveGroupCopy is the live group's heading, lede and footer for its rules' states: "Blocked live now" while at
@@ -90,188 +59,6 @@ func liveGroupCopy(rules []Rule) (title, lede, foot string) {
 	}
 	return "Blocking live", "Blocks you added while the agent runs. The run puts each one in force in about a second. They end with the run.",
 		"A block refuses nothing until the run puts it in force. From then on it refuses more than the rules file, never less, and ends with the run."
-}
-
-// isDir reports whether a declared path names a folder: contract paths end a directory in "/".
-func isDir(entry string) bool { return strings.HasSuffix(entry, "/") }
-
-// isGlob reports whether a declared path is a pattern.
-func isGlob(entry string) bool { return strings.ContainsAny(entry, "*?[") }
-
-// short is a path for display: the home directory as ~, everything else as written.
-func short(p, home string) string {
-	if home != "" && home != "/" {
-		if p == home {
-			return "~"
-		}
-		if rest, ok := strings.CutPrefix(p, home+"/"); ok {
-			return "~/" + rest
-		}
-	}
-	return p
-}
-
-// pathSentence says a path rule: verb is what the rule lets or refuses ("Can change", "Can never read",
-// "Asks you before it reads").
-func pathSentence(verb, entry, home string) (sentence, target string) {
-	target = short(entry, home)
-	switch {
-	case isGlob(entry):
-		return verb + " files matching " + target, target
-	case isDir(entry):
-		return verb + " files in " + target, target
-	}
-	return verb + " " + target, target
-}
-
-// programSentence says an exec rule. A program given by its full path is said by its name ("Can run python3.12");
-// the full path stays in the target, which the page shows as the title. The entry's words are read as compile reads
-// them (withWords): a quoted path with a space is one word ('/opt/My Tools/run' says "Can run run"), and a tab
-// separates words as a space does.
-func programSentence(verb, entry, home string) (sentence, target string) {
-	target = short(entry, home)
-	if !withWords(entry) {
-		w := programWord(entry)
-		switch {
-		case isDir(w):
-			return verb + " programs in " + short(w, home), target
-		case strings.Contains(w, "/") && !isGlob(w):
-			return verb + " " + path.Base(w), target
-		}
-		return verb + " " + short(w, home), target
-	}
-	name := target
-	trimmed := strings.TrimSpace(entry)
-	if i := strings.IndexAny(trimmed, " \t"); i > 0 {
-		if first := trimmed[:i]; strings.Contains(first, "/") && !isGlob(first) {
-			name = path.Base(first) + " " + strings.TrimLeft(trimmed[i:], " \t")
-		}
-	}
-	return verb + " " + name, target
-}
-
-// netTarget says a net entry as a place: "chatgpt.com on port 443", "the local socket /run/x.sock".
-func netTarget(entry string) string {
-	if p, ok := strings.CutPrefix(entry, "unix:"); ok {
-		if strings.HasPrefix(p, "@") {
-			return "the local socket named " + p
-		}
-		return "the local socket " + p
-	}
-	udp := false
-	e := entry
-	if r, ok := strings.CutPrefix(e, "udp://"); ok {
-		e, udp = r, true
-	} else if r, ok := strings.CutPrefix(e, "tcp://"); ok {
-		e = r
-	}
-	suffix := ""
-	if udp {
-		suffix = " (UDP)"
-	}
-	if strings.Contains(e, "/") {
-		return "addresses in " + e + suffix
-	}
-	host, port := splitHostPort(e)
-	if port == "" {
-		return host + " on any port" + suffix
-	}
-	return host + " on port " + port + suffix
-}
-
-// splitHostPort splits host:port, [v6]:port and a bare v6 address; port is "" when there is none.
-func splitHostPort(e string) (host, port string) {
-	if strings.HasPrefix(e, "[") {
-		if i := strings.Index(e, "]"); i > 0 {
-			host = e[1:i]
-			if p, ok := strings.CutPrefix(e[i+1:], ":"); ok {
-				port = p
-			}
-			return host, port
-		}
-	}
-	if strings.Count(e, ":") == 1 {
-		i := strings.LastIndex(e, ":")
-		if _, err := strconv.Atoi(e[i+1:]); err == nil {
-			return e[:i], e[i+1:]
-		}
-	}
-	return e, ""
-}
-
-// limitSentence says one limits key.
-func limitSentence(key, value string) string {
-	switch key {
-	case "wall":
-		return "Is stopped after " + human(value)
-	case "tokens":
-		return "Is stopped after " + value + " model tokens"
-	case "cost_usd":
-		return "Is stopped after $" + value + " of model use"
-	case "memory":
-		return "Can use at most " + human(value) + " of memory"
-	case "memory_high":
-		return "Is slowed down above " + human(value) + " of memory"
-	case "pids":
-		return "Can run at most " + value + " processes at once"
-	case "cpu":
-		return "Can use at most " + value + " CPU cores"
-	case "cpu_weight":
-		return "Gets a CPU share of " + value + " (100 is normal)"
-	case "stall_after":
-		return "Is stopped when nothing happens for " + human(value)
-	case "repeats":
-		return "Is stopped when it repeats the same step " + value + " times in a row"
-	}
-	return key + ": " + value
-}
-
-// limitAmount says one limits key's value as an amount, for a sentence that names two of them: "2 hours", "4 GiB",
-// "$5", "5000 model tokens".
-func limitAmount(key, value string) string {
-	switch key {
-	case "wall", "stall_after", "memory", "memory_high":
-		return human(value)
-	case "tokens":
-		return value + " model tokens"
-	case "cost_usd":
-		return "$" + value
-	case "pids":
-		return value + " processes"
-	case "cpu":
-		return value + " CPU cores"
-	case "cpu_weight":
-		return "a CPU share of " + value
-	case "repeats":
-		return value + " repeats"
-	}
-	return value
-}
-
-// human says a duration or a size the way people do: 2h as "2 hours", 4GiB as "4 GiB". A value it does not know
-// stays as written.
-func human(v string) string {
-	for _, u := range []struct{ suffix, one, many string }{
-		{"ms", "millisecond", "milliseconds"}, {"d", "day", "days"}, {"h", "hour", "hours"},
-		{"m", "minute", "minutes"}, {"s", "second", "seconds"},
-	} {
-		if n, ok := strings.CutSuffix(v, u.suffix); ok {
-			if _, err := strconv.Atoi(n); err == nil {
-				if n == "1" {
-					return n + " " + u.one
-				}
-				return n + " " + u.many
-			}
-		}
-	}
-	for _, u := range []string{"TiB", "GiB", "MiB", "KiB", "TB", "GB", "MB", "KB", "B"} {
-		if n, ok := strings.CutSuffix(v, u); ok {
-			if _, err := strconv.Atoi(n); err == nil {
-				return n + " " + u
-			}
-		}
-	}
-	return v
 }
 
 // liveWhat is what a live block names, with no word of its state: "cannot run curl". A write block names changes
@@ -324,6 +111,8 @@ func liveSentenceIn(kind, value string, state livestatus.State) string {
 		if kind == "path" {
 			return "Blocked now: cannot change " + value + " (reads still go through)"
 		}
+	case livestatus.PartlyKernel:
+		return "Partly blocked now: " + strings.TrimPrefix(s, "Blocked now: ") + "; changes the kernel decides in this run are not covered"
 	case livestatus.InForce:
 	}
 	return s
@@ -347,6 +136,11 @@ func liveEnded(kind, value string, was livestatus.State) (sentence, text string)
 			return "Was blocked: cannot change " + value + " (reads went through)", textEndedPartial
 		}
 		return "Was blocked: " + what, textEndedInForce
+	case livestatus.PartlyKernel:
+		if kind == "write" {
+			what += " (reads went through)"
+		}
+		return "Was partly blocked: " + what + "; changes the kernel decided in this run were not covered", textEndedPartlyKernel
 	case livestatus.RecordedOnly:
 		return "Was marked (recorded, not refused): " + what, textEndedMarked
 	case livestatus.Waiting:

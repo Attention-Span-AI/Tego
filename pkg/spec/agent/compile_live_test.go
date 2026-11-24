@@ -163,7 +163,7 @@ var liveOffVariants = map[string]string{
 // compileGolden compiles one contract hermetically: a fixed home, PATH, clock and resolver, no mount probe, every
 // tier built. It returns the table's JSON with the host's fields dropped and the diagnostics, every temporary and
 // repository path replaced by a placeholder; "" when the file is not a contract (verdicts, a profile).
-func compileGolden(t *testing.T, c goldenContract, home, bin string, subst *strings.Replacer) string {
+func compileGolden(t *testing.T, c goldenContract, home, bin string, subst *strings.Replacer, baselines ...*config.Machine) string {
 	t.Helper()
 	data, err := os.ReadFile(c.path)
 	if err != nil {
@@ -182,6 +182,12 @@ func compileGolden(t *testing.T, c goldenContract, home, bin string, subst *stri
 	machine, mds, err := config.LoadSources(config.Sources{}, home, 1000, config.TrustAbort)
 	if err != nil {
 		t.Fatalf("machine: %v %v", err, mds)
+	}
+	if len(baselines) > 0 {
+		baseline, known := baselines[0].BaselineSnapshot()
+		if !known || !baseline.Empty() {
+			machine = baselines[0]
+		}
 	}
 	rt, ds, err := Compile(ct, machine, WithCwd(filepath.Dir(c.path)), WithHome(home), WithPATH(bin), WithMountInfo(""),
 		WithResolver(goldenResolver{}), WithTiers(backend.Tiers()...), WithChainAnchor(filepath.Join(home, ".tego", "chain.log")),
@@ -328,11 +334,27 @@ func goldenHome(t *testing.T, home string) {
 }
 
 // TestLiveOffGolden is ADR 0125 R1: every contract with no live: key compiles to the table and diagnostics it
-// compiled to before the live: section existed, byte for byte. The golden was written at that commit
+// compiled to before the live: section existed, byte for byte, with the fixed refusal inventory subsequently
+// amended by ADR 0113 (including WSL launch and GUI servers). The golden was written at that commit
 // (-update-live-off). It holds on any architecture: every program a contract runs is a goldenBin stub, neither ELF
 // nor a #! script, so no loader or interpreter enters a table, and the host's loader identities (ExecCommands) are
 // left out of the golden.
-func TestLiveOffGolden(t *testing.T) {
+func TestLiveOffGolden(t *testing.T) { testLiveOffGolden(t) }
+
+func testLiveOffGolden(t *testing.T, baselines ...*config.Machine) {
+	testLiveOffGoldenIn(t, liveOffGolden, baselines...)
+}
+
+func testLiveOffGoldenIn(t *testing.T, goldenDir string, baselines ...*config.Machine) {
+	t.Helper()
+	if *updateLiveOff {
+		for _, baseline := range baselines {
+			snapshot, known := baseline.BaselineSnapshot()
+			if !known || !snapshot.Empty() {
+				t.Fatal("refusing -update-live-off with a configured or unknown baseline; regenerate only with the baseline-free fixture")
+			}
+		}
+	}
 	t.Setenv("TMUX_TMPDIR", "")
 	t.Setenv("SCREENDIR", "")
 	tmp := t.TempDir()
@@ -359,14 +381,14 @@ func TestLiveOffGolden(t *testing.T) {
 	subst := strings.NewReplacer(pairs...)
 	n := 0
 	for _, c := range liveOffContracts(t, starter) {
-		got := compileGolden(t, c, home, bin, subst)
+		got := compileGolden(t, c, home, bin, subst, baselines...)
 		if got == "" {
 			continue
 		}
 		n++
-		file := filepath.Join(liveOffGolden, c.name+".golden")
+		file := filepath.Join(goldenDir, c.name+".golden")
 		if *updateLiveOff {
-			if err := os.MkdirAll(liveOffGolden, 0o755); err != nil {
+			if err := os.MkdirAll(goldenDir, 0o755); err != nil {
 				t.Fatal(err)
 			}
 			if err := os.WriteFile(file, []byte(got), 0o644); err != nil {
@@ -383,6 +405,7 @@ func TestLiveOffGolden(t *testing.T) {
 			t.Errorf("%s: the compiled table or its diagnostics changed with no live: key\n%s", c.name, firstDiff(string(want), got))
 		}
 	}
+	t.Logf("compared %d existing compile goldens", n)
 	if n < 15 {
 		t.Fatalf("compiled %d contracts: too few to prove anything", n)
 	}

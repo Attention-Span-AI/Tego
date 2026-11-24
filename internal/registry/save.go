@@ -3,12 +3,14 @@
 package registry
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/sys/unix"
 )
 
 // Save is one new entry of the user registry: the contract Text, whose name: is Name, written as
@@ -32,6 +34,10 @@ type Save struct {
 	// Compile checks Text as the file at path, as `tego run <Name>` will compile it; nil checks nothing. An error is a
 	// refusal (SaveNoCompile) and nothing is written.
 	Compile func(path string, text []byte) error
+	// ExpectedDirectory binds creation to the directory reviewed by the caller.
+	ExpectedDirectory *DirectoryIdentity
+	// BeforePublish repeats caller review checks after the temporary file is synced.
+	BeforePublish func() error
 }
 
 // SaveStep is the check that refused a Save.
@@ -55,11 +61,12 @@ const (
 	// SaveIO: making the folder, or creating or writing the file, failed (Op says which).
 	SaveIO
 	// SaveUnusable: written, the entry is not one tego run <name> would use from a folder of From (Dir); it was
-	// removed again.
+	// removed again. A cleanup failure is SaveIO instead, reporting what may remain.
 	SaveUnusable
 )
 
-// SaveError is a refused Save. Nothing is left written.
+// SaveError is a refused Save. A post-publication failure explicitly says that
+// the complete file exists; a failure before publication leaves no new contract.
 type SaveError struct {
 	Step SaveStep
 	// Path is the file or directory the refusal is about; Dir the folder of From the name was looked up from.
@@ -68,7 +75,7 @@ type SaveError struct {
 	Write string
 	// Entry is the contract the name already is (SaveTaken with a registry's answer).
 	Entry *Entry
-	// Op is what failed for SaveIO: "mkdir", "create" or "write".
+	// Op is what failed for SaveIO; nested errors name the exact publication step.
 	Op  string
 	Err error
 }
@@ -91,6 +98,10 @@ func (e *SaveError) Error() string {
 	case SaveInsideWrite:
 		return fmt.Sprintf("%s would lie inside the contract's own fs.write entry %q, which tego refuses to run", e.Path, e.Write)
 	case SaveNoCompile:
+		var nf interface{ NotFinishedWords() string }
+		if errors.As(e.Err, &nf) {
+			return nf.NotFinishedWords() + "; nothing was written; try again"
+		}
 		return "the contract does not compile here (" + e.Err.Error() + ")"
 	case SaveExists:
 		return e.Path + " exists already, and a contract is never written over a file"
@@ -152,16 +163,28 @@ func (s Save) Check() (string, error) {
 	return path, nil
 }
 
-// Write checks the entry (Check), compiles it (Compile), and creates the file, mode 0600, never over a file or a link,
-// with the registry's directory and its agents/ made 0700 when missing. agents/ is opened as an os.Root inside the
-// registry's directory, as Resolve reads it, so a link at agents/ that leads out of the registry is refused, never
-// followed, and the file is created in it with O_EXCL, which a link at the file's name fails. The entry is then
-// resolved from each folder of From as tego run <name> will: one that would be refused there (a registry inside a
-// directory of tego's own, R6a) is removed again. It returns the file's path; a refusal is a *SaveError, with nothing
-// left written.
+// Write checks and compiles the entry, then publishes a synced 0600 file beneath
+// a pinned directory descriptor. Registry and agents are opened without links;
+// standalone saves retain linked-ancestor compatibility, while reviewed writes
+// use the strict no-link walk from the root.
+// Publication never replaces a file or link. It syncs the final directory.
+// A post-publication directory-sync error says that the complete file exists.
 func (s Save) Write() (string, error) {
+	return s.WriteContext(context.Background())
+}
+
+// WriteContext is Write with cancellation checks before path work and each new write.
+// Reads and compilation which resume after cancellation cannot create a new entry.
+// A filesystem mutation already submitted can still have an uncertain outcome.
+func (s Save) WriteContext(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	path, err := s.Check()
 	if err != nil {
+		return path, err
+	}
+	if err := ctx.Err(); err != nil {
 		return path, err
 	}
 	if s.Compile != nil {
@@ -169,47 +192,80 @@ func (s Save) Write() (string, error) {
 			return path, &SaveError{Step: SaveNoCompile, Path: path, Err: err}
 		}
 	}
-	user := s.Places.User
 	agents := filepath.Dir(path)
-	if err := os.MkdirAll(user, 0o700); err != nil {
-		return path, &SaveError{Step: SaveIO, Op: "mkdir", Path: user, Err: err}
+	placement := agents
+	if s.ExpectedDirectory == nil {
+		// TODO(next9): the builder's no-link rule for every ancestor is not
+		// applied to standalone saves; retain b68fbcab6 parent-link compatibility.
+		parent, err := saveParent(ctx, filepath.Dir(s.Places.User))
+		if err != nil {
+			return path, &SaveError{Step: SaveIO, Op: "open-directory", Path: agents, Err: err}
+		}
+		placement = filepath.Join(parent, filepath.Base(s.Places.User), AgentsDir)
 	}
-	root, err := os.OpenRoot(user)
+	dir, err := OpenDirectoryContext(ctx, placement, true)
 	if err != nil {
-		return path, &SaveError{Step: SaveIO, Op: "mkdir", Path: user, Err: err}
+		return path, &SaveError{Step: SaveIO, Op: "open-directory", Path: agents, Err: err}
 	}
-	defer func() { _ = root.Close() }()
-	if err := root.Mkdir(AgentsDir, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
-		return path, &SaveError{Step: SaveIO, Op: "mkdir", Path: agents, Err: err}
-	}
-	ar, err := root.OpenRoot(AgentsDir)
-	if err != nil {
-		return path, &SaveError{Step: SaveIO, Op: "mkdir", Path: agents, Err: err}
-	}
-	defer func() { _ = ar.Close() }()
+	defer func() { _ = dir.Close() }() // Directory was synced by Write; no buffered writes remain.
 	rel := s.Name + ".yaml"
-	f, err := ar.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
+	if err := dir.Write(rel, s.Text, WriteOptions{Context: ctx, Mode: 0o600, ExpectedDirectory: s.ExpectedDirectory, BeforePublish: s.BeforePublish}); err != nil {
 		if errors.Is(err, fs.ErrExist) {
 			return path, &SaveError{Step: SaveExists, Path: path, Err: err}
 		}
-		return path, &SaveError{Step: SaveIO, Op: "create", Path: path, Err: err}
-	}
-	_, err = f.Write(s.Text)
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		_ = ar.Remove(rel)
+		// Keep the established write operation: callers must not append a claim
+		// that nothing was written after a post-publication sync failure.
 		return path, &SaveError{Step: SaveIO, Op: "write", Path: path, Err: err}
 	}
 	places := s.Places
 	for _, d := range s.From {
 		places.Dir = d
 		if _, err := places.Resolve(s.Name); err != nil {
-			_ = ar.Remove(rel)
+			cleanupErr := dir.fd.Borrow(func(n int) error {
+				e := publicationStep("unusable-remove")
+				if e == nil {
+					e = unix.Unlinkat(n, rel, 0)
+				}
+				if e != nil {
+					return fmt.Errorf("unusable-remove: complete %s may remain: %w", rel, e)
+				}
+				if e := unix.Fsync(n); e != nil {
+					return fmt.Errorf("unusable-directory-sync: removal of %s could not be synced: %w", rel, e)
+				}
+				return nil
+			})
+			if cleanupErr != nil {
+				return path, &SaveError{Step: SaveIO, Op: "write", Path: path, Dir: d, Err: errors.Join(err, cleanupErr)}
+			}
 			return path, &SaveError{Step: SaveUnusable, Path: path, Dir: d, Err: err}
 		}
 	}
 	return path, nil
+}
+
+// saveParent resolves existing ancestors only. Registry and agents themselves
+// are subsequently opened without links; reviewed dashboard saves skip this
+// compatibility path and keep the strict descriptor walk from the root.
+func saveParent(ctx context.Context, path string) (string, error) {
+	var missing []string
+	for {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		resolved, err := filepath.EvalSymlinks(path)
+		if err == nil {
+			if err := ctx.Err(); err != nil {
+				return "", err
+			}
+			for i := len(missing) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, missing[i])
+			}
+			return resolved, nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) || path == string(filepath.Separator) {
+			return "", err
+		}
+		missing = append(missing, filepath.Base(path))
+		path = filepath.Dir(path)
+	}
 }

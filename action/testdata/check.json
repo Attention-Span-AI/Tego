@@ -1,0 +1,1 @@
+{"check_v": 1, "binding_v": 1, "result": "match", "ended": true, "checks": [{"name": "receipt", "result": "pass"}, {"name": "made_by", "result": "pass"}, {"name": "run", "result": "pass"}, {"name": "chain", "result": "pass"}, {"name": "head", "result": "pass"}, {"name": "bytes", "result": "pass"}, {"name": "facts", "result": "pass"}]}

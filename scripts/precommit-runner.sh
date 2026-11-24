@@ -15,13 +15,17 @@
 #   it are done. PC_JOBS=1 runs the phase's steps one after another in the order added.
 # pc_stop: stops the running jobs and every process their steps started (an EXIT trap's interrupt).
 # pc_finish: prints the verdict line (PC_VERDICT when set, else "precommit: every step passed") and returns 0 when
-#   every step passed; 1 when one failed or was never reported.
+#   every step passed; 1 when one failed or was never reported; 3 when no step failed but one was added as "notrun":
+#   the verdict then names what did not run and never says every step passed (a step that cannot run is not a pass).
 #
 # Each step's output goes to its own file and its exit status and duration to another, written last by a rename:
 # a step whose shell is killed leaves no status and is reported as FAIL, never as ok. Needs PC_TMP (a private
 # directory) and PC_JOBS (a positive integer).
 
-pc_phase=() pc_job=() pc_name=() pc_kind=() pc_cmd=() pc_failed=() pc_printed=0
+pc_phase=() pc_job=() pc_name=() pc_kind=() pc_cmd=() pc_failed=() pc_notrun=() pc_printed=0
+
+# pc_inert I: step I runs nothing (a note, or a step that could not run).
+pc_inert() { [ "${pc_kind[$1]}" = note ] || [ "${pc_kind[$1]}" = notrun ]; }
 
 pc_add() {
 	local phase=$1 job=$2 name=$3 kind=$4 cmd
@@ -33,7 +37,7 @@ pc_add() {
 		return 2
 		;;
 	esac
-	if [ "$kind" = note ]; then cmd="$*"; else cmd="$(printf '%q ' "$@")"; fi
+	if [ "$kind" = note ] || [ "$kind" = notrun ]; then cmd="$*"; else cmd="$(printf '%q ' "$@")"; fi
 	pc_phase+=("$phase") pc_job+=("$job") pc_name+=("$name") pc_kind+=("$kind") pc_cmd+=("$cmd")
 }
 
@@ -59,6 +63,11 @@ pc_report() {
 		printf '%-48s%s\n' "$name" "${pc_cmd[$i]}"
 		return
 	fi
+	if [ "${pc_kind[$i]}" = notrun ]; then
+		printf '%-48s%s\n' "$name" "NOT RUN: ${pc_cmd[$i]}"
+		pc_notrun+=("${pc_name[$i]} (${pc_cmd[$i]})")
+		return
+	fi
 	[ -s "$PC_TMP/$i.rc" ] && read -r rc dur <"$PC_TMP/$i.rc"
 	if [ "${pc_kind[$i]}" = report ]; then
 		printf '%-48s%s\n' "$name" "$(head -n 1 "$PC_TMP/$i.out" 2>/dev/null)"
@@ -78,7 +87,7 @@ pc_report() {
 pc_flush() {
 	while [ "$pc_printed" -lt "${#pc_name[@]}" ]; do
 		local i=$pc_printed
-		[ "${pc_kind[$i]}" = note ] || [ -e "$PC_TMP/$i.rc" ] || [ -e "$PC_TMP/$i.gone" ] || return 0
+		pc_inert "$i" || [ -e "$PC_TMP/$i.rc" ] || [ -e "$PC_TMP/$i.gone" ] || return 0
 		pc_report "$i"
 		pc_printed=$((i + 1))
 	done
@@ -88,7 +97,8 @@ pc_run() {
 	local phase=$1 i j k running next=0 first
 	local -a queue=() keys=() started=()
 	for i in "${!pc_name[@]}"; do
-		[ "${pc_phase[$i]}" = "$phase" ] && [ "${pc_kind[$i]}" != note ] || continue
+		[ "${pc_phase[$i]}" = "$phase" ] || continue
+		! pc_inert "$i" || continue
 		k=-1
 		for j in "${!keys[@]}"; do [ "${keys[$j]}" = "${pc_job[$i]}" ] && k=$j; done
 		if [ "$k" -lt 0 ]; then
@@ -106,7 +116,8 @@ pc_run() {
 	queue=("${started[@]}")
 	if [ "$PC_JOBS" -le 1 ]; then
 		for i in "${!pc_name[@]}"; do
-			[ "${pc_phase[$i]}" = "$phase" ] && [ "${pc_kind[$i]}" != note ] || continue
+			[ "${pc_phase[$i]}" = "$phase" ] || continue
+			! pc_inert "$i" || continue
 			pc_step "$i"
 			pc_flush
 		done
@@ -156,7 +167,7 @@ pc_finish() {
 	local i
 	# A step never reported (its phase was never run) is a failure, never a pass left out of the count.
 	for ((i = pc_printed; i < ${#pc_name[@]}; i++)); do
-		if [ "${pc_kind[$i]}" = note ] || [ -e "$PC_TMP/$i.rc" ]; then
+		if pc_inert "$i" || [ -e "$PC_TMP/$i.rc" ]; then
 			pc_report "$i"
 		else
 			printf '%-48s%s\n' "${pc_name[$i]} " "FAIL (never ran: phase ${pc_phase[$i]} was not run)"
@@ -167,6 +178,10 @@ pc_finish() {
 	if [ "${#pc_failed[@]}" -gt 0 ]; then
 		echo "precommit: failed: ${pc_failed[*]}" >&2
 		return 1
+	fi
+	if [ "${#pc_notrun[@]}" -gt 0 ]; then
+		echo "precommit: every step that ran passed, but not every step ran: NOT RUN: ${pc_notrun[*]}; this is not a full gate"
+		return 3
 	fi
 	echo "${PC_VERDICT:-precommit: every step passed}"
 }

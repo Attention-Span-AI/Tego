@@ -89,16 +89,16 @@ func markRow(t *testing.T, page string, seq string) string {
 	return page[start : i+end]
 }
 
-// TestWatchedLeakRowsStandOut (QU-3): on the watched run the id_rsa and token reads read "Secret read" and the send to
+// TestWatchedLeakRowsStandOut (QU-3): on the watched run the id_rsa and token reads read "Read, not refused" and the send to
 // the sink "Sent out", in red; the .pyc reads and the project's own API stay a grey "Observed"; the timeline head
 // says once that nothing was enforced, and the quick filter is "Secrets and sends", which keeps those three rows.
 func TestWatchedLeakRowsStandOut(t *testing.T) {
 	s := newServer(t, markFixture(t))
 	c := login(t, s)
 	page := get(t, s, c, "/runs/"+markWatchRun)
-	for seq, want := range map[string]string{"2": "Secret read", "3": "Secret read", "5": "Sent out"} {
+	for seq, want := range map[string]string{"2": "Read, not refused", "3": "Read, not refused", "5": "Sent out"} {
 		row := markRow(t, page, seq)
-		if !strings.Contains(row, `class="b b-bad"`) || !strings.Contains(row, want) || !strings.Contains(row, "mk-leak") {
+		if !strings.Contains(row, `class="b b-through"`) && !strings.Contains(row, `class="b b-bad"`) || !strings.Contains(row, want) || !strings.Contains(row, "mk-leak") {
 			t.Errorf("line %s does not read %q in red:\n%s", seq, want, row)
 		}
 	}
@@ -124,7 +124,7 @@ func TestWatchedLeakRowsStandOut(t *testing.T) {
 	}
 	// The live rows a watched run's page polls carry the same marks.
 	frag := do(s, "GET", "/runs/"+markWatchRun+"/rows?after=0", "127.0.0.1:8484", c).Body.String()
-	if !strings.Contains(frag, "Secret read") || !strings.Contains(frag, "Sent out") {
+	if !strings.Contains(frag, "Read, not refused") || !strings.Contains(frag, "Sent out") {
 		t.Errorf("the live rows of a watched run lack the marks:\n%s", frag)
 	}
 	// The enforced run marks nothing, and its timeline keeps "Blocked only".
@@ -164,16 +164,6 @@ func TestReceiptWords(t *testing.T) {
 	if !strings.Contains(page, `<span class="rc-k">Files written</span>`) || !strings.Contains(page, "<h3>Files written</h3>") ||
 		strings.Contains(page, "Files changed") {
 		t.Error(`the Receipt's files tile or list is not named "Files written"`)
-	}
-	v := &receiptView{}
-	if got := v.GapWords("record", "1 gap line: tego knows it missed some actions, so the counts are a floor"); got != "1 gap in the record (counts are a minimum)" {
-		t.Errorf("one gap reads %q", got)
-	}
-	if got := v.GapWords("record", "3 gap lines: …"); got != "3 gaps in the record (counts are a minimum)" {
-		t.Errorf("three gaps read %q", got)
-	}
-	if v.GapWords("stall", "x") != "" {
-		t.Error("another coverage gap was reworded")
 	}
 }
 
@@ -243,8 +233,8 @@ func TestCompareHeadline(t *testing.T) {
 	c := login(t, s)
 	page := get(t, s, c, "/compare?a="+markWatchRun+"&b="+markGuardRun)
 	for _, want := range []string{
-		`<div class="cmp-stat cmp-stat-leak"><span class="cmp-stat-k">A · Watched</span><strong class="cmp-stat-h">2 secrets left the machine</strong><span class="cmp-stat-d">id_rsa, token → 127.0.0.1:9821</span>`,
-		`<div class="cmp-stat cmp-stat-ok"><span class="cmp-stat-k">B · Enforced</span><strong class="cmp-stat-h">0 left</strong><span class="cmp-stat-d">3 attempts stopped</span>`,
+		`<span class="cmp-stat-k">Run A · Watched</span><strong class="cmp-stat-h">2 secrets left the machine</strong><span class="cmp-stat-d">id_rsa, token → 127.0.0.1:9821</span>`,
+		`<span class="cmp-stat-k">Run B · Enforced</span><strong class="cmp-stat-h">3 attempts stopped</strong><span class="cmp-stat-d">Recorded refusals</span>`,
 		`class="cmp-sum cmp-sum-quiet"`, `href="/static/compare.css"`,
 	} {
 		if !strings.Contains(page, want) {

@@ -3,6 +3,7 @@
 package agent
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -152,6 +153,10 @@ type resolvedProfile struct {
 }
 
 func (c *ProfileChain) resolve(name string) resolvedProfile {
+	return c.resolveBounded(context.Background(), name, -1)
+}
+
+func (c *ProfileChain) resolveBounded(ctx context.Context, name string, max int64) resolvedProfile {
 	sources, kind := c.dir, ProfileDir
 	r := resolvedProfile{}
 	if IsBuiltinName(name) {
@@ -166,7 +171,21 @@ func (c *ProfileChain) resolve(name string) resolvedProfile {
 		}
 	}
 	for _, s := range sources {
-		path, data, err := s.Resolve(name)
+		if err := ctx.Err(); err != nil {
+			r.err = err
+			return r
+		}
+		var path string
+		var data []byte
+		var err error
+		if bounded, ok := s.(BoundedProfileSource); ok && max >= 0 {
+			path, data, err = bounded.ResolveBounded(ctx, name, max)
+		} else {
+			path, data, err = s.Resolve(name)
+		}
+		if max >= 0 && err == nil && int64(len(data)) > max {
+			err = fmt.Errorf("%w: %s: source bytes; reduce the profile graph", ErrLoadBudget, path)
+		}
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
@@ -183,10 +202,20 @@ func (c *ProfileChain) resolve(name string) resolvedProfile {
 // resolveProfile resolves name through src. A source that is no ProfileChain is a profiles directory and serves no
 // built-in name, so the reserved namespace stays closed whatever a caller passes.
 func resolveProfile(src ProfileSource, name string) resolvedProfile {
+	return resolveProfileBounded(context.Background(), src, name, -1)
+}
+
+// BoundedProfileSource optionally bounds resolution before bytes are read.
+// Graph readers use it for request cancellation and the remaining byte budget.
+type BoundedProfileSource interface {
+	ResolveBounded(context.Context, string, int64) (string, []byte, error)
+}
+
+func resolveProfileBounded(ctx context.Context, src ProfileSource, name string, max int64) resolvedProfile {
 	if c, ok := src.(*ProfileChain); ok {
-		return c.resolve(name)
+		return c.resolveBounded(ctx, name, max)
 	}
-	return (&ProfileChain{dir: []ProfileSource{src}}).resolve(name)
+	return (&ProfileChain{dir: []ProfileSource{src}}).resolveBounded(ctx, name, max)
 }
 
 // profileUse is the record of a profile read for a merge.

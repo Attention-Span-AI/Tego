@@ -210,6 +210,7 @@ func TestSummarySaysHeldReadsAndAlternates(t *testing.T) {
 		{record.KindAnswer, `{"ask_id":"q-1","by":"uid:1000 pid:7","after_s":2,"approved":false,"alternate":"/home/u/fake","alternate_dev":2049,"alternate_ino":7}`, "alternate /home/u/fake (not the file asked for) by uid:1000 pid:7 after 2s"},
 		{record.KindAnswer, `{"ask_id":"q-1","by":"standing:q-0","after_s":0,"approved":false,"alternate":"/home/u/fake"}`, "alternate /home/u/fake (not the file asked for) by standing:q-0 after 0s"},
 		{record.KindAnswer, `{"ask_id":"q-1","by":"uid:1000 pid:7","after_s":2,"approved":true}`, "approved by uid:1000 pid:7 after 2s"},
+		{record.KindAnswer, `{"ask_id":"q-1","by":"uid:26743 pid:912 dashboard","after_s":2,"approved":true}`, "approved by uid:26743 pid:912, answered in the dashboard by the person signed in to it after 2s"},
 		{record.KindAnswer, `{"ask_id":"q-1","by":"timeout","after_s":300,"approved":false,"answer_reason":"ask-timeout"}`, "refused ask-timeout by timeout after 300s"},
 		{record.KindAnswer, `{"ask_id":"q-1","by":"human","after_s":1}`, "by human after 1s"},
 		{record.KindFS, `{"op":"open","path":"/home/u/fake","alternate_for":"/home/u/.aws/credentials"}`, "open /home/u/fake (alternate for /home/u/.aws/credentials)"},

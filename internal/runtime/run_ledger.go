@@ -17,6 +17,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/ledger"
+	"github.com/attention-span-ai/tego/internal/runtime/admission"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
@@ -215,18 +216,80 @@ func (r *runner) writeRunStart() error {
 		// run is unreadable to it (GAPS A12): written on every run whose ruleset listed one.
 		DenyReadFrozen: r.denyReadFrozen(),
 	}
+	// The home the run resolved, which a receipt folds to ~ (record minor 41), and the limits its scope holds (GAPS C221).
+	if start.RecordMinor >= record.MinorEveryLaunch {
+		start.Home = r.runHome(false)
+		start.AppliedLimits = r.applied
+	}
+	if r.localAuthority.OwnerOnly() {
+		if !r.localDropKnown || r.localAgentUID == 0 {
+			return fmt.Errorf("%w: root-only approval requires verified child credentials", ErrDeps)
+		}
+		if err := r.localAuthority.Check(); err != nil {
+			return err
+		}
+		start.RecordMinor = localRolesMinor(start.RecordMinor)
+		start.LocalApprovalAuthority = &record.LocalApprovalAuthority{Mode: config.LocalRolesOwnerOnly, SHA256: r.localAuthority.Digest(), AgentUID: r.localAgentUID}
+	}
 	// An Adjustable run's mode and fence (ADR 0125 decision 9); a Locked run writes neither field.
 	start.LiveMode, start.LiveFence = runLiveFence(r.rt)
 	// Who launched the run, on which host, and the identity its caller gave it (ADR 0073).
 	r.fillRunIdentity(&start)
+	if err := r.prepareBaselineRecord(&admission.Table{}, &start); err != nil {
+		return err
+	}
 	// The reserved blocks the caller handed the run, checked at launchMinor by newRunner (RunStartExtras).
 	r.deps.RunStartExtras.apply(&start)
 	if err := r.writer.WriteRunStartIn(start, r.cg.ID); err != nil {
 		return fmt.Errorf("runtime: write run_start: %w", err)
 	}
+	if r.localAuthority.OwnerOnly() {
+		if err := r.writer.Sync(); err != nil {
+			return fmt.Errorf("runtime: persist local approval authority: %w", err)
+		}
+	}
 	r.anchored.Store(true)
 	r.noteFrozen(start.DenyReadFrozen)
 	return nil
+}
+
+// runHome is the home directory run_start.home records (record minor 41): the one the run resolved, a clean absolute
+// path from the passwd database (config.Machine.Home, which never reads $HOME), or "" when it resolved none. A launch
+// is the invoking user's; an adoption is the agent owner's (Deps.Home), never the adopter's, and "" when the
+// owner has none. Whatever is not a clean absolute path is left out, so run_start never holds a home a reader could
+// not fold against.
+func (r *runner) runHome(adopted bool) string {
+	home := r.deps.Home
+	if !adopted && r.deps.Config != nil {
+		home = r.deps.Config.Home
+	}
+	if home == "" || r.deps.BaselineOwnerUnknown && adopted || !filepath.IsAbs(home) || filepath.Clean(home) != home {
+		return ""
+	}
+	return home
+}
+
+// prepareBaselineRecord classifies the refusing record steps for both launch and
+// adoption. Adoption passes its shared table and retains the payload before migration;
+// a launched run prepares its record immediately before publication and child release.
+func (r *runner) prepareBaselineRecord(checks *admission.Table, start *record.RunStartPayload) error {
+	if err := checks.Add(
+		admission.Check{Name: "baseline record evidence", SnapshotReason: "The evidence describes the compiled contract, exact retained configuration bytes, owner context and prepared mechanism; adoption rechecks current configuration separately before migration.", Run: func() error {
+			if err := r.rt.RecordBaseline(start, r.deps.Config, r.deps.Enforce.Tier(), start.DecisionPlane, r.execPinned(), !r.deps.BaselineOwnerUnknown); err != nil {
+				return fmt.Errorf("runtime: baseline record: %w", err)
+			}
+			return nil
+		}},
+		admission.Check{Name: "effective contract copy", SnapshotReason: "The effective bytes are the validated compiled snapshot and are written once through the held ledger directory descriptor; the writer and directory remain acquired through migration.", Run: func() error {
+			if start.Baseline != nil {
+				return r.writer.WriteEffective(start.Baseline.EffectiveContract)
+			}
+			return nil
+		}},
+	); err != nil {
+		return err
+	}
+	return checks.Prepare()
 }
 
 // denyReadFrozenLister is a handle whose Landlock ruleset lists directories to build its deny_read entries: tier 1's
@@ -333,7 +396,9 @@ func (r *runner) fsReads() *record.FSReads {
 		out.Reads = record.FSReadsHeld
 	}
 	for _, n := range r.rt.Reads.Nested {
-		out.Nested = append(out.Nested, n.Rule)
+		if n.AliasOf == "" { // another name of a target is held under the target's own rule, listed once
+			out.Nested = append(out.Nested, n.Rule)
+		}
 	}
 	return out
 }

@@ -44,8 +44,9 @@ func (t MCPTools) MarshalYAML() (any, error) {
 	return n, nil
 }
 
-// Relayed reports whether the server's messages go through Tego's MCP relay: it declares tools:.
-func (s MCPServer) Relayed() bool { return s.Tools != nil }
+// Relayed reports whether the server declares relay mediation. A business marker
+// keeps this true even if a caller loses tools; it must never select a direct path.
+func (s MCPServer) Relayed() bool { return s.Tools != nil || s.BusinessRules != nil }
 
 // mcpToolNameRE is a tool name the rules can name: MCP's own name rule widened by ':' and '/', which real servers use.
 var mcpToolNameRE = regexp.MustCompile(`^[A-Za-z0-9_.:/-]{1,128}$`)

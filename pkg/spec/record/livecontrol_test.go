@@ -299,3 +299,23 @@ func TestReadmeNamesTheLiveControlMinor(t *testing.T) {
 		}
 	}
 }
+
+// TestPausedAfter: a run is paused from a run-paused or resume-failed line until a run-resumed line; a failed pause
+// leaves the run as it was, and a line that is not a pause line moves nothing.
+func TestPausedAfter(t *testing.T) {
+	for _, tc := range []struct {
+		before bool
+		why    string
+		want   bool
+	}{
+		{false, GapRunPaused, true}, {true, GapRunPaused, true},
+		{false, GapRunResumed, false}, {true, GapRunResumed, false},
+		{false, GapPauseFailed, false}, {true, GapPauseFailed, true},
+		{false, GapResumeFailed, true}, {true, GapResumeFailed, true},
+		{false, GapLiveBlockAdded, false}, {true, GapLiveBlockAdded, true}, {true, "", true},
+	} {
+		if got := PausedAfter(tc.before, tc.why); got != tc.want {
+			t.Errorf("PausedAfter(%v, %q) = %v, want %v", tc.before, tc.why, got, tc.want)
+		}
+	}
+}

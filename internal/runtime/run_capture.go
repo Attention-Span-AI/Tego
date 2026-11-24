@@ -358,6 +358,16 @@ func (r *runner) superviseKernelRecord(fn func(tid int, op, name, name2 string, 
 			p.SetDecisionPlane(mode)
 		}
 	}
+	// The plane's refusals under a live block carry its id, which the launcher names (ADR 0124, amendment 2026-11-21).
+	if n, ok := r.kernelRecord.(LiveBlockRuleNamer); ok {
+		n.SetLiveBlockRule(r.liveRules.rule)
+	}
+}
+
+// LiveBlockRuleNamer is a kernel recorder that names the live block a plane refusal's rule carries
+// (observe.Recorder.SetLiveBlockRule).
+type LiveBlockRuleNamer interface {
+	SetLiveBlockRule(name func(id uint16) (string, bool))
 }
 
 // DecisionPlaneNamer is a kernel recorder that names the kernel decision plane's mode on the lines whose verdict
@@ -405,6 +415,13 @@ func (r *runner) planeExecs() bool {
 // (observe.Recorder.SetActivity).
 type ActivityReporter interface {
 	SetActivity(fn func(monoNS uint64))
+}
+
+// RequestHolder is a capture source that holds an agent's request inside Tego while it prepares to send it on
+// (forwarder.Manager.HoldingRequest). The budget watcher counts such a run as held (limits.WithHeld): the stall
+// check does not run while Tego itself is what the agent waits for.
+type RequestHolder interface {
+	HoldingRequest() bool
 }
 
 // ActivityStamper is a kernel recorder that reads the run's activity stamp, the newest action the BPF programs saw

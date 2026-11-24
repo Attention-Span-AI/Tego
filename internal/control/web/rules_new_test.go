@@ -14,11 +14,13 @@ import (
 	"strings"
 	"testing"
 
+	htmlnode "golang.org/x/net/html"
+
 	"github.com/attention-span-ai/tego/internal/control/rules"
 	"github.com/attention-span-ai/tego/internal/rulefile"
 )
 
-var newBase = regexp.MustCompile(`name="base" value="([0-9a-f]{64})"`)
+var newBase = regexp.MustCompile(`name="base" value="([0-9a-f]{48}\.[0-9a-f]{64})"`)
 var newRef = regexp.MustCompile(`href="/rules\?c=([0-9a-f]{16})"`)
 
 // withSetup gives the fixture's server the rule service with a compiler that accepts every contract.
@@ -33,8 +35,8 @@ func (f *rulesFix) withSetup(t *testing.T) *rules.Service {
 // TestRulesNewPreviewAndCreate: the form offers the presets; a preview (a GET) shows the rules in sentences and the
 // Create form and writes nothing; Create (a POST) writes agent.yaml and answers 303 to the page of the agent set up,
 // with the start line, which a reload shows again; the new rules file is then in the Rules chooser as not run yet,
-// and its page shows its rules and the start line. A second Create and a stale base go back to the preview with a
-// line saying why, a post without the form token is refused, and the file is never overwritten.
+// and its page shows its rules and the start line. A second Create is refused and an unknown review asks the person
+// to review again. A post without the form token is refused, and the file is never overwritten.
 func TestRulesNewPreviewAndCreate(t *testing.T) {
 	f := newRulesFix(t)
 	f.withSetup(t)
@@ -75,8 +77,8 @@ func TestRulesNewPreviewAndCreate(t *testing.T) {
 	if m == nil {
 		t.Fatal("no base in the Create form")
 	}
-	form := url.Values{"dir": {dir}, "name": {"fresh-proj"}, "preset": {"no-secrets", "no-prod"}, "hosts": {"api.example.com:443"},
-		"cmd": {"sh"}, "mode": {"presets"}, "base": {m[1]}}
+	form := builderRenderedSaveForm(t, body)
+	form.Del("csrf")
 	if w := post(f.s, "/rules/new", form, own, "", f.c); w.Code != http.StatusForbidden {
 		t.Fatalf("a post without the form token: %d", w.Code)
 	}
@@ -87,11 +89,11 @@ func TestRulesNewPreviewAndCreate(t *testing.T) {
 	}
 	stale.Set("base", strings.Repeat("0", 64))
 	w := post(f.s, "/rules/new", stale, own, "", f.c)
-	if loc := w.Header().Get("Location"); !strings.HasPrefix(loc, "/rules/new?") || !strings.Contains(loc, "preview=1") {
-		t.Errorf("a stale base went to %q", loc)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), rules.ErrReviewGone.Error()) {
+		t.Fatalf("unknown review: %d %s", w.Code, w.Body.String())
 	}
-	if b := follow(t, f.s, f.c, w); !strings.Contains(b, "Not created: the folder or the presets changed") || !strings.Contains(b, "Create agent.yaml") {
-		t.Fatalf("a stale base's page:\n%s", b)
+	if _, err := os.Lstat(file); !os.IsNotExist(err) {
+		t.Fatalf("unknown review wrote a contract: %v", err)
 	}
 	w = post(f.s, "/rules/new", form, own, "", f.c)
 	loc := w.Header().Get("Location")
@@ -111,15 +113,16 @@ func TestRulesNewPreviewAndCreate(t *testing.T) {
 	if err != nil || !strings.Contains(string(written), "tego/no-prod") {
 		t.Fatalf("file = %q, %v", written, err)
 	}
-	if b := follow(t, f.s, f.c, post(f.s, "/rules/new", form, own, "", f.c)); !strings.Contains(b, "never written over a") {
-		t.Fatalf("a second Create:\n%s", b)
+	w = post(f.s, "/rules/new", form, own, "", f.c)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), rules.ErrReviewGone.Error()) {
+		t.Fatalf("a second Create: %d\n%s", w.Code, w.Body.String())
 	}
 	if again, _ := os.ReadFile(file); string(again) != string(written) {
 		t.Fatal("the file was overwritten")
 	}
 
 	_, body = f.get(t, "/rules")
-	if !strings.Contains(body, `<option value="`+ref[1]+`"`) || !strings.Contains(body, "not run yet") {
+	if !strings.Contains(body, `href="/rules?c=`+ref[1]+`"`) || !strings.Contains(body, "Not run yet") {
 		t.Fatalf("the chooser does not offer the new rules file")
 	}
 	code, body = f.get(t, "/rules?c="+ref[1])
@@ -127,6 +130,36 @@ func TestRulesNewPreviewAndCreate(t *testing.T) {
 		if code != http.StatusOK || !strings.Contains(body, want) {
 			t.Errorf("the not-run page lacks %q (%d)", want, code)
 		}
+	}
+}
+
+// CI is an explicit choice: adding it to the catalog must not change desktop contracts.
+func TestRulesNewCIPresetIsOptIn(t *testing.T) {
+	f := newRulesFix(t)
+	f.withSetup(t)
+	for _, tc := range []struct {
+		name, query string
+		checked     bool
+	}{
+		{"fresh", "", false},
+		{"selected", "?preset=ci", true},
+		{"cleared", "?preview=1", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			code, body := f.get(t, "/rules/new"+tc.query)
+			if code != http.StatusOK {
+				t.Fatalf("form: %d %s", code, body)
+			}
+			if got := strings.Contains(body, `name="preset" value="ci" checked`); got != tc.checked {
+				t.Errorf("CI checked = %v, want %v", got, tc.checked)
+			}
+			if !tc.checked && !strings.Contains(body, `name="preset" value="ci">`) {
+				t.Error("form does not offer CI unchecked")
+			}
+			if !strings.Contains(body, "CI job guard") {
+				t.Error("CI has no outcome label")
+			}
+		})
 	}
 }
 
@@ -212,13 +245,48 @@ func TestRulesNewStatesGrantsBesidePresets(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("preview: %d %s", code, body)
 	}
-	const want = `<strong>Only hosts I list</strong><span class="soft ut" title="What the command's agent needs to run">Also api.anthropic.com:443</span>`
-	if !strings.Contains(body, want) {
-		t.Errorf("the label does not state the grant:\n%s", body)
+	checkLabel := func(body, extra string) {
+		t.Helper()
+		var preset *htmlnode.Node
+		walk(parseHTML(t, "preset grants", body), func(n *htmlnode.Node) {
+			kind, _ := attr(n, "type")
+			if field, _ := attr(n, "name"); n.Data == "input" && kind == "checkbox" && field == "preset" {
+				if value, _ := attr(n, "value"); strings.TrimPrefix(value, "tego/") == "no-prod" {
+					preset = n
+				}
+			}
+		})
+		if preset == nil || preset.Parent == nil || preset.Parent.Data != "label" {
+			t.Fatal("no-prod is not inside its preset label")
+		}
+		var heading, notice *htmlnode.Node
+		walk(preset.Parent, func(n *htmlnode.Node) {
+			if n.Data == "strong" {
+				heading = n
+			}
+			if title, _ := attr(n, "title"); title == "What the command’s agent needs to run" {
+				notice = n
+			}
+		})
+		if heading == nil || text(heading) != "Only hosts I list" {
+			t.Fatal("no-prod lost its Only hosts I list label")
+		}
+		if extra == "" {
+			if notice != nil {
+				t.Error("a command that needs nothing got an extra grant beside the label")
+			}
+		} else if notice == nil || notice.Parent != heading.Parent || text(notice) != extra {
+			t.Errorf("the preset's own label does not state %q beside its heading", extra)
+		}
 	}
+	checkLabel(body, "Also api.anthropic.com:443")
 	q.Set("cmd", "sh")
-	if _, body = f.get(t, "/rules/new?"+q.Encode()); strings.Contains(body, ">Also ") {
-		t.Errorf("a command that needs nothing got a grant beside the label:\n%s", body)
+	if code, body = f.get(t, "/rules/new?"+q.Encode()); code != http.StatusOK {
+		t.Fatalf("preview with no added grant: %d %s", code, body)
+	}
+	checkLabel(body, "")
+	if strings.Contains(body, ">Also ") {
+		t.Errorf("a command that needs nothing got an extra grant notice: %s", body)
 	}
 }
 
@@ -256,11 +324,11 @@ func TestRulesNewNotRunHidesEnv(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, body := f.get(t, "/rules")
-	ref := regexp.MustCompile(`<option value="([0-9a-f]{16})"[^>]*>[^<]* · not run yet</option>`).FindStringSubmatch(body)
-	if ref == nil {
-		t.Fatal("the chooser does not offer the set-up file")
+	ref := rules.Ref(filepath.Join(dir, "agent.yaml"))
+	if !strings.Contains(body, `href="/rules?c=`+ref+`"`) {
+		t.Fatal("the list does not offer the set-up file")
 	}
-	code, body := f.get(t, "/rules?c="+ref[1])
+	code, body := f.get(t, "/rules?c="+ref)
 	if code != http.StatusOK || !strings.Contains(body, "Contract · rules-demo") {
 		t.Fatalf("not-run page: %d", code)
 	}
@@ -319,5 +387,32 @@ func TestRulesNewAskReadNote(t *testing.T) {
 	}
 	if b := preview(url.Values{"askread": {"./notes/"}, "live": {"adjustable"}}); !strings.Contains(b, adjustable) {
 		t.Errorf("the Adjustable preview lacks its banner:\n%s", b)
+	}
+}
+
+// A preview in a project whose generated folders are already there makes none: it says so, and names the .gitignore
+// lines to add, instead of "Folders to make:" with nothing after it. A preview that makes folders and needs no line
+// says that, instead of "Add to .gitignore:" with nothing after it.
+func TestRulesNewFolderAndIgnoreLinesAreNeverBlank(t *testing.T) {
+	f := newRulesFix(t)
+	f.withSetup(t)
+	dir := filepath.Join(filepath.Dir(f.proj), "settled-proj")
+	for _, d := range []string{"src", filepath.Join(".tego", "tmp")} {
+		if err := os.MkdirAll(filepath.Join(dir, d), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	q := url.Values{"dir": {dir}, "preset": {"repo-only-writes"}, "writes": {"src/"}, "cmd": {"sh"}, "preview": {"1"}}
+	code, body := f.get(t, "/rules/new?"+q.Encode())
+	if code != http.StatusOK {
+		t.Fatalf("preview: %d", code)
+	}
+	if strings.Contains(body, "Folders to make: </p>") || strings.Contains(body, "Add to .gitignore: </p>") {
+		t.Errorf("the preview names a folder or ignore list with nothing after it:\n%s", body)
+	}
+	for _, want := range []string{"Every folder it writes to is already there.", "Add to .gitignore: .tego/tmp/"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the preview lacks %q", want)
+		}
 	}
 }

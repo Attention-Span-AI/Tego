@@ -53,7 +53,7 @@ func (l *Loop) mcpStageGrant(c *compiled, n *notif, r *reader, cmd execCommand, 
 //
 // The gate asks of every exec the mcp line would name a server for, walked or not: mcpServerOf matches by the
 // line's path and argv when the image was not reached in this view, so a guard on the walk would have the ledger
-// record a relayed server's start the gate never judged (review of r11/MCPTOOLS, fail-open on an unwalked image).
+// record a relayed server's start the gate never judged (fail-open on an unwalked image, found in review).
 // An exec whose lookup failed is never continued (d.answer.cont), so it needs no case of its own.
 func (l *Loop) mcpRelayGate(c *compiled, n *notif, r *reader, d execDecision, name string, img execImage, argvAddr uint64) (execDecision, bool) {
 	if l.mcpRelayed == nil || !d.answer.cont || d.verdict != record.VerdictAllow || !c.mayStartMCP(name, img) {

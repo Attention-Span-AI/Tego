@@ -82,3 +82,44 @@ func resolveBlobRef(runDir, sha string) *BlobRef {
 	}
 	return b
 }
+
+// BlobFieldKey is the key of the blob field of line seq of r that names the blob sha (resolveBlobRef's rule: a
+// <field>_blob or blob key holding sha), "" when the line names no such blob. It is what authorizes a download of that
+// blob from that line: it reads the one line from the run's events file and its keys, and nothing else, where Explain
+// also resolves every blob the line names (each read whole and hashed) and builds the line page's facts. A seq the run
+// does not hold is os.ErrNotExist, as Explain says it.
+func BlobFieldKey(root string, r *Run, seq uint64, sha string) (string, error) {
+	evs := r.AllEvents()
+	if err := r.readError(); err != nil && (len(r.LineErrors) == 0 || findSeq(evs, seq) < 0) {
+		return "", err
+	}
+	if findSeq(evs, seq) < 0 && r.Cut && seq < ^uint64(0)-consequenceWindow-1 {
+		window, err := WindowBefore(root, r, seq+consequenceWindow+1)
+		if err != nil {
+			return "", err
+		}
+		r, evs = window, window.Events
+	}
+	i := findSeq(evs, seq)
+	if i < 0 {
+		return "", os.ErrNotExist
+	}
+	cur := currentLine(root, r.ID, &evs[i])
+	if cur == nil {
+		return "", os.ErrNotExist
+	}
+	if cur.err != nil {
+		return "", cur.err
+	}
+	key := ""
+	walkObject("", cur.raw, func(k string, v json.RawMessage) {
+		if key != "" || envelopeKeys[k] || !isBlobKey(k[strings.LastIndexByte(k, '.')+1:]) {
+			return
+		}
+		var s string
+		if json.Unmarshal(v, &s) == nil && s == sha {
+			key = k
+		}
+	})
+	return key, nil
+}

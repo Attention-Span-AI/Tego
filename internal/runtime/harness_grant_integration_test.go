@@ -178,7 +178,8 @@ func TestIntegrationKernelExecAssuranceRefusesAlikeWithAHook(t *testing.T) {
 // the run cannot answer the ask the run holds: it is refused the run's lock file, since the ledger root is
 // read-denied (R6a), and were it not, the broker refuses a peer in the governed cgroup
 // (TestAskBrokerRefusesTegoApproveFromTheRunsCgroup); the ask stays pending until the person answers it from outside.
-// A nested `tego run` fails closed (exit 125, the kernel refusing a second seccomp listener) and starts no agent.
+// A nested `tego run` fails closed (exit 125, the kernel refusing a second seccomp listener) and starts no agent; it
+// is given an anchor it can open, since the anchor is opened before the kernel is probed.
 func TestIntegrationTegoInsideADenyListRun(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("the agent, dropped to the invoking user, cannot run the tego binary root built in its own temporary directory; a root launcher grants no hook")
@@ -202,8 +203,9 @@ func TestIntegrationTegoInsideADenyListRun(t *testing.T) {
 	}
 	// Each refusal is held to its cause, so neither passes for an unrelated failure (a wrong config, a missing binary):
 	// approve stops at the run's lock, which R6a read-denies (the broker's own refusal of a peer in the run's cgroup is
-	// the next layer, TestAskBrokerRefusesTegoApproveFromTheRunsCgroup); the nested run at its tier probe, whose
-	// seccomp listener the kernel refuses in a filter chain that already has one (EBUSY).
+	// the next layer, TestAskBrokerRefusesTegoApproveFromTheRunsCgroup); the nested run at its first step, which
+	// names the run it is inside and says a run cannot start inside a run (its cgroup path shows one; the seccomp
+	// listener the kernel refuses in a filter chain that already has one, EBUSY, is the reason behind it).
 	if rc, out := strings.TrimSpace(s.out("approve.rc")), s.out("approve.out"); rc == "0" || rc == "" ||
 		!strings.Contains(out, "open lock file") || !strings.Contains(out, "permission denied") {
 		t.Fatalf("tego approve inside the run exited %q, want a refusal of the run's lock file (R6a):\n%s", rc, out)
@@ -212,8 +214,8 @@ func TestIntegrationTegoInsideADenyListRun(t *testing.T) {
 		t.Fatalf("after the agent's approve the pending request is %v, want %s still pending", again, id)
 	}
 	if rc, out := strings.TrimSpace(s.out("nested.rc")), s.out("nested.out"); rc != "125" || s.out("nested.started") != "" ||
-		!strings.Contains(out, "[tier-unavailable]") || !strings.Contains(out, "NEW_LISTENER") || !strings.Contains(out, "device or resource busy") {
-		t.Fatalf("a nested tego run exited %q, started %q, want 125 with the seccomp listener refused (EBUSY):\n%s", rc, s.out("nested.started"), out)
+		!strings.Contains(out, "a run cannot start inside a run") || !strings.Contains(out, "[governed]") || !strings.Contains(out, filepath.Base(dir)) {
+		t.Fatalf("a nested tego run exited %q, started %q, want 125 naming the run it is inside (%s) and saying a run cannot start inside a run:\n%s", rc, s.out("nested.started"), filepath.Base(dir), out)
 	}
 	t.Logf("inside the run, tego approve said %q and the nested tego run %q", s.out("approve.out"), s.out("nested.out"))
 	s.answer(t, "deny", filepath.Base(dir), id)
@@ -255,14 +257,21 @@ func newDenyListScene(t *testing.T, bin string) *askReadScene {
 	if err := os.WriteFile(filepath.Join(s.f.out, "inner.yaml"), []byte(inner), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// `tego run` opens its chain anchor for append before it probes the kernel (the checks that need no kernel come
+	// first: TestRunChecksTheAnchorBeforeProbing), so the nested run reaches the seccomp listener the test exists to
+	// prove refused only when it can open an anchor. The scene's own anchor is in a folder the run's rules keep the
+	// agent out of (it got EACCES there, and the refusal at the anchor hid the one at the listener); the nested run's
+	// is a file in out/, which the contract lets the agent write. It is still in the test's own directory.
+	nestedEnv := fmt.Sprintf("TEGO_CONFIG=%q TEGO_TEST_CHAIN_ANCHOR=%q TEGO_TEST_OWN_LOG_HOME=%q", cfg,
+		filepath.Join(s.f.out, "nested-chain.log"), os.Getenv("TEGO_TEST_OWN_LOG_HOME"))
 	script := fmt.Sprintf(`#!/bin/sh
 cat %[3]q > out/got.txt 2> out/err.txt &
 while [ ! -s out/id ]; do sleep 0.05; done
 %[2]s %[1]q approve "$TEGO_RUN_ID" "$(cat out/id)" > out/approve.out 2>&1; echo $? > out/approve.rc
-%[2]s %[1]q run out/inner.yaml -- /bin/sh -c 'echo yes > out/nested.started' > out/nested.out 2>&1; echo $? > out/nested.rc
+%[4]s %[1]q run out/inner.yaml -- /bin/sh -c 'echo yes > out/nested.started' > out/nested.out 2>&1; echo $? > out/nested.rc
 echo done > out/inside.done
 wait
-`, bin, env, s.secret)
+`, bin, env, s.secret, nestedEnv)
 	if err := os.WriteFile(filepath.Join(s.f.dir, "agent.sh"), []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}

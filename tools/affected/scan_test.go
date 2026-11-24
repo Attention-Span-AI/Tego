@@ -204,3 +204,41 @@ func TestUp(t *testing.T) {
 		t.Errorf("TestUp, which climbs out by \"..\", is not a source scanner: %+v", f)
 	}
 }
+
+// TestScanReadsCodeNotComments: the tree-reading and Markdown patterns look at code and string literals. A comment
+// that names repoRoot, a walk, "go.mod" or README is not a read: nothing is selected for it, and the file is not a
+// docs reader. The same words in code still are (the control), beside a comment on the same line.
+func TestScanReadsCodeNotComments(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "d/d_test.go", `package d
+
+import "testing"
+
+// TestMentions: repoRoot, filepath.WalkDir(".", nil), "go.mod", README.md and docs/x.md in a comment only.
+func TestMentions(t *testing.T) {
+	// parser.ParseFile(nil, "", nil, 0) and "../.." and docs/OPERATIONS.md
+	_ = 1 /* findRepoRoot() */
+}
+`)
+	write(t, root, "e/e_test.go", `package e
+
+import "testing"
+
+// the same words, with real code beside the comment
+func TestReads(t *testing.T) {
+	_ = "docs/OPERATIONS.md" // not here
+	_ = findRepoRoot() // README
+}
+
+func findRepoRoot() string { return "" }
+`)
+	known := map[string]string{"d": mod + "/d", "e": mod + "/e"}
+	pd := combine(root, mod, "d", []*fileFacts{scanFile(filepath.Join(root, "d", "d_test.go"))}, known)
+	if pd.whole || len(pd.tests) != 0 || pd.docs || pd.why != "" {
+		t.Errorf("comment-only mentions selected something: whole %v, tests %v, docs %v, why %q", pd.whole, sorted(pd.tests), pd.docs, pd.why)
+	}
+	pe := combine(root, mod, "e", []*fileFacts{scanFile(filepath.Join(root, "e", "e_test.go"))}, known)
+	if got := sorted(pe.tests); !reflect.DeepEqual(got, []string{"TestReads"}) || !pe.docs {
+		t.Errorf("code that reads the tree: tests %v, docs %v; want TestReads and a docs reader", got, pe.docs)
+	}
+}
