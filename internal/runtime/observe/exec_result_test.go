@@ -130,8 +130,12 @@ func TestExecResultConsumesBprmRefusalWithOpenedImage(t *testing.T) {
 	}
 }
 
+// -13 is here too: an exec the plane refused whose plane sample the ring lost reaches the recorder as its result alone,
+// and the line it writes says what it read (observed, the kernel's return, the attempt's argv), never a refusal it did
+// not read (ADR 0048, the swap cells' implementation note; spec/record/v1/README.md on syscall_ret). The race cells'
+// judge accepts that shape only beside a stated loss (execpin_race_judge_test.go).
 func TestExecResultRecordsFailuresOutsidePolicyHooks(t *testing.T) {
-	for _, ret := range []int64{-8, -26, -2} {
+	for _, ret := range []int64{-8, -26, -2, -13} {
 		t.Run(strconv.FormatInt(-ret, 10), func(t *testing.T) {
 			f := newFixture(t)
 			n := outcomeNaming(10)
@@ -140,7 +144,8 @@ func TestExecResultRecordsFailuresOutsidePolicyHooks(t *testing.T) {
 				execResultSample(execOutcomeHeader(30), ret))
 			ev, p := oneExecOutcome(t, sink)
 			if ev.Verdict != record.VerdictObserved || ev.Rule != RuleUnmatched || ev.Reason != "" ||
-				p.SyscallRet != ret || p.Path != n.Path || p.Mechanism != "" {
+				p.SyscallRet != ret || p.Path != n.Path || p.Mechanism != "" || p.ArgvFrom != "attempt" || p.PlaneReason != "" ||
+				p.By != "" {
 				t.Fatalf("unhooked failure = %+v / %+v", ev, p)
 			}
 		})

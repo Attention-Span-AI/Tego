@@ -57,6 +57,9 @@ func openDashboard() int {
 // (web/opencode.go), and a browser takes some seconds to start.
 const openCodeFresh = 40 * time.Second
 
+// errLinuxSilent is shown to the person as it is; Tego is a name, so the message starts with a capital.
+var errLinuxSilent = errors.New("Tego's Linux did not answer within 90 seconds") //nolint:staticcheck // ST1005: a name, not a sentence start
+
 // dashboardOpenInfo runs `windows-entry --dashboard-open` (`tego dashboard-relay open` in the person's scope) and
 // reads its one line from a private pipe.
 func dashboardOpenInfo() (openInfo, error) {
@@ -79,8 +82,8 @@ func dashboardOpenInfo() (openInfo, error) {
 		}
 	case <-time.After(90 * time.Second):
 		_ = cmd.Process.Kill()
-		<-done
-		return openInfo{}, errors.New("Tego's Linux did not answer within 90 seconds")
+		<-done //nolint:errcheck // the killed child's status says nothing more
+		return openInfo{}, errLinuxSilent
 	}
 	return parseOpenLine(string(stdout.data))
 }

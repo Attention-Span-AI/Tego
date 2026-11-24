@@ -18,6 +18,9 @@ func (s *Server) baselinePostAllowed(w http.ResponseWriter, r *http.Request) boo
 	if r.URL.Path == "/approvals/answer" && r.PostForm.Get("decision") == "deny" {
 		return true
 	}
+	if r.URL.Path == previewPath { // writes nothing; its GET form is open too
+		return true
+	}
 	if rest, ok := strings.CutPrefix(r.URL.Path, "/runs/"); ok {
 		parts := strings.Split(rest, "/")
 		if len(parts) == 2 && parts[0] != "" && (parts[1] == "stop" || parts[1] == "pause") {

@@ -143,11 +143,11 @@ func cachedScan(dir string, r *ledgerview.Run) (*runScan, error) {
 			continue
 		}
 		execs++
-		var p record.ExecPayload
-		if json.Unmarshal([]byte(evs[i].Raw), &p) != nil || !filepath.IsAbs(p.Path) {
+		p := evs[i].ExecPath() // the path the read model decoded: no second decode of the line
+		if !filepath.IsAbs(p) {
 			continue
 		}
-		if d := filepath.Dir(p.Path); !seen[d] {
+		if d := filepath.Dir(p); !seen[d] {
 			seen[d] = true
 			sc.execDirs = append(sc.execDirs, d)
 		}

@@ -5,10 +5,13 @@ package ledgerview
 import (
 	"bytes"
 	"path"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 )
@@ -313,6 +316,54 @@ func newMatcher(f *Filter) *matcher {
 	return m
 }
 
+// warmMinEvents is how many lines the runs a search has yet to build haystacks for must hold in all before the
+// builds are spread over cores: below it, a goroutine costs more than it saves.
+const warmMinEvents = 16 << 10
+
+// warmText builds the haystacks of the runs this search will look in, a few at a time on separate cores, before the
+// walk that matches run after run reads them one by one: a first search of a large ledger built them in series (a
+// version's haystacks are built once and kept). A run whose lines are not in memory is left alone, as reading it
+// back belongs to the walk (the store reads evicted windows one at a time, never en masse).
+func (m *matcher) warmText(runs []*Run) {
+	if (len(m.text) == 0 || m.perLine) && len(m.words) == 0 && len(m.notWords) == 0 {
+		return
+	}
+	type job struct {
+		r   *Run
+		evs []Event
+	}
+	var todo []job
+	events := 0
+	for _, r := range runs {
+		if r.memo == nil || r.memo.hayBuilt.Load() || !m.f.wantsRun(r) {
+			continue
+		}
+		if evs := r.heldEvents(); len(evs) > 0 {
+			todo = append(todo, job{r, evs})
+			events += len(evs)
+		}
+	}
+	if len(todo) < 2 || events < warmMinEvents {
+		return
+	}
+	var next atomic.Int64
+	var wg sync.WaitGroup
+	for range min(runtime.GOMAXPROCS(0), 8, len(todo)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				i := int(next.Add(1)) - 1
+				if i >= len(todo) {
+					return
+				}
+				todo[i].r.memo.buildHay(todo[i].evs)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
 // runMatch is a matcher made ready for one run: the text searches' hits and the path prefix with ~ expanded.
 type runMatch struct {
 	*matcher
@@ -555,6 +606,9 @@ func (s *Snapshot) Query(f Filter) Page {
 	m := newMatcher(&f)
 	// No filter but the run: each run's lines folded once per version (allFolded).
 	plain := f.plain()
+	if !plain {
+		m.warmText(s.Runs)
+	}
 	var fc *facetCounter
 	if f.Facets {
 		fc = newFacetCounter(&f)

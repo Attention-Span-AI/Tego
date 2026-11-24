@@ -1648,6 +1648,7 @@
   "Summary": "Interface label or instruction; states no quantity.",
   "Busiest hour": "Interface label or instruction; states no quantity.",
   "Refused each hour": "Interface label or instruction; states no quantity.",
+  "Refused each day": "Interface label or instruction; states no quantity.",
   "Tallest bar": "Interface label or instruction; states no quantity.",
   "Retained event windows omit part of this period.": "Interface label or instruction; states no quantity.",
   "Hours with refusals": "Interface label or instruction; states no quantity.",

@@ -121,7 +121,11 @@ func TestNoProposedLinkToAcceptedADR(t *testing.T) {
 
 // TestSpecsDoNotNameSymbolsThatNeverExisted: names once written into a spec sketch that no Go source declares.
 func TestSpecsDoNotNameSymbolsThatNeverExisted(t *testing.T) {
-	root := filepath.Join("..", "..", "docs", "p0")
+	docs := componentDocsRoot(filepath.Join("..", ".."))
+	if docs == "" {
+		t.Skip("no component documents here (a tree that keeps frozen copies reads them from its archive folder)")
+	}
+	root := filepath.Join(docs, "docs", "p0")
 	stale := map[string][]string{
 		"runtime-launch.md":         {"func AcquireLock", "type RunLock", "// clock.Clock (internal/platform/clock"},
 		"supervisor.md":             {"`handleUnixConnect`/", "`handleSendAddr` (", "`handleOpenWrite`/"},
@@ -130,7 +134,7 @@ func TestSpecsDoNotNameSymbolsThatNeverExisted(t *testing.T) {
 	for f, names := range stale {
 		data, err := os.ReadFile(filepath.Join(root, f))
 		if err != nil {
-			t.Skip("no docs/p0 here")
+			t.Fatal(err)
 		}
 		for _, n := range names {
 			if strings.Contains(string(data), n) {
@@ -144,7 +148,7 @@ func TestSpecsDoNotNameSymbolsThatNeverExisted(t *testing.T) {
 	// after them are a dated history, which names what was removed.
 	spec, err := os.ReadFile(filepath.Join(root, "supervisor.md"))
 	if err != nil {
-		t.Skip("no docs/p0 here")
+		t.Fatal(err)
 	}
 	srcs, _ := filepath.Glob(filepath.Join("..", "..", "internal", "runtime", "supervisor", "*.go"))
 	declared := map[string]bool{}
@@ -187,9 +191,13 @@ func TestSpecsDoNotNameSymbolsThatNeverExisted(t *testing.T) {
 // TestADRNotBuiltClaimsAgreeWithTier3Plan: a tier-3 ADR's Status may not list as "not built" a ticket that
 // docs/p0/TIER3-PLAN.md marks Done or Built.
 func TestADRNotBuiltClaimsAgreeWithTier3Plan(t *testing.T) {
-	plan, err := os.ReadFile(filepath.Join("..", "..", "docs", "p0", "TIER3-PLAN.md"))
+	docs := componentDocsRoot(filepath.Join("..", ".."))
+	if docs == "" {
+		t.Skip("no component documents here (a tree that keeps frozen copies reads them from its archive folder)")
+	}
+	plan, err := os.ReadFile(filepath.Join(docs, "docs", "p0", "TIER3-PLAN.md"))
 	if err != nil {
-		t.Skip("no plan here")
+		t.Fatal(err)
 	}
 	done := map[string]bool{}
 	rowRe := regexp.MustCompile(`(?m)^\| (T\d+b?) \|(.*)$`)

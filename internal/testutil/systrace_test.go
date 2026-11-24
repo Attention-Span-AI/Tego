@@ -96,3 +96,32 @@ func TestSpawnsTellsAThreadFromAProcess(t *testing.T) {
 		}
 	}
 }
+
+// sysTraceDirEnv names, to TestSysTraceDecodesStatfsPathnames' traced child, the directory it asks statfs about.
+const sysTraceDirEnv = "TEGO_SYSTRACE_TEST_DIR"
+
+// TestSysTraceDecodesStatfsPathnames: a statfs(2) of a path is recorded with that path, as stat and lstat are, so an
+// audit that restricts the paths a program touches sees the call (the table once kept statfs by number only, and an
+// audit's path rules could not apply to it).
+func TestSysTraceDecodesStatfsPathnames(t *testing.T) {
+	if InSysTraceChild() {
+		var st syscall.Statfs_t
+		MarkBegin()
+		err := syscall.Statfs(os.Getenv(sysTraceDirEnv), &st)
+		MarkEnd()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	dir := t.TempDir()
+	var got []Syscall
+	for _, c := range SysTrace(t, t.Name(), sysTraceDirEnv+"="+dir) {
+		if c.Nr == syscall.SYS_STATFS {
+			got = append(got, c)
+		}
+	}
+	if len(got) != 1 || got[0].Name != "statfs" || len(got[0].Paths) != 1 || got[0].Paths[0] != dir {
+		t.Errorf("statfs calls recorded: %v, want one named statfs of %s", got, dir)
+	}
+}

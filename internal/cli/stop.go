@@ -334,7 +334,15 @@ func stopRun(ctx context.Context, dir, runID string, info runlock.LockInfo,
 	}
 	// The launcher's own stop_grace timer should have written cgroup.kill by now (R9); this is the
 	// backstop for a launcher that is itself wedged, and one extra write to cgroup.kill is harmless.
-	escalateRun(dir, runID, stderr)
+	if escalateRun(dir, runID, stderr) {
+		// The run holds its lock but has not written run_start, so the launcher is still preparing the run's
+		// enforcement (seconds on a first use): it reads the stop once it has, and no scope is on record to kill.
+		// Nothing was written to cgroup.kill and nothing failed, and the run is not running yet (N111).
+		fmt.Fprintf(stdout, "%s: stop requested; the run is still starting after %s (its launcher is preparing the enforcement and "+
+			"has not written run_start), so it has not read the stop yet and has no scope to kill; the stop stays queued and "+
+			"takes effect as soon as the launcher has started the run\n", runID, grace)
+		return identity.ExitOK
+	}
 	// cgroup.kill is one asynchronous write, so the wait after it is short, not a second full grace.
 	after := min(grace, postKillWait)
 	if waitForEnd(ctx, dir, after) {
@@ -363,8 +371,8 @@ func backstopAfter(dir string, own, machine time.Duration) time.Duration {
 	return own
 }
 
-// escalateRun is the backstop kill; a variable so the tests can see when it would have been written
-// without a cgroup to write it to.
+// escalateRun is the backstop kill, and whether the run had not started (escalate); a variable so the tests can see
+// when it would have been written without a cgroup to write it to.
 var escalateRun = escalate
 
 // waitForEnd polls the run's lock until it is free or d elapses. The lock, not a pid and not a
@@ -400,17 +408,25 @@ func waitForEnd(ctx context.Context, dir string, d time.Duration) bool {
 // under, and only the one whose cgroup id run_start recorded. The path was built under the stopper's
 // own cgroup root with no id check, so a user stopping a root launcher's run killed nothing, and a scope
 // of the same name made since would have been killed in its place (R29).
-func escalate(dir, runID string, stderr io.Writer) {
+//
+// It reports starting when the run has written no agent id yet (errNoAgentYet): the launcher holds the lock from the
+// moment it opens the ledger, and writes run_start only after it has prepared the run's enforcement, so in that window
+// no scope is on record to find and the stop's signal waits in the launcher's queue. That is a state, not a failure:
+// nothing is said on stderr and the caller says what the run is doing.
+func escalate(dir, runID string, stderr io.Writer) (starting bool) {
 	agentID, err := runAgent(dir)
+	if errors.Is(err, errNoAgentYet) {
+		return true
+	}
 	if err != nil {
 		message(stderr, "", 0, 0, "tego stop: "+err.Error(), codeIO)
-		return
+		return false
 	}
 	uid, _ := config.InvokingUID()
 	mgr, err := stopCgroups(uid)
 	if err != nil {
 		message(stderr, "", 0, 0, "tego stop: "+err.Error(), codeIO)
-		return
+		return false
 	}
 	var marks []tegoruntime.SweepOption
 	if stopRootMarks != "" {
@@ -420,14 +436,15 @@ func escalate(dir, runID string, stderr io.Writer) {
 	switch {
 	case err != nil:
 		message(stderr, "", 0, 0, "tego stop: "+err.Error(), codeIO)
-		return
+		return false
 	case !ok:
 		logOwn("stop: escalate: no scope of run " + runID + " is left to kill")
-		return
+		return false
 	}
 	if err := mgr.Kill(c); err != nil {
 		logOwn("stop: escalate: " + err.Error())
 	}
+	return false
 }
 
 // stopCgroups is the cgroup manager of the stop's backstop kill; a variable so a test can root it in a
@@ -455,8 +472,13 @@ func runAgent(dir string) (identity.AgentID, error) {
 			return identity.ParseAgentID(e.Agent)
 		}
 	}
-	return "", fmt.Errorf("run has no agent id yet")
+	return "", errNoAgentYet
 }
+
+// errNoAgentYet is what runAgent answers for a run whose ledger has no line that names the agent: the launcher holds
+// the run's lock and has opened the ledger, but has not written run_start, which it does once the run's enforcement
+// is prepared (N111).
+var errNoAgentYet = errors.New("run has no agent id yet")
 
 // stopLostPaused is what `tego stop` says of a lost run whose last recorded state was paused once its sweep has run
 // (ADR 0124): what its scope showed before and after the sweep, and that its orphaned

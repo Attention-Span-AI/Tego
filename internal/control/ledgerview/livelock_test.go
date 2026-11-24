@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -36,7 +37,14 @@ func TestHelperLockHolder(t *testing.T) {
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
 		os.Exit(4)
 	}
+	// Collect now, as a long-lived launcher would sooner or later: a lock descriptor nothing keeps reachable is
+	// closed by its finalizer and the lock goes with it (the cause of an earlier flake in the sibling stop helper of internal/control/web).
+	runtime.GC()
+	runtime.GC()
+	time.Sleep(200 * time.Millisecond)
+	// Keep the flock descriptor live for the whole minute.
 	time.Sleep(time.Minute)
+	runtime.KeepAlive(f)
 	os.Exit(5)
 }
 

@@ -90,12 +90,16 @@ type PlaneModeResult struct {
 	// error from the fixtures, the scratch cgroup or the child, an attach errno that can pass on its own
 	// (attachFault), a probe syscall's errno that can
 	// (planeOutcomeFaulted), or for LSM mode an active LSM list that could
-	// not be read), not a mode that ran and failed. Its cause may be transient or the host's, so the run-probe
-	// cache never keeps an answer holding one.
+	// not be read, or two probes of one boot that answered differently (planeretry.go)), not a mode that ran and
+	// failed the same way each time. Its cause may be transient or the host's, or a hook that decides
+	// inconsistently, so the run-probe cache never keeps an answer holding one and the mode is not selected.
 	Faulted bool   `json:"faulted,omitempty"`
 	Detail  string `json:"detail"`
 	// Fix is the one change that would make the mode pass, "" when there is none to name.
 	Fix string `json:"fix,omitempty"`
+	// Probes holds both probes' rows of a mode whose first probe failed on a row verdict and whose second probe
+	// answered differently (planeretry.go); it is then Faulted. None for any other mode.
+	Probes []PlaneProbeAnswer `json:"probes,omitempty"`
 	// Scope is the probe row's scope evidence (planeScope), "" when the syscalls did not run.
 	Scope string `json:"scope,omitempty"`
 	// Known is each known-answer cell's verdict and counters (planeknown.go), in the table's order; none when the
@@ -480,6 +484,26 @@ func modePrecondition(m bpfobj.PlaneMode, env PlaneEnv, lsm LSMState) (string, s
 	return "", ""
 }
 
+// planeFixtureFix is the fix text of a mode Faulted because doctor's own side could not prepare a row's fixture
+// (planeFixtureErr) while the programs were attached: what failed, with the errno, and what the user can do. It does
+// not blame the host's room, which a refused socket, key or exec is not.
+func planeFixtureFix(fixtures []string) string {
+	const show = 3
+	shown := fixtures
+	more := ""
+	if len(shown) > show {
+		more = fmt.Sprintf("; and %d more (see the rows)", len(shown)-show)
+		shown = shown[:show]
+	}
+	return "doctor could not prepare a step the probe needs, so the hook was never exercised (" +
+		strings.Join(shown, "; ") + more + "): the errno is in the row. Check that no seccomp profile, container " +
+		"policy or other security module refuses doctor its own socket, key, exec or memfd calls, and that its " +
+		"descriptors and processes are not at a limit; run it as the same user in a plain shell. If the errno is " +
+		"EACCES and that does not clear it, a hook of this mode may be refusing doctor outside the scratch cgroup: " +
+		"report the rows (tego machine check --json) as a tego bug, or pin bpf.plane to the other mode in " +
+		"/etc/tego/config.yaml. Nothing is cached, so the next run probes again"
+}
+
 // planeModeVerdict is one mode's result over its hook rows, the probe row's scope evidence and the known answers,
 // pure so the wording is held to what the rows and counters say.
 func planeModeVerdict(m bpfobj.PlaneMode, rows []HookResult, sc planeScope, known []PlaneKnownAnswer) PlaneModeResult {
@@ -487,6 +511,9 @@ func planeModeVerdict(m bpfobj.PlaneMode, rows []HookResult, sc planeScope, know
 	decided := 0
 	var absent []string
 	faulted := false
+	// fixtures are the rows whose own preparing step failed, one entry each: the hook, the leg and the step's error.
+	var fixtures []string
+	otherFault := false
 	for _, r := range rows {
 		if r.Absent {
 			absent = append(absent, r.Hook)
@@ -495,8 +522,17 @@ func planeModeVerdict(m bpfobj.PlaneMode, rows []HookResult, sc planeScope, know
 		if !r.OK() {
 			failed = append(failed, r.Hook)
 		}
-		if planeOutcomeFaulted(r.Inside) || planeOutcomeFaulted(r.Outside) {
-			faulted = true
+		for _, leg := range []struct{ name, outcome string }{{"inside the scratch cgroup", r.Inside},
+			{"outside it", r.Outside}} {
+			switch {
+			case planeOutcomeFixture(leg.outcome):
+				faulted = true
+				fixtures = append(fixtures, fmt.Sprintf("%s, %s: %s", r.Hook, leg.name,
+					strings.TrimPrefix(leg.outcome, "failed: ")))
+			case planeOutcomeFaulted(leg.outcome):
+				faulted = true
+				otherFault = true
+			}
 		}
 		if r.Decides {
 			decided++
@@ -528,6 +564,12 @@ func planeModeVerdict(m bpfobj.PlaneMode, rows []HookResult, sc planeScope, know
 			// A probe syscall failed with an errno that may pass on its own: the probe could not finish.
 			out.Faulted = true
 			out.Fix = faultFix
+			if len(fixtures) > 0 {
+				out.Fix = planeFixtureFix(fixtures)
+				if otherFault {
+					out.Fix += "; other rows failed with an errno that may pass on its own: " + faultFix
+				}
+			}
 		}
 		return out
 	}

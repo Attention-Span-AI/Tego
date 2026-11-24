@@ -7,6 +7,7 @@ package web
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,19 +28,22 @@ if(!vis(root))return {banner:false};
 const phone=innerWidth<=600;
 const s=phone?root.querySelector('.ab-summary'):root.querySelector(root.classList.contains('ab-line')?'.ab-h':'.ab-what');
 let text='';const rects=[];
+s.setAttribute('data-probe-sentence','');
 const w=document.createTreeWalker(s,NodeFilter.SHOW_TEXT);let n;
 while(n=w.nextNode()){if(n.parentElement.closest('.sr,.ab-timing'))continue;const r=document.createRange();r.selectNodeContents(n);const rs=[...r.getClientRects()].filter(x=>x.width>0);if(!rs.length)continue;text+=n.data;rects.push(...rs)}
 rects.sort((a,b)=>a.top-b.top);let lines=0,bottom=-1e9;for(const r of rects){if(r.top>=bottom-2){lines++;bottom=r.bottom}else bottom=Math.max(bottom,r.bottom)}
+const ink=rects.reduce((a,r)=>a+r.width,0),cs=getComputedStyle(s),box=s.clientWidth?s.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight):s.getBoundingClientRect().width;
 const quick=[...root.querySelectorAll('button[name=decision]')].some(vis);
 const words=[...root.querySelectorAll('.ab-note,.ab-what,.ab-h,.ab-summary')].filter(vis).some(e=>e.innerText.includes('Allow once'));
 const review=root.querySelector('.ab-review a');
 const inside=[...root.querySelectorAll('button,a')].filter(vis).every(e=>{const r=e.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth+1});
-return ({banner:true,text,lines,quick,words,review:vis(review),reviewHref:review?review.getAttribute('href'):'',reviewLabel:review?review.getAttribute('aria-label'):'',label:phone?s.getAttribute('aria-label'):(s.querySelector('[data-number-exclude="layout.request-full"]')||{}).textContent||'',height:Math.round(root.getBoundingClientRect().height),inside,scroll:document.documentElement.scrollWidth<=innerWidth})})()`
+return ({banner:true,text,lines,ink,box,quick,words,review:vis(review),reviewHref:review?review.getAttribute('href'):'',reviewLabel:review?review.getAttribute('aria-label'):'',label:phone?s.getAttribute('aria-label'):(s.querySelector('[data-number-exclude="layout.request-full"]')||{}).textContent||'',height:Math.round(root.getBoundingClientRect().height),inside,scroll:document.documentElement.scrollWidth<=innerWidth})})()`
 
 type requestSeen struct {
 	Banner                  bool
 	Text                    string
 	Lines                   int
+	Ink, Box                float64
 	Quick, Review, Words    bool
 	ReviewHref, ReviewLabel string
 	Label                   string
@@ -104,6 +108,7 @@ func TestFix5FullRequestInChrome(t *testing.T) {
 							t.Errorf("%s: no visible request banner", page)
 							return
 						}
+						t.Logf("%s: the sentence is painted in %v", page, platformFonts(t, tb, "[data-probe-sentence]"))
 						if s.Quick && strings.Contains(s.Text, "…") {
 							t.Errorf("%s: Allow once is offered beside a cut request: %q", page, s.Text)
 						}
@@ -122,8 +127,22 @@ func TestFix5FullRequestInChrome(t *testing.T) {
 						if form.Long && (!strings.HasPrefix(wantTarget, tc.Head) || !strings.HasSuffix(wantTarget, tc.Tail)) {
 							t.Errorf("%s: the cut target lost a kept end: %q", page, wantTarget)
 						}
+						// In any font: the lines of the sentence are bounded by its measured text width over its box's width, and one
+						// more for the word that does not end where a line does (a runaway wrap, a column a character wide, fails
+						// whatever the font).
+						if s.Box < 1 || s.Ink < 1 {
+							t.Errorf("%s: the sentence's measured width is %.1f in a box of %.1f", page, s.Ink, s.Box)
+						} else if need := int(math.Ceil(s.Ink/s.Box)) + 1; s.Lines > need {
+							t.Errorf("%s: the sentence takes %d lines, but its text %.0f px wide in a box %.0f px wide needs at most %d", page, s.Lines, s.Ink, s.Box, need)
+						}
+						// The design's own bound (ADR 0123: four lines at 320 px, two at 1280 px) was measured in Noto Sans, so it is
+						// asserted where the page was painted in Noto Sans, and only reported anywhere else.
 						if limit := map[bool]int{true: 4, false: 2}[phone]; s.Lines > limit && (width == 320 || width == 1280) {
-							t.Errorf("%s: the sentence takes %d lines, more than %d", page, s.Lines, limit)
+							if fonts := platformFonts(t, tb, "[data-probe-sentence]"); inFont(fonts, "Noto Sans") {
+								t.Errorf("%s: the sentence takes %d lines in Noto Sans, more than %d", page, s.Lines, limit)
+							} else {
+								t.Logf("%s: the sentence takes %d lines, over the design's %d, in %v, not the Noto Sans it was measured in: not asserted", page, s.Lines, limit, fonts)
+							}
 						}
 						if (phone || form.Long) && s.Label != v.Full {
 							t.Errorf("%s: the accessible sentence is not whole: %q", page, s.Label)

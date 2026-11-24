@@ -399,7 +399,13 @@ Use `tego status --agent <name>` to find its newest run, or add `--all` for its 
 - Real agents: [examples/agents/](../examples/agents/README.md) has contracts for Claude Code, Codex and a custom agent. Each
   needs editing for your machine before use, and each file's header says how. Keep a contract outside the project the agent
   works in: a contract the agent can rewrite is refused.
-- Tighten or loosen a contract with `tego rules learn` (it proposes one from a finished run) and `tego rule`.
+- Tighten or loosen a contract with `tego rules learn` (it proposes one from a finished run) and `tego rule`. See what
+  a change did with `tego rules history <agent>`, and take back the newest one with `tego rules undo <agent>`.
+- Find what is already on this machine: `tego scan` lists your running agents, installed candidates and settings
+  metadata, and `tego contracts` finds contracts and checks them without running an agent. See
+  [user/scan.md](user/scan.md) and [user/contracts.md](user/contracts.md).
+- Run an agent in CI and keep its record: [user/ci-receipt.md](user/ci-receipt.md).
+- Remove Tego: `tego uninstall`, which keeps your records unless you say so ([INSTALL.md](INSTALL.md#uninstall)).
 - Root tiers: `sudo "$(command -v tego)" run --tier cgroup agent.yaml`. The run lands in your own `~/.tego` and the dashboard
   shows it once it ends. This contract prints a `best effort` warning there, because it has no `net:` section. See
   [TIERS.md](TIERS.md).

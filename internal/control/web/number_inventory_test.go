@@ -602,7 +602,7 @@ func numberPages() []struct{ path, kind string } {
 		{r + "?before=20", "run"}, {r + "/least-privilege", "run"}, {r + "?details=1", "run"},
 		{"/logs", "snapshot"}, {"/logs?filters=1", "snapshot"}, {"/logs?group=rule", "snapshot"},
 		{"/logs?group=process", "snapshot"}, {"/logs?group=target", "snapshot"}, {"/logs?group=severity", "snapshot"},
-		{"/detections", "snapshot"}, {"/refusals", "snapshot"}, {"/approvals", "snapshot"}, {"/approvals?tab=history", "snapshot"},
+		{"/detections", "snapshot"}, {"/refusals", "snapshot"}, {"/refusals?span=week", "snapshot"}, {"/approvals", "snapshot"}, {"/approvals?tab=history", "snapshot"},
 		{"/rules", "snapshot"}, {"/rules?run=" + numRichRun, "snapshot"},
 		{"/mcp?run=" + harmRun, "mcp"},
 		{"/runs/" + cleanRun, "other run"}, {"/runs/" + cleanRun + "/receipt", "other run"}, {"/runs/" + cleanRun + "/refusals", "other run"}, {"/runs/" + harmRun, "other run"}, {"/runs/" + harmRun + "/receipt", "other run"},

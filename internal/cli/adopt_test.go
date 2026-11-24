@@ -735,7 +735,7 @@ func TestStopReleasesAnAdoptionWithoutSignallingItsAdopter(t *testing.T) {
 	}
 	signalled, escalated := false, false
 	signalTarget = func(*tegoruntime.StopTarget, syscall.Signal) error { signalled = true; return nil }
-	escalateRun = func(string, string, io.Writer) { escalated = true }
+	escalateRun = func(string, string, io.Writer) bool { escalated = true; return false }
 	code, out, errs := run(t, "stop", id, "--grace", "1s")
 	if code != identity.ExitOK || !strings.Contains(out, id+": released by its adopter (pid 4242)") {
 		t.Fatalf("tego session stop of an adoption: exit %d stdout %q stderr %q", code, out, errs)

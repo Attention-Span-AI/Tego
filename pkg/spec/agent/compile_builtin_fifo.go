@@ -10,6 +10,17 @@ import (
 	"strings"
 )
 
+// The inventory's two bounds. Files are the entries the walk stats one by one (a FIFO can only be one of
+// those). Directories are the entries it opens and lists: a name the parent's listing already gave, with no stat of
+// its own and nothing to spend but one open and one read. A desktop's /run/user/<uid>/gnupg holds one directory per
+// GNUPGHOME ever used (4043 on the dev box); charged as files they used up the 4096 and every later folder (systemd,
+// pulse) was refused whole. The directory bound is four times the file bound: a listing costs about what a stat does,
+// and the walk still ends in time on a hostile tree.
+const (
+	builtinFIFOFiles = 4096
+	builtinFIFODirs  = 16384
+)
+
 // Existing screen FIFO endpoints become ordinary immutable deny-read nodes.
 // Never open a FIFO for data. The bounded directory walker fails closed rather
 // than silently omitting endpoints when it cannot finish the snapshot.
@@ -20,7 +31,7 @@ func (k *compiler) builtinFIFOs() {
 	}
 	queue := append(slices.Clone(b.Runtime), b.IPCDirs...)
 	seen := map[string]bool{}
-	left := 4096
+	left, dirsLeft := builtinFIFOFiles, builtinFIFODirs
 	for len(queue) > 0 {
 		dir := queue[0]
 		queue = queue[1:]
@@ -38,7 +49,7 @@ func (k *compiler) builtinFIFOs() {
 		if skip {
 			continue
 		}
-		entries, more, err := listDir(dir, left)
+		entries, more, err := listDir(dir, left+dirsLeft)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
@@ -63,14 +74,23 @@ func (k *compiler) builtinFIFOs() {
 			k.ds.errorf(k.cpos, CodeUnenforced, "builtin.host_ipc cannot inventory FIFO endpoints in %s: %v", dir, err)
 			return
 		}
-		if more {
+		files, dirs := 0, 0
+		for _, e := range entries {
+			if e.IsDir() {
+				dirs++
+			} else {
+				files++
+			}
+		}
+		if more || files > left || dirs > dirsLeft {
 			// A large runtime alias must not force an unbounded scan or omit
 			// unknown FIFO nodes. Protect this subtree in full instead.
 			k.builtinReadTarget(dir)
-			left = 0
+			left, dirsLeft = 0, 0
 			continue
 		}
-		left -= len(entries)
+		left -= files
+		dirsLeft -= dirs
 		protected := false
 		for _, e := range entries {
 			p := filepath.Join(dir, e.Name())

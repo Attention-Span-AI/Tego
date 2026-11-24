@@ -42,7 +42,7 @@ func TestStopByAgentName(t *testing.T) {
 		}
 		return nil
 	}
-	escalateRun = func(string, string, io.Writer) {}
+	escalateRun = func(string, string, io.Writer) bool { return false }
 	t.Cleanup(func() { signalTarget, escalateRun = prevSig, prevEsc })
 
 	code, out, errs := run(t, "stop", "--agent", "tester", "--grace", "100ms")

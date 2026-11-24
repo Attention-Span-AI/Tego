@@ -24,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 
 parser = argparse.ArgumentParser()
 parser.add_argument('source')
@@ -53,6 +54,32 @@ if os.geteuid() == 0:
     os.setgroups([])
     os.setgid(65534)
     os.setuid(65534)
+
+
+HANG_AFTER = 10  # seconds a driver may go on without taking a step before it counts as hung
+
+
+def wait_for_progress(proc, command, root):
+    """Wait for the driver to end, and call it hung only when it stops taking steps. Its steps are what the case can
+    show on disk: a case that retries a failed cleanup runs the rm stand-in once per attempt (up to 50 of them, each a
+    python start that a loaded host stretches to a quarter of a second or more), and the stand-in counts each one in
+    <root>/calls. A fixed ten seconds for the whole run, which this used to be, was a speed estimate of fifty process
+    starts (a gate's tier2-pairs run timed out on exactly that case, N101); no step for ten seconds is a hang."""
+    def marks():
+        try:
+            return (root / 'calls').read_text(), (root / 'hb').stat().st_mtime_ns
+        except OSError:
+            return None
+    last, since = marks(), time.monotonic()
+    while True:
+        try:
+            return proc.communicate(timeout=1)
+        except subprocess.TimeoutExpired:
+            now = time.monotonic()
+            if (mark := marks()) != last:
+                last, since = mark, now
+            elif now - since >= HANG_AFTER:
+                raise subprocess.TimeoutExpired(command, now - since)
 
 
 def check(ok, message):
@@ -298,7 +325,7 @@ with tempfile.TemporaryDirectory(prefix='tego-pair-cleanup.', dir=os.environ.get
                      'PAIR_KILL': kill_target or ('b' if actor_b == 137 and actor_a != 137 else 'a'),
                      'PAIR_REAL_RM': real_rm, 'PAIR_TEST_MODE': mode})
             try:
-                stdout, stderr = proc.communicate(timeout=10)
+                stdout, stderr = wait_for_progress(proc, command, root)
             except BaseException:
                 # A timeout leaves the private session leader unreaped. KeyboardInterrupt can
                 # instead make communicate reap it: never signal a released numeric group ID.

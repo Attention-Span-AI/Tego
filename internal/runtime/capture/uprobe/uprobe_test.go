@@ -206,6 +206,16 @@ func holeRecord(cgroup uint64, pid, tid uint32, ssl uint64, dir uint8, monoNS ui
 func newTestUprobe(t *testing.T, records [][]byte, opts Options) (*Uprobe, *fakeSink) {
 	t.Helper()
 	opts.Reader = &fakeRing{records: records}
+	// The attach and pre-attach budgets are wall-clock bounds of the product (§4), which a test that is
+	// about something else must not inherit: on a busy host a 50 ms budget is spent before the first
+	// candidate is read and the attach is abandoned with a size-cap gap (TestAttachOutcomeDoesNotDependOnHowFastTheHostIs).
+	// A test about a budget sets its own.
+	if opts.AttachBudget <= 0 {
+		opts.AttachBudget = time.Hour
+	}
+	if opts.PreattachBudget <= 0 {
+		opts.PreattachBudget = time.Hour
+	}
 	u, err := New(opts)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -802,7 +812,8 @@ func TestAttachBudget(t *testing.T) {
 		return now
 	}
 	att := &fakeAttacher{}
-	u, sink := newTestUprobe(t, nil, Options{Proc: proc.NewAt(tree.root), Attacher: att, Now: clock})
+	u, sink := newTestUprobe(t, nil, Options{Proc: proc.NewAt(tree.root), Attacher: att, Now: clock,
+		AttachBudget: DefaultAttachBudget})
 	if err := u.Start(context.Background(), source.RunRef{ID: "r-1", Agent: "a"}, sink); err != nil {
 		t.Fatalf("Start: %v", err)
 	}

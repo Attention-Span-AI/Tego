@@ -308,15 +308,24 @@ rootskips() {
 }
 rootskips "unlisted needs-root skips fail, a direct gate and a helper's alike, in the plain build" 1 \
 	'unit build: p TestDirectGate' 'unit build: p TestViaHelper'
-if grep -qE 'TestRootRunSkip|TestOnlyWithObjects|TestPlain' "$tmp/rs.out"; then
-	echo "FAIL a skip under euid == 0, a tegobpf-only file and a plain test are named" >&2
+if grep -qE 'TestOnlyWithObjects|TestPlain' "$tmp/rs.out"; then
+	echo "FAIL a tegobpf-only file and a plain test are named" >&2
 	fail=1
 else
-	echo "ok   a skip when root, a tegobpf-only file and a plain test are not candidates"
+	echo "ok   a tegobpf-only file and a plain test are not candidates"
+fi
+# A test that skips when the process is root is named (check-skiplists.sh, the root run's lists): the unprivileged
+# scan reads the skips of a process that is not root, which this one is none of.
+if grep -qF 'root run: p TestRootRunSkip' "$tmp/rs.out"; then
+	echo "ok   a skip under euid == 0 is named for the root run's lists"
+else
+	echo "FAIL a skip under euid == 0 is not named for the root run's lists" >&2
+	sed 's/^/     /' "$tmp/rs.out" >&2
+	fail=1
 fi
 printf 'p TestDirectGate # needs root\np TestViaHelper # needs root\n' >>"$fixture/test/unit-skips.txt"
 printf 'p TestDirectGate # needs root\np TestViaHelper # needs root\n' >>"$fixture/test/integration-skips.txt"
-printf 'p TestDirectGate # root only\np TestViaHelper # root only\n' >"$fixture/test/vm/root-skips.txt"
+printf 'p TestDirectGate # root only\np TestViaHelper # root only\np TestRootRunSkip # root only\n' >"$fixture/test/vm/root-skips.txt"
 rootskips "the plain build's tests pass once listed; the integration build's file is still unlisted" 1 \
 	'integration build: p TestIntegrationRoot'
 if grep -q 'unit build' "$tmp/rs.out"; then

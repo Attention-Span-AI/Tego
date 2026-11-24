@@ -4,6 +4,7 @@ package doctor
 
 import (
 	"errors"
+	"fmt"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -54,6 +55,28 @@ func moveThread() bool {
 	return false
 }
 
+// keyctlUnavailable reports whether err says the host has no keyctl for this process: EPERM (a seccomp profile) or
+// ENOSYS (no CONFIG_KEYS). Nothing else is a reason to skip.
+func keyctlUnavailable(err error) bool {
+	return errors.Is(err, unix.EPERM) || errors.Is(err, unix.ENOSYS)
+}
+
+// TestKeyctlUnavailableIsOnlyEPERMAndENOSYS: the skip of TestPlaneKeyProbeStaysOnOneThread is for those two and for
+// nothing else: EACCES (the race the test hunts), EDQUOT, ENOMEM and the like fail it.
+func TestKeyctlUnavailableIsOnlyEPERMAndENOSYS(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		skip bool
+	}{
+		{unix.EPERM, true}, {unix.ENOSYS, true}, {fmt.Errorf("wrapped: %w", unix.EPERM), true},
+		{unix.EACCES, false}, {unix.EDQUOT, false}, {unix.ENOMEM, false}, {unix.ENOKEY, false}, {errors.New("other"), false},
+	} {
+		if got := keyctlUnavailable(tc.err); got != tc.skip {
+			t.Errorf("keyctlUnavailable(%v) = %v, want %v", tc.err, got, tc.skip)
+		}
+	}
+}
+
 // TestPlaneKeyProbeStaysOnOneThread: doctor's key_permission fixture is made from a goroutine that a busy
 // scheduler is asked to move to another thread between every two syscalls of the sequence. A process keyring is in
 // the credentials of the thread that installed it, so a goroutine that moves loses possession and the kernel
@@ -61,6 +84,17 @@ func moveThread() bool {
 // lsm/key_permission). Both ways to make the key are driven: planePrivateKey (the pre-made key) and doctor's own
 // side, planeControlAction with no key made.
 func TestPlaneKeyProbeStaysOnOneThread(t *testing.T) {
+	// A host with no keyctl cannot run this test at all: Docker's default seccomp profile answers EPERM for add_key
+	// and keyctl, a kernel built without CONFIG_KEYS answers ENOSYS. The first sequence, made before any forced thread
+	// move, says so; any other failure of it is a failure of the test.
+	key, err := planePrivateKey()
+	if err != nil {
+		if keyctlUnavailable(err) {
+			t.Skipf("no keyctl on this host (%v): a seccomp profile (Docker's default) or a kernel without CONFIG_KEYS refuses add_key and keyctl", err)
+		}
+		t.Fatalf("planePrivateKey, before any thread move: %v", err)
+	}
+	planeReleaseKey(key)
 	defer busyScheduler()()
 	// The scheduler must be able to move a goroutine at all, or this test proves nothing.
 	var calibrated atomic.Bool
@@ -104,15 +138,54 @@ func TestPlaneKeyProbeStaysOnOneThread(t *testing.T) {
 	t.Logf("%d iterations, %d pauses between the syscalls, %d thread moves", iterations, runs.Load(), moves.Load())
 }
 
+// keyOnAHeldThread makes planePrivateKey's key on a goroutine that stays locked to its thread until the returned
+// function is called, which releases the key there and ends the thread. The key is linked only in the process keyring
+// that lives in the credentials of the thread that installed it, and the kernel destroys a keyring with the last
+// credentials that hold it, which takes the key with it: a key made on a thread the Go scheduler may end (any
+// thread a goroutine that exits locked lands on, onThrowawayThread) is gone for every thread afterwards, and an update
+// of it answers ENOKEY, "required key not available" (the 2026-11-24 flake of TestPlaneKeyUpdateFromAnyThread, a key
+// made on whatever thread the test goroutine had and then lost when one of the throwaway goroutines ran there and
+// ended it). The helper child of the product never ends a thread while it holds its key, so this is a property of the
+// test only.
+func keyOnAHeldThread() (int, func(), error) {
+	type made struct {
+		key int
+		err error
+	}
+	madeC := make(chan made)
+	stop, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		// Held until the key is released, then given back. It is unlocked and not ended: this goroutine can be on the
+		// main thread, and a goroutine that exits locked to the main thread parks it for good, which fails every later
+		// test that needs a goroutine there (TestThrowawayThreadIsNeverTheMainThread, 2026-11-24).
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		k, err := planePrivateKey()
+		madeC <- made{k, err}
+		if err != nil {
+			return
+		}
+		<-stop
+		planeReleaseKey(k)
+	}()
+	m := <-madeC
+	return m.key, func() { close(stop); <-done }, m.err
+}
+
 // TestPlaneKeyUpdateFromAnyThread: the key a helper made before its probe row was armed is updated later from
 // whatever thread the goroutine is on, which owner rights allow without possessing the ring (the comment in
-// planePrivateKey). Each goroutine here runs on a thread of its own (onThrowawayThread).
+// planePrivateKey). Each goroutine here runs on a thread of its own (onThrowawayThread); the key is made on a thread
+// that is held until the test ends (keyOnAHeldThread), so none of them can end the thread that holds its ring.
 func TestPlaneKeyUpdateFromAnyThread(t *testing.T) {
-	key, err := planePrivateKey()
+	key, release, err := keyOnAHeldThread()
 	if err != nil {
-		t.Skipf("no private key here: %v", err)
+		if keyctlUnavailable(err) {
+			t.Skipf("no keyctl on this host: %v", err)
+		}
+		t.Fatalf("the key this test updates could not be made: %v", err)
 	}
-	defer planeReleaseKey(key)
+	defer release()
 	pre := planeMakeEach
 	pre.key = key
 	var wg sync.WaitGroup

@@ -6,6 +6,8 @@ and exposes a separate effective contract/hash, owner context and modeled covera
 `effective_hash` only when a nonempty baseline was applied. Empty and absent baselines keep the
 existing compile JSON output.
 
+The `baseline:` machine setting is new in v0.2.0. v0.1.3 does not have it.
+
 Slice 6 adds the record and receipt format described below, with validated historical replay.
 Enforcing launches with a nonempty baseline remain refused until per-mechanism guest proof.
 The reviewed base35 fixes are integrated. Baseline editing commands and an editable dashboard card

@@ -7,14 +7,18 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
+	"hash"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -338,7 +342,8 @@ func AppendLive(ctx context.Context, root, of string, live []Live) error {
 }
 
 // ReadJournal is every line of root's journal, oldest first; none when there is no journal yet. A line that does not
-// decode (a torn last line after a crash, a newer version's) is skipped.
+// decode (a torn last line after a crash, a newer version's) is skipped. The slice is shared with the next read of
+// the same journal (see journalMemo): a caller reads it and does not change it, nor what its entries point to.
 func ReadJournal(root string) ([]Entry, error) {
 	j, err := openJournalRead(root)
 	if errors.Is(err, os.ErrNotExist) {
@@ -356,18 +361,95 @@ func ReadJournal(root string) ([]Entry, error) {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }() // read-only
+	return readJournalFile(root, f)
+}
+
+// journalMemo keeps what the last read of each ledger root's journal decoded, so that History and the creation check
+// (which run on every request of the Rules pages) decode only the lines added since, and nothing when there are none.
+// What makes a kept decode usable is the bytes it came from: the memo holds the SHA-256 of exactly the complete lines
+// it decoded, and a read serves them only after hashing the same number of bytes from the start of the file it has
+// open now and finding the same digest. A line edited in place (the same length or not), a file cut short and grown
+// again, a file replaced by another (whatever its identity or times) and a Prune's new file all change those bytes, so
+// the whole file is decoded again; nothing about the file's name, inode, size or times is trusted. What is saved is the
+// JSON decode (hashing is far cheaper), not the read. The memo is of complete lines only: a last line with no newline
+// yet is decoded each time and never kept.
+var journalMemo = struct {
+	sync.Mutex
+	m map[string]*journalRead
+}{m: map[string]*journalRead{}}
+
+// maxJournalMemos bounds the roots kept (a dashboard serves one; the rest is tests and tools).
+const maxJournalMemos = 8
+
+// journalRead is the memo of one journal: the entries of its complete lines, the length of those lines, and the
+// SHA-256 of those bytes as they were when they were decoded.
+type journalRead struct {
+	off     int64
+	entries []Entry
+	sum     [sha256.Size]byte
+}
+
+// hashPrefix feeds the first n bytes of f to h, false when f holds fewer or cannot be read.
+func hashPrefix(h hash.Hash, f *os.File, n int64) bool {
+	w, err := io.CopyBuffer(h, io.NewSectionReader(f, 0, n), make([]byte, 64<<10))
+	return err == nil && w == n
+}
+
+func readJournalFile(root string, f *os.File) ([]Entry, error) {
+	var st unix.Stat_t
+	if err := sys.FstatFile(f, &st); err != nil {
+		return nil, err
+	}
+	size := st.Size
+	journalMemo.Lock()
+	m := journalMemo.m[root]
+	journalMemo.Unlock()
+	// h hashes the complete lines the entries in es came from, in order, so the digest kept below is of the bytes
+	// those entries were decoded from and of nothing read at another moment.
+	h := sha256.New()
 	var es []Entry
-	sc := bufio.NewScanner(f)
+	var off int64
+	if m != nil && m.off <= size && hashPrefix(h, f, m.off) && [sha256.Size]byte(h.Sum(nil)) == m.sum {
+		es, off = m.entries, m.off
+	} else {
+		h.Reset()
+	}
+	if off == size {
+		return slices.Clip(es), nil
+	}
+	// Read the lines after off, as far as the size seen: lines the writer adds meanwhile are the next read's.
+	keep, keepOff := len(es), off // the entries and the end of the complete lines
+	es = slices.Clip(es)
+	pos := off
+	sc := bufio.NewScanner(io.NewSectionReader(f, off, size-off))
 	sc.Buffer(make([]byte, 0, 64<<10), maxLine)
+	sc.Split(func(data []byte, atEOF bool) (int, []byte, error) {
+		adv, tok, err := bufio.ScanLines(data, atEOF)
+		if adv > 0 && data[adv-1] == '\n' { // a complete line: its bytes are hashed as they are consumed
+			_, _ = h.Write(data[:adv]) // hash.Hash.Write never returns an error
+			pos += int64(adv)
+		}
+		return adv, tok, err
+	})
 	for sc.Scan() {
 		var e Entry
-		if json.Unmarshal(sc.Bytes(), &e) != nil || e.V != JournalVersion || e.ID == "" {
-			continue
+		if json.Unmarshal(sc.Bytes(), &e) == nil && e.V == JournalVersion && e.ID != "" {
+			es = append(es, e)
 		}
-		es = append(es, e)
+		if pos > keepOff { // the line just scanned ended in a newline: it is complete
+			keep, keepOff = len(es), pos
+		}
 	}
 	if err := sc.Err(); err != nil {
 		return nil, fmt.Errorf("%s: %w", JournalFile, err)
+	}
+	if keepOff > 0 {
+		journalMemo.Lock()
+		if _, there := journalMemo.m[root]; !there && len(journalMemo.m) >= maxJournalMemos {
+			journalMemo.m = map[string]*journalRead{}
+		}
+		journalMemo.m[root] = &journalRead{off: keepOff, entries: slices.Clip(es[:keep]), sum: [sha256.Size]byte(h.Sum(nil))}
+		journalMemo.Unlock()
 	}
 	return es, nil
 }

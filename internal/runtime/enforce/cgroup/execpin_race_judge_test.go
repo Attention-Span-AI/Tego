@@ -43,6 +43,7 @@ type pinRaceWant struct {
 type pinRaceVerdict struct {
 	problems, notes                  []string
 	ran, refused, killed, busy, odd  int
+	undecided                        int // EACCES lines whose plane sample was lost (isLostRefusalLine)
 	lost                             int
 	runEnd                           map[string]any
 	pinRefused, endKilled, endFailed int
@@ -57,7 +58,12 @@ type pinRaceVerdict struct {
 // attempt, and run_end must count the refusals and kills it holds. Only in the two swap cells (w.swap: ADR 0048 R4's
 // ruling), when the run says it lost records (a gap line with its count), is the ledger checked for consistency
 // instead: it never holds more lines of a kind than attempts that ended so, the attempts without a line are no more
-// than the records said lost, and run_end's counts lie between the ledger's and the racer's. Every other race cell,
+// than the records said lost, and run_end's counts lie between the ledger's and the racer's. In that lossy check one
+// more shape is a line: an attempt the plane refused whose plane sample the ring lost, which is an exec result with
+// no fragment to join, so its line can only say observed, syscall_ret -13 (isLostRefusalLine; ADR 0048, the swap
+// cells' implementation note). Such a line stands for one lost record, so with the refusals it is no more than the
+// racer's EACCES and alone no more than the records lost; with no loss stated, or outside the swap cells, it is
+// one of the lines that fail the cell. Every other race cell,
 // the kill cells included, keeps the exact check whatever the run says it lost, and a loss without its gap line
 // leaves the ledger short and fails the exact check in every cell.
 func judgePinRace(rep racerReport, events []map[string]any, w pinRaceWant) pinRaceVerdict {
@@ -96,6 +102,8 @@ func judgePinRace(rep racerReport, events []map[string]any, w pinRaceWant) pinRa
 			}
 		case e["verdict"] != "refused" && e["argv_facts"] == "kernel_pinned":
 			v.ran++
+		case w.swap && w.refusedReason != "" && isLostRefusalLine(e):
+			v.undecided++
 		default:
 			if v.odd++; v.odd <= 3 {
 				fail("an exec line that is neither a pinned run, the plane's refusal nor its kill: %v", e)
@@ -142,6 +150,10 @@ func judgePinRace(rep racerReport, events []map[string]any, w pinRaceWant) pinRa
 		if v.lost != 0 {
 			why = fmt.Sprintf("and a stated loss (%s) is tolerated only in the two swap cells", strings.Join(lossWhy, ", "))
 		}
+		if v.undecided != 0 {
+			fail("%d exec lines say observed with syscall_ret -13 and no decision, which only a lost plane sample "+
+				"explains, %s", v.undecided, why)
+		}
 		if v.refused != rep.eacces || v.killed != rep.other || v.ran != rep.ran || v.busy != rep.busy {
 			fail("%+v: the ledger has %d refusals, %d kills, %d pinned runs and %d ETXTBSY, %s", rep, v.refused,
 				v.killed, v.ran, v.busy, why)
@@ -163,11 +175,20 @@ func judgePinRace(rep racerReport, events []map[string]any, w pinRaceWant) pinRa
 	v.notes = append(v.notes, fmt.Sprintf("the run lost %d records (%s), each stated by a gap line: the attempts' "+
 		"outcomes are the racer's, and the ledger is checked for consistency with the loss", v.lost,
 		strings.Join(lossWhy, ", ")))
-	if v.refused > rep.eacces || v.killed > rep.other || v.ran > rep.ran || v.busy > rep.busy {
-		fail("%+v: the ledger has %d refusals, %d kills, %d pinned runs and %d ETXTBSY, more of a kind than the "+
-			"attempts that ended so", rep, v.refused, v.killed, v.ran, v.busy)
+	if v.refused+v.undecided > rep.eacces || v.killed > rep.other || v.ran > rep.ran || v.busy > rep.busy {
+		fail("%+v: the ledger has %d refusals (and %d EACCES lines without a decision), %d kills, %d pinned runs "+
+			"and %d ETXTBSY, more of a kind than the attempts that ended so", rep, v.refused, v.undecided, v.killed,
+			v.ran, v.busy)
 	}
-	if missing := rep.attempts - v.refused - v.killed - v.ran - v.busy; missing > v.lost {
+	if v.undecided > v.lost {
+		fail("%d exec lines say observed with syscall_ret -13 and no decision, more than the %d records the run "+
+			"says it lost", v.undecided, v.lost)
+	} else if v.undecided > 0 {
+		v.notes = append(v.notes, fmt.Sprintf("%d exec lines say observed with syscall_ret -13: the plane's refusal "+
+			"of each, whose sample the ring lost, is not in the ledger; the run's gap lines account for them",
+			v.undecided))
+	}
+	if missing := rep.attempts - v.refused - v.killed - v.ran - v.busy - v.undecided; missing > v.lost {
 		fail("%+v: %d attempts have no exec line, more than the %d records the run says it lost", rep, missing, v.lost)
 	} else if missing > 0 {
 		v.notes = append(v.notes, fmt.Sprintf("%d attempts have no exec line; the run's gap lines account for them",
@@ -188,6 +209,24 @@ func judgePinRace(rep racerReport, events []map[string]any, w pinRaceWant) pinRa
 		fail("%d exec-pin-kill-failed gaps, want between the ledger's %d kills and the racer's %d", f, v.killed, rep.other)
 	}
 	return v
+}
+
+// isLostRefusalLine says whether an exec line is what an attempt the plane refused EACCES becomes when the ring lost the
+// plane's sample of its refusal and only the exec's own result (the syscall's return) arrived: observed, rule
+// unmatched, the attempt's argv, syscall_ret -13, and nothing a decision gives (no mechanism, plane_reason, reason, signal
+// or kernel argv_facts). The recorder writes no refusal it did not read (observe.handleExecResult), so this is the line
+// it can write; it is not a refusal and says none.
+func isLostRefusalLine(e map[string]any) bool {
+	if e["kind"] != "exec" || e["verdict"] != "observed" || e["rule"] != "unmatched" || e["syscall_ret"] != float64(-13) ||
+		e["argv_from"] != "attempt" {
+		return false
+	}
+	for _, k := range []string{"mechanism", "decision_plane", "plane_reason", "reason", "signal", "argv_facts", "by", "errno"} {
+		if e[k] != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func isRecordLoss(why string) bool {
@@ -216,6 +255,22 @@ func raceLedger(refused, ran int, gaps map[string]int) []map[string]any {
 		"exec_rules": map[string]any{"pin_refused": float64(refused)}}})
 }
 
+// withLostRefusals puts n lines before the ledger's run_end of the shape an attempt the plane refused becomes when the
+// ring lost the plane's sample (N132, 2026-11-24: observed, unmatched, argv_from attempt, syscall_ret -13), each edited by f.
+func withLostRefusals(ev []map[string]any, n int, f func(map[string]any)) []map[string]any {
+	end := ev[len(ev)-1]
+	ev = ev[:len(ev)-1]
+	for range n {
+		l := map[string]any{"kind": "exec", "path": "/p/out/l", "verdict": "observed", "rule": "unmatched",
+			"argv_from": "attempt", "syscall_ret": float64(-13)}
+		if f != nil {
+			f(l)
+		}
+		ev = append(ev, l)
+	}
+	return append(ev, end)
+}
+
 // TestJudgePinRace holds the swap cells' judgement on ledgers made to its cases: the kernel's per-attempt outcomes
 // decide, a stated loss leaves the ledger checked for consistency, and a silent loss or a run of an image other than
 // the one decided fails.
@@ -240,6 +295,23 @@ func TestJudgePinRace(t *testing.T) {
 		{"stated loss, ledger whole", racerReport{attempts: 1000, eacces: 450, ran: 550},
 			raceLedger(450, 550, map[string]int{"channel-full": 334}), ""},
 		{"silent loss", rep, silent, "no gap says a record was lost"},
+		// A root-suite run on fedora-7.0 (2026-11-24), TestPlaneRunExecPinSymlinkSwap/cgroup@fmod_ret: 5,253 records lost; one refusal's plane
+		// sample among them, so its exec result alone wrote the line (the racer counted that EACCES, the ledger's
+		// refusals did not).
+		{"a refusal whose sample the ring lost", rep, withLostRefusals(raceLedger(437, 562, map[string]int{"ringbuf-full": 708,
+			"exec-fragment-overflow": 2}), 1, nil), ""},
+		{"a refusal whose sample was lost, with no loss stated", rep, withLostRefusals(raceLedger(437, 562, nil), 1, nil),
+			"no gap says a record was lost"},
+		{"more such lines than records lost", rep, withLostRefusals(raceLedger(435, 562, map[string]int{"ringbuf-full": 2}),
+			3, nil), "more than the 2 records"},
+		{"such lines beside all the refusals the racer saw", rep, withLostRefusals(raceLedger(438, 561,
+			map[string]int{"ringbuf-full": 5}), 1, nil), "more of a kind"},
+		{"observed with another errno", rep, withLostRefusals(raceLedger(437, 562, map[string]int{"ringbuf-full": 5}), 1,
+			func(l map[string]any) { l["syscall_ret"] = float64(-8) }), "neither a pinned run"},
+		{"observed with the plane's mechanism", rep, withLostRefusals(raceLedger(437, 562, map[string]int{"ringbuf-full": 5}),
+			1, func(l map[string]any) { l["mechanism"] = "plane" }), "neither a pinned run"},
+		{"observed with the kernel's argv", rep, withLostRefusals(raceLedger(437, 562, map[string]int{"ringbuf-full": 5}),
+			1, func(l map[string]any) { l["argv_from"] = "kernel"; l["argv_facts"] = "unproven" }), "neither a pinned run"},
 		{"swapped run beside a stated loss", rep, swapped, "neither a pinned run"},
 		{"swapped run counted as a pinned one", rep, func() []map[string]any {
 			ev := raceLedger(438, 562, nil)
@@ -288,6 +360,8 @@ func TestJudgePinRace(t *testing.T) {
 		{"kill cell, stated loss leaving a kill without its line", killLedger(99, map[string]int{"ringbuf-full": 1997}),
 			"tolerated only in the two swap cells"},
 		{"kill cell, silent loss", killLedger(99, nil), "no gap says a record was lost"},
+		{"kill cell, a refusal whose sample was lost (still no line of its own)", withLostRefusals(killLedger(100, map[string]int{"ringbuf-full": 1997}),
+			1, nil), "neither a pinned run"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			got := strings.Join(judgePinRace(killRep, c.events, kill).problems, "\n")

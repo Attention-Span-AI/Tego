@@ -13,6 +13,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/liveblock"
+	"github.com/attention-span-ai/tego/internal/runlock"
 	"github.com/attention-span-ai/tego/internal/testutil"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -231,10 +232,21 @@ func TestAUserLiftingARootRunIsToldToUseRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
-	owner, root := runDirOwner, callerIsRoot
-	t.Cleanup(func() { runDirOwner, callerIsRoot = owner, root })
+	uid := os.Geteuid()
+	var restore func()
+	t.Cleanup(func() {
+		if restore != nil {
+			restore()
+		}
+	})
+	seams := func(owner func(string) (int, bool), euid int) { // the previous seams are put back first, so they nest once
+		if restore != nil {
+			restore()
+		}
+		restore = runlock.SetRootOwnedSeams(owner, func() int { return euid })
+	}
 
-	runDirOwner = func(string) (int, bool) { return 0, true } // the folder is root's
+	seams(func(string) (int, bool) { return 0, true }, uid) // the folder is root's
 	for _, args := range [][]string{
 		{"lift", id, "read", "/srv/billing", "--yes"},
 		{"grant", id, "exec", "/usr/bin/psql", "--yes"},
@@ -260,18 +272,17 @@ func TestAUserLiftingARootRunIsToldToUseRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runDirOwner = func(string) (int, bool) { return os.Getuid(), true } // the person's own folder: not a root run
+	seams(func(string) (int, bool) { return os.Getuid(), true }, uid) // the person's own folder: not a root run
 	code, _, errs := run(t, "lift", id, "read", "/srv/billing", "--yes")
 	if code != identity.ExitError || !strings.Contains(errs, "[io]") || !strings.Contains(errs, "permission denied") || strings.Contains(errs, codeRootRun) {
 		t.Errorf("the person's own folder: exit %d stderr %q, want the plain I/O failure, exit 125", code, errs)
 	}
-	runDirOwner = func(string) (int, bool) { return 0, false } // an owner that cannot be told is not claimed
+	seams(func(string) (int, bool) { return 0, false }, uid) // an owner that cannot be told is not claimed
 	code, _, errs = run(t, "lift", id, "read", "/srv/billing", "--yes")
 	if code != identity.ExitError || strings.Contains(errs, codeRootRun) {
 		t.Errorf("an unknown owner: exit %d stderr %q", code, errs)
 	}
-	runDirOwner = func(string) (int, bool) { return 0, true }
-	callerIsRoot = func() bool { return true }
+	seams(func(string) (int, bool) { return 0, true }, 0)
 	code, _, errs = run(t, "lift", id, "read", "/srv/billing", "--yes")
 	if code != identity.ExitError || strings.Contains(errs, codeRootRun) {
 		t.Errorf("root itself: exit %d stderr %q", code, errs)

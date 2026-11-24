@@ -126,6 +126,8 @@ github.com/attention-span-ai/tego/internal/rulefile.Revert	control-only	internal
 github.com/attention-span-ai/tego/internal/rulefile.foundAt	control-only	FindAtIn, reached as it is
 github.com/attention-span-ai/tego/internal/rulefile.pinned.create	control-only	Create, reached as it is
 github.com/attention-span-ai/tego/internal/rulefile.pinned.taken	control-only	Create, reached as it is
+github.com/attention-span-ai/tego/internal/rulefile.hashPrefix	control-only	ReadJournal, reached as it is
+github.com/attention-span-ai/tego/internal/rulefile.readJournalFile	control-only	ReadJournal, reached as it is
 github.com/attention-span-ai/tego/internal/rulefile.revert	control-only	Revert, reached as it is
 github.com/attention-span-ai/tego/internal/rulefile.settle	control-only	Fold, reached as it is
 github.com/attention-span-ai/tego/internal/rulefile.Undo	test-api	internal/control/rulesview and internal/control/web tests undo a change with it
@@ -157,6 +159,7 @@ github.com/attention-span-ai/tego/internal/policy/decide.LandlockLinkRefusal	tes
 github.com/attention-span-ai/tego/internal/policy/decide.LandlockRenameRefusal	test-api	internal/runtime/observe's chain_link_test names the Landlock floor's rename refusal by scan, the oracle for the recorder's indexed answer
 github.com/attention-span-ai/tego/internal/policy/decide.PlaneNameTag	test-api	internal/bpf tests check the kernel rule_idx of a name refusal
 github.com/attention-span-ai/tego/internal/runlock.HoldDashboard	control-only	internal/control/cli serve takes the dashboard lock so tego scan names the non-dumpable dashboard (N80, F5)
+github.com/attention-span-ai/tego/internal/runlock.SetRootOwnedSeams	test-api	internal/cli and internal/control/ledgerview tests stand in a root-owned run folder, which a test cannot make (N125)
 github.com/attention-span-ai/tego/internal/runtime.NewHookQueue	test-api	internal/runtime/observe stop-drain tests drive a real recorder through it
 github.com/attention-span-ai/tego/internal/runtime/derive.ServerToolUse.UnmarshalJSON	reflection	encoding/json calls it decoding the server_tool_use field inside anthropic.Usage.UnmarshalJSON (derive/anthropic/types.go), a call the analysis does not follow
 github.com/attention-span-ai/tego/internal/runtime/derive.plainName	reflection	ServerToolUse.UnmarshalJSON's name check, reached as it is

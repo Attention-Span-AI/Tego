@@ -100,6 +100,7 @@ var amd64Syscalls = map[uint64]sysInfo{
 	92:  {"chown", []pathArg{{0, -1}}, -1},
 	94:  {"lchown", []pathArg{{0, -1}}, -1},
 	133: {"mknod", []pathArg{{0, -1}}, -1},
+	137: {"statfs", []pathArg{{0, -1}}, -1},
 	161: {"chroot", []pathArg{{0, -1}}, -1},
 	165: {"mount", []pathArg{{1, -1}}, -1},
 	166: {"umount2", []pathArg{{0, -1}}, -1},

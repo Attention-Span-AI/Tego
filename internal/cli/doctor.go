@@ -118,6 +118,7 @@ func runDoctor(ctx context.Context, asJSON bool, require string, noScope bool, s
 		message(stderr, "", 0, 0, "tego doctor: "+err.Error(), codeIO)
 		return identity.ExitError // R25: Tego's own error
 	}
+	notePlaneProbes(nil, "tego doctor", rep)
 	lc := checkLedger(m, stderr)
 	var builds []cgroupenforce.BuildInfo
 	var rings *cgroupenforce.RingUse

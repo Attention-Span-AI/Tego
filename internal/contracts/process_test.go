@@ -26,6 +26,9 @@ import (
 
 var lifecycleTestCommand func() (int, bool)
 
+// hangGuard ends a traced command or worker that never exits (see traceRecordedPath).
+const hangGuard = 60 * time.Second
+
 func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == HelperCommand {
 		if executable, err := os.Executable(); err == nil {

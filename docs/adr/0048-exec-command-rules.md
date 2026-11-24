@@ -3604,3 +3604,26 @@ first command word cannot supply helper authority absent from the retained
 pattern. Both sets are compiled once with the index; each reader must satisfy
 its corresponding closure. A supplied-row regression compares this boundary
 with the frozen released matcher.
+
+### Amendment 2026-11-24: a lost refusal sample under the swap cells' tolerance (row N132)
+
+On a fedora-7.0 guest (kernel 7.0, BPF LSM boot, `fmod_ret` mode admitted by the test builds' waiver, the host under
+heavy load) `TestPlaneRunExecPinSymlinkSwap` and `TestPlaneRunExecPinInterpreterSwap` failed in `cgroup@fmod_ret`
+alone. Each run said it lost records (5,253 and 615: `ringbuf-full`, `channel-full`, `exec-fragment-overflow`) and
+each ledger held exactly one exec line of the shape the swap-cells note above says a lost refusal sample leaves:
+`observed`, `unmatched`, `argv_from: attempt`, `syscall_ret: -13`, no `mechanism`, `plane_reason` or `reason`. The
+racer counted one more EACCES than the ledger had refusals (401 against 400 and that line; in the other run 390
+against 385 and that line, the rest among the 15 attempts with no line), and the same cells passed in LSM mode and
+on 6.17, where the same race passed. The product wrote what it read: the plane's sample (`tego_ev_plane`, 352 bytes
+with its path) and the exec result (`tego_ev_exec_result`, 64 bytes) are reserved separately, so a nearly full ring
+can refuse the first and take the second, and a result with no fragment is an `observed` line with the kernel's
+return, never a refusal the recorder did not read. (The failed runs' ledgers were not kept, so which record was lost
+is read from the counts above and not from a log: the odd line is the one EACCES the ledger lacks a refusal for.)
+The line is true (the exec failed with EACCES; it does not say it ran or was allowed) and each loss is stated by its
+gap; the receipt counts it in neither its refusals nor its programs (a failed exec ran nothing). The test's list of
+shapes was incomplete for a lossy run: `judgePinRace` now takes that one shape in the two swap cells only, only with a
+stated record loss, and bounds it (with the refusals no more than the racer's EACCES, alone no more than the records
+the run says it lost); with no loss stated, or in the kill cells, it still fails. No record field and no product code
+changed. Production reaches the same state in either mode whenever a ring is overrun (the plane's sample is lost at
+`bpf_ringbuf_reserve`, the exec result survives; `tego_exec_sample` is one function for both); the waiver adds
+nothing to it, since a skipped program refuses nothing and so leaves no EACCES.

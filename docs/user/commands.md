@@ -30,7 +30,7 @@ connect to.
 | Command | What it does |
 |---|---|
 | `tego rules create [flags]` | Creates a rules file (`agent.yaml`) in a project, from presets. See [presets.md](presets.md). |
-| `tego rules edit <agent \| file>` | Opens the rules file in `$EDITOR`, checks your edit, and saves it only when it passes. |
+| `tego rules edit <agent \| file>` | Opens the rules file in `$EDITOR`, checks your edit, and saves it only when it passes. A saved edit is a change-history entry (the old text is kept as `<file>.bak`), so `tego rules undo` can give it back; a file the history cannot keep is saved and the output says it cannot be undone. |
 | `tego rules check <agent \| file>` | Checks a rules file and shows what it enforces. |
 | `tego rules learn <session>` | Proposes a rules file from what a session did; `--save <name>` saves it as an agent. |
 

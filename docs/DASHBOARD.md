@@ -525,6 +525,15 @@ lines, 185 MB), `curl -w %{time_total}`, median of 5 warm requests after one col
 | Line details, line 100,000 of the big run | 1.31 s | 0.85 s |
 | Resident memory after the run | 708 MB (peak 981 MB) | 456 MB |
 
+A live run of 200,000 lines (GAPS C67; `BenchmarkLiveLargeAppend` and `BenchmarkLiveLargeOpen` in
+`internal/control/ledgerview`, `-benchtime 5x`, a generated live run of 214,091 lines written by `agentLines`, its lock
+held, on the dev box, 2026-11-24, not a real agent's ledger). The run holds a bounded window of its lines (17,949
+events here), so the views a refresh builds are bounded by the window, not by the file: after the run gains 10 lines,
+the timeline takes 1.4 ms (277 kB allocated), the refusals tab 3.2 ms, Logs with no filter 5.8 ms, Logs with facets
+5.5 ms, Logs with a text search not made before 26 ms (8.8 MB: the window's haystack is built again for the new
+version), Signal 0.4 ms. Reading the 10 appended lines takes 4.8 ms. The first read of the whole run by a store that
+has none of it takes 1.16 s and allocates 274 MB (transient). A real agent's ledger written for hours is still owed.
+
 The first request after start reads every line once; see "Cold start" below for how that is now shared and spread
 over cores. The line details page is still
 slow deep in a huge run: its "Act on this" panel asks the rule service, which walks the run with the engine's own

@@ -44,19 +44,13 @@ type progProc struct {
 	prog int32
 }
 
-// progEntry guards one run's index while a pass extends it.
+// progEntry guards one run's index while a pass extends it. The index lives in its run's runState (runState.prog), so
+// it is dropped with the state, and with the run's lines when the Store evicts them (Store.evict): it needs no
+// count of its own, and no table of its own that keeps a state the Store has dropped reachable.
 type progEntry struct {
 	mu sync.Mutex
 	x  *progIndex
 }
-
-// maxProgRuns bounds the index cache (one entry per run read; dropped wholesale past it).
-const maxProgRuns = 64
-
-var progCache = struct {
-	sync.Mutex
-	m map[*runState]*progEntry
-}{m: map[*runState]*progEntry{}}
 
 // progs is the program index of r's lines: the cached one, extended to r's lines, when r is a run the store
 // publishes; built afresh otherwise. The slices it returns are cut to r's lines.
@@ -73,16 +67,11 @@ func (r *Run) progsFull() (names, paths []string, of []int32) {
 		x.extend(evs)
 		return x.names, x.paths, x.of
 	}
-	progCache.Lock()
-	ent := progCache.m[r.st]
+	ent := r.st.prog.Load()
 	if ent == nil {
-		if len(progCache.m) >= maxProgRuns {
-			progCache.m = map[*runState]*progEntry{}
-		}
-		ent = &progEntry{}
-		progCache.m[r.st] = ent
+		r.st.prog.CompareAndSwap(nil, &progEntry{})
+		ent = r.st.prog.Load()
 	}
-	progCache.Unlock()
 	ent.mu.Lock()
 	defer ent.mu.Unlock()
 	if ent.x == nil || !ent.x.continues(evs) {

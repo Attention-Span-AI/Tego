@@ -1,5 +1,5 @@
 {{/* SPDX-License-Identifier: Apache-2.0 */}}
-{{/* Refusals by hour (hours.go, C111): one bar for each local hour of the last day or week, from the same reader as
+{{/* Refusals by hour (hours.go, C111; N124: at phone width the week is drawn by day, each day a tap target): one bar for each local hour of the last day or week, from the same reader as
      the Overview's "refused today". The chart is for the eye (hidden from the accessibility tree, like every svg);
      the list under it is the same hours as links, in order, for the keyboard and a screen reader. Every number is a
      quantity of the "daily" source, so a count that is a lower bound says "at least". */}}
@@ -13,9 +13,11 @@
 <div class="tile"><span class="label">{{template "i" "i-ban"}}Refused</span><span class="value"><a href="{{.LogsHref}}" aria-label="{{quantityText "hours.total" .Total $.Numbers}} refused in this period, open Logs" data-number-aria-label="hours.total">{{template "quantity" (quantity "hours.total" .Total $.Numbers)}}</a></span><span class="meta"><span data-number="hours.active">{{template "quantity" (quantity "hours.active" .Active $.Numbers)}} {{plural .Active "hour" "hours"}} with a refusal</span></span></div>
 <div class="tile"><span class="label">{{template "i" "i-activity"}}Busiest hour</span><span class="value"><a href="{{.PeakBar.Href}}" aria-label="{{quantityText "hours.peak" .Peak $.Numbers}} refused in the busiest hour, open Logs" data-number-aria-label="hours.peak">{{template "quantity" (quantity "hours.peak" .Peak $.Numbers)}}</a></span><span class="meta"><time datetime="{{iso .PeakBar.Start}}" title="{{stamp .PeakBar.Start}}" data-number-exclude="hours.clock-1">{{hourWords .PeakBar.Start $d.Now}}</time></span></div>
 </section>
-<figure class="panel ch-fig hr-fig"><figcaption class="ch-cap"><span class="ch-h">Refused each hour</span><span class="ch-n">Tallest bar {{template "quantity" (quantity "hours.peak" .Peak $.Numbers)}}</span></figcaption>
-{{template "chart" .Chart}}
-<div class="hr-axis" aria-hidden="true"><time datetime="{{iso .From}}" data-number-exclude="hours.clock-2">{{hourWords .From $d.Now}}</time><span>now</span></div></figure>
+<figure class="panel ch-fig hr-fig{{if .DayChart}} hr-week{{end}}"><figcaption class="ch-cap"><span class="ch-h"><span class="hr-fine-i">Refused each hour</span>{{if .DayChart}}<span class="hr-coarse-i">Refused each day</span>{{end}}</span><span class="ch-n hr-fine-i">Tallest bar {{template "quantity" (quantity "hours.peak" .Peak $.Numbers)}}</span></figcaption>
+<div class="hr-fine">{{template "chart" .Chart}}
+<div class="hr-axis" aria-hidden="true"><time datetime="{{iso .From}}" data-number-exclude="hours.clock-2">{{hourWords .From $d.Now}}</time><span>now</span></div></div>
+{{if .DayChart}}<div class="hr-coarse">{{template "chart" .DayChart}}
+<ul class="hr-days">{{range .Days}}<li><a href="{{.Href}}" aria-label="{{.Full}}, {{quantityText "hours.day" .N $.Numbers}} refused, open Logs" data-number-aria-label="hours.day"><span class="hr-dn">{{.Name}}</span><span class="hr-dv">{{template "quantity" (quantity "hours.day" .N $.Numbers)}}</span></a></li>{{end}}</ul></div>{{end}}</figure>
 {{end}}
 {{if .Lower}}<p class="soft hr-note">{{if .Unreadable}}Some record lines could not be read.{{else if .Records}}Retained event windows omit part of this period.{{else}}Some runs are omitted from this snapshot.{{end}} Open complete records:{{range .Records}} <a class="link" href="{{.URL}}" data-number-exclude="hours.agent-1">{{.Label}}</a>{{end}}{{if not .Records}} <a class="link" href="/runs">All runs</a>{{end}}.</p>{{end}}
 {{if .Total}}<section class="panel hr-list" aria-labelledby="h-hr-list"><div class="panel-head"><h2 id="h-hr-list">Hours with refusals</h2><a class="link" href="{{.LogsHref}}">All in Logs</a></div>

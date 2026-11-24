@@ -336,8 +336,29 @@ func TestNetworkScene(t *testing.T) {
 	}
 }
 
+// standInHarness writes a harness binary that does nothing into a new directory under base and returns the
+// directory. `tego compile` resolves the contract's command on PATH and reads nothing else of it, so a file with
+// the name and the execute bit gives the same answer as the real harness for the contract's own words; that the
+// harness itself runs under the contract is the demo's job (demo.sh claude, demo.sh codex), not this test's.
+// Codex's contract also names the helper that sits next to the real binary, so the codex stand-in has one.
+func standInHarness(t *testing.T, base, name string, siblings ...string) string {
+	t.Helper()
+	dir := filepath.Join(base, "standin-"+name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range append([]string{name}, siblings...) {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
 // TestContractsCompile holds every contract of the kit to `tego compile` with no error. The real-agent
-// contracts need their binary on PATH to compile (the command names it), so they are skipped without.
+// contracts need their binary on PATH to compile (the command names it): the real one where the machine has it,
+// else a stand-in of the same name (standInHarness), so the two contracts are held on every runner, not only
+// on a machine where Claude Code and Codex are installed.
 func TestContractsCompile(t *testing.T) {
 	k := newKit(t)
 	k.mustDemo("setup")
@@ -348,22 +369,28 @@ func TestContractsCompile(t *testing.T) {
 			xdg = v
 		}
 	}
-	codexHost := ""
-	if p, err := exec.LookPath("codex"); err == nil {
-		if real, err := filepath.EvalSymlinks(p); err == nil {
-			codexHost = filepath.Dir(real)
-		}
-	}
-	fillers := strings.NewReplacer("@@STAGE@@", k.stage, "@@XDG@@", xdg, "@@CODEXHOST@@", codexHost)
-	for _, tc := range []struct{ file, bin string }{
-		{"guarded.yaml", ""}, {"always-on.yaml", ""}, {"claude-code.yaml", "claude"}, {"codex.yaml", "codex"},
+	for _, tc := range []struct {
+		file, bin string
+		siblings  []string
+	}{
+		{"guarded.yaml", "", nil}, {"always-on.yaml", "", nil}, {"claude-code.yaml", "claude", nil},
+		{"codex.yaml", "codex", []string{"codex-code-mode-host"}},
 	} {
 		t.Run(tc.file, func(t *testing.T) {
+			path := os.Getenv("PATH")
+			codexHost := ""
 			if tc.bin != "" {
-				if _, err := exec.LookPath(tc.bin); err != nil {
-					t.Skipf("%s is not installed", tc.bin)
+				if p, err := exec.LookPath(tc.bin); err == nil {
+					if real, err := filepath.EvalSymlinks(p); err == nil {
+						codexHost = filepath.Dir(real)
+					}
+				} else {
+					dir := standInHarness(t, k.base, tc.bin, tc.siblings...)
+					path, codexHost = dir+string(os.PathListSeparator)+path, dir
+					t.Logf("%s is not installed: compiled against a stand-in %s", tc.bin, filepath.Join(dir, tc.bin))
 				}
 			}
+			fillers := strings.NewReplacer("@@STAGE@@", k.stage, "@@XDG@@", xdg, "@@CODEXHOST@@", codexHost)
 			src, err := os.ReadFile(filepath.Join("contracts", tc.file))
 			if err != nil {
 				t.Fatal(err)
@@ -372,17 +399,17 @@ func TestContractsCompile(t *testing.T) {
 			if err := os.MkdirAll(filepath.Join(dir, "work"), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			path := filepath.Join(k.base, "c-"+tc.file)
-			if err := os.WriteFile(path, []byte(fillers.Replace(string(src))), 0o644); err != nil {
+			cpath := filepath.Join(k.base, "c-"+tc.file)
+			if err := os.WriteFile(cpath, []byte(fillers.Replace(string(src))), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			cwd := dir
 			if tc.file == "guarded.yaml" || tc.file == "always-on.yaml" {
 				cwd = proj // "../secrets/" is relative to the project
 			}
-			// the tool's PATH for the command lookup includes the real claude / codex
-			env := append(append([]string{}, k.env...), "PATH="+os.Getenv("PATH"))
-			cmd := exec.Command(k.bin, "compile", path)
+			// the tool's PATH for the command lookup includes the real claude / codex, or the stand-in
+			env := append(append([]string{}, k.env...), "PATH="+path)
+			cmd := exec.Command(k.bin, "compile", cpath)
 			cmd.Dir, cmd.Env = cwd, env
 			out, err := cmd.CombinedOutput()
 			if err != nil {

@@ -32,6 +32,9 @@ matrix='TestInteriorsDisclosuresAndNoScriptInChrome|TestA1NativeRecoveryInChrome
 operator='TestFinishOwnerGalleryInChrome|TestLogsShotsInChrome|TestLiveShotsInChrome'
 chrome="${TEGO_CHROME:-google-chrome}"
 command -v "$chrome" >/dev/null || { echo "chrome-tests: no $chrome on PATH (TEGO_CHROME names another): the browser tests cannot run" >&2; exit 1; }
+# The design's layout bounds (ADR 0123) were measured in Noto Sans and the tests assert them only where the page was painted in it; a failure of a width or line-count assertion
+# should be read next to the font the page resolved to.
+command -v fc-match >/dev/null && echo "chrome-tests: system-ui resolves to: $(fc-match system-ui)"
 files="$(./scripts/tree-files.sh | tr '\0' '\n' | grep '_test\.go$' | xargs -r grep -l '^//go:build chrome$')"
 [ -n "$files" ] || { echo "chrome-tests: no test file says //go:build chrome: a run that finds no test would pass over nothing" >&2; exit 1; }
 # shellcheck disable=SC2086 # file names without spaces

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -39,13 +40,20 @@ type runMemo struct {
 	all       folded         // Query with no filter: every line but the mirrors (pair.go) folded, newest first
 	allCounts map[string]int // and those lines per verdictOf
 
-	hayOnce sync.Once
-	hay     []byte // Query's text search: each line's haystack, lower-cased, each ending in a newline
-	hayOff  []int  // where line i's haystack starts in hay; hayOff[n] is len(hay)
+	hayOnce  sync.Once
+	hayBuilt atomic.Bool // hay is built: the warm-up (matcher.warmText) skips such a run
+	hay      []byte      // Query's text search: each line's haystack, lower-cased, each ending in a newline
+	hayOff   []int       // where line i's haystack starts in hay; hayOff[n] is len(hay)
 	// hitsMu guards hits, the last few searches' results: a page refresh, the next page and a live update repeat
 	// the same search.
 	hitsMu sync.Mutex
 	hits   map[string][]bool
+
+	// tallies and groups are the facet tallies and the groupings Logs counted under each filter (facets.go,
+	// group.go), at most maxKeptPerVersion of each, the oldest dropped past it; plain is the unfiltered tally.
+	tallies, groups keptSet
+	plainOnce       sync.Once
+	plain           *runTally
 
 	live liveMemo // LiveFactsOf and the live-block views built on it (live.go)
 
@@ -58,6 +66,47 @@ type runMemo struct {
 
 // maxHits bounds runMemo.hits per run, dropped wholesale past it.
 const maxHits = 8
+
+// maxKeptPerVersion bounds each keptSet: the searches a person tries on one version of a run. The sets belong to the
+// version, so they leave with it when the run gains a line or the store lets the version go, and no cache outlives the
+// run it was counted from (GAPS C82).
+const maxKeptPerVersion = 8
+
+// keptSet is a few values derived from one version of a run, by the filter they were derived under: first in, first
+// out, one dropped at a time. Safe for concurrent use; a value is shared by every caller that gets it.
+type keptSet struct {
+	mu    sync.Mutex
+	m     map[string]any
+	order []string
+}
+
+func (k *keptSet) get(key string) any {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return k.m[key]
+}
+
+func (k *keptSet) put(key string, v any) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.m == nil {
+		k.m = map[string]any{}
+	}
+	if _, ok := k.m[key]; !ok {
+		if len(k.order) >= maxKeptPerVersion {
+			delete(k.m, k.order[0])
+			k.order = k.order[1:]
+		}
+		k.order = append(k.order, key)
+	}
+	k.m[key] = v
+}
+
+func (k *keptSet) len() int {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return len(k.m)
+}
 
 func (r *Run) memoOf() *runMemo {
 	if r.memo == nil {
@@ -284,14 +333,7 @@ func (r *Run) allFolded() (folded, map[string]int) {
 func (r *Run) textMatches(needle []byte) []bool {
 	m := r.memoOf()
 	evs := r.AllEvents()
-	m.hayOnce.Do(func() {
-		m.hayOff = make([]int, len(evs)+1)
-		for i := range evs {
-			m.hayOff[i] = len(m.hay)
-			m.hay = append(haystack(m.hay, &evs[i]), '\n')
-		}
-		m.hayOff[len(evs)] = len(m.hay)
-	})
+	m.buildHay(evs)
 	m.hitsMu.Lock()
 	out, ok := m.hits[string(needle)]
 	m.hitsMu.Unlock()
@@ -321,6 +363,28 @@ func (r *Run) textMatches(needle []byte) []bool {
 		pos = m.hayOff[i+1]
 	}
 	return out
+}
+
+// buildHay builds the haystacks of evs, the run's lines, once per version. The buffer is sized first from the fields
+// it will hold, so it is filled without growing (it used to double its way up: twice the allocation of the text and
+// a copy of it at each step).
+func (m *runMemo) buildHay(evs []Event) {
+	m.hayOnce.Do(func() {
+		n := 0
+		for i := range evs {
+			e := &evs[i]
+			n += len(e.Op) + len(e.Target) + len(e.Rule) + len(e.Reason) + len(e.Agent) + len(e.Run) + len(e.Kind) +
+				len(e.AskID) + len(e.askTarget) + 9 // the separators and the newline
+		}
+		m.hay = make([]byte, 0, n)
+		m.hayOff = make([]int, len(evs)+1)
+		for i := range evs {
+			m.hayOff[i] = len(m.hay)
+			m.hay = append(haystack(m.hay, &evs[i]), '\n')
+		}
+		m.hayOff[len(evs)] = len(m.hay)
+		m.hayBuilt.Store(true)
+	})
 }
 
 // RuleHits is how many lines of r name each rule key (Event.Rule), a refused action's mirror (pair.go) left out, so a

@@ -61,6 +61,19 @@ type hoursData struct {
 	Unreadable bool
 	Records    []hourRecord
 	Week       bool
+	// Days are the week's hours added up by local calendar day (the first and last may be part days), DayChart their
+	// bars: the phone view of the week, where 168 hourly bars are under 2 px each and cannot be tapped (N124).
+	Days     []dayBar
+	DayChart *svgChart
+}
+
+// dayBar is one local calendar day of the week chart: its first and last instant within the period, its short name,
+// the refusals timed in it (the sum of its hourly bars) and its Logs link.
+type dayBar struct {
+	Start, End time.Time
+	Name, Full string
+	N          int
+	Href       string
 }
 
 // hourRecord is a link to one run's complete record.
@@ -133,7 +146,60 @@ func hoursOf(snap *ledgerview.Snapshot, span string, now time.Time) hoursData {
 		}
 	}
 	d.Chart = hoursChart(d.Bars, d.Peak, d.Week)
+	if d.Week {
+		d.Days = daysOf(d.Bars, now)
+		d.DayChart = daysChart(d.Days)
+	}
 	return d
+}
+
+// daysOf adds the hourly bars up by local calendar day, oldest first. A day's bounds are its first bar's start and its
+// last bar's end, so the first and the last day may be part days and the days' counts add up to the hours' exactly.
+func daysOf(bars []hourBar, now time.Time) []dayBar {
+	var out []dayBar
+	key := func(t time.Time) [3]int { y, m, d := t.In(now.Location()).Date(); return [3]int{y, int(m), d} }
+	for _, b := range bars {
+		if n := len(out); n > 0 && key(out[n-1].Start) == key(b.Start) {
+			out[n-1].End = b.End
+			out[n-1].N += b.N
+			continue
+		}
+		out = append(out, dayBar{Start: b.Start, End: b.End, N: b.N})
+	}
+	for i := range out {
+		out[i].Href = logsWindow(out[i].Start, out[i].End)
+		out[i].Name = out[i].Start.In(now.Location()).Format("Mon")
+		out[i].Full = out[i].Start.In(now.Location()).Format("Mon Jan 2")
+		if key(out[i].Start) == key(now) {
+			out[i].Name, out[i].Full = "Today", "Today"
+		}
+	}
+	return out
+}
+
+// daysChart is the days as an svgChart: one wide column for each day, drawn as hoursChart draws an hour, each day with
+// refusals a link to its window in Logs. The bars share the peak of the days, not of the hours.
+func daysChart(days []dayBar) *svgChart {
+	const col, gap, h = 40.0, 8.0, 100.0
+	c := &svgChart{Class: "ch-days", W: num(col * float64(len(days))), H: num(h), Label: "Refusals in each day of the last week"}
+	peak := 0
+	for _, d := range days {
+		peak = max(peak, d.N)
+	}
+	vals := make([]int, len(days))
+	for i, d := range days {
+		vals[i] = d.N
+		x := col * float64(i)
+		if d.N == 0 {
+			c.Parts = append(c.Parts, svgPart{Class: "ch-track", X: num(x + gap/2), Y: num(h - 2), W: num(col - gap), H: "2"})
+			continue
+		}
+		bh := max(float64(d.N)/float64(max(peak, 1))*(h-4), 4)
+		c.Parts = append(c.Parts, svgPart{Class: "ch-refused", X: num(x + gap/2), Y: num(h - bh), W: num(col - gap), H: num(bh),
+			Href: d.Href, Title: fmt.Sprintf("%s: %d refused", d.Full, d.N)})
+	}
+	c.Desc = "Oldest day to newest: " + joinInts(vals) + "."
+	return c
 }
 
 // recordLink is where a run's complete record is: its receipt, or its raw lines when a line could not be read (as the
@@ -229,5 +295,6 @@ func (s *Server) refusalHours(w http.ResponseWriter, r *http.Request) {
 		c.Numbers.Daily = countScope{}
 	}
 	qualifyChart(d.Chart, "hours.series", c.Numbers.Daily)
+	qualifyChart(d.DayChart, "hours.series", c.Numbers.Daily)
 	s.render(w, http.StatusOK, "hours", c, d)
 }

@@ -210,6 +210,32 @@ func TestRulesHistoryIsTheDashboardsHistory(t *testing.T) {
 	}
 }
 
+// TestRulesEditIsListedAndUndone (N113): what `tego rules edit` writes (internal/cli/rules_edit.go: rulefile.Replace under
+// the ledger root's guard, via "cli", the dashboard's summary for a whole-text edit, direction mixed) is one entry of the
+// history the dashboard and these commands read: listed in the same words, current while the file holds its text, and
+// undone like a free edit, with the word (here --yes).
+func TestRulesEditIsListedAndUndone(t *testing.T) {
+	f := newUndoFix(t)
+	c := f.ref(t)
+	edited := undoBaseText + "# edited by hand\n"
+	e, err := rulefile.Replace(t.Context(), rulefile.DefaultGuard(f.root), f.contract, c.Base, []byte(edited),
+		rulefile.Change{Via: "cli", Summary: "free edit of the whole text", Direction: "mixed"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, out, errs := run(t, user, "rules", "history", "tester")
+	if code != identity.ExitOK || errs != "" || !strings.Contains(out, e.ID) || !strings.Contains(out, "free edit of the whole text") || !strings.Contains(out, "[mixed]") ||
+		!strings.Contains(out, "Undo the newest change") {
+		t.Fatalf("history: exit %d stdout %q stderr %q", code, out, errs)
+	}
+	if code, out, errs := run(t, user, "rules", "undo", "tester"); code != identity.ExitUsage || !strings.Contains(errs, "--yes") || f.text(t) != edited {
+		t.Fatalf("an undo of a free edit with no terminal: exit %d stdout %q stderr %q", code, out, errs)
+	}
+	if code, out, errs := run(t, user, "rules", "undo", "tester", "--yes"); code != identity.ExitOK || f.text(t) != undoBaseText {
+		t.Fatalf("the undo: exit %d stdout %q stderr %q", code, out, errs)
+	}
+}
+
 // TestRulesHistoryWordsAreEscaped: what a ledger or a journal holds is shown as text, never as a control sequence, and
 // the text lists the newest entries only.
 func TestRulesHistoryWordsAreEscaped(t *testing.T) {
@@ -348,6 +374,35 @@ func TestRulesUndoExitTable(t *testing.T) {
 		selfGoverned = func() runscope.Answer { return answertest.Inside(runscope.CauseGoverned) }
 		if code, out, errs := run(t, user, "rules", "undo", "tester"); code != identity.ExitOK || f.text(t) != undoBaseText {
 			t.Errorf("exit %d stdout %q stderr %q", code, out, errs)
+		}
+	})
+	// N112: a run's own rules can hide the ledger root, so from inside a run the rules files runs here ran are not listed.
+	// The undo then cannot be shown to narrow: the governed refusal comes first (exit 1, [governed], nothing written),
+	// not a usage error about a file "no run here has run".
+	t.Run("an undo from inside a run that lists no rules file is refused as governed", func(t *testing.T) {
+		for _, row := range answertest.Rows() {
+			f := newUndoFix(t)
+			f.change(t, "remove", "exec.allow", "cat")
+			changed := f.text(t)
+			hidden := &rules.Service{Ledger: filepath.Join(f.base, "hidden-runs"), Home: f.svc.Home, Now: f.svc.Now, Compile: f.svc.Compile}
+			if err := os.Mkdir(hidden.Ledger, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			newRulesService = func(string, string, *config.Machine, bool) *rules.Service { return hidden }
+			selfGoverned = func() runscope.Answer { return row.Answer }
+			for _, args := range [][]string{{"rules", "undo", "tester", "--yes"}, {"rules", "undo", f.contract}, {"rules", "undo", "tester", "rc-x"}} {
+				code, out, errs := run(t, user, args...)
+				if row.Permits {
+					if code != identity.ExitUsage || !strings.Contains(errs, "[usage]") || out != "" {
+						t.Errorf("%s %v: outside every run, exit %d stdout %q stderr %q, want the usage error", row.Name, args, code, out, errs)
+					}
+					continue
+				}
+				if code != identity.ExitFinding || !strings.Contains(errs, "[governed]") || strings.Contains(errs, "[usage]") || out != "" ||
+					!strings.Contains(errs, "cannot show that this undo only narrows") || f.text(t) != changed {
+					t.Errorf("%s %v: exit %d stdout %q stderr %q, want exit 1 [governed]", row.Name, args, code, out, errs)
+				}
+			}
 		}
 	})
 	t.Run("what names nothing is usage", func(t *testing.T) {

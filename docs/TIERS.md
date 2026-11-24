@@ -42,7 +42,7 @@ refused at start (exit 125), before the agent starts, and the message gives the 
 offered cpu (its `cgroup.controllers` does not list it), a user cannot turn cpu on alone, so the fix starts with the
 administrator's steps below. A `limits.cpu` ceiling in
 `/etc/tego/config.yaml` gives every `tego run` a CPU limit, so with one they are all refused. `tego machine check`
-still reports tier landlock for a user; from the next release its cgroupv2 line also names that ceiling and says
+reports tier landlock for a user, and its cgroupv2 line also names that ceiling and says
 every run is refused. Memory and process limits apply as usual. To allow CPU limits, an administrator runs this
 once, then reboots:
 
@@ -159,7 +159,7 @@ records, with the fixed build too.
 
 v0.1.1's root test suites (`test/vm/root-suites.sh`) do not all pass there. Every failure and both hangs below are
 now explained. Apart from the overlayfs case, which v0.1.1 fixes, each is a bug in a test or a test that assumes a
-host unlike RHEL 9; no product bug was found. Those tests are fixed for the next release: with the fixes, every
+host unlike RHEL 9; no product bug was found. Those tests are fixed in v0.2.0: with the fixes, every
 suite that failed or hung there runs to the end and its tests pass, with the skips named below. The suites ran as
 root in local guests, one suite at a time, not in CI's shards. As of 2026-11-10:
 
@@ -235,7 +235,7 @@ grew by up to 9.5 times, and the programs without `bpf_loop` did not change. Fed
 mainline 6.19.10 does, and on Fedora's 7.0.14 and 7.2.9 kernels the programs that call `bpf_loop` verify in at most
 19,834. The likely cause is the stable backport, in 6.19.4, of upstream commit f597664454bd ("bpf: bpf_scc_visit
 instance and backedges accumulation for bpf_loop()"). That is named from a bisection over releases, not isolated: no
-kernel was built without it. The tests' budget is fixed for Linux 6.19.4 to 6.19.y for the next release.
+kernel was built without it. The tests' budget is fixed for Linux 6.19.4 to 6.19.y in v0.2.0.
 
 ## Choosing
 

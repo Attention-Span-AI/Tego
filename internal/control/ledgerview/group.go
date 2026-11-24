@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -89,11 +88,6 @@ type runGroups struct {
 	keyless int
 }
 
-var groupCache = struct {
-	sync.Mutex
-	m map[tallyKey]*runGroups
-}{m: map[tallyKey]*runGroups{}}
-
 // Group gathers the lines f matches by by (GroupProcess, GroupTarget, GroupRule or GroupSeverity), most lines first
 // (ties: the newest first; GroupSeverity in sevOrder), at most limit groups (0: all). An unknown by is an empty Grouped.
 // sens is what makes a path a secret for each run, as the pages read its Signal, so GroupSeverity's High is Detections'
@@ -104,6 +98,7 @@ func (s *Snapshot) Group(f Filter, by string, limit int, sens func(*Run) Sensiti
 		return out
 	}
 	m := newMatcher(&f)
+	m.warmText(s.Runs)
 	fk, keep := facetKey(&f)
 	all := map[string]*GroupRow{}
 	for _, r := range s.Runs {
@@ -114,30 +109,24 @@ func (s *Snapshot) Group(f Filter, by string, limit int, sens func(*Run) Sensiti
 		if !ok {
 			continue
 		}
-		var k tallyKey
+		var gk string
 		var g *runGroups
 		rs := Sensitive{Cwd: r.Cwd}
 		if sens != nil {
 			rs = sens(r)
 		}
-		if keep && cacheable(r) {
-			k = tallyKey{store: r.st.store, run: r.ID, rev: r.Rev, filter: fk + "\x00group:" + by}
+		kept := keep && cacheable(r)
+		if kept {
+			gk = fk + "\x00group:" + by
 			if by == GroupSeverity {
-				k.filter += "\x00" + sensKey(rs)
+				gk += "\x00" + sensKey(rs)
 			}
-			groupCache.Lock()
-			g = groupCache.m[k]
-			groupCache.Unlock()
+			g, _ = r.memo.groups.get(gk).(*runGroups)
 		}
 		if g == nil {
 			g = groupRun(r, rm, by, rs)
-			if keep && cacheable(r) {
-				groupCache.Lock()
-				if len(groupCache.m) >= maxTallies {
-					groupCache.m = map[tallyKey]*runGroups{}
-				}
-				groupCache.m[k] = g
-				groupCache.Unlock()
+			if kept {
+				r.memo.groups.put(gk, g)
 			}
 		}
 		out.Keyless += g.keyless

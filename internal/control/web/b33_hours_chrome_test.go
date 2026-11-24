@@ -44,6 +44,39 @@ func TestRefusalHoursInChrome(t *testing.T) {
 							t.Errorf("the list link takes no focus ring")
 						}
 					}
+					if span == "week" {
+						// N124: at phone width the week is drawn by day, each day a bar and a label at least 24 px wide and
+						// 44 px tall to tap; the 168 hourly bars are drawn from 601 px up.
+						probe := `(function(){var v=function(s){var e=document.querySelector(s);return !!e&&e.getBoundingClientRect().width>0};` +
+							`var labels=[].map.call(document.querySelectorAll('.hr-days a'),function(a){var r=a.getBoundingClientRect();return [Math.round(r.width),Math.round(r.height)]});` +
+							`var bars=[].map.call(document.querySelectorAll('.ch-days a rect'),function(a){return Math.round(a.getBoundingClientRect().width)});` +
+							`return {fine:v('.ch-hours'),coarse:v('.ch-days'),labels:labels,bars:bars}})()`
+						var got struct {
+							Fine, Coarse bool
+							Labels       [][2]int
+							Bars         []int
+						}
+						if err := json.Unmarshal([]byte(tb.eval(t, probe)), &got); err != nil {
+							t.Fatalf("probe: %v", err)
+						}
+						if w == 390 {
+							if got.Fine || !got.Coarse || len(got.Labels) < 7 {
+								t.Errorf("phone week: hourly chart %v, day chart %v, %d day labels", got.Fine, got.Coarse, len(got.Labels))
+							}
+							for _, l := range got.Labels {
+								if l[0] < 24 || l[1] < 44 {
+									t.Errorf("a day label is %dx%d px, want at least 24x44", l[0], l[1])
+								}
+							}
+							for _, b := range got.Bars {
+								if b < 24 {
+									t.Errorf("a day bar is %d px wide, want at least 24", b)
+								}
+							}
+						} else if !got.Fine || got.Coarse {
+							t.Errorf("desktop week: hourly chart %v, day chart %v", got.Fine, got.Coarse)
+						}
+					}
 					if v := tb.eval(t, `JSON.parse(`+builderMeasure+`).contrastFailures.length===0`); v != "true" {
 						t.Errorf("rendered contrast failed")
 					}

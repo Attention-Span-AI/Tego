@@ -242,7 +242,10 @@ Each of these is something the kit tells you itself, in the words below, when it
 - **A name service it does not know.** The contracts let curl's name lookup through by naming the sockets this host's
   lookup uses: nscd's (nsncd, which stands in for nscd, serves the same path), systemd-resolved's and systemd's user
   database, and the socket of each module `/etc/nsswitch.conf` names on its `hosts`, `passwd` and `group` lines among
-  `sss` (sssd), `mdns*` (avahi) and `mymachines` (systemd-machined), when that socket exists. A module that talks to a socket
+  `sss` (sssd), `mdns*` (avahi) and `mymachines` (systemd-machined), when that socket exists. A `net.allow` `unix:` entry admits a
+  connect by the name the program passes, and `/var/run` is a link to `/run`, so the kit names avahi's socket by both spellings
+  (`/run/avahi-daemon/socket`, which libnss-mdns on a current distribution uses, and `/var/run/avahi-daemon/socket`, which an
+  older one used) for each that exists. A module that talks to a socket
   or a server of its own that the kit does not know (`ldap`, `nis`, `winbind`) cannot be named for you, and its lookup can show as
   a net refusal the scene is not about. `setup`, Act 2 and `./demo.sh lookup` then print, once, for example:
   `note: /etc/nsswitch.conf names the name service(s) ldap nis, whose socket or server this demo kit does not know. If a scene shows a net refusal for a name lookup that the scene is not about, add that socket or server to net.allow in the contract; the refusals the scene is about are not affected.`

@@ -274,7 +274,14 @@ func heldLabelWarning(by string, lsm []byte, err error) string {
 		what = "file read that tego checks and opens"
 	}
 	if err != nil {
-		return fmt.Sprintf("the host's security modules could not be read (%v); a %s for the agent is refused when its security labels cannot be verified; permit lsm_list_modules in the outer seccomp filter or expose readable /sys/kernel/security/lsm", err, what)
+		cause, remedy := fmt.Sprint(err), "permit lsm_list_modules in the outer seccomp filter or expose readable /sys/kernel/security/lsm"
+		var le *doctor.LSMReadError
+		if errors.As(err, &le) {
+			// What each way answered, so the note names the cause that is true here: a kernel older than 6.8 has no
+			// syscall to permit, and a default Docker container can read neither the call nor the file.
+			cause, remedy = le.Why(), le.Remedy()
+		}
+		return fmt.Sprintf("the host's security modules could not be read (%v); a %s for the agent is refused when its security labels cannot be verified; %s", cause, what, remedy)
 	}
 	var names, holds []string
 	for _, name := range strings.Split(strings.TrimSpace(string(lsm)), ",") {

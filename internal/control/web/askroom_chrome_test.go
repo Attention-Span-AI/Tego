@@ -23,7 +23,7 @@ func settle(t *testing.T, tb *tab, expr string) int {
 	t.Helper()
 	last, n := -1<<30, 0
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
-		v, err := strconv.Atoi(tb.eval(t, "Math.round("+expr+")"))
+		v, err := strconv.Atoi(tb.eval(t, "Math.round("+expr+") + 0"))
 		if err != nil {
 			t.Fatal(err)
 		}

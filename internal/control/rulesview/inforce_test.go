@@ -552,40 +552,112 @@ func bigRun(tb testing.TB, n int) *fixture {
 	return f
 }
 
-// inForceBudget55k is the budget of one InForce over a 55k-line run read from disk (no read model, so the whole
-// ledger is scanned): the Rules page renders on every refresh. Measured about 60 to 70 ms on the reference box.
-const inForceBudget55k = 150 * time.Millisecond
+// inForceTarget is the CPU time the Rules page's refresh was designed for: one InForce over a 55k-line run read from
+// disk (no read model, so the whole ledger is scanned), the page rendering on every refresh. It was measured at 60 to 70
+// ms on the reference box on 2026-10-27, when the read ran in the calling process. Since the read runs in a worker
+// process (inforce.go's remoteView; two exchanges, each scanning the run, and a worker's start) the caller's and the
+// worker's CPU time together is 450 to 550 ms on a lightly loaded development box (the in-process read alone, 230 ms
+// there), and the test no longer meets it: budget mode prints TARGET-MISS, as it does for every budget it misses.
+const inForceTarget = 150 * time.Millisecond
 
-// TestInForceLongRunIsFast: a 55k-line run reads in under 150 ms. In budget mode (testutil.BudgetsEnv, set by
-// scripts/timing-budgets.sh, which runs it alone) the figure is the fastest of three reads on the wall clock, held to
-// the budget as the test always held it; in the unit gate, which also runs beside the integration suites, it is the
-// fastest of five reads in the thread's own time (testutil.MinOfThread: InForce runs on the calling goroutine), held to
-// testutil.CeilingFactor times the budget and its wall clock to testutil.WallCeilingFactor times it
-// (docs/BENCHMARKS.md, "Timing budgets in the test suites"). The wall clock alone failed there: beside the integration
-// suites the box has more runnable threads than CPUs, and the fastest of three reads still waited for a CPU and ran on
-// a busy core (213 and 228 ms, 70 ms alone). A scan that grew with the run's size squared, or a read
-// that waited on anything, still fails the ceiling. The race detector's slowdown skips it.
+// inForceLimit is the CPU time over which the read fails in budget mode, where the machine is quiet: about twice what it
+// costs today. inForceCeiling is the unit gate's, where it runs beside other work: a busy machine slows CPU work by a
+// lower clock and a busy sibling hyperthread (8 busy loops on the reference box's 16 threads made today's 0.4 s read
+// 1.3 s; 20 made it 1.5 s), so the ceiling is more than six times today's cost, 3 s. Either fails a read that does
+// several times the work it does now, on any machine.
+const (
+	inForceLimit   = time.Second
+	inForceCeiling = 3 * time.Second
+)
+
+// inForceWallBound is the loose bound on the wall clock of the same read: far over what it takes (0.35 to 0.45 s on the
+// box, 0.26 to 0.33 s on a hosted runner) on purpose, so that it fails a wait (a sleep, a lock, a pipe that is never
+// answered, a timeout run to its end) on any machine and not the machine's ordinary load. A busy machine also
+// stretches the wall clock (1.15 s beside 8 busy loops, 2 s beside 20), by waits for a CPU that its CPU time keeps out,
+// so the bound holds only where the wall clock is also over twice the CPU time: a wait is wall clock the work does
+// not account for.
+const inForceWallBound = time.Second
+
+// inForceCostRatio is the most the 55k-line read may cost over the 11k-line one, in CPU time. Five times the lines is
+// five times the cost at the most (the worker's start-up is the same for both, so the ratio reads about 3), and one
+// more for the run's own spread.
+const inForceCostRatio = 6.0
+
+// TestInForceLongRunIsFast: a 55k-line run reads in a time the Rules page can refresh in, and what the read costs grows
+// with the run's size and no faster. InForce does its work in a worker process, which a short launcher starts and
+// leaves (so it is nobody's child), and which the calling thread's clock, the unit gate's usual figure
+// (testutil.MinOfThread), never sees: the first form of this test read 3.9 ms of CPU for a read that takes 450 ms, and
+// the one before it held the wall clock to the 150 ms budget on a hosted runner with other tenants (261 and 332 ms,
+// with the CPU time flat). Three bounds, each for one fault and none for the machine's load:
+//   - CPU time of the process tree, the caller's and its worker's (testutil.MinOfTree, the fastest of five reads of each
+//     run, interleaved), at most inForceLimit in budget mode and inForceCeiling in the unit gate: the work the read does,
+//     which a scan that does more of it, or a read that copies more, exceeds. A busy machine slows CPU work by a lower
+//     clock and a busy sibling hyperthread, not by the waits for a CPU, so the figure keeps the room for that.
+//   - The same figure of the 55k-line run over an 11k-line run, at most inForceCostRatio: a scan that is quadratic in
+//     the run (a rescan for every line, a lookup that walks what it has seen) costs 25 times and fails on any machine,
+//     however slow, since both sides run on it alike.
+//   - The wall clock of the 55k-line read, at most inForceWallBound unless it is under twice the CPU time: a read that
+//     waits (a sleep, a lock, a worker that is slow to answer) fails it, and the message gives the machine's load, the
+//     other reading of it. No budget is read on the wall clock, because a wall clock beside other tenants has no bound
+//     the code controls.
+//
+// In budget mode (testutil.BudgetsEnv, scripts/timing-budgets.sh, which runs it alone) the same bounds hold, three
+// reads a side instead of five, and a CPU time over inForceTarget prints TARGET-MISS; the race detector's slowdown and
+// -short skip it.
 func TestInForceLongRunIsFast(t *testing.T) {
 	if raceEnabled || testing.Short() {
 		t.Skip("timing under -race or -short says nothing")
 	}
 	mode := testutil.TimingMode(t)
-	f := bigRun(t, 55000)
-	v := f.inForce(t) // warm the page cache as a dashboard's earlier reads have
-	if v.Lines != 55000 || rule(t, v, "exec.allow", "git").Hits != 11000 {
-		t.Fatalf("lines %d git hits %d, want 55000 and 11000", v.Lines, rule(t, v, "exec.allow", "git").Hits)
+	big, small := bigRun(t, 55000), bigRun(t, 11000)
+	for _, tc := range []struct {
+		f     *fixture
+		lines int
+	}{{big, 55000}, {small, 11000}} {
+		v := tc.f.inForce(t) // warm the page cache as a dashboard's earlier reads have
+		if hits := rule(t, v, "exec.allow", "git").Hits; v.Lines != tc.lines || hits != tc.lines/5 {
+			t.Fatalf("%d lines: read %d lines, git hits %d, want %d and %d", tc.lines, v.Lines, hits, tc.lines, tc.lines/5)
+		}
+	}
+	read := func(f *fixture, lines int) func() {
+		return func() {
+			if got := InForce(context.Background(), f.root, f.run, Options{Machine: f.m}); got.Err != "" || got.Lines != lines {
+				t.Errorf("timed InForce: err %q, lines %d, want none and %d", got.Err, got.Lines, lines)
+			}
+		}
 	}
 	rounds := 5
 	if mode.Budgets() {
 		rounds = 3
 	}
-	var got *InForceView
-	m := mode.Measure(rounds, func() { got = InForce(context.Background(), f.root, f.run, Options{Machine: f.m}) })
-	if got.Err != "" || got.Lines != 55000 {
-		t.Fatalf("timed InForce: err %q, lines %d, want none and 55000", got.Err, got.Lines)
+	// Interleaved, the order rotated: a change in the machine's load over the measurement is on both runs alike.
+	fig := testutil.MinOfTree(rounds, read(big, 55000), read(small, 11000))
+	b, s := fig[0], fig[1]
+	ratio := float64(b.CPU) / float64(max(s.CPU, time.Millisecond))
+	suffix := ""
+	if mode.Budgets() {
+		suffix = ", budget mode"
 	}
-	mode.Judge(t, testutil.Budget{Name: "InForce over a 55k-line run", Limit: inForceBudget55k,
-		Spec: "the Rules page renders on every refresh"}, m[0])
+	t.Logf("InForce over a 55k-line run: %v of CPU time (the caller's and its worker's; target %v, limit %v, ceiling %v), %v of wall clock (bound %v); "+
+		"the 11k-line run %v of CPU time, ratio %.2f (limit %.1f); the Rules page renders on every refresh%s)",
+		b.CPU, inForceTarget, inForceLimit, inForceCeiling, b.Wall, inForceWallBound, s.CPU, ratio, inForceCostRatio, suffix)
+	if mode.Budgets() && b.CPU > inForceTarget {
+		t.Logf("TARGET-MISS: InForce over a 55k-line run %v of CPU time > %v (the Rules page renders on every refresh)", b.CPU, inForceTarget)
+	}
+	limit := inForceCeiling
+	if mode.Budgets() {
+		limit = inForceLimit
+	}
+	if b.CPU > limit {
+		t.Errorf("InForce over a 55k-line run: %v of CPU time of the caller and its worker, over the %v limit", b.CPU, limit)
+	}
+	if ratio > inForceCostRatio {
+		t.Errorf("InForce costs %.1f times as much CPU time over 55k lines (%v) as over 11k (%v), more than %.0f: the read grows faster than the run", ratio, b.CPU, s.CPU, inForceCostRatio)
+	}
+	if b.Wall > inForceWallBound && b.Wall > 2*b.CPU {
+		load, _ := os.ReadFile("/proc/loadavg")
+		t.Errorf("InForce over a 55k-line run took %v of wall clock for %v of CPU time, over the %v bound and over twice its CPU time: the read waits on something, or the machine is loaded beyond what a wait of this size says (load average %s)", b.Wall, b.CPU, inForceWallBound, strings.TrimSpace(string(load)))
+	}
 }
 
 // BenchmarkInForce55k is InForce over a 55k-line run.

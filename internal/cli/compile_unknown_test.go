@@ -409,19 +409,21 @@ func TestRootPredictionBuiltinFolderCutKeepsOtherRows(t *testing.T) {
 
 // Which rows each reach leaves unknown, and which it leaves their own answer (rootPrediction.unknown): the built-in
 // lists' place reaches the rows about paths at, beneath or above it, an exec list's place every exec row, and any other
-// place every file-backed row; a landlock column and a network row with no path are never unknown.
+// place every file-backed row; a landlock column and a network row with no path are never unknown. The folders are
+// under a root-level name no host has: /run/podman is root-only on the runner image, so this user's lstat of a row
+// beneath it is EACCES, which unknown reads as a walk the row leaves to root, whatever the cut says.
 func TestRootPredictionReach(t *testing.T) {
 	fs := func(kind agent.ActionKind, path string) agent.Action { return agent.Action{Kind: kind, Path: path} }
 	rows := map[string]agent.Action{
-		"read at the folder":        fs(agent.ActionFSRead, "/run/podman"),
-		"read beneath":              fs(agent.ActionFSRead, "/run/podman/podman.sock"),
-		"connect beneath":           fs(agent.ActionNetConnect, "unix:/run/podman/podman.sock"),
-		"delete above":              fs(agent.ActionFSDelete, "/run"),
-		"read beside":               fs(agent.ActionFSRead, "/run/podmanx/s"),
+		"read at the folder":        fs(agent.ActionFSRead, "/tego-reach-test/podman"),
+		"read beneath":              fs(agent.ActionFSRead, "/tego-reach-test/podman/podman.sock"),
+		"connect beneath":           fs(agent.ActionNetConnect, "unix:/tego-reach-test/podman/podman.sock"),
+		"delete above":              fs(agent.ActionFSDelete, "/tego-reach-test"),
+		"read beside":               fs(agent.ActionFSRead, "/tego-reach-test/podmanx/s"),
 		"read elsewhere":            fs(agent.ActionFSRead, "/home/u/project/out"),
 		"exec elsewhere":            fs(agent.ActionExec, "/usr/bin/git"),
 		"connect to a port":         {Kind: agent.ActionNetConnect, Host: "127.0.0.1", Port: 80},
-		"exec script beneath":       {Kind: agent.ActionExec, Path: "/usr/bin/sh", Script: "/run/podman/x"},
+		"exec script beneath":       {Kind: agent.ActionExec, Path: "/usr/bin/sh", Script: "/tego-reach-test/podman/x"},
 		"relative path is no place": fs(agent.ActionFSRead, "run/podman/x"),
 	}
 	for _, tc := range []struct {
@@ -436,7 +438,7 @@ func TestRootPredictionReach(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := &rootPrediction{}
-			p.cutTable(agent.NameCut{Path: "/run/podman", Reach: tc.reach})
+			p.cutTable(agent.NameCut{Path: "/tego-reach-test/podman", Reach: tc.reach})
 			for name, a := range rows {
 				for _, tier := range []backend.Tier{backend.TierCgroup, backend.TierBPFLSM} {
 					if got := p.unknown(a, tier); got != tc.want[name] {

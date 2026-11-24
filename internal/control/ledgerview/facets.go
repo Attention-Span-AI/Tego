@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 // Facets: Logs' matched lines counted by kind, verdict, rule, host and run, so a person sees what a search holds and
@@ -98,23 +97,6 @@ func (t *runTally) countMirror(rm *runMatch, i int32, e *Event) {
 	}
 }
 
-// tallyKey names one run version's tally under one filter: the store and run, the run's revision (a new line is a
-// new revision) and the filter's line fields (facetKey).
-type tallyKey struct {
-	store  *Store
-	run    string
-	rev    uint64
-	filter string
-}
-
-// maxTallies bounds the tally cache, dropped wholesale past it (a few filters for each of thousands of runs).
-const maxTallies = 1 << 14
-
-var tallies = struct {
-	sync.Mutex
-	m map[tallyKey]*runTally
-}{m: map[tallyKey]*runTally{}}
-
 // facetKey is f's fields that decide which of a run's lines match: everything but the run selection and paging, so
 // one run's tally serves every search that differs only in those. ok is false for a filter whose tallies are not
 // worth keeping (one that matches nothing).
@@ -180,25 +162,6 @@ func newFacetCounter(f *Filter) *facetCounter {
 // for the line bound, has no revision of its own).
 func cacheable(r *Run) bool { return r.st != nil && r.memo != nil }
 
-func tallyGet(k tallyKey) *runTally {
-	tallies.Lock()
-	defer tallies.Unlock()
-	return tallies.m[k]
-}
-
-func tallyPut(k tallyKey, t *runTally) {
-	tallies.Lock()
-	defer tallies.Unlock()
-	if len(tallies.m) >= maxTallies {
-		tallies.m = map[tallyKey]*runTally{}
-	}
-	tallies.m[k] = t
-}
-
-func (fc *facetCounter) keyOf(r *Run, filter string) tallyKey {
-	return tallyKey{store: r.st.store, run: r.ID, rev: r.Rev, filter: filter}
-}
-
 // cached is r's tally under this counter's filter: kept from an earlier Query (true), or a fresh one for the walk to
 // fill (false). A nil counter answers nil.
 func (fc *facetCounter) cached(r *Run) (*runTally, bool) {
@@ -206,7 +169,7 @@ func (fc *facetCounter) cached(r *Run) (*runTally, bool) {
 		return nil, false
 	}
 	if fc.keepable && cacheable(r) {
-		if t := tallyGet(fc.keyOf(r, fc.key)); t != nil {
+		if t, _ := r.memo.tallies.get(fc.key).(*runTally); t != nil {
 			return t, true
 		}
 	}
@@ -216,19 +179,21 @@ func (fc *facetCounter) cached(r *Run) (*runTally, bool) {
 // keep stores a tally the walk filled.
 func (fc *facetCounter) keep(r *Run, t *runTally, cached bool) {
 	if !cached && fc.keepable && cacheable(r) {
-		tallyPut(fc.keyOf(r, fc.key), t)
+		r.memo.tallies.put(fc.key, t)
 	}
 }
 
 // plainTally is r's tally with no filter: every line but the mirrors, the lines Query's plain path counts.
 func (fc *facetCounter) plainTally(r *Run) *runTally {
-	var k tallyKey
-	if cacheable(r) {
-		k = fc.keyOf(r, "\x00plain")
-		if t := tallyGet(k); t != nil {
-			return t
-		}
+	if !cacheable(r) {
+		return countPlain(r)
 	}
+	m := r.memo
+	m.plainOnce.Do(func() { m.plain = countPlain(r) })
+	return m.plain
+}
+
+func countPlain(r *Run) *runTally {
 	t := newRunTally()
 	evs := r.AllEvents()
 	names, of := r.progs()
@@ -238,9 +203,6 @@ func (fc *facetCounter) plainTally(r *Run) *runTally {
 		} else {
 			t.kinds = bump(t.kinds, "refused") // a refusal note kind:refused lists (countMirror)
 		}
-	}
-	if cacheable(r) {
-		tallyPut(k, t)
 	}
 	return t
 }

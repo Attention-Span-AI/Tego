@@ -79,7 +79,7 @@ Anthropic Python SDK and an agent of your own.
 |---|---|---|
 | **Linux** (amd64 or arm64) | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | If `tego` isn't found, run the `export PATH=…` line it prints, or log in again; the next command it prints names `tego` by its full path until then. |
 | **macOS** 13.5 or later | the same line | Open a new terminal window. Tego runs in a small Linux VM ([Lima](https://lima-vm.io)), and the `tego` command on your Mac runs it there. |
-| **Windows** | From the next release: `irm https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.ps1 \| iex` in PowerShell. The latest release, v0.1.3, has no Windows installer: run `wsl --install -d Ubuntu-24.04` and then the Linux line in Ubuntu. | **Not fully qualified.** Tego runs in its own `tego` WSL2 distribution; rerun after a requested Windows restart, and `tego dashboard` opens the dashboard in your Windows browser. A Windows 11 guest with WSL 3.0.5 refused setup until the run-membership rule was switched on for WSL ([what was and was not measured](docs/INSTALL.md#windows)). |
+| **Windows** | `irm https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.ps1 \| iex` in PowerShell. | **Not fully qualified.** Tego runs in its own `tego` WSL2 distribution; rerun after a requested Windows restart, and `tego dashboard` opens the dashboard in your Windows browser. A Windows 11 guest with WSL 3.0.5 refused setup until the run-membership rule was switched on for WSL ([what was and was not measured](docs/INSTALL.md#windows)). |
 | **From source** | `git clone https://github.com/Attention-Span-AI/Tego && cd Tego && make build` | Then put both binaries on your `PATH`: [Build from source](docs/INSTALL.md#build-from-source). |
 
 Run the same line again to update. On a Mac, that also updates Tego inside the VM.
@@ -142,6 +142,10 @@ tego dashboard                # the same session in your browser
 | **Check** what a rules file enforces | `tego rules check <agent>` |
 | **Narrow** rules to what a session used | `tego rules learn <session>` |
 | **Check** this machine | `tego machine check` |
+| **Find** your running agents and installed candidates | `tego scan` ([docs/user/scan.md](docs/user/scan.md)) |
+| **Find** contracts and check them without running an agent | `tego contracts` ([docs/user/contracts.md](docs/user/contracts.md)) |
+| **See** or **undo** changes to a rules file | `tego rules history <agent>` · `tego rules undo <agent>` |
+| **Remove** Tego | `tego uninstall` ([how](#remove-tego)) |
 
 `tego help` lists the common commands, `tego help -a` every one, and [docs/user/commands.md](docs/user/commands.md)
 explains each. [examples/agents/](examples/agents/README.md) has rules files for Claude Code, Codex, the Claude Agent
@@ -157,8 +161,6 @@ and explains the output.
   `systemd-run --user --scope bash` ([why](docs/INSTALL.md#check-the-machine)).
 
 ### Remove Tego
-
-`tego uninstall` is in the repository and comes with the next release: the latest release, v0.1.3, does not have it.
 
 Linux: `tego uninstall`. It lists what it will remove (the units `tego start` and `tego dashboard` made, the installed
 `tego` and `tego-control`, the line `tego start` added to `~/.bashrc`), asks once, and keeps your records (`~/.tego`) and

@@ -999,6 +999,7 @@ func selectBackend(ctx context.Context, o runOptions, m *config.Machine, rt *age
 	if note := rep.CoordinationNote(); note != "" {
 		fmt.Fprintln(stderr, record.Printable(o.cmdName()+": note: this run could not wait for a concurrent run's probe, so it probed on its own: "+note))
 	}
+	notePlaneProbes(stderr, o.cmdName(), rep)
 	endSelect := startphase.Begin(nil, "select")
 	b, ds := rep.Select(m, rt, only)
 	endSelect()
@@ -1030,6 +1031,18 @@ func landlockWillDo(rt *agent.RuleTable, only backend.Tier) bool {
 	}
 	t := backend.Tier(rt.Contract.Tier)
 	return t == "" || t == backend.TierAuto || t == backend.TierLandlock
+}
+
+// notePlaneProbes tells where a plane mode that two probes answered differently is not used (doctor.PlaneModeResult.
+// Probes): tego.log keeps the rows that differed, and a run says so on stderr, since its tier is not the one the mode
+// would have given. stderr nil logs only, which is what `tego doctor` does: its output already carries the same words.
+func notePlaneProbes(stderr io.Writer, cmd string, rep *doctor.Report) {
+	for _, note := range rep.PlaneNotes() {
+		logOwn(cmd + ": " + note)
+		if stderr != nil {
+			fmt.Fprintln(stderr, record.Printable(cmd+": note: "+note))
+		}
+	}
 }
 
 // probeMachine is the tier derivation `tego doctor` reports (derive.go), over the checks of the tiers this

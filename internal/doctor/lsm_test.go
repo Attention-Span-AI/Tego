@@ -3,8 +3,10 @@
 package doctor
 
 import (
+	"errors"
 	"fmt"
 	"github.com/attention-span-ai/tego/internal/platform/tomoyo"
+	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -287,5 +289,37 @@ func TestTOMOYOHeldOpenDetailNamesTheFactsPath(t *testing.T) {
 		if strings.Contains(strings.ToLower(s), "assume") {
 			t.Errorf("an assume-style wording: %q", s)
 		}
+	}
+}
+
+// TestUnreadLSMListDoctorWords (N114): a list no mechanism could read is said with the cause of each failure, what it
+// stops (tier bpflsm cannot be decided; held file opens are refused) and the option that would let tego read it, in
+// place of the host-only "mount securityfs" line. errors.Is(ErrLSMList) still holds.
+func TestUnreadLSMListDoctorWords(t *testing.T) {
+	err := error(&LSMReadError{
+		Syscall:    fmt.Errorf("lsm_list_modules(2): %w", unix.EPERM),
+		SecurityFS: &os.PathError{Op: "open", Path: "/sys/kernel/security/lsm", Err: unix.EACCES},
+	})
+	if !errors.Is(err, ErrLSMList) {
+		t.Fatalf("%v is not ErrLSMList", err)
+	}
+	d, fix := lsmUnreadDetail(err), lsmUnreadFixFor(err)
+	for _, w := range []string{"cannot read the active LSM list", "lsm_list_modules(2) was refused", "docker-default AppArmor",
+		"tier bpflsm cannot be decided safely", "held file opens", "held-label-unavailable"} {
+		if !strings.Contains(d, w) {
+			t.Errorf("detail %q lacks %q", d, w)
+		}
+	}
+	for _, w := range []string{"permit lsm_list_modules in the outer seccomp filter", "expose a readable /sys/kernel/security/lsm", "mount securityfs"} {
+		if !strings.Contains(fix, w) {
+			t.Errorf("fix %q lacks %q", fix, w)
+		}
+	}
+	// An error with no causes (a caller's own) keeps the generic words and the host fix.
+	if d := lsmUnreadDetail(ErrLSMList); !strings.Contains(d, "held file opens") || strings.Contains(d, "lsm_list_modules(2)") {
+		t.Errorf("bare ErrLSMList detail %q", d)
+	}
+	if fix := lsmUnreadFixFor(ErrLSMList); fix != lsmUnreadFix {
+		t.Errorf("bare ErrLSMList fix %q, want %q", fix, lsmUnreadFix)
 	}
 }
