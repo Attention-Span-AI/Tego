@@ -6,7 +6,7 @@ source is the other way.
 | System | Install | Tested on |
 |---|---|---|
 | Linux | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | The published v0.1.1 as a new user, tier landlock: AlmaLinux 9.8, Ubuntu 24.04 and 26.04.1, Debian 13, Fedora 44, Amazon Linux 2023 ([details](TIERS.md#the-published-release-as-a-new-user)) |
-| macOS | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | By hand on an Apple silicon Mac, through to a Claude Code session; on each change, in CI on GitHub's hosted macOS 15 runners ([details](#macos)) |
+| macOS | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | By hand on an Apple silicon Mac, through to a Claude Code session; in CI on GitHub's hosted macOS 15 runners when a pull request changes the installer or the Mac setup ([details](#macos)) |
 | Windows | `wsl --install -d Ubuntu-24.04`, then the Linux line inside Ubuntu | Not run on Windows yet |
 
 ## Requirements
@@ -168,8 +168,9 @@ start no tunnel and open no browser; they create no temporary socket folder.
 `limactl stop tego` stops the VM and `limactl delete tego` removes it.
 
 **Tested on** an Apple silicon Mac by hand, in zsh, with Lima 2.3: install, `tego start` with a Claude subscription, a
-session with both blocked actions, and `tego dashboard`. On each change, CI runs the installer on GitHub's hosted
-macOS 15 runners, Apple silicon and Intel (`.github/workflows/mac-install.yml`): Lima validates the template on both.
+session with both blocked actions, and `tego dashboard`. On each pull request that changes the installer, the Mac test
+scripts or the Lima template, CI runs on GitHub's hosted macOS 15 runners, Apple silicon and Intel
+(`.github/workflows/mac-install.yml`): Lima validates the template on both.
 On Intel, when a Lima driver can boot a VM there, CI runs the real installer, the Mac command, the guide, the
 dashboard tunnel and a rerun; when none can, it checks that the installer fails cleanly. Apple silicon runners cannot
 start a nested VM. `scripts/install_mac_test.sh` covers every installer path

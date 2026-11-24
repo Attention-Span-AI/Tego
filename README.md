@@ -79,8 +79,8 @@ Anthropic Python SDK and an agent of your own.
 |---|---|---|
 | **Linux** (amd64 or arm64) | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | If `tego` isn't found, run the `export PATH=…` line it prints, or log in again. |
 | **macOS** 13.5 or later | the same line | Open a new terminal window. Tego runs in a small Linux VM ([Lima](https://lima-vm.io)), and the `tego` command on your Mac runs it there. |
-| **Windows** | `wsl --install -d Ubuntu-24.04` in PowerShell | Open Ubuntu and run the Linux line there. |
-| **From source** | `git clone https://github.com/Attention-Span-AI/Tego && cd Tego && make build` | [Build from source](docs/INSTALL.md#build-from-source) |
+| **Windows** | `wsl --install -d Ubuntu-24.04` in PowerShell | Open Ubuntu and run the Linux line there. Not run on Windows yet ([details](docs/INSTALL.md#windows)). |
+| **From source** | `git clone https://github.com/Attention-Span-AI/Tego && cd Tego && make build` | Then put both binaries on your `PATH`: [Build from source](docs/INSTALL.md#build-from-source). |
 
 Run the same line again to update. On a Mac, that also updates Tego inside the VM.
 [docs/INSTALL.md](docs/INSTALL.md) has the details, what each system was tested on, and how to check the installer
@@ -100,7 +100,8 @@ Four questions, one at a time:
 4. **Rules:** Base development, Read-only review, rules you pick one by one, or your own rules file
    ([presets](docs/user/presets.md)).
 
-It then opens the dashboard and prints the command for the next step. It never starts the agent for you.
+It then starts the dashboard (on Linux it prints the sign-in link, on a Mac it opens your browser) and prints the
+command for the next step. It never starts the agent for you.
 
 ### 3. Run your agent under the rules
 
@@ -194,7 +195,8 @@ run records the tier it had. Details, including the one boot line Ubuntu needs f
 `tego dashboard` starts a dashboard on `127.0.0.1` for one person, and prints its link (on a Mac, opens it in your browser): runs, logs, refusals, held requests you can allow or
 deny, each run's rules, and a way to stop a run or block something while it runs. A run started with `sudo` is root's
 until it ends, so the dashboard shows it only then; until then use `sudo "$(command -v tego)" status`.
-`--preview` also lists the pages for MCP tool rules and model routes. See [docs/DASHBOARD.md](docs/DASHBOARD.md).
+`tego serve --preview`, in place of `tego dashboard`, also lists the pages for MCP tool rules and model routes. See
+[docs/DASHBOARD.md](docs/DASHBOARD.md).
 
 <table>
   <tr>
