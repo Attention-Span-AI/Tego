@@ -186,7 +186,7 @@ func quietRun(o runOptions, m *config.Machine, src *record.ContractSource, stder
 // chosenRulesLine is the line tego start writes into the rules files it makes (withRulesLine).
 var chosenRulesLine = regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(rulesLinePrefix) + `(.+)$`)
 
-// ended is the end line: the session, how many actions Tego blocked, and the command that shows the rest.
+// ended is the end line: the session, how many actions Tego refused, and the command that shows the rest.
 func (q *runTerminal) ended(stderr io.Writer, name string, sum *endSummary) bool {
 	// A check mark needs a complete, verified record and an ordinary successful exit.
 	// Keep the existing summary's facts whenever the abbreviated count needs qualification.
@@ -200,12 +200,12 @@ func (q *runTerminal) ended(stderr io.Writer, name string, sum *endSummary) bool
 	if sum.how != "" {
 		what = "ended: " + sum.how
 	}
-	blocked := ""
+	refused := ""
 	if sum.rc != nil {
 		n := sum.rc.Refusals.Total
-		blocked = fmt.Sprintf(" · %d action%s blocked", n, map[bool]string{true: "", false: "s"}[n == 1])
+		refused = fmt.Sprintf(" · %d action%s refused", n, map[bool]string{true: "", false: "s"}[n == 1])
 	}
-	fmt.Fprintf(stderr, "\n  ✓ Session %s %s%s\n      Details: tego session show %s\n", record.Printable(session), what, blocked, record.Printable(session))
+	fmt.Fprintf(stderr, "\n  ✓ Session %s %s%s\n      Details: tego session show %s\n", record.Printable(session), what, refused, record.Printable(session))
 	return true
 }
 

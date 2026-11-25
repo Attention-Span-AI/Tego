@@ -5,7 +5,7 @@ usage: tego session list [--json]
    or: tego session resume <session>
 
    list             List sessions
-   show             Show what a session did and what Tego blocked
+   show             Show what a session did and what Tego refused
    stop             Stop a running session
    pause            Pause a running session
    resume           Resume a paused session

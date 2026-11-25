@@ -42,7 +42,7 @@ func trees() []noun {
 		}},
 		{"session", []verb{
 			{"list", "List sessions", "", cmdSessionList, "[--json]"},
-			{"show", "Show what a session did and what Tego blocked", "receipt", nil, "<session> | --last [--json]"},
+			{"show", "Show what a session did and what Tego refused", "receipt", nil, "<session> | --last [--json]"},
 			{"stop", "Stop a running session", "stop", nil, "<session> | --agent <name> [--grace <d>]"},
 			{"pause", "Pause a running session", "pause", nil, "<session>"},
 			{"resume", "Resume a paused session", "resume", nil, "<session>"},

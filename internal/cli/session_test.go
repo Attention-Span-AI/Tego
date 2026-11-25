@@ -110,7 +110,7 @@ func TestTerminalRunEndDisclosures(t *testing.T) {
 				t.Fatalf("exit %d:\n%s", code, got)
 			}
 			if tc == "verified" {
-				want := "\n  ✓ Session " + sessionName("minimal", id) + " ended · 2 actions blocked\n      Details: tego session show " + sessionName("minimal", id) + "\n"
+				want := "\n  ✓ Session " + sessionName("minimal", id) + " ended · 2 actions refused\n      Details: tego session show " + sessionName("minimal", id) + "\n"
 				if !strings.HasSuffix(got, want) {
 					t.Fatalf("verified footer changed:\n%s", got)
 				}
