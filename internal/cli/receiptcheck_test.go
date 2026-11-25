@@ -156,7 +156,7 @@ func TestReceiptCheckWordStillNamesARun(t *testing.T) {
 	}
 	useAnchor(t, ledger.DefaultAnchorPath(filepath.Join(root, id)))
 	t.Chdir(t.TempDir())
-	if code, out, errs := run(t, "receipt", "check"); code != identity.ExitOK || !strings.HasPrefix(out, "Receipt for run "+id+" ") {
+	if code, out, errs := run(t, "receipt", "check"); code != identity.ExitOK || !strings.HasPrefix(out, "Session ") || !strings.Contains(out, " (run "+id+")\n") {
 		t.Errorf("receipt check: exit %d, want run %s's receipt\nstdout %s\nstderr %s", code, id, out, errs)
 	}
 }

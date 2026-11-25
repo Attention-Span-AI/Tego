@@ -115,7 +115,7 @@ func TestSessionList(t *testing.T) {
 	ids := sessionsOf(t, root, "tego-sample", 1)
 	code, out, errs := run(t, "session", "list")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if code != identity.ExitOK || len(lines) != 2 || !regexp.MustCompile(`^NAME +AGENT +STATUS +STARTED +BLOCKED$`).MatchString(lines[0]) ||
+	if code != identity.ExitOK || len(lines) != 2 || !regexp.MustCompile(`^NAME +AGENT +STATUS +STARTED +REFUSED$`).MatchString(lines[0]) ||
 		!regexp.MustCompile(`^`+sessionName("tego-sample", ids[0])+` +tego-sample +ended +1h ago +0$`).MatchString(lines[1]) {
 		t.Fatalf("one session: exit %d\nstdout %s\nstderr %s", code, out, errs)
 	}
@@ -137,7 +137,7 @@ func TestSessionNameWorksAsARun(t *testing.T) {
 	ids := sessionsOf(t, root, "tego-sample", 2)
 	id := ids[1]
 	name := sessionName("tego-sample", id)
-	if code, out, errs := run(t, "session", "show", name); code != identity.ExitOK || !strings.HasPrefix(out, "Receipt for run "+id+" ") {
+	if code, out, errs := run(t, "session", "show", name); code != identity.ExitOK || !strings.HasPrefix(out, "Session "+name+" (run "+id+")\n") {
 		t.Errorf("session show %s: exit %d\nstdout %s\nstderr %s", name, code, out, errs)
 	}
 	if code, out, errs := run(t, "events", name, "--json"); code != identity.ExitOK || !strings.Contains(out, `"run":"`+id+`"`) {
@@ -154,7 +154,7 @@ func TestSessionNameWorksAsARun(t *testing.T) {
 	if code, _, errs := run(t, "events", other); code != identity.ExitUsage {
 		t.Errorf("events %s: exit %d, want 2\nstderr %s", other, code, errs)
 	}
-	if code, out, errs := run(t, "session", "show", "--last"); code != identity.ExitOK || !strings.HasPrefix(out, "Receipt for run "+id+" ") {
+	if code, out, errs := run(t, "session", "show", "--last"); code != identity.ExitOK || !strings.HasPrefix(out, "Session "+name+" (run "+id+")\n") {
 		t.Errorf("session show --last: exit %d\nstdout %s\nstderr %s", code, out, errs)
 	}
 }

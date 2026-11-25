@@ -58,11 +58,15 @@ func (rc *Receipt) JSON(w io.Writer) error {
 func (rc *Receipt) Text(w io.Writer) error {
 	var b strings.Builder
 	p := record.Printable
-	agent := rc.Agent
-	if agent == "" {
-		agent = "an agent"
+	// The session's name as tego session list gives it (internal/cli sessionName): the agent and the run id's last four.
+	session := rc.Agent
+	if session == "" {
+		session = "session"
 	}
-	fmt.Fprintf(&b, "Receipt for run %s (%s)\n", p(rc.Run), p(agent))
+	if len(rc.Run) >= 4 {
+		session += "-" + rc.Run[len(rc.Run)-4:]
+	}
+	fmt.Fprintf(&b, "Session %s (run %s)\n", p(session), p(rc.Run))
 	if len(rc.Command) > 0 {
 		fmt.Fprintf(&b, "  Command: %s\n", p(cut(strings.Join(rc.Command, " "), 100)))
 	}

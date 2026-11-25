@@ -620,7 +620,7 @@ internal/check/receipt/render.go:Receipt.StallText:carrier-reference	1	internal/
 internal/check/receipt/render.go:Receipt.StallText:evidence-call	5	internal/check/receipt/baseline_test.go:TestBaselineReceiptWordsAndBinding
 internal/check/receipt/render.go:Receipt.StallText:untyped-context	1	internal/check/receipt/baseline_test.go:TestBaselineReceiptWordsAndBinding
 internal/check/receipt/render.go:Receipt.Text:carrier-reference	1	internal/check/receipt/baseline_test.go:TestBaselineReceiptWordsAndBinding
-internal/check/receipt/render.go:Receipt.Text:evidence-call	150	internal/check/receipt/baseline_test.go:TestBaselineReceiptWordsAndBinding
+internal/check/receipt/render.go:Receipt.Text:evidence-call	152	internal/check/receipt/baseline_test.go:TestBaselineReceiptWordsAndBinding
 internal/check/receipt/render.go:Receipt.Text:untyped-context	1	internal/check/receipt/baseline_test.go:TestBaselineReceiptWordsAndBinding
 internal/check/receipt/render.go:Receipt.TimeText:carrier-reference	1	internal/check/receipt/baseline_test.go:TestBaselineReceiptWordsAndBinding
 internal/check/receipt/render.go:Receipt.TimeText:evidence-call	1	internal/check/receipt/baseline_test.go:TestBaselineReceiptWordsAndBinding

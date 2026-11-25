@@ -74,7 +74,7 @@ func TestReceiptAgreesWithMeasure(t *testing.T) {
 	if code != identity.ExitOK {
 		t.Fatalf("text: exit %d (stderr %q)", code, errs)
 	}
-	for _, want := range []string{"Receipt for run", "Time taken", "\nFiles written\n", "Refused actions", "Tokens and model calls",
+	for _, want := range []string{"Session ", " (run ", "Time taken", "\nFiles written\n", "Refused actions", "Tokens and model calls",
 		"Coverage", "Cost: "} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the text receipt has no %q:\n%s", want, text)

@@ -365,7 +365,7 @@ func TestLearnSaveWritesTheRegistryEntry(t *testing.T) {
 		t.Fatalf("--save: exit %d, stdout %q, stderr %q", code, out, errs)
 	}
 	for _, want := range []string{
-		"tego learn: saved " + path + " (mode 0600), made only from what run " + id + " was recorded doing.\n",
+		"tego rules learn: saved " + path + " (mode 0600), made only from what run " + id + " was recorded doing.\n",
 		"\nnext: run your agent under it:\n  cd " + project + " && tego run bot\n",
 	} {
 		if !strings.Contains(errs, want) {

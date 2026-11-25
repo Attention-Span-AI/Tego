@@ -36,7 +36,7 @@ func TestFeatureScenes(t *testing.T) {
 		{[]string{"presets"}, []string{"created agent.yaml (name: demo-preset, presets: no-secrets,no-prod,repo-only-writes)",
 			"pass: [SECRETS, SINK, HOMEISH, PROJECT]", "could not read the secrets file (refused)", "net-not-allowed",
 			"sink: 0 request(s) arrived", "shell profile: untouched", "git hook: none", "notes.txt: still there"}},
-		{[]string{"receipt"}, []string{"Receipt for run", "demo-preset", "Refused actions"}},
+		{[]string{"receipt"}, []string{"Session demo-preset-", "Refused actions"}},
 		{[]string{"selftest"}, []string{"Tego self-check: 4 actions, 4 refused", "read-denied", "exec-not-allowed"}},
 		{[]string{"identity"}, []string{`"launcher_user":`, `"host":`, `"contract_hash":`}},
 		{[]string{"doctor"}, []string{"landlock: ABI"}},
