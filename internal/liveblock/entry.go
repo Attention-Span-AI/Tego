@@ -21,7 +21,8 @@ type Kind string
 const (
 	// KindExec is a program: an absolute path (that file, by any name the supervisor sees for it and by its
 	// identity), a directory ending in "/" (every program beneath it), or a bare name ("curl": any program run by
-	// that file name).
+	// that file name); or a command, a bare name and words ("git push": what the same entry in exec.deny would
+	// refuse, ADR 0171).
 	KindExec Kind = "exec"
 	// KindNet is a destination: host[:port], IP[:port] (IPv6 with a port in brackets), a unix socket path, or an
 	// abstract unix name ("@name"). No port means every port.
@@ -233,9 +234,12 @@ func plain(v string) error {
 	return nil
 }
 
-// normalizeExec is an exec value: an absolute path, cleaned, keeping one trailing "/" for a directory; or a bare
-// program name, which holds no "/" and no space.
+// normalizeExec is an exec value: an absolute path, cleaned, keeping one trailing "/" for a directory; a bare
+// program name, which holds no "/" and no space; or a command, a bare program name and words (NormalizeWords).
 func normalizeExec(v string) (string, error) {
+	if !strings.HasPrefix(v, "/") && strings.Contains(v, " ") {
+		return NormalizeWords(v)
+	}
 	if strings.HasPrefix(v, "/") {
 		p := filepath.Clean(v)
 		if strings.HasSuffix(v, "/") && p != "/" {

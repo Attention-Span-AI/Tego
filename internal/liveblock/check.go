@@ -23,6 +23,8 @@ type Target struct {
 	NarrowKinds bool
 	// ReadsSeen: the run's supervisor sees its reads, held or recorded (livestatus.Facts.ReadsSeen).
 	ReadsSeen bool
+	// TakesWords: the run's launcher made the mark that it reads a command-word block (TakesWords of its directory).
+	TakesWords bool
 	// Adjustable: the run's fence may be lifted and restored while it runs (ADR 0125); false is a Locked run.
 	Adjustable bool
 	// Fenced: the run's fence lists the entry a lift, a grant or a restore names (livestatus.Facts.InFence).
@@ -49,6 +51,11 @@ var (
 	// to read an overlay holding one, keeps the blocks it last read and ignores every later change until the block is
 	// removed.
 	ErrOldLauncher = errors.New("the run was started by an older tego that has no read or write blocks")
+	// ErrNoWords is a command-word block (exec value with words) asked of a run whose launcher has not made the mark
+	// that it reads one (TakesWords): an older tego, or a run that is still starting. That launcher refuses the whole
+	// overlay once it holds one and ignores every later change, and the whole-program block would refuse more than the
+	// rules the person changed do, so nothing is placed.
+	ErrNoWords = errors.New("the run's launcher does not read a block on a command's words")
 	// ErrReadsUnseen is a read block asked of a run whose supervisor does not see its reads: placed, it would refuse
 	// nothing.
 	ErrReadsUnseen = errors.New("the run's reads are not seen, so a read block would refuse nothing")
@@ -153,6 +160,20 @@ func CheckBlock(t Target, kind Kind, add bool, until time.Time) error {
 	case add && kind == KindRead && !t.ReadsSeen:
 		return refuse(ErrReadsUnseen, t.Run, func(run string) string {
 			return run + " does not see its reads (they are neither held nor recorded), so a read block would refuse nothing"
+		})
+	}
+	return nil
+}
+
+// CheckWords refuses a command-word block's add (add true; a removal needs nothing the block's own entry does not prove)
+// that the run t describes cannot take, after CheckBlock passed it: a launcher that has not made the mark that it reads
+// one (ErrNoWords). Nothing else decides here: the matcher runs in the supervisor of every tier.
+func CheckWords(t Target, add bool) error {
+	if add && t.Running && !t.TakesWords {
+		return refuse(ErrNoWords, t.Run, func(run string) string {
+			return run + "'s launcher does not say it reads a block on a command's words (an older tego, or a run that is still starting), " +
+				"so nothing was placed: a block on the whole program would refuse more than the command; wait a few seconds and ask again, " +
+				"or start the run with this tego"
 		})
 	}
 	return nil

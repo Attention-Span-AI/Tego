@@ -220,7 +220,9 @@ func TestBatchAskedMemberIsAskedAndGoesOnAlone(t *testing.T) {
 			})
 			sh, _ := dial(t, s, "files", filesCmd)
 			sh.client(batchOf(toolCall(1, "read_file"), toolCall(2, "write_file")))
-			// The allowed member goes at once, as the batch of the one; the asked one follows by itself, or is answered.
+			// The allowed member goes at once, as the batch of the one; the asked one follows by itself, or is answered. The
+			// relay holds the asked member only after it has written the allowed ones, so an approval that comes back at
+			// once cannot reach the server first.
 			toClient, toServer := sh.frames(2)
 			if len(toServer) != c.toServer {
 				t.Fatalf("to the server %q, to the client %q", toServer, toClient)
@@ -240,8 +242,9 @@ func TestBatchAskedMemberIsAskedAndGoesOnAlone(t *testing.T) {
 			if len(asked) != 1 || asked[0].Target != "files write_file" {
 				t.Fatalf("asked %+v: one card, for the asked member only", asked)
 			}
-			if got := len(sk.of(record.KindMCP)); got != 2 {
-				t.Fatalf("record lines %d, want one for each member", got)
+			// One line for each member: the allowed member's, then the asked member's after the person's answer.
+			if got := linesOf(t, sk); len(got) != 2 || !strings.Contains(got[0], " read_file ") || !strings.Contains(got[1], " write_file ") {
+				t.Fatalf("record lines %q, want read_file's and then write_file's", got)
 			}
 		})
 	}

@@ -314,6 +314,7 @@ var contractSchema = mapping(map[string]*field{
 		"wall":        nullLimit(scalar(checkDuration)),
 		"stall_after": nullLimit(scalar(checkDuration)),
 		"repeats":     nullLimit(number(scalar(intRange("repeats", 1, 1<<31-1)))),
+		"window":      nullLimit(scalar(checkDuration)),
 	}), "every limit is unbounded", "write `limits: {}` for no limit, give the limits values, or remove the key"),
 	"record":           scalar(enumCheck("record", "full", "summary", "off")),
 	"tier":             scalar(enumCheck("tier", "auto", "landlock", "cgroup", "bpflsm")),

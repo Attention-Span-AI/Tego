@@ -3,8 +3,9 @@
 Your first governed run, from `tego version` to the dashboard. It takes a few minutes and needs no root and no agent
 account: the demo command it runs is a short shell script that shows what each rule does.
 
-For the guided setup, run `tego start` instead ([README](../README.md#quickstart)). This page does each step by hand
-and explains the output.
+For the guided setup, run `tego start` instead ([README](../README.md#quickstart)); with no agent installed and signed
+in, it offers a demonstration agent that needs no account and ends with a governed run. This page does each step by
+hand and explains the output.
 
 Run every command in a plain terminal, as yourself, not inside another `tego run`.
 

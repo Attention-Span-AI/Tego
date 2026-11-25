@@ -55,9 +55,9 @@ No historical line is rewritten.
 ## 3. Contract (`spec/agent/v0`)
 - `version: 0` on the file. Unknown fields are errors from M0 (yaml.v3 `KnownFields(true)`): a misspelt `write:` must
   never pass silently.
-- Until `v0.2.0` the v0 field set may change without notice. From `v0.2.0` fields are only added; a removed or re-meant
-  field is `version: 1`, `compile` warns on the old field for one MINOR release, and `compile --upgrade` rewrites the
-  file and prints the diff.
+- Releases before `v0.2.0` (v0.1.0 to v0.1.3) could change the v0 field set without notice. From `v0.2.0` fields are
+  only added; a removed or re-meant field is `version: 1`, `compile` warns on the old field for one MINOR release, and
+  `compile --upgrade` rewrites the file and prints the diff.
 
 ## 4. BPF objects
 - Pinned under `/sys/fs/bpf/tego/<bpf_hash>/`, not `<version>`: two binaries with the same object share one attached

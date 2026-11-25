@@ -11,10 +11,12 @@
 # 6.19.4 to 6.19.y the count measured on Fedora's 6.19.10 plus 10 %), and logs the counts either way, so a kernel
 # that no row of plane_budget_integration_test.go covers shows its count here before anyone sets a budget for it.
 #
-# What it proves: the verifier cost of the plane's own objects on those kernels (ADR 0024 N100: 6.18 and 7.2.9 were
-# never measured; mainline 6.19.3, 6.19.4 and 6.19.14 only before the block walk). It proves nothing about what a
-# program decides: the identity-mismatch, dormant, class-overflow and name-collision paths of the live blocks are
-# unit-tested only, and arm64 has no guest.
+# What it proves: the verifier cost of the plane's own objects on those kernels. It proves nothing about what a program
+# decides (the root tests do: internal/runtime's TestRootLiveBlock* for the live blocks' paths), and arm64 has no guest.
+#
+# socket_listen, the plane's largest program (it walks no path), has a budget of its own per kernel family (internal/bpf
+# plane_budget_integration_test.go's planeListenFamilies): its counts are in listen.txt, not in the table's rd and pr
+# columns, which are the largest path-walking program of each build against the budget those programs are held to.
 #
 # Usage: test/vm/measure-plane-verifier.sh [-o OUTDIR] [KERNEL...]
 #   KERNEL    a directory name under $TEGO_VM_CACHE/kernel that holds a vmlinuz (what kvm-run.sh calls
@@ -70,7 +72,8 @@ echo "measure-plane-verifier: building $bin" >&2
 	exit 2
 }
 
-# summarize LOG: "<rd largest> <pr largest> <budget lines> <over-budget lines>" for the table.
+# summarize LOG: "<rd largest> <pr largest> <rd budget> <pr budget> <over-budget lines> <rd listen> <pr listen> <rd listen
+# budget> <pr listen budget>" for the table and listen.txt. The largest counts leave out socket_listen's, which have their own.
 summarize() {
 	awk '
 		/=== RUN +TestPlaneLoadsAndAttaches\// {
@@ -79,19 +82,27 @@ summarize() {
 		/[0-9]+ instructions verified/ {
 			match($0, /[0-9]+ instructions verified/)
 			n = substr($0, RSTART, RLENGTH) + 0
-			if (n > max[cur]) max[cur] = n
+			if ($0 ~ /socket_listen: [0-9]+ instructions verified/) {
+				if (n > lmax[cur]) lmax[cur] = n
+			} else if (n > max[cur]) max[cur] = n
+		}
+		/socket_listen.s budget is [0-9]+/ {
+			match($0, /socket_listen.s budget is [0-9]+/); lb[cur] = substr($0, RSTART, RLENGTH); sub(/^.*budget is /, "", lb[cur]); lb[cur] += 0
 		}
 		/a plane program.s budget is [0-9]+/ {
 			match($0, /budget is [0-9]+/); b[cur] = substr($0, RSTART + 10, RLENGTH - 10) + 0
 		}
 		/over the budget of/ { over++ }
 		END {
-			printf "%d %d %d %d %d\n", max["decide_rd"], max["decide_pr"], b["decide_rd"], b["decide_pr"], over
+			printf "%d %d %d %d %d %d %d %d %d\n", max["decide_rd"], max["decide_pr"], b["decide_rd"], b["decide_pr"], over,
+				lmax["decide_rd"], lmax["decide_pr"], lb["decide_rd"], lb["decide_pr"]
 		}' "$1"
 }
 
 table="$out/table.txt"
 printf '%-34s %-26s %10s %10s %10s %10s %s\n' kernel uname rd-largest pr-largest rd-budget pr-budget result >"$table"
+listen="$out/listen.txt"
+printf '%-34s %-26s %12s %12s %12s %12s\n' kernel uname rd-listen pr-listen rd-budget pr-budget >"$listen"
 worst=0
 for k in "${kernels[@]}"; do
 	log="$out/$k.console"
@@ -106,18 +117,21 @@ for k in "${kernels[@]}"; do
 	rc=$?
 	echo "$rc" >"$out/$k.rc"
 	uname_line="$(grep -m1 -oE 'Linux version [^ ]+' "$log" 2>/dev/null | sed 's/Linux version //')"
-	read -r rd pr rdb prb over < <(summarize "$log")
+	read -r rd pr rdb prb over lrd lpr lrdb lprb < <(summarize "$log")
 	result=PASS
 	if [ "$rc" -eq 97 ]; then
 		result="NOT-BOOTED(97)"
 		worst=97
-	elif [ "$rc" -ne 0 ] || [ "${over:-0}" -ne 0 ] || [ $((rd + pr)) -eq 0 ]; then
+	elif [ "$rc" -ne 0 ] || [ "${over:-0}" -ne 0 ] || [ $((rd + pr)) -eq 0 ] || [ $((lrd + lpr)) -eq 0 ]; then
 		result="FAIL(rc=$rc,over=${over:-0})"
 		[ "$worst" -eq 97 ] || worst=1
 	fi
 	printf '%-34s %-26s %10s %10s %10s %10s %s\n' "$k" "${uname_line:-?}" "$rd" "$pr" "${rdb:-0}" "${prb:-0}" "$result" >>"$table"
+	printf '%-34s %-26s %12s %12s %12s %12s\n' "$k" "${uname_line:-?}" "${lrd:-0}" "${lpr:-0}" "${lrdb:-0}" "${lprb:-0}" >>"$listen"
 done
 
 cat "$table"
+echo "socket_listen (its own budget per kernel family):"
+cat "$listen"
 echo "measure-plane-verifier: logs and table in $out" >&2
 exit "$worst"

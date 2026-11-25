@@ -28,7 +28,7 @@ import (
 )
 
 // The two windows at the end of a run in which the loser of a lost approve race (two answerers, one request) used to
-// hear a wrong or raw error (N109). The winner's answer ends the run, so the broker closes its socket while the loser's
+// hear a wrong or raw error. The winner's answer ends the run, so the broker closes its socket while the loser's
 // command is in flight:
 //
 //   - the broker closes the connection with the loser's packet unread: the loser's recvmsg fails with "connection
@@ -386,7 +386,7 @@ func TestAskJSONOfARunWhoseSocketIsGoneAgreesWithTheText(t *testing.T) {
 	}
 }
 
-// TestAskAcrossSaysWhichRunItLeftOut (N125 (b)): `tego ask` with no run lists the pending asks of the runs that serve an
+// TestAskAcrossSaysWhichRunItLeftOut: `tego ask` with no run lists the pending asks of the runs that serve an
 // ask socket. A live run whose start record says it served approvals, and whose socket is gone (its broker closed as it
 // shut down), used to be passed over without a word, so a list that left out a run that had held requests read as the
 // whole. Now it is named on stderr with the words `tego ask <run>` uses; the list on stdout, the --json form and the exit

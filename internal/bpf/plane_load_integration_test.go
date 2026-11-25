@@ -119,14 +119,7 @@ func TestPlaneLoadsAndAttaches(t *testing.T) {
 						if p == nil {
 							t.Fatalf("%s did not load", name)
 						}
-						if info, err := p.Info(); err == nil {
-							if n, ok := info.VerifiedInstructions(); ok {
-								t.Logf("%s: %d instructions verified", name, n)
-								if b := planeBudget(t, o, h.Name); n > b {
-									t.Errorf("%s: %d instructions verified, over the budget of %d", name, n, b)
-								}
-							}
-						}
+						planeHeldToBudget(t, o, h.Name, name, p)
 						var l link.Link
 						if mode == PlaneLSM {
 							l, err = link.AttachLSM(link.LSMOptions{Program: p})
@@ -144,14 +137,7 @@ func TestPlaneLoadsAndAttaches(t *testing.T) {
 					if pin == nil {
 						t.Fatalf("%s did not load", PlaneExecPinProgram(mode))
 					}
-					if info, err := pin.Info(); err == nil {
-						if n, ok := info.VerifiedInstructions(); ok {
-							t.Logf("%s: %d instructions verified", PlaneExecPinProgram(mode), n)
-							if b := planeBudget(t, o, ""); n > b {
-								t.Errorf("%s: %d instructions verified, over the budget of %d", PlaneExecPinProgram(mode), n, b)
-							}
-						}
-					}
+					planeHeldToBudget(t, o, "", PlaneExecPinProgram(mode), pin)
 					pl, err := link.AttachTracing(link.TracingOptions{Program: pin, AttachType: ebpf.AttachTraceRawTp})
 					if err != nil {
 						t.Fatalf("attach %s to %s: %v", PlaneExecPinProgram(mode), PlaneExecPinSection, err)

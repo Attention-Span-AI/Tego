@@ -57,7 +57,7 @@ func (l *Loop) recordExec(n *notif, dirfd int32, pathAddr, argvAddr uint64, flag
 	c := l.table.Load()
 	r := l.newReader(n)
 	q := pathQuery{tid: n.pid, dirfd: dirfd}.as(followLookup(flags&unix.AT_SYMLINK_NOFOLLOW != 0))
-	if c.cmds != nil {
+	if c.cmds != nil || c.blocks().HasWords() {
 		// A run with command rules walks the exec's #! interpreters and a loader's program too: the task's root is opened
 		// once for all of them (taskRoot), and closed here when the decision ends.
 		q.root = &n.execRoot
@@ -111,7 +111,7 @@ func (l *Loop) recordExec(n *notif, dirfd int32, pathAddr, argvAddr uint64, flag
 	// A run with command rules reads every image's #! line, through the walk's own descriptor (ADR 0048 (3)): any
 	// ruled tool can be a script's interpreter, and the kernel runs it inside the same execve, with no notification of
 	// its own.
-	q.head = c.cmds != nil
+	q.head = c.cmds != nil || c.blocks().HasWords()
 	// A pinned run's pin names the image as the plane holds it (ADR 0048 (3) P2).
 	q.kid = l.pinner != nil
 	if !unreadable {
@@ -175,7 +175,7 @@ func (l *Loop) recordExec(n *notif, dirfd int32, pathAddr, argvAddr uint64, flag
 	// And so does an image the deny_read snapshot refuses (snapshotRead): the ruleset's file_open refuses its exec open
 	// before the plane's bprm hook could name it, so the refusal and its line are this loop's, as at tier landlock.
 	snapshotRefused := ierr == nil && !img.fileless() && l.snapshotRefuses != nil && l.snapshotRefuses(imageWhere(name, img, true))
-	if !anonRefused && !snapshotRefused && !c.pol.Rules.Gate.Has(gate.Exec) && c.cmds == nil && !c.blocks().HasExec() && !c.fenceHasExec() && l.mcpRelayed == nil && l.kernelExecHandoff != nil && l.kernelExecHandoff() {
+	if !anonRefused && !snapshotRefused && !c.pol.Rules.Gate.Has(gate.Exec) && c.cmds == nil && !c.blocks().HasExec() && !c.blocks().HasWords() && !c.fenceHasExec() && l.mcpRelayed == nil && l.kernelExecHandoff != nil && l.kernelExecHandoff() {
 		l.handOverExec(n, r, c, name, raw, argvAddr, img, ierr == nil, !unreadable, fileless, dropped)
 		return
 	}
@@ -247,6 +247,18 @@ func (l *Loop) recordExec(n *notif, dirfd int32, pathAddr, argvAddr uint64, flag
 					l.metrics.cmdAsked.Add(1)
 				}
 			}
+		}
+	}
+	// A live block on a command's words (liveWords) is the command rules' own matcher asked of the blocks' texts, on the
+	// facts the run's own rules read when they read the whole vector. It comes with the program blocks, before the gate
+	// and the pin.
+	if ierr == nil && c.blocks().HasWords() {
+		nd, alive := l.liveWords(c, n, r, q, raw, img, argvAddr, d, cmd)
+		if !alive {
+			return
+		}
+		if nd.rule != d.rule || nd.verdict != d.verdict {
+			d, listener = nd, false
 		}
 	}
 	// A live block (liveExec) refuses an exec the floor, the command rules and the PATH search would continue; it comes

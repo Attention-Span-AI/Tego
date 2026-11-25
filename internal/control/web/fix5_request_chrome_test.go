@@ -30,7 +30,7 @@ const s=phone?root.querySelector('.ab-summary'):root.querySelector(root.classLis
 let text='';const rects=[];
 s.setAttribute('data-probe-sentence','');
 const w=document.createTreeWalker(s,NodeFilter.SHOW_TEXT);let n;
-while(n=w.nextNode()){if(n.parentElement.closest('.sr,.ab-timing'))continue;const r=document.createRange();r.selectNodeContents(n);const rs=[...r.getClientRects()].filter(x=>x.width>0);if(!rs.length)continue;text+=n.data;rects.push(...rs)}
+while(n=w.nextNode()){if(n.parentElement.closest('.sr,.ab-timing'))continue;const r=document.createRange();r.selectNodeContents(n);const rs=[...r.getClientRects()].filter(x=>x.width>0);if(!rs.length)continue;text+=n.data;rects.push(...rs);n.parentElement.setAttribute('data-probe-text','')}
 rects.sort((a,b)=>a.top-b.top);let lines=0,bottom=-1e9;for(const r of rects){if(r.top>=bottom-2){lines++;bottom=r.bottom}else bottom=Math.max(bottom,r.bottom)}
 const ink=rects.reduce((a,r)=>a+r.width,0),cs=getComputedStyle(s),box=s.clientWidth?s.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight):s.getBoundingClientRect().width;
 const quick=[...root.querySelectorAll('button[name=decision]')].some(vis);
@@ -108,7 +108,8 @@ func TestFix5FullRequestInChrome(t *testing.T) {
 							t.Errorf("%s: no visible request banner", page)
 							return
 						}
-						t.Logf("%s: the sentence is painted in %v", page, platformFonts(t, tb, "[data-probe-sentence]"))
+						fonts := paintedFonts(t, tb, "[data-probe-text]")
+						t.Logf("%s: the sentence is painted in %v; %d lines, its text %.1f px wide in a box %.1f px wide, the page %d px wide", page, fonts, s.Lines, s.Ink, s.Box, width)
 						if s.Quick && strings.Contains(s.Text, "…") {
 							t.Errorf("%s: Allow once is offered beside a cut request: %q", page, s.Text)
 						}
@@ -135,13 +136,15 @@ func TestFix5FullRequestInChrome(t *testing.T) {
 						} else if need := int(math.Ceil(s.Ink/s.Box)) + 1; s.Lines > need {
 							t.Errorf("%s: the sentence takes %d lines, but its text %.0f px wide in a box %.0f px wide needs at most %d", page, s.Lines, s.Ink, s.Box, need)
 						}
-						// The design's own bound (ADR 0123: four lines at 320 px, two at 1280 px) was measured in Noto Sans, so it is
-						// asserted where the page was painted in Noto Sans, and only reported anywhere else.
+						// The design's own bound (ADR 0123: four lines at 320 px, two at 1280 px) was measured on a page painted in Noto
+						// Sans (the words) and Ubuntu Sans Mono (the target, a narrow monospace; DejaVu Sans Mono, the usual one, is
+						// about a tenth wider and takes a third line at the bounds), so it is asserted where every glyph of the sentence
+						// was painted in those two, and only reported anywhere else.
 						if limit := map[bool]int{true: 4, false: 2}[phone]; s.Lines > limit && (width == 320 || width == 1280) {
-							if fonts := platformFonts(t, tb, "[data-probe-sentence]"); inFont(fonts, "Noto Sans") {
-								t.Errorf("%s: the sentence takes %d lines in Noto Sans, more than %d", page, s.Lines, limit)
+							if onlyFonts(fonts, "Noto Sans", "Ubuntu Sans Mono") {
+								t.Errorf("%s: the sentence takes %d lines in %v, more than %d", page, s.Lines, fonts, limit)
 							} else {
-								t.Logf("%s: the sentence takes %d lines, over the design's %d, in %v, not the Noto Sans it was measured in: not asserted", page, s.Lines, limit, fonts)
+								t.Logf("%s: the sentence takes %d lines, over the design's %d, in %v, not the Noto Sans and Ubuntu Sans Mono it was measured in: not asserted", page, s.Lines, limit, fonts)
 							}
 						}
 						if (phone || form.Long) && s.Label != v.Full {

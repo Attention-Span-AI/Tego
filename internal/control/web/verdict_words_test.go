@@ -155,6 +155,11 @@ func TestLineVerdict(t *testing.T) {
 		{"an action held for a person", ledgerview.Event{Kind: "fs", Verdict: "ask"}, "asked i-hand Asked"},
 		{"a watched action", ledgerview.Event{Kind: "net", Verdict: "observed"}, "observed i-eye Observed"},
 		{"an ask line", ledgerview.Event{Kind: "ask"}, "asked i-hand Asked"},
+		// Public issue 65: an exec's own EACCES result whose decision record was lost is neither a refusal nor a plain watched line.
+		{"an exec whose decision record was lost", ledgerview.Event{Kind: "exec", Verdict: "observed",
+			Raw: `{"syscall_ret":-13,"decision_lost":["ringbuf-full"]}`}, "observed i-eye Failed, no decision read"},
+		{"the same key on another errno", ledgerview.Event{Kind: "exec", Verdict: "observed",
+			Raw: `{"syscall_ret":-8,"decision_lost":["ringbuf-full"]}`}, "observed i-eye Observed"},
 		{"a person's yes", answer(`{"approved":true}`), "allowed i-check Allowed"},
 		{"a person's no", answer(`{"approved":false,"answer_reason":"ask-denied"}`), "refused i-ban Denied"},
 		// No person denied these (askwords' answered.TimedOut and Withdrawn), so neither reads Denied.

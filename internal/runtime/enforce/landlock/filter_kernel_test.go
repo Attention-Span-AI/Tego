@@ -110,14 +110,16 @@ func TestFilterRefusesTruncateOnABI2Kernel(t *testing.T) {
 	if !ok {
 		t.Skip("could not install a seccomp filter on this thread")
 	}
-	if !errors.Is(errs[0], unix.EPERM) {
-		t.Errorf("truncate(2) under the ABI-2 filter returned %v, want EPERM: the pre-6.2 truncation hole is open", errs[0])
+	// The arms notify these calls (the supervisor answers EPERM with a line); with no listener installed here the
+	// kernel answers a notified call ENOSYS, which is still a refusal: nothing was truncated.
+	if !errors.Is(errs[0], unix.ENOSYS) {
+		t.Errorf("truncate(2) under the ABI-2 filter returned %v, want ENOSYS (notified, no listener): the pre-6.2 truncation hole is open", errs[0])
 	}
-	if !errors.Is(errs[1], unix.EPERM) {
-		t.Errorf("open(O_RDONLY|O_TRUNC) under the ABI-2 filter returned %v, want EPERM", errs[1])
+	if !errors.Is(errs[1], unix.ENOSYS) {
+		t.Errorf("open(O_RDONLY|O_TRUNC) under the ABI-2 filter returned %v, want ENOSYS (notified, no listener)", errs[1])
 	}
-	if !errors.Is(errs[4], unix.EPERM) {
-		t.Errorf("open(O_ACCMODE|O_TRUNC) under the ABI-2 filter returned %v, want EPERM", errs[4])
+	if !errors.Is(errs[4], unix.ENOSYS) {
+		t.Errorf("open(O_ACCMODE|O_TRUNC) under the ABI-2 filter returned %v, want ENOSYS (notified, no listener)", errs[4])
 	}
 	if errs[2] != nil {
 		t.Errorf("a plain read open was refused (%v): the guard is too broad", errs[2])

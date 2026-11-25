@@ -86,6 +86,7 @@ func TestFromStart(t *testing.T) {
 		{"held", `{"tier":"landlock","fs_reads":{"reads":"held","why":"contract"}}`, Facts{Started: true, ReadsSeen: true}},
 		{"record-full", `{"tier":"landlock","fs_reads":{"reads":"direct","why":"none-nested"},"reads_notified":{"notified":true,"why":"record-full"}}`, Facts{Started: true, ReadsSeen: true}},
 		{"direct", `{"tier":"landlock","fs_reads":{"reads":"direct","why":"none-nested"},"reads_notified":{"notified":false,"why":"reason-off"}}`, Facts{Started: true}},
+		{"tego run's command", `{"tier":"landlock","run_command_grant":"/usr/bin/git"}`, Facts{Started: true, RunCommandGrant: "/usr/bin/git"}},
 		{"old ledger", `{"tier":"cgroup"}`, Facts{Started: true}},
 		{"r6 launcher", `{"tier":"landlock","record_minor":23}`, Facts{Started: true, RecordMinor: 23}},
 		{"r7 launcher", `{"tier":"landlock","record_minor":24}`, Facts{Started: true, RecordMinor: 24}},
@@ -112,6 +113,10 @@ func TestFromStart(t *testing.T) {
 	p := &record.RunStartPayload{Tier: "landlock", FSReads: &record.FSReads{Reads: record.FSReadsHeld}}
 	if got := FromStart(p); !reflect.DeepEqual(got, Facts{Started: true, ReadsSeen: true}) {
 		t.Fatalf("FromStart = %+v", got)
+	}
+	p = &record.RunStartPayload{Tier: "landlock", RunCommandGrant: "/usr/bin/git"}
+	if got := FromStart(p); !reflect.DeepEqual(got, Facts{Started: true, RunCommandGrant: "/usr/bin/git"}) {
+		t.Fatalf("FromStart(run command) = %+v", got)
 	}
 	p = &record.RunStartPayload{Tier: "bpf-lsm", RecordMinor: record.MinorLiveControl, DecisionPlane: record.DecisionPlaneLSM}
 	if got := FromStart(p); !reflect.DeepEqual(got, Facts{Started: true, RecordMinor: record.MinorLiveControl, KernelDecidesChanges: true}) || !got.NarrowKinds() {

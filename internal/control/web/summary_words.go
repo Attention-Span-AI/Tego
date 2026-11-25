@@ -65,11 +65,12 @@ func phoneRuleName(r ruleRow) string {
 
 // builtinRuleNames are the phone names of the rules every contract carries (rulesview's built-in rows).
 var builtinRuleNames = map[string]string{
-	"deny_read":    "Secret files",
-	"own-records":  "Tego's records",
-	"contract":     "Rules file",
-	"no-setuid":    "Root access",
-	"host_ipc":     "Session services",
-	"tego_surface": "Tego controls",
-	"other_tty":    "Terminal devices",
+	"deny_read":        "Secret files",
+	"own-records":      "Tego's records",
+	"contract":         "Rules file",
+	"no-setuid":        "Root access",
+	"host_ipc":         "Session services",
+	"tego_surface":     "Tego controls",
+	"other_tty":        "Terminal devices",
+	"standard_devices": "Standard data devices",
 }

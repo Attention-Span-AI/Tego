@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/check/receipt"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
@@ -92,5 +93,20 @@ func TestEndSummaryReadsTheLedgerOnce(t *testing.T) {
 	}
 	if read := after - before; read > uint64(st.Size())*3/2 {
 		t.Errorf("the summary read %d bytes of a %d byte record: it read the ledger more than once", read, st.Size())
+	}
+
+	// Keeping the receipt (ADR 0159) binds it in that same pass: the record is not read again for the binding.
+	useStamp(t, releasedStamp)
+	if _, err := receipt.ExecutableSHA256(); err != nil { // read once per process, and not part of the record's read
+		t.Fatal(err)
+	}
+	before, _ = bytesRead(t)
+	k := summarizeRunKeeping(t.Context(), &config.Machine{}, anchor, res, agent.RecordSummary, true)
+	after, _ = bytesRead(t)
+	if k == nil || k.kept == nil || k.chain != "chain verified" {
+		t.Fatalf("keeping summary %+v", k)
+	}
+	if read := after - before; read > uint64(st.Size())*3/2 {
+		t.Errorf("the summary that keeps the receipt read %d bytes of a %d byte record: it read the ledger more than once", read, st.Size())
 	}
 }

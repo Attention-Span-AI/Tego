@@ -162,6 +162,21 @@ func (r *runner) markLinkReader() {
 	}
 }
 
+// markWordsReader tells writers that this launcher reads a block on a command's words (an exec entry whose value has
+// words, liveblock.Entry.IsWords, VersionWords, ADR 0171): it makes the run directory's liveblock.WordsName once the
+// live-block poll runs. `tego block` and the dashboard place such a block only on a run that has the mark
+// (liveblock.TakesWords) and refuse the run in words otherwise: an older launcher would refuse the whole overlay once it
+// was VersionWords, and a block on the whole program would refuse more than the rules the person changed. A mark that
+// cannot be made is logged: such a block is then refused for this run, in words, as for an older launcher.
+func (r *runner) markWordsReader() {
+	if r.dir == "" {
+		return
+	}
+	if err := liveblock.MarkWords(r.dir); err != nil {
+		r.log.Warn("live blocks: the run's command-word mark could not be made, so a block on a command's words is refused for this run", "err", err)
+	}
+}
+
 // markNoteReader tells writers that this launcher reads a lift's note (liveblock.Change.Note, signed inside the lift's
 // MAC): it makes the run directory's liveblock.NoteName once the live-block poll runs. `tego lift` and the dashboard
 // sign and write a note only for a run that has the mark (liveblock.TakesNote) and refuse the note in words otherwise,

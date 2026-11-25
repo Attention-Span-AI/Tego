@@ -4,9 +4,10 @@
 # go-shim.sh — installed as /usr/local/bin/go inside the kvm-run.sh guest by test/vm/root-suites.sh.
 #
 # Why it exists: a few integration tests build a helper at run time with `go build -o OUT PKG`
-# (internal/runtime builds cmd/tego and test/workloads/model-agent, internal/runtime/cgroup builds its
-# memhog). The guest has no Go toolchain, module cache or build cache, and carrying them in would
-# triple the initramfs for three binaries. root-suites.sh builds exactly those packages on the host
+# (internal/runtime builds cmd/tego, test/workloads/model-agent and test/workloads/ledger-attacker,
+# internal/runtime/cgroup builds its memhog, and more: test/vm/suites.sh's HELPERS names them all). The guest has
+# no Go toolchain, module cache or build cache, and carrying them in would triple the initramfs for a handful
+# of binaries. root-suites.sh builds exactly those packages on the host
 # from the same tree, CGO_ENABLED=0 like the tests ask, into /vm/prebuilt/<last path element>, and
 # this shim hands the test that file. It serves nothing else: any other go command fails loudly, so
 # a test that grows a new `go` call shows up as a failure here rather than as a silent skip.
@@ -57,7 +58,7 @@ esac
 case " $tags " in
 *tegotesthooks*) src="$src.testhooks" ;;
 esac
-[ -f "$src" ] || die "no prebuilt binary for $pkg at $src (root-suites.sh builds cmd/tego, memhog and model-agent)"
+[ -f "$src" ] || die "no prebuilt binary for $pkg at $src (root-suites.sh builds the packages test/vm/suites.sh's HELPERS names: a test that builds a new one adds it there)"
 case "$out" in */) out="$out$name" ;; esac
 cp "$src" "$out"
 chmod 0755 "$out"

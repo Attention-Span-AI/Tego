@@ -185,6 +185,9 @@ func (p *printer) limits(l ResolvedLimits) {
 		unb(BudgetWall, Duration(l.Wall).String()),
 		unb(BudgetStallAfter, Duration(l.StallAfter).String()),
 		unb(BudgetRepeats, strconv.Itoa(l.Repeats)))
+	if l.Window > 0 {
+		p.line("window    %s (tokens and cost_usd count across restarts of this agent)", Duration(l.Window))
+	}
 }
 
 // ask prints the approval configuration of a table that asks (ask.*), with what a timed-out ask leaves behind:

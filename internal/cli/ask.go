@@ -285,7 +285,7 @@ func askAcross(ctx context.Context, root string, asJSON bool, out, errs io.Write
 			_ = target.Close()
 		}
 		if noAskSocket(err) {
-			// It takes no approvals, or it is going or gone (N125 (b)). A run that holds nothing for an answer by
+			// It takes no approvals, or it is going or gone. A run that holds nothing for an answer by
 			// its contract is passed over as before; one that served approvals, whose socket is gone now, or whose
 			// start record cannot say, or that ended after the probe, is named, so a list that leaves it out is not
 			// read as the whole.
@@ -483,7 +483,7 @@ func askAt(ctx context.Context, name, runID, dir, id string, approve, always, as
 	if err != nil && brokerWentAway(err) {
 		// The run is live by its lock but its broker is not there: it never served approvals (no ask rule, a watched run),
 		// or the run is ending and took its socket, or closed the connection, before its lock was released. Which one is
-		// the run's record's to say, not the error's (N109).
+		// the run's record's to say, not the error's.
 		w := settleLost(name, runID, dir, id, err)
 		message(errs, "", 0, 0, w.text, w.code)
 		return w.exit

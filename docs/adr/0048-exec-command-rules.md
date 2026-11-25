@@ -2761,7 +2761,7 @@ refusals.
 whether or not an exec was in flight: hundreds of thousands of fs actions a run, each a ledger line under
 `record: full`. The record overran: the run's gap lines said `ringbuf-full` (up to 6680), `channel-full` and
 `exec-fragment-overflow`. A refusal whose plane sample was lost in the ring is an exec result with no plane fragment,
-so its line can only say `observed`, `syscall_ret: -13`; a pinned exec whose held sample was lost says `unproven`;
+so its line can only say `observed`, `syscall_ret: -13` (and, from revision 41, `decision_lost`: the amendment of 2026-11-24 below); a pinned exec whose held sample was lost says `unproven`;
 lines the events channel dropped are missing. Each of those is what (8)'s fold is specified to say under loss, and
 each loss was disclosed by its gap, so the fold and the handover join are unchanged. The racer now swaps only while
 an exec is in flight, one rename a swap, and the race cells (`checkPinRace`) fail on any loss gap first
@@ -3605,7 +3605,7 @@ pattern. Both sets are compiled once with the index; each reader must satisfy
 its corresponding closure. A supplied-row regression compares this boundary
 with the frozen released matcher.
 
-### Amendment 2026-11-24: a lost refusal sample under the swap cells' tolerance (row N132)
+### Amendment 2026-11-24: a lost refusal sample under the swap cells' tolerance
 
 On a fedora-7.0 guest (kernel 7.0, BPF LSM boot, `fmod_ret` mode admitted by the test builds' waiver, the host under
 heavy load) `TestPlaneRunExecPinSymlinkSwap` and `TestPlaneRunExecPinInterpreterSwap` failed in `cgroup@fmod_ret`
@@ -3627,3 +3627,66 @@ the run says it lost); with no loss stated, or in the kill cells, it still fails
 changed. Production reaches the same state in either mode whenever a ring is overrun (the plane's sample is lost at
 `bpf_ringbuf_reserve`, the exec result survives; `tego_exec_sample` is one function for both); the waiver adds
 nothing to it, since a skipped program refuses nothing and so leaves no EACCES.
+
+### Amendment 2026-11-24: an exec whose decision record was lost says so (record revision 41)
+
+The note above leaves the line true and incomplete: a refusal whose plane sample the ring lost is an `observed`,
+`unmatched`, `syscall_ret: -13` line, and neither the receipt nor a reader of the record can tell it from an exec
+that another security module or the file's own mode failed with EACCES, though the run's gap lines say records were
+lost. What is known at the moment the line is written is more than the line said. Tego cannot know from the result
+alone whether its own plane or another module refused the exec; it does know that the exec failed with EACCES, that
+no decision record of this attempt was read, and whether this run has lost records of the kinds a decision record can
+be among. Revision 41 (not shipped when this was written) says all of that and no more.
+
+- **The field.** `exec.decision_lost`, a list of strings, on exactly that line: verdict `observed`, rule `unmatched`,
+  `syscall_ret -13`, no `mechanism`, `plane_reason`, `decision_plane`, `signal`, `errno` or `by`, and no `argv_facts`
+  but the gate's own `copied_syscall`: an exec a command rule admitted names its rule and that mark on the kernel's line
+  (ADR 0048 (8)), and can still fail with EACCES with no decision record (a pin's refusal whose sample was lost, another
+  module, the file's mode), so the field must be writable beside them (the first version refused that line and ended the
+  run with a ledger error). Its
+  members are the gaps of this run, sorted and not repeated, that lost records a decision may be among, from a closed
+  set of two: `ringbuf-full` (the kernel's own lost counter for the run's ring, which the recorder reads when it writes
+  the line, since the sample the ring refused was counted before the result that follows it was reserved) and
+  `exec-fragment-overflow` (a decision fragment the recorder dropped for lack of room). `channel-full`, which the judge
+  also counts, is a loss after the recorder has written the line, and cannot be known when the line is written, so it is
+  not named. The field is absent when the run had lost none: that line is another module's or the file's own, and
+  stays as it was. **The meaning is the run's.** The list names the gaps the run had lost when the line was written, not
+  a loss of this attempt: after one early loss every later EACCES exec of the run (a `noexec` mount, a missing execute
+  bit, another module) carries it. This version does not narrow it: the line is marked with the run's stated losses, not those of the attempt's time. A narrower
+  rule would be sound and is a later improvement: mark only a loss seen at or after the attempt's `AttemptMonoNS`, which the
+  supervisor stamps before it lets the exec continue (the plane's sample, and any drop of it, come after that time). The rule
+  that marks only a rise since the previous exec result is not sound: exec results of one run arrive in any order, so an
+  attempt whose loss another result had already read would be left unmarked, a refusal stated by no line; it was considered
+  and left out (`TestExecResultIsMarkedAfterAnotherResultReadTheSameLoss` holds the run-wide meaning). The receipt's words
+  say "may" for that reason.
+- **It is no refusal.** The verdict stays `observed` and the rule `unmatched`. A refusal still needs a plane sample the
+  recorder read ("never a verdict from attempt metadata"). The line says the call failed with permission denied and
+  that the record of what decided it may be among those the run lost. Which module refused it is not claimed.
+- **The receipt.** `execs_decision_lost` (an additive key; `receipt_v` stays 1) counts those lines. They are in
+  neither `refusals` nor `programs` (a failed exec ran nothing), and the receipt's sentence beside the refusal count says
+  so in words instead of "Nothing was refused", which the figure makes false to claim.
+- **Readers.** `tego events` shows `[failed: permission denied; decision record may be lost: <gaps>]` in the line's detail;
+  the dashboard's timeline chip reads "Failed, no decision read" instead of "Observed", and its line page says what is known
+  and what is not; the receipt page carries the receipt's sentence. A v0.1.3 reader ignores the unknown key (a v1
+  reader ignores unknown fields) and reads and verifies the line as before.
+- **Validation.** From revision 41 `Event.ValidateAt` refuses the field below 41 (`below-minor`) and refuses it
+  (`decision-lost`) on any other line or with a list that is empty, outside the set, unsorted or repeating.
+- **The other result kinds.** An exec is the one action whose result is a record apart from its decision: the plane's
+  sample and the exec result are reserved separately, so one can be lost and the other arrive. A refused open, rename,
+  link, unlink or mkdir is the plane's sample itself (the line is written from it, never a second one), and a refused
+  connect or bind is the supervisor's or the plane's own line: when that sample is lost no result remains to write a line
+  from, so there is no line to mark, and the run's `ringbuf-full` gap, with its count, is the whole of what the record
+  can say. A bind or listen result carries its decision in the result record itself (`BindDecided`), so its loss cannot
+  leave a result without a decision. They are treated alike in the only way open to them: stated by the gap, which is the
+  count of what was lost. An exec whose attempt metadata is missing (`exec-metadata-missing`) carries no field, since the
+  recorder never looked for a decision fragment of an attempt it could not join.
+- **The judge.** `judgePinRace` accepts the shape only as the new one: the line must name the gaps (`decision_lost`),
+  each of them a gap the ledger holds with a count. The old shape, with no field, now fails.
+
+Production: unchanged apart from this field, in either mode, on any kernel. Proof: `TestExecResultNamesTheGapThatLostItsDecision`
+and the record, receipt, explain, events, dashboard and judge tests of the same change, the fixtures of the field, and v0.1.3's own
+ledger code reading and verifying a ledger that carries it. A real overrun of the ring is stochastic, so the swap cells
+(`TestPlaneRunExecPinSymlinkSwap` and `TestPlaneRunExecPinInterpreterSwap`) on a guest are the check that the field appears
+on a real run when one overruns; a run that does not overrun leaves the field unexercised there.
+Every run's ledger is at revision 41 (ADR 0157), so the writer, which refuses a field below its revision, never meets the
+field below it.

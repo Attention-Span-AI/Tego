@@ -34,8 +34,11 @@ type Resolved struct {
 // every change and the supervisor reads the newest through one atomic load. A nil *Set blocks nothing.
 type Set struct {
 	exec []execBlock
-	net  []netBlock
-	unix []netBlock
+	// words are the command-word blocks (Entry.IsWords), which the supervisor's command matcher decides (Words,
+	// WordOn); MatchExec never sees them.
+	words []wordsBlock
+	net   []netBlock
+	unix  []netBlock
 	// fs is every path, read and write block, in the overlay's order, each with the access classes it refuses.
 	fs []fsBlock
 	// serial is the overlay's, for the launcher's own bookkeeping.
@@ -73,6 +76,12 @@ type execBlock struct {
 	// grant is a block that matches by link (MatchLink): it refuses what the running contract grants under the
 	// exec.allow entry at its value (Grant), and only where the contract holds no such entry the whole file.
 	grant bool
+}
+
+// wordsBlock is one command-word block: its entry and when it refuses.
+type wordsBlock struct {
+	e Entry
+	w window
 }
 
 type fsBlock struct {
@@ -126,6 +135,10 @@ func CompileEntries(entries []Entry, serial uint64, res Resolved) *Set {
 		}
 		switch e.Kind {
 		case KindExec:
+			if e.IsWords() {
+				s.words = append(s.words, wordsBlock{e: e, w: w})
+				continue
+			}
 			b := execBlock{e: e, w: w, dir: strings.HasSuffix(e.Value, "/"), base: !strings.HasPrefix(e.Value, "/")}
 			b.id, b.idOK = res.Files[e.Value]
 			b.grant = e.Match == MatchLink && !b.dir && !b.base
@@ -217,6 +230,9 @@ func (s *Set) Fenced() int {
 	for _, b := range s.exec {
 		count(b.e)
 	}
+	for _, b := range s.words {
+		count(b.e)
+	}
 	for _, b := range s.net {
 		count(b.e)
 	}
@@ -236,6 +252,39 @@ func (s *Set) Fenced() int {
 
 // HasExec reports whether s blocks any program.
 func (s *Set) HasExec() bool { return s != nil && len(s.exec) > 0 }
+
+// HasWords reports whether s holds any command-word block, refusing now or not: the supervisor decides every exec while
+// one stands, as it does while a program is blocked.
+func (s *Set) HasWords() bool { return s != nil && len(s.words) > 0 }
+
+// Words are the command-word blocks' entries in the overlay's order, each refusing now or not. The supervisor compiles
+// the command matcher's index from their values (agent.NewLiveCommands) and asks WordOn whether one refuses at the moment
+// of an exec.
+func (s *Set) Words() []Entry {
+	if s == nil {
+		return nil
+	}
+	out := make([]Entry, len(s.words))
+	for i, b := range s.words {
+		out[i] = b.e
+	}
+	return out
+}
+
+// WordOn reports whether the command-word block with key (Entry.Key) refuses now: it is held, not past its limit on both
+// clocks and not dormant under an unblock for a while.
+func (s *Set) WordOn(key string) (Entry, bool) {
+	if s == nil {
+		return Entry{}, false
+	}
+	c := s.now()
+	for _, b := range s.words {
+		if b.e.Key() == key {
+			return b.e, s.on(b.w, c)
+		}
+	}
+	return Entry{}, false
+}
 
 // HasNet reports whether s blocks any destination, inet or unix.
 func (s *Set) HasNet() bool { return s != nil && (len(s.net) > 0 || len(s.unix) > 0) }

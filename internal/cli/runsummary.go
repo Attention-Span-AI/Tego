@@ -3,9 +3,11 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -13,8 +15,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/check/measure"
 	"github.com/attention-span-ai/tego/internal/check/receipt"
 	"github.com/attention-span-ai/tego/internal/ledger"
+	"github.com/attention-span-ai/tego/internal/pricetable"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
 	"github.com/attention-span-ai/tego/internal/shellword"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
@@ -63,15 +67,21 @@ type endSummary struct {
 	// machine is the machine config the run was started under, whose registries a hint's proposed agent name is
 	// checked against (proposedName); nil for a summary built without one.
 	machine *config.Machine
+	// kept is the run's bound receipt as `tego receipt --json` prints it, built in the summary's own pass when the
+	// caller asked to keep it (summarizeRunKeeping); nil otherwise, or when the receipt could not be built or bound.
+	kept []byte
+	// keptWhy is why kept is nil when a copy was asked for and the receipt was built: the binding's own words.
+	keptWhy string
 }
 
 // recordOffClause is what the summary of a run whose record was off says, before its chain clause.
 const recordOffClause = "record off: refusals only"
 
-// summarizeRun builds the summary of the run res names, which ran under the record mode mode (its table's, after
+// summarizeRunKeeping builds the summary of the run res names, which ran under the record mode mode (its table's, after
 // --record): its receipt over the run's ledger, and its chain verified against anchor. nil when there is no run (the
-// run never started).
-func summarizeRun(ctx context.Context, m *config.Machine, anchor string, res tegoruntime.Result, mode agent.RecordMode) *endSummary {
+// run never started). With keep it also binds the receipt in the same one pass and leaves its JSON in the summary
+// (endSummary.kept) for keepReceipt to place in the run directory (ADR 0159).
+func summarizeRunKeeping(ctx context.Context, m *config.Machine, anchor string, res tegoruntime.Result, mode agent.RecordMode, keep bool) *endSummary {
 	if res.RunID == "" {
 		return nil
 	}
@@ -85,18 +95,31 @@ func summarizeRun(ctx context.Context, m *config.Machine, anchor string, res teg
 	}
 	s.root = root
 	dir := filepath.Join(root, res.RunID)
-	s.rc, s.chain, s.err = receiptAndChain(ctx, dir, anchor, res)
+	// No copy from a build no tego can check: receipt.Check compares a receipt's figures only for the exact build that
+	// made it, and a dirty build or one with no version stamp is no exact build, so its copy could never be compared by
+	// any tego, itself included. The receipt is built from the record whenever it is asked for (ADR 0159 §3).
+	keep = keep && receipt.Exact(receiptStamp())
+	var unbound string
+	s.rc, s.chain, unbound, s.err = receiptAndChain(ctx, dir, anchor, res, m, keep)
+	if unbound != "" {
+		keep, s.keptWhy = false, unbound
+	}
+	if keep && s.rc != nil {
+		s.kept, s.keptWhy = keptJSON(s.rc)
+	}
 	return s
 }
 
 // receiptAndChain is the receipt of the run in dir and the chain clause, from one read of the ledger: the chain check
 // rides the receipt's pass (ledger.Reader.VerifyAlong), as `tego events --verify` would check the same lines, so a long
 // record is read once for the summary, not once for the receipt and again for the chain. A record that cannot be opened
-// has no receipt, and its chain clause says why from the check's own read.
-func receiptAndChain(ctx context.Context, dir, anchor string, res tegoruntime.Result) (*receipt.Receipt, string, error) {
+// has no receipt, and its chain clause says why from the check's own read. With keep it also binds the receipt, which
+// needs the hash of tego's own executable: when that cannot be read the receipt is built unbound, so the summary is
+// what it would be without keeping, and the third result says why no copy can be kept ("" otherwise).
+func receiptAndChain(ctx context.Context, dir, anchor string, res tegoruntime.Result, m *config.Machine, keep bool) (rc *receipt.Receipt, chain, unbound string, err error) {
 	r, err := ledger.OpenReader(dir)
 	if err != nil {
-		return nil, chainClause(ctx, dir, anchor, res), err
+		return nil, chainClause(ctx, dir, anchor, res), "", err
 	}
 	defer func() { _ = r.Close() }()
 	r.SkipNewerVersions()
@@ -104,9 +127,85 @@ func receiptAndChain(ctx context.Context, dir, anchor string, res tegoruntime.Re
 	if res.RecordErr == nil && anchor != "" {
 		along = r.VerifyAlong()
 	}
-	rc, err := receipt.Compute(ctx, r, receipt.Options{Home: os.Getenv("HOME")})
-	chain := chainClauseOf(ctx, anchor, res, func(a ledger.ChainAnchor) (ledger.VerifyReport, error) { return along.Finish(ctx, a) })
-	return rc, chain, err
+	opt := receipt.Options{Home: os.Getenv("HOME")}
+	if keep {
+		// What `tego receipt --json` binds and prices, so `tego receipt --check` takes the kept copy as it takes that
+		// one. Neither changes a word of the summary. The hash is read first: Compute fails as a whole without it, and
+		// the one pass over the ledger must not be lost to a binary that cannot be read (mode 0711, say).
+		if sum, herr := executableSHA256(); herr != nil {
+			unbound = "the receipt could not be bound: " + errText(herr)
+		} else {
+			by := receiptStamp()
+			opt.Bind, opt.BinarySHA256 = &by, sum
+			opt.Prices = pricesOf(m)
+		}
+	}
+	rc, err = receipt.Compute(ctx, r, opt)
+	chain = chainClauseOf(ctx, anchor, res, func(a ledger.ChainAnchor) (ledger.VerifyReport, error) { return along.Finish(ctx, a) })
+	return rc, chain, unbound, err
+}
+
+// executableSHA256 is the hash of the running executable a bound receipt carries, a variable so a test can make it fail.
+var executableSHA256 = receipt.ExecutableSHA256
+
+// pricesOf is the price table of the machine config m, loaded when a receipt first needs a price, or nil with no
+// warning (the receipt then says no table priced it, as it does for any run without one).
+func pricesOf(m *config.Machine) measure.Prices {
+	return pricetable.NewLazy(func() pricetable.Coster {
+		if m == nil {
+			return nil
+		}
+		table, warn := pricetable.FromMachine(m)
+		if warn != nil {
+			return nil // a nil *PriceTable in an interface is not a nil interface
+		}
+		return table
+	})
+}
+
+// keptJSON is the receipt as `tego receipt --json` writes it, or, when its binding failed, nil and the binding's words:
+// a receipt bound to nothing is not kept.
+func keptJSON(rc *receipt.Receipt) ([]byte, string) {
+	if rc.Binding == nil {
+		return nil, "the receipt was not bound to its record"
+	}
+	if rc.Binding.Error != "" {
+		return nil, "the receipt is not bound to its record: " + rc.Binding.Error
+	}
+	var b bytes.Buffer
+	if err := rc.JSON(&b); err != nil {
+		return nil, err.Error()
+	}
+	return b.Bytes(), ""
+}
+
+// keepReceipt places the run's bound receipt in its run directory as receipt.json, once and never over a file already
+// there (ledger.PlaceRunFile), and says in one warning line on stderr why it could not. It changes no exit code: the
+// run's own outcome is the exit, and the receipt is rebuilt from the record whenever it is asked for. A run that never
+// started, one whose record could not be completed, one tego run was interrupted for and one with no receipt keep none.
+func keepReceipt(ctx context.Context, stderr io.Writer, cmd string, res tegoruntime.Result, s *endSummary) {
+	if s == nil || res.RunID == "" || res.RecordErr != nil || ctx.Err() != nil || s.root == "" {
+		return
+	}
+	dir := filepath.Join(s.root, res.RunID)
+	why := s.keptWhy
+	switch {
+	case s.err != nil && s.rc == nil:
+		why = "the receipt could not be built: " + errText(s.err)
+	case s.kept == nil && why == "":
+		return
+	case s.kept != nil:
+		err := ledger.PlaceRunFile(dir, ledger.ReceiptFile, s.kept)
+		switch {
+		case err == nil:
+			return
+		case errors.Is(err, os.ErrExist):
+			why = ledger.ReceiptFile + " is already in the run directory, and is left as it is"
+		default:
+			why = err.Error()
+		}
+	}
+	message(stderr, "", 0, 0, "warning: "+cmd+": the receipt was not kept in "+dir+": "+record.Printable(why), codeIO)
 }
 
 // chainClause checks the run's chain and its anchor as `tego events --verify` does, and says the result in a few
@@ -327,12 +426,15 @@ func (s *endSummary) disclosures() string {
 	return b.String()
 }
 
-// devNullLine is the one line a run that was refused /dev/null by the default deny gets (N14, ADR 0158): a shell's
-// `> /dev/null` or `2>/dev/null` outside every fs.write entry fails with "permission denied", and a beginner's first rules
-// file (`fs.write: [./]`) has no entry for it. The refusal counts like any other and is routine on the dashboard; the line
-// names the cause and the fix, which costs nothing, since the device holds no file. A refusal an entry of the contract
-// made (a deny_write on /dev/null) is not the default and gets no line. "" when there is none. The count is of the
-// refusals the receipt lists (at most receipt.MaxRefusals).
+// devNullLine is the one line a run that was refused /dev/null by the default deny gets (ADR 0158): a shell's
+// `> /dev/null` or `2>/dev/null` outside every fs.write entry fails with "permission denied". Every table with an fs:
+// section now grants the standard data devices by what they are, so this arises only where that grant did not apply (the
+// host's file at the name is not the device), under a contract with no fs: section (R6: no write entry at all), or in a
+// record an earlier version wrote; the line names the cause and the fix, which costs
+// nothing, since the device holds no file. It reads refusals under the rule `unmatched` alone: a run whose grant
+// applied has allowed opens named `builtin.standard_devices`, and a refusal an entry of the contract made (a deny_write
+// on /dev/null) is not the default; neither gets a line. "" when there is none. The count is of the refusals the receipt
+// lists (at most receipt.MaxRefusals).
 func devNullLine(rc *receipt.Receipt) string {
 	n := 0
 	for _, r := range rc.Refusals.List {

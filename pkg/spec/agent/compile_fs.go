@@ -164,6 +164,7 @@ func (k *compiler) fs() {
 		b.builtIn(writes)
 	}
 	b.tegoOwn(ledger, writes)
+	b.standardDevices()
 	b.nameEntries()
 	k.rt.FS = b.rules
 }

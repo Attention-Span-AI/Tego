@@ -5,7 +5,7 @@ source is the other way.
 
 | System | Install | Tested on |
 |---|---|---|
-| Linux | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | The published v0.1.1 as a new user, tier landlock: AlmaLinux 9.8, Ubuntu 24.04 and 26.04.1, Debian 13, Fedora 44, Amazon Linux 2023 ([details](TIERS.md#the-published-release-as-a-new-user)) |
+| Linux | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | The published v0.1.1 as a new user, tier landlock: AlmaLinux 9.8, Ubuntu 24.04 and 26.04.1, Debian 13, Fedora 44, Amazon Linux 2023 ([details](TIERS.md#the-published-release-as-a-new-user)). Release files built for v0.2.0, as a user and as root: AlmaLinux 9.8, Amazon Linux 2023, Ubuntu 24.04 and 26.04.1, Fedora 44 ([details](TIERS.md#platforms-checked-for-v020)) |
 | macOS | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | By hand on an Apple silicon Mac, through to a Claude Code session; in CI on GitHub's hosted macOS 15 runners when a pull request changes the installer or the Mac setup ([details](#macos)) |
 | Windows | `irm https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.ps1 \| iex` | Windows 11 Enterprise evaluation, build 26300.9457 under KVM; WSL 3.0.5.0. The guide's WSL blocker was lifted by the rule's switch-on (below); the ordinary build passed the six beginner steps there (below), from a local mirror, unsigned, without a real mouse or HTTPS release; the browser dashboard opens |
 
@@ -64,6 +64,12 @@ then `tego doctor --require landlock`, `tego test`, a run and the record's check
 ([TIERS.md](TIERS.md#the-published-release-as-a-new-user)). On a fresh Ubuntu 24.04, the first line of this section, as written,
 installed v0.1.1 with the checksum check only, since that image has no `cosign`. `scripts/install_test.sh` covers each
 check, the piped form and the exit codes.
+
+On 2026-11-24, release files built from v0.2.0's code were installed with the release's `install.sh` from a local
+folder (the checksum check only) on AlmaLinux 9.8, Amazon Linux 2023, Ubuntu 24.04, Ubuntu 26.04.1 and Fedora 44, then
+run as a user and as root ([TIERS.md](TIERS.md#platforms-checked-for-v020)). A fresh install passed on Ubuntu 24.04 and
+Debian 12, and an update from the published v0.1.3 on Ubuntu 24.04 and Debian 13. The published v0.2.0 files were not
+part of those runs.
 
 ## macOS
 
@@ -210,8 +216,9 @@ can run, the next step is:
 tego start
 ```
 
-The intended four steps choose your agent, login, project and rules. Choose the test project for the first run. In the
-Ready panel, copy the command beginning with `cd` and press Enter. The sample's poisoned dependency tries to
+The intended four steps choose your agent, login, project and rules. With no agent installed and signed in, the first
+choice is the demonstration agent, which needs no account: the guide runs it once and ends with the commands that show
+the run. Otherwise choose your agent and the test project for the first run. In the Ready panel, copy the command beginning with `cd` and press Enter. The sample's poisoned dependency tries to
 read a fake secret; Tego should refuse that read and keep the record. Then type `tego session list` and
 `tego session show --last`. Type `exit` to return to Windows.
 
@@ -438,7 +445,7 @@ readable either); held file opens are then refused, as on Debian 12 (kernel 6.1)
 [the container guide](user/container.md).
 
 The host's Linux kernel still determines which tier works. See [the container guide](user/container.md) for the
-settings, supported hosts and a Compose setup. The published image uses uid/gid 10001; build it locally with your own
+settings, the hosts it was tried on and a Compose setup. The published image uses uid/gid 10001; build it locally with your own
 uid/gid when opening the dashboard from the host. First publication also needs an organization/package admin to make
 the GHCR package public once; see [the release runbook](VERSIONING.md#72-how-the-tag-is-made).
 

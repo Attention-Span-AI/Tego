@@ -31,7 +31,11 @@ func TestNormalize(t *testing.T) {
 		{KindExec, "/opt/tools//", "/opt/tools/", false},
 		{KindExec, "./curl", "", true},
 		{KindExec, "bin/curl", "", true},
-		{KindExec, "two words", "", true},
+		{KindExec, "two words", "two words", false}, // a command (words.go), once an error
+		{KindExec, "/opt/My Tools/run", "/opt/My Tools/run", false},
+		{KindExec, "git", "git", false},
+		{KindExec, "/usr/bin/git push", "/usr/bin/git push", false}, // an absolute value is a program path, spaces and all
+		{KindExec, "tw\to words", "", true},
 		{KindExec, "..", "", true},
 		{KindNet, "Example.COM:443", "example.com:443", false},
 		{KindNet, "example.com.", "example.com", false},
@@ -138,7 +142,7 @@ func TestOverlayKeepsNewestChanges(t *testing.T) {
 func TestDecodeRefusesMalformed(t *testing.T) {
 	for name, body := range map[string]string{
 		"not json":          "{",
-		"wrong version":     `{"v":6,"run":"` + testRun + `"}`,
+		"wrong version":     `{"v":7,"run":"` + testRun + `"}`,
 		"unknown kind":      `{"v":1,"run":"` + testRun + `","blocks":[{"kind":"file","value":"/x"}]}`,
 		"not normalized":    `{"v":1,"run":"` + testRun + `","blocks":[{"kind":"path","value":"/x/../y"}]}`,
 		"twice":             `{"v":1,"run":"` + testRun + `","blocks":[{"kind":"path","value":"/y"},{"kind":"path","value":"/y"}]}`,

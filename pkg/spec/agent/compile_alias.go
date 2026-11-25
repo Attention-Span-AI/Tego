@@ -99,7 +99,10 @@ func (p *aliasPass) writes() {
 	}
 	for i, n := 0, len(k.rt.FS); i < n; i++ {
 		w := k.rt.FS[i]
-		if w.Kind != FSWrite || w.AliasOf != "" || w.Runtime != "" {
+		// A standard device's row (ADR 0158) is the object's, not a path's: the ruleset and the plane key its inode, so every
+		// other name of it (a container's masked path bound from /dev/null) is granted there already, and a row at that
+		// name would have to pass the device check under a name no device carries.
+		if w.Kind != FSWrite || w.AliasOf != "" || w.Runtime != "" || w.StdDevice {
 			continue
 		}
 		c := w.Canonical()

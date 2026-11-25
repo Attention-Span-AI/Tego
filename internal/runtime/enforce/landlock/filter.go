@@ -574,8 +574,9 @@ func planeSkips(hooks map[string]bool, full, ask bool) planeSkip {
 // so it is race-free with no round trip; it holds under an observe run, whose supervisor continues every
 // notification; and it holds when no listener or supervisor is left to answer. (A notification the
 // supervisor has no handler for is answered ENOSYS, ADR 0018 (3), which TestEveryNotifiedSyscallHasAHandler
-// checks — so that is not the reason.) A third, the truncation pair, is emitted only when abi cannot handle
-// LANDLOCK_ACCESS_FS_TRUNCATE (R2's ABI-3 row).
+// checks — so that is not the reason.) The truncation pair, emitted only when abi cannot handle
+// LANDLOCK_ACCESS_FS_TRUNCATE (R2's ABI-3 row), is not an errno return any more: it is a notification the supervisor
+// answers EPERM to, so that the refusal has a line; the decision is the same scalar test.
 //
 // The memfd_create arm (filterOpts.memfd) is an errno return for the same reasons as the ioctl and MPTCP
 // arms: its flags are a scalar argument, and an executable anonymous image is exactly what tiers 1 and 2
@@ -1217,7 +1218,8 @@ func memfdRefuseTest(nr uint32) []bpf.Instruction {
 	}
 }
 
-// truncateTest refuses path-based truncate(2) with EPERM; emitted only below ABI 3 (R2, E31).
+// truncateTest notifies path-based truncate(2) below ABI 3 (R2, E31), and the supervisor refuses it with EPERM and
+// writes the refusal's line (supervisor handleTruncate, rule landlock-no-truncate).
 //
 // truncate(2) takes a path and needs no fd, so nothing else in tier 1 constrains it: Landlock has no
 // LANDLOCK_ACCESS_FS_TRUNCATE before ABI 3, the open-family write test never sees it, and it is in no
@@ -1225,23 +1227,29 @@ func memfdRefuseTest(nr uint32) []bpf.Instruction {
 // could otherwise truncate any DAC-writable file to zero — SEMANTICS §1 promises `fs: {}` refuses
 // truncate, and only this arm makes that true below 6.2.
 //
-// Deliberately coarser than the contract: a truncate(2) of a path inside a declared write dir is refused
-// too, because the filter cannot safely resolve the path argument (R11's TOCTOU reason for notifying
-// rather than deciding) and over-restriction is the fail-closed direction. ftruncate(2) is NOT refused:
-// it needs a fd opened for writing, and WRITE_FILE is handled from ABI 1, so the open already decided it.
+// The arm used to answer EPERM itself, which left the refusal with no line in the record. The
+// decision is the same, the call number alone, so it stays race-free and takes no path from task memory: every
+// truncate(2) is refused, one inside a declared write dir too. The filter cannot safely resolve the path argument
+// (R11's TOCTOU reason for notifying rather than deciding) and over-restriction is the fail-closed direction, so
+// the supervisor does not decide by path either: it answers EPERM unconditionally and names the path in the line.
+// With the supervisor gone the kernel answers a notified call ENOSYS, as it does for every notified syscall of the
+// run: still a refusal, with another errno. ftruncate(2) is NOT refused: it needs a fd opened for writing, and
+// WRITE_FILE is handled from ABI 1, so the open already decided it.
 func truncateTest(nr uint32) []bpf.Instruction {
 	if nr == noSyscall {
 		return nil
 	}
 	return []bpf.Instruction{
 		bpf.JumpIf{Cond: bpf.JumpEqual, Val: nr, SkipFalse: 1},
-		bpf.RetConstant{Val: retEPERM},
+		bpf.RetConstant{Val: retNotify},
 	}
 }
 
-// readOnlyTruncateTest refuses an open-family call carrying O_TRUNC unless its access mode is exactly
-// O_WRONLY or O_RDWR, so O_RDONLY and access mode 3 (O_ACCMODE) are refused; emitted only below ABI 3,
-// alongside truncateTest (R2, E31).
+// readOnlyTruncateTest notifies an open-family call carrying O_TRUNC unless its access mode is exactly
+// O_WRONLY or O_RDWR, so O_RDONLY and access mode 3 (O_ACCMODE) are notified, and the supervisor refuses them with EPERM
+// and writes the line (supervisor recordOpen, rule landlock-no-truncate); emitted only below ABI 3, alongside
+// truncateTest (R2, E31). It notifies unconditionally, before the open family's own notify arms, because an open the
+// supervisor merely records is answered CONTINUE and would truncate.
 //
 // Landlock's required access for file_open derives WRITE_FILE from FMODE_WRITE, which O_RDONLY does not
 // set; the O_TRUNC term that would demand LANDLOCK_ACCESS_FS_TRUNCATE arrived with ABI 3. The VFS still
@@ -1260,7 +1268,7 @@ func readOnlyTruncateTest(nr uint32, arg int) []bpf.Instruction {
 		bpf.ALUOpConstant{Op: bpf.ALUOpAnd, Val: oAccMode},
 		bpf.JumpIf{Cond: bpf.JumpEqual, Val: oWrOnly, SkipTrue: 2}, // a write open: Landlock decides it
 		bpf.JumpIf{Cond: bpf.JumpEqual, Val: oRdWr, SkipTrue: 1},
-		bpf.RetConstant{Val: retEPERM}, // access mode 0 (O_RDONLY) or 3 (O_ACCMODE)
+		bpf.RetConstant{Val: retNotify}, // access mode 0 (O_RDONLY) or 3 (O_ACCMODE): the supervisor refuses it
 		bpf.LoadAbsolute{Off: offNR, Size: 4},
 	}
 }

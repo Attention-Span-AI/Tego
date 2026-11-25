@@ -326,7 +326,7 @@ func ReplayRecordedBaseline(source *Contract, p record.RunStartPayload) (*Baseli
 func baselineRelationPaths(key config.BaselineKey, fs, ask []FSRule, exec []ExecRule) []string {
 	paths := map[string]bool{}
 	for _, g := range slices.Concat(fs, ask) {
-		if g.Kind == FSWrite || g.Kind == FSAsk {
+		if (g.Kind == FSWrite && !g.StdDevice) || g.Kind == FSAsk { // a standard device's row (ADR 0158) is the product's, never a grant to relate
 			paths[g.Canonical()] = true
 		}
 	}

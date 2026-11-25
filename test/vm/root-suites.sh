@@ -36,7 +36,7 @@
 #   passed to kvm-run.sh --module; default test/vm/suites.sh's GUEST_MODULES, "overlay btrfs unix_diag tcp_diag",
 #   which scripts/coverage.sh --vm's guests load too and which says what needs each; VM_MODULES="" loads none),
 #   VM_SUITE_MEM (per-package guest memory, "pkg=size ...", over
-#   TEGO_VM_MEM; e.g. "internal/runtime/enforce/cgroup=2560M" for its 32 concurrent runs), plus kvm-run.sh's
+#   TEGO_VM_MEM; e.g. "internal/runtime/enforce/cgroup=3G" for its 32 concurrent runs), plus kvm-run.sh's
 #   TEGO_VM_* knobs.
 #   TEGO_TEST_PLANE_PREEMPT=waive reaches every suite (PREEMPT_WAIVER below).
 #   VM_FIXTURE_ROOT optionally stages a directory's contents at the guest root,

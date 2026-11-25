@@ -24,6 +24,9 @@ const (
 	codeNewerRecord   = "newer-record"
 	codeLedgerAnomaly = "ledger-anomaly"
 	codeRunLost       = "run-lost"
+	// codeKeptReceipt is `receipt --verify` finding that the record verified and only the receipt.json kept in the run
+	// folder differs from it.
+	codeKeptReceipt = "receipt-differs"
 )
 
 // warnAnomalies reports each ledger anomaly a view met (two run_end

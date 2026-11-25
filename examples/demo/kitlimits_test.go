@@ -2,7 +2,7 @@
 
 package demo
 
-// The demo kit's three stated limits (GAPS N92), each held in a test: the name-lookup sockets follow the host's
+// The demo kit's three stated limits, each held in a test: the name-lookup sockets follow the host's
 // nsswitch.conf and the kit says which modules it cannot name, a host with no procfs is refused in words, and a reset on
 // a host with no python3 still ends the helpers it started.
 
@@ -29,7 +29,7 @@ func (k *plainKit) demoSplit(env []string, args ...string) (stdout, stderr strin
 	return o.String(), e.String(), err
 }
 
-// TestNameLookupFollowsTheHostsNameServices (N92 (a)): a host whose nsswitch.conf names sssd or avahi's mdns module has
+// TestNameLookupFollowsTheHostsNameServices: a host whose nsswitch.conf names sssd or avahi's mdns module has
 // the lookup go to that module's socket first, which showed as an extra net refusal. The kit names the socket of each
 // module the host's hosts, passwd and group lines name, when it exists, and no other; and it says, in words, which module
 // it does not know (ldap, nis, winbind), instead of leaving the presenter a refusal with no explanation.
@@ -67,7 +67,7 @@ func TestNameLookupFollowsTheHostsNameServices(t *testing.T) {
 		t.Fatalf("mdns4_minimal: lookup = %q, note %q (%v)", got, note, err)
 	}
 
-	// N116: a net.allow unix: entry admits the name as the program spelled it, and /var/run is a symlink to /run, so
+	// A net.allow unix: entry admits the name as the program spelled it, and /var/run is a symlink to /run, so
 	// libnss-mdns on a current distribution asks for /run/avahi-daemon/socket, which an entry spelled /var/run does not
 	// admit (the refusal stayed on Ubuntu 25.10 in a guest). Where the socket exists under both spellings the kit names both;
 	// where only the old spelling exists it names that one, and where only the new one does, the new.
@@ -115,7 +115,7 @@ func TestNameLookupFollowsTheHostsNameServices(t *testing.T) {
 	}
 }
 
-// TestKitRefusesAHostWithNoProcInWords (N92 (b)): the kit knows a helper by its process (the start time, the arguments and
+// TestKitRefusesAHostWithNoProcInWords: the kit knows a helper by its process (the start time, the arguments and
 // the open sockets under /proc), so a system with no Linux procfs cannot run it. It says so, and what to do, before it
 // starts anything, and not by an error about a pid.
 func TestKitRefusesAHostWithNoProcInWords(t *testing.T) {
@@ -166,7 +166,7 @@ func toolsOnly(t *testing.T) string {
 	return dir
 }
 
-// TestResetEndsTheHelpersWithoutPython (N92 (c)): setup starts the sink with python3; a reset from a shell where python3
+// TestResetEndsTheHelpersWithoutPython: setup starts the sink with python3; a reset from a shell where python3
 // is not on PATH (a venv left, an interpreter removed, another user's PATH) found no helper to stop, said the sink was
 // stopped, and removed the pid file that was the only record of it. It now makes procid.py's checks in sh and ends the
 // helper that passes them, says it did it that way, and still leaves a process that is not the helper alone.

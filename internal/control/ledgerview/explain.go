@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -829,6 +830,10 @@ func outcome(lv *LineView, e *Event) string {
 			out += ", and the agent got " + n
 		}
 		return out
+	case e.Verdict == string(record.VerdictObserved) && hasField(lv.Fields, "decision_lost"):
+		// The exec's own result, whose decision record the run lost: it says what is known (the call failed, permission
+		// was denied) and what is not (which module refused it), and does not call it a refusal.
+		return "; the program did not start (permission denied), and no record of what decided that was read, while the run lost records: Tego cannot say whether its own rules or another security module refused it"
 	case e.Verdict == string(record.VerdictObserved):
 		return "; recorded only, nothing was decided"
 	case e.Authority == string(record.AuthorityHuman):
@@ -839,6 +844,11 @@ func outcome(lv *LineView, e *Event) string {
 		return "; allowed"
 	}
 	return ""
+}
+
+// hasField reports whether the line's fields include key.
+func hasField(fs []Field, key string) bool {
+	return slices.ContainsFunc(fs, func(f Field) bool { return f.Key == key })
 }
 
 // errnoOf is the error the line says the agent got ("EACCES"), "" when it names none.

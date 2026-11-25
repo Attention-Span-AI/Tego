@@ -413,7 +413,7 @@ release the same write outside the workspace succeeded again.
    crash must not end the operator's session); keeping the plane's rows until a person releases it (the plane would go
    on refusing with nobody recording the refusals, so the ledger would no longer say what happened, and nothing would
    say the run had ended). The release is never silent: run_end `orphaned` says the agent was released unconfined.
-   *Amended 2026-11-23 (N73):* the origin is gone when the agent was the only process of a transient scope
+   *Amended 2026-11-23:* the origin is gone when the agent was the only process of a transient scope
    (`systemd-run --scope`, a desktop launcher's app scope): the service manager removes a scope the moment it is empty,
    and each ancestor (`app.slice`, `user@<uid>.service`, `user-<uid>.slice`, `user.slice`) has controllers on for its
    children, so the kernel refuses a process in it (EBUSY, measured on Debian 13, kernel 6.12). The release then found

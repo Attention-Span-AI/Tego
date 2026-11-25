@@ -3,6 +3,7 @@
 package rulesview
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
 	"github.com/attention-span-ai/tego/internal/ledger"
@@ -20,10 +22,13 @@ import (
 
 // runScan is what one pass over a run's ledger found.
 type runScan struct {
-	start   record.RunStartPayload
-	started time.Time
-	ended   bool
-	lines   int
+	// firstLine is the run_start line the scan decoded, kept so the scan can cross to the worker (scanWire) and be
+	// decoded there again, in place of the run's whole ledger being read twice more.
+	firstLine []byte
+	start     record.RunStartPayload
+	started   time.Time
+	ended     bool
+	lines     int
 	// rules counts each rule key the lines carry; from the read model (cachedScan) it is shared and only read.
 	rules map[string]int
 	// unmatched counts, by line kind, the lines whose rule is unmatched (the defaults decided them), so each counts
@@ -42,7 +47,8 @@ const maxExecScan = 5000
 // scanRun reads the run's ledger in dir once. The first line is decoded in full (run_start); every other line's kind,
 // rule and, for an exec line, its command entry are read as data by record.Strings, which takes the members of a
 // line's top level whatever their order or spelling (no search of the line's text), without decoding the payload;
-// only exec lines' programs are decoded, and only the first maxExecScan of them.
+// only exec lines' programs are decoded, only the first maxExecScan of them, and not those that run from a folder the scan
+// has listed already.
 func scanRun(ctx context.Context, dir string) (*runScan, error) {
 	r, err := ledger.OpenReader(dir)
 	if err != nil {
@@ -70,7 +76,7 @@ func scanRun(ctx context.Context, dir string) (*runScan, error) {
 		}
 		// The line is read as data (record.Strings), whatever the order of its keys or the spelling of its tokens; a
 		// line the decoder refuses (a newer writer's, or one this binary cannot read) names no rule shown here.
-		f, err := record.Strings(line, keyKind, keyRule, keyVerdict, keyCommandRule, keyCommandList)
+		f, err := record.Strings(line, keyKind, keyRule, keyVerdict, keyCommandRule, keyCommandList, keyPath)
 		if err != nil {
 			continue
 		}
@@ -88,7 +94,9 @@ func scanRun(ctx context.Context, dir string) (*runScan, error) {
 			sc.addCommand(f[2], f[4], f[3])
 			if execs < maxExecScan {
 				execs++
-				sc.addExec(line, seenDir)
+				if !knownProgramDir(f[5], seenDir) {
+					sc.addExec(line, seenDir)
+				}
 			}
 		}
 	}
@@ -96,6 +104,13 @@ func scanRun(ctx context.Context, dir string) (*runScan, error) {
 		return nil, errors.New("the run holds no run_start yet")
 	}
 	return sc, nil
+}
+
+// knownProgramDir reports whether path, the "path" member Strings read from an exec line, is an absolute path in a folder
+// already listed: the line then adds nothing, whether its full decode (addExec) would succeed or not, so it is not
+// decoded. A path that is not valid UTF-8 is always decoded: the full decode spells it its own way.
+func knownProgramDir(path string, seen map[string]bool) bool {
+	return path != "" && filepath.IsAbs(path) && utf8.ValidString(path) && seen[filepath.Dir(path)]
 }
 
 // cachedScan is scanRun's findings for a run the dashboard's read model holds: run_start read from the ledger (the
@@ -166,6 +181,7 @@ func (sc *runScan) addCommand(verdict, list, rule string) {
 
 // first reads the run_start line.
 func (sc *runScan) first(line []byte) error {
+	sc.firstLine = bytes.Clone(line)
 	e, err := record.Decode(line)
 	if err != nil {
 		return fmt.Errorf("its first line: %w", err)
@@ -218,4 +234,33 @@ const (
 	keyVerdict     = "verdict"
 	keyCommandRule = "command_rule"
 	keyCommandList = "command_list"
+	keyPath        = "path" // an exec line's program
 )
+
+// scanWire is a runScan on its way to the worker that composes the view (viewRequest.Scan): the caller reads the
+// ledger once, or takes the findings from the read model (memoScan), and the worker, which a fresh process starts for
+// every exchange and which therefore keeps nothing from one to the next, reads none of it. The run_start line is
+// carried as it was written and decoded there by the same code (first), so what the worker holds is what a scan of
+// its own finds, field for field (TestInForceViewIsTheSameWhoeverScans).
+type scanWire struct {
+	StartLine       []byte
+	RunEnded        bool
+	LinesRead       int
+	HitsByRule      map[string]int
+	UnmatchedByKind map[string]int
+	UsesByCommand   map[string]int
+	ProgramDirs     []string
+}
+
+func (sc *runScan) toWire() *scanWire {
+	return &scanWire{StartLine: sc.firstLine, RunEnded: sc.ended, LinesRead: sc.lines, HitsByRule: sc.rules, UnmatchedByKind: sc.unmatched, UsesByCommand: sc.commands, ProgramDirs: sc.execDirs}
+}
+
+// decode is the runScan the wire carries; an error is the run_start line no longer decoding.
+func (w *scanWire) decode() (*runScan, error) {
+	sc := &runScan{ended: w.RunEnded, lines: w.LinesRead, rules: w.HitsByRule, unmatched: w.UnmatchedByKind, commands: w.UsesByCommand, execDirs: w.ProgramDirs}
+	if err := sc.first(w.StartLine); err != nil {
+		return nil, err
+	}
+	return sc, nil
+}

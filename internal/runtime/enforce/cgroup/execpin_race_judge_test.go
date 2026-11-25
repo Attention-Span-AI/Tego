@@ -4,6 +4,7 @@ package cgroup
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -14,6 +15,10 @@ type racerReport struct{ attempts, eacces, ran, other, busy int }
 // recordLossGaps are the gaps of records the run lost on their way to the ledger: past one, a race cell's ledger
 // cannot hold one line an attempt, so the cell checks it for consistency with the loss it states.
 var recordLossGaps = []string{"ringbuf-full", "channel-full", "exec-fragment-overflow"}
+
+// decisionLostGaps are the gaps an exec line's decision_lost may name (record.DecisionLostWhys): the two of recordLossGaps
+// a recorder knows when it writes the line.
+var decisionLostGaps = []string{"exec-fragment-overflow", "ringbuf-full"}
 
 // gapCounts sums the run's gap lines by why.
 func gapCounts(events []map[string]any) map[string]int {
@@ -60,8 +65,8 @@ type pinRaceVerdict struct {
 // instead: it never holds more lines of a kind than attempts that ended so, the attempts without a line are no more
 // than the records said lost, and run_end's counts lie between the ledger's and the racer's. In that lossy check one
 // more shape is a line: an attempt the plane refused whose plane sample the ring lost, which is an exec result with
-// no fragment to join, so its line can only say observed, syscall_ret -13 (isLostRefusalLine; ADR 0048, the swap
-// cells' implementation note). Such a line stands for one lost record, so with the refusals it is no more than the
+// no fragment to join, so its line says observed, syscall_ret -13 and decision_lost, the gaps its decision record may be
+// among (isLostRefusalLine; ADR 0048, the swap cells' implementation note and its amendment of 2026-11-24). Such a line stands for one lost record, so with the refusals it is no more than the
 // racer's EACCES and alone no more than the records lost; with no loss stated, or outside the swap cells, it is
 // one of the lines that fail the cell. Every other race cell,
 // the kill cells included, keeps the exact check whatever the run says it lost, and a loss without its gap line
@@ -81,6 +86,7 @@ func judgePinRace(rep racerReport, events []map[string]any, w pinRaceWant) pinRa
 	if w.killedReason == "" && rep.other != 0 {
 		fail("%+v: an attempt ended otherwise where the cell expects no kill", rep)
 	}
+	gaps := gapCounts(events)
 	for _, e := range events {
 		if e["kind"] != "exec" || strings.HasSuffix(fmt.Sprint(e["path"]), "/bin/execracer") {
 			continue
@@ -102,7 +108,7 @@ func judgePinRace(rep racerReport, events []map[string]any, w pinRaceWant) pinRa
 			}
 		case e["verdict"] != "refused" && e["argv_facts"] == "kernel_pinned":
 			v.ran++
-		case w.swap && w.refusedReason != "" && isLostRefusalLine(e):
+		case w.swap && w.refusedReason != "" && isLostRefusalLine(e, gaps):
 			v.undecided++
 		default:
 			if v.odd++; v.odd <= 3 {
@@ -113,7 +119,6 @@ func judgePinRace(rep racerReport, events []map[string]any, w pinRaceWant) pinRa
 	if v.odd > 3 {
 		fail("%d exec lines in all are neither a pinned run, the plane's refusal nor its kill", v.odd)
 	}
-	gaps := gapCounts(events)
 	var lossWhy []string
 	for _, e := range events {
 		why := fmt.Sprint(e["why"])
@@ -185,7 +190,8 @@ func judgePinRace(rep racerReport, events []map[string]any, w pinRaceWant) pinRa
 			"says it lost", v.undecided, v.lost)
 	} else if v.undecided > 0 {
 		v.notes = append(v.notes, fmt.Sprintf("%d exec lines say observed with syscall_ret -13: the plane's refusal "+
-			"of each, whose sample the ring lost, is not in the ledger; the run's gap lines account for them",
+			"of each, whose sample the ring lost, is not in the ledger; each names, in decision_lost, the gaps its decision record may be among, "+
+			"and the run's gap lines account for them",
 			v.undecided))
 	}
 	if missing := rep.attempts - v.refused - v.killed - v.ran - v.busy - v.undecided; missing > v.lost {
@@ -213,18 +219,39 @@ func judgePinRace(rep racerReport, events []map[string]any, w pinRaceWant) pinRa
 
 // isLostRefusalLine says whether an exec line is what an attempt the plane refused EACCES becomes when the ring lost the
 // plane's sample of its refusal and only the exec's own result (the syscall's return) arrived: observed, rule
-// unmatched, the attempt's argv, syscall_ret -13, and nothing a decision gives (no mechanism, plane_reason, reason, signal
-// or kernel argv_facts). The recorder writes no refusal it did not read (observe.handleExecResult), so this is the line
-// it can write; it is not a refusal and says none.
-func isLostRefusalLine(e map[string]any) bool {
+// unmatched, the attempt's argv, syscall_ret -13, nothing a decision gives (no mechanism, plane_reason, reason, signal
+// or the plane's argv_facts), and, from record revision 41, decision_lost: the gaps of the run that lost records its
+// decision may be among (public issue 65). The list must be what the record allows (sorted, no repeat, only gaps a
+// recorder names there) and each gap in it must be one the ledger holds with a count: a line that names a loss the run
+// does not state is no account of one, and the old shape, with no field, is no longer written and no longer accepted.
+// The recorder writes no refusal it did not read (observe.handleExecResult), so this is the line it can write; it is
+// not a refusal and says none.
+func isLostRefusalLine(e map[string]any, gaps map[string]int) bool {
 	if e["kind"] != "exec" || e["verdict"] != "observed" || e["rule"] != "unmatched" || e["syscall_ret"] != float64(-13) ||
 		e["argv_from"] != "attempt" {
 		return false
 	}
-	for _, k := range []string{"mechanism", "decision_plane", "plane_reason", "reason", "signal", "argv_facts", "by", "errno"} {
+	for _, k := range []string{"mechanism", "decision_plane", "plane_reason", "reason", "signal", "by", "errno"} {
 		if e[k] != nil {
 			return false
 		}
+	}
+	// argv_facts is the plane's (kernel_pinned, unproven) or the gate's own copied_syscall, which a command rule's admission
+	// writes on the line and the record allows beside decision_lost (record.ArgvFactsCopied): only the plane's is a decision.
+	if f, ok := e["argv_facts"]; ok && f != "copied_syscall" {
+		return false
+	}
+	named, ok := e["decision_lost"].([]any)
+	if !ok || len(named) == 0 {
+		return false
+	}
+	prev := ""
+	for _, n := range named {
+		why, ok := n.(string)
+		if !ok || why <= prev || !slices.Contains(decisionLostGaps, why) || gaps[why] == 0 {
+			return false
+		}
+		prev = why
 	}
 	return true
 }
@@ -256,13 +283,13 @@ func raceLedger(refused, ran int, gaps map[string]int) []map[string]any {
 }
 
 // withLostRefusals puts n lines before the ledger's run_end of the shape an attempt the plane refused becomes when the
-// ring lost the plane's sample (N132, 2026-11-24: observed, unmatched, argv_from attempt, syscall_ret -13), each edited by f.
+// ring lost the plane's sample (observed, unmatched, argv_from attempt, syscall_ret -13, decision_lost [ringbuf-full]), each edited by f.
 func withLostRefusals(ev []map[string]any, n int, f func(map[string]any)) []map[string]any {
 	end := ev[len(ev)-1]
 	ev = ev[:len(ev)-1]
 	for range n {
 		l := map[string]any{"kind": "exec", "path": "/p/out/l", "verdict": "observed", "rule": "unmatched",
-			"argv_from": "attempt", "syscall_ret": float64(-13)}
+			"argv_from": "attempt", "syscall_ret": float64(-13), "decision_lost": []any{"ringbuf-full"}}
 		if f != nil {
 			f(l)
 		}
@@ -312,6 +339,25 @@ func TestJudgePinRace(t *testing.T) {
 			1, func(l map[string]any) { l["mechanism"] = "plane" }), "neither a pinned run"},
 		{"observed with the kernel's argv", rep, withLostRefusals(raceLedger(437, 562, map[string]int{"ringbuf-full": 5}),
 			1, func(l map[string]any) { l["argv_from"] = "kernel"; l["argv_facts"] = "unproven" }), "neither a pinned run"},
+		{"with the gate's copied argv facts", rep, withLostRefusals(raceLedger(437, 562, map[string]int{"ringbuf-full": 5}), 1,
+			func(l map[string]any) { l["argv_facts"] = "copied_syscall" }), ""},
+		{"with the plane's argv facts on the attempt's argv", rep, withLostRefusals(raceLedger(437, 562, map[string]int{"ringbuf-full": 5}), 1,
+			func(l map[string]any) { l["argv_facts"] = "unproven" }), "neither a pinned run"},
+		// Public issue 65: the line names the gap that lost its decision record, and the gap must be one the ledger holds.
+		{"the old shape, with no decision_lost", rep, withLostRefusals(raceLedger(437, 562, map[string]int{"ringbuf-full": 5}), 1,
+			func(l map[string]any) { delete(l, "decision_lost") }), "neither a pinned run"},
+		{"decision_lost naming a gap the run does not hold", rep, withLostRefusals(raceLedger(437, 562, map[string]int{"ringbuf-full": 5}),
+			1, func(l map[string]any) { l["decision_lost"] = []any{"exec-fragment-overflow"} }), "neither a pinned run"},
+		{"decision_lost naming a gap no recorder names there", rep, withLostRefusals(raceLedger(437, 562, map[string]int{"channel-full": 5}),
+			1, func(l map[string]any) { l["decision_lost"] = []any{"channel-full"} }), "neither a pinned run"},
+		{"decision_lost unsorted", rep, withLostRefusals(raceLedger(437, 562, map[string]int{"ringbuf-full": 5, "exec-fragment-overflow": 1}),
+			1, func(l map[string]any) { l["decision_lost"] = []any{"ringbuf-full", "exec-fragment-overflow"} }), "neither a pinned run"},
+		{"decision_lost empty", rep, withLostRefusals(raceLedger(437, 562, map[string]int{"ringbuf-full": 5}),
+			1, func(l map[string]any) { l["decision_lost"] = []any{} }), "neither a pinned run"},
+		{"decision_lost naming both gaps the run holds", rep, withLostRefusals(raceLedger(437, 562, map[string]int{"ringbuf-full": 5,
+			"exec-fragment-overflow": 1}), 1, func(l map[string]any) {
+			l["decision_lost"] = []any{"exec-fragment-overflow", "ringbuf-full"}
+		}), ""},
 		{"swapped run beside a stated loss", rep, swapped, "neither a pinned run"},
 		{"swapped run counted as a pinned one", rep, func() []map[string]any {
 			ev := raceLedger(438, 562, nil)

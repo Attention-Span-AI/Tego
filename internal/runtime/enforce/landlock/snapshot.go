@@ -151,3 +151,9 @@ func (s *Snapshot) Refuses(p string) bool {
 		}
 	}
 }
+
+// LandlockDecidesTruncate reports whether the run's Landlock ruleset decides truncate(2): the probed ABI has the
+// truncate right (ABI 3, kernel 6.2 or a backport). Below it the filter notifies every truncation the ruleset cannot
+// refuse and the supervisor refuses them (supervisor.Options.LandlockTruncate); the same ABI picks the filter's arm, so
+// the two cannot differ.
+func (h *Handle) LandlockDecidesTruncate() bool { return h.abi >= minTruncateABI }

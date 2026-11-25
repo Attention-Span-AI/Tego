@@ -75,13 +75,14 @@ func (g merger) apply(m *Machine, d *layerData) {
 	etcOnly(g, &m.BPF.RingBudget, d.ringBudget, "bpf.ring_budget")
 	etcOnly(g, &m.BPF.Plane, d.bpfPlane, "bpf.plane")
 	etcOnly(g, &m.TOMOYO.FactsDir, d.tomoyoFactsDir, "tomoyo.facts_dir")
+	etcOnly(g, &m.LSM.ListFile, d.lsmListFile, "lsm.list_file")
 }
 
 // etcOnly applies a setting of what root does in the kernel from /etc/tego/config.yaml only: record.ringbuf sizes
 // each run's ring and bpf.ring_budget caps them all, both kernel allocations the launcher makes as root, so an
 // invoking user's layer would size or lift what root allocates with nothing to bound it (ADR 0026 (2)); bpf.plane
 // picks which programs decide every host process's opens (ADR 0024 (2)); bpf.linger is how long a build stays
-// attached host-wide after its last run (ADR 0022); tomoyo.facts_dir names the files that stand for TOMOYO's policy (ADR 0041); privileged_binary names what runs as root; users: is tegod's
+// attached host-wide after its last run (ADR 0022); tomoyo.facts_dir names the files that stand for TOMOYO's policy and lsm.list_file the file the active security-module list is read from (ADR 0041); privileged_binary names what runs as root; users: is tegod's
 // authorization, which an invoking user's own layer would otherwise grant itself (ADR 0042 (4)). Elsewhere the
 // value is ignored with a warning.
 func etcOnly[T any](g merger, dst *Setting[T], f field[T], key string) {

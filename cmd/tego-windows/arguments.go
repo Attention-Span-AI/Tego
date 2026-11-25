@@ -43,3 +43,16 @@ func startupFailureWords(cause string) string {
 		"Next: type the same command again. Linux is often still starting right after a restart or when the PC is short of memory, and nothing was changed by this try.\n" +
 		"If it fails a second time, this shows why:\n  " + why + "\n"
 }
+
+// keepAttachedWords is the sentence the launcher says where the person starts work, and where it lets go of the
+// hold it keeps itself (the dashboard's connection): Windows stops Tego's Linux a short time after the last
+// program attached to it ends, which ends a supervised run still going (docs: Repair and removal, "Keep a Windows
+// tego command or Linux shell attached while work runs"). It promises nothing about how long, because that was
+// measured in one guest only.
+const keepAttachedWords = "Keep a tego command or a Linux shell open while an agent works: Windows can stop Tego's Linux when nothing is attached to it, and that ends any run still going."
+
+// dashboardStoppedWords is what `tego dashboard --stop` says after it ended a relay: the relay was holding Tego's
+// Linux up, so this is the moment the hold ends.
+func dashboardStoppedWords() string {
+	return "Stopped the dashboard's connection to your browser. To open the dashboard again, run: tego dashboard\n" + keepAttachedWords
+}

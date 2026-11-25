@@ -59,7 +59,7 @@ test:        ## unit tests, as CI runs them (user manager, test/unit-skips.txt)
 integration: ## root-free integration tests (Landlock tier on this box), as CI runs them
 	GO="$(GO)" ./scripts/gated-test.sh test/integration-skips.txt 0 -count=1 -tags integration ./...
 lint:        ## precommit's static steps: format, the four vets, licenses, spdx, both golangci-lint runs, skiplists, exits, descriptor ownership (check-fd), rulecheck, isocheck (required)
-	./scripts/gofmt-clean.sh && $(GO) vet ./... && $(GO) vet -tags integration ./... && $(GO) vet -tags tegobpf ./... && $(GO) vet -tags 'integration tegobpf' ./... && ./scripts/check-spdx.sh && GO="$(GO)" ./scripts/check-licenses.sh && golangci-lint run --config .golangci.yml && ./scripts/lint-untagged.sh && ./scripts/check-skiplists.sh && GO="$(GO)" ./scripts/check-exits.sh && GO="$(GO)" ./scripts/check-fd.sh && $(GO) run ./tools/rulecheck && $(GO) run ./tools/isocheck
+	./scripts/gofmt-clean.sh && $(GO) vet ./... && $(GO) vet -tags integration ./... && $(GO) vet -tags tegobpf ./... && $(GO) vet -tags 'integration tegobpf' ./... && ./scripts/check-spdx.sh && python3 -I ./scripts/check-paths.py && GO="$(GO)" ./scripts/check-licenses.sh && golangci-lint run --config .golangci.yml && ./scripts/lint-untagged.sh && ./scripts/check-skiplists.sh && GO="$(GO)" ./scripts/check-exits.sh && GO="$(GO)" ./scripts/check-fd.sh && $(GO) run ./tools/rulecheck && $(GO) run ./tools/isocheck
 # precommit is the merge gate: an inherited TEGO_PRECOMMIT_SINCE would make it the scoped check, so it is cleared.
 precommit:   ## CI build-test's checks before a commit: gofmt, vets, both lints, spdx, skiplists, script self-tests, gated tests (.githooks); TEGO_PRECOMMIT_JOBS=1 runs them one at a time
 	TEGO_PRECOMMIT_SINCE= GO="$(GO)" ./scripts/precommit.sh
@@ -133,6 +133,7 @@ release-test: ## scripts/release.sh push and tag refusals, bpf-toolchain.sh's di
 	./scripts/tree-files_test.sh
 harness-test: ## the kill tests', overhead harness's and kernel matrix's own shell tests, with stand-ins (no root, guest or network)
 	./scripts/check-spdx_test.sh
+	./scripts/check-paths_test.sh
 	./scripts/scrub-capture_test.sh
 	./scripts/check-licenses_test.sh
 	./scripts/fuzz-corpus_test.sh

@@ -110,7 +110,7 @@ func editGuard(m *config.Machine) (rulefile.Guard, string) {
 // "cli"), so the edit is in the change history and tego rules undo can give the old text back. A file the writer's
 // guards refuse (not yours alone, a link, under tego's own folders) or a machine with no ledger root yet is still
 // saved as before, and the output says that the edit is not in the history and cannot be undone: the limit is stated,
-// never silent (N113).
+// never silent.
 func saveEdit(ctx context.Context, m *config.Machine, path string, edited []byte, original os.FileInfo, text []byte, stdout, stderr io.Writer) int {
 	abs, err := filepath.Abs(path)
 	if err != nil {

@@ -337,7 +337,7 @@ func stopRun(ctx context.Context, dir, runID string, info runlock.LockInfo,
 	if escalateRun(dir, runID, stderr) {
 		// The run holds its lock but has not written run_start, so the launcher is still preparing the run's
 		// enforcement (seconds on a first use): it reads the stop once it has, and no scope is on record to kill.
-		// Nothing was written to cgroup.kill and nothing failed, and the run is not running yet (N111).
+		// Nothing was written to cgroup.kill and nothing failed, and the run is not running yet.
 		fmt.Fprintf(stdout, "%s: stop requested; the run is still starting after %s (its launcher is preparing the enforcement and "+
 			"has not written run_start), so it has not read the stop yet and has no scope to kill; the stop stays queued and "+
 			"takes effect as soon as the launcher has started the run\n", runID, grace)
@@ -477,7 +477,7 @@ func runAgent(dir string) (identity.AgentID, error) {
 
 // errNoAgentYet is what runAgent answers for a run whose ledger has no line that names the agent: the launcher holds
 // the run's lock and has opened the ledger, but has not written run_start, which it does once the run's enforcement
-// is prepared (N111).
+// is prepared.
 var errNoAgentYet = errors.New("run has no agent id yet")
 
 // stopLostPaused is what `tego stop` says of a lost run whose last recorded state was paused once its sweep has run

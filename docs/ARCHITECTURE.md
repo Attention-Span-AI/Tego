@@ -333,7 +333,8 @@ container's own libssl through `/proc/<pid>/root` or the injected forwarder vari
   Landlock rules are added from the same fds. `compile` never computes an inode; it only checks that paths exist.
   The inode-storage map is created only in tier 3 and only after `doctor` has confirmed `bpf` is an active LSM,
   in this order: `lsm_list_modules(2)` (6.8+, unprivileged, `LSM_ID_BPF`), then `/sys/kernel/security/lsm`, then the
-  kernel log; and a functional probe when root (attach a counting program to `file_open`, open a file, require a
+  kernel log (never the list file `lsm.list_file`, which a container can hand in for held file opens and which decides nothing
+  else, ADR 0041's note of 2026-11-25); and a functional probe when root (attach a counting program to `file_open`, open a file, require a
   count, no inode-storage map in the probe). Activation is silent: an LSM program attaches even when `bpf` is not
   active and then never runs (verified: `bpf_lsm_verify_prog` checks licence and hook membership only). On every
   kernel below 7.1.4 / 7.2-rc2, including 6.17, creating an inode-storage map while BPF LSM is inactive succeeds and
@@ -473,13 +474,18 @@ link confined to one directory).
 | macOS Lima, `template:ubuntu` (Lima's own: 26.04 in Lima 2.2.1, not Tego's) | 7.0 | no | 8 | tier 1; tier 3 after the GRUB edit |
 | Hosted CI (GitHub ubuntu-24.04) | Ubuntu | no | ≥ 4 | tier 1 + forwarder only; command line not editable |
 
+*Note 2026-11-24 (Amazon Linux 2023, 6.1, Landlock ABI 2):* the errno of a refused change differs by kernel in one place. A refusal by the decision plane (a live block, a contract's rule) is `EACCES`. On a kernel below Landlock ABI 3 (below 6.2: Amazon Linux 2023's 6.1, Debian 12) `truncate(2)` is answered `EPERM` by the supervisor before the plane's `path_truncate` hook is reached, for every path, a truncate the contract allows included. The tier-1 seccomp filter's arm (R2, E31) notifies the call and the supervisor answers it, so the refusal has a line: `refused`, reason `write-outside-contract`, rule `landlock-no-truncate`, under every record mode. The filter keeps that arm when the plane is loaded (the plane decides neither call), and an `O_RDONLY|O_TRUNC` open, which asks Landlock for no write right below ABI 3, is answered the same way. `ftruncate(2)` and an `O_TRUNC` write open are the plane's on those kernels (`path_truncate` carries both below 6.2) and answer `EACCES` with the plane's line. From ABI 3 `truncate(2)` is Landlock's or the plane's `EACCES`. With the supervisor gone the kernel answers a notified call `ENOSYS`: still a refusal, not the same errno. The extended-attribute changes (`setxattr`, `removexattr`) under a live block are `EACCES` on every kernel and every filesystem, including one with no user xattrs (tmpfs below 6.6): the kernel calls `security_inode_setxattr` and `_removexattr` before the filesystem's handler can say "not supported".
+
 ## 15. Performance and scale
 
 1. **Cost must not scale with the number of agents.** Programs are attached once per host and pinned; a new run adds
    map entries and its own rings. Concurrent launchers share the build lock (§6). The rings are the one cost that
    does scale with concurrent runs: a record ring and, with uprobe capture, a capture ring of `record.ringbuf` each
    (2 MiB default, about 4.2 MB of memlock for both), capped host-wide by `bpf.ring_budget` (256 MiB default, about
-   60 such runs); a run past it is refused, or runs without capture (ADR 0026).
+   60 such runs); a run past it is refused, or runs without capture (ADR 0026). A root-tier run's launcher also
+   holds memory of its own. Measured in one test guest, it peaks near 70 MB (57 to 73 MB resident), keeps about 14 MB at
+   rest, and a run shares about 28 MB; 32 concurrent root-tier runs used about 1.05 GB of process memory and 0.9 GB of
+   shared memory and passed in a 2,560 MB guest with under 100 MB to spare, so plan about 3 GB for 32 runs.
 2. **Filter in the kernel.** A hook that finds no entry for the current cgroup returns in nanoseconds; only managed
    cgroups and requested kinds cross the ring buffer.
 3. **Never block the agent for the record.** Ring buffer drops are counted into a `gap` event; enforcement decisions

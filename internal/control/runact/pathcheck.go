@@ -76,7 +76,7 @@ type blockReply struct {
 	Kinds    []int
 }
 
-var blockErrors = []error{ErrGoverned, ErrBadRun, ErrNotRunning, ErrNoTimeLimits, ErrOldLauncher, ErrReadsUnseen, liveblock.ErrInvalid, liveblock.ErrStarting, liveblock.ErrStartUnreadable, ErrOverlayMoved}
+var blockErrors = []error{ErrGoverned, ErrBadRun, ErrNotRunning, ErrNoTimeLimits, ErrOldLauncher, ErrReadsUnseen, liveblock.ErrInvalid, liveblock.ErrStarting, liveblock.ErrStartUnreadable, ErrOverlayMoved, ErrNoWords}
 
 func init() {
 	pathcheck.Register("control.block", func(parent context.Context, payload []byte) ([]byte, error) {

@@ -182,7 +182,7 @@ nss_modules() {
 # has one this kit knows. A module that needs none (files, dns, myhostname, ...) and a module this kit does not know
 # print nothing; nss_known says which of the two. A net.allow unix: entry admits a connect by the name as the program
 # spelled it (spec/policy/SEMANTICS.md section 5), and /var/run is a symlink to /run, so a client that connects to
-# /run/avahi-daemon/socket is not admitted by an entry spelled /var/run/avahi-daemon/socket (N116: libnss-mdns on
+# /run/avahi-daemon/socket is not admitted by an entry spelled /var/run/avahi-daemon/socket (libnss-mdns on
 # Ubuntu 25.10 spells it /run, an older avahi /var/run). A module whose clients differ prints each spelling, and
 # lookup_allow names those that exist as sockets on this host.
 nss_socket() {
@@ -200,7 +200,7 @@ nss_known() {
   return 1
 }
 
-# lookup_note says, in words, which name-service modules of this host the kit does not know (GAPS N92 (a)): a module
+# lookup_note says, in words, which name-service modules of this host the kit does not know: a module
 # whose client talks to a socket or a server of its own (ldap, nis, winbind, ...) cannot be named in net.allow by a kit
 # that does not know where it connects, and its lookup shows as a net refusal the scene is not about. Prints nothing when
 # every module is known.
@@ -219,7 +219,7 @@ s=socket.socket(); s.settimeout(0.5)
 sys.exit(s.connect_ex(("127.0.0.1", int(sys.argv[1]))))' "$PORT"
 }
 
-# require_proc refuses a host with no Linux procfs (GAPS N92 (b)). A helper the kit starts is known by its process: the start
+# require_proc refuses a host with no Linux procfs. A helper the kit starts is known by its process: the start
 # time in /proc/<pid>/stat, the arguments in /proc/<pid>/cmdline and the listening socket in /proc/<pid>/fd (procid.py),
 # and the agent's python3 by /proc/self/exe. Another system has none of those, and the demo, which also needs Linux for
 # the rules it shows, would die at the first helper with a message about a pid. It says so first.
@@ -247,7 +247,7 @@ proc_stop() {
   python3 -I "$HERE/procid.py" stop "$STAGE/$1.pid" "$2" ${3:+"$3"} 2>/dev/null || stop_rc=$?
   case $stop_rc in 0 | 10) ;; *) stop_rc=11 ;; esac
 }
-# proc_stop_sh NAME SCRIPT is proc_stop for a host where python3 is not on PATH (GAPS N92 (c)): a reset from another
+# proc_stop_sh NAME SCRIPT is proc_stop for a host where python3 is not on PATH: a reset from another
 # shell, a venv left or an interpreter removed since setup. It makes the same two checks procid.py makes without a port,
 # in sh alone: the process with the pid file's pid still has the pid file's start time (field 22 of /proc/<pid>/stat,
 # read after the last ")" of the line, which a command name may hold), and an argument of it is SCRIPT, exactly. Any

@@ -150,7 +150,7 @@ func (s *Service) pendingOn(ctx context.Context, run, id string) (PendingNow, er
 			inOverlay[b.Key()] = true
 		}
 	}
-	for _, o := range s.nowOptions(ctx, []string{run}, rawChanges(old, nw), cwd, entriesOf(cur.Text)) {
+	for _, o := range s.nowOptions(ctx, []string{run}, rawChanges(old, nw), cwd, s.restOf(cur.Text, cwd)) {
 		if o.Block != "" && (slices.Contains(p.Placed, o.Block) || inOverlay[o.Block]) {
 			continue // placed already: its state is the run's, not an offer
 		}

@@ -29,7 +29,7 @@ func appliedScope(t *testing.T, files ...string) (*cgroup.FS, cgroup.Cgroup) {
 		if err := os.WriteFile(filepath.Join(c.Path, f), nil, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		// The slices above the scope hold the same files, at no ceiling, as cgroupfs has them (GAPS N85); the root of the
+		// The slices above the scope hold the same files, at no ceiling, as cgroupfs has them; the root of the
 		// tree, like the cgroup2 root, holds none.
 		unlimited := map[string]string{"cpu.max": "max 100000", "memory.max": "max", "memory.high": "max", "pids.max": "max"}[f]
 		if unlimited == "" {

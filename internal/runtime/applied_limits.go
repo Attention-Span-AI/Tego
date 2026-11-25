@@ -10,8 +10,7 @@ import (
 // readAppliedLimits reads back the limits cg holds after SetLimits wrote l, for run_start.applied_limits (GAPS C221):
 // the requested limits are in the contract's copy, and what holds is the kernel's number (memory is rounded to a page).
 // A file that cannot be read is left out and said in the log; nil when the run wrote no limit or none could be read.
-// Each limit the run wrote is the lowest ceiling along the chain of cgroups above its scope (cgroup.ReadEffective, GAPS
-// N85), since the kernel holds the run to that one. A chain with an ancestor that cannot be read, or one cut short by a
+// Each limit the run wrote is the lowest ceiling along the chain of cgroups above its scope (cgroup.ReadEffective), since the kernel holds the run to that one. A chain with an ancestor that cannot be read, or one cut short by a
 // private cgroup namespace's root, leaves the member out rather than state the scope's own number as the one that
 // holds. The read is once, at the run's start: a ceiling an operator changes later is not followed.
 func (r *runner) readAppliedLimits(cg cgroup.Cgroup, l cgroup.Limits) *record.AppliedLimits {

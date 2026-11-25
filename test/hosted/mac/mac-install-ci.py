@@ -20,6 +20,11 @@ import termios
 import time
 
 
+# The two questions of the Mac command's tego uninstall; the check in mac-install-ci_test.py keeps them equal to install.sh.
+UNINSTALL_FIRST = b'Remove what is listed under "Tego will remove"?'
+UNINSTALL_SECOND = b'Also delete the VM and your records and contracts in it?'
+
+
 def require_hosted():
     if os.environ.get('GITHUB_ACTIONS') != 'true' or os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted':
         print('this script installs the real product and is only for GitHub-hosted machines', file=sys.stderr)
@@ -71,6 +76,9 @@ def terminal(seconds, path, mode, command):
                   (b'TEGO_CI_PROJECT_SHELL>', b'pwd; test -f README.md && echo CHECK_PROJECT_FILES; exit\n')],
         'shell': [(b'TEGO_CI_PROJECT_SHELL>', b'pwd; test -f README.md && echo CHECK_PROJECT_FILES; exit\n')],
         'dashboard': [(b'Open it, or start a new one?', b'1\n')],
+        # tego uninstall asks twice on a terminal; the words are the Mac command's own, written by scripts/install.sh.
+        'uninstall-decline': [(UNINSTALL_FIRST, b'n\n')],
+        'uninstall-keep': [(UNINSTALL_FIRST, b'\n'), (UNINSTALL_SECOND, b'\n')],
     }[mode]
     gate_read, gate_write = os.pipe()
     pid, fd = pty.fork()

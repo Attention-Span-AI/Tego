@@ -3,9 +3,9 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -33,13 +33,17 @@ type guidePTYRoute struct {
 // paths. Every external action is a stand-in; the real guide owns the forms.
 func guidePTYRoutes() []guidePTYRoute {
 	agent := guidePTYStep{"Which agent do you want to supervise?", "\r"}
+	// With no login in the shell, Claude Code is installed but not signed in, so the demonstration agent is first and
+	// Claude Code is the second item.
+	claude := agent
+	claude.keys = "\x1b[B\r"
 	shellAgent := agent
 	shellAgent.keys = "\t/zzzz\r\x7f\x7f\x7f\x7fClaude\r"
 	project := guidePTYStep{"Which project should Claude Code work in?", "\x1b[B\r"}
 	rules := guidePTYStep{"Which rules should Claude Code follow?", "\r"}
 	return []guidePTYRoute{
 		{"shell", []guidePTYStep{shellAgent, project, rules}},
-		{"login", []guidePTYStep{agent,
+		{"login", []guidePTYStep{claude,
 			{"How do you want to log in to Claude Code?", "\x1b[B\r"},
 			{"Paste your Anthropic API key", "\r\x1b[200~test-token\x1b[201~\t\r"},
 			{"Save the login for later sessions?", "\x1b[B\r"},
@@ -50,12 +54,12 @@ func guidePTYRoutes() []guidePTYRoute {
 			{"Other hosts it may reach", "api.github.com\r"}}},
 		{"command", []guidePTYStep{{agent.prompt, "\x1b[B\x1b[B\r"}, {"What command starts it?", "claude\r"},
 			{"Which project should claude work in?", "\x1b[B\r"}, {"Which rules should claude follow?", "\r"}}},
-		{"install", []guidePTYStep{agent, {"Install Claude Code now?", "\r"}}},
+		{"install", []guidePTYStep{claude, {"Install Claude Code now?", "\r"}}},
 		{"saved", []guidePTYStep{agent, {"Use your saved Claude Code login?", "\r"}}},
-		{"secret", []guidePTYStep{agent, {"How do you want to log in to Claude Code?", "\x1b[B\r"},
+		{"secret", []guidePTYStep{claude, {"How do you want to log in to Claude Code?", "\x1b[B\r"},
 			{"Paste your Anthropic API key", "test-token\r/SECOND_SECRET"},
 			{"Save the login for later sessions?", "\x1b[B\r"}, project}},
-		{"subscription", []guidePTYStep{agent, {"How do you want to log in to Claude Code?", "\r"},
+		{"subscription", []guidePTYStep{claude, {"How do you want to log in to Claude Code?", "\r"},
 			{"Paste the token Claude Code printed", "test-token\r"}}},
 		{"file", []guidePTYStep{agent, project, {rules.prompt, "\x1b[B\x1b[B\x1b[B\r"}, {"Path to the rules file", "~/own.yaml\r"}}},
 		{"replace", []guidePTYStep{agent, project, rules, {"Agent bot already exists. Replace its rules?", "\r"}}},
@@ -128,10 +132,17 @@ func (w *guidePTYOutput) Write(b []byte) (int, error) {
 	return w.File.Write(b)
 }
 
+// guideLeaveSteps is, for a route whose last step runs something the guide started, the line the guide prints when one
+// key leaves it and the question it then asks again.
+var guideLeaveSteps = map[string]struct{ marker, question string }{
+	"child-installer": {"Stopped the installer.", "Install Claude Code now?"},
+	"child-signin":    {"sign-in ended without a login", "How do you want to log in to Claude Code?"},
+}
+
 func guidePTYHelper(t *testing.T, routeName string) {
 	t.Helper()
 	var route guidePTYRoute
-	for _, r := range append(append(append(guidePTYRoutes(), guideChildRoutes()...), guideDumbRoutes()...), guideHandoffRoutes()...) {
+	for _, r := range append(append(append(append(guidePTYRoutes(), guideChildRoutes()...), guideDumbRoutes()...), guideHandoffRoutes()...), guideSigninRoute()) {
 		if r.name == routeName {
 			route = r
 		}
@@ -192,7 +203,7 @@ func guidePTYHelper(t *testing.T, routeName string) {
 	}
 	ctx, stop := notifyContext()
 	defer stop()
-	if code := runSetupGuide(ctx, os.Stdin, out, os.Stderr, true); code != identity.ExitFinding {
+	if code := runSetupGuideCommand(ctx, out, os.Stderr); code != identity.ExitFinding {
 		t.Fatalf("interrupt exit %d", code)
 	}
 	if routeName == "handoff-secret" && os.Getenv("CLAUDE_CODE_OAUTH_TOKEN") != "test-token" {
@@ -217,6 +228,19 @@ func guidePTYHelper(t *testing.T, routeName string) {
 	}
 	if after := guidePTYFiles(t, f.Home); !strings.HasPrefix(routeName, "child-") && !reflect.DeepEqual(before, after) {
 		t.Fatalf("interrupted guide changed files: before %v after %v", before, after)
+	}
+	if os.Getenv("TEGO_TEST_GUIDE_LATE") == "1" {
+		// The guide has returned, the terminal is back, and the process has not ended: the gap a second signal can
+		// fall into. Say so, then wait for the parent to have sent it (no sleep: the parent's byte follows its kill).
+		returned := os.NewFile(4, "guide-test-returned")
+		gate := os.NewFile(3, "guide-test-gate")
+		if _, err := returned.Write([]byte("returned\n")); err != nil {
+			t.Fatal(err)
+		}
+		var ack [1]byte
+		if _, err := io.ReadFull(gate, ack[:]); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -298,11 +322,21 @@ func runGuidePTY(t *testing.T, route guidePTYRoute, target int, how string, ahea
 	c := exec.Command(self, "-test.run=^TestGuideInterruptRestoresTerminal$")
 	c.Env = append(os.Environ(), "TEGO_TEST_GUIDE_INTERRUPT="+route.name, "TEGO_TEST_GUIDE_CHILD_PID="+childPID, "TEGO_TEST_GUIDE_STOP_CALLS="+childPID+".stops", "TERM=xterm-256color", "TEGO_TEST_GUIDE_AHEAD="+map[bool]string{true: "1", false: "0"}[ahead])
 	c.Stdin, c.Stdout, c.Stderr = slave, slave, slave
-	c.ExtraFiles = []*os.File{gateRead}
+	returnedRead, returnedWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = returnedRead.Close(); _ = returnedWrite.Close() }()
+	late := strings.HasPrefix(how, "late-")
+	if late {
+		c.Env = append(c.Env, "TEGO_TEST_GUIDE_LATE=1")
+	}
+	c.ExtraFiles = []*os.File{gateRead, returnedWrite}
 	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
 	if err := c.Start(); err != nil {
 		t.Fatal(err)
 	}
+	_ = returnedWrite.Close()
 	done := make(chan struct{})
 	var childErr error
 	go func() { childErr = c.Wait(); close(done) }()
@@ -390,21 +424,70 @@ func runGuidePTY(t *testing.T, route guidePTYRoute, target int, how string, ahea
 			if route.name == "dumb" && strings.HasPrefix(step.prompt, "Paste ") {
 				write("partial-secret")
 			}
-			if how == "key" || how == "burst" {
+			switch how {
+			case "leave":
+				// One key leaves the installer or the sign-in the guide started, and the guide asks the question that
+				// started it again: the marker line, then that question drawn after it. A second key then ends the
+				// guide at the question, which is what the checks below hold to the stopped ending.
+				leave := guideLeaveSteps[route.name]
 				write("\x03")
-			} else {
-				sig := os.Signal(os.Interrupt)
-				if how == "hup" {
-					sig = syscall.SIGHUP
+				waitFor := func(what string, found func(string) bool) {
+					deadline := time.NewTimer(guidePromptHangGuard)
+					defer deadline.Stop()
+					for !found(snapshot()) {
+						select {
+						case <-outputChanged:
+						case <-done:
+							t.Fatalf("helper ended before %s:\n%s", what, snapshot())
+						case <-deadline.C:
+							t.Fatalf("no %s:\n%s", what, snapshot())
+						}
+					}
 				}
-				if how == "term" || how == "double" {
-					sig = syscall.SIGTERM
-				}
-				if err := c.Process.Signal(sig); err != nil {
-					t.Fatal(err)
-				}
-				if how == "double" {
-					_ = c.Process.Signal(os.Interrupt)
+				waitFor("marker "+leave.marker, func(out string) bool { return strings.Contains(out, leave.marker) })
+				waitFor("the question again", func(out string) bool {
+					_, after, _ := strings.Cut(out, leave.marker)
+					return strings.Contains(after, leave.question)
+				})
+				write("\x03")
+			case "key", "burst":
+				write("\x03")
+			default:
+				if late {
+					first, second := lateSignals(t, how)
+					if err := c.Process.Signal(first); err != nil {
+						t.Fatal(err)
+					}
+					// The helper says so once the guide has returned and only the process's end is left.
+					returned := make(chan struct{})
+					go func() { _, _ = bufio.NewReader(returnedRead).ReadString('\n'); close(returned) }()
+					select {
+					case <-returned:
+					case <-done:
+						t.Fatalf("helper ended on the first signal without waiting for the second: %v\n%s", childErr, snapshot())
+					case <-time.After(15 * time.Second):
+						t.Fatalf("guide did not return after %v:\n%s", first, snapshot())
+					}
+					if err := c.Process.Signal(second); err != nil {
+						t.Fatal(err)
+					}
+					if _, err := gateWrite.Write([]byte{'x'}); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					sig := os.Signal(os.Interrupt)
+					if how == "hup" {
+						sig = syscall.SIGHUP
+					}
+					if how == "term" || how == "double" {
+						sig = syscall.SIGTERM
+					}
+					if err := c.Process.Signal(sig); err != nil {
+						t.Fatal(err)
+					}
+					if how == "double" {
+						_ = c.Process.Signal(os.Interrupt)
+					}
 				}
 			}
 		} else if how == "burst" {
@@ -430,16 +513,9 @@ func runGuidePTY(t *testing.T, route guidePTYRoute, target int, how string, ahea
 	}
 	select {
 	case <-done:
-		// The second signal of a pair can arrive after the guide has put the terminal back and released
-		// its signals; it then ends the process as it ends any command. That is not a failure: the
-		// Stopped line and the restored terminal are still required below.
-		late := false
-		var exit *exec.ExitError
-		if how == "double" && errors.As(childErr, &exit) {
-			status, ok := exit.Sys().(syscall.WaitStatus)
-			late = ok && status.Signaled() && status.Signal() == syscall.SIGINT
-		}
-		if childErr != nil && !late {
+		// A second signal may arrive at any point up to the process's end, including after the guide has put the
+		// terminal back: the helper's exit is still the guide's own, never the signal's.
+		if childErr != nil {
 			t.Fatalf("interrupted helper: %v\n%s", childErr, snapshot())
 		}
 	case <-time.After(15 * time.Second):
@@ -480,5 +556,43 @@ func runGuidePTY(t *testing.T, route guidePTYRoute, target int, how string, ahea
 	}
 	if !reflect.DeepEqual(before, after) {
 		t.Fatalf("terminal not restored: before %+v after %+v", before, after)
+	}
+}
+
+// lateSignals reads "late-<first>-<second>", the two signals TestGuideSignalAfterRestore sends.
+func lateSignals(t *testing.T, how string) (first, second os.Signal) {
+	t.Helper()
+	names := map[string]os.Signal{"int": os.Interrupt, "term": syscall.SIGTERM, "hup": syscall.SIGHUP}
+	parts := strings.Split(how, "-")
+	if len(parts) != 3 || names[parts[1]] == nil || names[parts[2]] == nil {
+		t.Fatalf("unknown late signal pair %q", how)
+	}
+	return names[parts[1]], names[parts[2]]
+}
+
+// TestGuideSignalAfterRestore: a signal that comes after the guide has restored the terminal and returned, while its
+// process has not yet ended, does not end the process with that signal. The helper holds that moment open, so each
+// case fails every time the guide's subscription ends with the guide (the default action of TERM, INT or HUP ends the
+// process with the signal) and does not depend on how loaded the machine is. The pairs cover each signal as the
+// first, which the guide handles, and as the second, which arrives in the gap.
+func TestGuideSignalAfterRestore(t *testing.T) {
+	routes := map[string]guidePTYRoute{}
+	for _, r := range append(append(append(guidePTYRoutes(), guideChildRoutes()...), guideDumbRoutes()...), guideHandoffRoutes()...) {
+		routes[r.name] = r
+	}
+	cases := []struct {
+		route  string
+		target int
+	}{{"shell", 0}, {"login", 2}, {"dumb", 0}, {"dumb", 2}, {"child-installer", 1}, {"child-systemd-run", 3}}
+	for _, c := range cases {
+		route := routes[c.route]
+		for _, first := range []string{"int", "term", "hup"} {
+			for _, second := range []string{"int", "term", "hup"} {
+				t.Run(c.route+"/"+strconv.Itoa(c.target)+"/"+first+"-"+second, func(t *testing.T) {
+					t.Parallel()
+					runGuidePTY(t, route, c.target, "late-"+first+"-"+second, false)
+				})
+			}
+		}
 	}
 }

@@ -149,7 +149,7 @@ func TestValidateRefusesTimed(t *testing.T) {
 		"add with mac":        `{"v":3,` + run + `,` + chg("add", `,"kind":"path","value":"/y","mac":"`+mac+`"`) + `}`,
 		"pause with until":    `{"v":2,` + run + `,"paused":true,` + chg("pause", `,"until":"2026-10-27T13:00:00Z"`) + `}`,
 		"version 0":           `{"v":0,` + run + `}`,
-		"version 6":           `{"v":6,` + run + `}`,
+		"version 7":           `{"v":7,` + run + `}`,
 	} {
 		if _, err := Decode([]byte(body), testRun); !errors.Is(err, ErrInvalid) {
 			t.Errorf("%s: Decode = %v, want ErrInvalid", name, err)

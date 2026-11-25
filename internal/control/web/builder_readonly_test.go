@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/control/rules"
+	"github.com/attention-span-ai/tego/internal/testutil"
 	htmlnode "golang.org/x/net/html"
 )
 
@@ -94,6 +95,13 @@ func builderDiskSnapshot(t *testing.T, roots ...string) map[string]builderDiskEn
 // The registry exists before the request; missing-directory preparation is tested
 // separately by TestBuilderPreparationRequiresGuardedPost.
 func TestBuilderEveryReadRouteLeavesDiskUnchanged(t *testing.T) {
+	// Every case plans a draft through a compile helper, and a race build starts that helper race-instrumented (about a
+	// second, and about 5 s a case here: 393 s for the test on a quiet box), so a race run takes every fourth case, from the
+	// -shuffle seed's offset, and every other run takes all of them.
+	subset, n := 0, 0
+	if raceEnabled {
+		subset = testutil.ShuffleOffset(t, 4)
+	}
 	for _, route := range builderGetRoutes {
 		for _, alias := range []bool{false, true} {
 			path := route.path
@@ -102,6 +110,9 @@ func TestBuilderEveryReadRouteLeavesDiskUnchanged(t *testing.T) {
 			}
 			for _, method := range []string{http.MethodGet, http.MethodHead} {
 				for _, mode := range []string{"blank", "presets", "run"} {
+					if n++; raceEnabled && (n-1)%4 != subset {
+						continue
+					}
 					t.Run(method+path+"/"+mode, func(t *testing.T) {
 						f := newChangeFix(t)
 						reg := filepath.Join(f.home, ".config", "tego")

@@ -321,7 +321,7 @@ func (s *Service) planEdits(ctx context.Context, c *contractInfo, f *rulefile.Fi
 		if cwd == "" {
 			cwd = filepath.Dir(cc.Contract)
 		}
-		p.Now = s.nowOptions(ctx, c.Live, res.Changes, cwd, entriesOf(res.Text))
+		p.Now = s.nowOptions(ctx, c.Live, res.Changes, cwd, s.restOf(res.Text, cwd))
 	}
 	return p
 }

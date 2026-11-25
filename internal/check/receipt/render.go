@@ -406,7 +406,30 @@ const NoneOverTime = "None to show."
 // (RefusedReadsUnrecorded), that no recorded action was refused and why. With refusals: that a refused read is not
 // counted, when it leaves no line, else "".
 func (rc *Receipt) RefusedWords() string {
-	return RefusedSentence(rc.Refusals.Total, rc.RefusedReadsUnrecorded())
+	w := RefusedSentence(rc.Refusals.Total, rc.RefusedReadsUnrecorded())
+	if rc.ExecsDecisionLost == 0 {
+		return w
+	}
+	if rc.Refusals.Total == 0 && w == "Nothing was refused." {
+		// An exec that failed with permission denied and lost its decision record may have been refused by Tego: the
+		// sentence does not say nothing was.
+		w = "No refusal was recorded."
+	}
+	return strings.TrimSpace(w + " " + rc.DecisionLostWords())
+}
+
+// DecisionLostWords is what a receipt says of the execs that failed with permission denied and whose decision record the
+// run lost (ExecsDecisionLost): that they are counted as neither refused nor run, and why, on `tego receipt` and the
+// dashboard's Receipt tab alike. "" when there is none.
+func (rc *Receipt) DecisionLostWords() string {
+	n := rc.ExecsDecisionLost
+	if n == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d %s failed with permission denied and no record of what decided %s was read, while this run lost "+
+		"records (see its gaps). Tego cannot say whether its own rules or another security module refused %s, so %s counted "+
+		"as neither a refusal nor a program that ran.", n, plural(n, "exec", "execs"), plural(n, "it", "them"),
+		plural(n, "it", "them"), plural(n, "it is", "they are"))
 }
 
 // RefusedSentence is RefusedWords for a run that refused total lines and whose refused reads leave no line when

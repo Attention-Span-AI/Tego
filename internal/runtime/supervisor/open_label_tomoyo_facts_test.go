@@ -28,7 +28,7 @@ func TestOpenLabelTOMOYOFactsDirIsChecked(t *testing.T) {
 		t.Fatal(err)
 	}
 	tomoyoOnly := func() ([]uint64, error) { return []uint64{103}, nil }
-	err := checkOpenLabelAuthority(1, 1, 0, readOpenLabelFile, tomoyoOnly, false)
+	err := checkOpenLabelAuthority(1, 1, 0, readOpenLabelFile, tomoyoOnly, nil, false)
 	if err == nil || !strings.Contains(err.Error(), "is not on securityfs") || !strings.Contains(err.Error(), d) {
 		t.Fatalf("a facts directory of ordinary files admitted a held open: %v", err)
 	}

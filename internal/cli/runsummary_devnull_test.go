@@ -14,22 +14,27 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestRunSummarySaysADevNullRefusal (N14): a run whose first rules file had no fs.write entry for /dev/null was refused
-// the device by the default deny; the summary names the cause and the fix under its line. A refusal that an entry of the
-// contract made, a refusal of another file and a run with none say nothing of it.
+// TestRunSummarySaysADevNullRefusal: a run that was refused /dev/null by the default deny (a table with no grant of it: a
+// host whose file at the name is not the device, a contract with no fs: section, or a record an earlier version wrote) gets the cause and the fix under
+// its line. A refusal that an entry of the contract made, a refusal of another file, a run with none and a run whose
+// standard-device grant applied (ADR 0158: its opens are allowed under that rule) say nothing of it.
 func TestRunSummarySaysADevNullRefusal(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		rule  string
-		path  string
-		times int
-		want  string
+		name    string
+		rule    string
+		path    string
+		times   int
+		want    string
+		allowed bool
 	}{
-		{"default deny", "unmatched", "/dev/null", 2, "\n  /dev/null: refused, no fs.write entry covers it (2 times); it holds no file: add /dev/null to fs.write so `> /dev/null` works\n"},
-		{"once", "unmatched", "/dev/null", 1, "(1 time);"},
-		{"a deny_write of the contract", "fs.deny_write[/dev/null]", "/dev/null", 2, ""},
-		{"another file", "unmatched", "/etc/passwd", 2, ""},
-		{"none", "unmatched", "/dev/null", 0, ""},
+		{"default deny", "unmatched", "/dev/null", 2, "\n  /dev/null: refused, no fs.write entry covers it (2 times); it holds no file: add /dev/null to fs.write so `> /dev/null` works\n", false},
+		{"once", "unmatched", "/dev/null", 1, "(1 time);", false},
+		{"a deny_write of the contract", "fs.deny_write[/dev/null]", "/dev/null", 2, "", false},
+		{"another file", "unmatched", "/etc/passwd", 2, "", false},
+		{"none", "unmatched", "/dev/null", 0, "", false},
+		// ADR 0158: every table with an fs: section grants the standard devices, so a run whose grant applied has allowed opens of /dev/null
+		// under the product's own rule and no refusal to explain.
+		{"the standard-device grant applied", "builtin.standard_devices", "/dev/null", 3, "", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			base := t.TempDir()
@@ -50,6 +55,9 @@ func TestRunSummarySaysADevNullRefusal(t *testing.T) {
 			for i := 0; i < tc.times; i++ {
 				e := &record.Event{Kind: record.KindFS, Source: record.SourceSupervisor, PID: 1, TID: 1, Rule: tc.rule,
 					Verdict: record.VerdictRefused, Reason: record.ReasonWriteOutsideContract, Authority: record.AuthorityRule, Attr: record.Unattributed()}
+				if tc.allowed {
+					e.Verdict, e.Reason = record.VerdictAllow, ""
+				}
 				if err := e.SetPayload(record.FSPayload{Op: "open", Path: tc.path, Flags: 1}); err != nil {
 					t.Fatal(err)
 				}

@@ -1110,7 +1110,7 @@
   "contract": "Interface label or instruction; states no quantity.",
   "contract saved": "Interface label or instruction; states no quantity.",
   "contract written": "Interface label or instruction; states no quantity.",
-  "curl, example.com:443, 127.0.0.1:8080, /home/you/.aws/": "Example syntax, protocol identity or field format; does not state a quantity about the page or its record.",
+  "curl, git push, example.com:443, 127.0.0.1:8080, /home/you/.aws/": "Example syntax, protocol identity or field format; does not state a quantity about the page or its record.",
   "decided by defaults": "Interface label or instruction; states no quantity.",
   "deleted": "Interface label or instruction; states no quantity.",
   "denied": "Interface label or instruction; states no quantity.",

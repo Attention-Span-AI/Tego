@@ -139,8 +139,8 @@ check "check-writes: a sibling that shares a prefix passes" "$A/scripts/check-wr
 check "check-writes: the sample's real compile table passes" "$A/scripts/check-writes.sh" "$A/testdata/compile.json" "${P[@]}"
 
 # 4. collect -> render -> post -> gate on the governed run's real output
-pipeline() { # pipeline NAME DATA_DIR: runs the four scripts as the action would, in $WORK/NAME
-	local data="$2" d="$WORK/$1"
+pipeline() { # pipeline NAME DATA_DIR [KEPT_RC]: runs the four scripts as the action would, in $WORK/NAME
+	local data="$2" d="$WORK/$1" kept="${3:-0}"
 	mkdir -p "$d/dir/evidence" "$d/dir/state" "$d/ledger/r-5cd05e60-0dmrm463r69xq-kpyavw"
 	cp "$data/events.jsonl" "$d/ledger/r-5cd05e60-0dmrm463r69xq-kpyavw/events.jsonl"
 	printf 'r-5cd05e60-0dmrm463r69xq-kpyavw a48c6844922d6ea567be6d901561116d2b79255471b10ef3851464867443f6a8\n' >"$d/anchor.txt"
@@ -151,7 +151,7 @@ pipeline() { # pipeline NAME DATA_DIR: runs the four scripts as the action would
 	: >"$d/out"
 	: >"$d/summary.md"
 	(
-		export DIR="$d/dir" TEGO="$A/test/fake-tego" FAKE_TEGO_DATA="$data" FAKE_ANCHOR="$d/anchor.txt" LEDGER_ROOT="$d/ledger" AGENT_EXIT=0
+		export DIR="$d/dir" TEGO="$A/test/fake-tego" FAKE_TEGO_DATA="$data" FAKE_ANCHOR="$d/anchor.txt" FAKE_KEPT_RC="$kept" LEDGER_ROOT="$d/ledger" AGENT_EXIT=0
 		export GITHUB_OUTPUT="$d/out" GITHUB_STEP_SUMMARY="$d/summary.md" GITHUB_REPOSITORY=example/app GITHUB_RUN_ID=42
 		export GITHUB_SERVER_URL=https://github.com GITHUB_WORKFLOW_REF=example/app/.github/workflows/agent-receipt.yml@refs/pull/7/merge
 		export GITHUB_SHA=0123456789abcdef0123456789abcdef01234567 GITHUB_REF=refs/pull/7/merge GITHUB_EVENT_NAME=pull_request
@@ -174,6 +174,16 @@ verified=true
 EOF
 check "collect: manifest ties head, ledger digest and contract hash" jq -e --arg e "$(sha256sum "$A/testdata/events.jsonl" | cut -d' ' -f1)" \
 	'.head == "a48c6844922d6ea567be6d901561116d2b79255471b10ef3851464867443f6a8" and .events_sha256 == $e and .contract_hash == "9bc51d9305575273e74713c53bc0150dcf05c630bf8e4e35e28395a110a87abd" and .tier == "landlock" and .lines == 74 and .refusals == 1' "$S/dir/evidence/tego-ci.json"
+# a receipt.json planted in the run folder makes `receipt --verify` exit 1 or 125 on an intact record: not the action's failure
+for krc in 1 125; do
+	check "pipeline when the kept receipt gives exit $krc but the record verifies" pipeline "kept$krc" "$A/testdata" "$krc"
+	check "collect: the same manifest ($krc)" jq -e '.verified_on_runner == true and .lines == 74' "$WORK/kept$krc/dir/evidence/tego-ci.json"
+done
+unv="$WORK/unverified-data"
+mkdir -p "$unv"
+cp "$A/testdata/"*.json "$A/testdata/"*.jsonl "$A/testdata/"*.yaml "$unv/"
+jq '.verified = false | .error = "chain broken"' "$A/testdata/verify.json" >"$unv/verify.json"
+refuses "a record that does not verify still fails collection (kept receipt exit 1)" pipeline unverified "$unv" 1
 check "post: the job summary holds the receipt" cmp "$S/dir/evidence/receipt.md" "$S/summary.md"
 for want in '### Incomplete: Tego receipt' 'head `a48c6844922d6ea567be6d901561116d2b79255471b10ef3851464867443f6a8`' 'fs.deny_read[~/k2-secret.txt]' \
   '| Tier | `landlock` |' 'Wrote `k2-worker/result.json`' 'Reads: this tier records read activity' '`tokens`: `not recorded: model traffic capture was off for this run`' \

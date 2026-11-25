@@ -123,6 +123,13 @@ func (b *builder) countConn(dst, rule string, verdict record.Verdict, send bool)
 
 // program counts one exec that ran: a refused exec never ran (Refusals lists it), and a failed one ran nothing.
 func (b *builder) program(e *record.Event, p *payload) {
+	// An exec that failed with EACCES and whose decision record the run lost (decision_lost) is neither: the record cannot
+	// say whether Tego's rules or another module refused it, and it ran nothing. It has a count of its own, and only on the
+	// line's own terms: observed, EACCES, from the revision that has the field.
+	if e.Verdict == record.VerdictObserved && p.SyscallRet == -13 && len(p.DecisionLost) > 0 && b.runStart.RecordMinor >= record.MinorEveryLaunch {
+		b.rc.ExecsDecisionLost++
+		return
+	}
 	if e.Verdict == record.VerdictRefused || e.Verdict == record.VerdictAsk || p.Path == "" || p.SyscallRet < 0 {
 		return
 	}

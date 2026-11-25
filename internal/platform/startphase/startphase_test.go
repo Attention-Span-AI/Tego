@@ -51,3 +51,34 @@ func TestCountsAndStacksGoWhereTheTimingLinesGo(t *testing.T) {
 		t.Fatalf("stats %v, stacks %v", stats, stacks)
 	}
 }
+
+// TestBeginReportsTheCPUAPhaseUsedBesideItsWallTime: with a CPU clock and sink set (a test build's TEGO_TEST_PHASE_CPU)
+// a phase reports the CPU the process spent between its start and end; with neither, only the wall time goes out.
+func TestBeginReportsTheCPUAPhaseUsedBesideItsWallTime(t *testing.T) {
+	savedNow, savedSink := CPUNow, CPUSink
+	defer func() { CPUNow, CPUSink = savedNow, savedSink }()
+	var clock time.Duration
+	CPUNow = func() time.Duration { return clock }
+	got := map[string]time.Duration{}
+	CPUSink = func(name string, cpu time.Duration) { got[name] = cpu }
+	var wall []string
+	sink := func(n string, _ time.Duration) { wall = append(wall, n) }
+
+	clock = 10 * time.Millisecond
+	end := Begin(sink, "work")
+	clock = 35 * time.Millisecond
+	end()
+	end = Begin(sink, "wait") // the clock does not move: a phase that only waits
+	end()
+	if got["work"] != 25*time.Millisecond || got["wait"] != 0 || len(got) != 2 {
+		t.Errorf("CPU per phase %v, want work=25ms wait=0", got)
+	}
+	if len(wall) != 2 || wall[0] != "work" || wall[1] != "wait" {
+		t.Errorf("wall sink saw %v, want work then wait", wall)
+	}
+
+	CPUSink = nil // a clock without a sink reports nothing and does not panic
+	Begin(sink, "x")()
+	CPUNow, CPUSink = nil, func(string, time.Duration) { t.Error("a CPU report without a CPU clock") }
+	Begin(sink, "y")()
+}

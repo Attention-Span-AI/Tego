@@ -9,9 +9,9 @@ import (
 	"testing"
 )
 
-// securityNotes is the "### Security" notes of the changelog section that starts with heading ("## Unreleased\n",
+// securityNotes is the "### Security" notes of the changelog section that starts with heading ("## v0.2.0 ",
 // "## v0.1.3 "): the section's own notes, never a later release's, so a section that has none fails here instead of
-// reading the next release's (the Unreleased section had no security notes while this test read v0.1.3's).
+// reading the next release's (the unreleased section had no security notes while this test read v0.1.3's).
 func securityNotes(t *testing.T, heading string) string {
 	t.Helper()
 	data, err := os.ReadFile("../../tools/oss/testdata/overlay/docs/CHANGELOG.md")
@@ -35,7 +35,7 @@ func securityNotes(t *testing.T, heading string) string {
 }
 
 // TestCommandRuleSecurityNotes keeps the affected rules and tools visible in the public notice of the release that
-// fixed the command rules (v0.1.3), and keeps opaque wording out of that notice and the Unreleased one.
+// fixed the command rules (v0.1.3), and keeps opaque wording out of that notice and v0.2.0's.
 func TestCommandRuleSecurityNotes(t *testing.T) {
 	notes := securityNotes(t, "## v0.1.3 ")
 	for _, rule := range []string{"exec.deny", "exec.ask"} {
@@ -48,7 +48,7 @@ func TestCommandRuleSecurityNotes(t *testing.T) {
 			t.Errorf("security notice omits %s", tool)
 		}
 	}
-	for _, heading := range []string{"## Unreleased\n", "## v0.1.3 "} {
+	for _, heading := range []string{"## v0.2.0 ", "## v0.1.3 "} {
 		for _, jargon := range []string{"verified tool parser", "unstable command-position terminator"} {
 			if strings.Contains(securityNotes(t, heading), jargon) {
 				t.Errorf("security notice of %q uses opaque wording %q", strings.TrimSpace(heading), jargon)

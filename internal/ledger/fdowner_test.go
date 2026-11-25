@@ -130,7 +130,7 @@ func TestLedgerDescriptorsCloseOnEveryPath(t *testing.T) {
 		t.Fatalf("OpenAt through no lender = %v, want sys.ErrClosed", err)
 	}
 
-	if err := PlaceNewFile(t.TempDir(), "marker", []byte("x")); err != nil {
+	if err := PlaceRunFile(t.TempDir(), "marker", []byte("x")); err != nil {
 		t.Fatal(err)
 	}
 	if err := PlaceNewFileThen(ctx, t.TempDir(), "marker", []byte("x"), func(bool) error { return nil }); err != nil {

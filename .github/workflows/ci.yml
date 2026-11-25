@@ -449,6 +449,11 @@ jobs:
           persist-credentials: false
       - name: demo credential and cleanup regressions
         run: ./scripts/demo-credentials_test.sh && ./scripts/demo-reset_test.sh && ./scripts/cleanup-guards_test.sh
+      # A path with a backslash, colon, reserved device name or case twin fails every Windows clone at checkout.
+      - name: tracked paths a Windows checkout can create
+        run: python3 -I ./scripts/check-paths.py
+      - name: check-paths.py refuses each kind of name a Windows checkout cannot hold
+        run: ./scripts/check-paths_test.sh
       - name: fetch shellcheck and actionlint
         shell: bash
         env:
@@ -611,7 +616,8 @@ jobs:
     # The job first asserts the tree's absolute timing budgets (scripts/timing-budgets.sh; docs/BENCHMARKS.md, "Timing
     # budgets in the test suites"): ADR 0048 C8's exec costs, enforce-plane §10's plan fill, DGRAM-VERDICT's flood,
     # ADR 0023 P1's Borrow ratio and the Rules page's read of a 55k-line run (TestInForceLongRunIsFast: the CPU time of
-    # the caller and its worker, a cost ratio to an 11k-line run, a loose wall bound), held to their Limits (and
+    # the caller and its worker with and without the dashboard's read model, a cost ratio to an 11k-line run, a loose wall
+    # bound), held to their Limits (and
     # Targets) as written. This runner runs nothing but this job, and the step runs before
     # the gate's builds and rounds, so the figures are taken on a quiet machine; the unit gate (build-test, precommit)
     # holds the same tests only to ten times their Limits, since a busy machine slows CPU work two to five times
@@ -876,7 +882,7 @@ jobs:
     # dynamically linked stage (ADR 0021 (4): its marks are placed after the stage's execve), but the guest
     # run of a dynamically linked or PIE build is still that ADR's open condition.
     runs-on: ubuntu-24.04
-    timeout-minutes: 130
+    timeout-minutes: 100
     strategy:
       fail-fast: false
       matrix:
@@ -884,17 +890,36 @@ jobs:
           - shard: control-rules
             packages: ./internal/control/rules
             timeout: 25m
-          # 942 tests, many through a draft compile: it was still going at the 25 minutes of the first run, beside the
-          # others on four vCPUs. Alone, its own runner gets this, measured again on the first run of the shards.
-          - shard: control-web
+          # internal/control/web: 803 tests, many through a draft compile, 3,000 s and more of them under -race (a quiet
+          # 16-core box ran 695 of them in the 50 minutes it was given, and the runner passed its 40 minutes in both
+          # runs of 2026-11-24 with tests still going). It is cut by the first letter of the test's name into three
+          # shards that each run its own two steps; the last is every test the other two leave out (-skip with their
+          # two classes joined), so a test added later is in exactly one of them, and a Fuzz or Example function too.
+          # The classes: B (the builder), A and C to N, and the rest: 63, 341 and 399 tests. Run alone on a quiet 16-core box the
+          # three took 1068, 955 and 1056 s with the race build included (internal/control/rules took 1093 s there and 1063 s
+          # on a runner), so 40 minutes is 2.2 times the longest (a hosted runner ran the whole package's unit step in
+          # 3,085 s). The rest shard has 40 minutes too: a hosted runner needed more than the 25 it had. Their results
+          # together are all 803 tests, once each.
+          - shard: control-web-b
             packages: ./internal/control/web
-            timeout: 70m
+            run: '^TestB'
+            timeout: 40m
+          - shard: control-web-a-n
+            packages: ./internal/control/web
+            run: '^Test[ACDEFGHIJKLMN]'
+            timeout: 40m
+          - shard: control-web-o-z
+            packages: ./internal/control/web
+            skip: '^Test[ABCDEFGHIJKLMN]'
+            timeout: 40m
           - shard: rest
             packages: ''
             timeout: 40m
     env:
       CGO_ENABLED: '1'
       SHARD_PACKAGES: ${{ matrix.packages }}
+      SHARD_RUN: ${{ matrix.run }}
+      SHARD_SKIP: ${{ matrix.skip }}
       SHARD_TIMEOUT: ${{ matrix.timeout }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -929,14 +954,20 @@ jobs:
         shell: bash
         run: |
           pkgs=${SHARD_PACKAGES:-$(go list ./... | grep -vE '/internal/control/(rules|web)$')}
+          sel=()
+          [ -z "$SHARD_RUN" ] || sel+=(-run "$SHARD_RUN")
+          [ -z "$SHARD_SKIP" ] || sel+=(-skip "$SHARD_SKIP")
           # shellcheck disable=SC2086 # the packages are words
-          ./scripts/in-user-manager.sh go test -count=1 -race -shuffle=on -p 4 -timeout "$SHARD_TIMEOUT" $pkgs
+          ./scripts/in-user-manager.sh go test -count=1 -race -shuffle=on -p 4 -timeout "$SHARD_TIMEOUT" "${sel[@]}" $pkgs
       - name: integration, raced (unprivileged on the runner)
         shell: bash
         run: |
           pkgs=${SHARD_PACKAGES:-$(go list -tags integration ./... | grep -vE '/internal/control/(rules|web)$')}
+          sel=()
+          [ -z "$SHARD_RUN" ] || sel+=(-run "$SHARD_RUN")
+          [ -z "$SHARD_SKIP" ] || sel+=(-skip "$SHARD_SKIP")
           # shellcheck disable=SC2086 # the packages are words
-          ./scripts/in-user-manager.sh go test -count=1 -race -shuffle=on -p 4 -timeout "$SHARD_TIMEOUT" -tags integration $pkgs
+          ./scripts/in-user-manager.sh go test -count=1 -race -shuffle=on -p 4 -timeout "$SHARD_TIMEOUT" -tags integration "${sel[@]}" $pkgs
 
   race:
     # The check the main ruleset requires, after every shard above. always(): a job skipped because a shard failed
@@ -1122,10 +1153,14 @@ jobs:
       # sideways scroll, the whole request sentence shown, lines bounded by the measured text width) are asserted
       # whatever the page was painted in. The design's pixel bounds (the request sentence's two lines at 1280 px, the
       # action labels at 320 px; ADR 0123) were measured in Noto Sans, which the stylesheet's system-ui resolves to where
-      # it is installed; the tests assert them only where Chrome reports it painted in Noto Sans, and say so where it did
-      # not. The runner image has no Noto (system-ui falls to DejaVu Sans, about a tenth wider), so the font is installed
-      # and this step fails if system-ui still does not resolve to it: without that, a failed install would only drop
-      # the bounds from the run, unseen.
+      # it is installed, and, for a request's target, in Ubuntu Sans Mono, the first of the stylesheet's monospace
+      # families a desktop Ubuntu has; the tests assert them only where Chrome reports every glyph of the sentence was
+      # painted in those, and say so where it was not. The runner image has no Noto (system-ui falls to DejaVu Sans,
+      # about a tenth wider), so that font is installed and this step fails if system-ui still does not resolve to it:
+      # without that, a failed install would only drop the bounds from the run, unseen. The image has no Ubuntu Sans
+      # Mono (its monospace is DejaVu Sans Mono, also about a tenth wider), so the request
+      # sentence's pixel bound is asserted where Ubuntu Sans Mono is installed (the box it was measured on), and here its
+      # font-free form holds: lines at most the text's measured width over the box's, plus one.
       - name: the font the layout bounds were measured in
         shell: bash
         run: |

@@ -69,7 +69,8 @@ const planeScratchPrefix = ".tego-doctor-plane-"
 // probePlane is the plane probe: the environment, the build, and each mode's rows and verdict, with tier cgroup's
 // mode selected under pin. keep is true only for a run (ForRun's scope, where the run-probe cache is on): then a
 // mode's matched known answers are read from and kept in the known-answers cache; doctor's own scope passes false
-// and exercises every cell afresh. It never fails: what it cannot establish is an answer (§4).
+// and exercises every cell afresh, and probes every mode, where a run stops after the mode selection takes
+// (planeDecides). It never fails: what it cannot establish is an answer (§4).
 func probePlane(root bool, uid int, release, pin string, keep bool) (*PlaneState, []HookResult) {
 	st := &PlaneState{Pin: pin, Source: planeSourceProbed}
 	if !root {
@@ -125,16 +126,10 @@ func probePlane(root bool, uid int, release, pin string, keep bool) (*PlaneState
 	// One exec image for every mode's probe, made by the first mode that reaches its syscalls.
 	image := &planeImage{fd: -1}
 	defer image.close()
-	var rows []HookResult
-	for _, m := range bpfobj.PlaneModes {
-		endMode := startphase.Begin(nil, "probe.plane."+string(m)+".total")
-		res, modeRows := probePlaneModeTwice(m, func() (PlaneModeResult, []HookResult) {
-			return probePlaneMode(m, spec, st.Env, lsm, build, why, buildFix, uid, known, image)
-		})
-		endMode()
-		st.Modes = append(st.Modes, res)
-		rows = append(rows, modeRows...)
-	}
+	modes, rows := probePlaneModesRetried(pin, keep, func(m bpfobj.PlaneMode) (PlaneModeResult, []HookResult) {
+		return probePlaneMode(m, spec, st.Env, lsm, build, why, buildFix, uid, known, image)
+	})
+	st.Modes = modes
 	selectPlane(st)
 	return st, rows
 }

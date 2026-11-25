@@ -272,13 +272,8 @@ func planeMapCells(t *testing.T, o Object, mode PlaneMode) {
 	})
 	for _, h := range PlaneHooksHere(mode) {
 		p := coll.Programs[h.Program(mode)]
-		if info, err := p.Info(); err == nil {
-			if n, ok := info.VerifiedInstructions(); ok && (h.Name == "mmap_file" || h.Name == "file_mprotect") {
-				t.Logf("%s: %d instructions verified", h.Program(mode), n)
-				if b := planeBudget(t, o, h.Name); n > b {
-					t.Errorf("%s: %d instructions verified, over the budget of %d", h.Program(mode), n, b)
-				}
-			}
+		if h.Name == "mmap_file" || h.Name == "file_mprotect" {
+			planeHeldToBudget(t, o, h.Name, h.Program(mode), p)
 		}
 		var l link.Link
 		if mode == PlaneLSM {

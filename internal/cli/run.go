@@ -425,6 +425,12 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 		message(stderr, "", 0, 0, o.cmdName()+": "+err.Error(), identity.CodeBudgetUnmetered)
 		return identity.ExitLauncher
 	}
+	if errors.Is(err, tegoruntime.ErrBudgetWindow) {
+		// limits.window could not be established from the ledgers: the contract or the record is the cause, not the
+		// machine's probe answer, which is kept.
+		message(stderr, "", 0, 0, o.cmdName()+": "+err.Error(), identity.CodeBudgetWindow)
+		return identity.ExitLauncher
+	}
 	if err != nil {
 		// A run selected from a cached probe answer that then could not start may be a machine that no longer
 		// does what the answer vouched for (a Prepare that cannot load a program, or make its fanotify group):
@@ -442,9 +448,13 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 	}
 	// The end summary: after the agent's process tree is gone, from the run's own ledger and the record mode it ran
 	// under.
+	// The same one read of the record binds the receipt, which is kept in the run directory whether or not the summary
+	// is printed (--no-summary silences the summary and nothing else; ADR 0159).
+	kept := summarizeRunKeeping(ctx, m, anchor, res, rt.Record, true)
+	keepReceipt(ctx, stderr, o.cmdName(), res, kept)
 	var sum *endSummary
 	if !o.noSummary {
-		sum = summarizeRun(ctx, m, anchor, res, rt.Record)
+		sum = kept
 	}
 	switch {
 	case sum == nil:

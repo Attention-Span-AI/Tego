@@ -297,7 +297,7 @@ func TestReleaseFallsBackWhenTheSourceIsGone(t *testing.T) {
 // An agent launched alone in a transient scope (systemd-run --scope claude, a desktop launcher's app scope) leaves
 // that scope empty when it moves, and the service manager removes it. Every ancestor then has controllers on for its
 // children (a systemd slice always does) and refuses a process of its own (EBUSY), so the old release found no place
-// and left the agent in the adoption's scope, where the guard counts it governed for ever (N73). A new empty cgroup
+// and left the agent in the adoption's scope, where the guard counts it governed for ever. A new empty cgroup
 // under the nearest ancestor is a place that takes it.
 func TestReleaseOfALoneScopeMakesALeafUnderTheNearestAncestor(t *testing.T) {
 	m := terminal()

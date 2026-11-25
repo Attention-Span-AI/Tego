@@ -97,7 +97,7 @@ var fieldCodes = [...]string{
 	"live-block", "live-control",
 	"credential", "mcp-tool",
 	"live-mode", "live-fence",
-	"model-route", "learn",
+	"model-route", "learn", "decision-lost",
 }
 
 // FieldCodes lists every FieldError code. Editing it does not change validation.
@@ -460,7 +460,7 @@ var mvpKeys = [...]mvpKey{
 	{"deployment", KindRunStart}, {"secrets", KindRunStart}, {"vault", KindRunStart}, {"shares", KindRunStart},
 	{"stopped_by", KindRunEnd}, {RedactionsKey, ""},
 	{"contract_source", KindRunStart}, {"live_mode", KindRunStart}, {"live_fence", KindRunStart}, {"deny_read_frozen", KindRunStart},
-	{"home", KindRunStart},
+	{"home", KindRunStart}, {"decision_lost", KindExec},
 }
 
 // IsMVPField reports whether key, a payload key of a line of kind k, is a field of a reserved revision, or a key a
@@ -593,6 +593,12 @@ func (e *Event) validateMVP(minor int, fields []field) error {
 	case KindRunStart:
 		if err := validateRunStartAt(minor, fields, raw); err != nil {
 			return err
+		}
+	case KindExec:
+		if b, ok := raw["decision_lost"]; ok {
+			if err := e.validateDecisionLost(minor, b); err != nil {
+				return err
+			}
 		}
 	case KindAnswer:
 		if b, ok := raw["principal"]; ok {
@@ -765,6 +771,7 @@ var fieldKeyCodes = map[string]string{
 	"run_start.deny_read_frozen.dirs":           "deny-read-frozen",
 	"run_start.deny_read_frozen.omitted":        "deny-read-frozen",
 	"run_start.live_mode":                       "live-mode",
+	"exec.decision_lost":                        "decision-lost",
 	"run_start.live_fence":                      "live-fence",
 	"run_start.live_fence.sha256":               "live-fence",
 	"run_start.live_fence.entries":              "live-fence",

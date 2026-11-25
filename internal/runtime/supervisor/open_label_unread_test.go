@@ -12,7 +12,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// TestUnreadLSMListRefusesInWordsThatAreTrue (N114): a held open is refused whenever the active module list cannot be
+// TestUnreadLSMListRefusesInWordsThatAreTrue: a held open is refused whenever the active module list cannot be
 // read, which is the safe answer (without the list no module's labels can be compared, and a label the completing
 // process lacks could admit what the agent's own open would not). The decision is unchanged by the words; the error says
 // what failed and why, and offers a remedy that exists: on a kernel before 6.8 there is no syscall to permit.
@@ -39,7 +39,7 @@ func TestUnreadLSMListRefusesInWordsThatAreTrue(t *testing.T) {
 			[]string{"could not be read", "ENOSYS", "older than Linux 6.8", "is not there", "only the file can answer"},
 			[]string{"seccomp filter outside Tego, such as Docker"}},
 	} {
-		err := checkOpenLabelAuthority(1, 1, unix.O_RDONLY, tc.read, tc.mods, false)
+		err := checkOpenLabelAuthority(1, 1, unix.O_RDONLY, tc.read, tc.mods, nil, false)
 		if err == nil {
 			t.Fatalf("%s: an unreadable module list admitted a held open", tc.name)
 		}
@@ -55,7 +55,7 @@ func TestUnreadLSMListRefusesInWordsThatAreTrue(t *testing.T) {
 		}
 	}
 	// The assertion about AppArmor's namespace never waives module discovery.
-	if err := checkOpenLabelAuthority(1, 1, unix.O_RDONLY, absentFile, func() ([]uint64, error) { return nil, unix.ENOSYS }, true); err == nil {
+	if err := checkOpenLabelAuthority(1, 1, unix.O_RDONLY, absentFile, func() ([]uint64, error) { return nil, unix.ENOSYS }, nil, true); err == nil {
 		t.Fatal("fs.apparmor_assume_root_namespace admitted a held open with no module list")
 	}
 }

@@ -94,13 +94,30 @@ type CheckResult struct {
 	Limits           []Limit     `json:"limits"`
 	NotShown         []string    `json:"not_shown"`
 	ReceiptBy        *MadeBy     `json:"receipt_by,omitempty"`
-	CheckedBy        MadeBy      `json:"checked_by"`
+	// RecordBy is the build run_start names, read from the record when the check computed it; nil when it did not. It is
+	// for a caller that knows who must have made the receipt (a copy `tego run` keeps was made by the tego that ran the
+	// run), never written into the check's JSON or text.
+	RecordBy *MadeBy `json:"-"`
+	// RecordMinor is the record revision run_start opens, read with RecordBy and never written into the check's JSON or
+	// text: 0 when the check did not compute it, or the line names no revision. A build that keeps no receipt wrote a
+	// lower revision than the first that does, so a caller that holds a copy to the build that ran the run also needs
+	// this one: a record of an older revision names an older build exactly, and no such build made the copy.
+	RecordMinor int `json:"-"`
+	// versionNotRead is set when the receipt could not be checked only because its receipt_v or binding version is one
+	// this tego does not read (a later release may have made it); see VersionNotRead.
+	versionNotRead bool
+	CheckedBy      MadeBy `json:"checked_by"`
 	// NotCompared names the receipt's values facts took as given rather than compared, once each was what this tego
 	// writes for the record: what only the price table or clock of the machine that made the receipt gives. [] when
 	// facts compared every value, null when facts compared nothing. Binding 2 also holds the producer image hash
 	// constant; release verification checks its identity separately.
 	NotCompared []string `json:"not_compared"`
 }
+
+// VersionNotRead is true when the receipt was not checked because its receipt_v or binding version is not one this tego
+// reads: what a later release of tego writes. It is no statement about the receipt, which this tego cannot read, so
+// a caller that holds a copy it knows to be tego's own can tell this from a file that is no receipt at all.
+func (c *CheckResult) VersionNotRead() bool { return c.versionNotRead }
 
 // ExitCode is the check's exit: 0 for a match (ended or not), 1 for a mismatch, 125 when it could not check.
 func (c *CheckResult) ExitCode() int {
@@ -258,14 +275,20 @@ func (k *checker) receipt() bool {
 	}
 	switch {
 	case k.rc.V == nil || *k.rc.V != Version:
-		k.step("receipt", StepNotChecked, fmt.Sprintf("this tego reads receipt_v %d, and the file has no such receipt_v", Version))
+		has := "no receipt_v"
+		if k.rc.V != nil {
+			has = fmt.Sprintf("receipt_v %d, which another release of tego made", *k.rc.V)
+		}
+		k.res.versionNotRead = k.rc.V != nil
+		k.step("receipt", StepNotChecked, fmt.Sprintf("this tego reads receipt_v %d, and the file has %s", Version, has))
 		return false
 	case b == nil:
 		k.step("receipt", StepNotChecked, "the receipt has no binding: a tego from before receipts were bound made it, "+
 			"or it was made without --json; make it again with tego session show --json")
 		return false
 	case b.V != 1 && b.V != BindingVersion && b.V != BaselineBindingVersion:
-		k.step("receipt", StepNotChecked, fmt.Sprintf("binding v %d: this tego reads binding v 1, %d and %d", b.V, BindingVersion, BaselineBindingVersion))
+		k.res.versionNotRead = true
+		k.step("receipt", StepNotChecked, fmt.Sprintf("binding v %d, which another release of tego made: this tego reads binding v 1, %d and %d", b.V, BindingVersion, BaselineBindingVersion))
 		return false
 	case b.Error != "":
 		k.step("receipt", StepFail, "the receipt says its own record did not hold together: "+b.Error)
@@ -495,6 +518,9 @@ func (k *checker) bytesCheck() {
 func (k *checker) facts(ctx context.Context, sameBuild, chained bool) {
 	rc, cerr := k.recompute(ctx, 0)
 	if rc != nil {
+		by := rc.startBy
+		k.res.RecordBy = &by
+		k.res.RecordMinor = rc.startMinor
 		k.res.Limits = limitsForBinding(rc.Tier, k.rc.Binding.V) // the record's tier, not the one the receipt claims
 	}
 	switch {

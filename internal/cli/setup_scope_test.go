@@ -125,7 +125,7 @@ func TestStartOutsideTheManager(t *testing.T) {
 		return errors.New("not in a test")
 	}
 	outsideShell(t, probeAnswer{tier: backend.TierLandlock, outside: true, throughScope: true})
-	_, out, _ := runGuide(t, "1\n2\n")
+	_, out, _ := runGuide(t, "2\n2\n")
 	wantAll(t, "rehearsal worked", out, "This machine can run Tego", "This shell is outside your user manager's cgroup; "+
 		"tego run, watch and test open a user scope for each run (checked).", "1/4  Agent")
 

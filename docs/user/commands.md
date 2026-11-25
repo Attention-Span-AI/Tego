@@ -12,7 +12,7 @@ connect to.
 
 | Command | What it does |
 |---|---|
-| `tego start` | Sets up your first agent in four steps: the agent, its login, its project and its rules. Then it starts the dashboard, prints its sign-in link on Linux and shows the command that starts your first session. On a Mac it runs inside Tego's Linux VM, opens the dashboard in your Mac browser and leaves you in the VM project. |
+| `tego start` | Sets up your first agent in four steps: the agent, its login, its project and its rules. It looks at the machine first: an installed, signed-in agent is the first choice, and with none the first choice is a demonstration agent that needs no account, which the guide then runs once as the first governed run. Ctrl-C leaves an installer or a sign-in and returns to the question. Then it starts the dashboard, prints its sign-in link on Linux and shows the command that starts your first session. On a Mac it runs inside Tego's Linux VM, opens the dashboard in your Mac browser and leaves you in the VM project. |
 | `tego dashboard` | On Linux it starts or reuses the dashboard and prints its sign-in link for you to open. On a Mac it runs the dashboard in Tego's VM and opens it in your Mac browser. |
 | `tego shell` | On a Mac only: opens a shell in Tego's VM, in the project `tego start` set up last. |
 
@@ -63,7 +63,7 @@ A system-wide install (files owned by root, `/etc/tego`, system units) is not re
 
 ## Older names
 
-The older names keep their flags and exit codes. Guidance uses the new names, including command strings in JSON next-step and `fix` fields. `tego setup` opens the guide in a terminal; `--json` and `-v` keep its checklist. Terminal `tego run` output also changed as described above; piped stderr and `-v` retain its previous output. See [Unreleased](../CHANGELOG.md#unreleased).
+The older names keep their flags and exit codes. Guidance uses the new names, including command strings in JSON next-step and `fix` fields. `tego setup` opens the guide in a terminal; `--json` and `-v` keep its checklist. Terminal `tego run` output also changed as described above; piped stderr and `-v` retain its previous output. See [the changelog](../CHANGELOG.md).
 
 | Older name | Same as |
 |---|---|

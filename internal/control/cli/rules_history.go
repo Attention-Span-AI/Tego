@@ -121,7 +121,7 @@ func rulesHistoryVerb(ctx context.Context, name string, args []string, stdout, s
 	// An undo asked from inside a run, or from a process that cannot be shown to be outside every run, cannot be told to
 	// narrow until the contract's history is read, and a run's own contract may hide the ledger root that holds it. So
 	// when the contract cannot be listed for such a caller, the answer is the governed refusal, not a usage error about
-	// a file "no run here has run" (N112).
+	// a file "no run here has run".
 	var unlisted func(why string) int
 	if name == "undo" {
 		if a := selfGoverned(); !a.Outside() {

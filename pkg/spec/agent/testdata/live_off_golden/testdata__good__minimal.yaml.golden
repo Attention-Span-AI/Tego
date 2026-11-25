@@ -560,7 +560,8 @@ table:
     "Repeats": null,
     "StallAfter": null,
     "Tokens": null,
-    "Wall": null
+    "Wall": null,
+    "Window": null
    },
    "MCP": null,
    "Models": null,
@@ -1622,7 +1623,8 @@ table:
    "Set": 0,
    "StallAfter": 0,
    "Tokens": 0,
-   "Wall": 0
+   "Wall": 0,
+   "Window": 0
   },
   "Listen": null,
   "NameDeny": [

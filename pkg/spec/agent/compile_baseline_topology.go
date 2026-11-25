@@ -107,7 +107,7 @@ func (k *compiler) baselineTopology() {
 				bt.identities[pin.path] = pin.key
 			}
 			for _, g := range k.rt.FS {
-				if g.Kind == FSWrite {
+				if g.Kind == FSWrite && !g.StdDevice { // a standard device's row (ADR 0158) is the product's, a file no scope encloses
 					_, enclosing := baselineGrantRelation(e, g.Canonical())
 					e.topology.enclosingWrite = e.topology.enclosingWrite || enclosing
 				}
@@ -402,7 +402,7 @@ func (rt *RuleTable) baselineCell(e *BaselineRule, tier backend.Tier, plane stri
 		why = f.problem
 		writeAuthority, enclosingWrite := false, f.enclosingWrite
 		for _, g := range slices.Concat(rt.FS, rt.FSAsk) {
-			if g.Kind == FSWrite || g.Kind == FSAsk {
+			if (g.Kind == FSWrite && !g.StdDevice) || g.Kind == FSAsk { // the standard devices (ADR 0158) are no write authority over a refused scope
 				writeAuthority = true
 				_, encloses := rt.baselineCoverageRelation(e, g.Canonical())
 				enclosingWrite = enclosingWrite || encloses

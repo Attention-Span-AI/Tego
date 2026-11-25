@@ -18,6 +18,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/liveblock"
+	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -320,9 +321,10 @@ func awaitGap(t *testing.T, dir, word string, n int, ended <-chan error) {
 // TestRootLiveBlockInPlane is A35 on the real kernel. While the run runs, a write block on out/mid/blk and on the absent
 // out/absent.txt, and a path block on out/rd, are placed through the run's overlay, as `tego block` places them; once
 // the launcher's live-block-added lines are in, the probe tries every class of change at and beneath the blocked folder.
-// Each is refused EACCES, in the kernel, with nothing left behind: a write, read-write and truncating open, a create
-// (deep too), unlink, rmdir, rename out of it, into it and over a file in it, a rename inside it, a link out of it and
-// into it, mkdir, symlink, truncate and ftruncate, chmod, setxattr (where the filesystem takes user xattrs), the file
+// Each is refused EACCES (truncate(2) also EPERM where Landlock is below ABI 3: planeBlockRefusals), in the kernel,
+// with nothing left behind: a write, read-write and truncating open, a create (deep too), unlink, rmdir, rename out of it, into it and over a file in it, a rename inside it, a link out of it and
+// into it, mkdir, symlink, truncate and ftruncate, chmod, setxattr and removexattr (on a filesystem with no user
+// xattrs too: the plane's hook is asked before the filesystem's handler), the file
 // under a hard link made before a block on that file, the rename of the folder above it, the creation of the absent blocked name,
 // from a thread, a forked child and an exec'd program alike; a plain read of the write-blocked file is not refused, and
 // the path block refuses a read and a write under out/rd. What lies outside the blocks is untouched. A descriptor opened
@@ -379,6 +381,10 @@ func TestRootLiveBlockInPlane(t *testing.T) {
 				deep = append(deep, f)
 			}
 			agentOwnsTree(t, mnt, filepath.Join(s.f.out, "deep"))
+			abi, err := sys.LandlockABI()
+			if err != nil {
+				t.Fatalf("the Landlock ABI of this machine: %v", err)
+			}
 			xattrs := xattrsWork(t, filepath.Join(s.f.out, "free.txt"))
 			mntXattrs := xattrsWork(t, filepath.Join(mnt, "m.txt"))
 			cmd := s.tego(t, "run", filepath.Join(s.f.dir, "agent.yaml"), "--", python, "probe.py")
@@ -424,7 +430,7 @@ func TestRootLiveBlockInPlane(t *testing.T) {
 				t.Fatal(err)
 			}
 			phase1 := awaitJSON(t, filepath.Join(s.f.out, "phase1.json"), ended, &out)
-			t.Logf("phase 1 (user xattrs on the run's filesystem %v, on the tmpfs %v): %v", xattrs, mntXattrs, phase1)
+			t.Logf("phase 1 (Landlock ABI %d, user xattrs on the run's filesystem %v, on the tmpfs %v): %v", abi, xattrs, mntXattrs, phase1)
 			// A host-side move of the blocked folder's parent (an IDE, a checkout): the objects the blocks landed on stay
 			// blocked under their new path. The launcher re-walks every half second; two ticks pass before the probe
 			// tries, so a re-walk that dropped what moved would show.
@@ -504,11 +510,16 @@ func TestRootLiveBlockInPlane(t *testing.T) {
 			if got := runPlane(t, evs); got != tc.plane {
 				t.Fatalf("the run's decision plane is %q, want %q", got, tc.plane)
 			}
+			// The xattr changes are refused whether or not the filesystem takes user xattrs: the kernel asks the LSM
+			// hooks (security_inode_setxattr, _removexattr) before the filesystem's handler can answer "not
+			// supported", on every kernel, so a filesystem without them (tmpfs below 6.6, as on Amazon Linux 2023's
+			// 6.1) shows the plane's EACCES, never the probe's "skipped".
 			refused := []string{"write_open", "rdwr_open", "trunc_open", "create", "deep_write", "deep_create", "unlink",
 				"rmdir", "rename_out", "rename_in", "rename_over", "rename_inside", "link_out", "link_in", "mkdir", "symlink",
 				"truncate", "ftruncate_early", "chmod", "hardlink_before", "rename_ancestor", "absent_create",
 				"thread_write", "fork_write", "exec_write", "path_read", "path_write",
-				"rename_exchange", "tmpfile_in", "proc_reopen", "fchmod", "fchown", "mnt_write", "mnt_create"}
+				"rename_exchange", "tmpfile_in", "proc_reopen", "fchmod", "fchown", "mnt_write", "mnt_create",
+				"setxattr", "removexattr", "mnt_setxattr"}
 			// An O_TMPFILE linked through /proc/self/fd into the blocked folder or onto the absent name: Landlock's
 			// refer check refuses the link EXDEV before any LSM hook (seen on 6.17, both boots; the unlinked file has no
 			// folder to refer from), so the plane is not asked; it must be refused either way and leave no file.
@@ -518,17 +529,9 @@ func TestRootLiveBlockInPlane(t *testing.T) {
 				}
 			}
 			for _, k := range refused {
-				if phase1[k] != "EACCES" {
-					t.Errorf("phase 1 %s = %v, want EACCES (all: %v)", k, phase1[k], phase1)
-				}
-			}
-			for k, works := range map[string]bool{"setxattr": xattrs, "removexattr": xattrs, "mnt_setxattr": mntXattrs} {
-				want := "skipped" // the filesystem takes no user xattr, as asked outside the run
-				if works {
-					want = "EACCES"
-				}
-				if phase1[k] != want {
-					t.Errorf("phase 1 %s = %v, want %s", k, phase1[k], want)
+				if !planeBlockRefused(k, phase1[k], abi) {
+					t.Errorf("phase 1 %s = %v, want %s (Landlock ABI %d; all: %v)", k, phase1[k],
+						strings.Join(planeBlockRefusals(k, abi), " or "), abi, phase1)
 				}
 			}
 			for _, k := range []string{"write_early", "free_write", "free_create", "read_blocked_by_write", "hardlink_into_folder",

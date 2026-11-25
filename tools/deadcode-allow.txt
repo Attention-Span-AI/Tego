@@ -40,6 +40,7 @@ github.com/attention-span-ai/tego/internal/check/rule.EditKeys	control-only	inte
 github.com/attention-span-ai/tego/internal/check/rule.Entries	control-only	internal/control/rules reads a contract's list entries with it
 github.com/attention-span-ai/tego/internal/check/rule.EntryLevel	control-only	internal/control/rules finds which folder an ask entry decided with it
 github.com/attention-span-ai/tego/internal/check/rule.HostOf	control-only	internal/control/rules offers the whole-host scope with it
+github.com/attention-span-ai/tego/internal/check/rule.RunCommands	control-only	internal/control/rules reads the commands a contract starts by itself with it
 github.com/attention-span-ai/tego/internal/check/rule.Target.Verb	control-only	internal/control/rules words the event's action with it
 github.com/attention-span-ai/tego/internal/check/rule.checkEntry	control-only	ApplyEdits, reached as it is
 github.com/attention-span-ai/tego/internal/check/rule.editComment	control-only	ApplyEdits, reached as it is
@@ -99,7 +100,6 @@ github.com/attention-span-ai/tego/internal/handoff.SelfSum	control-only	internal
 github.com/attention-span-ai/tego/internal/handoff.sumOfProgram	control-only	SelfSum, reached as it is
 github.com/attention-span-ai/tego/internal/handoff.Spawn	pending	ADR 0100 (1e): the sealed child start, built ahead of its first caller
 github.com/attention-span-ai/tego/internal/handoff.readOnly	pending	Spawn, reached as it is
-github.com/attention-span-ai/tego/internal/ledger.AnchorHeads	control-only	internal/control/ledgerview reads a run's anchored head through it (anchorview.go); tego reads them inside VerifyRunDir
 github.com/attention-span-ai/tego/internal/ledger.AnchorPath	control-only	internal/control/cli's serve names the chain anchor by it; tego's runtime takes AnchorPathWith, the same rule
 github.com/attention-span-ai/tego/internal/ledger.LiveWatch.Changes	pending	the ledger's live index watch, built ahead of its first consumer
 github.com/attention-span-ai/tego/internal/ledger.LiveWatch.Close	pending	WatchLive's watch, reached as it is
@@ -158,8 +158,8 @@ github.com/attention-span-ai/tego/internal/pricetable.identityAt	control-only	ca
 github.com/attention-span-ai/tego/internal/policy/decide.LandlockLinkRefusal	test-api	internal/runtime/observe's chain_link_test names the Landlock floor's link refusal by scan, the oracle for the recorder's indexed answer
 github.com/attention-span-ai/tego/internal/policy/decide.LandlockRenameRefusal	test-api	internal/runtime/observe's chain_link_test names the Landlock floor's rename refusal by scan, the oracle for the recorder's indexed answer
 github.com/attention-span-ai/tego/internal/policy/decide.PlaneNameTag	test-api	internal/bpf tests check the kernel rule_idx of a name refusal
-github.com/attention-span-ai/tego/internal/runlock.HoldDashboard	control-only	internal/control/cli serve takes the dashboard lock so tego scan names the non-dumpable dashboard (N80, F5)
-github.com/attention-span-ai/tego/internal/runlock.SetRootOwnedSeams	test-api	internal/cli and internal/control/ledgerview tests stand in a root-owned run folder, which a test cannot make (N125)
+github.com/attention-span-ai/tego/internal/runlock.HoldDashboard	control-only	internal/control/cli serve takes the dashboard lock so tego scan names the non-dumpable dashboard
+github.com/attention-span-ai/tego/internal/runlock.SetRootOwnedSeams	test-api	internal/cli and internal/control/ledgerview tests stand in a root-owned run folder, which a test cannot make
 github.com/attention-span-ai/tego/internal/runtime.NewHookQueue	test-api	internal/runtime/observe stop-drain tests drive a real recorder through it
 github.com/attention-span-ai/tego/internal/runtime/derive.ServerToolUse.UnmarshalJSON	reflection	encoding/json calls it decoding the server_tool_use field inside anthropic.Usage.UnmarshalJSON (derive/anthropic/types.go), a call the analysis does not follow
 github.com/attention-span-ai/tego/internal/runtime/derive.plainName	reflection	ServerToolUse.UnmarshalJSON's name check, reached as it is
@@ -228,6 +228,7 @@ github.com/attention-span-ai/tego/pkg/policy/fsplan.FirstCover	public-api	the fi
 github.com/attention-span-ai/tego/pkg/policy/fsplan.Plan.Enumerate	public-api	lists a plan's targets for consumers of pkg/policy
 github.com/attention-span-ai/tego/pkg/spec/agent.BuiltInDenyReadFamily	control-only	internal/control/rules groups the new policy preview's built-in refusals by it
 github.com/attention-span-ai/tego/pkg/spec/agent.BuiltInDenyWriteNames	test-api	internal/control/ledgerview's severity test holds laterFiles to the engine's built-in deny_write set with it
+github.com/attention-span-ai/tego/pkg/spec/agent.StandardDevices	test-api	internal/runtime's integration test reads the five devices' lines from a run's ledger by the list the compiler grants
 github.com/attention-span-ai/tego/pkg/spec/agent.TestTable.Run	public-api	contract test tables (tego's examples and other consumers) run their rows with it
 github.com/attention-span-ai/tego/pkg/spec/agent.TestTable.RunBy	public-api	contract test tables run their rows with a caller's decider (pkg/policy/evaluate)
 github.com/attention-span-ai/tego/pkg/spec/agent.WithDNSTTL	public-api	the compile option setting the TTL handed to the launcher, for consumers of pkg/spec

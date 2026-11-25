@@ -33,7 +33,7 @@ func TestBaselineLoadClassesDocumented(t *testing.T) {
 			}
 			text := strings.Join(strings.Fields(string(data)), " ")
 			if strings.HasSuffix(tt.path, "CHANGELOG.md") {
-				_, text, _ = strings.Cut(text, "## Unreleased ")
+				_, text, _ = strings.Cut(text, "## v0.2.0 ")
 				text, _, _ = strings.Cut(text, " ## ")
 			}
 			for _, required := range tt.required {

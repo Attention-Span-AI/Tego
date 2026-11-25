@@ -678,7 +678,8 @@ table:
     "Repeats": null,
     "StallAfter": null,
     "Tokens": null,
-    "Wall": null
+    "Wall": null,
+    "Window": null
    },
    "MCP": null,
    "Models": null,
@@ -1758,6 +1759,111 @@ table:
     "RuntimeDev": 0,
     "RuntimeIno": 0,
     "Unenforced": false
+   },
+   {
+    "Access": 49154,
+    "AskRead": false,
+    "BuiltIn": true,
+    "Kind": "write",
+    "Missing": false,
+    "Path": "/dev/null",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/dev/null",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "StdDevice": true,
+    "Unenforced": false
+   },
+   {
+    "Access": 49154,
+    "AskRead": false,
+    "BuiltIn": true,
+    "Kind": "write",
+    "Missing": false,
+    "Path": "/dev/zero",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/dev/zero",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "StdDevice": true,
+    "Unenforced": false
+   },
+   {
+    "Access": 49154,
+    "AskRead": false,
+    "BuiltIn": true,
+    "Kind": "write",
+    "Missing": false,
+    "Path": "/dev/full",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/dev/full",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "StdDevice": true,
+    "Unenforced": false
+   },
+   {
+    "Access": 49154,
+    "AskRead": false,
+    "BuiltIn": true,
+    "Kind": "write",
+    "Missing": false,
+    "Path": "/dev/random",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/dev/random",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "StdDevice": true,
+    "Unenforced": false
+   },
+   {
+    "Access": 49154,
+    "AskRead": false,
+    "BuiltIn": true,
+    "Kind": "write",
+    "Missing": false,
+    "Path": "/dev/urandom",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/dev/urandom",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "StdDevice": true,
+    "Unenforced": false
    }
   ],
   "FSAsk": null,
@@ -1813,7 +1919,8 @@ table:
    "Set": 0,
    "StallAfter": 0,
    "Tokens": 0,
-   "Wall": 0
+   "Wall": 0,
+   "Window": 0
   },
   "Listen": null,
   "NameDeny": [

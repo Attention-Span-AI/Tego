@@ -20,7 +20,7 @@ import (
 // it, while the run still counts as live. What it says then comes from the run's record at that moment (what the
 // ledger holds for the ask, whether the run's lock is still held) and from nothing it only supposes: an answer is
 // never reported as delivered unless the ledger holds it, and "no ask rule" is never said of a run whose start record
-// says it served approvals (N109).
+// says it served approvals.
 
 // askLauncherAgain is the second look at the run's launcher that a command whose broker went away takes, a variable
 // only so a test can end the run between the dial and this look without waiting for it.

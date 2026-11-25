@@ -450,6 +450,9 @@ type Limits struct {
 	Wall       *Duration `yaml:"wall,omitempty"`
 	StallAfter *Duration `yaml:"stall_after,omitempty"`
 	Repeats    *int      `yaml:"repeats,omitempty"`
+	// Window makes tokens and cost_usd a total over any span this long across every run of this agent, restarts
+	// included (ADR 0165). Absent: each run counts from zero, as ever.
+	Window *Duration `yaml:"window,omitempty"`
 }
 
 // RecordMode is what the ledger keeps; enforcement is unaffected.
@@ -794,6 +797,10 @@ type FSRule struct {
 	// Fence marks an entry an Adjustable contract's live.fence added (ADR 0125): its rule name is the fence entry's,
 	// live.fence[<kind>:<value>], so the record never says the contract allowed what only a lifted entry allows.
 	Fence bool `json:",omitempty"`
+	// StdDevice marks a row compile added for one of the standard data devices (StandardDevices): a write grant of the
+	// product's own, named BuiltinStandardDevices, which a tier keys on the object it opens only after checking that
+	// the object is that device (StandardDeviceAt). False for every entry of a contract.
+	StdDevice bool `json:",omitempty"`
 	// AliasOf is, for an entry compile added because the mount table shows a denied file or tree under another name,
 	// the path of the entry it is another name of (compile_alias.go): a refusal is about the file, not one of its
 	// names. The entry keeps that entry's Raw and Pos, so it carries the same rule name; a built-in one is named by
@@ -939,7 +946,10 @@ type ResolvedLimits struct {
 	Wall       time.Duration
 	StallAfter time.Duration
 	Repeats    int
-	Set        BudgetSet
+	// Window is the span tokens and cost_usd add up over across runs of one agent (Limits.Window, ADR 0165); 0 is none,
+	// each run then counting from zero. It is not a dimension of its own, so it has no BudgetSet bit.
+	Window time.Duration
+	Set    BudgetSet
 }
 
 // Bounded reports whether dimension k carries a budget. k names one dimension.

@@ -82,3 +82,23 @@ func errString(err error) string {
 	}
 	return err.Error()
 }
+
+// TestFileChainAnchorHeadsIsHead: the batch answer the budget window asks for equals the one-run answer, for a run the
+// file names and for one it does not.
+func TestFileChainAnchorHeadsIsHead(t *testing.T) {
+	a, absent := testRef.ID, runID(fixedStart.Add(2*time.Minute), "zz8zz8")
+	path := filepath.Join(t.TempDir(), ChainLogFile)
+	if err := os.WriteFile(path, []byte(a+" "+strings.Repeat("ab", 32)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fa := NewFileChainAnchor(path).(interface {
+		Heads(runs []string) map[string]AnchorHead
+	})
+	got := fa.Heads([]string{a, absent})
+	for _, run := range []string{a, absent} {
+		h, ok, err := NewFileChainAnchor(path).Head(run)
+		if got[run].Head != h || got[run].OK != ok || got[run].Err != err {
+			t.Fatalf("Heads[%s] = %+v, Head = %q %v %v", run, got[run], h, ok, err)
+		}
+	}
+}

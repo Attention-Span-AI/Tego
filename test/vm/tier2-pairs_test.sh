@@ -64,7 +64,7 @@ def wait_for_progress(proc, command, root):
     show on disk: a case that retries a failed cleanup runs the rm stand-in once per attempt (up to 50 of them, each a
     python start that a loaded host stretches to a quarter of a second or more), and the stand-in counts each one in
     <root>/calls. A fixed ten seconds for the whole run, which this used to be, was a speed estimate of fifty process
-    starts (a gate's tier2-pairs run timed out on exactly that case, N101); no step for ten seconds is a hang."""
+    starts (a gate's tier2-pairs run timed out on exactly that case); no step for ten seconds is a hang."""
     def marks():
         try:
             return (root / 'calls').read_text(), (root / 'hb').stat().st_mtime_ns

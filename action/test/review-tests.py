@@ -165,6 +165,17 @@ else:
                      'Additional command grant', '/bin/bash', 'harness.generated-canary']:
             self.assertIn(text, md)
 
+    def test_M7_commands_whose_decision_record_was_lost_are_said(self):
+        self.assertNotIn('decision', self.render().split('#### Refused actions')[1].split('Protected or secret')[0])
+        self.r['refusals'].update(total=0, by_rule=[], list=[])
+        self.r['execs_decision_lost'] = 1
+        md = self.render().split('#### Refused actions')[1].split('Protected or secret')[0]
+        self.assertIn('No refusals recorded', md)
+        self.assertIn('`1` command failed with permission denied; the record of what decided it was lost', md)
+        self.r['execs_decision_lost'] = 3
+        md = self.render().split('#### Refused actions')[1].split('Protected or secret')[0]
+        self.assertIn('`3` commands failed with permission denied; the record of what decided them was lost', md)
+
     def test_S1_refuse_setuid_after_merge(self):
         p = self.policy({'setuid': True})
         self.assertNotEqual(p.returncode, 0)

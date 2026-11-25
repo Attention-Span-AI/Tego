@@ -22,7 +22,7 @@ func ceiling(t *testing.T, dir, file, value string) {
 	}
 }
 
-// TestLaunchRecordsTheCeilingAnAncestorHolds (GAPS N85): a run placed under a cgroup with a lower memory, pids or cpu
+// TestLaunchRecordsTheCeilingAnAncestorHolds: a run placed under a cgroup with a lower memory, pids or cpu
 // ceiling than the one the launcher wrote is held to the lower one by the kernel, so run_start.applied_limits says the
 // lower one and not only the scope's own file. The ceilings come from the whole chain up to the manager's root.
 func TestLaunchRecordsTheCeilingAnAncestorHolds(t *testing.T) {
@@ -48,7 +48,7 @@ func TestLaunchRecordsTheCeilingAnAncestorHolds(t *testing.T) {
 	}
 }
 
-// TestLaunchSaysWhenAnAncestorCannotBeRead (GAPS N85): a ceiling the launcher cannot read is not guessed. The member it
+// TestLaunchSaysWhenAnAncestorCannotBeRead: a ceiling the launcher cannot read is not guessed. The member it
 // would have bounded is left out of the record, and the log says which ancestor file and why.
 func TestLaunchSaysWhenAnAncestorCannotBeRead(t *testing.T) {
 	fs, c := appliedScope(t, "memory.max", "pids.max")

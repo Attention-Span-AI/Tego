@@ -242,6 +242,8 @@ type payload struct {
 	Which        string   `json:"which"`
 	Command      []string `json:"command"`
 	Mechanism    string   `json:"mechanism"`
+	// DecisionLost is an exec line's decision_lost (record revision 41): the gaps its decision record may be lost to.
+	DecisionLost []string `json:"decision_lost"`
 }
 
 // The open flags that make an open a write (Linux values; the ledger records the raw flags).
@@ -394,6 +396,8 @@ func (b *builder) line(e *record.Event) error {
 				return fmt.Errorf("receipt run_start: %w", err)
 			}
 			b.runStart.RecordMinor, _ = e.RunStartMinor() // malformed or folded revision grants no attribution
+			rc.startBy = MadeBy{TegoVersion: b.runStart.TegoVersion, Commit: b.runStart.Commit}
+			rc.startMinor = b.runStart.RecordMinor
 			if src := b.runStart.ContractSource; b.runStart.RecordMinor >= record.MinorLearn && src != nil && src.Learn != nil && src.Learn.Validate() == nil {
 				b.learned = src.Learn
 			}

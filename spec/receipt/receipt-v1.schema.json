@@ -1121,6 +1121,9 @@
     "escalated": {
       "type": "boolean"
     },
+    "execs_decision_lost": {
+      "type": "integer"
+    },
     "exit_code": {
       "anyOf": [
         {

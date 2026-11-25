@@ -203,7 +203,7 @@ func TestHighlightsSecretLeadsToNeverAllow(t *testing.T) {
 	}
 }
 
-// TestAnswerErrSaysWhatIsTrueOfAGoneSocket (N125): a run whose launcher holds its lock but whose answer socket is not
+// TestAnswerErrSaysWhatIsTrueOfAGoneSocket: a run whose launcher holds its lock but whose answer socket is not
 // there (ENOENT) or has no listener (ECONNREFUSED) has not been shown to have ended, so the line must not say it is not
 // running; a run with no live launcher is the one that says so. The words match `tego ask`'s: the answer was not delivered.
 func TestAnswerErrSaysWhatIsTrueOfAGoneSocket(t *testing.T) {

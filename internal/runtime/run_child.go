@@ -113,7 +113,9 @@ func (r *runner) startChild(ctx context.Context) error {
 				return err
 			}
 			if r.deps.Warn != nil {
-				state, err := doctor.ReadLSMState()
+				// The list a held open reads, in its order (the call, the file, the list file): not the kernel log, which
+				// answers doctor's tier row only, so a refusal the supervisor will make is not left unsaid here.
+				state, err := doctor.ReadHeldOpenList()
 				r.warnHeldLabel([]byte(strings.Join(state.Modules, ",")), err)
 			}
 		}

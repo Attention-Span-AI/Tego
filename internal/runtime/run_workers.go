@@ -128,6 +128,18 @@ type unixGranter interface {
 	GrantUnix(done <-chan struct{}, cookie uint64, name []byte) (supervisor.Revoke, error)
 }
 
+// landlockTruncater is the tier-1 handle's word on whether its ruleset decides truncate(2) (landlock.Handle).
+type landlockTruncater interface {
+	LandlockDecidesTruncate() bool
+}
+
+// landlockDecidesTruncate is the handle's word that its Landlock ruleset decides truncate(2), false for a handle that
+// does not say (the supervisor then refuses a notified truncation itself).
+func landlockDecidesTruncate(h any) bool {
+	s, ok := h.(landlockTruncater)
+	return ok && s.LandlockDecidesTruncate()
+}
+
 // denyReadSnapshotter is the tier-1 handle's deny_read enumeration as Prepare froze it (landlock.Handle.DenyReadSnapshot):
 // whether the ruleset refuses a read of a resolved path the contract allows, nil when it enumerated nothing.
 type denyReadSnapshotter interface {
@@ -230,6 +242,7 @@ func (r *runner) startNotifyLoop(ctx context.Context) error {
 		r.markPauseReader() // only now does a pause written to the overlay reach a launcher that applies it
 		r.markRealReader()  // only now may a writer store a block's real path (VersionReal) for this run
 		r.markLinkReader()  // only now may a writer place a block that matches by link (VersionLink) on this run
+		r.markWordsReader() // only now may a writer place a block on a command's words (VersionWords) on this run
 		r.markNoteReader()  // only now may a writer sign a lift's note for this run
 	}
 	supOpts.Ask = r.askRequest
@@ -307,6 +320,10 @@ func (r *runner) startNotifyLoop(ctx context.Context) error {
 	if s, ok := r.handle.(denyReadSnapshotter); ok && !policy.Observe {
 		supOpts.DenyReadSnapshot = s.DenyReadSnapshot()
 	}
+	// Below Landlock ABI 3 the filter notifies the truncations the ruleset cannot refuse and the supervisor refuses them
+	// (landlock-no-truncate). Only a handle that says its ruleset decides truncate(2) has them continued: a handle that
+	// does not say refuses, as an unwired answer must not let a file be emptied.
+	supOpts.LandlockTruncate = landlockDecidesTruncate(r.handle)
 	// This check sits after the early return for a run with no notify descriptor (a tier with no seccomp filter): such
 	// a run notifies nothing to the supervisor, so no read or exec of a late name could reach the snapshot whether or
 	// not it was handed on, and what the record says of one is the kernel recorder's (observed, by other, with the
@@ -600,6 +617,9 @@ func (r *runner) newBudget() {
 	}
 	if r.writer != nil {
 		opts = append(opts, limits.WithLedgerCeiling(r.ledgerCeiling(), r.writer.LedgerBytes))
+	}
+	if r.window != nil {
+		opts = append(opts, limits.WithWindow(*r.window))
 	}
 	r.budget = limits.NewWatcher(r.rt.Limits, r.deps.Prices, r.cgm, r.cg, r.deps.Clock, r.queue.BudgetSink(), opts...)
 }

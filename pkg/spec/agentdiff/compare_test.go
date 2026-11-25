@@ -111,11 +111,11 @@ func TestClassifiedFieldCoverage(t *testing.T) {
 		typ    reflect.Type
 		fields string
 	}{
-		{reflect.TypeFor[agent.FSRule](), "BuiltinRule Path Kind Access Raw Pos Resolved Mount Filesystem Device IsMountPoint Overlay Btrfs Missing Unenforced BuiltIn AskRead Regular Nlink FileMountPoint DirCaseExact Runtime RuntimeDev RuntimeIno Fence AliasOf"},
+		{reflect.TypeFor[agent.FSRule](), "BuiltinRule Path Kind Access Raw Pos Resolved Mount Filesystem Device IsMountPoint Overlay Btrfs Missing Unenforced BuiltIn AskRead Regular Nlink FileMountPoint DirCaseExact Runtime RuntimeDev RuntimeIno Fence AliasOf StdDevice"},
 		{reflect.TypeFor[agent.ExecRule](), "Raw Path Resolved Basename ByName Interp Verdict Source IsDir Pos Runtime Fence FenceEntry"},
 		{reflect.TypeFor[agent.NetRule](), "Raw Host Port Proto Verdict IPs CIDR UnixPath Abstract UnixResolved Static Denied PublicAnswer Runtime MCP ResolvedAt TTL ExpiresAt Pos Fence"},
 		{reflect.TypeFor[agent.NetworkLimits](), "Connections PendingConnects Bytes DatagramsPerSecond"},
-		{reflect.TypeFor[agent.ResolvedLimits](), "CPU CPUWeight MemoryB MemoryHigh Pids Tokens CostUSD Wall StallAfter Repeats Set"},
+		{reflect.TypeFor[agent.ResolvedLimits](), "CPU CPUWeight MemoryB MemoryHigh Pids Tokens CostUSD Wall StallAfter Repeats Window Set"},
 		{reflect.TypeFor[agent.AskConfig](), "Hold Timeout MaxPending OnTimeout"},
 		{reflect.TypeFor[agent.Credential](), "Name Env Allow BaseURLEnv"},
 		{reflect.TypeFor[agent.EnvSection](), "Pass Deny Mask Set"},

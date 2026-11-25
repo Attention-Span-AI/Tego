@@ -318,12 +318,17 @@ func TestHelperSessionReusesWorker(t *testing.T) {
 func TestHelperSixteenConcurrentHealthySessions(t *testing.T) {
 	// Keep every helper alive until all sixteen have answered. A four-slot
 	// shared budget refused healthy commands even though no mount was stuck.
-	var ready sync.WaitGroup
+	var ready, done sync.WaitGroup
 	ready.Add(16)
+	done.Add(16)
 	release := make(chan struct{})
 	errs := make(chan error, 16)
 	for i := range 16 {
 		go func(i int) {
+			// The test ends only when every session has closed, so no helper of this test is still alive (and
+			// holding its slot) while a later test runs. A late close would give its slot back to the pool the
+			// worker took it from, not to a later test's pool (admitWorker), but it would still be a stray worker.
+			defer done.Done()
 			ctx, closeSession := WithHelperSession(context.Background())
 			defer closeSession()
 			_, err := PlacePath(ctx, fmt.Sprintf("/healthy-%d.yaml", i))
@@ -339,6 +344,7 @@ func TestHelperSixteenConcurrentHealthySessions(t *testing.T) {
 			t.Errorf("healthy session refused: %v", err)
 		}
 	}
+	done.Wait()
 }
 
 func TestHelperReservationFailureRefuses(t *testing.T) {

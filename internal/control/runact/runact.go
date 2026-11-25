@@ -325,8 +325,15 @@ func blockUntil(ctx context.Context, root, run, kind, value string, add bool, un
 	out := Blocked{Run: run, Rule: liveblock.Rule(k, v), Until: until}
 	f := StartFacts(dir)
 	out.Observe, out.ReadsSeen = f.Observe, f.ReadsDecided()
-	if err := liveblock.CheckBlock(liveTarget(run, held, f), k, add, until); err != nil {
+	target := liveTarget(run, held, f)
+	target.TakesWords = liveblock.TakesWords(dir)
+	if err := liveblock.CheckBlock(target, k, add, until); err != nil {
 		return out, err
+	}
+	if k == liveblock.KindExec && liveblock.IsWords(v) {
+		if err := liveblock.CheckWords(target, add); err != nil {
+			return out, err
+		}
 	}
 	if !until.IsZero() {
 		if err := liveblock.CheckUntil(time.Now(), until); err != nil {
@@ -381,7 +388,7 @@ func blockUntil(ctx context.Context, root, run, kind, value string, add bool, un
 		// leaves the block as it is, said as Unknown.
 		r, _ := liveblock.AddReal(ctx, dir, run, k, v, placed)
 		out.Real, out.Uncovered, out.RealUnknown = r.Real, r.Uncovered, r.Unknown
-		if k == liveblock.KindExec {
+		if k == liveblock.KindExec && !liveblock.IsWords(v) {
 			// An absolute program is matched by its file's identity too, so the block refuses that file under every
 			// name it has; the page says so. No PATH is searched: the dashboard's is not the run's.
 			x := liveblock.ReachOf(v, "")
@@ -535,6 +542,9 @@ var (
 	// ErrReadsUnseen is a read block asked of a run whose supervisor does not see its reads (neither held nor
 	// recorded): it would refuse nothing there.
 	ErrReadsUnseen = liveblock.ErrReadsUnseen
+	// ErrNoWords is a block on a command's words asked of a run whose launcher has not made the mark that it reads one
+	// (an older tego, or a run still starting): nothing is placed, and never a block on the whole program in its stead.
+	ErrNoWords = liveblock.ErrNoWords
 )
 
 // ErrOverlayMoved is a change asked on the strength of one state of a run's live overlay (its serial at a preview, the

@@ -4,7 +4,6 @@ package ledger
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -39,21 +38,6 @@ func HandOverRun(runDir string) error {
 	}
 	defer func() { _ = d.Close() }()
 	return handOverDir(d, runDir, o)
-}
-
-// PlaceNewFile is placeNewFileAt (whose doc is the contract) on dir reached by the §3 walk (openDir), refusing a
-// name that is not one file name.
-func PlaceNewFile(dir, name string, b []byte) error {
-	if name == "" || name == "." || name == ".." || filepath.Base(name) != name {
-		return fmt.Errorf("ledger: place %q in %s: not a file name", name, dir)
-	}
-	path := filepath.Join(dir, name)
-	dfd, err := openDir(dir, false)
-	if err != nil {
-		return fmt.Errorf("ledger: place %s: %w", path, err)
-	}
-	defer func() { _ = dfd.Close() }()
-	return placeNewFileAt(dfd, dir, name, b, nil)
 }
 
 // WithWriterOptions passes options to the Writers the sweep opens (clock, anchor, logger).

@@ -134,7 +134,8 @@ func handleLink(l *Loop, n *notif) {
 }
 
 // handleTruncate records a truncate(2), which follows a final symlink, and continues it: Landlock's TRUNCATE
-// right decides it from ABI 3, below which the filter refuses it and nothing is notified.
+// right decides it from ABI 3. Below ABI 3 (Options.LandlockTruncate false) the kernel has no such right and every
+// truncate(2) is refused here, with EPERM, whatever its path (refuseNoTruncateRight).
 // A truncate that reaches a deny_write target is refused here (R15c), as a write-open with O_TRUNC is.
 func handleTruncate(l *Loop, n *notif) {
 	r := l.newReader(n)
@@ -143,6 +144,10 @@ func handleTruncate(l *Loop, n *notif) {
 		return
 	}
 	q := pathQuery{tid: n.pid, dirfd: atFDCWD, path: raw, joined: p}.as(agent.LookupFollow)
+	if l.noTruncateRight() {
+		l.refuseNoTruncateRight(n, r, record.FSTruncate, 0, fsEnd{p: p, q: q})
+		return
+	}
 	d := l.decideFS(n, record.FSTruncate, p, q, 0, false)
 	if n.gone {
 		return
@@ -380,6 +385,12 @@ func (l *Loop) recordOpen(n *notif, dirfd int32, addr uint64, flags int, decideO
 	if n.gone {
 		return
 	}
+	if decideOp == record.FSOpen && opensTruncatingWithoutWrite(flags) && l.noTruncateRight() {
+		// Below ABI 3 Landlock asks for no write right of this open, so nothing but this answer stops the truncation.
+		q := pathQuery{tid: n.pid, dirfd: dirfd, path: raw, joined: p}.as(openLookup(flags, false))
+		l.refuseNoTruncateRight(n, r, record.FSOpen, flags, fsEnd{p: p, q: q})
+		return
+	}
 	if decideOp == record.FSOpen && l.ptyOpen(n, r, p, raw, flags) {
 		return
 	}
@@ -588,16 +599,50 @@ type fsDecided struct {
 	// floor marks a refusal a supervisor floor made on the copied names (denyWrite's R15c, denyReadMove's R15d): it is
 	// final, and no person is asked to lift it (ADR 0041 D3 (1), ADR 0047).
 	floor bool
+	// errno is the errno of a refusal this loop answers, where it is not refusalErrno: the zero value is.
+	errno unix.Errno
 }
 
 // answerFS answers an fs notification: CONTINUE for an advisory verdict, R10's errno for a refusal this loop
 // makes itself. An observe run's respond turns the latter into CONTINUE too (R30).
 func (l *Loop) answerFS(n *notif, d fsDecided) {
 	if d.enforce {
-		l.respond(n, respErrno(refusalErrno))
+		errno := refusalErrno
+		if d.errno != 0 {
+			errno = d.errno
+		}
+		l.respond(n, respErrno(errno))
 		return
 	}
 	l.respond(n, respContinue())
+}
+
+// ruleNoTruncateRight names the refusal of a truncation on a kernel whose Landlock has no right for it (ABI below 3,
+// kernel 6.2 unless backported). The filter notifies every truncate(2), and every open that truncates through an access
+// mode that is neither O_WRONLY nor O_RDWR, and this loop answers EPERM, whatever the path: Landlock asks for no write
+// right of either, so nothing else stops the file's content going, and the filter cannot read a path safely, so the
+// answer is the same for a path inside a declared write entry. The reason is the one a refused write has.
+const ruleNoTruncateRight = "landlock-no-truncate"
+
+// noTruncateRight reports whether this run must refuse a truncation itself: it enforces something and its Landlock
+// ruleset cannot (Options.LandlockTruncate). An observe run continues every call, so it asks no such thing.
+func (l *Loop) noTruncateRight() bool { return !l.landlockTruncate && !l.observing() }
+
+// opensTruncatingWithoutWrite is the open the filter's second truncation arm notifies below ABI 3
+// (landlock.readOnlyTruncateTest, kept in step by TestOpenTruncatesWithoutWriteMatchesTheFilter): O_TRUNC with an access
+// mode that is not exactly O_WRONLY or O_RDWR, so O_RDONLY and the access mode 3. Landlock derives its write right
+// from the access mode alone, so below ABI 3 it asks for none here while the VFS truncates.
+func opensTruncatingWithoutWrite(flags int) bool {
+	acc := flags & unix.O_ACCMODE
+	return flags&unix.O_TRUNC != 0 && acc != unix.O_WRONLY && acc != unix.O_RDWR
+}
+
+// refuseNoTruncateRight answers a truncation EPERM, the errno the filter answered on its own before this arm was a
+// notification, and writes the action's line: refused, reason write-outside-contract, rule landlock-no-truncate. It is
+// written under record: off too, as every refusal is. No path rule is asked: the refusal does not depend on one.
+func (l *Loop) refuseNoTruncateRight(n *notif, r *reader, op string, flags int, e fsEnd) {
+	d := fsDecided{rule: ruleNoTruncateRight, verdict: record.VerdictRefused, reason: reasonFor(op), enforce: true, floor: true, errno: unix.EPERM}
+	l.settleFS(n, r, op, e, fsEnd{}, flags, d)
 }
 
 // settleFS answers an fs notification and writes its line, unless another producer's line is the action's one

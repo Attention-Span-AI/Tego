@@ -153,6 +153,19 @@ func (f *facts) builtInDenyRead() (keys []string, c claim) {
 	return keys, c
 }
 
+// hasStandardDevices reports whether the table holds a row for a standard data device (agent.FSRule.StdDevice).
+func (f *facts) hasStandardDevices() bool {
+	if f == nil {
+		return false
+	}
+	for i := range f.rt.FS {
+		if f.rt.FS[i].IsStandardDevice() {
+			return true
+		}
+	}
+	return false
+}
+
 // builtInDenyWrite reports whether the table holds built-in deny_write targets, their rule keys and their claim.
 func (f *facts) builtInDenyWrite() (present bool, keys []string, c claim) {
 	if f == nil {
@@ -865,6 +878,16 @@ func buildAlwaysOn(v *View, d Declaration, f *facts, add func(string, Rule), src
 		}
 		r.RuleKey, r.Covers = keyAndCovers(keys)
 		add(GroupAlwaysOn, r)
+	}
+	// ADR 0158: every contract may write the five standard data devices, and a compiled view says so only for the
+	// devices the table holds a row for (a host whose file at the name is not the device has none, and an entry of
+	// the contract that names one decides it instead); a view read as text, which cannot look, says it for the set.
+	if (f == nil && d.HasFS) || f.hasStandardDevices() {
+		add(GroupAlwaysOn, Rule{
+			Key: "built-in.standard_devices", RuleKey: agent.BuiltinStandardDevices,
+			Sentence: "Can write the standard data devices /dev/null, /dev/zero, /dev/full, /dev/random and /dev/urandom, which hold no file; no other device",
+			Effect:   EffectAllow,
+		})
 	}
 	if f == nil || f.rt.Builtins != nil {
 		for _, entry := range []struct{ id, sentence string }{

@@ -134,7 +134,7 @@ func (s *Service) planRaw(ctx context.Context, req RawReq) (*ChangePlan, error) 
 		if cwd == "" {
 			cwd = filepath.Dir(cc.Contract)
 		}
-		p.Now = s.nowOptions(ctx, c.Live, p.changes, cwd, entriesOf(p.text))
+		p.Now = s.nowOptions(ctx, c.Live, p.changes, cwd, s.restOf(p.text, cwd))
 	}
 	return p, nil
 }

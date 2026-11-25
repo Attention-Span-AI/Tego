@@ -51,6 +51,9 @@ func (bd *builder) writeEntry(r agent.FSRule) error {
 	if err == nil && r.RuntimeIno != 0 {
 		return bd.sameRuntimeDir(idx, r)
 	}
+	if err == nil && r.IsStandardDevice() {
+		return bd.sameStandardDevice(idx, r)
+	}
 	if err == nil || !r.Missing || !errors.Is(err, ErrPathVanished) {
 		return err
 	}
@@ -75,6 +78,22 @@ func (bd *builder) sameRuntimeDir(idx int, r agent.FSRule) error {
 	}
 	if st.Mode&unix.S_IFMT != unix.S_IFDIR || uint64(st.Dev) != r.RuntimeDev || st.Ino != r.RuntimeIno {
 		return fmt.Errorf("%w: runtime grant %q is no longer the directory the run made", ErrRulesetBuild, r.Path)
+	}
+	return nil
+}
+
+// sameStandardDevice refuses a standard-device grant (ADR 0158) whose held descriptor is not that character device:
+// the grant is by what the file is, so a file another device, a regular file or a mount of something else holds at
+// the name by now gets none, and the run does not start rather than go without a rule it was compiled with. The
+// comparison reads the descriptor the rule is made on, so nothing can be swapped in after it.
+func (bd *builder) sameStandardDevice(idx int, r agent.FSRule) error {
+	var st unix.Stat_t
+	if err := unix.Fstat(bd.fds.open[idx].FD, &st); err != nil {
+		return fmt.Errorf("%w: standard device %q: %w", ErrRulesetBuild, r.Path, err)
+	}
+	if !agent.StandardDeviceAt(r.Path, st.Mode, uint64(st.Rdev)) { //nolint:unconvert // Rdev is uint64 on amd64 and arm64, not everywhere
+		return fmt.Errorf("%w: %q is not the standard character device it was when the run was compiled (mode %#o, device %d:%d)",
+			ErrRulesetBuild, r.Path, st.Mode&unix.S_IFMT, unix.Major(uint64(st.Rdev)), unix.Minor(uint64(st.Rdev))) //nolint:unconvert // as above
 	}
 	return nil
 }

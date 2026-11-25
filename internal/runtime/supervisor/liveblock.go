@@ -5,11 +5,14 @@
 package supervisor
 
 import (
+	"fmt"
 	"net/netip"
 	"strings"
+	"sync"
 
 	"github.com/attention-span-ai/tego/internal/liveblock"
 	"github.com/attention-span-ai/tego/internal/policy/decide"
+	"github.com/attention-span-ai/tego/pkg/policy/execmatch"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
@@ -64,7 +67,7 @@ func (c *compiled) decidesFastOpen() bool { return !c.netOpen || c.blocks().HasN
 // leaves every other exec to the contract. Where the contract holds no such entry, it matches the whole file.
 func (c *compiled) liveExec(d execDecision, p string, names []string, img execImage, walked bool, unmatched string) execDecision {
 	s := c.blocks()
-	if !s.HasExec() || !d.answer.cont {
+	if !(s.HasExec() || s.HasWords()) || !d.answer.cont {
 		return d
 	}
 	refused := func(rule string) execDecision {
@@ -274,4 +277,107 @@ func liveAccess(op string, flags int, mknod bool) liveblock.Access {
 		return acc
 	}
 	return liveblock.AccessWrite
+}
+
+// A live command-word block (liveblock.Entry.IsWords, ADR 0171) is matched on the command rules' own matcher: the run's
+// live blocks' texts are an exec.deny list built into one more index (agent.NewLiveCommands), and an exec is asked of it
+// on the facts the run's own command rules read (decideCommandWith), or on the very facts they read when they read the
+// whole vector, so the kernel's pin of a decided exec holds what both judged. Nothing in the run's own index, pin or
+// lines changes. The refusal is the block's: rule live.block[exec:<words>], reason exec-not-allowed, EACCES, never a
+// continue. Where the facts could not be read as the matcher needs them (an unreadable vector, an interpreter that
+// cannot be walked, a loader's program the supervisor cannot read) the exec is refused under the rule the contract's
+// own command rules refuse it under, since the block's tool may be what runs: the same fail-closed answers an exec.deny
+// entry gives.
+
+// liveWordsCache is the matcher compiled for one Set: the index of all its command blocks, and those of the subsets
+// that are in force when some block is dormant or ended (keyed by the in-force keys), so a pattern that is not in force
+// never decides ahead of one that is.
+type liveWordsCache struct {
+	set  *liveblock.Set
+	mu   sync.Mutex
+	subs map[string]*liveWordsIndex
+}
+
+// liveWordsIndex is one compiled matcher, or why it could not be built.
+type liveWordsIndex struct {
+	lc  *agent.LiveCommands
+	err error
+}
+
+// liveCommands is the matcher of the command-word blocks of s that are in force now, or nil when none is.
+func (c *compiled) liveCommands(s *liveblock.Set) (*liveWordsIndex, []liveblock.Entry) {
+	var on []liveblock.Entry
+	keys := make([]string, 0, 8)
+	for _, e := range s.Words() {
+		if _, ok := s.WordOn(e.Key()); ok {
+			on = append(on, e)
+			keys = append(keys, e.Key())
+		}
+	}
+	if len(on) == 0 {
+		return nil, nil
+	}
+	cache := c.liveWords.Load()
+	if cache == nil || cache.set != s {
+		cache = &liveWordsCache{set: s, subs: map[string]*liveWordsIndex{}}
+		c.liveWords.Store(cache)
+	}
+	key := fmt.Sprintf("%q", keys)
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	if ix, ok := cache.subs[key]; ok {
+		return ix, on
+	}
+	values := make([]string, len(on))
+	for i, e := range on {
+		values[i] = e.Value
+	}
+	lc, err := agent.NewLiveCommands(c.pol.Rules, "", values)
+	ix := &liveWordsIndex{lc: lc, err: err}
+	cache.subs[key] = ix
+	return ix, on
+}
+
+// liveWords is an exec's decision under the live command-word blocks: one this loop would continue is refused when the
+// matcher the blocks make refuses it. d is the decision so far and cmd what the run's own command rules read of the exec
+// (zero when it has none). ok is false when the notification is gone.
+func (l *Loop) liveWords(c *compiled, n *notif, r *reader, q pathQuery, raw string, img execImage, argvAddr uint64, d execDecision, cmd execCommand) (_ execDecision, ok bool) {
+	s := c.blocks()
+	if !s.HasWords() || !d.answer.cont {
+		return d, true
+	}
+	ix, on := c.liveCommands(s)
+	if ix == nil {
+		return d, true
+	}
+	refuseAs := func(rule string) execDecision {
+		return execDecision{rule: rule, verdict: record.VerdictRefused, reason: record.ReasonExecNotAllowed, answer: respErrno(refusalErrno)}
+	}
+	if ix.err != nil {
+		// The text of a block this build does not read as a command: it cannot be matched, so it is held as what it names
+		// first, fail closed, and the person unblocks it.
+		return refuseAs(on[0].Rule()), true
+	}
+	var res execCommand
+	if cmd.facts != nil && cmd.complete {
+		res = execCommand{res: ix.lc.Index.Decide(cmd.facts), argv: cmd.argv, complete: true, staged: true, walked: true, facts: cmd.facts}
+		res.decided = res.res.Outcome != execmatch.OutcomeNone
+	} else {
+		var alive bool
+		res, alive = l.decideCommandWith(ix.lc.Index, c, n, r, q, raw, img, argvAddr, false)
+		if !alive {
+			return d, false
+		}
+	}
+	if !res.refuses() {
+		return d, true
+	}
+	if p := res.res.Pattern; res.res.Outcome == execmatch.OutcomeRefused && p != nil {
+		if v, found := ix.lc.ValueOf(p); found {
+			if e, held := s.WordOn(liveblock.Key(liveblock.KindExec, v)); held {
+				return refuseAs(e.Rule()), true
+			}
+		}
+	}
+	return commandDecision(res), true
 }

@@ -552,6 +552,16 @@ func Summary(e *record.Event) string {
 		if p["dropped"] == true {
 			s += " [dropped: file written by the agent]"
 		}
+		// An exec's own EACCES result whose decision record the run lost: failed, not refused by any record, not run.
+		if lost, ok := p["decision_lost"].([]any); ok && len(lost) > 0 && e.Verdict == record.VerdictObserved {
+			names := make([]string, 0, len(lost))
+			for _, w := range lost {
+				if n, ok := w.(string); ok {
+					names = append(names, n)
+				}
+			}
+			s += " [failed: permission denied; decision record may be lost: " + strings.Join(names, ", ") + "]"
+		}
 		// ADR 0048 (8): an exec a command rule decided names the entry, how it matched and how it was read.
 		if rule := str("command_rule"); rule != "" {
 			s += " command=" + str("command_list") + ":" + rule

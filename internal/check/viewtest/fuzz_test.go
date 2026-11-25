@@ -29,6 +29,7 @@ func FuzzViews(f *testing.F) {
 		}
 	}
 	f.Add(data)
+	f.Add(decisionLostSeed(f)) // an exec whose decision record was lost (revision 41)
 	f.Fuzz(func(t *testing.T, b []byte) {
 		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, ledger.EventsFile), b, 0o600); err != nil {

@@ -90,7 +90,7 @@ var logsBudgetPages = []string{
 // warmBytes is what one call of fn allocates, as the least of n calls. TotalAlloc is the whole process's: whatever else
 // allocates while fn runs (the runtime's pools refilling after a collection, a goroutine another test left behind)
 // adds to a sample and never takes from it, so the least sample is the cost of fn itself, and a structure fn builds
-// per line is in every sample (N121: one sample of /logs?group=process was 221 bytes over the band, which a ledger's
+// per line is in every sample (one sample of /logs?group=process was 221 bytes over the band, which a ledger's
 // real growth, about 14 bytes a line from the fold's row list, leaves 84 KB of).
 func warmBytes(n int, fn func()) uint64 {
 	best := ^uint64(0)
@@ -135,6 +135,12 @@ func TestWarmBytesIgnoresAllocationFromOutsideTheCall(t *testing.T) {
 // ceiling no page of the budget set comes near. A page that walked or decoded the ledger on each refresh, or built a
 // haystack, a fold or a process index again, would allocate in proportion to the lines and fail here on any machine, which a wall-clock figure on a shared runner cannot say. Every page of the set answers 200.
 func TestLogsWarmBudget(t *testing.T) {
+	if raceEnabled {
+		// The race detector's instrumentation changes how many objects and bytes the same code allocates: a grouped
+		// page grew from 6.65 MB to 7.75 MB between the two ledgers in a race run on a hosted runner, over a bound
+		// measured without it. The budgets hold in the plain unit run of every pull request.
+		t.Skip("allocation budgets are measured without the race detector")
+	}
 	const slack = 200         // a few objects more for wider numbers on the bigger ledger
 	const byteSlack = 1 << 18 // and a quarter of a megabyte
 	const ceiling = 150_000   // allocations a warm page may cost (103,000 measured, the plain page's 100 rows with their facets)

@@ -87,7 +87,6 @@ const (
 	whyAskAdd     = "an ask cannot be added live: the run asks from its next run"
 	whyAskRemove  = "removing a read ask has no live block: this run keeps asking until its next run"
 	whyPattern    = "a pattern: a live block names one path"
-	whyCommand    = "a command entry: a live block names a whole program, and would refuse its other commands too"
 	whyNoHome     = "the home folder is not known here"
 	whyUnknownKey = "this list has no live block"
 	whyTakenBack  = "a later change took this entry back, so the current rules do not refuse it"
@@ -107,9 +106,9 @@ const (
 // where a kept entry was fixed to the same file at the same path when the run started (busybox's links), it refuses
 // that too, since the run cannot tell the two apart (ADR 0124):
 //
-//   - exec.allow X removed, or exec.deny X added: exec:X (a program; a command entry "git push" has none, since a
-//     live block names a whole program and would refuse git pull too), unless another exec.allow entry still allows
-//     that program;
+//   - exec.allow X removed, or exec.deny X added: exec:X (a program), unless another exec.allow entry still allows
+//     that program; for a command entry with words ("git push"), exec:git push, the block that refuses what that text
+//     in exec.deny refuses (wordsBlockOf, ADR 0171), unless another entry may still allow part of it;
 //   - net.allow or net.ask X removed: net:X, unless another net.allow or net.ask entry still admits that host;
 //   - fs.deny_read X added (a block of a read, or the ask_read → deny_read move of "Never allow"): read:X, a path and
 //     everything beneath it for reads only, which the supervisor decides only when the run sees its reads (heldReads);
@@ -129,7 +128,7 @@ func blockOf(c rule.Change, cwd, home string, rest map[string][]string) (kind li
 	switch {
 	case !c.Remove && c.Key == "exec.deny", c.Remove && c.Key == "exec.allow":
 		if strings.ContainsAny(c.Entry, " \t") {
-			return "", "", whyCommand
+			return wordsBlockOf(c, rest)
 		}
 		v := execValue(c.Entry, cwd)
 		k, n, why := norm(liveblock.KindExec, v)
@@ -398,8 +397,9 @@ func (s *Service) nowOptions(ctx context.Context, runs []string, changes []rule.
 		held, heldWhy := -1, ""
 		facts := s.runFacts(run)
 		var mine []NowOption
+		runRest := withRunCommand(rest, facts.RunCommandGrant)
 		for _, c := range changes {
-			k, v, why := blockOf(c, cwd, s.Home, rest)
+			k, v, why := blockOf(c, cwd, s.Home, runRest)
 			if k == "" && why != whyTakenBack && facts.Adjustable {
 				if fk, fv, src, ok := fenceOf(c, cwd, s.Home); ok {
 					if e, in := fenceEntry(facts.Fence, string(fk), fv, src); in {
@@ -412,6 +412,8 @@ func (s *Service) nowOptions(ctx context.Context, runs []string, changes []rule.
 			switch {
 			case k == liveblock.KindRead && !facts.NarrowKinds():
 				k = liveblock.KindPath
+			case k == liveblock.KindExec && liveblock.IsWords(v) && !s.takesWords(run):
+				k, v, why = "", "", whyOldWords
 			case k == liveblock.KindWrite && !facts.NarrowKinds():
 				k, v, why = "", "", whyOldWrite
 			case k == liveblock.KindWrite && facts.KernelDecidesChanges && !facts.PlaneBlocks:
@@ -455,6 +457,15 @@ func sameEntry(a, b string) bool {
 		return s
 	}
 	return entry(a) == entry(b)
+}
+
+// takesWords reports whether the launcher of run reads a block on a command's words (liveblock.TakesWords of its
+// directory); a run whose directory cannot be named does not.
+func (s *Service) takesWords(run string) bool {
+	if s.wordsMark != nil {
+		return s.wordsMark(run)
+	}
+	return runID(run) && liveblock.TakesWords(filepath.Join(s.Ledger, run))
 }
 
 // runFacts is what run's record says of how it can enforce a live block (runact.StartFacts).

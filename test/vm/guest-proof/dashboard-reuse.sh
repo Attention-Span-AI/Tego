@@ -24,7 +24,7 @@ INV1=$(inv); LINK1=$(link)
 chk "S1 started a dashboard" "[ \"$rc\" = 0 ] && [ -n '$INV1' ] && grep -q 'Started the dashboard' $OUT/s1.out"
 chk "S1 the log records pair A's tego-control bytes" "[ \"\$(prog)\" = '$A_SUM' ]"
 PID1=$(mainpid)
-echo "== undumpable (N80): the owner cannot read the dashboard's /proc entries"
+echo "== undumpable: the owner cannot read the dashboard's /proc entries"
 ls -ld "/proc/$PID1" ; readlink "/proc/$PID1/exe" 2>&1; cat "/proc/$PID1/environ" 2>&1 | head -c 80; echo
 chk "the dashboard is undumpable (its /proc/PID/exe cannot be read by its own user)" "! readlink /proc/$PID1/exe >/dev/null 2>&1"
 echo "link answers: $(curl -s -o /dev/null -w '%{http_code}' "$LINK1" 2>&1)"

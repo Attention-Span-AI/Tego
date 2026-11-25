@@ -14,7 +14,7 @@ import (
 )
 
 func checkOpenLabel(tid, opener, flags int, read func(string) ([]byte, error), modules func() ([]uint64, error)) error {
-	return checkOpenLabelAuthority(tid, opener, flags, read, modules, false)
+	return checkOpenLabelAuthority(tid, opener, flags, read, modules, nil, false)
 }
 
 func TestOpenLabelAppArmorNamespaceAssumption(t *testing.T) {
@@ -46,7 +46,7 @@ func TestOpenLabelAppArmorNamespaceAssumption(t *testing.T) {
 				}
 				return nil, os.ErrNotExist
 			}
-			err := checkOpenLabelAuthority(123, 456, unix.O_RDONLY, read, func() ([]uint64, error) { return []uint64{100, 104}, nil }, tc.assume)
+			err := checkOpenLabelAuthority(123, 456, unix.O_RDONLY, read, func() ([]uint64, error) { return []uint64{100, 104}, nil }, nil, tc.assume)
 			if (err == nil) != tc.wantOK {
 				t.Fatalf("got %v, wantOK=%t", err, tc.wantOK)
 			}
@@ -60,7 +60,7 @@ func TestOpenLabelAppArmorNamespaceAssumption(t *testing.T) {
 	}
 	// The assertion cannot hide an unknown module, missing enumeration, or Smack.
 	for _, ids := range [][]uint64{nil, {999}, {100, 102}} {
-		err := checkOpenLabelAuthority(123, 456, unix.O_CREAT, func(string) ([]byte, error) { return nil, os.ErrPermission }, func() ([]uint64, error) { return ids, nil }, true)
+		err := checkOpenLabelAuthority(123, 456, unix.O_CREAT, func(string) ([]byte, error) { return nil, os.ErrPermission }, func() ([]uint64, error) { return ids, nil }, nil, true)
 		if err == nil {
 			t.Fatalf("assertion bypassed module facts: %v", ids)
 		}

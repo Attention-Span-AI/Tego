@@ -910,7 +910,7 @@ func CheckReviewFile(contract []byte, label, dir string, env CheckEnv, state str
 	}
 	expected := filepath.Clean(filepath.Join(dir, state))
 	for _, rule := range rt.FS {
-		if rule.Kind != agent.FSWrite {
+		if rule.Kind != agent.FSWrite || rule.IsStandardDevice() { // the product's own grant of the data devices (ADR 0158) is no write the review contract made
 			continue
 		}
 		path := filepath.Clean(rule.Resolved)

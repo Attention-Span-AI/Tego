@@ -79,7 +79,7 @@ func TestOpenLabelTOMOYO(t *testing.T) {
 				if syscallList {
 					modules = func() ([]uint64, error) { return []uint64{108, 100, 110, 105, 104, 103, 109, 113, 111, 112}, nil }
 				}
-				err := checkOpenLabelAuthority(123, 456, unix.O_RDONLY, read, modules, false)
+				err := checkOpenLabelAuthority(123, 456, unix.O_RDONLY, read, modules, nil, false)
 				if tc.want == "" {
 					if err != nil {
 						t.Fatal(err)

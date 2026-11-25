@@ -14,6 +14,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/platform/sys"
+	"github.com/attention-span-ai/tego/internal/runtime/budgetwindow"
 	"github.com/attention-span-ai/tego/internal/runtime/source"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
@@ -173,7 +174,9 @@ func RestoreOwnState(s OwnState) ([]ModeRestored, error) {
 // rest of the directory's tree is walked as at a run's end (restoreTree), since a tree taken whole is taken in every
 // level. Only the owner's bits are added, so no mode is widened beyond what tego made the run directory with (0700,
 // 0600), and a group or other bit stays for the checks that judge it. Another user's run directory, a link, and a
-// file that only has a run's name are left alone, as restoreAt leaves them. The root's own mode is restored before.
+// file that only has a run's name are left alone, as restoreAt leaves them. The root's own mode is restored before. The
+// window locks of limits.window (budgetwindow.IsLockName), which sit in the root beside the run directories, are
+// restored the same way: a file tego writes, whose mode a held agent can take.
 func restoreRunDirs(root string, out *[]ModeRestored) error {
 	rd, err := sys.Own(unix.Open(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0))
 	if errors.Is(err, unix.ENOENT) {
@@ -189,6 +192,15 @@ func restoreRunDirs(root string, out *[]ModeRestored) error {
 	}
 	var errs []error
 	for _, name := range names {
+		if budgetwindow.IsLockName(name) {
+			// An agent's window lock (limits.window), a file of the root that tego writes and reads: no tier denies chmod and its
+			// name follows from the agent's identity, so a held agent can take its mode, and every later start of that agent
+			// would be refused at the open.
+			if _, err := restoreAt(rd, name, filepath.Join(root, name), 0, needFile, out); err != nil {
+				errs = append(errs, err)
+			}
+			continue
+		}
 		if !ledger.IsRunID(name) {
 			continue
 		}

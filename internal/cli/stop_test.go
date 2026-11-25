@@ -148,7 +148,7 @@ func liveRun(t *testing.T) (dir, id string, info tegoruntime.LockInfo) {
 
 // liveRunAt is liveRun for a run at either end of its start: started false leaves the ledger as the launcher has it
 // from the moment it takes the run's lock until run_start is written (events.jsonl exists, no line in it names the
-// agent), the window in which the launcher prepares the run's enforcement, which takes seconds on a first use (N111).
+// agent), the window in which the launcher prepares the run's enforcement, which takes seconds on a first use.
 func liveRunAt(t *testing.T, started bool) (dir, id string, info tegoruntime.LockInfo) {
 	t.Helper()
 	root := gcRoot(t)
@@ -393,7 +393,7 @@ func TestR1StopFailedDeliveryMarkerRollback(t *testing.T) {
 	}
 }
 
-// TestStopOfARunStillStartingSaysSo is N111. A run holds its lock from the moment its ledger is opened, but run_start
+// TestStopOfARunStillStartingSaysSo is that window. A run holds its lock from the moment its ledger is opened, but run_start
 // (the first line that names the agent) is written only after the launcher has prepared the run's enforcement, which
 // takes seconds on a first use. A stop in that window signals a launcher that reads the signal once it has prepared;
 // at the end of the grace there is no scope on record to kill, so its backstop said "run has no agent id yet [io]"

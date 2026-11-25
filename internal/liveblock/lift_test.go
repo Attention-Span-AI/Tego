@@ -46,7 +46,7 @@ func TestLiftAndRestore(t *testing.T) {
 		"short key":   func() error { _, err := o.Lift(KindRead, "/x", "b", t0, time.Time{}, key[:16]); return err }(),
 		"until early": func() error { _, err := o.Lift(KindRead, "/x", "b", t0, t0, key); return err }(),
 		"write kind":  func() error { _, err := o.Restore(KindWrite, "/x", "b", t0); return err }(),
-		"bad value":   func() error { _, err := o.Restore(KindExec, "two words", "b", t0); return err }(),
+		"bad value":   func() error { _, err := o.Restore(KindExec, "bad\x01value", "b", t0); return err }(),
 	} {
 		if !errors.Is(err, ErrInvalid) {
 			t.Errorf("%s: %v, want ErrInvalid", name, err)

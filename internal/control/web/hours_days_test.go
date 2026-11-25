@@ -10,7 +10,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
 )
 
-// N124: at phone width the week is drawn by local calendar day (168 hourly bars are under 2 px each at 390 px and
+// At phone width the week is drawn by local calendar day (168 hourly bars are under 2 px each at 390 px and
 // cannot be tapped). The days are the hours added up, never a second count.
 func TestWeekDaysAreTheHoursAddedUp(t *testing.T) {
 	root, _ := hoursFixture(t)

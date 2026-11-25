@@ -62,17 +62,9 @@ jobs:
       matrix:
         shell: [powershell, pwsh]
     steps:
-      # The scan fixtures name systemd units with a literal backslash (app-chromium\x2dbrowser-.scope.d), a path
-      # Git for Windows refuses under core.protectNTFS even when sparse checkout leaves it unwritten; this job only
-      # runs the install scripts, so it checks out without that folder.
-      - run: git config --global core.protectNTFS false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            /*
-            !/internal/scan/testdata/unit-layouts/
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: windows-release

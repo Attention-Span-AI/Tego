@@ -408,9 +408,11 @@ simpler arrangement that lost keys or left the terminal unusable:
    `systemd-run`): no input, its own process group, ended and joined when the guide is left. Starting the dashboard
    is bounded at twenty seconds, and a start that was interrupted stops the unit.
 5. **Leaving.** Ctrl-C is a key in raw mode; SIGINT, SIGTERM and SIGHUP stay subscribed until the terminal is
-   restored. Each ends the guide with the `Stopped` line and exit 1. A second signal that arrives after the
-   terminal is restored ends the process as it ends any command. What was already saved stays saved: the guide is
-   not a transaction.
+   restored. Each ends the guide with the `Stopped` line and exit 1. `tego start` and `tego setup` keep the
+   subscription until the process ends (`holdSignalsToExit`), because the guide is the last thing the command does and
+   its own subscription, and Main's first-signal handler, are gone before the process is: a second signal in that gap
+   found Go's default action and ended the process with the signal instead of the guide's exit 1 (one TERM and INT sent
+   together did, on a loaded machine). What was already saved stays saved: the guide is not a transaction.
 6. **`TERM=dumb`** gets numbered questions read through the same reader, because Huh's plain prompts do not end
    when their context does. Input that is not a terminal (a pipe, a test) keeps Huh's plain prompts, one line per
    answer.

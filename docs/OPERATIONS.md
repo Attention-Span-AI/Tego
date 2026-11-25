@@ -23,6 +23,13 @@ run's configured-map load and link removal still cost several seconds. A smaller
 decision exercise would establish less. Sharing loaded programs needs equivalent map configuration,
 resource-failure behavior and ownership; no such handoff is established by this change.
 
+A run's probe of the decision plane stops after the mode the machine's `bpf.plane` takes: under `auto` or `lsm`, once
+LSM mode has passed every hook, fmod_ret mode is not loaded or probed, and the start-up check line says so. Selection is
+unchanged, since under those settings LSM mode is chosen first whenever it passed. A failed LSM mode, `bpf.plane:
+fmod_ret` and `tego doctor` probe both modes; a kept answer that holds LSM mode alone is not used by a run pinned to
+fmod_ret, which probes. On a kernel that closes tracing links one grace period at a time, this removes the second
+mode's removal waits from a cold start.
+
 After about one second of an enforcing start, stderr prints `[startup-wait]` if preparation is still pending.
 A fast start prints no wait note, and the timer ends before the command is released. The command keeps stdout.
 Caller and contract prerequisites, the status-file directory and the chain anchor are checked before the kernel
@@ -829,6 +836,7 @@ needs a delegated cgroup; a missing controller refuses the run, naming it).
 | `repeats` | the same tool call from the model that many times in a row: killed, 124 | `repeats: 6` ended a runaway loop at its sixth call; a healthy loop's longest streak was 1 |
 | `tokens` | input plus output tokens of the calls so far, cache tokens excluded: killed, 124 | `tokens: 300` ended at 317, the call that crossed it; the value equals the sum of the ledger's own usage |
 | `cost_usd` | the same, priced: killed, 124 | `cost_usd: 0.002` ended at $0.002127, equal to the ledger's tokens priced by the table |
+| `window` | not a limit of its own: with it, `tokens` and `cost_usd` are totals over the last `window` across every run of the agent, restarts included, and the run that crosses them is killed, 124 (below) | a restart after a run that spent 600 of 1000 tokens was ended at the 1000th of the two, `limit tokens 1100 over 1000` (unit proof on real ledgers; no kernel run) |
 | `memory` | the kernel kills inside the cgroup, `run_end reason=oom`, 137 | a hog under `memory: 40MiB` reached the limit 38 times and was killed; peak exactly 40 MiB |
 | `pids` | a refused fork ends the run, `reason=pids`, 137 (it does not wait for the agent to cope) | `pids: 16`: the 16th task's fork was refused and the run ended; peak 16 |
 | `cpu` | throttled, never killed | `cpu: 0.25` over 6 s of a busy loop: 1.56 s of cpu, throttled 62 times |
@@ -926,6 +934,33 @@ run 143, which `RestartPreventExitStatus` keeps from restarting, and the unit is
 restart, in the same check), so the agent stays down. A `wall` in the contract's `limits` is restarted, as any limit
 (124), but it ends the run with `cgroup.kill`, no SIGTERM first, and records a `limit` each time
 (`examples/demo/contracts/always-on.yaml` uses `wall: 1h` so).
+
+**A budget for a day, across restarts (2026-11-24, ADR 0165).** `limits: {cost_usd: 5, window: 24h}` makes `cost_usd`
+(and `tokens`) a total over any 24 hours across every run of that agent, so a unit that restarts the agent twelve times
+in half an hour spends $5, not $60. The agent is the one `tego run --agent NAME` names (in the project registry, that name
+beside its file, so the same name in two folders is two agents), or the contract file's path; `--agent NAME` and the same
+file by path are two agents with two budgets, so keep the form your unit uses. A contract tego generated has no name to
+count under and is refused, and so is a record-only run (`--observe`): its agent could reach the records the count is read
+from. Before the run starts, tego reads the agent's runs that did not end before the window began (proved by the `run_end`
+that `chain.log` anchors, not by a file's date) from the ledger and counts every model response in them, checking each
+ledger against its line in `chain.log`. A ledger of this agent that was edited or cut, one it cannot read, a run of the agent
+still live (two would each count the other as zero), a `retention` shorter than the window (`tego gc` would remove runs the
+window counts) and more than 512 MiB of this agent's ledgers in the window each refuse the start, exit 125
+`[budget-window]` naming the run: a count that could be low is no cap. To clear a damaged run, restore it from a copy, or
+move its directory out of the ledger root (which keeps the record and stops counting its spend); waiting does not help.
+Another agent's damaged ledger never refuses a start. A run that ended with no line in `chain.log` (the anchor write
+failed) is counted as its own verified chain holds it, and the start logs it. The ledger says what the run counted:
+`gap what=limits why=window-carried count=N` right after `run_start` (when N is above 0), `window-unanchored` and
+`window-unattributed` beside it when they apply, and the `limit` line's `value` is the window's total, which the record
+spec's "A budget over a window" shows how to recompute from the records. What it cannot count is stated in the ADR: spend a
+launcher lost when it was killed, responses the record could not write (a `gap` says so), runs a person removed, and a
+clock set forward past the window. A restart into a full window is ended at its first model response, so a unit with
+`Restart=on-failure` spends its `StartLimitBurst` and stops until `systemctl --user reset-failed` after the window has
+room. Reading the ledgers costs about 50 microseconds a line (measured: 100,000 responses, 9.9 s), bounded at 512 MiB
+of this agent's ledgers (one to two minutes), so a windowed agent belongs under `record: summary`. A held agent cannot
+lower the count by writing: at tiers landlock, cgroup and bpflsm its appends to its own record and to `chain.log` are
+refused. Another agent of the same account that runs observe-only is not held, and can hold the window lock or change
+its mode; that only makes later starts refuse and never lowers the count.
 
 #### Ledger space for an agent that never stops
 
@@ -1035,9 +1070,22 @@ refused.", in the terminal or on the dashboard's Receipt tab: it says "No record
 not record refused reads", and with refusals it adds that a read it refused is not counted.
 
 **Keeping a receipt and checking it later.** `--verify` checks a run against `~/.tego/chain.log`, so it works only
-on the machine and account that ran it; in CI that file goes with the runner. Keep the JSON receipt and run folder
-together: `tego session show <run> --json > receipt.json`. The record is the folder's `events.jsonl`.
-`tego session show --check receipt.json <run folder> --json` compares these files without reading chain.log.
+on the machine and account that ran it; in CI that file goes with the runner. When a run ends, `tego run` and
+`tego watch` keep its bound receipt in the run's folder as `receipt.json` (mode 0600, the bytes `tego receipt <run> --json`
+prints; a file already there is never replaced, and a run whose record could not be completed or that was interrupted
+keeps none; `--no-summary` does not stop it), and `--verify` then also compares that file with the record and prints
+`Kept receipt: <path> matches the record.`, or exits 1 naming what differs. The chain is checked first, so
+the message says the record verified and only the kept copy differs (`[receipt-differs]`): an edited figure, a copy that
+names a maker other than the tego that ran the run, any copy in a run recorded before revision 41 (v0.1.3 and
+earlier kept none: an agent of such a run could have written it), a file that is no receipt, a link or a pipe. After an upgrade, or from a
+build with uncommitted changes or no version stamp, the figures of a copy that names the run's own build cannot be compared
+(only the exact build that kept the receipt does), so it says so in one line and exits 0 when the chain verified; such a
+build keeps no `receipt.json`. A copy made in a later release's form, which this tego does not read, exits 125 and says
+that only the copy is unchecked. In a mode that only records, an agent that can write its run's folder may put a
+`receipt.json` there first: the run's end then says once that the name was taken, leaves the file, and `--verify` exits 1
+for it. It is a kept copy, not evidence: whoever can write the folder can write both. To keep a receipt elsewhere: `tego session show <run> --json > receipt.json`. The record
+is the folder's `events.jsonl`. `tego session show --check receipt.json <run folder> --json` compares these files without
+reading chain.log.
 
 New receipts retain `receipt_v:1` and use `binding.v:2`. The binding names the run, complete line count, head,
 ended status, record bytes/SHA-256, release version/commit and limits. It also carries the compiled contract hash,
@@ -1913,7 +1961,7 @@ What it costs and what it leaves:
   administrator cannot establish the assertion or will not accept that residual. The default refusal warning
   names unreadable AppArmor namespace depth, `EACCES` / Permission denied, `held-label-unavailable`, the
   readable-securityfs fix, and this opt-in. An outer seccomp filter must still permit `lsm_list_modules`
-  when securityfs cannot enumerate modules; the option never supplies a guessed module list. On a kernel before 6.8 (Debian 12's 6.1) there is no such call to permit, so under Docker's defaults, where the file cannot be read either, the list cannot be read at all and every held open is refused (`held-label-unavailable`) whatever `tomoyo.facts_dir` or the AppArmor opt-in say: the list is read first. The refusal stays on purpose, since a list that cannot be read cannot be assumed to name no label-bearing module; the launch note and `tego doctor` say what each way answered (`lsm_list_modules(2)` and `/sys/kernel/security/lsm`) and what can be changed. [The container guide](user/container.md#held-file-opens-and-the-list-of-security-modules) has the measured table.
+  when securityfs cannot enumerate modules; the option never supplies a guessed module list. On a kernel before 6.8 (Debian 12's 6.1) there is no such call to permit, and under Docker's defaults the container's own `/sys` has no securityfs, so the kernel's two answers are both unavailable and, with no list handed in, every held open is refused (`held-label-unavailable`) whatever `tomoyo.facts_dir` or the AppArmor opt-in say: the list is read first. A list can be handed in with the machine setting `lsm.list_file` in `/etc/tego/config.yaml` (a clean absolute path; a user layer's value is ignored with a warning; no key supplies a list inline). It is asked only after the call and `/sys/kernel/security/lsm` both failed, and it is believed only as the host's securityfs `lsm` file bound read-only (`-v /sys/kernel/security/lsm:/run/tego-kernel-lsm:ro`, read-only mount, file exactly `/lsm` in its filesystem), or as the three-line file root wrote in this boot (the image's entrypoint writes `/run/tego-lsm/lsm-list`): owned by root, not writable by group or others, in directories only root can write, no link in the path, not on FUSE or a network filesystem, naming this boot's id, listing names the kernel prints with `capability` among them, and read for a task that is not root and holds none of `CAP_CHOWN`, `CAP_DAC_OVERRIDE`, `CAP_FOWNER` or `CAP_SYS_ADMIN` in its permitted set; each check is repeated at every open. A list file never decides a tier, only held opens: a name missing from a wrong list would switch off that module's label comparison, so a file that fails a check is refused in words that say which. A refusal that remains is on purpose, since a list that cannot be read cannot be assumed to name no label-bearing module; the launch note and `tego doctor` say what each way answered (`lsm_list_modules(2)`, `/sys/kernel/security/lsm` and the list file) and what can be changed. [The container guide](user/container.md#held-file-opens-and-the-list-of-security-modules) has the measured table and the settings of the documented flow.
   Key/socket creation and other operations are outside this file-open check. Previous timing figures predate
   these checks; current performance acceptance remains open.
 - Still copied: `O_PATH` opens (`gate.fs.read/o_path`), non-open changes (rename, unlink, chmod and the rest:
@@ -2120,7 +2168,26 @@ another name of its file, the refused line's rule names the blocked path and its
 summary, `tego session show` and the dashboard's row say so: "/bin/sleep: refused, same program file as /bin/ls, which is
 blocked". `tego block` also notes a bare name no folder of its own PATH holds (a
 typo, or a program not installed here) and an absolute path that is no file here now; either block still refuses
-the program if it appears. A `net` value is `host[:port]`, an IP, a unix socket path or `@name`; a `path` value is an absolute path and
+the program if it appears. An `exec` value may also be a **command**: a bare program name and words, `tego block <run> exec "git push"` (one argument, quoted;
+`'...'` or `"..."` keeps a word that holds a space). It refuses what the same text in `exec.deny` would refuse, decided by the
+contract's own command matcher, so `git -C . push origin` and `git --git-dir=x push` are the command too, `git status`,
+`git stash push` and another program's `push` still run, and a glob word (`npm install --global *`) matches as it does in a
+contract. The program is named by its bare name, never a path (an absolute value with a space is still a program path, as
+before: `/opt/My Tools/run`). While one stands, tego's supervisor decides every exec of the run itself, at every tier (the
+kernel plane's own handover of execs is off), on the copy of argv it reads; like `exec.allow` words that is best effort: a
+thread of the agent that rewrites its arguments after the check can still run the command, unless the run's kernel pins
+execs (`plane.exec_pin`). Facts the matcher cannot read are refused as an `exec.deny` entry refuses them (`args-unreadable`,
+`image-unreadable`). A run whose launcher made no `live-words` mark in its folder (an older tego, or a run still starting) is
+refused in words (exit 1, `[launcher-too-old]`) and nothing is written, since the whole-program block would refuse more than
+the command; a launcher older than this reads the version 6 overlay as an invalid file ("overlay version 6, want 1 to 5") and
+keeps its last blocks. The dashboard's Rules page offers the command's block when you remove an `exec.allow` entry with words
+(only if every other `exec.allow` entry of that program is provably disjoint from it: a program allowed bare, or an entry
+that may still allow part of it, has the saved change for the next run instead, and the page says which entry) or add one to
+`exec.deny` (always: a deny comes before any allow), and the command is not written with a path. Nothing about it is a rules-file key or a new record field: the
+gap lines carry `kind: exec` and the words as `value`, and the refusals `live.block[exec:<words>]` (ADR 0171). A live block
+for a pattern (`**/.env`) is not built.
+
+A `net` value is `host[:port]`, an IP, a unix socket path or `@name`; a `path` value is an absolute path and
 everything beneath it (a relative one is read against the working directory and printed as the absolute path), for
 every file action; a value written through a link (`~/link/secret`, where `~/link` leads to `/data`) is resolved
 once, when the block is written, and the block refuses the real path too (`/data/secret`; `tego block` and the
@@ -2275,6 +2342,11 @@ nothing until the limit, and refuses again from then on. Every run has them, Loc
 - A run started by a tego without time limits (`run_start` `record_minor` below 25) refuses a limit: exit 1,
   `[launcher-too-old]`, with nothing written. Place the block without one, or restart the run.
 - A limit stops new access only: what was already read or copied, open files and live connections stay.
+- At tiers cgroup and bpflsm, a path, read or write block is held in the kernel in rows, and a row has one start instant.
+  So with a read block in force and a write block lifted for a while on the same file, the kernel keeps refusing writes
+  through the window. In a time namespace where the launcher cannot map the boot clock, an unblock for a while has no
+  effect at these tiers while the record and the dashboard say the block is lifted. Both cases refuse more than the
+  views say, never less. A plain unblock and tier landlock are not affected.
 
 ### Adjustable runs: lift, grant, restore (ADR 0125)
 

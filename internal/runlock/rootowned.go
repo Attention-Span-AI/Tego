@@ -13,7 +13,7 @@ import (
 // the person could open would let the agent reach the live chain and the live files. A command or a dashboard served
 // by that person therefore gets "permission denied" on the run's files, and the words for it must say what the folder
 // is, not quote the failed system call. RootOwned is the one place that decides it; internal/cli's [root-run] refusal
-// and the dashboard's read error both ask it (N125 (a): the two used to keep a copy each, one with Stat and one with
+// and the dashboard's read error both ask it (the two used to keep a copy each, one with Stat and one with
 // Lstat).
 
 // runFolderOwner is the uid that owns a run's folder, and false when it cannot be told. It does not follow a symlink

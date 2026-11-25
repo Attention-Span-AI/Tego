@@ -15,7 +15,7 @@ import (
 )
 
 // The ledger's close releases the run's flock before the launcher process exits. A command that probed the lock held, and
-// whose proof that the named process holds it then failed, is looking at a run that ended (N109): ErrNoBroker, and the
+// whose proof that the named process holds it then failed, is looking at a run that ended: ErrNoBroker, and the
 // refusal stands while the lock is still held by something else.
 func TestALockReleasedWhileTheLauncherWasProvedIsNoLiveBroker(t *testing.T) {
 	dir := t.TempDir()

@@ -6,7 +6,6 @@ import (
 	"context"
 	"flag"
 	"io"
-	"os"
 
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
@@ -35,7 +34,7 @@ func cmdStart() Command {
 			if refuseSetup(stderr) {
 				return identity.ExitError
 			}
-			return runSetupGuide(rehearseUserScope(ctx, stderr), os.Stdin, stdout, stderr, true)
+			return runSetupGuideCommand(rehearseUserScope(ctx, stderr), stdout, stderr)
 		},
 	}
 }

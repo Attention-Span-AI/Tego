@@ -1,0 +1,30 @@
+run r-aaaaaaaa-0000000000016-bigrun
+err ""
+lines 55000 ended false positions source ()
+started <the fixture's start>
+group read default_kind="" default_hits=0
+group change default_kind="" default_hits=0
+  rule fs.write | ./out/ | fs.write[./out/] | allow | hits 10999
+  rule fs.write | ./tmp/ | fs.write[./tmp/] | allow | hits 0
+group ask default_kind="" default_hits=0
+group never-read default_kind="" default_hits=0
+group never-change default_kind="" default_hits=0
+group programs default_kind="exec" default_hits=0
+  rule exec.allow | sh | exec[sh] | allow | hits 0
+  rule exec.allow | git | exec[git] | allow | hits 11000
+group network default_kind="net" default_hits=11000
+group env default_kind="" default_hits=0
+group limits default_kind="" default_hits=0
+group live default_kind="" default_hits=0
+group always-on default_kind="" default_hits=0
+  rule built-in.deny_read |  | fs.deny_read[<ledger>] | deny | hits 0
+  rule built-in.standard_devices |  | builtin.standard_devices | allow | hits 0
+  rule builtin.host_ipc |  | builtin.host_ipc | deny | hits 0
+  rule builtin.tego_surface |  | builtin.tego_surface | deny | hits 0
+  rule builtin.other_tty |  | builtin.other_tty | deny | hits 0
+  rule built-in.own-records |  |  | deny | hits 0
+  rule built-in.contract |  |  | deny | hits 0
+  rule built-in.host-sockets |  | host-sockets | deny | hits 0
+  rule built-in.route-read |  | route-query | allow | hits 0
+  rule built-in.no-setuid |  |  | deny | hits 0
+  rule record |  |  | note | hits 0

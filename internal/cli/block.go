@@ -223,8 +223,15 @@ func applyBlock(ctx context.Context, name string, add bool, ref string, kind liv
 	// The run's refusals are liveblock's, which runact makes for the dashboard too: a run that has ended is refused a
 	// block and an unblock alike, and a launcher too old for the change, or blind to the reads a read block would
 	// refuse, is refused it.
-	if err := liveblock.CheckBlock(liveTarget(run, held, facts), kind, add, until); err != nil {
+	target := liveTarget(run, held, facts)
+	target.TakesWords = liveblock.TakesWords(dir)
+	if err := liveblock.CheckBlock(target, kind, add, until); err != nil {
 		return blockRefused(name, run, add, value, err, stderr)
+	}
+	if kind == liveblock.KindExec && liveblock.IsWords(value) {
+		if err := liveblock.CheckWords(target, add); err != nil {
+			return blockRefused(name, run, add, value, err, stderr)
+		}
 	}
 	by := liveblock.By("cli")
 	var word string
@@ -285,7 +292,10 @@ func applyBlock(ctx context.Context, name string, add bool, ref string, kind liv
 		if kind == liveblock.KindWrite {
 			fmt.Fprintln(stdout, "It refuses changes (writes, creates, deletes, renames); reading it still works.")
 		}
-		if kind == liveblock.KindExec {
+		switch {
+		case kind == liveblock.KindExec && liveblock.IsWords(value):
+			fmt.Fprintln(stdout, wordsNote(value))
+		case kind == liveblock.KindExec:
 			if line := execWords(run, value, execReach(value, os.Getenv("PATH"))); line != "" {
 				fmt.Fprintln(stdout, line)
 			}
@@ -355,6 +365,8 @@ func blockRefused(name, run string, add bool, value string, err error, stderr io
 		hint = "; " + path + ", or make it a rule for its next run (tego rule)"
 	case errors.Is(err, liveblock.ErrReadsUnseen):
 		hint = "; " + path + ", which refuses changes to it"
+	case errors.Is(err, liveblock.ErrNoWords):
+		hint = "; for its next run, make it a rule of the contract (tego rule)"
 	}
 	message(stderr, "", 0, 0, "tego "+name+": "+liveblock.RunWords(err)+hint, liveCode(err))
 	return identity.ExitFinding
@@ -366,7 +378,8 @@ func liveCode(err error) string {
 	switch {
 	case errors.Is(err, liveblock.ErrNotRunning):
 		return codeNotRunning
-	case errors.Is(err, liveblock.ErrNoTimeLimits), errors.Is(err, liveblock.ErrOldLauncher), errors.Is(err, liveblock.ErrNoNote):
+	case errors.Is(err, liveblock.ErrNoTimeLimits), errors.Is(err, liveblock.ErrOldLauncher), errors.Is(err, liveblock.ErrNoNote),
+		errors.Is(err, liveblock.ErrNoWords):
 		return codeOldLauncher
 	case errors.Is(err, liveblock.ErrReadsUnseen):
 		return codeReadsUnseen
@@ -389,6 +402,16 @@ func liveCode(err error) string {
 func liveTarget(run string, held bool, f livestatus.Facts) liveblock.Target {
 	return liveblock.Target{Run: run, Running: held, Timed: f.Timed, NarrowKinds: f.NarrowKinds(), ReadsSeen: f.ReadsDecided(),
 		Adjustable: f.Adjustable, Starting: !f.Started, StartUnreadable: f.StartUnreadable}
+}
+
+// wordsNote says what a block on a command's words refuses and how it decides: the same commands an exec.deny entry of
+// that text would refuse, on the copy of argv tego's supervisor reads, so another program is untouched and the same
+// program with other words runs; a thread of the agent that rewrites its argv after that check can still run the
+// command (ADR 0171, the claim exec.allow words carry).
+func wordsNote(value string) string {
+	return "Note: " + record.Printable(value) + " is matched as an exec.deny entry of that text would be: the next such command is " +
+		"refused, under any spelling of its options, and the same program with other words still runs. It is decided on the copy of " +
+		"argv tego reads, so a thread of the agent that rewrites its argv after the check can still run it (best effort, as for exec.allow words)."
 }
 
 // execReach is liveblock.ReachOf, what an exec block's value reaches on this machine; tests replace it.

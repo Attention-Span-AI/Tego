@@ -76,6 +76,8 @@ func TestIntegrationPlaneProbeOnThisKernel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	planeProbeEvery = true // the golden file holds both modes on the lsm= boot, where a run stops after LSM mode
+	defer func() { planeProbeEvery = false }()
 	st, rows := probePlane(true, uid, release, config.PlaneAuto, true)
 	env, _ := json.Marshal(st.Env)
 	t.Logf("env %s; build %s (%s)", env, st.Build, st.BuildWhy)
@@ -148,6 +150,43 @@ func logKnown(t *testing.T, m PlaneModeResult) {
 	for _, a := range m.Known {
 		t.Logf("mode %s known %s: %s counters %s, want %s counters %s (ok=%v)", m.Mode, a.Cell, a.Got, a.GotCounts,
 			a.Want, a.WantCounts, a.OK())
+	}
+}
+
+// TestIntegrationAPlaneProbeOfARunStopsAtTheSelectedMode is the run-stop cut on a real kernel: a run's probe (keep) under
+// auto reads LSM mode and stops where it passed, so on the lsm= boot fmod_ret mode is never loaded (its row maps
+// and links are the seconds), and on the default boot, where LSM mode is ruled out before any load, both modes are
+// answered as before; doctor's scope answers both on either boot, and the run's selection equals doctor's. The
+// probe leaves nothing behind.
+func TestIntegrationAPlaneProbeOfARunStopsAtTheSelectedMode(t *testing.T) {
+	requirePlaneRoot(t)
+	before := leftovers(t)
+	uid, _ := config.InvokingUID()
+	_, release, _ := probeKernelVersion()
+	full, _ := probePlane(true, uid, release, config.PlaneAuto, false)
+	run, rows := probePlane(true, uid, release, config.PlaneAuto, true)
+	for _, r := range rows {
+		if r.Plane == bpfobj.PlaneFmodRet && run.Selected == string(bpfobj.PlaneLSM) {
+			t.Errorf("a run that selected LSM mode loaded fmod_ret row %s", r.Hook)
+		}
+	}
+	if len(full.Modes) != len(bpfobj.PlaneModes) {
+		t.Errorf("doctor's scope answered %d modes, want %d", len(full.Modes), len(bpfobj.PlaneModes))
+	}
+	wantModes := len(bpfobj.PlaneModes)
+	if run.Selected == string(bpfobj.PlaneLSM) {
+		wantModes = 1
+	}
+	if len(run.Modes) != wantModes {
+		t.Errorf("a run selecting %q answered %d modes, want %d: %+v", run.Selected, len(run.Modes), wantModes, run.Modes)
+	}
+	if run.Selected != full.Selected || run.SelectedWhy != full.SelectedWhy {
+		t.Errorf("a run selects %q (%q), doctor's scope %q (%q)", run.Selected, run.SelectedWhy, full.Selected,
+			full.SelectedWhy)
+	}
+	t.Logf("a run: selected %q after %d modes; doctor's scope: %d modes", run.Selected, len(run.Modes), len(full.Modes))
+	if after := leftovers(t); !sameLeftovers(after, before) {
+		t.Errorf("state left behind: before %v, after %v", before, after)
 	}
 }
 
@@ -249,6 +288,8 @@ func TestIntegrationPlaneProbeAnswersTheNameCells(t *testing.T) {
 	}
 	uid, _ := config.InvokingUID()
 	_, release, _ := probeKernelVersion()
+	planeProbeEvery = true // each mode the boot offers answers every name cell, not only the mode a run takes
+	defer func() { planeProbeEvery = false }()
 	st, _ := probePlane(true, uid, release, config.PlaneAuto, true)
 	want := map[bpfobj.PlaneMode]bool{bpfobj.PlaneFmodRet: fmodRetOffered(t, st), bpfobj.PlaneLSM: lsm.BPFActive}
 	for _, m := range st.Modes {

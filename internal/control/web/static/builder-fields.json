@@ -342,6 +342,10 @@
       "Meaning": "Repeated-action threshold used to report a loop."
     },
     {
+      "Key": "limits.window",
+      "Meaning": "Makes tokens and cost_usd a total over this span, such as 24h, across every restart of the agent."
+    },
+    {
       "Key": "record",
       "Meaning": "How much of the run is recorded."
     },

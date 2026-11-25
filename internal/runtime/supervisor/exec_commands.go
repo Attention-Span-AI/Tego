@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/attention-span-ai/tego/internal/policy/decide"
 	"github.com/attention-span-ai/tego/pkg/policy/execmatch"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -82,6 +81,10 @@ type execCommand struct {
 	form            execmatch.Form
 	stages          []execmatch.Stage
 	kids            []fileID
+	// facts are the facts the decision was made on, once a guarded exec's argv was read in stages: a second matcher
+	// (the live command-word blocks') decides the same vector the first read, so the kernel's pin of a decided exec
+	// holds to what both judged.
+	facts *execmatch.Facts
 }
 
 // refuses reports whether the command rules refuse the exec.
@@ -101,7 +104,12 @@ func (e execCommand) refuses() bool {
 // such an exec, stops once the loads are walked, before a guarded tool's staged argv reads and the match, whose answer
 // would be thrown away.
 func (l *Loop) decideCommand(c *compiled, n *notif, r *reader, q pathQuery, raw string, img execImage, argvAddr uint64, walkOnly bool) (out execCommand, ok bool) {
-	ix := c.cmds.Index
+	return l.decideCommandWith(c.cmds.Index, c, n, r, q, raw, img, argvAddr, walkOnly)
+}
+
+// decideCommandWith is decideCommand asking ix, the command rules the decision is made against: the run's own index
+// (decideCommand), or the matcher of its live command-word blocks (liveWords), which reads the same facts the same way.
+func (l *Loop) decideCommandWith(ix *execmatch.Index, c *compiled, n *notif, r *reader, q pathQuery, raw string, img execImage, argvAddr uint64, walkOnly bool) (out execCommand, ok bool) {
 	f := execmatch.Facts{
 		NodeVersion: img.nodeVersion, Path: raw,
 		Image: path.Base(strings.TrimSuffix(img.link, deletedSuffix)),
@@ -139,7 +147,7 @@ func (l *Loop) decideCommand(c *compiled, n *notif, r *reader, q pathQuery, raw 
 	var lp *loaderProgram
 	if loaderImage(ix, &f) {
 		var ok bool
-		if lp, ok = l.loadedProgram(c, n, r, &f, argvAddr, &out, q.root); !ok {
+		if lp, ok = l.loadedProgram(ix, c, n, r, &f, argvAddr, &out, q.root); !ok {
 			return out, false
 		}
 		if out.loader != "" || out.unreadable {
@@ -170,7 +178,7 @@ func (l *Loop) decideCommand(c *compiled, n *notif, r *reader, q pathQuery, raw 
 		f.Argv, f.ArgvComplete = argv, whole
 		lp.refresh(&f)
 		out.argv, out.complete, out.staged = argv, whole, true
-		out.res = decide.ExecCommand(c.pol.Rules, &f)
+		out.res = ix.Decide(&f)
 		if out.res.Final || whole {
 			break
 		}
@@ -182,6 +190,8 @@ func (l *Loop) decideCommand(c *compiled, n *notif, r *reader, q pathQuery, raw 
 		out.unreadable = true
 	}
 	out.decided = out.res.Outcome != execmatch.OutcomeNone
+	kept := f
+	out.facts = &kept
 	return out, true
 }
 
@@ -294,7 +304,7 @@ func (p *loaderProgram) refresh(f *execmatch.Facts) {
 // itself a loader. An operand past the bound is args-unreadable. In a run whose images are restricted the program
 // must be granted as an exec of it would be (ruleLoaderProgram): the loader opens it O_RDONLY and maps it PROT_EXEC,
 // which no EXECUTE right governs.
-func (l *Loop) loadedProgram(c *compiled, n *notif, r *reader, f *execmatch.Facts, argvAddr uint64, out *execCommand, root *taskRoot) (*loaderProgram, bool) {
+func (l *Loop) loadedProgram(ix *execmatch.Index, c *compiled, n *notif, r *reader, f *execmatch.Facts, argvAddr uint64, out *execCommand, root *taskRoot) (*loaderProgram, bool) {
 	var (
 		i     int
 		prog  []string
@@ -350,7 +360,7 @@ func (l *Loop) loadedProgram(c *compiled, n *notif, r *reader, f *execmatch.Fact
 	f.Loaded.NodeVersion = pimg.nodeVersion
 	f.Loaded.Image = path.Base(strings.TrimSuffix(pimg.link, deletedSuffix))
 	f.Loaded.ID, f.Loaded.HasID, f.Loaded.Links = execmatch.ID{Dev: pimg.id.dev, Ino: pimg.id.ino}, pimg.linked, pimg.nlink
-	if execmatch.LoaderName(f.Loaded.Image) || execmatch.LoaderName(operand) || f.Loaded.HasID && c.cmds.Index.Loader(f.Loaded.ID) {
+	if execmatch.LoaderName(f.Loaded.Image) || execmatch.LoaderName(operand) || f.Loaded.HasID && ix.Loader(f.Loaded.ID) {
 		out.loader = ruleLoaderUnresolved
 		return lp, true
 	}

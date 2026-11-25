@@ -230,6 +230,9 @@ func targetMain() int {
 	case modeExecLiveLink:
 		rep.Checks = liveLinkChecks()
 		return emitReport(rep)
+	case modeExecLiveWords:
+		rep.Checks = liveWordsChecks()
+		return emitReport(rep)
 	case modeDenyWrite, modeDenyWriteOff:
 		rep.Checks = denyWriteChecks()
 		return emitReport(rep)

@@ -148,14 +148,7 @@ func planeUnixCells(t *testing.T, o Object, mode PlaneMode) {
 	t.Cleanup(coll.Close)
 	for _, h := range hooks {
 		p := coll.Programs[h.Program(mode)]
-		if info, err := p.Info(); err == nil {
-			if n, ok := info.VerifiedInstructions(); ok {
-				t.Logf("%s: %d instructions verified", h.Program(mode), n)
-				if b := planeBudget(t, o, h.Name); n > b {
-					t.Errorf("%s: %d instructions verified, over the budget of %d", h.Program(mode), n, b)
-				}
-			}
-		}
+		planeHeldToBudget(t, o, h.Name, h.Program(mode), p)
 		var l link.Link
 		if mode == PlaneLSM {
 			l, err = link.AttachLSM(link.LSMOptions{Program: p})

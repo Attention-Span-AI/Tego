@@ -23,7 +23,9 @@
 // would stand (`tego receipt --check`). A binding vouches for nothing: whoever can write both files can make a matching
 // pair, and the words of both say so (limits, not_shown).
 //
-// The builder uses one streaming pass and stores no receipt.json in the run directory. Comparison results have a
+// The builder uses one streaming pass and stores nothing itself: `tego run` places the bound receipt in the run directory
+// as receipt.json once the run has ended (internal/cli, ADR 0159) and `tego receipt --verify` compares it with the record
+// through Check. Comparison results have a
 // schema under spec/receipt. A bound receipt also reads its producer image hash; no runtime state is consulted.
 // The cost estimate goes through measure.Prices, the interface `tego measure`
 // prices with, so the two print one figure. A file is secret-looking by internal/check/secretpath, the classifier

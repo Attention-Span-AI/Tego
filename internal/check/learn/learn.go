@@ -514,6 +514,8 @@ func (l *Learner) addFS(e *record.Event) error {
 	case agent.IsRuntimeRule(e.Rule):
 		l.runtime += n
 		return nil
+	case e.Rule == agent.BuiltinStandardDevices:
+		return nil // every contract grants the standard data devices (ADR 0158): an allowed open of one needs no entry
 	}
 	file := path.Clean(p.Path)
 	if p.Op == record.FSOpen && (file == "/dev/null" || file == "/dev/tty") {

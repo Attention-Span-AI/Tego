@@ -36,7 +36,7 @@ func TestBlockOf(t *testing.T) {
 		{true, "exec.allow", "cat", none, "exec:cat"},
 		{true, "exec.allow", "/usr/bin/cat", none, "exec:/usr/bin/cat"},
 		{true, "exec.allow", "./bin/", none, "exec:/p/proj/bin/"},
-		{true, "exec.allow", "git push", none, "!command"},
+		{true, "exec.allow", "git push", none, "exec:git push"},    // a command with words: the block that exec.deny of that text is (ADR 0171)
 		{true, "exec.allow", "git", rest, "!git push"},             // a command entry still admits git
 		{true, "exec.allow", "python3", rest, "!/usr/bin/python3"}, // the absolute entry still allows it
 		{true, "exec.allow", "/p/proj/tools/x", rest, "!./tools/"},

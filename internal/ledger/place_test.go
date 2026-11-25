@@ -9,17 +9,20 @@ import (
 	"testing"
 )
 
-// TestPlaceNewFile: the file lands under its name with its bytes, a name already there — whatever it is — is
+// TestPlaceRunFile (stop.request and receipt.json go through it): the file lands under its name with its bytes, a name already there — whatever it is — is
 // os.ErrExist and is left as it was, and no temporary name is left behind.
-func TestPlaceNewFile(t *testing.T) {
+func TestPlaceRunFile(t *testing.T) {
 	dir := t.TempDir()
-	if err := PlaceNewFile(dir, "stop.request", []byte("4s\n")); err != nil {
+	if err := PlaceRunFile(dir, "stop.request", []byte("4s\n")); err != nil {
 		t.Fatalf("PlaceNewFile: %v", err)
 	}
 	if b, err := os.ReadFile(filepath.Join(dir, "stop.request")); err != nil || string(b) != "4s\n" {
 		t.Fatalf("placed %q %v", b, err)
 	}
-	if err := PlaceNewFile(dir, "stop.request", []byte("9s\n")); !errors.Is(err, os.ErrExist) {
+	if st, err := os.Lstat(filepath.Join(dir, "stop.request")); err != nil || st.Mode().Perm() != 0o600 {
+		t.Fatalf("the placed file is %v %v, want 0600", st, err)
+	}
+	if err := PlaceRunFile(dir, "stop.request", []byte("9s\n")); !errors.Is(err, os.ErrExist) {
 		t.Fatalf("a second place: %v, want os.ErrExist", err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "stop.request")); string(b) != "4s\n" {
@@ -29,7 +32,7 @@ func TestPlaceNewFile(t *testing.T) {
 	if err := os.Symlink(target, filepath.Join(dir, "linked")); err != nil {
 		t.Fatal(err)
 	}
-	if err := PlaceNewFile(dir, "linked", nil); !errors.Is(err, os.ErrExist) {
+	if err := PlaceRunFile(dir, "linked", nil); !errors.Is(err, os.ErrExist) {
 		t.Fatalf("a dangling link under the name: %v, want os.ErrExist", err)
 	}
 	if _, err := os.Lstat(target); !errors.Is(err, os.ErrNotExist) {
@@ -43,7 +46,7 @@ func TestPlaceNewFile(t *testing.T) {
 		t.Fatalf("left %v, want the file and the link only", entries)
 	}
 	for _, bad := range []string{"", ".", "..", "a/b"} {
-		if err := PlaceNewFile(dir, bad, nil); err == nil {
+		if err := PlaceRunFile(dir, bad, nil); err == nil {
 			t.Errorf("name %q was accepted", bad)
 		}
 	}
@@ -67,7 +70,7 @@ func TestPlaceNewFileAsRootRefusesALinkedRunDirectory(t *testing.T) {
 	if err := os.Symlink(victim, run); err != nil {
 		t.Fatal(err)
 	}
-	if err := PlaceNewFile(run, "stop.request", nil); !errors.Is(err, ErrLinkRefused) {
+	if err := PlaceRunFile(run, "stop.request", nil); !errors.Is(err, ErrLinkRefused) {
 		t.Fatalf("PlaceNewFile through a linked run directory: %v, want ErrLinkRefused", err)
 	}
 	if entries, _ := os.ReadDir(victim); len(entries) != 0 {

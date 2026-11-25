@@ -12,7 +12,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// TestLSMListUnreadNamesTheCauseThatIsTrue (N114): the words for an unreadable active LSM list say which way failed and
+// TestLSMListUnreadNamesTheCauseThatIsTrue: the words for an unreadable active LSM list say which way failed and
 // why, from the errors themselves, and offer only a remedy that exists for that cause. On a kernel older than 6.8 there
 // is no syscall to permit; under Docker's default profiles the call is refused by seccomp and the file by AppArmor.
 func TestLSMListUnreadNamesTheCauseThatIsTrue(t *testing.T) {
@@ -35,7 +35,7 @@ func TestLSMListUnreadNamesTheCauseThatIsTrue(t *testing.T) {
 		{"the call was not tried", nil, deniedFile, []string{"/sys/kernel/security/lsm was refused"}, []string{"permit lsm_list_modules"}, []string{"lsm_list_modules(2)"}},
 		{"some other failure", errors.New("boom"), errors.New("bang"), []string{"lsm_list_modules(2) failed (boom)", "could not be read (bang)"}, []string{"permit lsm_list_modules"}, nil},
 	} {
-		why, remedy := LSMListUnread(tc.sysErr, tc.file)
+		why, remedy := LSMListUnreadVia(tc.sysErr, tc.file, "", nil)
 		for _, w := range tc.why {
 			if !strings.Contains(why, w) {
 				t.Errorf("%s: why %q lacks %q", tc.name, why, w)
@@ -51,5 +51,29 @@ func TestLSMListUnreadNamesTheCauseThatIsTrue(t *testing.T) {
 				t.Errorf("%s: remedy %q lacks %q", tc.name, remedy, w)
 			}
 		}
+	}
+}
+
+// TestLSMListUnreadViaNamesTheListFile: with a list file named, the words say what is wrong with it and the remedy
+// starts with fixing it; with none named, the remedy says that a list can be handed in and how. The kernel's two ways are
+// worded as before in both.
+func TestLSMListUnreadViaNamesTheListFile(t *testing.T) {
+	sysErr := fmt.Errorf("lsm_list_modules(2): %w", unix.ENOSYS)
+	fileErr := &os.PathError{Op: "open", Path: "/sys/kernel/security/lsm", Err: unix.ENOENT}
+	listErr := errors.New("lsm.list_file /run/tego-lsm/lsm-list was written in another boot")
+	why, remedy := LSMListUnreadVia(sysErr, fileErr, "/run/tego-lsm/lsm-list", listErr)
+	for _, w := range []string{"older than Linux 6.8", "is not there", "lsm.list_file /run/tego-lsm/lsm-list was written in another boot"} {
+		if !strings.Contains(why, w) {
+			t.Errorf("why %q lacks %q", why, w)
+		}
+	}
+	if !strings.HasPrefix(remedy, "make the list file /run/tego-lsm/lsm-list what the entrypoint writes at each start") ||
+		!strings.Contains(remedy, "examples/container/compose.yaml") || !strings.Contains(remedy, "only the file can answer") {
+		t.Errorf("remedy with a file: %q", remedy)
+	}
+	why, remedy = LSMListUnreadVia(sysErr, fileErr, "", nil)
+	if strings.Contains(why, "lsm.list_file") || strings.Contains(remedy, "make the list file") ||
+		!strings.Contains(remedy, "hand the list in") || !strings.Contains(remedy, "lsm.list_file") || !strings.Contains(remedy, "only the file can answer") {
+		t.Errorf("with no file named: why %q, remedy %q", why, remedy)
 	}
 }

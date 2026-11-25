@@ -68,6 +68,7 @@ func Builtin() *Machine {
 			RingBudget: Setting[ByteSize]{Value: DefaultRingBudget, Source: src},
 			Plane:      Setting[string]{Value: PlaneAuto, Source: src}},
 		TOMOYO:           TOMOYOConfig{FactsDir: Setting[string]{Source: src}},
+		LSM:              LSMConfig{ListFile: Setting[string]{Source: src}},
 		Resolver:         Setting[ResolverMode]{Value: ResolverMode{Auto: true}, Source: src},
 		DeniedResolved:   Setting[[]netip.Prefix]{Value: []netip.Prefix{}, Source: src},
 		Forwarder:        ForwarderConfig{Listen: Setting[string]{Value: DefaultForwarderListen, Source: src}},

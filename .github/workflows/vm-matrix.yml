@@ -126,7 +126,8 @@ jobs:
       # nothing on a row whose kernel does not.
       # Keep dispatches literal so check-skiprows.py can prove the row-scoped conformance obligations.
       # Run 43152191607: 32-launcher rounds OOM-killed tego at 2560M on Debian/RHEL.
-      # 3G passes in historical samples, not a measured requirement; other rows retain 2560M.
+      # 3G passes in historical samples, not a measured requirement. On 2026-11-24 the same round was killed at 2560M on
+      # the host kernel 6.17 and on fedora-7.0 as well (32 launchers of about 72 MB each), so every row now uses 3G.
       # Preserve the existing 60-minute plain/150-minute tagged caps on the three slow rows,
       # and the 100-minute cgroup cap elsewhere. Every full row gets exactly one step per boot.
       - name: tier 3 suites on the ${{ matrix.part }} boot of ${{ matrix.kernel }}, as root (slow tagged rows)
@@ -134,7 +135,7 @@ jobs:
         shell: bash
         run: |
           TEGO_TEST_PLANE_PREEMPT=waive TEGO_VM_ROW="$KERNEL" TEGO_VM_LOCKDOWN=none TEGO_VM_MEM=1536M \
-            VM_BOOTS="$PART" VM_BPF=yes VM_SUITE_MEM="internal/runtime/enforce/cgroup=2560M" VM_SUITE_TIMEOUT="1500 internal/runtime/enforce/cgroup=3600 internal_runtime_enforce_cgroup.tegobpf=9000" VM_OUT="$RUNNER_TEMP/tier3" \
+            VM_BOOTS="$PART" VM_BPF=yes VM_SUITE_MEM="internal/runtime/enforce/cgroup=3G" VM_SUITE_TIMEOUT="1500 internal/runtime/enforce/cgroup=3600 internal_runtime_enforce_cgroup.tegobpf=9000" VM_OUT="$RUNNER_TEMP/tier3" \
             test/vm/root-suites.sh internal/runtime/enforce/cgroup internal/bpf test/conformance
 
       - name: tier 3 suites on the ${{ matrix.part }} boot of ${{ matrix.kernel }}, as root (larger-memory rows)
@@ -150,7 +151,7 @@ jobs:
         shell: bash
         run: |
           TEGO_TEST_PLANE_PREEMPT=waive TEGO_VM_ROW="$KERNEL" TEGO_VM_LOCKDOWN=none TEGO_VM_MEM=1536M \
-            VM_BOOTS="$PART" VM_BPF=yes VM_SUITE_MEM="internal/runtime/enforce/cgroup=2560M" VM_SUITE_TIMEOUT="1500 internal/runtime/enforce/cgroup=6000" VM_OUT="$RUNNER_TEMP/tier3" \
+            VM_BOOTS="$PART" VM_BPF=yes VM_SUITE_MEM="internal/runtime/enforce/cgroup=3G" VM_SUITE_TIMEOUT="1500 internal/runtime/enforce/cgroup=6000" VM_OUT="$RUNNER_TEMP/tier3" \
             test/vm/root-suites.sh internal/runtime/enforce/cgroup internal/bpf test/conformance
 
       # Evidence of every full row, kept when a step above failed (if: always()): each suite's status, console, test

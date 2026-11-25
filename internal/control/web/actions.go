@@ -252,7 +252,7 @@ func answerErr(err error) string {
 		return "the run is not running, so nothing holds this request any more."
 	case errors.Is(err, os.ErrNotExist):
 		// The dial found no socket: the launcher was seen alive (else ErrNoBroker), so the run is not known to have ended
-		// (N125; tego ask says the same: "the ask socket is not there now, so this answer was not delivered").
+		// (tego ask says the same: "the ask socket is not there now, so this answer was not delivered").
 		return "the run's answer socket is gone, so this answer was not delivered. The request may still be waiting: open the run's page to see whether it can still be answered."
 	case errors.Is(err, syscall.ECONNREFUSED):
 		return "nothing is listening on the run's answer socket, so this answer was not delivered. The request may still be waiting: open the run's page to see whether it can still be answered."
@@ -379,6 +379,8 @@ func (s *Server) block(w http.ResponseWriter, r *http.Request, run string, add b
 			why = unreadableStartWords
 		case errors.Is(err, runact.ErrNoTimeLimits):
 			why = "this run was started by an older tego that has no time limits: block it with no end, or restart the run."
+		case errors.Is(err, runact.ErrNoWords):
+			why = plainErr(err) + "."
 		case errors.Is(err, liveblock.ErrInvalid):
 			why = plainErr(err) + "."
 		default:

@@ -161,6 +161,8 @@ internal/runtime TestRootLauncherRefusesGroupHostState # needs root: /run/tego a
 internal/runtime TestFileCapabilityCopyIsRefused # needs root: setting security.capability and mounting a tmpfs (ADR 0042 (3)(a))
 internal/runtime TestAmbientIncidentalCapabilityRunsLandlock # needs root: handing a user an ambient capability (ADR 0042 (3)(a))
 internal/runtime TestRootRunStartNamesTheSudoAccount # needs root: the case is sudo tego run at tier cgroup (ADR 0073 root arm)
+internal/runtime TestIntegrationAWindowHoldsAgainstItsOwnAgent # needs root and SUDO_UID: the case is a launcher of an ordinary user and root's at tiers cgroup and bpflsm, each with an agent that attacks an earlier run's ledger (ADR 0165); it runs in root-suites
+internal/runtime TestIntegrationAWindowHoldsAgainstItsOwnAgent/* # the same, per launcher and tier
 internal/runtime TestRootAgentHasItsOwnAccountsHome # needs root: the case is sudo tego run (identity-config.md R3a)
 internal/platform/proc TestStartIdentityOutlivesPidReuse # needs root: reissuing a chosen pid through ns_last_pid needs CAP_SYS_ADMIN
 internal/runtime/enforce/cgroup TestPlaceRingOnARealOuter # creating a ring outer needs CAP_BPF
@@ -379,6 +381,8 @@ internal/runtime/capture/uprobe TestIntegrationRecordOffActivityStartCost # need
 # enforce-plane §10.1 cold attribution (perf-cold C1): the verifier statistics the attribution parses are the kernel's own.
 internal/bpf TestLoadStatsMatchKernel # loads trace_proc with the verifier's statistics: needs compiled objects and CAP_BPF
 internal/runtime TestRootAskUnix # needs root: a root launcher at tiers cgroup and bpflsm, the agent dropped to the invoking user
+internal/runtime TestIntegrationStandardDevicesLandlock # needs root: a mknod look-alike of /dev/null on a tmpfs mount of its own, and the run at tier landlock launched by the invoking user (ADR 0158)
+internal/runtime TestRootStandardDevices # needs root: a mknod look-alike of /dev/null on a tmpfs mount of its own, and a root launcher at tiers cgroup and bpflsm, the agent dropped to the invoking user (ADR 0158)
 internal/runtime TestRootAskUDP # needs root: a root launcher at tiers cgroup and bpflsm, the agent dropped to the invoking user
 internal/runtime TestRootMCPRelayGate # needs root: a root launcher at tiers cgroup and bpflsm, where a plane decides the run's execs (ADR 0126 §4 "The gate")
 internal/runtime TestRootAskMutation # needs root: a root launcher at tiers cgroup and bpflsm, the agent dropped to the invoking user (ADR 0047)
@@ -387,6 +391,12 @@ internal/runtime TestRootStrictInterfaceLists # needs root: a root launcher at t
 internal/runtime TestRootStrictImportStillClosed # needs root: a root launcher at tiers cgroup and bpflsm under net.assurance: kernel, the agent dropped to the invoking user (ADR 0128's amendment); covered by the root-suites job
 internal/runtime TestRootStrictHeldOpens # needs root: a root launcher at tiers cgroup and bpflsm with held opens under net.assurance: kernel, the agent dropped to the invoking user (ADR 0128's amendment); covered by the root-suites job
 internal/runtime TestRootLiveBlockInPlane # needs root: a root launcher at tiers cgroup and bpflsm with the kernel plane's live-block map (ADR 0124's amendment); the root suites run it
+internal/runtime TestRootLiveBlockIdentityMismatch # needs root: a root launcher at tiers cgroup and bpflsm with the kernel plane's live-block map and a row changed in it (ADR 0124's amendment); the root suites run it
+internal/runtime TestRootLiveBlockPathUnresolved # needs root: a root launcher at tiers cgroup and bpflsm with the kernel plane's live-block map (ADR 0124's amendment); the root suites run it
+internal/runtime TestRootLiveBlockDormantBlockWaitsForItsInstant # needs root: a root launcher at tiers cgroup and bpflsm with the kernel plane's live-block map, about a minute a plane mode (ADR 0124's amendment); the root suites run it
+internal/runtime TestRootLiveBlockNameKeys # needs root: a root launcher at tiers cgroup and bpflsm with the kernel plane's live-block map and a row changed in it (ADR 0124's amendment); the root suites run it
+internal/runtime TestRootLiveBlockOnCommandWords # needs root: a root launcher at tiers landlock, cgroup and bpflsm with a live block on a command's words (ADR 0171); the root suites run it
+internal/runtime TestRootOlderLauncherRefusesACommandBlock # needs root, and a tego built from the revision before command blocks that only a row stages (ADR 0171); the row runs it
 internal/runtime TestIntegrationDenyReadSnapshotAtRootTiers # needs root: a root launcher at tiers cgroup and bpflsm with the agent dropped to the invoking user (ADR 0069 amendment, C45); the root suites run it
 internal/runtime TestRootAgentInOtherRunCannotAnswer # needs root: two runs at tier cgroup from a root launcher, the agents dropped to the invoking user
 internal/runtime TestAdoptedAgentCannotAnswer # needs root: an adoption moves another process between cgroups and loads tier 2's programs
@@ -445,3 +455,4 @@ internal/cli TestGuideDumbInterrupt/* # requires an available pseudo-terminal
 internal/runtime TestIntegrationHeldOpenTOMOYO # needs the dedicated root TOMOYO activation guest; held-label-tests.sh requires this test without skips
 internal/runtime TestIntegrationTOMOYOProfileProofDifferential # needs the dedicated root TOMOYO guest booted for the differential (TEGO_VM_TOMOYO_HALF=differential); held-label-tests.sh requires this test without skips
 internal/doctor TestIntegrationProbeProcessExitDropsProgramsAndLinks # BPF object IDs and privileged probe exits require root in a guest
+internal/doctor TestIntegrationAPlaneProbeOfARunStopsAtTheSelectedMode # the plane probe loads and attaches programs as root (CAP_BPF, CAP_SYS_ADMIN)

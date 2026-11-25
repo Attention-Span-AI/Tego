@@ -25,7 +25,7 @@ func EffectiveTop(scopePath, root string) string {
 	return root
 }
 
-// ReadEffective is ReadApplied folded with the ceilings of the ancestor cgroups (GAPS N85): for each limit the run
+// ReadEffective is ReadApplied folded with the ceilings of the ancestor cgroups: for each limit the run
 // wrote, the value that holds is the smallest along the chain from c up to top (cpu.max by its bandwidth, quota over
 // period; memory.max, memory.high and pids.max by their number, "max" being no ceiling). cpu.weight is a share and not
 // a ceiling, so an ancestor's is not folded in. A file an ancestor lacks is no ceiling there only at top itself (the

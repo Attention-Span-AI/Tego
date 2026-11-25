@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
-# N36: tego uninstall with the service guide's drop-in (10-delegate.conf) present. Run as an ordinary user inside a
+# tego uninstall with the service guide's drop-in (10-delegate.conf) present. Run as an ordinary user inside a
 # user scope, with /mnt/p2 mounted (guest-proof.py).
 # shellcheck source=common.sh
 . /mnt/p2/guest-proof/common.sh

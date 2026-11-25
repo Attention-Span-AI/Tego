@@ -270,7 +270,7 @@ func (h *Handle) fillPlane(rt *agent.RuleTable) error {
 	// which receives its request sockets and dirfds that way inside the run's cgroup, is flagged too: the launcher writes
 	// the deputy's identity into the slot before Arm (ExemptDeputy), and the hook passes it alone (amendment 2026-11-21).
 	importsDenied := rt.NetworkAssurance() == agent.NetAssuranceKernel && h.plane.hooks()[ebpfbindings.PlaneHookSocketRecvmsg]
-	rep, err := h.plane.fill(planeFillRequest{Slot: h.slot, Gen: h.gen, Rows: h.planeRows, Held: held,
+	rep, err := h.plane.fill(planeFillRequest{Slot: h.slot, Gen: h.gen, Rows: h.planeRows, Table: rt, Held: held,
 		ListenHeld: listenHeld, KeyringAllowed: rt.Contract != nil && rt.Contract.Keyring,
 		Exec: execPolicyOf(rt), Unix: unixPol, Net: netPolicyOf(rt), Pin: pin, ImportsDenied: importsDenied})
 	if err != nil {

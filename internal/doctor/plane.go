@@ -720,6 +720,11 @@ func planeSummary(st *PlaneState, bpfActive bool) string {
 			out += "no: " + r.Detail
 		}
 	}
+	if st.Source != planeSourcePin {
+		for _, m := range planeSkipped(st) {
+			out += fmt.Sprintf(", %s mode not probed (a mode that bpf.plane takes first passed)", m)
+		}
+	}
 	if st.Source != planeSourceProbed {
 		out += " [from the " + st.Source + "]"
 	}

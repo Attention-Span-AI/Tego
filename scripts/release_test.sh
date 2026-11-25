@@ -80,12 +80,12 @@ TEGO_RELEASE_SKIP_CI_CHECK=1 check "skip variable pushes the tag" 0 "v1.2.0 " pu
 # the three required lines is refused.
 git checkout -q main
 mkdir -p docs
-tagcheck() { # tagcheck NAME WANT-IN-OUTPUT WANT-ABSENT
+tagcheck() { # tagcheck NAME WANT-IN-OUTPUT WANT-ABSENT; the tag is $TAGV, v2.0.0 unless set
 	printf '%s' "$CHANGELOG" >docs/CHANGELOG.md
 	git add -A
 	git commit -q -m "changelog"
 	rc=0
-	sh scripts/release.sh tag v2.0.0 >"$tmp/out" 2>&1 || rc=$?
+	sh scripts/release.sh tag "${TAGV:-v2.0.0}" >"$tmp/out" 2>&1 || rc=$?
 	if [ "$rc" -eq 0 ] || ! grep -q -- "$2" "$tmp/out" || { [ -n "$3" ] && grep -q -- "$3" "$tmp/out"; }; then
 		echo "FAIL ${1}: exit ${rc}"
 		sed 's/^/    /' "$tmp/out"
@@ -125,6 +125,48 @@ CHANGELOG='## v2.0.0
 Notes.
 '
 tagcheck "bare heading without the required lines refused" "has no 'Record" "make"
+# A release candidate has its own section: the plain section is not its notes (v0.1.1-rc.1 and v0.2.0-rc.1 each have one).
+# shellcheck disable=SC2016 # Backticks are literal Markdown in the fixture.
+CHANGELOG='## v2.0.0 - 2026-01-01
+
+Notes.
+
+### Record `v`
+1
+### Contract schema
+1
+### Kernel minimums
+6.1
+'
+TAGV=v2.0.0-rc.1
+tagcheck "a release candidate does not take the plain section" "has no '## v2.0.0-rc.1' section" "make"
+unset TAGV
+# shellcheck disable=SC2016 # Backticks are literal Markdown in the fixture.
+CHANGELOG='## v2.0.0 - 2026-01-01
+
+Notes.
+
+### Record `v`
+1
+### Contract schema
+1
+### Kernel minimums
+6.1
+
+## v2.0.0-rc.1 - 2026-01-01
+
+Candidate.
+
+### Record `v`
+1
+### Contract schema
+1
+### Kernel minimums
+6.1
+'
+TAGV=v2.0.0-rc.1
+tagcheck "a release candidate finds its own dated section" "make" "has no '## v2.0.0-rc.1' section"
+unset TAGV
 
 # A tag made from a section keeps its "###" headings (the default cleanup strips "#" lines); the gate is stubbed.
 printf 'lint vuln test integration preset-freeze:\n\t@:\n' >Makefile

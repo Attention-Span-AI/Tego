@@ -46,6 +46,11 @@ func TestReviewChecksResolvedWriteTargets(t *testing.T) {
 	}
 	contract := []byte(strings.Replace(string(r.Contract), "  write:\n", "  write:\n    - \"./.tego/review/content/\"\n", 1))
 	env := CheckEnv{Options: []agent.CompileOption{agent.WithHome(home), agent.WithPATH("/usr/bin:/bin")}}
+	// The contract as composed is accepted, though every table now holds the product's own rows for the standard data
+	// devices (ADR 0158): they are no write the review contract made.
+	if ds, ok := CheckReviewFile(r.Contract, filepath.Join(dir, "agent.yaml"), dir, env, ".tego/review/"); !ok {
+		t.Fatalf("the composed review contract was refused: %v", ds)
+	}
 	ds, ok := CheckReviewFile(contract, filepath.Join(dir, "agent.yaml"), dir, env, ".tego/review/")
 	if ok {
 		t.Fatal("compiled write grant resolves through a nested state link into project content")

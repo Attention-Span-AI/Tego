@@ -1082,7 +1082,8 @@ linters:
       - path: ^internal/cli/asknotice\.go$
         linters: [forbidigo]
         text: reviewed process-start site
-      # tego start's guide (the agent's installer, its own login, stty, the dashboard's unit, --version) and tego rules
+      # tego start's guide (the agent's installer, its own login, stty, the dashboard's unit, --version, the demonstration
+      # run of `tego run`) and tego rules
       # edit's editor: commands that start no run, in a process that holds no fanotify group.
       - path: ^internal/cli/setup_guide\.go$
         linters: [forbidigo]
