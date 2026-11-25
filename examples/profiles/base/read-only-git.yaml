@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# base/read-only-git — git for reading a repository and nothing else (ADR 0048, docs/OPERATIONS.md "Exec command
+# base/read-only-git — git for reading a repository and nothing else (ADR 0048, docs/development/operations.md "Exec command
 # rules"). A contract takes it with `extends: base/read-only-git`; the contract adds its own command and tools. The
 # allow entries constrain git: git runs only as one of these subcommands, wherever its global options put the word
 # (`git -C sub status` is `git status`), and every other subcommand is refused as unlisted (exec.args[git]). The

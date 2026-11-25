@@ -108,7 +108,7 @@ Codex asks for no login and makes no WebSocket offers, and the run is otherwise 
   agent of any other tego run of the same user can read its
   `CODEX_HOME`, the `auth.json` with a typed key included (R10a's open condition), and a `tego run --observe` agent,
   which enforces no file-system rule, or any of the user's processes outside tego can write it too
-  (docs/OPERATIONS.md step 4 says what to do meanwhile).
+  (docs/site/codex.md says what to do meanwhile).
 - **Codex starts itself.** Before every command it runs `/proc/self/exe --codex-run-as-process-setup`, and
   `apply_patch` as a shell command is a symlink to it in `CODEX_HOME/tmp/arg0/`. Both are the command's own binary and
   need no `exec.allow` entry. A `/proc/self/exe` entry compiled to the tego binary, not to Codex, when this ran, and

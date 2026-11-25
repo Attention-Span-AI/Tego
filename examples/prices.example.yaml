@@ -2,7 +2,7 @@
 #
 # A price table to start from. tego estimates a run's limits.cost_usd from the price table at the machine config's
 # prices: path (~/.tego/prices.yaml unless a layer names another), and refuses a run whose contract declares cost_usd
-# when no table loads there, exit 125 [budget-unmetered]. docs/OPERATIONS.md ("The price table") has the whole format.
+# when no table loads there, exit 125 [budget-unmetered]. docs/site/budgets.md has the whole format.
 #
 # The prices are the Claude API's own list prices in USD per million tokens, as Anthropic's pricing page
 # (https://platform.claude.com/docs/en/about-claude/pricing) gave them on the date in `updated:` below, for every model

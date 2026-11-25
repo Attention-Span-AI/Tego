@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// What a message may show of the environment. This comment is the rule's one statement in the code (the operations
-// guide states it for people, docs/OPERATIONS.md "What a message shows of the environment"); every diagnostic,
+// What a message may show of the environment. This comment is the rule's one statement in the code (the engine
+// notes state it, docs/development/operations.md "What a message shows of the environment"); every diagnostic,
 // warning, error, log line and dashboard text follows it, through the three functions below where its package may
 // import this one.
 //

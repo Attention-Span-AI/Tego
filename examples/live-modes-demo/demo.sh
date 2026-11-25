@@ -144,7 +144,7 @@ cmd_setup() {
     printf 'version: 0\nledger_root: %s\n' "$DEMO_LEDGER" >"$DEMO_CONFIG"
     chmod 600 "$DEMO_CONFIG"
   fi
-  # The ledger is yours, so what a root run writes there is handed to you when the run ends (docs/OPERATIONS.md).
+  # The ledger is yours, so what a root run writes there is handed to you when the run ends (docs/development/operations.md, "Privileged path").
   run mkdir -p -m 0700 "$DEMO_LEDGER"
 
   say "tego compile accepts it (Adjustable, one read entry in the fence, refused at start)"

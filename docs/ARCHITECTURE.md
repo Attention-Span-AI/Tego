@@ -3,7 +3,7 @@
 Design baseline revised 2026-09-21 after the verification pass; current tier summary and implementation boundaries reconciled 2026-10-03. Facts marked (verified) were checked against kernel sources, man
 pages, vendor documentation or this machine; the rest is design to be proven in `test/`.
 
-This document combines implemented behavior and planned capabilities. `tego serve` hands off to `tego-control`, the local dashboard (docs/DASHBOARD.md); `learn` is built (2026-10-06, docs/OPERATIONS.md); additional provider parsers are not. For current implementation status, use `spec/backend/CAPABILITIES.md`; dated verification notes below retain their historical scope.
+This document combines implemented behavior and planned capabilities. `tego serve` hands off to `tego-control`, the local dashboard (docs/development/dashboard.md); `rules learn` is built (2026-10-06, docs/site/learning-rules.md); additional provider parsers are not. For current implementation status, use `spec/backend/CAPABILITIES.md`; dated verification notes below retain their historical scope.
 
 ## 1. A run, in order
 

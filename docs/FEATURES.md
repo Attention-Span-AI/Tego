@@ -212,7 +212,7 @@ host, never hides from root, and root can always see and remove what it installs
 | C7 | `tego approve/deny` | Built | |
 | C8 | Gap line in status and drift | Built | |
 | C9 | **Learn mode**: run observe-only, generate the first agent file from what the run actually did | Built | Onboarding in one command. Needs E9. |
-| C12 | `tego serve`: local dashboard over the ledger, with actions (`tego-control`) | Built | Answers held requests, stops runs and changes rules: docs/DASHBOARD.md. |
+| C12 | `tego serve`: local dashboard over the ledger, with actions (`tego-control`) | Built | Answers held requests, stops runs and changes rules: docs/development/dashboard.md. |
 | C13 | Run timeline (decision → actions) | Built | |
 | C14 | Run-to-run diff (same agent, two runs) | Built | In the dashboard, `internal/control/web/compare.go`. |
 | C15 | Export via ids: OTel GenAI spans, LangSmith, Langfuse (`traceparent`, `request-id`) | Partly | The ids are recorded (`traceparent`, `request-id`, E26). No exporter is built. |

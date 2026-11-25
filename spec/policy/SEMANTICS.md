@@ -373,7 +373,7 @@ no `XDG_RUNTIME_DIR`, and the same user's other runs keep their directories ther
 write grant the run makes itself, on exactly that directory, rule `fs.codex_home[<path>]`, and an `exec.allow` or
 `exec.ask` directory over it refuses the run, since everything the agent wrote there would run (agent-contract R10a).
 Its reads are not denied (an open condition: another run's agent of the same uid can read it where no `deny_read`
-covers it, the `auth.json` of a key typed at Codex's login screen included; docs/OPERATIONS.md gives the interim
+covers it, the `auth.json` of a key typed at Codex's login screen included; docs/site/codex.md gives the interim
 measure, *amended 2026-10-17*). Its writes are closed to enforcing runs only: an `--observe` run enforces no
 file-system rule, so its agent, like any of the user's processes outside tego, can write it (*amended 2026-10-17*).
 
@@ -1683,7 +1683,7 @@ for the full fixed list and implementation note, including fail-closed abstract 
 *Amended 2026-11-05 (release rollback, C55):* write declarations add no built-in scan/name scopes;
 ADR 0043 D10 remains the contract directory and launch cwd. The rejected coverage extension and its
 Landlock directory-move floor are reverted. Root-tier pip moves into an uncovered `target` remain an
-explicit limit; OPERATIONS gives the tested staging/target declarations plus target-cwd arrangement.
+explicit limit; docs/development/operations.md gives the tested staging/target declarations plus target-cwd arrangement.
 Landlock future-name aliases, including declared held patterns moved out of scope, remain GAPS A11.
 
 

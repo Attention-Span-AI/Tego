@@ -6,14 +6,14 @@ profile they extend, and `tests/` a `compile --test` table with the contract it 
 rule table tested, and test/poc/interactive-codex ran a contract of the same shape offline against a stand-in model.
 
 `prices.example.yaml` is a price table to start from: a contract that declares `limits.cost_usd` is refused without
-one, and its header says how to check and install it (`docs/OPERATIONS.md`, "The price table").
+one, and its header says how to check and install it (`docs/site/budgets.md`).
 
 `container/` holds the container image (a Dockerfile, a compose file running an agent under `tego run` with the
 dashboard on the host's loopback, and the entrypoint that prepares the container): see `docs/site/containers.md`.
 
 `systemd/` holds the user units for an agent that runs all the time: `tego-agent@.service` runs one agent of your
 registry and restarts it after a crash or a limit, `tego-agent-restart@.timer` restarts it once a day, and
-`tego-gc.timer` runs the retention pass once a day (docs/OPERATIONS.md, "Agents that run all the time").
+`tego-gc.timer` runs the retention pass once a day (docs/site/services.md).
 `example-restart-myapp.socket` and its service are an example to adapt: a one-verb helper through which a governed
 agent restarts one service, since no contract can grant it the user manager's socket (docs/site/built-in-refusals.md).
 

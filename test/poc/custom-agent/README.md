@@ -65,7 +65,7 @@ written (`run.sh` lists it before and after).
    `tego approve` and `tego deny`. Look at `tego drift <run>`: what it was refused (an agent that does not tolerate
    a refusal shows here), what was declared and never used, and the `gaps:` line of `tego status` (a
    `budget-unmetered` gap means a limit a machine ceiling sets counted nothing; one the contract declares is refused).
-6. **Then leave it.** The section "Unattended runs: what to put in the contract" of `docs/OPERATIONS.md`; in the morning, `tego
+6. **Then leave it.** `docs/site/services.md`; in the morning, `tego
    status <run>`, `tego events <run> --last` and `tego drift <run>`.
 
 ## What each scenario shows

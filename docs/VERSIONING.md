@@ -165,7 +165,7 @@ No historical line is rewritten.
 - Dependencies: `.github/dependabot.yml` proposes Go module and GitHub Actions updates weekly; every action is
   pinned by commit SHA, and CI runs `govulncheck` on every push.
 - A release requires kill tests 1–6 green on the `test/vm` matrix, kill test 7 (docs/FEATURES.md) run by hand on one
-  kernel, and the packet capture of kill test 8 (docs/OPERATIONS.md) run by hand once before beta. "No kill test regressed across two releases" means two consecutive `v0.y` tags.
+  kernel, and the packet capture of kill test 8 run by hand once before beta. "No kill test regressed across two releases" means two consecutive `v0.y` tags.
 - `docs/CHANGELOG.md`, one section per tag: Added / Changed / Removed / Record `v` / Contract schema / Kernel minimums.
 - Built-in presets (*added 2026-10-25*, ADR 0068 D3): every preset revision a tag carries is released and frozen
   from that tag on, so `pkg/spec/presets`' `released` table must list each with the sha256 of its bytes before the

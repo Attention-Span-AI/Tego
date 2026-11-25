@@ -1597,7 +1597,7 @@ rules remain a preview, with the limits below.
   skips may belong to other runs or ungoverned tasks, and overlapping runs may count the same skip. Preemptible
   kernels can still lose records (GAPS C53).
 - Built-in `.env` rename refusals and `tego learn` explain root-tier pip's name-coverage limit (C55) and its
-  measured contract/cwd remedy in [OPERATIONS.md](OPERATIONS.md#directory-moves-and-protected-names-c55).
+  measured contract/cwd remedy in [docs/development/operations.md](development/operations.md#directory-moves-and-protected-names-c55).
   Write entries alone add no name coverage; pip's copy fallback can exit 0 while recording rename refusals.
 - Kernel-matrix guests prepare delegation and authenticated Unix diagnostics/loop modules; doctor-only checks
   accept combined remedies. Automount tests use the same kernel's native result, and conformance releases

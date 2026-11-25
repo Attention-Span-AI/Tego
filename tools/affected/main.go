@@ -2,7 +2,7 @@
 
 // Command affected says what a change-scoped precommit run must check: `make precommit-affected BASE=<rev>` and
 // scripts/precommit.sh with TEGO_PRECOMMIT_SINCE=<rev> run what it selects. It is for in-between checks (an agent's
-// run before it hands a branch over, a merge queue); a merge to main keeps the full gate (docs/OPERATIONS.md,
+// run before it hands a branch over, a merge queue); a merge to main keeps the full gate (docs/development/operations.md,
 // "Precommit modes").
 //
 // The change is the working tree against the merge base of HEAD and -base: committed, staged, unstaged and
