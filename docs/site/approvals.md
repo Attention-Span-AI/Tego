@@ -19,7 +19,7 @@ An `ask` rule holds an action until a person allows or refuses it. The agent's s
 
 `exec.ask` never asks. Every program it matches is refused at every level, and `tego rules check` warns about it. Use `exec.allow` or `exec.deny` for programs.
 
-`fs.ask_read` works only at Basic. A rules file with `fs.ask_read` is refused when its session would run at Plus or Max. Add `tier: landlock` to keep the session at Basic. [Protection levels](/docs/tiers/) explains the levels.
+`fs.ask_read` works only at Basic. A rules file with `fs.ask_read` is refused when its session would run at Plus or Max. Add `tier: landlock` to keep the session at Basic. [Protection levels](/docs/tiers/) explains the levels. On Debian 12 and 13, Basic refuses read approvals instead: see [Supported systems](/docs/supported-systems/#distributions).
 
 An `fs.ask` path inside an `fs.write` folder is never asked: the write rule already allows it. Keep held folders outside your write folders.
 

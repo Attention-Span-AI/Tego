@@ -52,6 +52,8 @@ The session's launcher puts a block in force within about a second. From then on
 | `read` | A path | Reads only, plus a rename or hard link that would give the file a name outside the block |
 | `write` | A path | Changes only: writes, creates, deletes, renames, links, `mkdir` |
 
+An `exec` block on a path refuses the program file under every name it has. On Ubuntu 25.10 and 26.04, `/bin/ls` and `/bin/sleep` are names of one coreutils file, so blocking `/bin/ls` refuses `/bin/sleep` too. `tego block` prints some of the other names, and the command that blocks one name alone: a bare name such as `ls`, which is matched by name only.
+
 | Flag | Meaning |
 |---|---|
 | `--for <duration>` | The block ends after this long: `45m`, `72h`, `3d`, `1d12h`, `7w` |

@@ -15,7 +15,7 @@ Tego runs on Linux. On macOS it runs in a Linux VM that the installer sets up, a
 |---|---|
 | Linux | x86-64 (amd64) or arm64, and a kernel from [Linux kernels](#linux-kernels) |
 | macOS | macOS 13.5 or later, Apple silicon or Intel, Lima 2.0 or later, about 5 GB free |
-| Windows | Windows build 19044 or later, x64 or arm64, virtualization turned on, WSL 2.6.3 or later, at least 5 GB free |
+| Windows | Windows 10 version 21H2 (build 19044) or later, or Windows 11, x64 or arm64, virtualization turned on, WSL 2.6.3 or later, at least 5 GB free |
 
 [Protection levels](/docs/tiers/#which-level-your-machine-gets) says which level each platform gets.
 
@@ -66,12 +66,31 @@ cat /sys/kernel/security/lsm
 
 | Distribution | Basic | Max |
 |---|---|---|
-| Debian 13, Fedora, RHEL 9 and 10, Amazon Linux 2023 | Yes | Yes, with no change |
-| Ubuntu 24.04 and later | Yes | After one boot setting |
+| Debian 13, Fedora 40 and later, RHEL 9 and 10, AlmaLinux 9, Rocky Linux 9, Amazon Linux 2023 | Yes | Yes, with no change |
+| Ubuntu 24.04, 25.10 and 26.04 | Yes | After one [boot setting](#turn-on-max) |
 | Debian 12, and other 6.1 kernels | Yes, without kernel TCP port rules | Run `sudo "$(command -v tego)" machine check` |
 | Ubuntu 22.04 with its stock 5.15 kernel | No | No |
 
+AlmaLinux 9 and Rocky Linux 9 run RHEL 9's kernel.
+
+On Debian 12 and 13, the stock kernel lists TOMOYO, a Linux security module, as active with no policy loaded. At Basic, Tego refuses every file open it would hold for a person, so [read approvals and held reads](/docs/approvals/) do not work there: Basic cannot read TOMOYO's settings to prove nothing is enforced. At Plus and Max they work while no TOMOYO mode is enforcing. `tego machine check` says which check admitted them.
+
 Plus works wherever Basic does and you have root, unless a requirement above is missing.
+
+## Where Tego is tested
+
+Tego's GitHub workflows test these systems:
+
+| System | What runs |
+|---|---|
+| Ubuntu 24.04 (6.8), Ubuntu 25.10 (6.17), Debian 13 (6.12), RHEL 9 through AlmaLinux 9 (5.14), Amazon Linux 2023 (6.1 and 6.12), Fedora kernels 7.0 and 7.2 | Each distribution's kernel boots in a VM on an x86-64 runner and runs Tego's kernel tests. This matrix is started by hand. |
+| Ubuntu 22.04 (5.15) | `tego machine check` only: it must say no level works. |
+| Linux on arm64 | Build, unit tests and the kernel program checks, on GitHub's `ubuntu-24.04-arm` runner. |
+| macOS 15, Apple silicon | The installer and its tools. GitHub's Apple silicon runners cannot start a VM inside them. |
+| macOS 15, Intel | The real installer, and Tego's VM where the runner can boot one. |
+| Windows Server 2025, x64 | The real installer, from Windows PowerShell 5.1 and from PowerShell 7. |
+
+Windows on arm64 has release builds, and the installer installs them, but no workflow runs them.
 
 ## Turn on Max
 

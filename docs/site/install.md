@@ -34,6 +34,8 @@ Add that line to your shell's profile (`~/.bashrc` or `~/.zshrc`) to keep it.
 curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh | sh
 ```
 
+The same command works on Apple silicon and Intel Macs.
+
 The installer asks before each step. It:
 
 1. checks that the Mac meets the [requirements](/docs/supported-systems/#platforms),
@@ -53,6 +55,8 @@ Your agent and projects live inside the VM. To open a shell there, type `tego sh
 ```powershell title="PowerShell"
 irm https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.ps1 | iex
 ```
+
+The same command works on x64 and arm64 PCs, from Windows PowerShell or PowerShell 7.
 
 The installer:
 
