@@ -546,7 +546,9 @@ type helperWorker struct {
 	started       bool
 	// governed says the worker also holds a governedWorkers slot.
 	governed bool
-	once     sync.Once
+	// release gives its slots back to the pools it took them from (admitWorker); nil for a worker that holds none.
+	release func()
+	once    sync.Once
 	// slot is the name of the kernel reservation the worker holds, pid and start its own process (from its first
 	// frame and /proc): what is needed to tell later that an abandoned worker still holds its slot (markStuck).
 	slot  string
@@ -587,9 +589,8 @@ func (w *helperWorker) close() {
 	w.once.Do(func() {
 		closePipe(w.send)
 		closePipe(w.receive)
-		<-processWorkers
-		if w.governed {
-			<-governedWorkers
+		if w.release != nil {
+			w.release()
 		}
 	})
 }
@@ -1038,28 +1039,30 @@ func exchange(ctx context.Context, request []byte) (body []byte, err error) {
 // admitWorker takes this process's worker slot within ctx: a governed request's from the governedWorkers share
 // as well, so the personHelperReserve slots stay for other requests. release gives back what it took.
 func admitWorker(ctx context.Context, governed bool) (release func(), err error) {
+	// The pools as they are now: a release gives back to the pools it took from, even if the variables change later.
+	workers, governedPool := processWorkers, governedWorkers
 	busy := func() error {
-		return fmt.Errorf("%d filesystem helpers are still alive: %w", cap(processWorkers), ctx.Err())
+		return fmt.Errorf("%d filesystem helpers are still alive: %w", cap(workers), ctx.Err())
 	}
 	if governed {
 		select {
-		case governedWorkers <- struct{}{}:
+		case governedPool <- struct{}{}:
 		case <-ctx.Done():
 			return nil, busy()
 		}
 	}
 	select {
-	case processWorkers <- struct{}{}:
+	case workers <- struct{}{}:
 	case <-ctx.Done():
 		if governed {
-			<-governedWorkers
+			<-governedPool
 		}
 		return nil, busy()
 	}
 	return func() {
-		<-processWorkers
+		<-workers
 		if governed {
-			<-governedWorkers
+			<-governedPool
 		}
 	}, nil
 }
@@ -1111,7 +1114,7 @@ func startHelper(ctx context.Context, as helperCredentials) (*helperWorker, erro
 		closePipe(receive)
 		return fail(fmt.Errorf("start filesystem helper: %w", err))
 	}
-	return &helperWorker{cmd: cmd, send: send, receive: receive, governed: governed, slot: slot}, nil
+	return &helperWorker{cmd: cmd, send: send, receive: receive, governed: governed, slot: slot, release: release}, nil
 }
 
 // transact runs one request on the worker. events, when not nil, is called for each control frame that arrives before

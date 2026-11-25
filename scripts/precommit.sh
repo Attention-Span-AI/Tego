@@ -278,7 +278,7 @@ add_full() {
 	pc_add tests unit "unit tests (test/unit-skips.txt)" step gated_unit ./...
 	# In the unit job, after the unit pass: beside it, the unit pass's timing tests (rulesview's InForce) ran slow.
 	# precommit_test.sh holds this list to the directories with tegotesthooks test files.
-	pc_add tests unit "unit tests (-tags tegotesthooks)" step hooks_test ./cmd/tego/ ./internal/bpf/ ./internal/cli/ ./internal/platform/peer/ ./internal/platform/sys/ ./internal/runtime/ ./internal/runtime/enforce/ ./internal/runtime/enforce/landlock/ ./internal/selftest/
+	pc_add tests unit "unit tests (-tags tegotesthooks)" step hooks_test ./cmd/tego/ ./internal/bpf/ ./internal/cli/ ./internal/doctor/ ./internal/platform/peer/ ./internal/platform/sys/ ./internal/runtime/ ./internal/runtime/enforce/ ./internal/runtime/enforce/landlock/ ./internal/selftest/
 	pc_add integration integration "integration tests (test/integration-skips.txt)" step gated_integration ./...
 	# The public cut tree (tools/oss/cut_test.py, unrestricted): its own job, so it overlaps the integration tests when
 	# there is a slot for it. Only where the export tooling is (the public tree has none).
