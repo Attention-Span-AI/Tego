@@ -22,7 +22,7 @@ import urllib.request
 HERE = Path(__file__).absolute().parent
 WORDS = 'cannot tell: this location does not answer (a disconnected or stuck mount?)'
 NAME_WORDS = ("discovery is incomplete, so that name cannot be proven unambiguous; "
-              "give the contract's path")
+              "give the rules file's path")
 BOUND = 70
 PAGE_BOUND = 20
 # A page that has to wait for a helper slot held by other commands' stuck helpers waits for its request's whole bound

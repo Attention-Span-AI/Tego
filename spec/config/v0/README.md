@@ -184,11 +184,12 @@ users: {}                         # honoured from /etc/tego/config.yaml only (AD
 
 ### Built-in surface port (ADR 0113)
 
-`serve: {port: 7433}` selects the local TCP port refused by
+`serve: {port: 8484}` selects the local TCP port refused by
 `builtin.tego_surface` in every enforcing run. `serve.port` is a last-wins
-setting, integer 1..65535. `port:` may not be zero. The current dashboard's
-legacy default 8484 is protected as well. Set this before using `serve --addr`
-with another port; a per-command address is not machine policy.
+setting, integer 1..65535; the built-in value is 8484, the dashboard's port.
+`port:` may not be zero. 8484 stays refused when another port is set. Set this
+before using `serve --addr` with another port; a per-command address is not
+machine policy.
 
 ## Baseline schema (ADR 0144)
 

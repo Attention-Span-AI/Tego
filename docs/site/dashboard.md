@@ -49,7 +49,7 @@ If port 8484 is busy, see [Troubleshooting](/docs/troubleshooting/).
 
 ## The pages
 
-The menu shows Agents, Overview, Runs, Approvals and Logs. **More** holds Contracts, Detections and This machine.
+The menu shows Agents, Overview, Runs, Approvals and Logs. **More** holds Rules files, Detections and This machine.
 
 - **Agents**: agents running on this machine and those `tego scan` found, with a way to record one. [Finding agents](/docs/finding-agents/) covers the scan.
 - **Overview**: what needs you first, then questions waiting, sessions running now, recent refused actions and the record check.
@@ -63,7 +63,7 @@ The menu shows Agents, Overview, Runs, Approvals and Logs. **More** holds Contra
   - **Unused**: rules the session was given and never used.
 - **Approvals**: questions waiting for an answer, and a History tab of past answers. [Approvals](/docs/approvals/) explains the buttons.
 - **Logs**: every line across every session, with search, filters and a CSV download.
-- **Contracts**: the rules files in use, in plain sentences, with **Change rules** and **New contract**. Contracts is the dashboard's name for rules files.
+- **Rules files**: the rules files in use, in plain sentences, with **New rules file**, and **Edit contract** on each file.
 - **Detections**: refused actions that matter, ranked High, Medium, Low and Routine.
 - **This machine**: "Can this machine enforce rules?", with the [protection levels](/docs/tiers/) past sessions used here. Run `tego machine check` for a current answer.
 - **Guide**: a step-by-step setup tour, from checking the machine to enforcing an agent's rules.
@@ -83,7 +83,7 @@ A running session's page has these buttons:
 
 ## Change rules
 
-On **Contracts**, choose **Change rules** and pick a rules file. Edit it, check the result, then save:
+On **Rules files**, open a rules file and choose **Edit contract**. Edit it, check the result, then save:
 
 - A saved change applies from the next session.
 - **Apply now to** a running session places the change on that session too, within about a second.

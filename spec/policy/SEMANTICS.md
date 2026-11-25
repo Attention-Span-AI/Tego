@@ -1675,7 +1675,7 @@ Every enforcing contract first applies `builtin.host_ipc`, `builtin.tego_surface
 lists. The no-`net:` case keeps IP destinations allowed except local Tego control ports and the
 existing model guard. Protected IPC sockets include the session runtime (SSH-only fixed exceptions
 and the run's own runtime excepted), system D-Bus, X11 and listed multiplexer/editor directories.
-Tego sockets and local configured serve.port/default 7433 plus legacy 8484 are refused. Numeric pty
+Tego sockets and the local configured serve.port (built-in 8484) and 8484 itself are refused. Numeric pty
 slaves and consoles other than the inherited terminal and master-relayed own ptys are refused.
 Only an exact explicit container-daemon socket allow removes that socket's default refusal, with
 `container-socket-escape`. Both named and reached paths are checked, multiple-link sockets are

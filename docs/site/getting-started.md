@@ -68,7 +68,7 @@ The tests pass. While they run, the poisoned dependency tries to read `.env` and
 Exit Claude Code. Tego prints one line for the session:
 
 ```text
-  ✓ Session tego-sample-6hbm ended · 2 actions blocked
+  ✓ Session tego-sample-6hbm ended · 2 actions refused
       Details: tego session show tego-sample-6hbm
 ```
 
