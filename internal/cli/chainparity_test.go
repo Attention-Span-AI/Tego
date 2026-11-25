@@ -30,7 +30,7 @@ import (
 // line it breaks after is the last one the run has, #1 here, or #0 once run_end is gone, never the count of its lines,
 // which names a line it does not have (the dashboard said "after #2" for a two-line run).
 //
-// One difference is the dashboard's on purpose (docs/DASHBOARD.md): with no chain.log at all it says not checked where
+// One difference is the dashboard's on purpose (docs/development/dashboard.md): with no chain.log at all it says not checked where
 // the CLI fails an ended run for its missing anchor line (E29), as a dashboard pointed at another user's ledger root
 // sees none. It never says verified where the CLI does not.
 //

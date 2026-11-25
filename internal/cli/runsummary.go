@@ -271,7 +271,7 @@ func (s *endSummary) textWithMore(show string) string {
 	return b.String()
 }
 
-// The reads line (docs/OPERATIONS.md, after `tego learn`) is a fact, not a hint, so it prints whatever TEGO_HINTS says: after the
+// The reads line (docs/development/operations.md, after `tego learn`) is a fact, not a hint, so it prints whatever TEGO_HINTS says: after the
 // summary of a run whose record cannot hold a read its contract refused, the line says so, since "refused N" does not
 // count such a read. It is decided from run_start.reads_notified alone, never from the record level: a run at
 // record: summary under reason.reads: on, an fs.ask_read entry, a read gate or held reads records its refused reads.

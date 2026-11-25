@@ -1,6 +1,6 @@
 {
   "SPDX-License-Identifier": "Apache-2.0",
-  "about": "Every number a dashboard page shows: its page, label, source and what it shows when that source is incomplete (numbers.go, docs/DASHBOARD.md). The vault layer registers the Vault page's rows itself.",
+  "about": "Every number a dashboard page shows: its page, label, source and what it shows when that source is incomplete (numbers.go, docs/development/dashboard.md). The vault layer registers the Vault page's rows itself.",
   "rows": [
     {
       "page": "overview",

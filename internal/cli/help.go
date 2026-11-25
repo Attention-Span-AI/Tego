@@ -144,7 +144,7 @@ func writeHelp(w io.Writer, cmds []Command, all bool) {
 		fmt.Fprintln(w, "'tego help -a' lists every command, including approvals and live rule changes.")
 	}
 	fmt.Fprintln(w, "See 'tego help <command>' to read about a specific command.")
-	fmt.Fprintln(w, "Manual: https://github.com/Attention-Span-AI/Tego/blob/main/docs/user/commands.md")
+	fmt.Fprintln(w, "Manual: https://attention-span.ai/docs/commands/")
 }
 
 // runHelp is `tego help [-a | <command> [<verb>]]`.

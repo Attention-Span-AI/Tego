@@ -42,7 +42,7 @@ import (
 
 // Links the guide shows for reading more.
 const (
-	presetsDocURL = "https://github.com/Attention-Span-AI/Tego/blob/main/docs/user/presets.md"
+	presetsDocURL = "https://attention-span.ai/docs/presets/"
 	sampleURL     = "https://github.com/Attention-Span-AI/Tego/tree/main/internal/setup/sample"
 )
 

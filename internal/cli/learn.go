@@ -69,7 +69,7 @@ func cmdLearn() Command {
 				message(stderr, "", 0, 0, "tego rules learn: exactly one run id or run directory", codeUsage)
 				return identity.ExitUsage // R25: usage error
 			}
-			// --save records refused reads by default (docs/OPERATIONS.md, `tego learn`): a newcomer then sees the read the contract refused on every run. The printed proposal and --out keep the
+			// --save records refused reads by default (docs/development/operations.md, `tego learn`): a newcomer then sees the read the contract refused on every run. The printed proposal and --out keep the
 			// contract's default unless --reads on.
 			o := learnOptions{out: out, save: save, reads: reads, reasonReads: reads == "on" || (save != "" && reads == "")}
 			switch {

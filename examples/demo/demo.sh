@@ -453,7 +453,7 @@ cmd_codex() {
   done
   agent_contract codex "${deny:+deny_read: [${deny%, }]}"
   mkdir -p "$STAGE/codex/work/tmp" "$STAGE/codex-home"
-  # Codex's own sandbox is off because Tego enforces the contract (docs/OPERATIONS.md, interactive Codex).
+  # Codex's own sandbox is off because Tego enforces the contract (docs/site/codex.md).
   cat >"$STAGE/codex-home/config.toml" <<'TOML'
 model = "gpt-5"
 sandbox_mode = "danger-full-access"

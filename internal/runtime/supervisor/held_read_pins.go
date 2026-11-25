@@ -211,7 +211,7 @@ func (p *heldReadPins) close() {
 // themselves raises no inotify event (a lazy unmount kept alive by a descriptor raises no IN_UNMOUNT, and a mount over
 // a watched directory raises nothing): topologyChanged re-resolves every place when the mount table changes, and the
 // topology is a support condition beyond that (ADR 0069). A container whose / is overlayfs and whose work folder is a
-// volume or bind mount of a local filesystem holds its reads (docs/user/container.md). Remote, FUSE and unknown
+// volume or bind mount of a local filesystem holds its reads (docs/site/containers.md). Remote, FUSE and unknown
 // filesystems stay refused.
 func heldReadAncestorFS(fd *sys.FD) error {
 	if magic, err := heldReadFSType(fd); err == nil && magic == unix.OVERLAYFS_SUPER_MAGIC {

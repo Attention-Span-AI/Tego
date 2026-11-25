@@ -566,7 +566,7 @@ func TestGlossary(t *testing.T) {
 		t.Error("the top bar does not link the Glossary")
 	}
 	g := get(t, s, c, "/glossary")
-	// Contract and Refused are the command line's words (docs/DASHBOARD.md, Contract and refused); each keeps the anchor of its older word, so a
+	// Contract and Refused are the command line's words (docs/development/dashboard.md, Contract and refused); each keeps the anchor of its older word, so a
 	// /glossary#policy or #blocked link still lands on it. Agent says any program first, since Tego holds every kind of
 	// agent.
 	for _, want := range []string{"<dt>High</dt>", `<div class="gl-row" id="contract"><dt><span id="policy"></span>Contract</dt>`,

@@ -49,7 +49,7 @@ type Options struct {
 	// Executable reports whether path is, on this machine, a program an exec could have started: a regular file
 	// with an execute bit, reached by following its links. Nil is the real file system (executable). An exec.allow
 	// entry is proposed only when it holds: tego compile refuses a path that does not exist (path-missing), and a
-	// PATH search's misses are paths that do not (docs/OPERATIONS.md "tego learn").
+	// PATH search's misses are paths that do not (docs/development/operations.md "tego learn").
 	Executable func(path string) bool
 	// LeaveLeaksToCaller turns the leak rule (leak.go) off: every address the run reached is proposed, and the caller
 	// judges them. The dashboard does, with its own verdict, which knows the run's pair and its contract

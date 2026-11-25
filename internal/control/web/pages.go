@@ -762,7 +762,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 
 // contractsAlias answers GET /contracts, /contracts/new and /contracts/change (with its /preview and /saved) with 303
 // to the same page under /rules, the query kept. The pages are named Contracts since the dashboard took the command
-// line's word (docs/DASHBOARD.md, Contract and refused); their addresses stay /rules, where every link, bookmark, form, live region and printed
+// line's word (docs/development/dashboard.md, Contract and refused); their addresses stay /rules, where every link, bookmark, form, live region and printed
 // line already points, and no address ever said policy. The alias only lets the page's name be typed. It is not
 // cached (Cache-Control no-store, as every page), so the canonical address can still change later. Any other path
 // under /contracts is the 404 page.

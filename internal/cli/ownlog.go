@@ -19,7 +19,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
-// The own log's shape (docs/OPERATIONS.md "Logs of tego itself",
+// The own log's shape (docs/development/operations.md "Logs of tego itself",
 // §3.3): ~/.tego/tego.log, 0600, rotated at 10 MB keeping 5 files, one appender per process.
 const (
 	ownLogDir   = ".tego"
@@ -50,7 +50,7 @@ type ownLogOwner struct{ uid, gid int }
 // hold that lock for as long as it likes — the agent among them — so a held lock is not only a brief
 // overlap: once the file reaches twice its limit with the lock still taken, lines are dropped and
 // counted rather than appended, and the count is written as the first line after the next rotation
-// (docs/OPERATIONS.md). The file then never grows past twice the limit plus the lines already on their
+// (docs/development/operations.md). The file then never grows past twice the limit plus the lines already on their
 // way to it.
 type ownLog struct {
 	mu    sync.Mutex

@@ -67,7 +67,7 @@ func internalError(stderr io.Writer, r any, stack []byte) int {
 }
 
 // logOwn appends one entry to tego.log at error level, through this process's one appender (ownlog.go:
-// the invoking user's passwd home, 0600, rotated 10 MB x 5, docs/OPERATIONS.md). Every entry a command
+// the invoking user's passwd home, 0600, rotated 10 MB x 5, docs/development/operations.md). Every entry a command
 // passes here is a failure it reports on stderr in a line or by its exit code only. Best effort: the
 // log must never turn an error report into a second failure, so nothing is returned. A multi-line
 // entry, a panic's stack, stays one quoted line.

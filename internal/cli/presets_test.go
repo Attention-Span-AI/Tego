@@ -76,14 +76,14 @@ func TestUnknownPresetListsTheKnownOnes(t *testing.T) {
 	}
 }
 
-// TestPresetsPageExampleReachesItsModel: the contract docs/user/presets.md offers, copied verbatim, compiles with
+// TestPresetsPageExampleReachesItsModel: the contract docs/site/presets.md offers, copied verbatim, compiles with
 // no error and keeps its harness's model reachable under the presets it extends: it declares the model under
 // models: (with no entry no forwarder starts, and tego/no-prod refuses the model like any other host), the run
 // captures through the forwarder, and env.pass names the provider's key, which tego/no-secrets would otherwise keep
 // out. Review F1: the page's example declared no model and passed no key, so Claude Code under it reached nothing.
 func TestPresetsPageExampleReachesItsModel(t *testing.T) {
 	t.Setenv("TEGO_CONFIG", "")
-	page, err := os.ReadFile(filepath.Join("..", "..", "docs", "user", "presets.md"))
+	page, err := os.ReadFile(filepath.Join("..", "..", "docs", "site", "presets.md"))
 	if err != nil {
 		t.Fatal(err)
 	}

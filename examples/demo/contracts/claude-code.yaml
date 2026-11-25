@@ -2,7 +2,7 @@
 # Claude Code, interactive, under Tego. demo.sh claude fills the @@ words in and writes it next to the
 # project (never inside it: a contract the agent could rewrite is refused).
 #
-# What makes it work interactively (test/poc/watch-demo/real-agents/README.md, docs/OPERATIONS.md):
+# What makes it work interactively (test/poc/watch-demo/real-agents/README.md, docs/site/claude-code.md):
 #  - capture: off and net.allow naming api.anthropic.com:443. With capture: forwarder Claude Code exits 1
 #    on its first connectivity check, which goes straight to api.anthropic.com whatever the base URL says.
 #  - fs.write has /dev/tty (the full-screen interface draws there) and private session sockets in the run's harness runtime (%R).

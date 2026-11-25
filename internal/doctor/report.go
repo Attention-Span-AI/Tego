@@ -413,7 +413,7 @@ func (r *Report) Verdict() (line, fix string) {
 }
 
 // TierWords is a tier as a newcomer reads it beside its key: "tier 1 (landlock)", "tier 2 (cgroup)", "tier 3
-// (bpflsm)" (docs/TIERS.md numbers them so).
+// (bpflsm)" (docs/site/tiers.md numbers them so).
 func TierWords(t backend.Tier) string {
 	switch t {
 	case backend.TierLandlock:

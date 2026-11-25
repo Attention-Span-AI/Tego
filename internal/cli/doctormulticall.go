@@ -63,7 +63,7 @@ func checkMulticall() *multicallCheck {
 
 // writeMulticallCheck writes the check as one line in the probe lines' shape (doctor.WriteResults), under the state
 // "note", since it says how this host's files are laid out and is neither a probe's pass nor a failure. A nil check
-// writes nothing. It goes before the dashboard line, which stays the report's last line (docs/INSTALL.md).
+// writes nothing. It goes before the dashboard line, which stays the report's last line (docs/site/install.md).
 func writeMulticallCheck(w io.Writer, c *multicallCheck) error {
 	if c == nil {
 		return nil

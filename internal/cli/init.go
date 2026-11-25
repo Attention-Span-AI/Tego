@@ -81,7 +81,7 @@ func cmdInit() Command {
 			fs.BoolVar(&list, "list", false, "print the presets, agents and host groups")
 			fs.StringVar(&live, "live-mode", string(agent.LiveLocked), "how the agent's rules change while it runs: locked (the default: file, program and network rules are "+
 				"fixed when the run starts; tighten while it runs, loosen from the next run) or adjustable (live both ways: loosen and tighten "+
-				"while it runs inside a fence Tego's live layer enforces; needs tier cgroup or bpflsm). docs/user/live-modes.md weighs the two")
+				"while it runs inside a fence Tego's live layer enforces; needs tier cgroup or bpflsm). https://attention-span.ai/docs/live-changes/ weighs the two")
 		},
 		Run: func(_ context.Context, fs *flag.FlagSet, stdout, stderr io.Writer) int {
 			if list {
@@ -102,7 +102,7 @@ func cmdInit() Command {
 			}
 			mode := agent.LiveMode(live)
 			if mode != agent.LiveLocked && mode != agent.LiveAdjustable {
-				message(stderr, "", 0, 0, fmt.Sprintf("tego init: --live-mode %q is not locked or adjustable (docs/user/live-modes.md)", live), codeUsage)
+				message(stderr, "", 0, 0, fmt.Sprintf("tego init: --live-mode %q is not locked or adjustable (https://attention-span.ai/docs/live-changes/)", live), codeUsage)
 				return identity.ExitUsage // R25: usage error
 			}
 			if agentKind != "" {
@@ -305,7 +305,7 @@ func runInitLive(dir, name string, force bool, po *setup.Options, live agent.Liv
 			}
 		}
 		if adjustable && !write {
-			fmt.Fprintf(stdout, "tego init: %s already exists, so --live-mode adjustable was not applied: add its live: section (docs/user/live-modes.md), or re-run with --force to replace it\n", initContract)
+			fmt.Fprintf(stdout, "tego init: %s already exists, so --live-mode adjustable was not applied: add its live: section (https://attention-span.ai/docs/live-changes/), or re-run with --force to replace it\n", initContract)
 		}
 	}
 	if len(actions) == 0 {
@@ -319,7 +319,7 @@ func runInitLive(dir, name string, force bool, po *setup.Options, live agent.Liv
 	notApplied()
 	if adjustable && write {
 		fmt.Fprintln(stdout, "live mode: adjustable (live both ways): list under live.fence what you may grant while it runs; "+
-			"Tego's live layer, not the kernel, refuses those entries until you lift them (docs/user/live-modes.md)")
+			"Tego's live layer, not the kernel, refuses those entries until you lift them (https://attention-span.ai/docs/live-changes/)")
 		if rootTier {
 			fmt.Fprintln(stdout, "tier: cgroup written in place of tier: landlock: Adjustable needs tier cgroup or bpflsm, which need root")
 		} else {
@@ -388,7 +388,7 @@ func initCheckEnv(stderr io.Writer) (setup.CheckEnv, int) {
 
 // printPresetList is `tego init --list`: each preset with its revision and promise, and the host groups.
 func printPresetList(stdout, stderr io.Writer) int {
-	fmt.Fprintln(stdout, "presets (tego rules create --preset a,b,c; docs/user/presets.md):")
+	fmt.Fprintln(stdout, "presets (tego rules create --preset a,b,c; https://attention-span.ai/docs/presets/):")
 	for _, p := range presets.List() {
 		fmt.Fprintf(stdout, "  %-17s %s@%d: %s\n", p.Name, p.Ref(), p.Revision, p.Promise)
 	}
@@ -485,7 +485,7 @@ func planContract(path string, force bool) (write bool, err error) {
 // liveAdjustableBlock is what `tego init --live-mode adjustable` appends to the contract it writes (ADR 0125): the
 // two modes in a line each, and an empty fence to fill.
 const liveAdjustableBlock = `
-# How this agent's rules change while it runs (docs/user/live-modes.md):
+# How this agent's rules change while it runs (https://attention-span.ai/docs/live-changes/):
 #   locked:     file, program and network rules are fixed when the run starts; tighten while it runs, loosen from the next run.
 #   adjustable: the kernel enforces a wider fence; Tego's live layer enforces the rules inside it, so you can
 #               loosen and tighten while it runs. Weaker if Tego fails; needs tier cgroup or bpflsm (root).
