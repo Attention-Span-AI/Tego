@@ -141,7 +141,7 @@ The agent's environment. Tego applies `pass`, then `deny`, then `set`.
 | `env.deny` | list of names | Removes these variables, even when passed. | None. |
 | `env.set` | map of name to value | Sets variables. `${TEGO_PROJECT_DIR}` expands here. Variables Tego sets for the session win. | None. |
 
-## Limits (`limits`)
+## Time and resource limits (`limits`)
 
 Each limit ends or slows the session. A rules file can lower a [machine settings](/docs/machine-settings/) ceiling, never raise it. Limits work at every level. [Budgets](/docs/budgets/) covers `tokens` and `cost_usd`.
 
