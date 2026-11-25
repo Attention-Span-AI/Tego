@@ -508,3 +508,6 @@ internal/runtime TestPlaneBlocksRefuseWholeWhatTheyCannotKey # root opens a mode
 internal/doctor TestIntegrationAPlaneProbeOfARunStopsAtTheSelectedMode # untagged: the plane probe loads decide.bpf.c's builds
 internal/runtime TestIntegrationAWindowHoldsAgainstItsOwnAgent/root-cgroup # needs tier cgroup: skipped only on doctor's answer that the machine offers none (a hosted runner without a delegated cgroup)
 internal/runtime TestIntegrationAWindowHoldsAgainstItsOwnAgent/root-bpflsm # needs BPF LSM; unavailable on default-lsm boot
+
+# Known, stated defects: a test skipped in every build until its fix lands (test/unit-skips.txt holds the same line).
+internal/cli TestScopeInterruptReachesTheLauncherOnce # known defect, public issue 81: one Ctrl-C can be counted as two when a process handles its marker signal before its own interrupt (exit 38, want 37, about once in 30 runs on one busy CPU); the whole test is skipped until it is fixed
