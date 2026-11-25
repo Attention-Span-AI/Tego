@@ -1,6 +1,6 @@
 usage: tego session list [--json]
    or: tego session show <session> | --last [--json]
-   or: tego session stop <session>
+   or: tego session stop <session> | --agent <name> [--grace <d>]
    or: tego session pause <session>
    or: tego session resume <session>
 

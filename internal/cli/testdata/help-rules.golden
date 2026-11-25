@@ -1,7 +1,7 @@
-usage: tego rules create [--name <agent>] [--agent <program>] [--preset <list>] [--write <dir>]... [<dir>]
+usage: tego rules create [--name <agent>] [--agent claude-code|codex] [--preset <list>] [--write <dir>]... [<dir>]
    or: tego rules edit <agent | file>
    or: tego rules check <agent | file> [--json]
-   or: tego rules learn <session> [--save <name> | --out <file>]
+   or: tego rules learn <session> [--save <name> | --out <file>] [--allow-host <host>[:<port>]]... [--reads on|off] [--workspace <dir>]
    or: tego rules list [<name|path>] [--json] [-v]
    or: tego rules history <agent | file> [--json]
    or: tego rules undo <agent | file> [<id>] [--yes]

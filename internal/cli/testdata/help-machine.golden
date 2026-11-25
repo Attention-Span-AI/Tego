@@ -1,4 +1,4 @@
-usage: tego machine check [--json]
+usage: tego machine check [--json] [--no-scope] [--require <tier>]
    or: tego machine test [--json]
 
    check            Check what this machine can enforce
