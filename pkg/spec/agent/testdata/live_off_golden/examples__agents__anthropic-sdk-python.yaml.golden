@@ -480,7 +480,7 @@ table:
    "Runtime": [
     "/run/user/4242"
    ],
-   "ServePort": 7433,
+   "ServePort": 8484,
    "TegoDirs": [
     "$HOME/.tego",
     "/run/user/4242/tego"

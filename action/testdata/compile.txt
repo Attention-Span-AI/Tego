@@ -50,7 +50,7 @@ path      /home/tego/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bi
 machine   the machine config in force, each value with the file and line it came from
   ceiling tier=auto  (built-in)
   ceiling capture=auto  (built-in)
-  setting serve.port=7433  (built-in)
+  setting serve.port=8484  (built-in)
   setting ledger_root=/home/tego/.tego/runs  (built-in)
   setting retention=30d  (built-in)
   setting gc_interval=0s  (built-in)
