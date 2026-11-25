@@ -216,7 +216,7 @@ import "testing"
 
 // TestMentions: repoRoot, filepath.WalkDir(".", nil), "go.mod", README.md and docs/x.md in a comment only.
 func TestMentions(t *testing.T) {
-	// parser.ParseFile(nil, "", nil, 0) and "../.." and docs/OPERATIONS.md
+	// parser.ParseFile(nil, "", nil, 0) and "../.." and docs/development/operations.md
 	_ = 1 /* findRepoRoot() */
 }
 `)
@@ -226,7 +226,7 @@ import "testing"
 
 // the same words, with real code beside the comment
 func TestReads(t *testing.T) {
-	_ = "docs/OPERATIONS.md" // not here
+	_ = "docs/development/operations.md" // not here
 	_ = findRepoRoot() // README
 }
 

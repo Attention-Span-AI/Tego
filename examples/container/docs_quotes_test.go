@@ -12,10 +12,15 @@ import (
 // TestContainerGuideQuotesTheRefusalTheProductPrints: on Docker's defaults the cgroup mount is read-only and
 // `tego run` refuses before it starts the agent. A guest run printed
 // "no enforcement tier available on this machine [tier-unavailable] missing for landlock: cgroupv2: cgroup: no
-// delegated cgroup v2 subtree for uid ...", not "runtime: cgroup: ...", which the guide had quoted. Each fragment the
-// guide quotes must be one the code still holds, and the old quote must stay out.
+// delegated cgroup v2 subtree for uid ...", not "runtime: cgroup: ...", which the guide had quoted. The guide
+// (docs/site/containers.md) quotes the refusal's code; each fragment of the refusal it quotes must be one the code
+// still holds, and the old quote must stay out.
 func TestContainerGuideQuotesTheRefusalTheProductPrints(t *testing.T) {
-	guide := readText(t, "../../docs/user/container.md")
+	const page = "docs/site/containers.md"
+	guide := readText(t, "../../"+page)
+	if !strings.Contains(guide, "[tier-unavailable]") {
+		t.Errorf("%s does not quote the refusal's code [tier-unavailable]", page)
+	}
 	for _, q := range []struct{ quote, file, holds string }{
 		{"no enforcement tier available on this machine", "../../pkg/spec/backend/select.go", "no enforcement tier available on this machine"},
 		{"[tier-unavailable]", "../../pkg/spec/backend/select.go", `"tier-unavailable"`},
@@ -28,15 +33,12 @@ func TestContainerGuideQuotesTheRefusalTheProductPrints(t *testing.T) {
 		{"tego-entrypoint: no delegated cgroup subtree:", "tego-entrypoint.sh", `say "no delegated cgroup subtree: $why"`},
 		{"/sys/fs/cgroup is read-only and could not be remounted read-write", "tego-entrypoint.sh", "is read-only and could not be remounted read-write"},
 	} {
-		if !strings.Contains(guide, q.quote) {
-			t.Errorf("docs/user/container.md no longer quotes %q", q.quote)
-		}
 		if src := readText(t, q.file); !strings.Contains(src, q.holds) {
-			t.Errorf("the guide quotes %q but %s no longer holds %q", q.quote, q.file, q.holds)
+			t.Errorf("the refusal prints %q but %s no longer holds %q", q.quote, q.file, q.holds)
 		}
 	}
 	if strings.Contains(guide, "`tego run` refuses with `runtime: cgroup") {
-		t.Error("docs/user/container.md says `tego run` refuses with `runtime: cgroup: ...`, which Docker's defaults do not print")
+		t.Error(page + " says `tego run` refuses with `runtime: cgroup: ...`, which Docker's defaults do not print")
 	}
 }
 
@@ -45,7 +47,7 @@ func TestContainerGuideQuotesTheRefusalTheProductPrints(t *testing.T) {
 // as the image's own user: the published image's 10001, and the uid and gid a local build was given. The volumes the
 // local line names are the ones compose.yaml makes under its project name.
 func TestContainerGuideOrderMatchesCompose(t *testing.T) {
-	guide := readText(t, "../../docs/user/container.md")
+	guide := readText(t, "../../docs/site/containers.md")
 	build, dash := strings.Index(guide, "docker compose build"), strings.Index(guide, "docker compose up -d control")
 	if build < 0 || dash < 0 || build > dash {
 		t.Errorf("the quick start must build (%d) before it starts the dashboard (%d)", build, dash)
@@ -81,7 +83,7 @@ func TestContainerGuideOrderMatchesCompose(t *testing.T) {
 // the entrypoint and Tego print, names the setting and the file the image's config names, and each check it lists is one
 // the reader still makes. Line breaks in the guide do not matter.
 func TestContainerGuideQuotesTheListHandIn(t *testing.T) {
-	guide := strings.Join(strings.Fields(readText(t, "../../docs/user/container.md")), " ")
+	guide := strings.Join(strings.Fields(readText(t, "../../docs/site/containers.md")), " ")
 	for _, q := range []struct{ quote, file, holds string }{
 		{"tego-entrypoint: no security-module list handed in:", "tego-entrypoint.sh", `say "no security-module list handed in: $LSM_LIST_WHY"`},
 		{"held file opens read this list", "../../internal/doctor/lsm.go", "held file opens read this list"},
@@ -94,7 +96,7 @@ func TestContainerGuideQuotesTheListHandIn(t *testing.T) {
 		{"bind the host's list into the container read-only", "../../internal/platform/lsmlist/lsmlist.go", `checkBind(p, f, "/lsm")`},
 	} {
 		if !strings.Contains(guide, q.quote) {
-			t.Errorf("docs/user/container.md no longer says %q", q.quote)
+			t.Errorf("docs/site/containers.md no longer says %q", q.quote)
 		}
 		if src := readText(t, q.file); !strings.Contains(src, q.holds) {
 			t.Errorf("the guide says %q but %s no longer holds %q", q.quote, q.file, q.holds)
@@ -102,29 +104,15 @@ func TestContainerGuideQuotesTheListHandIn(t *testing.T) {
 	}
 }
 
-// TestInstallContainerSectionVerifiesTheRecord: the install guide's container section ends with a step that
+// TestInstallContainerSectionVerifiesTheRecord: the container guide (docs/site/containers.md) has a step that
 // reads and checks the run's record from a fresh container, with the user and the two volumes it needs.
 func TestInstallContainerSectionVerifiesTheRecord(t *testing.T) {
-	// The private tree keeps the public install guide as an overlay; the public tree has it at docs/INSTALL.md.
-	b, err := os.ReadFile("../../tools/oss/testdata/overlay/docs/INSTALL.md")
-	if err != nil {
-		b, err = os.ReadFile("../../docs/INSTALL.md")
-	}
-	if err != nil {
-		t.Skipf("no install guide in this tree: %v", err)
-	}
-	s := string(b)
-	i := strings.Index(s, "## Run in a container")
-	j := strings.Index(s, "## Build from source")
-	if i < 0 || j < i {
-		t.Fatal("the install guide has no container section before its build section")
-	}
-	sec := s[i:j]
+	sec := readText(t, "../../docs/site/containers.md")
 	for _, want := range []string{
 		"--user 10001:10001", "-v tego-state:/home/tego/.tego", "-v tego-ledger:/var/lib/tego/runs", `tego events "$run" --verify`,
 	} {
 		if !strings.Contains(sec, want) {
-			t.Errorf("the install guide's container section lacks %q", want)
+			t.Errorf("docs/site/containers.md lacks %q", want)
 		}
 	}
 }

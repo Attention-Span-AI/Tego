@@ -225,7 +225,15 @@ func checkLink(path, target string, exists func(string) bool, anchorsOf func(str
 	}
 	rel := path
 	if file != "" {
-		if strings.HasPrefix(file, "/") {
+		if slug, ok := sitePageLink(path, file); ok {
+			if slug == "" {
+				return "" // the website's docs landing, which no page here is
+			}
+			rel = filepath.Join(siteDir, slug+".md")
+			if !exists(rel) {
+				return fmt.Sprintf("links %s, but %s does not exist", target, filepath.ToSlash(rel))
+			}
+		} else if strings.HasPrefix(file, "/") {
 			rel = filepath.Clean(strings.TrimPrefix(file, "/"))
 		} else {
 			rel = filepath.Clean(filepath.Join(filepath.Dir(path), file))
@@ -251,6 +259,19 @@ func checkLink(path, target string, exists func(string) bool, anchorsOf func(str
 		return fmt.Sprintf("links %s, but %s has no heading or anchor #%s", target, rel, frag)
 	}
 	return ""
+}
+
+// siteDir holds the user docs the website copies as they are. Their links between pages are website paths,
+// /docs/<slug>/ for docs/site/<slug>.md.
+const siteDir = "docs/site"
+
+// sitePageLink reports whether file, a link target in the document at path, is a website path of a docs/site page,
+// and that page's slug ("" for the docs landing).
+func sitePageLink(path, file string) (string, bool) {
+	if !strings.HasPrefix(filepath.ToSlash(path), siteDir+"/") || !strings.HasPrefix(file, "/docs/") {
+		return "", false
+	}
+	return strings.Trim(strings.TrimPrefix(file, "/docs/"), "/"), true
 }
 
 // checkLinksUnder runs the link check over the Markdown files under root.

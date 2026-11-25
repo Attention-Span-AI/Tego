@@ -11,13 +11,13 @@ import (
 // Test-only embedding lets overlay proofs replace documentation without rewriting
 // the worktree. None of these texts is linked into a product binary.
 //
-//go:embed docs/user/scan.md docs/adr/0145-tego-scan.md docs/user/presets.md pkg/spec/presets/README.md docs/adr/0068-presets-as-built-in-profiles.md
+//go:embed docs/site/finding-agents.md docs/adr/0145-tego-scan.md docs/site/presets.md pkg/spec/presets/README.md docs/adr/0068-presets-as-built-in-profiles.md
 var ciDocs embed.FS
 
 func checkCIDocs(t *testing.T, limits ...string) {
 	t.Helper()
 	for _, file := range []string{
-		"docs/user/presets.md", "pkg/spec/presets/README.md", "docs/adr/0068-presets-as-built-in-profiles.md",
+		"docs/site/presets.md", "pkg/spec/presets/README.md", "docs/adr/0068-presets-as-built-in-profiles.md",
 	} {
 		t.Run(file, func(t *testing.T) {
 			data, err := ciDocs.ReadFile(file)
@@ -52,7 +52,7 @@ func TestCIPresetDocsExposeCompileLimits(t *testing.T) {
 // TestScanDocsExplainLinkedPasswdRefusal keeps collector link support from
 // implying that caller identification accepts the same system layout.
 func TestScanDocsExplainLinkedPasswdRefusal(t *testing.T) {
-	for _, file := range []string{"docs/user/scan.md", "docs/adr/0145-tego-scan.md"} {
+	for _, file := range []string{"docs/site/finding-agents.md", "docs/adr/0145-tego-scan.md"} {
 		t.Run(file, func(t *testing.T) {
 			data, err := ciDocs.ReadFile(file)
 			if err != nil {

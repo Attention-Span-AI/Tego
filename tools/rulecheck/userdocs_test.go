@@ -12,19 +12,19 @@ import (
 	"testing"
 )
 
-// The user guide (docs/user) tells a person what a command does and what it needs. Tier landlock needs no privilege;
-// Tego's root tiers (cgroup and BPF-LSM) and the adopt command need root and a kernel that offers them, and the
-// release binary carries them as a build from source does (.goreleaser.yaml builds with -tags tegobpf). A page that
-// names one without saying it needs root sends a user to a command that fails with a permission error.
-// docs/user/README.md states the rule, and these tests hold the pages to it: every paragraph that names a root tier
-// or adopt says in words that it needs root, the README defining that rule and the one label "Not built yet." word
-// for word, and the README indexing every page.
+// The user docs (docs/site, which the website copies) tell a person what a command does and what it needs. Basic
+// (tier landlock) needs no privilege; Plus and Max (tiers cgroup and bpflsm) and the adopt command need root and a
+// kernel that offers them, and the release binary carries them as a build from source does (.goreleaser.yaml builds
+// with -tags tegobpf). A page that names one without saying it needs root sends a user to a command that fails with a
+// permission error. The Protection levels page states the rule, and these tests hold the pages to it: every paragraph
+// that names a root tier by its technical name or adopt says in words that it needs root, the levels page states the
+// rule, and every page carries the front matter the website's docs index lists it by.
 
 const (
-	// rootRule opens the README paragraph that states what the root tiers and adopt need.
-	rootRule = "Tier cgroup, tier bpflsm and adopt need root."
-	// labelNotBuilt marks a statement about a feature that has no code.
-	labelNotBuilt = "Not built yet."
+	// levelsPage is the page that states what the root tiers need.
+	levelsPage = "docs/site/tiers.md"
+	// rootRule is the levels page's statement of what Plus and Max need.
+	rootRule = "Plus and Max need root"
 	// staleLabel is the words of the label this guide used before the release carried the root tiers: it said the
 	// release binary lacked them. No page may say so now.
 	staleLabel = "not in the v0.1.0 binary"
@@ -43,12 +43,31 @@ var rootTierRe = regexp.MustCompile(`(?i)(?:\btiers?[\s:=*_"'` + "`" + `-]*(?:cg
 	`|\badopt(?:s|ed|ing|ion)?\b)`)
 
 // needsRootRe matches the words that say a root tier or adopt needs root: "needs root", "need root", "requires root",
-// "root is needed", "as root", "sudo". Only prose counts (withoutCode drops code spans), so a command in
-// backticks does not say it, and the bare noun in "the root tiers" does not either.
+// "root is needed", "as root", "with root", "sudo". Only prose counts (saysNeedsRoot drops code spans), so a command
+// in backticks does not say it, and the bare noun in "the root tiers" does not either; `sudo` alone in backticks, as
+// in "through `sudo`", is a word of the prose.
 var needsRootRe = regexp.MustCompile(`(?i)\b(?:needs?|needed|requires?|required|requiring)\s+(?:to\s+(?:run|be|start)\s+(?:as\s+)?)?(?:the\s+)?root\b` +
 	`|\broot\s+(?:is\s+)?(?:needed|required)\b` +
-	`|\b(?:as|run by|started by)\s+root\b` +
+	`|\b(?:as|with|run by|started by)\s+root\b` +
 	`|\bsudo\b`)
+
+// saysNeedsRoot reports whether the prose of a paragraph says it needs root.
+func saysNeedsRoot(text string) bool {
+	return needsRootRe.MatchString(withoutCode(strings.ReplaceAll(text, "`sudo`", "sudo")))
+}
+
+// frontMatterRe matches a page's front matter: the website reads it as the page's title, summary and place in the
+// docs index, not as a paragraph of the page.
+var frontMatterRe = regexp.MustCompile(`(?s)\A---\n(.*?)\n---\n`)
+
+// withoutFrontMatter blanks a page's front matter, keeping its newlines so line numbers stay the page's.
+func withoutFrontMatter(text string) string {
+	m := frontMatterRe.FindStringIndex(text)
+	if m == nil {
+		return text
+	}
+	return strings.Repeat("\n", strings.Count(text[:m[1]], "\n")) + text[m[1]:]
+}
 
 // inlineCodeRe matches an inline code span.
 var inlineCodeRe = regexp.MustCompile("`[^`\\n]*`")
@@ -158,7 +177,7 @@ func paragraphs(text string) []paragraph {
 	return out
 }
 
-// userDocPages returns the page paths of pages (every key is a path like docs/user/x.md), sorted.
+// userDocPages returns the page paths of pages (every key is a path like docs/site/x.md), sorted.
 func userDocPages(pages map[string]string) []string {
 	var names []string
 	for p := range pages {
@@ -173,13 +192,13 @@ func userDocPages(pages map[string]string) []string {
 func requirementFindings(pages map[string]string) []string {
 	var out []string
 	for _, p := range userDocPages(pages) {
-		visible := visibleText(pages[p])
+		visible := visibleText(withoutFrontMatter(pages[p]))
 		for _, para := range paragraphs(visible) {
 			if strings.Contains(para.text, staleLabel) {
 				out = append(out, fmt.Sprintf("%s:%d: carries the label %q, which is no longer true: the release binary has the root tiers", p, para.line, staleLabel))
 			}
 			m := rootTierRe.FindString(para.text)
-			if m == "" || needsRootRe.MatchString(withoutCode(para.text)) {
+			if m == "" || saysNeedsRoot(para.text) {
 				continue
 			}
 			out = append(out, fmt.Sprintf("%s:%d: names %q without saying in words, in the same paragraph, that it needs root", p, para.line, m))
@@ -188,33 +207,46 @@ func requirementFindings(pages map[string]string) []string {
 	return out
 }
 
-// readmeFindings reports a README that does not state the root rule and define the label word for word at the start
-// of a paragraph, and each page that the README does not link.
-func readmeFindings(pages map[string]string) []string {
-	const readme = "docs/user/README.md"
-	text, ok := pages[readme]
-	if !ok {
-		return []string{readme + " does not exist"}
-	}
+// indexSections are the sections of the website's docs index; a page's front matter names one.
+var indexSections = map[string]bool{"Get started": true, "Core concepts": true, "Agents": true, "Advanced usage": true,
+	"Production": true, "Reference": true}
+
+// indexFindings reports a levels page that does not state the root rule in its prose, and each page whose front
+// matter lacks what the website's docs index lists it by: a title, a summary, a known section and an order.
+func indexFindings(pages map[string]string) []string {
 	var out []string
-	for _, label := range []string{rootRule, labelNotBuilt} {
-		defined := false
-		for _, para := range paragraphs(visibleText(text)) {
-			if strings.HasPrefix(para.text, label) {
-				defined = true
+	if text, ok := pages[levelsPage]; !ok {
+		out = append(out, levelsPage+" does not exist")
+	} else {
+		stated := false
+		for _, para := range paragraphs(visibleText(withoutFrontMatter(text))) {
+			if strings.Contains(withoutCode(para.text), rootRule) {
+				stated = true
 			}
 		}
-		if !defined {
-			out = append(out, fmt.Sprintf("%s does not state %q at the start of a paragraph", readme, label))
+		if !stated {
+			out = append(out, fmt.Sprintf("%s does not state %q in its prose", levelsPage, rootRule))
 		}
 	}
 	for _, p := range userDocPages(pages) {
-		if p == readme {
+		m := frontMatterRe.FindStringSubmatch(pages[p])
+		if m == nil {
+			out = append(out, fmt.Sprintf("%s has no front matter, so the docs index does not list it", p))
 			continue
 		}
-		name := filepath.Base(p)
-		if !strings.Contains(text, "]("+name+")") && !strings.Contains(text, "]("+name+"#") {
-			out = append(out, fmt.Sprintf("%s does not link %s", readme, p))
+		fields := map[string]string{}
+		for _, line := range strings.Split(m[1], "\n") {
+			if k, v, ok := strings.Cut(line, ":"); ok {
+				fields[strings.TrimSpace(k)] = strings.Trim(strings.TrimSpace(v), `"`)
+			}
+		}
+		for _, k := range []string{"title", "summary", "section", "order"} {
+			if fields[k] == "" {
+				out = append(out, fmt.Sprintf("%s has no %s: in its front matter, so the docs index does not list it", p, k))
+			}
+		}
+		if s := fields["section"]; s != "" && !indexSections[s] {
+			out = append(out, fmt.Sprintf("%s names section %q, which the docs index does not have", p, s))
 		}
 	}
 	return out
@@ -226,7 +258,7 @@ func loadUserDocs(t *testing.T) map[string]string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	files, err := filepath.Glob(filepath.Join(root, "docs", "user", "*.md"))
+	files, err := filepath.Glob(filepath.Join(root, "docs", "site", "*.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,15 +268,15 @@ func loadUserDocs(t *testing.T) map[string]string {
 		if err != nil {
 			t.Fatal(err)
 		}
-		pages["docs/user/"+filepath.Base(f)] = string(b)
+		pages["docs/site/"+filepath.Base(f)] = string(b)
 	}
-	if _, ok := pages["docs/user/README.md"]; !ok {
-		t.Fatal("docs/user/README.md does not exist")
+	if _, ok := pages[levelsPage]; !ok {
+		t.Fatal(levelsPage + " does not exist")
 	}
 	return pages
 }
 
-// TestUserDocsNameRootRequirement: every paragraph of docs/user/*.md that names tier cgroup, tier bpflsm, adopt or
+// TestUserDocsNameRootRequirement: every paragraph of docs/site/*.md that names tier cgroup, tier bpflsm, adopt or
 // the root tiers says in words that it needs root, and no page carries the old "not in the v0.1.0 binary" label.
 func TestUserDocsNameRootRequirement(t *testing.T) {
 	for _, f := range requirementFindings(loadUserDocs(t)) {
@@ -252,19 +284,19 @@ func TestUserDocsNameRootRequirement(t *testing.T) {
 	}
 }
 
-// TestUserDocsReadmeStatesRuleAndIndexesPages: the README states the root rule and defines the label verbatim, and
-// links every page.
+// TestUserDocsReadmeStatesRuleAndIndexesPages: the levels page states the root rule, and the docs index lists every
+// page.
 func TestUserDocsReadmeStatesRuleAndIndexesPages(t *testing.T) {
-	for _, f := range readmeFindings(loadUserDocs(t)) {
+	for _, f := range indexFindings(loadUserDocs(t)) {
 		t.Error(f)
 	}
 }
 
-// TestUserDocsIndexListsEveryPage is the README index's check under the name its text gives.
+// TestUserDocsIndexListsEveryPage is the index's check under the name its text gives.
 func TestUserDocsIndexListsEveryPage(t *testing.T) {
 	pages := loadUserDocs(t)
-	for _, f := range readmeFindings(pages) {
-		if strings.Contains(f, "does not link") {
+	for _, f := range indexFindings(pages) {
+		if strings.Contains(f, "docs index") {
 			t.Error(f)
 		}
 	}
@@ -277,7 +309,7 @@ func TestUserDocsIndexListsEveryPage(t *testing.T) {
 // wherever it stands.
 func TestUserDocsRequirementCheckFindsPlantedBreakage(t *testing.T) {
 	pages := map[string]string{
-		"docs/user/a.md": "# A\n\nRun `tego run --tier cgroup agent.yaml` for a cgroup limit.\n\n" +
+		"docs/site/a.md": "# A\n\nRun `tego run --tier cgroup agent.yaml` for a cgroup limit.\n\n" +
 			"Set tier: bpflsm in the contract.\n\n" +
 			"The cgroup tier and the BPF-LSM tier are the root tiers.\n\n" +
 			"Use tego adopt to bring a running agent in.\n\n" +
@@ -290,9 +322,9 @@ func TestUserDocsRequirementCheckFindsPlantedBreakage(t *testing.T) {
 			"Adopting a running agent.\n\n" +
 			"tego adopted it.\n\n" +
 			"With tier: auto as root, tego picks cgroup or bpflsm.\n\n",
-		"docs/user/b.md": "# B\n\nTier cgroup needs root. Run `tego run --tier cgroup agent.yaml`.\n\n" +
+		"docs/site/b.md": "# B\n\nTier cgroup needs root. Run `tego run --tier cgroup agent.yaml`.\n\n" +
 			"The default tier is landlock and needs no privilege.\n\n" +
-			labelNotBuilt + " The adopt command is planned.\n\n" +
+			"Not built yet. The adopt command is planned.\n\n" +
 			"```sh\ntego adopt 1234\n\nsudo tego run --tier cgroup\n```\n\n" +
 			"Run `sudo tego run --tier cgroup`.\n\n" +
 			"Run tier 3 here. <!--\n\nneeds root\n\n-->\n\n" +
@@ -300,34 +332,36 @@ func TestUserDocsRequirementCheckFindsPlantedBreakage(t *testing.T) {
 			"Tier bpflsm: root is required, and so is `bpf` in the boot list.\n\n" +
 			"Adopt needs to run as root.\n\n" +
 			"Tiers 2 and 3 require root.\n\n" +
+			"Plus (`--tier cgroup`) runs through `sudo`.\n\n" +
 			"With sudo, adopt moves a process in.\n\n" +
 			"The tier of a rule is its priority.\n",
-		"docs/user/c.md": "# C\n\nThe **cgroup** tier needs root, and tier-2 too.\n\n" +
+		"docs/site/e.md": "---\ntitle: E\ndescription: \"Govern a running agent with tego adopt.\"\n---\n\nTier cgroup runs with root.\n",
+		"docs/site/c.md": "# C\n\nThe **cgroup** tier needs root, and tier-2 too.\n\n" +
 			"Run `tego adopt 1`. <!-- needs root -->\n\n" +
 			"```md\n<!-- not a comment: it is code -->\n```\n\n" +
 			"<!-- tier 2 is commented out -->\n",
-		"docs/user/d.md": "# D\n\nTier cgroup needs root, but it is " + staleLabel + ".\n",
+		"docs/site/d.md": "# D\n\nTier cgroup needs root, but it is " + staleLabel + ".\n",
 	}
 	want := []string{
-		`docs/user/a.md:3: names "tier cgroup"`,
-		`docs/user/a.md:5: names "tier: bpflsm"`,
-		`docs/user/a.md:7: names "cgroup tier"`,
-		`docs/user/a.md:9: names "adopt"`,
-		`docs/user/a.md:11: names "Tiers 2"`,
-		`docs/user/a.md:13: names "cgroup** tier"`,
-		`docs/user/a.md:15: names "BPF LSM"`,
-		`docs/user/a.md:17: names "bpflsm"`,
-		`docs/user/a.md:19: names "tier-2"`,
-		`docs/user/a.md:21: names "tier three"`,
-		`docs/user/a.md:23: names "Adopting"`,
-		`docs/user/a.md:25: names "adopted"`,
-		`docs/user/b.md:7: names "adopt"`,
-		`docs/user/b.md:9: names "adopt"`,
-		`docs/user/b.md:15: names "tier cgroup"`,
-		`docs/user/b.md:17: names "tier 3"`,
-		`docs/user/b.md:23: names "adopt"`,
-		`docs/user/c.md:5: names "adopt"`,
-		`docs/user/d.md:3: carries the label "` + staleLabel + `"`,
+		`docs/site/a.md:3: names "tier cgroup"`,
+		`docs/site/a.md:5: names "tier: bpflsm"`,
+		`docs/site/a.md:7: names "cgroup tier"`,
+		`docs/site/a.md:9: names "adopt"`,
+		`docs/site/a.md:11: names "Tiers 2"`,
+		`docs/site/a.md:13: names "cgroup** tier"`,
+		`docs/site/a.md:15: names "BPF LSM"`,
+		`docs/site/a.md:17: names "bpflsm"`,
+		`docs/site/a.md:19: names "tier-2"`,
+		`docs/site/a.md:21: names "tier three"`,
+		`docs/site/a.md:23: names "Adopting"`,
+		`docs/site/a.md:25: names "adopted"`,
+		`docs/site/b.md:7: names "adopt"`,
+		`docs/site/b.md:9: names "adopt"`,
+		`docs/site/b.md:15: names "tier cgroup"`,
+		`docs/site/b.md:17: names "tier 3"`,
+		`docs/site/b.md:23: names "adopt"`,
+		`docs/site/c.md:5: names "adopt"`,
+		`docs/site/d.md:3: carries the label "` + staleLabel + `"`,
 	}
 	got := requirementFindings(pages)
 	if len(got) != len(want) {
@@ -340,32 +374,39 @@ func TestUserDocsRequirementCheckFindsPlantedBreakage(t *testing.T) {
 	}
 }
 
-// TestUserDocsReadmeCheckFindsPlantedBreakage: a README without the root rule, with the label mid-paragraph, and one
-// that does not link a page are each reported; a README that does everything is not.
-func TestUserDocsReadmeCheckFindsPlantedBreakage(t *testing.T) {
-	good := rootRule + " text.\n\n" + labelNotBuilt + " text.\n\n| [Limits](limits.md) | x |\n| [Rules](rules.md#top) | y |\n"
-	if got := readmeFindings(map[string]string{
-		"docs/user/README.md": good, "docs/user/limits.md": "# L\n", "docs/user/rules.md": "# R\n",
-	}); len(got) != 0 {
-		t.Errorf("a complete README was reported: %v", got)
+// TestUserDocsIndexCheckFindsPlantedBreakage: a levels page without the root rule in its prose, a page with no front
+// matter, one without a section or order, and one with a section the index lacks are each reported; pages that do
+// everything are not.
+func TestUserDocsIndexCheckFindsPlantedBreakage(t *testing.T) {
+	fm := func(section, order string) string {
+		return "---\ntitle: T\nsummary: \"S\"\nsection: " + section + "\norder: " + order + "\n---\n\n"
+	}
+	good := map[string]string{
+		levelsPage:           fm("Core concepts", "3") + "Basic needs no root. " + rootRule + " through `sudo`.\n",
+		"docs/site/rules.md": fm("Reference", "1") + "# R\n",
+	}
+	if got := indexFindings(good); len(got) != 0 {
+		t.Errorf("complete pages were reported: %v", got)
 	}
 	bad := map[string]string{
-		"docs/user/README.md": "Intro. " + rootRule + "\n\n" + labelNotBuilt + "\n\n[Limits](limits.md)\n",
-		"docs/user/limits.md": "# L\n", "docs/user/rules.md": "# R\n",
+		levelsPage:           fm("Core concepts", "3") + "Levels.\n\n`" + rootRule + "`\n",
+		"docs/site/none.md":  "# N\n",
+		"docs/site/half.md":  "---\ntitle: H\nsummary: S\n---\n\n# H\n",
+		"docs/site/other.md": fm("Blog", "1") + "# O\n",
 	}
-	got := strings.Join(readmeFindings(bad), "\n")
+	got := strings.Join(indexFindings(bad), "\n")
 	for _, want := range []string{
-		`does not state "` + rootRule + `"`,
-		"does not link docs/user/rules.md",
+		levelsPage + ` does not state "` + rootRule + `"`,
+		"docs/site/none.md has no front matter",
+		"docs/site/half.md has no section:",
+		"docs/site/half.md has no order:",
+		`docs/site/other.md names section "Blog"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("findings lack %q:\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, labelNotBuilt) || strings.Contains(got, "limits.md") {
-		t.Errorf("findings report what is right:\n%s", got)
-	}
-	if got := readmeFindings(map[string]string{"docs/user/limits.md": "# L\n"}); len(got) != 1 {
-		t.Errorf("a missing README gave %v", got)
+	if got := indexFindings(map[string]string{"docs/site/rules.md": fm("Reference", "1")}); len(got) != 1 {
+		t.Errorf("a missing levels page gave %v", got)
 	}
 }

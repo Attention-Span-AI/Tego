@@ -411,11 +411,13 @@ func TestNoExampleSaysADeclaredBudgetNeverTrips(t *testing.T) {
 		}
 		flush()
 	}
-	ops, err := os.ReadFile(filepath.Join(pkgDir, "..", "..", "docs", "OPERATIONS.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if s := "A budget with nothing to count is not an error"; strings.Contains(string(ops), s) {
-		t.Errorf("docs/OPERATIONS.md still says %q, while a declared budget nothing counts is refused", s)
+	for _, doc := range []string{"docs/site/budgets.md", "docs/development/operations.md"} {
+		b, err := os.ReadFile(filepath.Join(pkgDir, "..", "..", filepath.FromSlash(doc)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s := "A budget with nothing to count is not an error"; strings.Contains(string(b), s) {
+			t.Errorf("%s still says %q, while a declared budget nothing counts is refused", doc, s)
+		}
 	}
 }

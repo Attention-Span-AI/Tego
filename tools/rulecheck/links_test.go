@@ -25,7 +25,8 @@ func TestSlug(t *testing.T) {
 }
 
 // TestCheckLinksFindsPlantedBreakage: a link to a file that does not exist and an anchor its target does not
-// define fail; links that resolve, external links, links in code and a repeated heading's -1 anchor do not.
+// define fail; links that resolve, external links, links in code and a repeated heading's -1 anchor do not. A docs/site page links
+// another by its website path, /docs/<slug>/.
 func TestCheckLinksFindsPlantedBreakage(t *testing.T) {
 	t.Parallel()
 	docs := map[string]string{
@@ -35,6 +36,8 @@ func TestCheckLinksFindsPlantedBreakage(t *testing.T) {
 			"\n`[code](nowhere.md)`\n\n```\n[fenced](nowhere.md)\n```\n\n[web](https://example.com/x.md#y) [mail](mailto:a@b)\n" +
 			"[ref]: ../nothere.md\n",
 		"docs/p0/agent-contract.md": "# Contract\n\n## 5. Business rules\n",
+		"docs/site/a.md":            "# A\n\n[b](/docs/b/) [anchor](/docs/b/#two) [no anchor](/docs/b/#three) [gone](/docs/c/) [landing](/docs/)\n",
+		"docs/site/b.md":            "# B\n\n## Two\n",
 	}
 	files := map[string]bool{"spec/backend/CAPABILITIES.md": true}
 	for p := range docs {
@@ -46,6 +49,8 @@ func TestCheckLinksFindsPlantedBreakage(t *testing.T) {
 		"docs/p0/gate.md:3: links agent-contract.md#5-algorithms--rules, but docs/p0/agent-contract.md has no heading or anchor #5-algorithms--rules",
 		"docs/p0/gate.md:4: links #nowhere, but docs/p0/gate.md has no heading or anchor #nowhere",
 		"docs/p0/gate.md:19: links ../nothere.md, which does not exist",
+		"docs/site/a.md:3: links /docs/b/#three, but docs/site/b.md has no heading or anchor #three",
+		"docs/site/a.md:3: links /docs/c/, but docs/site/c.md does not exist",
 	}
 	var lines []string
 	for _, f := range got {

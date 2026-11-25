@@ -21,7 +21,7 @@ func TestBaselineLoadClassesDocumented(t *testing.T) {
 	}{
 		{"docs/adr/0144-machine-baseline.md", []string{"TrustAbort", "TrustWarn", "UNKNOWN", "NOT YET APPLIED", "100,000", "runStop", "runGC", "path_chmod"}},
 		{"spec/config/v0/README.md", []string{"TrustAbort", "TrustWarn", "UNKNOWN", "100,000", "BaselineKnown"}},
-		{"docs/user/baseline.md", []string{"Stop", "UNKNOWN", "cannot", "widen"}},
+		{"docs/development/baseline.md", []string{"Stop", "UNKNOWN", "cannot", "widen"}},
 		{"docs/GAPS.md", []string{"UNKNOWN", "root-owned", "65534", "1775"}},
 	}
 	stale := regexp.MustCompile("(?i)all config loads (?:now )?abort|all config load modes fail closed|compile`/`doctor`\\s+warn and (?:continue|skip)")
@@ -49,7 +49,7 @@ func TestBaselineLoadClassesDocumented(t *testing.T) {
 }
 
 func TestBaselineRound2Documentation(t *testing.T) {
-	for _, file := range []string{"docs/user/baseline.md", "spec/config/v0/README.md"} {
+	for _, file := range []string{"docs/development/baseline.md", "spec/config/v0/README.md"} {
 		data, err := os.ReadFile(filepath.Join(baselineDocsRoot, file))
 		if err != nil {
 			t.Fatal(err)
