@@ -69,6 +69,8 @@ Granting `sudo` for `tego` is granting root. A sudoers rule limited to `tego` is
 
 Tego's trusted code is the launcher, the supervisor, the kernel programs and their loader, and the parsers that read the agent's traffic. The supervisor reads another process's memory, so a bug there could let a local user gain root. The code has fuzz tests, which feed it large amounts of random input. No one outside the project has reviewed it yet.
 
+<span id="the-dashboard"></span>
+
 ## Who can use the dashboard
 
 The dashboard answers only the user who started it. Other local users are refused. A change sent from inside a session, such as an approval or a rules change, is refused. [Dashboard](/docs/dashboard/) shows how to open it.
