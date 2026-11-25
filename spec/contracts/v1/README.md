@@ -36,7 +36,7 @@ compiler prints them. Rule sentences and group defaults reuse the existing rules
 name variables, never their values; the verbose compiler table retains its existing presentation.
 
 `footer` always discloses discovery scope. `context` always states the offline, current-file check and the limits
-of comparing a contract hash. The command reference and [user guide](../../../docs/user/contracts.md) define
+of comparing a contract hash. The command reference and [user guide](../../../docs/site/testing-rules.md) define
 selection, guards, resource bounds and exit codes. Tests validate real outputs with the repository's independent
 JSON Schema validator and reject an unsupported schema version.
 

@@ -33,7 +33,7 @@ a pass.
 2. Start an independent offline HTTP sink outside the governed tree. Store its
    request count and exact body bytes separately from Tego's ledger. No live
    financial endpoint or real credential may be reachable.
-3. Generate the canonical two-rule USD bundle in `docs/user/business-rules.md`
+3. Generate the canonical two-rule USD bundle (spec/policy/bizrule/v1/README.md)
    and its real SHA-256; pin the fixture manifest SHA-256 in the contract. Use
    `tier: bpflsm`, `record: full`, no capture/model forwarder, no external
    network grants, one business server and a non-root agent. Start with a clean

@@ -1,7 +1,7 @@
 # Tego in a container
 
 The container image and a compose file for running an agent under `tego run` on a server, with the dashboard on the
-host's loopback. [docs/user/container.md](../../docs/user/container.md) is the guide: what each setting is for, which
+host's loopback. [docs/site/containers.md](../../docs/site/containers.md) is the guide: what each setting is for, which
 tier works in a container, and how the ledger and the chain anchor are kept.
 
 | File | What it is |
@@ -36,7 +36,7 @@ without a container runtime; `.github/workflows/container.yml` builds and runs t
 Every release tag publishes `ghcr.io/attention-span-ai/tego` for Linux amd64 and arm64. `v0.1.2` produces `0.1.2`,
 `0.1` and `latest`; a prerelease such as `v0.1.1-rc.1` produces only `0.1.1-rc.1`. The release notes and the image
 job summary give the signed multi-platform digest. The
-[install guide](https://github.com/Attention-Span-AI/Tego/blob/main/docs/INSTALL.md#run-in-a-container) shows
+[install guide](https://attention-span.ai/docs/containers/) shows
 `docker run` and verification with cosign against the exact tag's `release.yml` identity.
 
 `release.yml` waits for the release gate, binary reproduction and vulnerability scan. It checks the original release

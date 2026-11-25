@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # example-restart-myapp.socket: AN EXAMPLE to adapt, not a unit Tego ships or needs. It is the supported way to let a
-# governed agent restart one service (docs/user/built-in-refusals.md, "An agent that must restart a service"). Tego
+# governed agent restart one service (docs/site/built-in-refusals.md, "Host sockets and terminals"). Tego
 # never lets a run reach the session bus or the systemd user manager, since through either one the agent could start
 # any command outside the run. This helper grants one verb instead: each connection to its socket starts
 # example-restart-myapp@.service once, which restarts myapp.service and does nothing else. The agent's contract allows

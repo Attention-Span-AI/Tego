@@ -140,7 +140,7 @@ No historical line is rewritten.
   this checkout's own extra files; CI's `reproducible` job runs the release job's staging step on a full snapshot.
 - `install.sh` is a release asset, and is in the checksums file (`checksum.extra_files` in
   `.goreleaser.yaml`), so the signature and the attestations cover it. That helps someone who downloads, verifies and
-  only then runs it (docs/INSTALL.md). It does nothing for a script piped into `sh`, which runs before anything can
+  only then runs it (docs/site/install.md). It does nothing for a script piped into `sh`, which runs before anything can
   check it (docs/GAPS.md B11); `reproduce` does not compare it, since it is the tag's own file and no build makes it.
 - `scripts/install.sh` downloads one tag (`TEGO_VERSION=v0.y.z` to pin), checks who published it when it can
   (`TEGO_VERIFY`: cosign against the signature bundle, or `gh attestation verify` against the provenance; with

@@ -23,7 +23,7 @@ const wslLauncherWords = "a run cannot be given WSL's Windows launcher: a progra
 // wslLauncherFix is the fix of such an entry.
 const wslLauncherFix = "remove the entry; WSL's launcher sockets under " + WSLLauncherDir + " are refused in every run, " +
 	"and a Windows program the agent needs is started by a helper outside the run that does that one thing " +
-	"(docs/user/built-in-refusals.md)"
+	"(https://attention-span.ai/docs/built-in-refusals/)"
 
 // maxWSLSockets bounds the launcher sockets compile looks at: WSL makes one per session.
 const maxWSLSockets = 256

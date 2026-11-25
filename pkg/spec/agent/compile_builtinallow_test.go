@@ -38,7 +38,7 @@ func TestBuiltinRefusedAllowIsAContradiction(t *testing.T) {
 	}
 	const hostIPCFix = "remove the entry; to let the agent cause one operation through that socket, such as restarting one " +
 		"service, run a helper outside the run that does that one operation and nothing else, listening on a socket at a " +
-		"path no built-in refuses (outside /run/user/4242), and allow that socket instead (docs/user/built-in-refusals.md)"
+		"path no built-in refuses (outside /run/user/4242), and allow that socket instead (https://attention-span.ai/docs/built-in-refusals/)"
 	for _, tc := range []struct {
 		name, entry, rule, message, fix string
 	}{
@@ -57,7 +57,7 @@ func TestBuiltinRefusedAllowIsAContradiction(t *testing.T) {
 			hostIPCFix},
 		{"tego's own socket", "unix:~/.tego/api.sock", BuiltinTegoSurface,
 			"net[unix:~/.tego/api.sock] is refused by builtin.tego_surface in every enforcing run, before net.allow is read: no contract entry lifts a built-in refusal (ADR 0113), so this entry admits nothing",
-			"remove the entry: no run reaches Tego's own sockets (docs/user/built-in-refusals.md)"},
+			"remove the entry: no run reaches Tego's own sockets (https://attention-span.ai/docs/built-in-refusals/)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rt, ds, err := f.compileErr(f.load(builtinAllowContract(tc.entry)))
@@ -168,7 +168,7 @@ func TestBuiltinRefusedAskIsAContradiction(t *testing.T) {
 	}
 	const hostIPCFix = "remove the entry; to let the agent cause one operation through that socket, such as restarting one " +
 		"service, run a helper outside the run that does that one operation and nothing else, listening on a socket at a " +
-		"path no built-in refuses (outside /run/user/4242), and ask about that socket instead (docs/user/built-in-refusals.md)"
+		"path no built-in refuses (outside /run/user/4242), and ask about that socket instead (https://attention-span.ai/docs/built-in-refusals/)"
 	for _, tc := range []struct{ name, entry, rule, message, fix string }{
 		{"the session bus", "unix:/run/user/4242/bus", BuiltinHostIPC,
 			"net[unix:/run/user/4242/bus] (a net.ask entry) is refused by builtin.host_ipc in every enforcing run, before net.ask is read: no contract entry lifts a built-in refusal (ADR 0113), so this entry never asks anyone, and the socket is refused outright; the socket is the D-Bus session bus, through which systemd-run --user starts a command outside the run",
@@ -178,7 +178,7 @@ func TestBuiltinRefusedAskIsAContradiction(t *testing.T) {
 		{"an exact container socket", "unix:/run/docker.sock", BuiltinHostIPC, "", hostIPCFix},
 		{"tego's own socket", "unix:~/.tego/api.sock", BuiltinTegoSurface,
 			"net[unix:~/.tego/api.sock] (a net.ask entry) is refused by builtin.tego_surface in every enforcing run, before net.ask is read: no contract entry lifts a built-in refusal (ADR 0113), so this entry never asks anyone, and the socket is refused outright",
-			"remove the entry: no run reaches Tego's own sockets (docs/user/built-in-refusals.md)"},
+			"remove the entry: no run reaches Tego's own sockets (https://attention-span.ai/docs/built-in-refusals/)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rt, ds, err := f.compileErr(f.load(builtinAskContract(tc.entry)))

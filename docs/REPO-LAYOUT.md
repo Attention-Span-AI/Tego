@@ -72,7 +72,7 @@ tego/
 │   └── cli/               one file per subcommand (init, doctor, compile, run, stop, status, ask, approve, deny, dns, drift, measure, learn, events, watch, adopt, agents, alternate, gc, licenses, version, hidden __child; guard.go and verify.go back `agents --follow --adopt` and `events --verify`)
 ├── test/                      fixtures, workloads, integration (root), e2e kill tests, VM matrix, hosted-machine checks
 ├── examples/                  contracts per common agent, quickstart; demo/ is the live demo kit (README.md, demo.sh, a rogue stand-in agent and its contracts)
-├── docs/                      start at docs/README.md: engine docs, adr/, user/ (the user guide; its README states what the root tiers and adopt need, and fixes the label for what is not built yet)
+├── docs/                      start at docs/README.md: engine docs, adr/, development/, site/ (the user docs; the website copies them)
 ├── tools/  scripts/           dev tooling; operator scripts
 ├── action/                    CI receipt implementation, offline tests and display fixtures; receipt workflow .github/workflows/ci-receipt.yml; optional signer ci-receipt-sign.yml
 ├── .github/                   CI, CODEOWNERS
@@ -192,8 +192,8 @@ and a noun never spans both binaries (ADR 0100 (2)).
 | the shape of `agent.yaml` | `spec/agent/v0/` (schema) and `pkg/spec/agent` (types, validation, compile) |
 | the contracts catalog and compiled view | `internal/contracts`, `internal/cli/contracts.go`, `spec/contracts/v1/` |
 | the shape of an event | `spec/record/v1/` and `pkg/spec/record` |
-| the built-in presets (`tego/no-secrets`, `tego/no-prod`, `tego/repo-only-writes`, `tego/ci`), their revisions and the host groups | `pkg/spec/presets` (the YAML, `README.md` is normative), registered in `internal/cli/profiles.go`; the user's page `docs/user/presets.md` (ADR 0068) |
-| `tego init --preset`: a contract from presets, folders, markers and host groups | `internal/setup` (compose.go, ecosystem.go, check.go: Draft/Create/Remove/Check; goldens in testdata/compose/), flags and printing in `internal/cli/init.go`; `docs/user/presets.md` "Start from tego init" |
+| the built-in presets (`tego/no-secrets`, `tego/no-prod`, `tego/repo-only-writes`, `tego/ci`), their revisions and the host groups | `pkg/spec/presets` (the YAML, `README.md` is normative), registered in `internal/cli/profiles.go`; the user's page `docs/site/presets.md` (ADR 0068) |
+| `tego init --preset`: a contract from presets, folders, markers and host groups | `internal/setup` (compose.go, ecosystem.go, check.go: Draft/Create/Remove/Check; goldens in testdata/compose/), flags and printing in `internal/cli/init.go`; `docs/site/presets.md` |
 | env vars a run sets | `pkg/spec/identity` |
 | what a run provisions for its agent harness (`harness:`, the per-run settings files, hook-state) | `internal/runtime/harness.go` (the point), `pkg/spec/harness` (its types), `internal/adapters` (the provisioners) |
 | what a backend can do | `pkg/spec/backend` and `internal/runtime/enforce` |

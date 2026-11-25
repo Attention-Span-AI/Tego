@@ -5,5 +5,5 @@
 // daily retention pass (tego-gc.timer, tego-gc.service), with the tests that hold their keys to tego run's exit codes
 // and to each other. example-restart-myapp.socket and example-restart-myapp@.service are an example to adapt, not units
 // Tego needs: a one-verb helper that lets a governed agent restart one service without the user manager's socket
-// (docs/user/built-in-refusals.md). It has no code of its own: the binary never imports it.
+// (docs/site/built-in-refusals.md). It has no code of its own: the binary never imports it.
 package systemd

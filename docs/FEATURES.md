@@ -224,13 +224,13 @@ host, never hides from root, and root can always see and remove what it installs
 | ID | Feature | Status | Notes |
 |----|---------|--------|-------|
 | U1 | `tego start`: a guided first run in four steps (agent, login, project, rules) that ends by printing the command for the next step | Built | Needs no root. Never starts the agent itself. Ctrl-C ends it and every program it started. |
-| U2 | `tego scan`: a private snapshot of your running agents, installed candidates and settings metadata; `--check` for CI; `--advanced` adds explicit discovery across users (root) | Built | [docs/user/scan.md](user/scan.md). A scan inside a nested PID namespace answers unknown, never "none observed". |
-| U3 | `tego contracts`: find contracts, check today's files offline and list each one's newest recorded runs | Built | [docs/user/contracts.md](user/contracts.md). Runs no agent. |
+| U2 | `tego scan`: a private snapshot of your running agents, installed candidates and settings metadata; `--check` for CI; `--advanced` adds explicit discovery across users (root) | Built | [docs/site/finding-agents.md](site/finding-agents.md). A scan inside a nested PID namespace answers unknown, never "none observed". |
+| U3 | `tego contracts`: find contracts, check today's files offline and list each one's newest recorded runs | Built | [docs/site/testing-rules.md](site/testing-rules.md). Runs no agent. |
 | U4 | `tego rules history` and `tego rules undo`: the dashboard's change history and its Undo, from a terminal | Built | An undo that lets the next run do more asks for a typed `undo`. A saved `tego rules edit` is in the history and can be undone, unless the writer refuses the file (not yours alone, writable by every user, under Tego's own folders) or the machine has no ledger root yet; the output then says it cannot be undone. |
 | U5 | `tego uninstall`: remove Tego on Linux and macOS (Windows has its own removal) | Built | Asks before it removes anything; keeps records and contracts unless you say so. The Mac steps are tested against stand-ins for Lima and SSH. |
-| U6 | The dashboard's Agents page: each recorded run and each program a scan saw, with the stages that are and are not known | Built | [docs/user/agents.md](user/agents.md). A stage shows as reached only for a recorded run. |
-| U7 | CI receipt: run an AI agent in CI with a record, a comparison job and optional signing | Partly | [docs/user/ci-receipt.md](user/ci-receipt.md). Signing with real GitHub permission delegation was not tried. |
-| U8 | Windows installer (`install.ps1`) and the browser dashboard on Windows | Partly | Unsigned, from a local mirror in the one guest measured; see [INSTALL.md](INSTALL.md#windows). |
+| U6 | The dashboard's Agents page: each recorded run and each program a scan saw, with the stages that are and are not known | Built | [docs/site/finding-agents.md](site/finding-agents.md). A stage shows as reached only for a recorded run. |
+| U7 | CI receipt: run an AI agent in CI with a record, a comparison job and optional signing | Partly | [docs/site/ci.md](site/ci.md). Signing with real GitHub permission delegation was not tried. |
+| U8 | Windows installer (`install.ps1`) and the browser dashboard on Windows | Partly | Unsigned, from a local mirror in the one guest measured; see [Supported systems](site/supported-systems.md#windows). |
 
 ---
 
@@ -243,8 +243,8 @@ host, never hides from root, and root can always see and remove what it installs
 | I3 | Claude Agent SDK (Python) under the forwarder: `examples/agents/claude-code.yaml` (`capture: forwarder`, `env.set` switches, expected gap line) and `test/workloads/claude-sdk` | Built | Kill test 7 as named. TypeScript SDK agents that replace `options.env` without spreading `process.env` are not covered. |
 | I4 | Codex CLI (forwarder via a generated `config.toml` under `CODEX_HOME`, `openai_base_url`; `chatgpt.com` upstream when logged in that way), Gemini CLI (uprobes under system or official node, forwarder via its three variables otherwise) | Built | |
 | I5 | Derive `net.allow` and exec entries from `mcp[]` declarations | Built | Less to write by hand. Built: `command[0]` gets its exec grant (agent-contract R8), and since 2026-10-19 an HTTP server's `url:` its net rule `mcp[<name>]` under a `net:` section (R16a). |
-| I6d | **MCP provisioning**: `mcp[]` entries launched by the run (stdio `command:`) or written into the harness's MCP config for the run; allowlists derived from them (I5) | Partly | Declared servers are not started yet; see I5 and the MCP preview in docs/user/mcp-tools.md. |
-| I7 | Run inside a container as the supervisor; `--cgroup-parent` for `docker run` children | Partly | docs/user/container.md runs `tego` in a container. `--cgroup-parent` for `docker run` children is not built. |
+| I6d | **MCP provisioning**: `mcp[]` entries launched by the run (stdio `command:`) or written into the harness's MCP config for the run; allowlists derived from them (I5) | Partly | Declared servers are not started yet; see I5 and the MCP preview in docs/site/mcp-tools.md. |
+| I7 | Run inside a container as the supervisor; `--cgroup-parent` for `docker run` children | Partly | docs/site/containers.md runs `tego` in a container. `--cgroup-parent` for `docker run` children is not built. |
 | I9 | CI mode: Landlock tier + forwarder, no root; for hosted runners whose command line cannot be edited | Partly | Self-hosted runners can use tier 2 with sudo. See ADR 0042 (2)(a) for when that is safe. |
 
 ---

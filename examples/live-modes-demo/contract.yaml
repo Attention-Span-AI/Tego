@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# The Adjustable-mode demo's contract (docs/user/live-modes.md, ADR 0125). demo.sh setup fills the @...@ program
+# The Adjustable-mode demo's contract (docs/site/live-changes.md, ADR 0125). demo.sh setup fills the @...@ program
 # paths for this machine and writes contract.filled.yaml beside it; run that one.
 #
 # Needs root: Adjustable runs only at tier cgroup or bpflsm, so the run is `sudo tego run`. Root lets Tego place the

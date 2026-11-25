@@ -25,10 +25,10 @@
 # the version they asked for. In gh mode the checksums file itself is not signature-checked, so that binding on
 # the binary's own attestation is the whole of the tag check.
 #
-# The one-line install docs/INSTALL.md gives pipes this script into sh from the latest release, where it is an asset
+# The one-line install docs/site/install.md gives pipes this script into sh from the latest release, where it is an asset
 # (.goreleaser.yaml), with no configuration: it installs that release into ~/.local/bin and ends with the next steps.
 # Nothing checks a piped script before it runs (docs/GAPS.md B11); the binaries it downloads are checked as above, and
-# docs/INSTALL.md shows how to check the script first.
+# docs/site/install.md shows how to check the script first.
 #
 # Configuration is env vars, not flags, to match the one already documented in VERSIONING.md §5:
 #   TEGO_VERSION    tag to install, e.g. v0.1.0 (default: the latest published release)
@@ -1097,7 +1097,7 @@ main() {
 	# the login's user service manager only when it can be seen to matter (session_notes: no manager, or no bus for the
 	# dashboard), then the one next command in tego's own hint format (a line starting "next: ", the command on the line
 	# after it, indented two spaces).
-	echo "Quickstart: https://github.com/${repo_owner}/${repo_name}/blob/main/docs/QUICKSTART.md"
+	echo "Quickstart: https://attention-span.ai/docs/getting-started/"
 	# tego_cmd is how the next command names tego: by its bare name when this shell finds it there, and by the full path
 	# where it does not. The installer cannot change the PATH of the shell that started it, so a bare name printed right
 	# after the install was "command not found" for a person who had not yet typed the export line (acceptance 4).
@@ -1140,7 +1140,7 @@ main() {
 	# sudo replaces PATH with its own secure_path, which has no ~/.local/bin (and on AlmaLinux no /usr/local/bin):
 	# A bare Tego program name after sudo does not find this copy, and a copy in this home is closed to an account that cannot
 	# enter it. One line, before the next step, which stays last.
-	echo "to run tego as another account (sudo -u <account>), install both binaries in that account's ~/.local/bin, or in a root-owned shared directory and adjust the service units; type its absolute path after sudo, which does not search ~/.local/bin (docs/INSTALL.md, \"A service account\")."
+	echo "to run tego as another account (sudo -u <account>), install both binaries in that account's ~/.local/bin, or in a root-owned shared directory and adjust the service units; type its absolute path after sudo, which does not search ~/.local/bin (https://attention-span.ai/docs/servers-and-ci-runners/#a-service-account)."
 	echo ""
 	# tego start walks a new user through the rest; tego setup, before it, says which step this machine is on (ADR 0142). A
 	# release made before them lacks both, and this script installs any tag, so the installed tego's own

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# tego-entrypoint.sh: the container image's entrypoint (docs/user/container.md). Started as root, it does the two
+# tego-entrypoint.sh: the container image's entrypoint (docs/site/containers.md). Started as root, it does the two
 # things only root can do in the container and then runs the command as the image's unprivileged user `tego`:
 #
 #   1. hands that user a cgroup v2 subtree of its own. Every tego run, at every tier, makes a cgroup per run (limits,
@@ -194,7 +194,7 @@ setup_cgroup() {
 		return 0
 	fi
 	say "no delegated cgroup subtree: $why"
-	say "tego run will refuse to start until there is one; tego doctor shows the cgroupv2 line (docs/user/container.md)"
+	say "tego run will refuse to start until there is one; tego doctor shows the cgroupv2 line (docs/site/containers.md)"
 	[ "$mode" = yes ] && return 1
 	return 0
 }
@@ -335,7 +335,7 @@ main() {
 	own_dir /work "$uid" "$gid"
 	hand_in_lsm_list "${TEGO_LSM_LIST_FILE:-/run/tego-lsm/lsm-list}" /sys/kernel/security/lsm /run/tego-lsm/.securityfs /proc/sys/kernel/random/boot_id "${TEGO_LSM_LIST:-auto}"
 	if [ "$launcher" = root ]; then
-		# Experimental (docs/user/container.md, "Tiers that need root"): tego stays root with the container's
+		# Experimental (docs/site/containers.md): tego stays root with the container's
 		# capabilities, which the root tiers need, and runs the agent as the tego user, as `sudo tego run` runs it as
 		# SUDO_UID's (identity-config R19). Nothing is dropped here: whatever the container was given, tego holds.
 		say "TEGO_LAUNCHER=root: tego runs as root with the container's capabilities; the agent as $user ($uid)"

@@ -34,7 +34,7 @@ type pathShadow struct {
 // defaultInstallDirs are the places a tego is installed to beside the one running and the one PATH finds: the
 // installer's default prefix under the compile's home (scripts/install.sh, TEGO_PREFIX), the usual system prefixes a
 // package or a person puts it in, and /opt/tego/bin. A systemd unit's ExecStart, or a second shell's PATH, names one of
-// these far more often than any other place (docs/user/run-as-a-service.md).
+// these far more often than any other place (docs/site/services.md).
 func defaultInstallDirs(home string) []string {
 	dirs := []string{"/usr/local/bin", "/usr/bin", "/opt/tego/bin"}
 	if home != "" {

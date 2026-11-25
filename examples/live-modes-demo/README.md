@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Adjustable mode demo: loosen a running agent's rules for two minutes, and it ends by itself
 
-A short demo of Tego's Adjustable mode (docs/user/live-modes.md, ADR 0125): an agent is refused a folder,
+A short demo of Tego's Adjustable mode (docs/site/live-changes.md, ADR 0125): an agent is refused a folder,
 you lift that refusal for two minutes while it runs, its next read works, and when the two minutes are up (or you
 Restore) it is refused again. The ledger records every change. It needs root (below).
 

@@ -1,7 +1,7 @@
 # pkg/spec/presets: the built-in presets
 
 Normative for the names, the revisions and the freeze rule (ADR 0068). The user's page is
-[docs/user/presets.md](../../../docs/user/presets.md).
+[docs/site/presets.md](../../../docs/site/presets.md).
 
 ## Names
 

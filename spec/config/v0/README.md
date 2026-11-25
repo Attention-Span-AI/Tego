@@ -288,7 +288,7 @@ load first refuses an unreadable system file without contacting the broker.
 Repair its mode on the original inode with the original bytes for a mode-only
 mistake. Deny's warning load and dashboard can reach the distinct broker refusal. Saving old
 text on a replacement inode does not repair the old run. Stop it as root with `sudo tego stop <run>`,
-then relaunch using the same ledger configuration. The [user guide](../../../docs/user/local-approvals.md)
+then relaunch using the same ledger configuration. The [user guide](../../../docs/site/approvals.md)
 gives commands for an explicit `TEGO_CONFIG` and the edit outcome table.
 Only a root launcher in the initial user namespace with a verified non-root
 child, enforcement and recording may activate the floor. The packet credentials
