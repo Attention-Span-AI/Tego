@@ -378,7 +378,7 @@ func (s *Server) changeChrome(w http.ResponseWriter, title string) (chrome, bool
 		return chrome{}, false
 	}
 	c := s.chromeOf(snap, title, "rules")
-	c.PhoneName = "Contracts" // the compact header names the section, as the contract builder pages always have
+	c.PhoneName = "Rules files" // the compact header names the section, as the contract builder pages always have
 	return c, true
 }
 
@@ -417,7 +417,7 @@ func (s *Server) serviceFail(w http.ResponseWriter, heading string, err error) {
 	}
 	switch {
 	case errors.Is(err, rules.ErrNoContract):
-		s.fail(w, http.StatusNotFound, "No such contract file", "No run used that contract file · pick one on the Contracts page")
+		s.fail(w, http.StatusNotFound, "No such contract file", "No run used that contract file · pick one on the Rules files page")
 	case errors.Is(err, rules.ErrNotWritable):
 		s.fail(w, http.StatusForbidden, heading, err.Error())
 	default:

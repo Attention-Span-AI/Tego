@@ -155,8 +155,8 @@ func TestEmptyPagesGiveANextStep(t *testing.T) {
 		"/detections":         "What Tego refuses a run under a contract (<span class=\"mono\">tego run</span>) shows here.",
 		"/approvals":          "A contract can ask you before a file change or a connection; those requests wait here for your answer.",
 		"/logs":               "Every line a run records shows here; <span class=\"mono\">tego watch -- &lt;command&gt;</span> starts one.",
-		"/rules":              `Make one from presets or from a finished run.</p><a class="btn btn-primary" href="/rules/new">New contract</a>`,
-		"/rules/change":       `Make one with <a class="link" href="/rules/new">New contract</a>; once it is written, its rules can be changed here.`,
+		"/rules":              `Make one from presets or from a finished run.</p><a class="btn btn-primary" href="/rules/new">New rules file</a>`,
+		"/rules/change":       `Make one with <a class="link" href="/rules/new">New rules file</a>; once it is written, its rules can be changed here.`,
 		"/rules/new?mode=run": "To record a run: <span class=\"mono\">tego watch -- &lt;the command that starts your agent&gt;</span>",
 	} {
 		body := get(t, s, c, path)

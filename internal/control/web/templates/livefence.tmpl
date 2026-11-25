@@ -12,7 +12,7 @@
 <ul class="rp-list lf-warn">
 <li><span title="Enforced by Tego's live layer, not the kernel. A time limit stops new access; anything already read or copied, files still open and live connections stay."><span data-number="shared.policy">Tego’s live layer enforces this access. A time limit stops new access only. Anything already read or copied, files still open and live connections remain.</span></span></li>
 {{if .Exec}}<li>Copies under another name not covered</li>{{end}}
-<li>Restore blocks it again · Contracts page or <span class="mono">tego restore</span></li>
+<li>Restore blocks it again · Rules files page or <span class="mono">tego restore</span></li>
 </ul>
 <form class="stack" method="post" action="/runs/{{pathEsc $r.ID}}/lift"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="kind" value="{{.Kind}}"><input type="hidden" name="value" value="{{.Value}}"><input type="hidden" name="until" value="{{.Until}}"><input type="hidden" name="serial" value="{{.Serial}}"><input type="hidden" name="permanent" value="{{if .Permanent}}1{{end}}"><input type="hidden" name="ack" value="{{.Ack}}">
 <label class="field">Note for the record (optional)<input class="input" type="text" name="note" maxlength="200" autocomplete="off" placeholder="Why this is allowed now"></label>

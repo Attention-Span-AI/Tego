@@ -417,11 +417,11 @@ func (s *Server) renderNew(w http.ResponseWriter, snap *ledgerview.Snapshot, sta
 	rememberBuilderView(w, d.View)
 	var c chrome
 	if snap == nil {
-		c = s.chromeFromLedger("New contract", "rules")
+		c = s.chromeFromLedger("New rules file", "rules")
 	} else {
-		c = s.chromeOf(snap, "New contract", "rules")
+		c = s.chromeOf(snap, "New rules file", "rules")
 	}
-	c.PhoneName = "Contracts" // the compact header names the section, as the contract builder pages always have
+	c.PhoneName = "Rules files" // the compact header names the section, as the contract builder pages always have
 	if d.Created != nil {
 		c.Title = "Agent set up · " + d.Created.Name
 	}
