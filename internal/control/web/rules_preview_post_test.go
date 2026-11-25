@@ -186,7 +186,7 @@ func TestSeveralPreviewPostKeepsTheGetsReach(t *testing.T) {
 		t.Errorf("a governed peer's save was answered %d", code)
 	}
 	f.s.governed = func(*http.Request) error { return nil }
-	f.s.cfg.Machine = machineWithMode(t, 0)
+	f.s.cfg.Machine = machineWithMode(t, 0o666) // untrusted, so unknown as root too: root reads a mode-000 file
 	if code, body := f.post(t, "/rules/change/preview", q()); code != http.StatusOK {
 		t.Errorf("a preview post with the baseline unknown: %d %.300s", code, body)
 	}

@@ -236,7 +236,7 @@ a.tile:hover { background: var(--c-bg); }
 .banner-ask.ab-line .ab-act .btn { min-height: var(--control-h); }
 .banner-ask .ab-h { font-size: var(--text-lg); font-weight: var(--weight-semibold); line-height: var(--leading-tight); color: inherit; }
 .banner-ask .ab { display: flex; flex-direction: column; gap: var(--space-2); }
-.banner-ask .ab-what { flex: 1 1 var(--col-hint); min-width: 0; margin-top: var(--space-1); overflow-wrap: anywhere; }
+.banner-ask .ab-what { flex: 1 1 100%; min-width: 0; margin-top: var(--space-1); overflow-wrap: anywhere; }
 .banner-ask .soft, .banner-ask .ab-note { color: inherit; opacity: 1; }
 .banner-ask .ab-note { margin-top: var(--space-2); font-size: var(--text-sm); }
 .banner-ask .ab-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }

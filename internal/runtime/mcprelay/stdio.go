@@ -283,6 +283,7 @@ func (c *stdioConn) clientLine(raw []byte) {
 // is a line of the record, whether or not it has an id to answer.
 func (c *stdioConn) clientBatch(calls []call) {
 	var pass, answers []json.RawMessage
+	var held []batchItem
 	for _, it := range c.s.planBatch(c.server, calls) {
 		cl := it.cl
 		if it.kind != itemRefuse {
@@ -297,7 +298,7 @@ func (c *stdioConn) clientBatch(calls []call) {
 			}
 			pass = append(pass, cl.raw)
 		case itemAsk:
-			c.holdAsk(cl, it.res, cl.raw)
+			held = append(held, it)
 		case itemRefuse:
 			c.s.emitCall(c.pid, c.server, TransportStdio, cl.tool, it.rule, record.VerdictRefused, record.AuthorityRule, it.reason)
 			if len(cl.id) > 0 {
@@ -310,6 +311,10 @@ func (c *stdioConn) clientBatch(calls []call) {
 	}
 	if len(pass) > 0 {
 		_ = c.fw.Write(Frame{ToServer: joinJSON(pass)})
+	}
+	// Held only now: an approval that comes back at once must not reach the server before the batch's allowed members.
+	for _, it := range held {
+		c.holdAsk(it.cl, it.res, it.cl.raw)
 	}
 }
 

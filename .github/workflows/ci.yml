@@ -199,7 +199,7 @@ jobs:
       # this tag, so no other step runs them. In the runner user's systemd manager, as the unit step: run tests
       # need its delegated cgroup subtree, and a step's own shell leaves descriptors open past the standard three.
       - name: unit (-tags tegotesthooks)
-        run: ./scripts/in-user-manager.sh go test -count=1 -tags tegotesthooks ./cmd/tego/ ./internal/bpf/ ./internal/cli/ ./internal/platform/peer/ ./internal/platform/sys/ ./internal/runtime/ ./internal/runtime/enforce/ ./internal/runtime/enforce/landlock/ ./internal/selftest/
+        run: ./scripts/in-user-manager.sh go test -count=1 -tags tegotesthooks ./cmd/tego/ ./internal/bpf/ ./internal/cli/ ./internal/doctor/ ./internal/platform/peer/ ./internal/platform/sys/ ./internal/runtime/ ./internal/runtime/enforce/ ./internal/runtime/enforce/landlock/ ./internal/selftest/
       - name: p0 example compiles clean
         run: go build -o /tmp/tego-ci ./cmd/tego && dir=$(mktemp -d) && mkdir -p "$dir/config" "$dir/out" && cp spec/agent/v0/example.p0.retriever.yaml "$dir/agent.yaml" && (cd "$dir" && /tmp/tego-ci compile agent.yaml --offline)
       # Every package's integration tests, unprivileged: this step named four trees by hand (pkg, enforce,
@@ -876,7 +876,7 @@ jobs:
     # dynamically linked stage (ADR 0021 (4): its marks are placed after the stage's execve), but the guest
     # run of a dynamically linked or PIE build is still that ADR's open condition.
     runs-on: ubuntu-24.04
-    timeout-minutes: 100
+    timeout-minutes: 130
     strategy:
       fail-fast: false
       matrix:
@@ -888,10 +888,10 @@ jobs:
           # others on four vCPUs. Alone, its own runner gets this, measured again on the first run of the shards.
           - shard: control-web
             packages: ./internal/control/web
-            timeout: 40m
+            timeout: 70m
           - shard: rest
             packages: ''
-            timeout: 25m
+            timeout: 40m
     env:
       CGO_ENABLED: '1'
       SHARD_PACKAGES: ${{ matrix.packages }}

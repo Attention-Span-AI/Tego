@@ -467,8 +467,7 @@ func TestHelperAbandonReleasesExchangeGoroutine(t *testing.T) {
 	ctx, closeSession := WithHelperSession(context.Background())
 	defer closeSession()
 	session := ctx.Value(helperSessionKey{}).(*helperSession)
-	processWorkers <- struct{}{}
-	session.worker = &helperWorker{send: send, receive: receive, started: true}
+	session.worker = &helperWorker{send: send, receive: receive, started: true, release: heldSlot()}
 	before := runtime.NumGoroutine()
 	ctx, cancel := context.WithTimeout(ctx, 25*time.Millisecond)
 	defer cancel()
@@ -508,8 +507,7 @@ func TestHelperSessionCloseWaitsForActiveOwner(t *testing.T) {
 	ctx, closeSession := WithHelperSession(context.Background())
 	defer closeSession()
 	session := ctx.Value(helperSessionKey{}).(*helperSession)
-	processWorkers <- struct{}{}
-	session.worker = &helperWorker{send: send, receive: receive, started: true}
+	session.worker = &helperWorker{send: send, receive: receive, started: true, release: heldSlot()}
 	// Hold the owner's final critical section, after it checked its context.
 	// Close must not skip the worker when the gate is temporarily busy.
 	<-session.gate

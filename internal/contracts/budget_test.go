@@ -106,8 +106,7 @@ func withScriptedBudget(t *testing.T, parent context.Context, b *budget, script 
 	ctx, closeSession := WithHelperSession(parent)
 	ctx = context.WithValue(ctx, budgetKey{}, b)
 	session := ctx.Value(helperSessionKey{}).(*helperSession)
-	processWorkers <- struct{}{} // the worker's slot, given back by close
-	session.worker = &helperWorker{send: send, receive: receive, started: true}
+	session.worker = &helperWorker{send: send, receive: receive, started: true, release: heldSlot()}
 	var played sync.WaitGroup
 	played.Add(1)
 	go func() {
@@ -554,4 +553,11 @@ func TestWithScopeIsOneScopePerContext(t *testing.T) {
 	if !SameScope(a, b) || SameScope(a, c) || SameScope(context.Background(), context.Background()) {
 		t.Fatal("scopes are not what WithScope says")
 	}
+}
+
+// heldSlot takes a slot of the current worker pool for a hand-made worker, given back to that same pool by its close.
+func heldSlot() func() {
+	pool := processWorkers
+	pool <- struct{}{}
+	return func() { <-pool }
 }
