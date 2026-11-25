@@ -40,7 +40,7 @@ Tego needs Linux 5.14 or later and Landlock ABI 2. Landlock is the Linux feature
 
 - A kernel from [Linux kernels](#linux-kernels).
 - cgroup v2 delegated to your user ([Servers and CI runners](/docs/servers-and-ci-runners/#let-your-user-group-processes-cgroup-delegation)). A cgroup (control group) is how Linux groups a session's processes.
-- `ptrace_scope`, the kernel setting for which processes may inspect others, at 0 or 1 ([how to set it](/docs/servers-and-ci-runners/#process-inspection-setting-ptrace-scope)).
+- `ptrace_scope`, the kernel setting for which processes may inspect others, at 0 or 1 ([how to set it](/docs/servers-and-ci-runners/#process-inspection-setting)).
 
 [Servers and CI runners](/docs/servers-and-ci-runners/) covers SSH sessions, service accounts and RHEL 9's CPU limits.
 

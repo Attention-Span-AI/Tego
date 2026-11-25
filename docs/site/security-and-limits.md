@@ -47,7 +47,7 @@ A file can have more than one name: a bind mount, a container volume or WSL's `/
 
 [MCP tool rules](/docs/mcp-tools/) decide by tool name, never by the call's arguments: you cannot allow `read_file` only under `src/`.
 
-An agent that can attach a debugger to its own processes can go around Tego's MCP relay, the process that checks each tool call. At the `ptrace_scope` values Basic needs, 0 or 1, the agent can attach to the relay it started. [Servers and CI runners](/docs/servers-and-ci-runners/#process-inspection-setting-ptrace-scope) lists what each value allows.
+An agent that can attach a debugger to its own processes can go around Tego's MCP relay, the process that checks each tool call. At the `ptrace_scope` values Basic needs, 0 or 1, the agent can attach to the relay it started. [Servers and CI runners](/docs/servers-and-ci-runners/#process-inspection-setting) lists what each value allows.
 
 ### Changes to the record
 

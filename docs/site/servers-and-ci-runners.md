@@ -118,9 +118,7 @@ Without `sudo -u svc`, the line in step 4 opens a shell in your own user manager
 
 To run the agent as a systemd unit under that account, see [Services](/docs/services/).
 
-<a id="process-inspection-setting-ptrace-scope"></a>
-
-## Process inspection setting (`ptrace_scope`)
+## Process inspection setting
 
 Yama is a kernel security module. Its `kernel.yama.ptrace_scope` setting decides which processes may read another process's memory. Tego's supervisor reads the agent's arguments and addresses that way, as the agent's parent, so the value decides which protection levels work:
 

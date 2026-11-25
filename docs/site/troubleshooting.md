@@ -83,7 +83,7 @@ Run `tego run` as yourself, without `sudo`, from a normal login, which sets `XDG
 
 ### Machine check names `ptrace_scope` 2 or 3
 
-Basic needs `kernel.yama.ptrace_scope` at 0 or 1. [Servers and CI runners](/docs/servers-and-ci-runners/#process-inspection-setting-ptrace-scope) shows how to set it.
+Basic needs `kernel.yama.ptrace_scope` at 0 or 1. [Servers and CI runners](/docs/servers-and-ci-runners/#process-inspection-setting) shows how to set it.
 
 ### pytest fails with `INTERNALERROR`
 

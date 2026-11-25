@@ -10,7 +10,7 @@ Tego runs an agent inside a Docker container at Basic only. Plus and Max load ke
 
 ## What you need
 
-- A Linux host with cgroup v2 (below), a kernel that meets Basic's requirements ([Supported systems](/docs/supported-systems/)), and `kernel.yama.ptrace_scope` at 0 or 1 ([Servers and CI runners](/docs/servers-and-ci-runners/#process-inspection-setting-ptrace-scope)).
+- A Linux host with cgroup v2 (below), a kernel that meets Basic's requirements ([Supported systems](/docs/supported-systems/)), and `kernel.yama.ptrace_scope` at 0 or 1 ([Servers and CI runners](/docs/servers-and-ci-runners/#process-inspection-setting)).
 - Docker with BuildKit and the compose plugin.
 - A checkout of the Tego repository. The files are in [`examples/container/`](https://github.com/Attention-Span-AI/Tego/blob/main/examples/container/).
 
