@@ -100,14 +100,14 @@ var shellAllowedLines = map[string][]string{
 		"  show \"cd '$PROJECT' && '$TEGO' run '$STAGE/c/$1.yaml' </dev/null 2>&1 | grep -v -E '^(warning|note|  fix:)|no price table'\" || true",
 		"  [ -n \"$run\" ] && id=$(\"$TEGO\" ask \"$run\" 2>/dev/null | grep -oE 'q-[0-9a-f]{32}' | head -n 1 || true)",
 		"    '$TEGO' run '$cc/agent.yaml' -- claude -p --permission-mode bypassPermissions --script '$cc/script.json' --result '$ws/work/result.json' 'Tidy up my shell profile.' 2>&1 | grep -v -E '^(warning|note|  fix:)|no price table'\" || true",
-		"  show \"cd '$PROJECT' && '$TEGO' compile agent.yaml 2>&1 | grep -E '^(tier|record|fs|exec|net) ' | cut -c1-160\"",
+		"  show \"cd '$PROJECT' && '$TEGO' rules check agent.yaml 2>&1 | grep -E '^(tier|record|fs|exec|net) ' | cut -c1-160\"",
 		"  show \"cd '$PROJECT' && '$TEGO' run agent.yaml </dev/null 2>&1 | grep -v -E '^(warning|note|  fix:)|no price table'\" || true",
 	},
 	"examples/demo/scenes/network.sh": {
 		"  show \"cd '$PROJECT' && '$TEGO' run network.yaml </dev/null 2>&1 | grep -v -E '^(warning|note|  fix:)|no price table'\"",
 	},
 	"examples/demo/scenes/tiers.sh": {
-		"  say \"Tiers: what this machine can enforce (tego doctor, short)\"",
+		"  say \"Tiers: what this machine can enforce (tego machine check, short)\"",
 		"  if piped \"cd '$PROJECT' && '$TEGO' run --tier landlock agent.yaml </dev/null 2>&1\" \"$filter\"; then",
 	},
 	"action/test/security-tests.py": {"                   GITHUB_RUN_ID='42', GITHUB_RUN_ATTEMPT='1', TEGO_CONFIG='caller-config-must-not-win',"},
