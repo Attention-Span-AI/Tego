@@ -10,7 +10,7 @@ A systemd user unit keeps an agent running under Tego and restarts it when it fa
 
 ## Before you start
 
-- The account that runs the agent has Tego installed in `~/.local/bin` and a running user manager. For an account nobody logs in to, follow [Servers and CI runners](/docs/servers-and-ci-runners/#a-service-account) first.
+- The account that runs the agent has Tego installed in `~/.local/bin` and a running user manager. For an account nobody logs in to, follow [Servers and CI runners](/docs/servers-and-ci-runners/#run-as-a-service-account) first.
 - The agent's rules file is saved by name in `~/.config/tego/agents/<name>.yaml`, with `name: <name>` inside. `tego rules learn <session> --save <name>` writes it there ([Learning rules](/docs/learning-rules/)).
 - `tego run <name>` works from a terminal.
 
@@ -32,7 +32,7 @@ A user unit runs only while the user manager runs. On a machine where you are no
 sudo loginctl enable-linger "$USER"
 ```
 
-## How each ending reads
+## How the unit treats each exit
 
 The unit's restart rules follow `tego run`'s [exit codes](/docs/exit-codes/):
 
@@ -72,7 +72,7 @@ A session's record grows as long as the session runs. Two machine settings bound
 - `record.max_run_bytes` ends the session as a limit ([Exit codes](/docs/exit-codes/)) when its record reaches that size. The unit then restarts the agent on a new record.
 - `retention` and `gc_interval` remove old ended sessions. On a machine where no session starts for days, enable `tego-gc.timer` from `examples/systemd/`, which runs `tego gc` once a day.
 
-## Asks with nobody watching
+## Questions with nobody watching
 
 In a service nobody answers, so each held action waits for `ask.timeout` and is refused. [Approvals](/docs/approvals/#with-nobody-watching) shows how to make retries fail at once.
 

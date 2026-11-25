@@ -18,7 +18,7 @@ limits:
 
 A session that reaches a limit ends with exit code 124 ([Exit codes](/docs/exit-codes/)).
 
-## The limits
+## Set a token or cost limit
 
 | Field | Value | What it counts |
 |---|---|---|

@@ -101,7 +101,7 @@ ssh -L 8484:127.0.0.1:8484 <host>
 
 A different local port is refused, because the dashboard checks that the address in the request is its own.
 
-[Security and limits](/docs/security-and-limits/#the-dashboard) says who the dashboard answers.
+[Security and limits](/docs/security-and-limits/#who-can-use-the-dashboard) says who the dashboard answers.
 
 ## Next steps
 

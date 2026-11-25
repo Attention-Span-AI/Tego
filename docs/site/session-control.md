@@ -34,7 +34,7 @@ tego session resume claude-code-a1b2
 
 Pause freezes every process of the session where it stands: none runs or handles a signal until you resume it. While paused, the `stall_after` limit does not count; the `wall` limit and the timeout of a waiting [approval](/docs/approvals/) keep counting. Stopping a paused session ends it as quickly as a running one.
 
-## Block something now
+## Block a program, host or path
 
 ```
 tego block claude-code-a1b2 net example.com:443

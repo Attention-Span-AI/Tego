@@ -53,7 +53,7 @@ Every line starts with the same fields, then the fields of its kind. The ones yo
 
 `tego events <session>` prints a session's lines. `tego session show <session>` and the dashboard summarize them.
 
-## The hash chain
+## How tampering shows (hash chain)
 
 Tego writes each line with the hash of the line before it. Change one character in a line, and its hash changes, so the next line no longer points to it. Remove lines from the end, and the record no longer ends with the hash that `~/.tego/chain.log` holds for that session.
 

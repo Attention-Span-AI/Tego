@@ -39,7 +39,7 @@ tego run agent.yaml -- python3 agent.py --task review
 
 A command given after `--` is allowed to start for that session only.
 
-## What to put in `exec` and `net`
+## Which programs and hosts to allow
 
 [Rules files](/docs/rules-files/#what-a-missing-section-means) says what a missing `exec:` or `net:` section allows. To hold the agent to a list:
 

@@ -30,7 +30,7 @@ env:
 
 `tego rules create --preset no-secrets,no-prod,repo-only-writes` writes a rules file from presets. The "Base development" choice in `tego start` uses the first three.
 
-## tego/no-secrets
+## Keep secrets out (`tego/no-secrets`)
 
 Keeps secret environment variables away from the agent. It sets `env.pass`, so only these variables reach the agent:
 
@@ -68,7 +68,7 @@ A variable such as `GITHUB_TOKEN` or `AWS_SECRET_ACCESS_KEY` stays out. To pass 
 
 The preset adds nothing to `fs.deny_read`. Secret files are refused by the [built-in refusals](/docs/built-in-refusals/), which every rules file has unless it sets `deny_read: []`.
 
-## tego/no-prod
+## Only hosts you name (`tego/no-prod`)
 
 Refuses every network connection except to hosts your rules file names:
 
@@ -79,7 +79,7 @@ net:
 
 Add the hosts the agent needs to your own `net.allow`. The agent's model is reached only when your rules file lists it under `models:` or in `net.allow`. The machine's DNS resolver stays reachable, because `net.dns.mode` defaults to `system`.
 
-## tego/repo-only-writes
+## Only folders you name (`tego/repo-only-writes`)
 
 Refuses every write outside the folders your rules file names:
 
@@ -90,7 +90,7 @@ fs:
 
 `/dev/null` is there because many tools open it for writing. Add your project folders to your own `fs.write`, such as `./src/` and `./tests/`. With no folder of your own, every write but `/dev/null` is refused.
 
-## tego/ci
+## CI runners (`tego/ci`)
 
 For agents in CI. It records refused reads, keeps CI tokens out of the agent's environment, and refuses writes to `.github/`, best effort at Basic:
 ```yaml
@@ -116,7 +116,7 @@ fs:
 
 `env.deny` adds up across presets and your rules file. Your `env.pass` cannot bring a denied variable back: `tego rules check` warns `redundant-rule` that the passed name is removed again by `env.deny`. `env.set` of a denied variable is an error. The `.github/` path resolves from the folder where `tego run` starts, so run from the repository root. Your rules file can set `reason.reads` to another value. [CI](/docs/ci/) shows the preset in a workflow.
 
-### What tego/ci does not cover
+### What the CI preset does not cover
 
 Three names on the list are recalled, to verify on a runner before you rely on them: `INPUT_TOKEN` and `INPUT_GITHUB_TOKEN`, because an action's input variable names depend on the action, and `ACTIONS_CACHE_SERVICE_V2`, which is a cache setting, not a credential. Secrets under other names need your own `env.pass` list or `tego/no-secrets`.
 

@@ -47,9 +47,9 @@ A file can have more than one name: a bind mount, a container volume or WSL's `/
 
 [MCP tool rules](/docs/mcp-tools/) decide by tool name, never by the call's arguments: you cannot allow `read_file` only under `src/`.
 
-An agent that can attach a debugger to its own processes can go around Tego's MCP relay, the process that checks each tool call. At the `ptrace_scope` values Basic needs, 0 or 1, the agent can attach to the relay it started. [Servers and CI runners](/docs/servers-and-ci-runners/#ptrace-scope-setting) lists what each value allows.
+An agent that can attach a debugger to its own processes can go around Tego's MCP relay, the process that checks each tool call. At the `ptrace_scope` values Basic needs, 0 or 1, the agent can attach to the relay it started. [Servers and CI runners](/docs/servers-and-ci-runners/#process-inspection-setting-ptrace-scope) lists what each value allows.
 
-### The record
+### Changes to the record
 
 The record is tamper-evident against the agent, not against the person who started the session. [Sessions and records](/docs/sessions-and-records/) explains what it proves.
 
@@ -69,7 +69,7 @@ Granting `sudo` for `tego` is granting root. A sudoers rule limited to `tego` is
 
 Tego's trusted code is the launcher, the supervisor, the kernel programs and their loader, and the parsers that read the agent's traffic. The supervisor reads another process's memory, so a bug there could let a local user gain root. The code has fuzz tests, which feed it large amounts of random input. No one outside the project has reviewed it yet.
 
-## The dashboard
+## Who can use the dashboard
 
 The dashboard answers only the user who started it. Other local users are refused. A change sent from inside a session, such as an approval or a rules change, is refused. [Dashboard](/docs/dashboard/) shows how to open it.
 

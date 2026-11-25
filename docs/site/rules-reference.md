@@ -26,12 +26,12 @@ limits:
   wall: 2h
 ```
 
-## Writing values
+## How to write values
 
 - Paths take `~/`, a relative path (from the folder where `tego run` starts) or an absolute path. Environment variables are not expanded, except `${TEGO_PROJECT_DIR}` inside `env.set`.
 - Durations look like `30s`, `5m`, `2h`. Sizes use IEC units, such as `512MiB` or `4GiB`.
 
-## Top level
+## Fields at the top of the file
 
 | Field | Type | What it does | When missing | Levels |
 |---|---|---|---|---|
@@ -52,7 +52,9 @@ limits:
 | `keep_descendants` | bool | The session keeps running while processes the agent started are alive. | `false`: they are stopped with the agent. | All |
 | `learn` | `{run, withheld}` | Written by `tego rules learn`: addresses held back after a secret read. A note only; it never allows anything. Top-level file only. | None. | All |
 
-## fs
+<span id="fs"></span>
+
+## Files (`fs`)
 
 Rules for files. The [built-in refusals](/docs/built-in-refusals/) apply with or without this section.
 
@@ -68,7 +70,9 @@ Rules for files. The [built-in refusals](/docs/built-in-refusals/) apply with or
 | `fs.reads` | `auto`, `held`, `direct` | `held` makes Tego check each read open, so a secret inside a write folder stays refused. `direct` only in the top-level file. | `auto`: held at Basic while a `deny_read` path lies inside a write folder. | All |
 | `fs.apparmor_assume_root_namespace` | bool | For administrators: states that the session sees the root AppArmor policy namespace. Top-level file only. | `false` | All |
 
-## net
+<span id="net"></span>
+
+## Network (`net`)
 
 Rules for the network.
 
@@ -85,7 +89,7 @@ Rules for the network.
 | `net.assurance` | `best-effort`, `kernel` | `kernel`: refuse to start where the kernel cannot decide each connection. | `best-effort` | `kernel` needs Plus or Max |
 | `net.http` | list of `{host, allow, methods}` | Allowed URL path prefixes and methods for model traffic. Needs `capture: forwarder`. | None. | All |
 
-### net.dns
+### Name lookups (`net.dns`)
 
 | Field | Type | What it does | When missing |
 |---|---|---|---|
@@ -96,7 +100,7 @@ Rules for the network.
 | `net.dns.max_parallel` | 1-16 | Broker queries at once. | `8` |
 | `net.dns.cache` | 0-512 | Broker cache entries. | `128` |
 
-### net.proxy
+### Model traffic (`net.proxy`)
 
 These fields shape model traffic through Tego's forwarder. They need a `models:` entry and `capture: forwarder`.
 
@@ -111,7 +115,9 @@ These fields shape model traffic through Tego's forwarder. They need a `models:`
 | `net.proxy.tunnel_idle` | duration | Idle time before a tunnel closes. | `30s` |
 | `net.proxy.tunnel_wall` | duration | Longest tunnel life. | `5m` |
 
-## exec
+<span id="exec"></span>
+
+## Programs (`exec`)
 
 Rules for programs.
 
@@ -125,7 +131,7 @@ Rules for programs.
 
 [Testing rules](/docs/testing-rules/) shows how to check a command rule with `tego rules check --exec`.
 
-## env
+## Environment variables (`env`)
 
 The agent's environment. Tego applies `pass`, then `deny`, then `set`.
 
@@ -135,7 +141,7 @@ The agent's environment. Tego applies `pass`, then `deny`, then `set`.
 | `env.deny` | list of names | Removes these variables, even when passed. | None. |
 | `env.set` | map of name to value | Sets variables. `${TEGO_PROJECT_DIR}` expands here. Variables Tego sets for the session win. | None. |
 
-## limits
+## Limits (`limits`)
 
 Each limit ends or slows the session. A rules file can lower a [machine settings](/docs/machine-settings/) ceiling, never raise it. Limits work at every level. [Budgets](/docs/budgets/) covers `tokens` and `cost_usd`.
 
@@ -152,7 +158,7 @@ Each limit ends or slows the session. A rules file can lower a [machine settings
 | `limits.cpu` | number of cores, 0.01 or more | CPU cap. | Slowed |
 | `limits.cpu_weight` | 1-10000 | CPU share against other work. | Slowed |
 
-## ask
+## Questions for a person (`ask`)
 
 How actions held by `fs.ask`, `fs.ask_read`, `net.ask` and MCP `ask` rules wait. [Approvals](/docs/approvals/) explains the flow.
 
@@ -165,7 +171,7 @@ How actions held by `fs.ask`, `fs.ask_read`, `net.ask` and MCP `ask` rules wait.
 
 `ask:` cannot be combined with `--observe`, `setuid: true` or `io_uring: true`.
 
-## gate
+## Risk scores (`gate`)
 
 Scores that can only make an action stricter: allowed to asked, asked to refused.
 
@@ -176,7 +182,7 @@ Scores that can only make an action stricter: allowed to asked, asked to refused
 | `gate.thresholds.ask` | 2-100 | Scores from `allow` to this wait for a person; above it, refused. | `80` |
 | `gate.completion` | `copied`, `held` | How a held file open completes. | `copied` |
 
-## live
+## Changes during a session (`live`)
 
 How the rules may change during a session. Top-level file only. [Live changes](/docs/live-changes/) explains both modes.
 
@@ -189,7 +195,7 @@ How the rules may change during a session. Top-level file only. [Live changes](/
 
 The fence holds at most 64 entries in all.
 
-## reason
+## Telling the agent why (`reason`)
 
 | Field | Type | What it does | When missing |
 |---|---|---|---|
@@ -197,7 +203,7 @@ The fence holds at most 64 entries in all.
 
 [Refusals](/docs/refusals/) explains what the agent is told.
 
-## mcp
+## MCP tools (`mcp`)
 
 MCP (Model Context Protocol) servers the agent uses. [MCP tools](/docs/mcp-tools/) shows how to write tool rules.
 
@@ -214,7 +220,7 @@ A `tools:` key, even `tools: {}`, puts the server behind Tego's MCP relay. Tool 
 
 To set business rules for your MCP tools (`mcp[].business_rules`), email us at hello@attention-span.ai.
 
-## models
+## Model providers (`models`)
 
 Model endpoints. With an entry here, the agent's model traffic goes through Tego's forwarder, where it is counted.
 
@@ -228,7 +234,7 @@ Model endpoints. With an entry here, the agent's model traffic goes through Tego
 
 With no `models:` entry, no forwarder starts.
 
-## Not supported
+## Fields Tego refuses
 
 The schema accepts these fields, but Tego refuses a rules file that sets them to anything but empty:
 

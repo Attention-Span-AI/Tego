@@ -10,7 +10,7 @@ In this tutorial you run Claude Code under Tego on a small test project, watch T
 
 The test project is a small notes app. One of its dependencies is poisoned on purpose: when the tests import it, it reads the project's `.env` file and tries to send it to a server. The secret is fake and the server is `127.0.0.1:8801` on your own machine, where nothing listens.
 
-## 1. Set up with tego start
+## 1. Set up Tego (`tego start`)
 
 ```sh
 tego start

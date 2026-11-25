@@ -45,7 +45,7 @@ Keep the rules file, and every file it extends, in your Linux home, for example 
 
 Exit 125: the session did not start. The lines above it name the cause and a `fix:`.
 
-### `[tier-unavailable]`: no protection level works here
+### No protection level works (`[tier-unavailable]`)
 
 Run `tego machine check`. Its `missing for` and `fix:` lines name what the machine lacks ([Self-check](/docs/self-check/)). [Supported systems](/docs/supported-systems/) lists what each level needs.
 
@@ -57,23 +57,23 @@ Start a shell inside your user manager and run from there:
 systemd-run --user --scope bash
 ```
 
-For a service account with no user manager, see [Servers and CI runners](/docs/servers-and-ci-runners/#a-service-account).
+For a service account with no user manager, see [Servers and CI runners](/docs/servers-and-ci-runners/#run-as-a-service-account).
 
-### `[config-untrusted]`
+### Machine settings not trusted (`[config-untrusted]`)
 
-A machine config file can be changed by another user. Make it yours or root's, with no group or other write permission ([Machine settings](/docs/machine-settings/#trust)).
+A machine config file can be changed by another user. Make it yours or root's, with no group or other write permission ([Machine settings](/docs/machine-settings/#which-files-tego-trusts)).
 
 ### The rules file sits where the agent could rewrite it
 
 Tego refuses to run a rules file that lies inside a folder its `fs.write` allows. Move the rules file out of every writable folder, for example to `~/tego/`, and run it from there.
 
-### `[budget-unmetered]`
+### Budget cannot be counted (`[budget-unmetered]`)
 
 The rules file sets `tokens`, `cost_usd` or `repeats`, and nothing in this session can count them. [Budgets](/docs/budgets/) explains what each budget needs.
 
 ### `limits.cpu` refused on RHEL 9 or AlmaLinux 9
 
-systemd there does not give users the `cpu` controller. [Servers and CI runners](/docs/servers-and-ci-runners/#rhel-9-and-almalinux-9-cpu-limits) has the administrator's fix.
+systemd there does not give users the `cpu` controller. [Servers and CI runners](/docs/servers-and-ci-runners/#cpu-limits-on-rhel-9-and-almalinux-9) has the administrator's fix.
 
 ### A message about `XDG_RUNTIME_DIR`
 
@@ -81,9 +81,9 @@ Run `tego run` as yourself, without `sudo`, from a normal login, which sets `XDG
 
 ## Agents and tools
 
-### `tego machine check` names `ptrace_scope=2` or `ptrace_scope=3`
+### Machine check names `ptrace_scope` 2 or 3
 
-Basic needs `kernel.yama.ptrace_scope` at 0 or 1. [Servers and CI runners](/docs/servers-and-ci-runners/#ptrace-scope-setting) shows how to set it.
+Basic needs `kernel.yama.ptrace_scope` at 0 or 1. [Servers and CI runners](/docs/servers-and-ci-runners/#process-inspection-setting-ptrace-scope) shows how to set it.
 
 ### pytest fails with `INTERNALERROR`
 

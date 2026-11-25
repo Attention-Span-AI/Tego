@@ -49,7 +49,7 @@ Name the endpoint by its `host:port`, or the host alone for port 443, or by its 
 
 On a Locked session, the default, `tego route set` to any route but `direct` is refused with `[locked]`; `tego route clear` still works. Routes move during the session on an Adjustable session, at Plus or Max. [Live changes](/docs/live-changes/) explains the two modes.
 
-## On the dashboard
+## Switch on the dashboard
 
 Start the dashboard with `tego serve --preview` to see **Model routes** in the menu. It shows, for each session, where each endpoint sends now, who changed it and when, and the requests sent by each route. **Send here** opens a page that says where the prompts will go; nothing changes until you confirm. **Back to direct** applies at once.
 

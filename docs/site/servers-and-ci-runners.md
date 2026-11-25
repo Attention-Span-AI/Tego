@@ -8,7 +8,7 @@ order: 1
 
 `tego setup` checks a server for the three things that differ from a desktop: SSH logins, service accounts and kernel settings. It checks from the shell you are in and names the next command to type. On a desktop login Tego works right after install. On a server you reach it over SSH, agents can run as a service account that never logs in, and the kernel settings can be stricter.
 
-## Check the machine with `tego setup`
+## Check the machine (`tego setup`)
 
 Run `tego setup` as the user who will run the agents, without `sudo`:
 
@@ -47,7 +47,7 @@ In this output, "tier 1" is Basic and "contract" is the older name for a rules f
 
 Step 2 is the same check `tego machine check` runs. [Self-check](/docs/self-check/) explains that output.
 
-## Over SSH
+## Run over SSH
 
 Tego places every session in a cgroup, a kernel group of processes that Tego uses to apply limits and to stop the whole session at once. As an ordinary user, Tego can make cgroups only inside the part of the tree that systemd hands your user manager, the per-user systemd instance. An SSH login starts outside that part.
 
@@ -63,7 +63,7 @@ If that fails (no `systemd-run`, the manager refuses, or it takes longer than 10
 systemd-run --user --scope bash
 ```
 
-## Cgroup delegation
+## Let your user group processes (cgroup delegation)
 
 Every level needs cgroup v2 with a subtree that systemd delegates to your user, holding the controllers a session's limits use (`cpu`, `memory`, `pids`). `tego machine check` lists the controllers your user has and, when delegation is missing, prints a `fix:` line. The fix is a systemd drop-in, run once by an administrator:
 
@@ -75,7 +75,7 @@ sudo systemctl daemon-reload
 
 Log out and in again, then run `tego setup`.
 
-## RHEL 9 and AlmaLinux 9: CPU limits
+## CPU limits on RHEL 9 and AlmaLinux 9
 
 RHEL 9's systemd turns on `memory` and `pids` for users and for root, but not `cpu`. Basic runs there. A session whose rules file sets `limits.cpu` or `limits.cpu_weight` is refused at start with exit 125, and a `limits.cpu` ceiling in `/etc/tego/config.yaml` refuses every session. To allow CPU limits, an administrator runs this once, then reboots:
 
@@ -88,7 +88,9 @@ printf '[Slice]\nCPUWeight=100\n' | sudo tee /etc/systemd/system/system.slice.d/
 
 The first file offers `cpu` to each user's systemd. The second makes the user's systemd turn it on. The third keeps `cpu` on for sessions started as root.
 
-## A service account
+<span id="a-service-account"></span>
+
+## Run as a service account
 
 A service account is a user with a `nologin` shell that you reach with `sudo -u` or `su -s`. It has no user manager running unless you start one, because it never logs in. Tego starts no session for such a user, not even `tego watch`. Set it up in this order, typing each line in your own administrator shell. The example account is `svc` with uid 1002.
 
@@ -116,7 +118,7 @@ Without `sudo -u svc`, the line in step 4 opens a shell in your own user manager
 
 To run the agent as a systemd unit under that account, see [Services](/docs/services/).
 
-## Ptrace scope setting
+## Process inspection setting (`ptrace_scope`)
 
 Yama is a kernel security module. Its `kernel.yama.ptrace_scope` setting decides which processes may read another process's memory. Tego's supervisor reads the agent's arguments and addresses that way, as the agent's parent, so the value decides which protection levels work:
 
@@ -128,7 +130,7 @@ Yama is a kernel security module. Its `kernel.yama.ptrace_scope` setting decides
 
 Read the current value with `cat /proc/sys/kernel/yama/ptrace_scope`. To set it to 1, put `kernel.yama.ptrace_scope=1` in a file in `/etc/sysctl.d`, in place of the line that set the current value, and apply it with `sudo sysctl --system`. At 3, boot with `kernel.yama.ptrace_scope=1` instead.
 
-## CI runners
+## Hosted CI runners
 
 A hosted runner is a fresh machine for each job. [CI](/docs/ci/) shows how to check the runner's protection level as the job's first step and run the agent there.
 

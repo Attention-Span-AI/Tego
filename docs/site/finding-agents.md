@@ -63,7 +63,7 @@ sudo "$(command -v tego)" agents --follow
 
 It only observes: it signals, moves and changes no process. Listing an agent does not protect anything.
 
-## Record an agent with tego watch
+## Record an agent (`tego watch`)
 
 ```
 tego watch -- claude
@@ -80,7 +80,7 @@ tego watch -- claude
 
 Turn the recording into a first rules file with `tego rules learn`: see [Learning rules](/docs/learning-rules/).
 
-## Govern an agent that is already running
+## Put rules on a running agent
 
 `tego adopt` needs root, so run it through `sudo`:
 ```

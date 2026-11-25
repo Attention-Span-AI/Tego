@@ -57,7 +57,7 @@ A `deny_read` entry inside a folder in `fs.write`, such as `./keys/` under `./`,
 | Plus | Best effort |
 | Max | Refused. The kernel refuses the rename or link out of the entry. |
 
-`tego rules check` prints a `held-reads` warning when Tego will hold reads, and [`fs.reads`](/docs/rules-reference/#fs) sets when it does. A held read is slower than a direct one.
+`tego rules check` prints a `held-reads` warning when Tego will hold reads, and [`fs.reads`](/docs/rules-reference/#files-fs) sets when it does. A held read is slower than a direct one.
 
 To have a person decide on each read of a file instead of refusing it, use `fs.ask_read`: see [Approvals](/docs/approvals/).
 

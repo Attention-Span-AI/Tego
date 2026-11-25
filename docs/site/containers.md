@@ -10,7 +10,7 @@ Tego runs an agent inside a Docker container at Basic only. Plus and Max load ke
 
 ## What you need
 
-- A Linux host with cgroup v2 (below), a kernel that meets Basic's requirements ([Supported systems](/docs/supported-systems/)), and `kernel.yama.ptrace_scope` at 0 or 1 ([Servers and CI runners](/docs/servers-and-ci-runners/#ptrace-scope-setting)).
+- A Linux host with cgroup v2 (below), a kernel that meets Basic's requirements ([Supported systems](/docs/supported-systems/)), and `kernel.yama.ptrace_scope` at 0 or 1 ([Servers and CI runners](/docs/servers-and-ci-runners/#process-inspection-setting-ptrace-scope)).
 - Docker with BuildKit and the compose plugin.
 - A checkout of the Tego repository. The files are in [`examples/container/`](https://github.com/Attention-Span-AI/Tego/blob/main/examples/container/).
 
@@ -39,7 +39,7 @@ docker compose up agent
 
 A program installed in the image is not allowed by that alone. The rules file's `exec.allow` still decides what runs. [`examples/agents/`](https://github.com/Attention-Span-AI/Tego/blob/main/examples/agents/) has rules files for Claude Code, Codex and other agents.
 
-## The settings and why each is there
+## Why each container setting is there
 
 Tego places each session in its own cgroup, a kernel group of processes it uses to apply limits and stop the session. A container has no systemd user manager to hand Tego a cgroup subtree, so the image's entrypoint builds one, as root, and then drops every capability (a slice of root's power, such as `SYS_ADMIN`) before it starts Tego as the `tego` user.
 
@@ -55,7 +55,7 @@ Tego places each session in its own cgroup, a kernel group of processes it uses 
 
 To start another session in a running container, put the entrypoint in front: `docker compose exec agent tego-entrypoint tego run <rules file>`.
 
-## On Docker's defaults
+## Without these settings
 
 Without the capabilities and the AppArmor setting, the entrypoint cannot remount `/sys/fs/cgroup`, and `tego run` exits 125 before the agent starts with `[tier-unavailable]`. The `fix:` line in that message is for a host with systemd. Inside a container the fix is the settings above. `--privileged` also works, and gives the container far more than Tego needs.
 
@@ -91,7 +91,7 @@ docker run --rm --user 10001:10001 --cap-drop ALL --security-opt no-new-privileg
 
 It exits 0 when the record's hash chain matches `chain.log`. A session started without the `tego-state` volume has no `chain.log` outside its own container to check against. [Sessions and records](/docs/sessions-and-records/) explains the check.
 
-## The dashboard
+## Open the dashboard
 
 ```sh
 docker compose up -d control

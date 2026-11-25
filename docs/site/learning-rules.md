@@ -16,7 +16,7 @@ Run the agent under `tego watch`. No rule refuses anything; Tego only records:
 tego watch -- claude
 ```
 
-Use the agent the way you normally do, then exit. `tego session list` shows the session's name. [Finding agents](/docs/finding-agents/#record-an-agent-with-tego-watch) covers `tego watch` and its flags.
+Use the agent the way you normally do, then exit. `tego session list` shows the session's name. [Finding agents](/docs/finding-agents/#record-an-agent-tego-watch) covers `tego watch` and its flags.
 
 You can also learn from a session that ran under rules, and from one still running: the proposal then covers the session so far.
 

@@ -36,7 +36,7 @@ A rules file lives in one of two places, and `tego run` finds it by the agent's 
 
 To find the rules files on this machine, use [`tego rules list`](/docs/testing-rules/#list-the-rules-files-tego-knows).
 
-## The sections
+## What a rules file contains
 
 Each section controls one kind of action. [Rules file fields](/docs/rules-reference/) lists every field, its values and its default.
 
@@ -75,7 +75,7 @@ A section that is present but empty is strict:
 
 A section with nothing under it, such as `net:` followed only by commented-out lines, is an error. Write `net: {}` or remove the line.
 
-## Presets and extends
+## Build on presets (`extends`)
 
 A preset is a ready-made rules file that ships with Tego. Its name starts with `tego/`. Your rules file builds on presets with `extends`:
 

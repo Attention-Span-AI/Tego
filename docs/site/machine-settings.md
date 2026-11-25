@@ -28,7 +28,7 @@ A key is one of two kinds:
 
 To see the value in force and the file and line it came from, run `tego rules check <file>`. Its `machine` section lists each value.
 
-## Trust
+## Which files Tego trusts
 
 Tego refuses a layer that another user could change. Each file, and its folder, must be a regular file owned by root or by you, with no group or other write permission. Otherwise `tego run` exits 125 before the agent starts:
 
@@ -38,7 +38,7 @@ machine config untrusted: <path> <owner> <mode> [config-untrusted]
 
 `/etc/tego/config.yaml` must also be readable by the users who run Tego: mode 0644, owned by root, does that.
 
-## Settings
+## Settings you can change
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -57,7 +57,7 @@ machine config untrusted: <path> <owner> <mode> [config-untrusted]
 | `denied_resolved_addresses` | `[]` | Address ranges, such as `10.0.0.0/8`, that no host name in a rules file's `net.allow` may reach. |
 | `log.level` | `info` | `debug`, `info` or `warn`, for Tego's own log. |
 
-### Only in `/etc/tego/config.yaml`
+### Machine-wide only (`/etc/tego/config.yaml`)
 
 Tego ignores these keys in any other layer, with a warning.
 
@@ -69,7 +69,7 @@ Tego ignores these keys in any other layer, with a warning.
 | `bpf.plane` | `auto` | Which kernel hook mechanism Plus and Max use: `auto`, `lsm` (the kernel's security hooks) or `fmod_ret` (hooks that change a kernel function's return value). |
 | `record.ringbuf` | `2MiB` | The size of each Plus or Max session's event buffer. |
 
-## An example
+## Example settings file
 
 ```yaml
 version: 0

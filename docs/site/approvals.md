@@ -99,5 +99,5 @@ A held action waits the full `ask.timeout`, then it is refused and recorded as a
 
 - [Dashboard](/docs/dashboard/): answer questions on the Approvals page.
 - [Refusals](/docs/refusals/): what the agent sees when an answer is no.
-- [Rules file fields](/docs/rules-reference/#ask): every `ask` field.
+- [Rules file fields](/docs/rules-reference/#questions-for-a-person-ask): every `ask` field.
 - [Session control](/docs/session-control/): block, pause or stop a running session.

@@ -9,7 +9,7 @@ order: 2
 
 `tego run` exits with the agent's own exit code, unless Tego ended the session or never started it. Then it uses one of the codes below. Other commands use a short, separate set. The codes of the installer are on [Install](/docs/install/).
 
-## tego run
+## When an agent runs (`tego run`)
 
 | Code | Meaning |
 |---|---|
@@ -35,7 +35,7 @@ A refused program inside the session does not end it. The agent sees the refusal
 | 125 | Tego's own error: the command could not do its work. |
 | 211 | `tego machine check --require <level>`: this machine is below that level. `tego run` never uses 211. |
 
-## tego machine test
+## Machine test (`tego machine test`)
 
 | Code | Meaning |
 |---|---|

@@ -102,7 +102,7 @@ On the dashboard, start it with `tego serve --preview` to see **MCP tools** in t
 
 Each tool call is a line with the server, the tool, the decision and the rule that made it, such as `mcp[files].tools.deny[delete_file]`. Each held call adds the question and its answer, and each change during the session adds who changed which tool. `tego events <session>` prints them, and the session's Timeline on the dashboard shows them.
 
-## Limits
+## What MCP rules cannot do
 
 The relay holds an agent that uses its MCP client. An agent allowed to trace the relay's process can go around it: [Security and limits](/docs/security-and-limits/) lists what Tego does not stop.
 

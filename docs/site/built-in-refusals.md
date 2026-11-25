@@ -51,7 +51,7 @@ Inside a folder the agent may write, Tego refuses changes to files that would ru
 | Agent and editor settings | `.claude`, `.mcp.json`, `.cursor`, `.codex`, `.gemini`, `.vscode` at a write folder's root or a repository's root |
 | Shell startup files | `.bashrc`, `.bash_profile`, `.bash_login`, `.profile`, `.zshrc`, `.zshenv`, `.zprofile`, `.zlogin`, `.config/fish/config.fish` at a write folder's root, or your home folder's copies when they resolve inside a write folder |
 
-The rest of the git folder stays writable, so `git commit` works. Your own `fs.deny_write` adds to this set and cannot remove from it. How strictly each [protection level](/docs/tiers/) holds it, and `fs.assurance: kernel`, are on [Rules file fields](/docs/rules-reference/#fs).
+The rest of the git folder stays writable, so `git commit` works. Your own `fs.deny_write` adds to this set and cannot remove from it. How strictly each [protection level](/docs/tiers/) holds it, and `fs.assurance: kernel`, are on [Rules file fields](/docs/rules-reference/#files-fs).
 
 ## Tego's own files
 

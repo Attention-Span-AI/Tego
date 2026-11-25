@@ -11,7 +11,7 @@ Two commands check a machine. `tego machine check` reads the kernel and reports 
 
 Neither needs root or changes anything of yours.
 
-## `tego machine check`
+## What this machine supports (`tego machine check`)
 
 ```sh
 tego machine check
@@ -54,11 +54,11 @@ Run without `sudo`, it reports what your own sessions get, which is Basic at mos
 |---|---|
 | `--json` | Prints one JSON object instead of the text. |
 | `--require <level>` | Exits 211 unless this machine reaches `landlock`, `cgroup` or `bpflsm`. Use it as a gate in a script or a CI job. `cgroup` and `bpflsm` are reached only with root. |
-| `--no-scope` | Checks this shell without trying to open a user scope from it ([Servers and CI runners](/docs/servers-and-ci-runners/#over-ssh)). |
+| `--no-scope` | Checks this shell without trying to open a user scope from it ([Servers and CI runners](/docs/servers-and-ci-runners/#run-over-ssh)). |
 
 [Exit codes](/docs/exit-codes/#other-commands) lists its exit codes.
 
-## `tego machine test`
+## Watch Tego refuse (`tego machine test`)
 
 ```sh
 tego machine test
@@ -89,7 +89,7 @@ The REFUSAL column is the reason and rule from that record. "Contract" in that c
 | `--json` | Prints one JSON object (schema `tego.selftest/v1`). Its `verdict` is `pass`, `fail` or `inconclusive`. |
 | `--tier <level>` | Pins each session's level, as `tego run --tier` does: `auto`, `landlock`, `cgroup` or `bpflsm`. `cgroup` and `bpflsm` need root. |
 
-[Exit codes](/docs/exit-codes/#tego-machine-test) lists its exit codes.
+[Exit codes](/docs/exit-codes/#machine-test-tego-machine-test) lists its exit codes.
 
 The four actions are ones Tego refuses at every level. The test does not show what a level lets through. [Security and limits](/docs/security-and-limits/) covers that.
 
