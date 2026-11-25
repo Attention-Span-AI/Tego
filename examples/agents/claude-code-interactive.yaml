@@ -8,7 +8,7 @@
 # Run it from the project (the directory Claude Code works in), with the contract kept OUTSIDE it (a contract the agent
 # could rewrite is refused):
 #   install -d -m 700 .claude-state .claude-state/tmp
-#   tego compile ~/contracts/claude-code-interactive.yaml
+#   tego rules check ~/contracts/claude-code-interactive.yaml
 #   tego run ~/contracts/claude-code-interactive.yaml
 #
 # XDG_RUNTIME_DIR: "%R" asks Tego for this run's private writable harness runtime. Keep the invoking

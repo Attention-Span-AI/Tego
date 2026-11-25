@@ -23,7 +23,7 @@ exec:
   # interpreter is the one binary the Python half of the work needs. A contract that installs packages with
   # native extensions under one of its write entries (a .venv, a pip --target directory) also names that
   # directory here: at tiers cgroup and bpflsm the decision plane maps native code under a write entry only where
-  # exec.allow covers it (ADR 0027), and `tego compile` warns exec-map with the line to add.
+  # exec.allow covers it (ADR 0027), and `tego rules check` warns exec-map with the line to add.
   allow: ["python3"]
 env:
   pass: ["PATH", "HOME", "LANG", "LC_ALL", "TERM", "TZ"]

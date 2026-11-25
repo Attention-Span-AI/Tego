@@ -35,7 +35,7 @@
 #
 # TEGO_LSM_LIST: auto (default) writes the list when it can and otherwise says why and carries on; yes fails the
 # container instead; no leaves /run/tego-lsm/lsm-list alone.
-# TEGO_DELEGATE: auto (default) builds the subtree when it can and otherwise says why and carries on, so `tego doctor`
+# TEGO_DELEGATE: auto (default) builds the subtree when it can and otherwise says why and carries on, so `tego machine check`
 # can report the machine; yes fails the container instead; no never touches the cgroup tree.
 # TEGO_LAUNCHER: user (default) as above; root, experimental, keeps tego root for the root tiers (cgroup, bpflsm) in a
 # privileged container: the namespace root is emptied into init/ and given its controllers, tego is started as root
@@ -77,7 +77,7 @@ make_writable() {
 }
 
 # enable_controllers DIR: cpu, memory and pids in DIR's cgroup.subtree_control, each on its own so one the parent
-# does not offer is named and the others still go in. tego doctor then reports what is missing.
+# does not offer is named and the others still go in. tego machine check then reports what is missing.
 enable_controllers() {
 	local dir=$1 c ok=0
 	for c in "${controllers[@]}"; do

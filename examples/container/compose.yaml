@@ -5,7 +5,7 @@
 #
 #   export TEGO_UID=$(id -u) TEGO_GID=$(id -g)
 #   docker compose build                             # builds the one image (the agent service does; the dashboard uses it)
-#   docker compose run --rm agent tego doctor        # what this host gives the container
+#   docker compose run --rm agent tego machine check # what this host gives the container
 #   docker compose up agent                          # one run of the example agent (hello.yaml)
 #   docker compose up -d control && docker compose logs control   # the dashboard's link, signed in
 #
@@ -65,7 +65,7 @@ services:
       - apparmor=unconfined
       - no-new-privileges:true
     environment:
-      # auto: a container that could not get its cgroup subtree says why and starts anyway, so `tego doctor` can
+      # auto: a container that could not get its cgroup subtree says why and starts anyway, so `tego machine check` can
       # report the host; yes fails it at start instead.
       TEGO_DELEGATE: ${TEGO_DELEGATE:-auto}
     volumes:

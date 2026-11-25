@@ -1,7 +1,7 @@
-# A small self-contained contract for `tego compile --test`. Its fs entries
+# A small self-contained contract for `tego rules check --test`. Its fs entries
 # are relative, so compile it from this directory:
 #
-#   cd examples/tests && tego compile agent.yaml --test verdicts.yaml
+#   cd examples/tests && tego rules check agent.yaml --test verdicts.yaml
 #
 # `out/keys/` is a deny_read inside a write directory on purpose: the root
 # tiers enforce it and Landlock cannot (spec/policy/SEMANTICS.md §2), which is
