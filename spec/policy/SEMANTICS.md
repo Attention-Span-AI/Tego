@@ -119,7 +119,7 @@ and is no longer handled without one, save in the unix-only state above. One add
 `AF_UNSPEC` address in a send, whose interpretation depends on the socket's domain: IPv4 UDP or raw sockets can use
 the `sockaddr_in` behind the family word, while IPv6 UDP can use its existing peer. That tier cannot place the
 destination or establish the result of a continued attempt. A `NULL` address spells a connected send, or `AF_INET`
-spells an IPv4 destination (`docs/p0/supervisor.md` R4, R7); it refuses a spelling, not a destination. An exec is still a read of the program (§4), so an undeclared binary under a
+spells an IPv4 destination (supervisor R4, R7); it refuses a spelling, not a destination. An exec is still a read of the program (§4), so an undeclared binary under a
 `deny_read` the tier enforces is refused as `read-denied`. Tier 2's fanotify exec check reads the same absent-exec
 policy through `decide.ListenerExec`: an undeclared binary is not refused merely because no `exec:` section
 was declared (`internal/runtime/enforce/cgroup`, `decideExec`).

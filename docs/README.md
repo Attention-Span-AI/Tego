@@ -1,63 +1,69 @@
-# Docs map
+# Contributor docs
 
-## Where to look
+Using Tego? Read the user docs at https://attention-span.ai/docs/. Their source is [site/](site/), and the website copies those pages as they are.
 
-| I want to know… | Read |
+This folder is for people who change Tego. Start with [ARCHITECTURE.md](ARCHITECTURE.md), then [../CONTRIBUTING.md](../CONTRIBUTING.md).
+
+## Architecture
+
+| Doc | What it holds |
 |---|---|
-| **How to install Tego** | [INSTALL.md](INSTALL.md): requirements, building from source, `sudo`, uninstall |
-| **How to run my first agent** | [QUICKSTART.md](QUICKSTART.md): eight commands from `tego version` to the dashboard, and how to read a receipt |
-| **Which tier my machine gets** | [TIERS.md](TIERS.md): what each of the three tiers needs and gives |
-| **What Tego cannot do** | [GAPS.md](GAPS.md): the known limits, each with what to do about it |
-| **How to run agents under it, command by command** | [user/README.md](user/README.md): the user guide |
-| **How the dashboard works** | [DASHBOARD.md](DASHBOARD.md) |
-| **How the engine works** | [ARCHITECTURE.md](ARCHITECTURE.md) first, then the table below |
-| **How to change it** | [../CONTRIBUTING.md](../CONTRIBUTING.md) and [REPO-LAYOUT.md](REPO-LAYOUT.md) |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | The engine's shape: the protection levels (tiers), how a run works, the trusted computing base |
+| [REPO-LAYOUT.md](REPO-LAYOUT.md) | Where code lives and which packages may import which |
+| [GAPS.md](GAPS.md) | The engine's known limits, each with its status |
+| [FEATURES.md](FEATURES.md) | The feature catalog with each feature's build status. A test reads it |
 
-## Engine docs
+## Specs
 
-These change in the same commits as the code.
-
-| Doc | What it is |
+| Doc | What it holds |
 |---|---|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | The engine's shape: tiers, the run, the trusted computing base |
-| [../spec/](../spec/README.md) | Versioned, language-neutral standards: the contract (`agent.yaml`), policy semantics, the record format, reason codes, capabilities per tier |
-| [adr/](adr/README.md) | Why each decision was made. Kept even when superseded; the index says which apply |
-| [OPERATIONS.md](OPERATIONS.md) | Running the engine: the privileged path, unattended runs, Claude Code under a boundary, crash and cleanup, threat model |
-| [REPO-LAYOUT.md](REPO-LAYOUT.md) | Where code lives and the import rules |
+| [../spec/](../spec/README.md) | Versioned, language-neutral standards: the rules file schema (`agent.yaml`), policy semantics, the record format, reason codes, the CI receipt, capabilities per tier |
+| [spec/exec-command-rows.md](spec/exec-command-rows.md) | The command-rule rows for `exec` entries. A design table, not a versioned standard |
+| [spec/builtin-deny-read.md](spec/builtin-deny-read.md) | The built-in list of files no run may read |
+
+## Decisions
+
+[adr/](adr/README.md) holds one architecture decision record (ADR) per decision, with the reasons and the options turned down. An ADR stays when a later one replaces it; the index says which apply. ADRs 0054 and 0055 cover watching and adopting an agent Tego did not start.
+
+## Development
+
+| Doc | What it holds |
+|---|---|
+| [development/operations.md](development/operations.md) | Engine notes: start-up probes, the control binary, the privileged path, adopt, host sockets, the kernel decision plane, exec command rules, live blocks, precommit modes, Tego's own log |
+| [development/dashboard.md](development/dashboard.md) | How the dashboard is built: routes, sign-in, the read model and its limits, each page's behavior |
+| [development/dashboard-assets.md](development/dashboard-assets.md) | The dashboard's static assets |
+| [development/baseline.md](development/baseline.md) | Status of the machine baseline (`baseline:` in the machine config) |
+
+## Testing
+
+| Doc | What it holds |
+|---|---|
+| [testing/](testing/) | Guest test scripts and their notes, such as [contracts-helper-cost.md](testing/contracts-helper-cost.md) and [prune-budget-guest.md](testing/prune-budget-guest.md) |
+| [BENCHMARKS.md](BENCHMARKS.md) | Overhead numbers from an early build (measure again before quoting) and the test suites' time budgets |
+
+## Versions and changes
+
+| Doc | What it holds |
+|---|---|
 | [VERSIONING.md](VERSIONING.md) | What is versioned and how, and how a release is made |
-| [GAPS.md](GAPS.md) | Known limits of the engine |
-| [CHANGELOG.md](CHANGELOG.md) | What changed, grouped by what a user gets; release tooling reads it |
-| poc/agent-watcher.md | Design of watching and adopting any agent (ADRs 0054, 0055) |
-| [spec/exec-command-rows.md](spec/exec-command-rows.md) | Command-rule rows; a design table, not a versioned standard, and `tego` prints this path to users |
-
-## Older documents
-
-Kept because code and tests cite them. Each says what is out of date. Skip them unless a code comment sends you there.
-
-| Doc | What it is |
-|---|---|
-| [FEATURES.md](FEATURES.md) | The engine's feature catalog as first written; a test reads it |
-| [BENCHMARKS.md](BENCHMARKS.md) | Overhead numbers from an early build (re-measure before quoting) and the test suites' timing budgets |
+| [CHANGELOG.md](CHANGELOG.md) | What changed in each release, grouped by what a user gets. Release tooling reads it |
 
 ## When two docs disagree
 
 - **Formats and wire contracts:** `../spec/` wins.
-- **Engine behaviour:** the code wins over ARCHITECTURE; it is edited in the same commits.
-- **Why:** the ADR, read with its amendments.
+- **Engine behavior:** the code wins over ARCHITECTURE.md, which changes in the same commits.
+- **Why a decision was made:** the ADR, read with its amendments.
 
-## Glossary
+## Words
 
-| Term | Meaning |
+The user docs use plain names; engine docs and code use the older technical ones.
+
+| User docs | Engine docs and code |
 |---|---|
-| **Tego** | The engine and its command, `tego` |
-| **tego-control** | The second binary. `tego serve` hands off to it to start the dashboard |
-| **contract / agent.yaml** | The rule file for one agent: what it may read, write, run and connect to, and its limits |
-| **run** | One governed session of an agent |
-| **refused** | An action Tego stopped. The run's record names the rule, except for a read refused at tier 1 under `record: summary`, which leaves no line |
-| **held** | An action paused while a person decides, with a timeout. Also called an ask |
-| **receipt** | The summary of a run's record: time, files, connections, sensitive files read, refusals, asks and tokens (`tego session show`). It shows only what the record holds |
-| **ledger / record** | The hash-chained file of what a run did, as far as its tier and `record:` mode can see ([TIERS.md](TIERS.md)). The only store Tego keeps |
-| **drift** | What the contract allowed against what the run used (`tego drift`) |
-| **tier 1 / 2 / 3** | Enforcement levels. Tier 1 (`landlock`) needs no root; tier 2 (`cgroup`) and tier 3 (`bpflsm`) need root. See [TIERS.md](TIERS.md) |
-| **PRD** | The original requirements document, not published. Some specs and ADRs cite its section numbers |
-| **P0** | The first build phase of the engine |
+| rules file | contract, `agent.yaml` |
+| session | run |
+| record | ledger |
+| Basic, Plus, Max | tier `landlock`, `cgroup`, `bpflsm` (tier 1, 2, 3) |
+| refused | refused, denied |
+
+A receipt is the summary of one run's record (`tego session show`), and the signed report of a CI run. PRD is the original requirements document, which is not published; some specs and ADRs cite its section numbers. P0 is the engine's first build phase.
