@@ -186,7 +186,7 @@ exit 0
 	if err := os.WriteFile(probeCfg, []byte("version: 0\nledger_root: "+filepath.Join(base, "doctor-ledger")+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	doctor := exec.Command(bin, "doctor", "--require", "landlock")
+	doctor := exec.Command(bin, "machine", "check", "--require", "landlock")
 	doctor.Env = append(append([]string{}, w.envList...), "TEGO_CONFIG="+probeCfg)
 	testutil.RequireTier(t, doctor, "landlock")
 	t.Cleanup(func() { _, _ = w.demoEnv(nil, "reset", "--stop") })
@@ -363,12 +363,12 @@ func TestSupplyChainContractFills(t *testing.T) {
 	}
 
 	// the compiled table
-	cmd := exec.Command(w.bin, "compile", "--offline", "--json", w.filled())
+	cmd := exec.Command(w.bin, "rules", "check", "--offline", "--json", w.filled())
 	cmd.Dir = filepath.Join(with, "proj")
 	cmd.Env = append(w.envList, "TEGO_CONFIG="+w.cfg)
 	b, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("tego compile: %v", err)
+		t.Fatalf("tego rules check: %v", err)
 	}
 	var tbl struct {
 		FS []struct {
@@ -947,16 +947,16 @@ func TestSetupRunsTheSelfCheck(t *testing.T) {
 	var args []string
 	for _, line := range strings.Split(block, "\n") {
 		cmd, _, _ := strings.Cut(line, "#")
-		if f := strings.Fields(cmd); len(f) > 1 && f[0] == "bin/tego" && f[1] == "test" {
+		if f := strings.Fields(cmd); len(f) > 2 && f[0] == "bin/tego" && f[1] == "machine" && f[2] == "test" {
 			args = f[1:]
 		}
 	}
 	if args == nil {
-		t.Fatalf("RUNBOOK.md's setup block runs no bin/tego test:\n%s", block)
+		t.Fatalf("RUNBOOK.md's setup block runs no bin/tego machine test:\n%s", block)
 	}
 	quote := regexp.MustCompile("`(Tego self-check: [^`]+)`").FindStringSubmatch(setup)
 	if quote == nil {
-		t.Fatal("RUNBOOK.md's setup does not quote tego test's first line (`Tego self-check: ...`)")
+		t.Fatal("RUNBOOK.md's setup does not quote tego machine test's first line (`Tego self-check: ...`)")
 	}
 	bin, _ := binaries(t)
 	base := t.TempDir()
@@ -974,7 +974,7 @@ func TestSetupRunsTheSelfCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := testutil.TegoEnv(t, base, "HOME="+home, "TMPDIR="+tmp, "TEGO_CONFIG="+cfg)
-	doctor := exec.Command(bin, "doctor", "--require", "landlock")
+	doctor := exec.Command(bin, "machine", "check", "--require", "landlock")
 	doctor.Env = env
 	testutil.RequireTier(t, doctor, "landlock")
 

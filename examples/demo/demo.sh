@@ -436,7 +436,7 @@ cmd_claude() {
     echo "or export ANTHROPIC_API_KEY=<your key>. Without either, Claude Code shows its login screen and cannot log in." >&2
   fi
   say "Act 5a: Claude Code under Tego (your login from CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY)"
-  show "cd '$STAGE/claude-code' && '$TEGO' compile '$STAGE/claude-code.yaml' 2>&1 | grep -E '^(warning|error)' || true"
+  show "cd '$STAGE/claude-code' && '$TEGO' rules check '$STAGE/claude-code.yaml' 2>&1 | grep -E '^(warning|error)' || true"
   if [ "$#" -gt 0 ]; then
     show "cd '$STAGE/claude-code' && '$TEGO' run '$STAGE/claude-code.yaml' -- claude$(qargs "$@")"
   else
@@ -470,7 +470,7 @@ apps = false
 shell_snapshot = false
 TOML
   say "Act 5b: Codex under Tego (sign in with 'Provide your own API key' on its login screen)"
-  show "cd '$STAGE/codex' && '$TEGO' compile '$STAGE/codex.yaml' 2>&1 | grep -E '^(warning|error)' || true"
+  show "cd '$STAGE/codex' && '$TEGO' rules check '$STAGE/codex.yaml' 2>&1 | grep -E '^(warning|error)' || true"
   if [ "$#" -gt 0 ]; then
     show "cd '$STAGE/codex' && '$TEGO' run '$STAGE/codex.yaml' -- codex --no-daemon$(qargs "$@")"
   else
@@ -481,7 +481,7 @@ TOML
 # always-on runs a small agent as a systemd --user service, restarted if it dies. Every pass it does a
 # little work and tries a secret: the refusals pile up in the dashboard. The unit ends a run as
 # examples/systemd/tego-agent@.service does: a crash or the hour's wall limit restarts it, a Stop from the
-# dashboard or `tego stop` (143) leaves it stopped, and a refused start (125) is not retried.
+# dashboard or `tego session stop` (143) leaves it stopped, and a refused start (125) is not retried.
 cmd_always_on() {
   need_tego
   unit=$UNIT

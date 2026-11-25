@@ -302,7 +302,7 @@ cmd_reason_hook() {
 cmd_receipt() {
   need_tego
   say "The receipt: time taken, files written, each refusal with its rule, refusals over time, stall minutes, tests, asks"
-  show "'$TEGO' receipt --last 2>&1 | grep -v 'no price table'"
+  show "'$TEGO' session show --last 2>&1 | grep -v 'no price table'"
   echo "In the dashboard: open the run (Overview, then the run's id) and its Receipt tab."
 }
 
@@ -316,12 +316,12 @@ cmd_presets() {
   SECRETS=$PROJECT
   say "Rule setup from presets: no-secrets, no-prod, repo-only-writes, then adjust with flags"
   echo "(the project's own .env holds the fake secrets in this scene; the sink, 127.0.0.1:$PORT, is not an allowed host)"
-  show "'$TEGO' init --preset no-secrets,no-prod,repo-only-writes --write ./src --write ./out --command 'sh rogue.sh' --name demo-preset --force '$PROJECT'"
+  show "'$TEGO' rules create --preset no-secrets,no-prod,repo-only-writes --write ./src --write ./out --command 'sh rogue.sh' --name demo-preset --force '$PROJECT'"
   # no-secrets passes only its allow-list of variables; the stand-in agent reads where the fake world is from four
   # more, so the scene adds them where the generated file says to (an edit the presenter would make by hand).
   say "Adjust: the stand-in agent needs four variables of its own (no-secrets passes only an allow-list)"
   show "sed -i 's|^  # pass:\$|  pass: [SECRETS, SINK, HOMEISH, PROJECT]|' '$PROJECT/agent.yaml' && grep -A3 '^env:' '$PROJECT/agent.yaml' | grep -v '^ *#'"
-  show "cd '$PROJECT' && '$TEGO' compile agent.yaml 2>&1 | grep -E '^(tier|record|fs|exec|net) ' | cut -c1-160"
+  show "cd '$PROJECT' && '$TEGO' rules check agent.yaml 2>&1 | grep -E '^(tier|record|fs|exec|net) ' | cut -c1-160"
   say "The rogue agent from Act 2, now under the preset rules"
   show "cd '$PROJECT' && '$TEGO' run agent.yaml </dev/null 2>&1 | grep -v -E '^(warning|note|  fix:)|no price table'" || true
   sleep 0.3
@@ -333,7 +333,7 @@ cmd_presets() {
 cmd_selftest() {
   need_tego
   say "The escape self-test: each trick first without Tego (did it get through?), then under Tego (refused, and by which rule)"
-  show "'$TEGO' test" || true
+  show "'$TEGO' machine test" || true
 }
 
 cmd_identity() {
@@ -348,8 +348,8 @@ cmd_identity() {
 cmd_doctor() {
   need_tego
   say "Which tiers this machine has. Tier 1 (landlock) needs nothing; tiers 2 and 3 need root, tier 3 also the BPF LSM"
-  show "'$TEGO' doctor 2>&1 | grep -E '^(ok|off|FAIL|skip) +(kernel|landlock|seccomp|cgroupv2|lsm|fanotify)' | fold -s -w 150 || true"
-  echo "(a 'skip ... requires root' line is honest: run the same doctor command as root using this binary's absolute path to test the root tiers; this kit uses tier landlock)"
+  show "'$TEGO' machine check 2>&1 | grep -E '^(ok|off|FAIL|skip) +(kernel|landlock|seccomp|cgroupv2|lsm|fanotify)' | fold -s -w 150 || true"
+  echo "(a 'skip ... requires root' line is honest: run the same machine check as root using this binary's absolute path to test the root tiers; this kit uses tier landlock)"
 }
 
 cmd_features() {

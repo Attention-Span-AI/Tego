@@ -6,9 +6,9 @@
 
 cmd_tiers() {
   need_tego
-  say "Tiers: what this machine can enforce (tego doctor, short)"
+  say "Tiers: what this machine can enforce (tego machine check, short)"
   # whole lines, folded at a space: a cut in the middle of a word hid the lsm fix
-  show "'$TEGO' doctor 2>&1 | grep -E '^(ok|FAIL|skip) +(landlock|seccomp|cgroupv2|lsm|fanotify)|^tier:|^missing for' | fold -s -w 150 || true"
+  show "'$TEGO' machine check 2>&1 | grep -E '^(ok|FAIL|skip) +(landlock|seccomp|cgroupv2|lsm|fanotify)|^tier:|^missing for' | fold -s -w 150 || true"
 
   # Each run goes to the screen, without tego's notes, and to stage/run.out. Whether a tier ran is its command's own
   # exit status (piped), not grep's: a sudo or a tego that refused the run is said to be one, never followed by an
@@ -56,7 +56,7 @@ cmd_tiers() {
       fi ;;
     *)
       echo "BPF LSM is not active on this machine's kernel, so tier 3 is not run here. One-time steps to enable it (NOT run by this demo):"
-      echo "  1. sudoedit /etc/default/grub and add to  GRUB_CMDLINE_LINUX_DEFAULT  (the variable tego doctor names):  lsm=$lsm,bpf"
+      echo "  1. sudoedit /etc/default/grub and add to  GRUB_CMDLINE_LINUX_DEFAULT  (the variable tego machine check names):  lsm=$lsm,bpf"
       echo "  2. sudo update-grub"
       echo "  3. reboot"
       echo "  4. cat /sys/kernel/security/lsm     # must now end in ,bpf; then: ./demo.sh tiers" ;;

@@ -96,7 +96,7 @@ func newKit(t *testing.T) *kit {
 		"LANG=C.UTF-8", "TERM=dumb",
 	)
 	k := &kit{t: t, base: base, bin: bin, stage: stage, ledger: ledger, env: env}
-	doctor := exec.Command(bin, "doctor", "--require", "landlock")
+	doctor := exec.Command(bin, "machine", "check", "--require", "landlock")
 	doctor.Env = env
 	testutil.RequireTier(t, doctor, "landlock")
 	t.Cleanup(func() { _, _ = k.demo("reset") })
@@ -409,15 +409,15 @@ func TestContractsCompile(t *testing.T) {
 			}
 			// the tool's PATH for the command lookup includes the real claude / codex, or the stand-in
 			env := append(append([]string{}, k.env...), "PATH="+path)
-			cmd := exec.Command(k.bin, "compile", cpath)
+			cmd := exec.Command(k.bin, "rules", "check", cpath)
 			cmd.Dir, cmd.Env = cwd, env
 			out, err := cmd.CombinedOutput()
 			if err != nil {
-				t.Fatalf("tego compile %s: %v\n%s", tc.file, err, out)
+				t.Fatalf("tego rules check %s: %v\n%s", tc.file, err, out)
 			}
 			for _, ln := range strings.Split(string(out), "\n") {
 				if strings.HasPrefix(ln, "error") {
-					t.Errorf("tego compile %s: %s", tc.file, ln)
+					t.Errorf("tego rules check %s: %s", tc.file, ln)
 				}
 			}
 		})
