@@ -411,7 +411,7 @@ carries the action line's `mechanism` and `decision_plane` (a plane's refusal's 
 ledgers that predate it. Fixture: `fixtures/reason-reads.jsonl`.
 
 At `record_minor` 24 (`MinorLiveControl`; 2026-10-27, beside revision 21's live blocks), a person can
-pause and resume a running run (`tego pause`, `tego resume`, the dashboard's Pause and Resume), and a live block may
+pause and resume a running run (`tego session pause`, `tego session resume`, the dashboard's Pause and Resume), and a live block may
 also be of kind `read` or `write`.
 - A pause and a resume are changes in the run's overlay, numbered in one sequence with its live blocks' changes. The
   launcher reads them in serial order and applies each to the run's cgroup in turn (a pause freezes every process of
@@ -781,7 +781,7 @@ are the gate's decision on the file delivered (its `path`), never the requested 
 alternate that fails its checks when it is delivered leaves the requested path's `refused` line, `ask-unavailable`.
 Every reader takes it so: `tego events` writes such an answer as `alternate <path> (not the file asked for) by
 <who>`, `drift` counts the `fs` line in its rule's `alternate` count, never its `allow`, `measure` counts the answer
-lines as `alternates` (neither refusals nor approvals), and `learn` proposes nothing from such an open. At
+lines as `alternates` (neither refusals nor approvals), and `rules learn` proposes nothing from such an open. At
 `record_minor` 9 every alternate answer carries all three fields; below it, a ledger an early build wrote may
 carry `alternate` alone (no revision was taken then, an omission ADR 0057 D5 corrects), and one older still has no
 held read and no alternate. An absent `alternate` means "no alternate" in every ledger.

@@ -3,12 +3,12 @@
 Layers, read in order: built-in defaults; optional `/etc/tego/config.yaml`; optional `~/.tego/config.yaml` of the
 invoking user; additive `$TEGO_CONFIG` (a selected missing file is an error); then the contract. Two ordinary kinds of key:
 - **ceilings** (`tier`, `capture`, `limits.*`): every layer, the contract included, may lower the value it inherited,
-  never raise it. Built-in ceilings are unbounded. Raising is not an error: the inherited value stands and `compile`
+  never raise it. Built-in ceilings are unbounded. Raising is not an error: the inherited value stands and `rules check`
   prints `ceiling <key>=<value> kept from <file>:<line>`.
 - **settings**: the last layer wins, except `denied_resolved_addresses`, a deny list every layer
   adds to and none removes from, and `landlock.audit`, a floor: once a layer sets `new-exec` a later `off` is not
-  applied, and `compile` prints `floor landlock.audit=new-exec kept from <file>:<line>`.
-`tego compile` prints every effective value with the file and line it came from: the `machine` section under its
+  applied, and `rules check` prints `floor landlock.audit=new-exec kept from <file>:<line>`.
+`tego rules check` prints every effective value with the file and line it came from: the `machine` section under its
 rule table, and `machine` in `--json` (*amended 2026-09-24:* the function existed and nothing called it, so no value
 was printed; an unset `tier` or `capture` reads `auto`).
 
@@ -78,7 +78,7 @@ bpf:
                                   # every tier-2 build on the host may charge together; a run whose record ring
                                   # would pass it is refused (exit 125), one whose capture ring would is run
                                   # without capture (refused when it has a tokens, cost_usd or repeats budget).
-                                  # `tego doctor` shows its use (ADR 0026; added 2026-09-24)
+                                  # `tego machine check` shows its use (ADR 0026; added 2026-09-24)
   plane: auto                     # auto | lsm | fmod_ret: which kernel decision plane tier 2 and tier 3 run.
                                   # Honoured from /etc/tego/config.yaml only (set in any other layer it is
                                   # ignored with a warning); any other value is an error at its line. auto prefers
@@ -135,7 +135,7 @@ prices: ~/.tego/prices.yaml      # price table: version, models.<model>.{input,o
                                   # lacks input_per_mtok or output_per_mtok): no response could be priced (R32)
 profiles: ~/.tego/profiles
 registry: ~/.config/tego         # the user registry (*added 2026-10-20*, agent-contract.md R26): agents/<name>.yaml
-                                  # is the contract `tego run <name>` and `tego compile <name>` resolve to when
+                                  # is the contract `tego run <name>` and `tego rules check <name>` resolve to when
                                   # the working directory's project registry does not hold the name; "" turns it
                                   # off. An entry, agents/ and this directory must be owned by the invoking user or
                                   # root and not group- or other-writable (R20's rule), or the name is refused; so
@@ -276,7 +276,7 @@ or unreadable system layer refuses every launch until corrected; observation
 loads retain unknown authority and cannot provide a personal-mode fallback.
 User and explicit `$TEGO_CONFIG` layers cannot set or unset this floor.
 The floor binds only runs launched after it is set: it is fixed per run at launch, a run already live keeps
-same-user approvals until it ends, and every live run is to be stopped before relying on the floor (`tego doctor` lists
+same-user approvals until it ends, and every live run is to be stopped before relying on the floor (`tego machine check` lists
 the live runs of the selected ledger root that started without it).
 The existing system placement trust rules apply. An enabled run pins the source
 identity and exact-byte SHA-256; missing, unreadable, edited or replaced input
@@ -287,7 +287,7 @@ receive this cause before the root-only remedy. Approve's strict configuration
 load first refuses an unreadable system file without contacting the broker.
 Repair its mode on the original inode with the original bytes for a mode-only
 mistake. Deny's warning load and dashboard can reach the distinct broker refusal. Saving old
-text on a replacement inode does not repair the old run. Stop it as root with `sudo tego stop <run>`,
+text on a replacement inode does not repair the old run. Stop it as root with `sudo tego session stop <run>`,
 then relaunch using the same ledger configuration. The [user guide](../../../docs/site/approvals.md)
 gives commands for an explicit `TEGO_CONFIG` and the edit outcome table.
 Only a root launcher in the initial user namespace with a verified non-root

@@ -42,16 +42,16 @@ under "The feature scenes" below.
 | Reason, status file | `./demo.sh with` (step 7), `./demo.sh why` | the agent reads `$TEGO_REASON`: "Tego refused open ... (rule ...)" | run page, Refusals tab |
 | Reason, Claude Code hook | `./demo.sh reason-hook` | a stand-in Claude Code (no login) under Tego; its next model request carries "Tego refused open ..." | run page of `demo-claude-standin` |
 | Reason, real Claude Code | `./demo.sh claude` | ask it to read `~/.ssh/id_rsa`; it says why it was refused | the run, live |
-| Receipt | `./demo.sh receipt` | `tego receipt --last`: time, files written, refusals with rules, asks | run page, Receipt tab |
-| Presets | `./demo.sh presets` | `tego init --preset no-secrets,no-prod,repo-only-writes ...`, `tego compile`, the rogue agent under it | Rules (`/rules`) |
-| Escape self-test | `./demo.sh selftest` | `tego test`: four tricks, each succeeds without Tego and is refused under it, with its rule | none |
+| Receipt | `./demo.sh receipt` | `tego session show --last`: time, files written, refusals with rules, asks | run page, Receipt tab |
+| Presets | `./demo.sh presets` | `tego rules create --preset no-secrets,no-prod,repo-only-writes ...`, `tego rules check`, the rogue agent under it | Rules (`/rules`) |
+| Escape self-test | `./demo.sh selftest` | `tego machine test`: four tricks, each succeeds without Tego and is refused under it, with its rule | none |
 | Approvals | `./demo.sh ask`, then `./demo.sh approve` (or `deny`) in a 2nd terminal | the agent pauses on a write to `held/` until you answer | Approvals (`/approvals`): Approve / Deny |
 | Limits | `./demo.sh limits` | a fork bomb stops at 32 processes; a memory hog is killed at 128 MiB | run page: exit `pids`, `oom` |
 | Protect .git/hooks in a writable repo | `./demo.sh deny-write` | `src/` writable, `.git/hooks/pre-commit` refused | run page: `fs.deny_write[./.git/hooks/]` |
 | Tamper-evident ledger | `./demo.sh why` | `--verify` passes; one changed word in a copy fails | the run page's chain badge: "Chain verified" |
 | 24/7 agent | `./demo.sh always-on` | a systemd --user service; a refusal every 5 s, run after run | Overview: the live run, refusals climbing |
 | Run identity | `./demo.sh identity` | who started the newest scene's run, on which host, the contract hash; `./demo.sh ask` shows who answered (`approved by uid:...`) | top bar: the host; the timeline's answer line names the uid |
-| What this machine can enforce | `./demo.sh doctor` | `tego doctor`: tier 1 ok; the root tiers say "requires root"; tier 3 needs the BPF LSM | none |
+| What this machine can enforce | `./demo.sh doctor` | `tego machine check`: tier 1 ok; the root tiers say "requires root"; tier 3 needs the BPF LSM | none |
 | Real agents | `./demo.sh claude`, `./demo.sh codex` | the real tools, interactive, under a contract | the runs, live |
 
 ## Before you start
@@ -127,7 +127,7 @@ mkdir -p ~/chatgpt-proj/work/tmp ~/chatgpt-proj/held && cd ~/chatgpt-proj && teg
 Say: "The real tools, in a normal terminal. Tego enforces the contract: they can only do what the contract lines allow."
 The contract lines that make it work: `net.allow: tcp://api.anthropic.com:443` with `capture: off` (Claude Code exits on its first connectivity check if its model traffic is forced through the forwarder), `fs.write` has `/dev/tty` (the full-screen interface), `CLAUDE_CONFIG_DIR` inside the project (so `~/.claude` is never written), `exec.allow: [bash, git]`. For Codex: `capture: forwarder` with `models: openai` (every model call is recorded), Codex's own sandbox switched off in the `config.toml` the kit writes because Tego enforces the contract, `codex --no-daemon`, `fs.write: ./work/` only and `fs.ask: ./held/` (a write there pauses Codex until you run `tego approve` in a second terminal).
 No wall limit on `claude-code.yaml` and `codex.yaml`: they set `limits.stall_after: 1h`, not `wall`. `codex-chatgpt.yaml` is the one exception: it records as a short demo does (`record: summary` with `reads: held`, so the dashboard shows what matters) and keeps `wall: 2h`; `examples/agents/codex-chatgpt.yaml` is its long-session form, with `record: full` and `stall_after`. A wall is a hard cap that ends a working session at the minute it expires; `stall_after` ends a run that did nothing for an hour, and typing at the terminal counts as activity. There is no `cost_usd` (it needs a price table, and `no price table` is not printed unless a cost limit is set).
-Expected, not a fault: `tego compile` (the line `demo.sh` runs first) prints `[mount]` for `/dev/pts/` and, for Codex, `[env-runtime-reserved]` (the run replaces `CODEX_HOME` with its own private one). `tego run` itself starts quiet: it prints before the agent starts only what needs you or what means this run enforces less than the contract says (for Codex that is `[env-runtime-reserved]` again, with its `fix:` line, and the answer line below); add `-v` (`tego run -v <contract>`) to see the compile notes there too. The ChatGPT contract (`contracts/codex-chatgpt.yaml`) also compiles with `[held-reads]` and `[wall-hard-cap]` (its `wall: 2h` ends an interactive session at the minute it expires; the long-session form uses `stall_after`). On AppArmor, `tego run` prints one more line before the answer line, not after it: held reads ignore a tighter profile, with its fix.
+Expected, not a fault: `tego rules check` (the line `demo.sh` runs first) prints `[mount]` for `/dev/pts/` and, for Codex, `[env-runtime-reserved]` (the run replaces `CODEX_HOME` with its own private one). `tego run` itself starts quiet: it prints before the agent starts only what needs you or what means this run enforces less than the contract says (for Codex that is `[env-runtime-reserved]` again, with its `fix:` line, and the answer line below); add `-v` (`tego run -v <contract>`) to see the compile notes there too. The ChatGPT contract (`contracts/codex-chatgpt.yaml`) also compiles with `[held-reads]` and `[wall-hard-cap]` (its `wall: 2h` ends an interactive session at the minute it expires; the long-session form uses `stall_after`). On AppArmor, `tego run` prints one more line before the answer line, not after it: held reads ignore a tighter profile, with its fix.
 Show a refusal: ask the agent to read `~/.ssh/id_rsa` or run `curl example.com`; then `tego status --all` and `tego events <run> --kind refused` in a second terminal.
 Without a login you can still show that both start under Tego: `./demo.sh claude --version`, `./demo.sh codex --version`.
 
@@ -140,7 +140,7 @@ tego-control serve --open                     # second terminal: prints the dash
 - **The one answer line.** A contract that can ask (`fs.ask`, `ask:`) makes `tego run` print one line before the agent starts: `tego run: <run> can hold an operation for your approval; answer from another terminal: tego ask <run>, then tego approve <run> <ask_id> (or deny), or on the dashboard's Approvals page`. It carries the run id; it stays above the agent's screen after the agent takes over. Copy the id from it.
 - **The desktop notice.** At tier `landlock`, as a normal user, with a root-owned `notify-send` on PATH (it is on a typical Linux desktop; `apt install libnotify-bin` elsewhere), a desktop notice appears for each held request: the agent, the operation and the run, never the target. Nothing is written into the agent's terminal. Over SSH, at the root tiers or with no notifier, use the answer line, `tego ask <run>` or the Approvals page. Answer within about 30 seconds: Codex gives up on a command that waits much longer (the ask itself times out after `ask.timeout`, 5 minutes).
 - **Ctrl-Z and `fg`.** Ctrl-Z in Claude Code stops Claude Code and `tego run` together: the shell prints `Stopped` and gives the terminal back. `fg` resumes it with its screen; `bg` resumes it in the background. (A tier-2 run and a run already in the background do not follow the stop.)
-- **The dashboard.** `./demo.sh dashboard` runs `tego-control serve --open` (the URL is printed too, for a machine with no browser opener). The header has an **Auto / Light / Dark** switch (Auto follows the system; the choice is kept in the browser). Every run carries a **kind** label, **Interactive**, **Deployed**, **Background** or **Unknown**, on Overview, Runs and the run page: the Claude Code and Codex runs say Interactive, the always-on service (no terminal, no deployment) says Background. A run ended with `tego stop` or the Stop button says **Stopped**.
+- **The dashboard.** `./demo.sh dashboard` runs `tego-control serve --open` (the URL is printed too, for a machine with no browser opener). The header has an **Auto / Light / Dark** switch (Auto follows the system; the choice is kept in the browser). Every run carries a **kind** label, **Interactive**, **Deployed**, **Background** or **Unknown**, on Overview, Runs and the run page: the Claude Code and Codex runs say Interactive, the always-on service (no terminal, no deployment) says Background. A run ended with `tego session stop` or the Stop button says **Stopped**.
 - **One refusal that looks odd.** At tier `landlock`, a file made beside a protected file after the run started (for example a new entry in `$HOME` while `~/.ssh` is denied) is unreadable for the rest of the run. The ledger names it: `refused`, `read-denied`, rule `deny-read-snapshot` (`tego events <run> --rule deny-read-snapshot`). It is the rule working, not a fault; stop the run and start it again to list the directories anew.
 
 ### 5c: an agent that never stops
@@ -161,8 +161,8 @@ Known problem: runs are detached from any terminal, so there is nobody to answer
 - Tier 1 `landlock`: no root. Landlock + the seccomp supervisor; the default on a laptop.
 - Tier 2 `cgroup`: root. cgroup BPF + fanotify: every process of the run is in one cgroup, enforced by the kernel.
 - Tier 3 `bpflsm`: root + `bpf` in the kernel's `lsm=` list: decisions in the kernel's LSM hooks.
-Why three: each needs more of the machine and enforces more; `tego doctor` says which this machine has.
-The scene: `tego doctor` (short), the guarded agent with `--tier landlock`, the same with `sudo ... --tier cgroup` (needs `make build`; the ledger goes to your own `~/.tego/runs`), then tier 3, or the one-time `lsm=...,bpf` steps (in `GRUB_CMDLINE_LINUX_DEFAULT`, the variable `tego doctor` names) when BPF LSM is off (printed, never run).
+Why three: each needs more of the machine and enforces more; `tego machine check` says which this machine has.
+The scene: `tego machine check` (short), the guarded agent with `--tier landlock`, the same with `sudo ... --tier cgroup` (needs `make build`; the ledger goes to your own `~/.tego/runs`), then tier 3, or the one-time `lsm=...,bpf` steps (in `GRUB_CMDLINE_LINUX_DEFAULT`, the variable `tego machine check` names) when BPF LSM is off (printed, never run).
 A tier whose sudo or tego refuses the run says so (`(tier 2 did not run: exit 1, see the message above)`, the exit
 being the command's own, not the output filter's) and shows no damage report and no run of its own.
 
@@ -273,15 +273,15 @@ Each of these is something the kit tells you itself, in the words below, when it
 | `with` | `tego run agent.yaml` (a copy of `contracts/guarded.yaml`), then `tego events <run> --kind refused` |
 | `why` | `tego events <run> --last`, `--verify`, then `--json` into a copy, one word changed with sed, and `--verify` on it |
 | `dashboard [args]` | `tego-control serve --open` (extra arguments go to it: `--addr 127.0.0.1:8585` when 8484 is busy) |
-| `claude`, `codex` | `tego compile` then `tego run contracts/<agent>.yaml` (extra arguments replace the interactive start) |
+| `claude`, `codex` | `tego rules check` then `tego run contracts/<agent>.yaml` (extra arguments replace the interactive start) |
 | `always-on` | `systemd-run --user ... tego run always-on.yaml`, in `stage/always-on/` (its own secrets and project, so the other acts never clear them) |
 | `rules`, `rule <t>` | `tego run stage/c/<t>.yaml` with `sh mini.sh <t>`, then `tego events <run> --kind refused` |
 | `always` | starts `sockd.py`, then the sockets and privesc tricks, without and under Tego |
 | `reason-hook` | builds fakeclaude, starts the model stub, `tego run ... -- claude -p ...`, `modelsaw.py` |
-| `receipt`, `presets`, `selftest` | `tego receipt --last`; `tego init --preset ...`, `tego compile`, `tego run`; `tego test` |
+| `receipt`, `presets`, `selftest` | `tego session show --last`; `tego rules create --preset ...`, `tego rules check`, `tego run`; `tego machine test` |
 | `ask`, `approve`, `deny` | `tego run stage/c/ask.yaml`; `tego ask <run>` then `tego approve`/`tego deny <run> <ask_id>` |
 | `limits`, `deny-write` | `tego run` of the fork, memory and hooks tricks; `tego events <run> --kind run_end`, `tego status <run>` |
-| `identity`, `doctor`, `features` | `tego events <run> --kind run_start --json`; `tego doctor`; prints the feature map |
+| `identity`, `doctor`, `features` | `tego events <run> --kind run_start --json`; `tego machine check`; prints the feature map |
 | `lookup` | prints the name-lookup sockets the contracts allow (`DEMO_RESOLVER_ROOT` points the search at a fixture tree; `DEMO_DRY=1` makes a scene print its commands and run none, for the tests that compile the contracts it writes) |
 | `reset` | stops everything (the sink, the stand-in sockets, the model stub, the service), removes generated children of a marked stage |
 

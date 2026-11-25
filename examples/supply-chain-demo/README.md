@@ -102,7 +102,7 @@ same result every time), and `tego events <run> --verify` (the record is a hash 
 
 ## What this demo does not show
 
-`env.mask` is not built: `tego compile` refuses it, so `env.pass` gives the agent the real `SERVICE_TOKEN`, and
+`env.mask` is not built: `tego rules check` refuses it, so `env.pass` gives the agent the real `SERVICE_TOKEN`, and
 Approvals / `fs.ask` is the live lever.
 
 ## Reset

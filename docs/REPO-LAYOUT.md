@@ -56,7 +56,7 @@ tego/
 │   │   ├── status/  drift/  measure/  learn/  events/
 │   │   ├── compiledview/      pure compiled rule sentences and source positions shared by contracts and inforce
 │   │   ├── inforce/           dashboard view: shared compiled sentences plus source fallback, live rules and ledger hits
-│   │   ├── receipt/           the run receipt: one streaming builder for tego receipt, tego run's end summary and the dashboard's Receipt tab
+│   │   ├── receipt/           the run receipt: one streaming builder for tego session show, tego run's end summary and the dashboard's Receipt tab
 │   │   ├── cireceipt/         CI evidence/manifest checks, pinned cosign bundle verification and certified identities
 │   │   ├── secretpath/        the name-based secret classifier (secretpath.Is): pure, stdlib only; the receipt and ledgerview share it
 │   │   ├── syslookup/         the routine system lookup classifier (nscd, userdb, D-Bus, the run's resolvers) and NoPlace (AF_UNSPEC, netlink): pure, stdlib only; the receipt, learn and ledgerview share it
@@ -81,7 +81,7 @@ tego/
 ├── notices.go                 package tego, the module root: embeds those files for `tego licenses` and `tego-control licenses`
 ```
 
-Packages added since 2026-09-22 and not drawn above: `internal/watch/` (watcher, adopt, tree, procconn, sig: watching and adopting any agent, ADRs 0054 and 0055), `internal/runtime/deputy/` (the run's open deputy, ADR 0041), `internal/runtime/dnsbroker/` (opt-in DNS transport for cooperating clients), `internal/runtime/hoststate/` (the root tiers' `/run/tego`, ADR 0034), `internal/realtego/` (the `~/.tego` directories a process could reach), `internal/selftest/` (`tego test`, Layer 2: starts the tego binary and reads its ledger, ADR 0074), `internal/check/gaps/` and `internal/check/resources/`, `internal/platform/hostaddr/` and `internal/platform/startphase/`, `internal/platform/winpeer/` (the Windows dashboard relay's owner check: which Windows user's process holds a loopback connection, standard library and x/sys/windows only) and `internal/relaymux/` (the framed multiplex the relay speaks over one wsl.exe pipe, standard library only; ADR 0123, "A browser on Windows"), `internal/shellword/` (one word of a shell command line, standard library only: the dashboard's terminal twins and tego doctor's fix line quote by it), and `pkg/policy/gate/`, `pkg/policy/dnspolicy/`, `pkg/policy/fsplan/`.
+Packages added since 2026-09-22 and not drawn above: `internal/watch/` (watcher, adopt, tree, procconn, sig: watching and adopting any agent, ADRs 0054 and 0055), `internal/runtime/deputy/` (the run's open deputy, ADR 0041), `internal/runtime/dnsbroker/` (opt-in DNS transport for cooperating clients), `internal/runtime/hoststate/` (the root tiers' `/run/tego`, ADR 0034), `internal/realtego/` (the `~/.tego` directories a process could reach), `internal/selftest/` (`tego machine test`, Layer 2: starts the tego binary and reads its ledger, ADR 0074), `internal/check/gaps/` and `internal/check/resources/`, `internal/platform/hostaddr/` and `internal/platform/startphase/`, `internal/platform/winpeer/` (the Windows dashboard relay's owner check: which Windows user's process holds a loopback connection, standard library and x/sys/windows only) and `internal/relaymux/` (the framed multiplex the relay speaks over one wsl.exe pipe, standard library only; ADR 0123, "A browser on Windows"), `internal/shellword/` (one word of a shell command line, standard library only: the dashboard's terminal twins and tego machine check's fix line quote by it), and `pkg/policy/gate/`, `pkg/policy/dnspolicy/`, `pkg/policy/fsplan/`.
 
 The tree includes reserved packages for later phases (`internal/adapters/openaicodex` is one); a reserved package's presence does not mean its feature is implemented, and additional provider parsers are roadmap entries. `rules learn` is built (2026-10-06): `tego rules learn` proposes a rules file from a run's record (docs/site/learning-rules.md). Current capability and Tier 3 status are in `spec/backend/CAPABILITIES.md`.
 
@@ -106,7 +106,7 @@ pkg/spec/presets ──► standard library only, embed among it (depguard prese
                      as agent.ProfileSource, registered by one line in internal/cli profileSources (ADR 0068)
 internal/setup ──► pkg/spec/presets, pkg/spec/agent, pkg/spec/config, golang.org/x/sys/unix, internal/platform/sys and the
                    standard library (never the engine: depguard setup-never-imports-engine): composes and compiles offline
-                   the agent.yaml `tego init --preset` writes (Draft, Create, Remove, Check: the API a dashboard page
+                   the agent.yaml `tego rules create --preset` writes (Draft, Create, Remove, Check: the API a dashboard page
                    can call too; Create makes the folders with mkdirat beneath the project folder pinned once, no
                    symlink followed, Claude Code's socket folder outside it beneath its nearest existing parent,
                    resolved once, and Remove takes them away with unlinkat AT_REMOVEDIR the same way); internal/cli
@@ -193,14 +193,14 @@ and a noun never spans both binaries (ADR 0100 (2)).
 | the contracts catalog and compiled view | `internal/contracts`, `internal/cli/contracts.go`, `spec/contracts/v1/` |
 | the shape of an event | `spec/record/v1/` and `pkg/spec/record` |
 | the built-in presets (`tego/no-secrets`, `tego/no-prod`, `tego/repo-only-writes`, `tego/ci`), their revisions and the host groups | `pkg/spec/presets` (the YAML, `README.md` is normative), registered in `internal/cli/profiles.go`; the user's page `docs/site/presets.md` (ADR 0068) |
-| `tego init --preset`: a contract from presets, folders, markers and host groups | `internal/setup` (compose.go, ecosystem.go, check.go: Draft/Create/Remove/Check; goldens in testdata/compose/), flags and printing in `internal/cli/init.go`; `docs/site/presets.md` |
+| `tego rules create --preset`: a contract from presets, folders, markers and host groups | `internal/setup` (compose.go, ecosystem.go, check.go: Draft/Create/Remove/Check; goldens in testdata/compose/), flags and printing in `internal/cli/init.go`; `docs/site/presets.md` |
 | env vars a run sets | `pkg/spec/identity` |
 | what a run provisions for its agent harness (`harness:`, the per-run settings files, hook-state) | `internal/runtime/harness.go` (the point), `pkg/spec/harness` (its types), `internal/adapters` (the provisioners) |
 | what a backend can do | `pkg/spec/backend` and `internal/runtime/enforce` |
 | the kernel programs | `bpf/` (C), bindings in `internal/bpf` |
 | how a run starts | `internal/runtime/launch` |
 | why something was refused | events with `verdict=refused`; the reason file and its wording, `pkg/spec/reason` (`spec/reason/`; *amended 2026-10-24*: the `internal/runtime/reason` placeholder is removed, ADR 0061) |
-| what verdict a tier gives an action (`compile --test`, the advisory and inferred verdicts) | `internal/policy/decide`; external Go callers use the experimental `pkg/policy/evaluate` facade |
+| what verdict a tier gives an action (`rules check --test`, the advisory and inferred verdicts) | `internal/policy/decide`; external Go callers use the experimental `pkg/policy/evaluate` facade |
 | how a pause for approval works | `internal/runtime/supervisor` (the loop), `internal/runtime/ask` (approvals, P1) |
 | how model calls are captured | `internal/runtime/capture/*` |
 | how a decision or step is derived | `internal/runtime/derive/*` |
@@ -221,7 +221,7 @@ and a noun never spans both binaries (ADR 0100 (2)).
 - Interfaces are declared where they are consumed (`enforce.Backend` in `enforce`, `api.Handle` in `enforce/api`, `source.Source` in `runtime/source`), kept small.
 - Packages document their purpose and boundaries in package comments, usually in `doc.go`. CI enforces the import restrictions configured in `.golangci.yml`.
 - Subcommands live in `internal/cli`. The CLI owns flags, configuration discovery and trust checks, component wiring, and output; policy decisions and runtime lifecycles belong to their owning packages.
-- Errors: sentinel `var ErrX` per package, wrapped with `%w`; refusal reasons are `record.Reason` values, never free strings. User-facing messages are one line in `file:line[:col]: message [code]` form; `compile` codes are `agent.Diagnostic`, refusal codes are `record.Reason`, never mixed.
+- Errors: sentinel `var ErrX` per package, wrapped with `%w`; refusal reasons are `record.Reason` values, never free strings. User-facing messages are one line in `file:line[:col]: message [code]` form; `rules check` codes are `agent.Diagnostic`, refusal codes are `record.Reason`, never mixed.
 - Every source file carries an SPDX header: `Apache-2.0` everywhere, `(GPL-2.0-only OR BSD-2-Clause)` on the C under `bpf/` (its Go tests are `Apache-2.0`); `vmlinux.h` and bpf2go output are exempt.
 - Anything privileged (`launch`, `ask`, `bpflsm`, `observe`, `capture/uprobe`) is the trusted computing base: no third-party dependency beyond cilium/ebpf, x/sys, x/net, go-landlock.
 - Tests: unit tests next to the code; `//go:build integration` for root; kill tests under `test/e2e`.

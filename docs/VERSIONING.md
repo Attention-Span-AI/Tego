@@ -8,7 +8,7 @@
   bump is required to drop a ledger reader or a contract reader.
 - `tego version` prints `tego`, `commit`, `date`, `go`, `contract_schema`, `record_v`, `record_readers`, `bpf_hash`,
   `parsers`, `control_sha256`, one `key=value` per line and `--json`. It is the first line of every bug report and of
-  `tego doctor`. `control_sha256` (*added 2026-10-24*, ADR 0100 (1b)) is the SHA-256 of the `tego-control` the build
+  `tego machine check`. `control_sha256` (*added 2026-10-24*, ADR 0100 (1b)) is the SHA-256 of the `tego-control` the build
   pinned, `none` for an unpinned build. `tego-control version` prints `tego-control`, `commit`, `date`, `go` and
   `sha256`, the hash of the image it runs; a matched pair prints the same version, commit and date, and that hash
   is the pin.
@@ -56,8 +56,8 @@ No historical line is rewritten.
 - `version: 0` on the file. Unknown fields are errors from M0 (yaml.v3 `KnownFields(true)`): a misspelt `write:` must
   never pass silently.
 - Releases before `v0.2.0` (v0.1.0 to v0.1.3) could change the v0 field set without notice. From `v0.2.0` fields are
-  only added; a removed or re-meant field is `version: 1`, `compile` warns on the old field for one MINOR release, and
-  `compile --upgrade` rewrites the file and prints the diff.
+  only added; a removed or re-meant field is `version: 1`, `rules check` warns on the old field for one MINOR release, and
+  `rules check --upgrade` rewrites the file and prints the diff.
 
 ## 4. BPF objects
 - Pinned under `/sys/fs/bpf/tego/<bpf_hash>/`, not `<version>`: two binaries with the same object share one attached
@@ -239,7 +239,7 @@ of this; retraction is deliberately not automated (§7.4).
 Record `v` (`spec/record/v1`, currently `1`) and the contract's `version:` field (`spec/agent/v0`, currently
 `0`) are their own axes, not the binary's semver (§1–§3); tagging `vX.Y.Z` does not itself change either. What
 a release *does* is pin, in `docs/CHANGELOG.md`'s Record `v` / Contract schema lines, which schema versions that
-specific binary speaks, so a reader (or `tego doctor`) can tell compatibility from the tag alone. If either
+specific binary speaks, so a reader (or `tego machine check`) can tell compatibility from the tag alone. If either
 value actually moved since the last tag, §1's MINOR/MAJOR rule decides the version bump — a new reader is
 MINOR, dropping one is MAJOR — the changelog entry does not decide it on its own.
 

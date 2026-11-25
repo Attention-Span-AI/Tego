@@ -140,7 +140,7 @@ entries only**:
   with a listed utility (`ls`, `xrm`, `uu-rm`), with `utils` or `box`, or one of `[`, `relpath`, `hostname`, `kill`,
   `more`, `uptime`. A file named `coreutils` (the row that lists the applets) is one whatever its count. A hard-linked
   program of another name (`unzip`, `perl`) is not one. A file named `busybox` or `toybox` with one link is not one:
-  those read argv[0] exactly, as the table above already does. `compile --test` stats no file, so for it only a file
+  those read argv[0] exactly, as the table above already does. `rules check --test` stats no file, so for it only a file
   named `coreutils` is one. The gate's scores do not read these applets.
 - **The names**: the requested pathname, the walked file's own name (the symlink fallback) and argv[0], for the exec's
   image; the requested pathname, the `#!` path and the walked interpreter's name, for a `#!` interpreter that is a
@@ -358,7 +358,7 @@ Node (`node` and `nodejs`); the added numeric name dispatch is separate.
   before deduplication so every argv[0] is checked without duplicating ordinary shebang scripts.
   Command patterns are compiled against the compatibility row too, preserving its option and
   alias matching. An inventory-only allow predicate that master could not compile stays unproved
-  on this path and does not admit an exec. Compile-time facts (`compile --test` and own-command preflight) have no
+  on this path and does not admit an exec. Compile-time facts (`rules check --test` and own-command preflight) have no
   attestation and use this same fallback; ordinary Node commands are no longer refused merely
   for that absence. `node`, `nodejs`, and numeric `node-N` / `node-N.N.N` names use the Node row.
   Arbitrarily renamed copies remain ADR 0048 R2. Hashing a descriptor adds no atomic kernel

@@ -1,6 +1,6 @@
 # Contracts view v1
 
-`tego contracts --json` emits `schema: "tego.contracts.v1"`. `tego contracts show <name|path> --json` emits
+`tego rules list --json` emits `schema: "tego.contracts.v1"`. `tego rules list <name|path> --json` emits
 `schema: "tego.contracts.show.v1"`. Both satisfy [contracts.schema.json](contracts.schema.json), a JSON Schema
 2020-12 document. This is a read-only view. It changes no contract, compile rule, merge order or record revision.
 

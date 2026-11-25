@@ -29,7 +29,7 @@ choose a fresh path for each run. Write failure before exec refuses the start; a
 returns exit 125. Missing, stale, partial, unknown and deferred statuses cannot
 establish completed teardown.
 
-The independent expectation/checksum inputs to `tego receipt --verify-ci` also
+The independent expectation/checksum inputs to `tego session show --verify-ci` also
 refuse any symlinked parent, including a symlinked `/home`, with exit 125. Supply
 their real paths. This input rule does not authenticate the checksums file.
 
@@ -61,7 +61,7 @@ launcher=$!
 
 Wait with a bounded deadline for both initial status and `run_start`, then take
 `run_id` and `scope` from that status. For clean exit use `/bin/true` in place of
-sleep and wait for the launcher. For stop call `"$tego" stop "$run_id"`. For agent
+sleep and wait for the launcher. For stop call `"$tego" session stop "$run_id"`. For agent
 SIGKILL, read the single sleep PID from the known scope's `cgroup.procs`, verify
 its `/proc/<pid>/exe` and cgroup membership, and send `kill -KILL "$agent_pid"`.
 For launcher SIGKILL send `kill -KILL "$launcher"`, wait for its exit, then call
@@ -72,7 +72,7 @@ after the sweep. Never select a process by a command-line pattern.
 | Ending, at each selected tier | Status at launcher return | Scope path check | `--check --require-ended` exit |
 |---|---|---|---|
 | Clean `/bin/true` exit | `removed:true,deferred:false` | Absent before return. | 1, `incomplete`; ended/teardown pass, `coverage_complete:false`, `complete:false`. |
-| `tego stop` of `/bin/sleep 120` | `removed:true,deferred:false` | Absent before return. | 1, `incomplete`, with ended/teardown passing and both completeness flags false. The agent's stop exit is separate. |
+| `tego session stop` of `/bin/sleep 120` | `removed:true,deferred:false` | Absent before return. | 1, `incomplete`, with ended/teardown passing and both completeness flags false. The agent's stop exit is separate. |
 | SIGKILL of the agent only | `removed:true,deferred:false` | Absent before return. | 1, `incomplete`, with ended/teardown passing and both completeness flags false. The launcher preserves agent exit 137. |
 | SIGKILL of the launcher after initial status | Initial `removed:false,deferred:false`, unchanged after sweep. | Require absent after the sweep; never infer absence from the status. | 1, `mismatch`, even once the sweep writes `run_end`; initial status cannot establish teardown. |
 | Source `Stop` held past the shutdown deadline | `removed:false,deferred:true`, unchanged after releasing Stop. | Present while Stop is held; absent after releasing it and waiting for background cleanup. | 1, `mismatch`, both before and after background cleanup; the status remains deferred and the stop-timeout gap remains. |
@@ -103,8 +103,8 @@ before any unrelated run can reuse a name. Once the relevant end/sweep/cleanup
 point has arrived, generate and check the retained receipt:
 
 ```sh
-"$tego" receipt "$run_id" --json > "$receipt"
-"$tego" receipt --check "$receipt" "$run_dir" --require-ended \
+"$tego" session show "$run_id" --json > "$receipt"
+"$tego" session show --check "$receipt" "$run_dir" --require-ended \
   --status-file "$status" --json > "$comparison"
 check_exit=$?
 ```

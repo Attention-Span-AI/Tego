@@ -1,7 +1,7 @@
 # examples/agents
 
 Copy-paste contracts, one per common agent shape. Every file here is the P0
-subset of `spec/agent/v0` and must load with `tego compile` with only
+subset of `spec/agent/v0` and must load with `tego rules check` with only
 warnings: `examples_test.go` compiles each one on a stand-in machine (tools on
 `PATH`, the profiles under `examples/profiles`), and again on a fresh one once
 the setup its comments name is done (below), and `pkg/spec/agent` tests

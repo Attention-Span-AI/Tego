@@ -72,20 +72,20 @@ The convention `docker run`, GNU `timeout` and the shell use, so CI needs no new
 | 125 | Tego failed before exec: contract invalid (incl. `contradiction`: a write entry contains the run directory or the contract file), tier or capture unavailable, machine config untrusted, cgroup, ledger or program-load error; one sentence on stderr with the diagnostic code | none |
 | 126 | the command was found but could not be executed (`EACCES`/`ENOEXEC`, or the tier cannot grant exec on it) | `run_end reason=exec-failed` |
 | 127 | the command was not found | `run_end reason=exec-failed` |
-| 137 / 143 | passthrough when someone else ended it: `tego stop` or a signal to the launcher (143 after SIGTERM, 137 after `cgroup.kill` at `stop_grace`), memory or pids cap (137) | `run_end reason=stopped|oom|pids` |
+| 137 / 143 | passthrough when someone else ended it: `tego session stop` or a signal to the launcher (143 after SIGTERM, 137 after `cgroup.kill` at `stop_grace`), memory or pids cap (137) | `run_end reason=stopped|oom|pids` |
 | 125 with code `config-untrusted` | machine config invalid or untrusted (path, owner and mode follow) | none |
-| 125 with code `tier-unavailable` | the contract pins a tier the machine cannot provide (`doctor --require <tier>` exits 211 for the same condition) | none |
+| 125 with code `tier-unavailable` | the contract pins a tier the machine cannot provide (`machine check --require <tier>` exits 211 for the same condition) | none |
 | 125 with code `privileged-path-unsupported` | the launcher gained privilege without being root of the initial user namespace: a file-capability, setuid or setgid copy of tego (`AT_SECURE`), a real and effective uid or gid that differ, or a privileged inherited capability set. Every subcommand but `version` refuses the same way, before anything runs; a launcher holding only incidental capabilities (`CAP_NET_BIND_SERVICE` and the like) has them cleared and runs at tier `landlock` (ADR 0042 (3)(a); *added 2026-10-05*) | none |
 | 125 with code `budget-unmetered` | the run's contract declares a `tokens`, `cost_usd` or `repeats` budget and nothing would count it: no capture runs for it (`capture: off`, a machine `capture:` ceiling of `off`, the forwarder with no `models:` endpoint, `record: off` under uprobe capture), or no price table that lists a model loads for `cost_usd`, or the table that loads prices no model (every entry lacks `input_per_mtok` or `output_per_mtok`) (*amended 2026-10-17:* the table that prices no model added); the message names the cause and the fix | none |
 | 125 with code `capture-unavailable` | the run has a `tokens`, `cost_usd` or `repeats` budget and the capture mechanism that would meter it could not start; the message names the cause and the fix | none |
 | 125 with code `budget-window` | the contract sets `limits.window` and the window cannot be established: the run is not named by a registry name or a contract file, the machine's `retention` is shorter than the window, an earlier run of this agent does not verify (its chain or its `chain.log` line: edited, cut) or cannot be read, another run of it is live, the run is record-only (`--observe`: its agent could reach the records the count is read from), or the agent's ledgers in the window hold more than 512 MiB; another agent's record never refuses, an ended run with no `chain.log` line is counted; the message names the run and the fix | none |
 
 An ask timeout is a refusal (`ask-timeout`), never an exit code. Other subcommands: 0 ok; 1 a finding (`drift` found
-drift, `status` shows `stalled` or `lost`, `doctor` finds no tier this machine can run, `compile` found an error);
-211 `doctor --require <tier>` on a machine that cannot reach that tier; 2 usage; 125 Tego's own error. Warnings
+drift, `status` shows `stalled` or `lost`, `machine check` finds no tier this machine can run, `rules check` found an error);
+211 `machine check --require <tier>` on a machine that cannot reach that tier; 2 usage; 125 Tego's own error. Warnings
 never change the code, nor does a stderr `tego run` cannot write them to (*amended 2026-10-05:* it turned the
-agent's 0 into 125). (*Amended 2026-09-24:* this said `doctor` exits 1 below `--require`; it exits 211, as the
-table above and `doctor`'s own code do)
+agent's 0 into 125). (*Amended 2026-09-24:* this said `machine check` exits 1 below `--require`; it exits 211, as the
+table above and `machine check`'s own code do)
 
 ## Signals
 The agent shares the launcher's process group. Terminal-generated `SIGINT`/`SIGQUIT`/`SIGTSTP`/`SIGWINCH` reach it
@@ -95,10 +95,10 @@ default 10 s); a second `SIGINT` within 2 s or expiry writes `cgroup.kill`. Ledg
 escalated=<bool>` (`<n>` is what the kernel reported for the agent, except that an escalated run whose reason is
 `signal` or `stopped` records the signal that started `stop_grace`; an agent that left by its own exit code also
 records that initiating signal). A run whose reason is `limit`, `oom` or `pids` keeps the kernel's signal even if a
-stop also escalated. A `cgroup.kill` written after `stop_grace` by the end of a main process that left processes running (the rule of `keep_descendants: false`) is the escalation too when a stop signal had been handled, whichever of the two timers wrote it; with no stop it is not, and the run keeps `escalated=false`. Exit code: passthrough. `reason=stopped` is reserved for `tego stop`.
+stop also escalated. A `cgroup.kill` written after `stop_grace` by the end of a main process that left processes running (the rule of `keep_descendants: false`) is the escalation too when a stop signal had been handled, whichever of the two timers wrote it; with no stop it is not, and the run keeps `escalated=false`. Exit code: passthrough. `reason=stopped` is reserved for `tego session stop`.
 
 ## Messages
 One sentence on stderr per error, in `<file>:<line>[:<col>]: <what is wrong> [<code>]` form followed by the fix, so
-editors can jump to it. `compile` codes are `agent.Diagnostic` (`schema`, `path-missing`, `host-unresolvable`,
+editors can jump to it. `rules check` codes are `agent.Diagnostic` (`schema`, `path-missing`, `host-unresolvable`,
 `exec-not-on-path`, `limit-above-machine`, `contradiction`, ...); refusal reasons are `record.Reason` and are never
-mixed with them. `doctor` and `run` refusals name the tier and the one command that fixes it.
+mixed with them. `machine check` and `run` refusals name the tier and the one command that fixes it.
