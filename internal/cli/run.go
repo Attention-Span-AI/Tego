@@ -472,9 +472,6 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 		// The summary's two lines, then the reads line (a fact, whatever TEGO_HINTS says), then the next step, except
 		// for a run whose record could not be completed: that is tego's own error, exit 125 [ledger], with no next step.
 		show := "tego session show"
-		if o.cmd == "" {
-			show = "tego receipt" // Pipes and -v retain the base command's bytes.
-		}
 		_, _ = io.WriteString(stderr, fitTerminal(stderr, sum.textWithMore(show)+sum.readsLine())) // Output failure never changes the run's exit.
 		if res.RecordErr == nil {
 			text, command := sum.runHintWithShow(o, show)

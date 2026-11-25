@@ -166,8 +166,8 @@ func TestNoSupervisorRunIsNotToldToRecordEveryRead(t *testing.T) {
 	if !strings.Contains(out, readsLineNoSupervisor) {
 		t.Fatalf("no reads line:\n%s", out)
 	}
-	if got := lastHint(t, out); !strings.HasPrefix(got, "tego receipt ") || !strings.HasSuffix(got, " --verify") {
-		t.Errorf("hint %q, want tego receipt <run> --verify", got)
+	if got := lastHint(t, out); !strings.HasPrefix(got, "tego session show ") || !strings.HasSuffix(got, " --verify") {
+		t.Errorf("hint %q, want tego session show <run> --verify", got)
 	}
 }
 
