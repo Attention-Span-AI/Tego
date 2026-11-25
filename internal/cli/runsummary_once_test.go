@@ -45,6 +45,11 @@ func bytesRead(t *testing.T) (uint64, bool) {
 // of the record, not a read for the receipt and another for the chain check. Over a 10,000-line run the bytes read for
 // the summary are about the file's size, never twice it.
 func TestEndSummaryReadsTheLedgerOnce(t *testing.T) {
+	// The test counts the bytes of one complete read. The summary's own budget (5 s) ends the read and says "chain not
+	// checked (it took too long)" on a machine that is slow enough, as a hosted runner running the race detector was.
+	prevBudget := summaryBudget
+	summaryBudget = 10 * time.Minute
+	t.Cleanup(func() { summaryBudget = prevBudget })
 	root := t.TempDir()
 	anchor := filepath.Join(t.TempDir(), "chain.log")
 	var host [32]byte

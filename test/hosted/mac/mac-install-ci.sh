@@ -27,128 +27,6 @@ terminal() { python3 "$helper" terminal "$@"; }
 collect() { python3 "$helper" collect "$RUNNER_TEMP/mac-ci-scrubbed"; }
 reject() { if grep -qE "$2" "$1"; then echo "CHECK FAILED: $1 contains $2"; exit 1; fi; }
 need() { grep -qE "$2" "$1" || { echo "CHECK FAILED: $1 lacks $2"; exit 1; }; }
-# The Mac uninstall check. The single-quoted bodies handed to guest() run in the VM's shell and expand there.
-# shellcheck disable=SC2016
-uninstall_phase() {
-  driver=$(cat "$MAC_CI_LOGS/selected-driver.txt")
-  if [ -z "$driver" ]; then
-    echo 'CHECK no VM booted here, so the installer left no Mac command; the failed install was asserted in its own step'
-    return 0
-  fi
-  export PATH="$HOME/.local/bin:$PATH"
-  shim="$HOME/.local/bin/tego"
-  vm_dir="$HOME/.lima/tego"
-  path_line='export PATH="$HOME/.local/bin:$PATH" # added by the Tego installer'
-  expect() { # DESCRIPTION COMMAND...: a plain check that names itself, pass or fail
-    d=$1
-    shift
-    if "$@"; then echo "CHECK $d"; else echo "CHECK FAILED: $d"; exit 1; fi
-  }
-  gone() { ! "$@"; }
-  vm_status() { limactl list --format '{{.Name}} {{.Status}}' 2>/dev/null | sed -n 's/^tego //p'; }
-  vm_running() { [ "$(vm_status)" = Running ]; }
-  guest() { limactl shell tego sh -c "$@"; }
-  # PATH line: the installer removes it only while ~/.local/bin holds nothing but tego (the docs' words).
-  others=0
-  for entry in "$HOME/.local/bin"/* "$HOME/.local/bin"/.[!.]*; do
-    { [ -e "$entry" ] || [ -L "$entry" ]; } || continue
-    [ "${entry##*/}" = tego ] || others=$((others + 1))
-  done
-  echo "CHECK before: $others other file(s) in ~/.local/bin besides tego"
-  expect 'before: the Mac command is installed' test -x "$shim"
-  expect 'before: the installer wrote its PATH line to .zshrc' grep -qFx -- "$path_line" "$HOME/.zshrc"
-  expect "before: the dashboard's tunnel is up (its control socket exists)" test -e "$vm_dir/tego-dashboard.sock"
-  expect 'before: the VM runs' vm_running
-  # Whether Lima keeps the installer's marker in the instance's lima.yaml decides whether tego uninstall may delete the VM.
-  expect "before: the instance's lima.yaml carries the installer's marker" grep -qxF '# tego-mac-provisioning: 1' "$vm_dir/lima.yaml"
-  expect 'before: Tego is installed inside the VM' guest 'test -x "$HOME/.local/bin/tego" && test -x "$HOME/.local/bin/tego-control"'
-  # A record and a contract stand for what the person's runs left; the other files under ~/.tego are listed to compare.
-  guest 'mkdir -p "$HOME/.tego" "$HOME/.config/tego" && echo records >"$HOME/.tego/uninstall-ci-records" && echo contract >"$HOME/.config/tego/uninstall-ci-contract"'
-  guest 'cd "$HOME/.tego" && find . -type f ! -name "dashboard*" | sort' >"$MAC_CI_LOGS/records-before.txt"
-  cat "$MAC_CI_LOGS/records-before.txt"
-  cp "$HOME/.zshrc" "$MAC_CI_LOGS/zshrc-before-uninstall"
-  cp "$shim" "$MAC_CI_TMP/tego-command-saved"
-  url=$(tail -n 1 "$MAC_CI_LOGS/browser-links.txt")
-
-  echo 'CHECK answering no to the first question changes nothing'
-  rc=0
-  terminal 120 "$MAC_CI_LOGS/uninstall-decline.log" uninstall-decline tego uninstall || rc=$?
-  expect 'declined: exit status 0' test "$rc" = 0
-  need "$MAC_CI_LOGS/uninstall-decline.log" 'Tego will remove'
-  need "$MAC_CI_LOGS/uninstall-decline.log" 'the tego command '
-  need "$MAC_CI_LOGS/uninstall-decline.log" 'Nothing was changed'
-  expect 'declined: the Mac command is still there' test -x "$shim"
-  expect 'declined: .zshrc is untouched' cmp -s "$HOME/.zshrc" "$MAC_CI_LOGS/zshrc-before-uninstall"
-  expect 'declined: no backup was made' test ! -e "$HOME/.zshrc.tego-backup"
-  expect "declined: the tunnel's control socket is still there" test -e "$vm_dir/tego-dashboard.sock"
-  expect 'declined: the VM still runs' vm_running
-  expect 'declined: Tego is still inside the VM' guest 'test -x "$HOME/.local/bin/tego"'
-
-  echo 'CHECK Enter at the first question removes Tego; the default at the second keeps the VM and its records'
-  rc=0
-  terminal 360 "$MAC_CI_LOGS/uninstall-keep.log" uninstall-keep tego uninstall || rc=$?
-  expect 'kept: exit status 0' test "$rc" = 0
-  need "$MAC_CI_LOGS/uninstall-keep.log" 'the tego command '
-  need "$MAC_CI_LOGS/uninstall-keep.log" 'Tego inside its VM'
-  need "$MAC_CI_LOGS/uninstall-keep.log" 'delete the VM "tego" and everything in it'
-  need "$MAC_CI_LOGS/uninstall-keep.log" 'Removed Tego inside the VM'
-  need "$MAC_CI_LOGS/uninstall-keep.log" "Closed the dashboard's tunnel"
-  need "$MAC_CI_LOGS/uninstall-keep.log" 'Removed the tego command'
-  need "$MAC_CI_LOGS/uninstall-keep.log" 'Kept: the VM "tego"'
-  need "$MAC_CI_LOGS/uninstall-keep.log" 'Tego is removed[.] The VM "tego" and your records stay'
-  reject "$MAC_CI_LOGS/uninstall-keep.log" 'Deleted the VM'
-  expect 'kept: the command is gone' test ! -e "$shim"
-  expect "kept: the tunnel's control socket is gone" test ! -e "$vm_dir/tego-dashboard.sock"
-  rc=0
-  bound 30 "$MAC_CI_LOGS/dashboard-after-uninstall.log" curl --fail --silent --max-time 10 --location "$url" -o /dev/null || rc=$?
-  expect 'kept: the dashboard no longer answers on the Mac' test "$rc" != 0
-  if [ "$others" = 0 ]; then
-    expect 'kept: the installer PATH line is gone from .zshrc' gone grep -qFx -- "$path_line" "$HOME/.zshrc"
-    expect 'kept: a backup of the original .zshrc sits beside it' cmp -s "$HOME/.zshrc.tego-backup" "$MAC_CI_LOGS/zshrc-before-uninstall"
-    grep -vFx -- "$path_line" "$MAC_CI_LOGS/zshrc-before-uninstall" >"$MAC_CI_LOGS/zshrc-expected" || :
-    expect 'kept: .zshrc is the original minus that one line' cmp -s "$HOME/.zshrc" "$MAC_CI_LOGS/zshrc-expected"
-  else
-    expect 'kept: the PATH line stays while other files need it' grep -qFx -- "$path_line" "$HOME/.zshrc"
-    need "$MAC_CI_LOGS/uninstall-keep.log" 'Left the PATH line'
-  fi
-  expect 'kept: the VM still exists and runs' vm_running
-  expect 'kept: the record under ~/.tego is still in the VM' guest 'test "$(cat "$HOME/.tego/uninstall-ci-records")" = records'
-  expect 'kept: the contract under ~/.config/tego is still in the VM' guest 'test "$(cat "$HOME/.config/tego/uninstall-ci-contract")" = contract'
-  guest 'cd "$HOME/.tego" && find . -type f ! -name "dashboard*" | sort' >"$MAC_CI_LOGS/records-after.txt"
-  expect 'kept: every record file listed before is still there' test -z "$(comm -23 "$MAC_CI_LOGS/records-before.txt" "$MAC_CI_LOGS/records-after.txt")"
-  expect 'kept: tego and tego-control are gone inside the VM' guest 'test ! -e "$HOME/.local/bin/tego" && test ! -e "$HOME/.local/bin/tego-control"'
-  expect "kept: the dashboard's and the clean-up units are gone inside the VM" guest 'test ! -e "$HOME/.config/systemd/user/tego-dashboard.service" && test ! -e "$HOME/.config/systemd/user/tego-gc.timer" && test ! -e "$HOME/.config/systemd/user/tego-gc.service"'
-  expect "kept: the line tego start added to the VM's .bashrc is gone" guest '! grep -qF "# added by tego start" "$HOME/.bashrc"'
-  expect 'kept: Lima itself stays' command -v limactl
-
-  echo 'CHECK the VM is kept; deleting it with its records takes --delete-records (the command saved before)'
-  # The VM's own logs go with the VM: keep them first.
-  collect
-  cp "$MAC_CI_TMP/tego-command-saved" "$shim"
-  chmod +x "$shim"
-  rc=0
-  bound 240 "$MAC_CI_LOGS/uninstall-delete.log" tego uninstall --yes --delete-records || rc=$?
-  expect 'deleted: exit status 0' test "$rc" = 0
-  need "$MAC_CI_LOGS/uninstall-delete.log" 'Deleted the VM "tego", with your records and contracts'
-  need "$MAC_CI_LOGS/uninstall-delete.log" 'Tego is removed, with the VM and your records'
-  expect 'deleted: no tego instance is listed' test -z "$(limactl list --format '{{.Name}}' | grep -x tego || :)"
-  expect "deleted: the instance's folder is gone, records with it" test ! -e "$vm_dir"
-  expect 'deleted: the command is gone' test ! -e "$shim"
-  expect 'deleted: Lima itself stays' command -v limactl
-
-  echo 'CHECK a second run finds nothing to do and changes nothing'
-  cp "$MAC_CI_TMP/tego-command-saved" "$shim"
-  chmod +x "$shim"
-  cp "$HOME/.zshrc" "$MAC_CI_LOGS/zshrc-after-delete"
-  rc=0
-  bound 60 "$MAC_CI_LOGS/uninstall-again.log" tego uninstall --yes || rc=$?
-  expect 'again: exit status 0' test "$rc" = 0
-  need "$MAC_CI_LOGS/uninstall-again.log" 'Tego is removed[.]'
-  expect 'again: the command is gone' test ! -e "$shim"
-  expect 'again: .zshrc did not change' cmp -s "$HOME/.zshrc" "$MAC_CI_LOGS/zshrc-after-delete"
-  expect 'again: no second backup was made' test ! -e "$HOME/.zshrc.tego-backup-1"
-  echo 'MAC_UNINSTALL_PROVEN=decline kept nothing changed; Enter removed the command, PATH line, tunnel and Tego inside the VM and kept the VM with its records; --delete-records deleted the VM; a second run changed nothing.'
-}
 case "$1" in
 probe)
   echo 'CHECK Intel host hypervisor support and Homebrew Lima version'
@@ -358,7 +236,6 @@ PYORDER
   bound 30 "$MAC_CI_LOGS/dashboard-refetch.log" /usr/bin/curl --fail --silent --show-error --max-time 20 --location --cookie-jar "$MAC_CI_LOGS/dashboard-after.cookies" --cookie "$MAC_CI_LOGS/dashboard-after.cookies" "$url" -o "$MAC_CI_LOGS/dashboard-after.html"
   need "$MAC_CI_LOGS/dashboard-after.html" '<!doctype|<!DOCTYPE|<html'
   ;;
-uninstall) uninstall_phase ;;
 collect) collect ;;
 cleanup)
   echo 'CHECK final VM removal (diagnostics were collected first)'

@@ -51,8 +51,12 @@ func runModelAgent(t *testing.T, f *fixture, cfg, agentBin, caFile string) (int,
 	return exitCodeOf(t, err), string(out), events(t, dirs[0]), filepath.Base(dirs[0])
 }
 
-// assertStoppedBy checks three things: exit 124, one limit event naming the
-// ceiling, and run_end reason=limit; and that the agent was stopped short of the calls it wanted.
+// assertStoppedBy checks: exit 124, one limit event naming the ceiling, run_end reason=limit, and that the limit line
+// follows model traffic the run captured (every budget here is counted from it). It does not bound the calls the
+// agent made altogether: the stop is a kill that lands after the limit line, and a stand-in agent that answers
+// instantly can make every call it was told to in that time (seen once under load, 200 of 200). That the budget
+// stopped the run at the right place is each caller's assertion, from the limit payload and the lines before the
+// limit line, which do not depend on how fast the agent loops.
 func assertStoppedBy(t *testing.T, code int, out string, evs []*record.Event, which string) record.LimitPayload {
 	t.Helper()
 	if code != identity.ExitLimit {
@@ -69,8 +73,8 @@ func assertStoppedBy(t *testing.T, code int, out string, evs []*record.Event, wh
 	if end.Reason != record.RunEndLimit || end.ExitCode != identity.ExitLimit {
 		t.Fatalf("run_end %+v, want limit/124", end)
 	}
-	if _, resps := sslPairs(t, evs); len(resps) >= loopCalls {
-		t.Fatalf("the agent made all %d calls: the budget did not stop it", len(resps))
+	if n := responsesBeforeLimit(evs); n < 1 {
+		t.Fatalf("the limit line stands before any captured response: %v", kinds(evs))
 	}
 	return lim
 }
@@ -96,6 +100,12 @@ func TestIntegrationRepeatsStopALoopingAgent(t *testing.T) {
 	lim := assertStoppedBy(t, code, out, evs, record.LimitRepeats)
 	if lim.Value != 3 || lim.Ceiling != 3 {
 		t.Fatalf("limit payload %+v, want repeats 3 at a ceiling of 3", lim)
+	}
+	// The watcher trips on the decision that crosses and the limit line follows that decision's own line, so exactly
+	// three decisions stand before it. That is the product's meaning of repeats: 3, whatever the agent does while the
+	// kill lands.
+	if n := decisionsBeforeLimit(evs); n != 3 {
+		t.Fatalf("%d decisions before the limit line, want 3: the third identical one crossed the ceiling", n)
 	}
 	var decisions int
 	for _, e := range evs {
@@ -262,6 +272,20 @@ func responsesBeforeLimit(evs []*record.Event) int {
 	return n
 }
 
+// decisionsBeforeLimit counts the decision lines that stand before the first limit line in a run's ledger.
+func decisionsBeforeLimit(evs []*record.Event) int {
+	n := 0
+	for _, e := range evs {
+		switch e.Kind {
+		case record.KindDecision:
+			n++
+		case record.KindLimit:
+			return n
+		}
+	}
+	return n
+}
+
 // windowGaps counts the gaps what=limits why=window-carried in a run's ledger.
 func windowGaps(t *testing.T, evs []*record.Event) int {
 	t.Helper()
@@ -300,5 +324,18 @@ func TestResponsesBeforeLimitCountsToTheLimitLine(t *testing.T) {
 		if got := responsesBeforeLimit(c.evs); got != c.want {
 			t.Errorf("%s: %d, want %d", c.name, got, c.want)
 		}
+	}
+}
+
+// TestDecisionsBeforeLimitCountsToTheLimitLine: decisions that stand after the limit line are the agent's calls while
+// the kill landed.
+func TestDecisionsBeforeLimitCountsToTheLimitLine(t *testing.T) {
+	ev := func(k record.Kind) *record.Event { return &record.Event{Kind: k} }
+	d, l := ev(record.KindDecision), ev(record.KindLimit)
+	if got := decisionsBeforeLimit([]*record.Event{d, d, d, l, d, d}); got != 3 {
+		t.Errorf("%d, want 3", got)
+	}
+	if got := decisionsBeforeLimit([]*record.Event{d, d, d, d, l}); got != 4 {
+		t.Errorf("%d, want 4", got)
 	}
 }

@@ -697,6 +697,7 @@ rc=0
 [ "$rc" = 2 ] || fail "--gather of no directory: exit $rc, want 2"
 
 python3 "$here/matrix-workflow_test.py"
+python3 "$here/guest-proof/drive-start_test.py"
 (cd "$here" && python3 summarize_test.py)
 
 echo "ok root-suites_test.sh"

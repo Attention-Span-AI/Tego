@@ -45,8 +45,9 @@ import (
 // summary off. It is printed after the agent's process tree is gone, never while it runs.
 
 // summaryBudget bounds the summary's read of the ledger and its chain check, so a huge ledger never holds tego's exit
-// long; past it the summary says what it could not do.
-const summaryBudget = 5 * time.Second
+// long; past it the summary says what it could not do. A variable only so a test that counts the bytes the summary reads
+// can keep a slow machine (the race detector on a shared runner) from ending the read it is counting early.
+var summaryBudget = 5 * time.Second
 
 // endSummary is one ended run's summary: its receipt and the state of its chain.
 type endSummary struct {

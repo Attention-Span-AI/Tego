@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import pty
+import re
 import select
 import signal
 import subprocess
@@ -21,6 +22,22 @@ def encoded(args):
     return base64.b64encode(json.dumps(args, ensure_ascii=False).encode()).decode()
 
 
+def number_of(label):
+    """The answer to a numbered question: the number of the item that offers label, once the whole list is drawn.
+
+    The guide orders the first question by what the machine has (a demonstration agent comes first when no agent is
+    installed and signed in), so the number of "Another program" is read from the list, never assumed."""
+    item = re.compile(rb'^[ \t]*(\d+)\. ' + re.escape(label), re.M)
+    def pick(shown):
+        if b'Enter a number' not in shown:
+            return None
+        found = item.search(shown)
+        if found is None:
+            raise RuntimeError('the question does not offer ' + label.decode() + ': ' + repr(shown[-600:]))
+        return found.group(1) + b'\n'
+    return pick
+
+
 def terminal():
     master, slave = pty.openpty()
     def session():
@@ -29,7 +46,7 @@ def terminal():
     env = dict(os.environ, TERM='dumb', NO_COLOR='1', HISTFILE='/dev/null')
     child = subprocess.Popen([ENTRY, encoded(['start'])], stdin=slave, stdout=slave, stderr=slave, env=env, preexec_fn=session)
     os.close(slave)
-    answers = [(b'Which agent do you want to supervise?', b'3\n'),
+    answers = [(b'Which agent do you want to supervise?', number_of(b'Another program')),
                (b'What command starts it?', b'python3 tests/test_notes.py\n'),
                (b'Which project should python3 work in?', b'1\n'),
                (b'Which rules should python3 follow?', b'1\n')]
@@ -43,7 +60,10 @@ def terminal():
                 if not data: break
                 sys.stdout.buffer.write(data);sys.stdout.buffer.flush();output+=data
                 if answers and answers[0][0] in output:
-                    _,answer=answers.pop(0);os.write(master,answer)
+                    ask,answer=answers[0]
+                    if callable(answer): answer=answer(output[output.index(ask):])
+                    if answer is not None:
+                        answers.pop(0);os.write(master,answer)
             if child.poll() is not None:
                 # A final Ready panel may still be buffered after process exit.
                 while select.select([master], [], [], 0.25)[0]:

@@ -104,13 +104,21 @@ noisy='Feed FeedExchange BuildRuleMaps SendMMsgTail IterFullRun SeccompNotifyRou
 # or callback (GAPS C73: a pause after the snapshot aged it against a later clock and stopped a live run on a
 # false 4.4 s stall). The call order alone moved 20.91 ns to 27.42 ns (+31.08%, p=0.000 n=10, no allocation either way)
 # on a hosted runner, and 64 to 69 ns (+8%) on the development box with the old order compiled into the same binary;
-# Tick runs once a second per run. The ceiling, +45%, is again room for a runner's spread and a ceiling: a larger step
-# fails. The v0.1.3 entries stay: bench-gate_test.sh holds the mechanism with them, and they expire by themselves.
+# Tick runs once a second per run. Then the limits window (ADR 0165) gave agent.ResolvedLimits a Window field, 8 bytes
+# the watcher embeds, and the watcher a pointer to its window state: the watcher grew from 496 to 512 bytes and every
+# field of it Tick reads moved 8 bytes on, while the benchmarked function's machine code is the same instructions
+# (go tool objdump of both test binaries differs only in those displacements and in call targets). The hosted runners
+# measured it +59% (16.9 to 26.9 ns, against the previous commit of the branch) and +79% (21.0 to 37.7 ns, against main),
+# p=0.000 n=10, no allocation either way: the cost of where the fields lie, which differs from one runner's cores to
+# another's, as NearestFS's did. The ceiling, +120%, is the worst of those with room for a runner's spread (the ratio of
+# two runners' figures went from +31% to +79% on the same code), and is still a ceiling: a larger step fails, and an
+# allocation, which the same gate never accepts, fails at once. The v0.1.3 entries stay: bench-gate_test.sh holds the
+# mechanism with them, and they expire by themselves.
 accepted='
 f8efe5ca2ab899598df2173c05119686b4c2cd57  internal/runtime/supervisor  ExecCommandCost/script   B/op  25  v0.1.3 decides a guarded exec with two readers of the command rules (ADR 0048)
 f8efe5ca2ab899598df2173c05119686b4c2cd57  internal/runtime/supervisor  ExecCommandCost/args16   B/op  25  v0.1.3 decides a guarded exec with two readers of the command rules (ADR 0048)
 f8efe5ca2ab899598df2173c05119686b4c2cd57  internal/runtime/supervisor  ExecCommandCost/args128  B/op  25  v0.1.3 decides a guarded exec with two readers of the command rules (ADR 0048)
-a2263f548514b072565668f25a2b0b7a6d9d13f8  internal/runtime/limits  Tick  sec/op  45  the watcher samples the clock before any activity snapshot or callback (GAPS C73)
+a2263f548514b072565668f25a2b0b7a6d9d13f8  internal/runtime/limits  Tick  sec/op  120  the watcher samples the clock before any activity snapshot or callback (GAPS C73), and its fields lie 8 bytes further on since the limits window (ADR 0165)
 '
 
 GO=${GO:-go}

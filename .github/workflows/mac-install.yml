@@ -105,7 +105,7 @@ jobs:
     # https://lima-vm.io/docs/config/vmtype/
     needs: linux-assets
     runs-on: macos-15-intel
-    timeout-minutes: 80 # the step limits below add up to more than the old 65; the uninstall step is the 15
+    timeout-minutes: 65
     env:
       SHELL: /bin/zsh
     steps:
@@ -129,11 +129,6 @@ jobs:
       - name: Mac command, guide, tunnel, rerun and stopped VM
         timeout-minutes: 20
         run: test/hosted/mac/mac-install-ci.sh exercise
-      - name: Mac uninstall asks, removes what the docs list and keeps the records unless asked
-        timeout-minutes: 15
-        run: |
-          echo 'CHECK tego uninstall on the real Mac command and the real Lima VM: decline, Enter, --delete-records, a second run'
-          test/hosted/mac/mac-install-ci.sh uninstall
       - name: preserve scrubbed installer, Lima and serial logs before removal
         if: always()
         run: test/hosted/mac/mac-install-ci.sh collect

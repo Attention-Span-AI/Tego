@@ -504,7 +504,7 @@ for module in example.com/fork/tego github.com/attention-span-ai/tego; do
 	refuse "accepted steps: every entry applied ($module)" 'accepted step internal/runtime/supervisor [^:]*: does not apply\|did not occur' "$tmp/out"
 done
 
-# v0.2.0's entry, the watcher's Tick, against its base: the measured +31% is a note, +50% fails over the ceiling.
+# v0.2.0's entry, the watcher's Tick, against its base: the measured +31% and the hosted runners' +79% are notes, +130% fails over the ceiling.
 v020=a2263f548514b072565668f25a2b0b7a6d9d13f8
 tick_results() { # tick_results HEADNS HEADSEC DELTA: $tmp/tick/{base,head}, the limits package's Tick under this tree's module path
 	# What the pinned benchstat prints for ten equal rounds of 20.9 ns against ten of HEADNS (the stand-in replays it).
@@ -522,13 +522,18 @@ tick_results 27.4 2.74e-08 +31.10%
 rc=0
 BENCH_GATE_BASE_COMMIT=$v020 "$gate" compare "$tmp/tick/base" "$tmp/tick/head" >"$tmp/out" 2>&1 || rc=$?
 check "accepted steps: v0.2.0's Tick step passes against its base" 0 "$rc"
-expect "accepted steps: the Tick step is a note" '^note github.com/attention-span-ai/tego/internal/runtime/limits Tick-4: sec/op +31\.[0-9]*% (p=0.000 n=10): over +25% at p<0.01 (accepted step against a2263f548514, ceiling +45%: the watcher samples the clock' "$tmp/out"
+expect "accepted steps: the Tick step is a note" '^note github.com/attention-span-ai/tego/internal/runtime/limits Tick-4: sec/op +31\.[0-9]*% (p=0.000 n=10): over +25% at p<0.01 (accepted step against a2263f548514, ceiling +120%: the watcher samples the clock' "$tmp/out"
 refuse "accepted steps: the Tick step is no failure" '^FAIL' "$tmp/out"
-tick_results 31.5 3.15e-08 +50.72%
+tick_results 37.7 3.77e-08 +80.38%
+rc=0
+BENCH_GATE_BASE_COMMIT=$v020 "$gate" compare "$tmp/tick/base" "$tmp/tick/head" >"$tmp/out" 2>&1 || rc=$?
+check "accepted steps: the Tick step a hosted runner measured (+79%) passes against its base" 0 "$rc"
+expect "accepted steps: the +79% Tick step is a note" '^note github.com/attention-span-ai/tego/internal/runtime/limits Tick-4: sec/op +80\.[0-9]*% (p=0.000 n=10): over +25% at p<0.01 (accepted step against a2263f548514, ceiling +120%: the watcher samples the clock' "$tmp/out"
+tick_results 48.1 4.81e-08 +130.14%
 rc=0
 BENCH_GATE_BASE_COMMIT=$v020 "$gate" compare "$tmp/tick/base" "$tmp/tick/head" >"$tmp/out" 2>&1 || rc=$?
 check "accepted steps: a Tick step over its ceiling fails" 1 "$rc"
-expect "accepted steps: the Tick ceiling is named" '^FAIL github.com/attention-span-ai/tego/internal/runtime/limits Tick-4: sec/op +50\.[0-9]*% (p=0.000 n=10): over +25% at p<0.01; over the accepted ceiling +45%$' "$tmp/out"
+expect "accepted steps: the Tick ceiling is named" '^FAIL github.com/attention-span-ai/tego/internal/runtime/limits Tick-4: sec/op +130\.[0-9]*% (p=0.000 n=10): over +25% at p<0.01; over the accepted ceiling +120%$' "$tmp/out"
 
 # Above its ceiling a step still fails, the ceiling named; at it, it is accepted.
 rc=0
