@@ -110,7 +110,7 @@ func TestFix5QuantityBranches(t *testing.T) {
 		{", forked, no exec recorded", "event.process-execs-zero"},
 		{"Only routine actions refused", "detections.noticed"},
 		{"Watched only: all recorded attempts went through", "shared.watch-refusals"},
-		{"No contract to check against", "run.contract-copy"},
+		{"No rules file to check against", "run.contract-copy"},
 		{"Never answered (run lost)", "run.request-answers"},
 		{"This run has no approvals (no ask: section)", "shared.configuration"},
 		{"(nothing)", "editor.entries-zero"},

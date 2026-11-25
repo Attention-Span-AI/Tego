@@ -138,7 +138,7 @@ func TestRunHeaderSaysWhoAndWhichRules(t *testing.T) {
 	c := login(t, s)
 	b := do(s, "GET", "/runs/"+harmRun, "127.0.0.1:8484", c).Body.String()
 	if !strings.Contains(b, `<p class="run-who"><b title="Started by">`) || !strings.Contains(b, `<span class="watch-only">Watched only</span>`) {
-		t.Error("a run with no contract file does not say who started it and that it was watched only")
+		t.Error("a run with no rules file does not say who started it and that it was watched only")
 	}
 }
 

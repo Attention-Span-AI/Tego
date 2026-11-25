@@ -71,8 +71,8 @@
 
 <details class="panel run-facts" id="run-details"><summary><span class="title">Run details and activity</span><span class="soft">Basic · <span class="mono">…PATH</span> · started <time datetime="2026-10-26T12:00:00Z">12:00:00 UTC</time> · <span class="ck" data-since="2026-10-26T12:00:00Z" data-ck>0 ms</span></span></summary>
 <div class="sub-h1"><span class="b b-running"><span class="dot" aria-hidden="true"></span>Running</span><span class="b b-origin b-origin-unknown" title="The record does not say how this run was started (an older ledger, or its input could not be examined).">Unknown</span><span class="mono">r-aaaaaaaa-0000000000006-askedx</span><span class="b b-neutral" title="Checked when the run ends"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-link"/></svg>Verify at end</span></div>
-<p class="run-who"><b title="Started by">Unknown user</b> · <time datetime="2026-10-26T12:00:00Z" title="2026-10-26 12:00:00.000 UTC">12:00:00 UTC</time> · <a class="link" href="/rules?run=r-aaaaaaaa-0000000000006-askedx" title="…PATH">Contract <span class="mono">…PATH</span></a></p><dl class="kv-cols"><div><dt>Agent</dt><dd>fixture</dd></div><div><dt>Run</dt><dd class="mono">r-aaaaaaaa-0000000000006-askedx</dd></div><div><dt>Folder</dt><dd class="mono">…PATH</dd></div><div><dt>Record</dt><dd><span class="b b-neutral" title="Checked when the run ends"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-link"/></svg>Verify at end</span> the run is still being written; check it once it ends</dd></div>
-  <div><dt>Contract</dt><dd><span class="mono">…PATH</span></dd></div>
+<p class="run-who"><b title="Started by">Unknown user</b> · <time datetime="2026-10-26T12:00:00Z" title="2026-10-26 12:00:00.000 UTC">12:00:00 UTC</time> · <a class="link" href="/rules?run=r-aaaaaaaa-0000000000006-askedx" title="…PATH">Rules file <span class="mono">…PATH</span></a></p><dl class="kv-cols"><div><dt>Agent</dt><dd>fixture</dd></div><div><dt>Run</dt><dd class="mono">r-aaaaaaaa-0000000000006-askedx</dd></div><div><dt>Folder</dt><dd class="mono">…PATH</dd></div><div><dt>Record</dt><dd><span class="b b-neutral" title="Checked when the run ends"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-link"/></svg>Verify at end</span> the run is still being written; check it once it ends</dd></div>
+  <div><dt>Rules file</dt><dd><span class="mono">…PATH</span></dd></div>
   <div><dt>Protection</dt><dd>Basic</dd></div>
   <div><dt>Started as</dt><dd>Unknown <span class="muted">· the record does not say</span></dd></div>
   <div><dt>Started by</dt><dd><span class="muted">not recorded</span></dd></div>
@@ -96,7 +96,7 @@
 </section>
 <section class="hl-sec hl-half" aria-labelledby="h-hl-o"><h3 id="h-hl-o"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-activity"/></svg>Outbound <span class="n">1</span></h3>
 
-<ul class="hl-list"><li><a class="hl-what" href="/logs?q=api.example.com&amp;run=r-aaaaaaaa-0000000000006-askedx" title="Every line for api.example.com:443"><span class="ut">api.example.com:443</span></a><span class="hl-v"><span class="b b-allowed"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-check"/></svg>Allowed 1</span></span><span class="hl-tag">In contract</span></li></ul>
+<ul class="hl-list"><li><a class="hl-what" href="/logs?q=api.example.com&amp;run=r-aaaaaaaa-0000000000006-askedx" title="Every line for api.example.com:443"><span class="ut">api.example.com:443</span></a><span class="hl-v"><span class="b b-allowed"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-check"/></svg>Allowed 1</span></span><span class="hl-tag">In rules file</span></li></ul>
 
 
 

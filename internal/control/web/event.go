@@ -856,7 +856,7 @@ func undo(ctx context.Context, as ActService, q url.Values) flash {
 	case errors.Is(err, rules.ErrStale):
 		return flash{Text: "Not undone · the contract changed since · edit it on the Rules files page"}
 	case errors.Is(err, rules.ErrAckMismatch):
-		return flash{Text: "Not undone · this Undo is out of date · use History under Edit contract"}
+		return flash{Text: "Not undone · this Undo is out of date · use History under Edit rules file"}
 	case errors.Is(err, rules.ErrNeedsAck):
 		return flash{Text: "Not undone · tick \"Next run may do more\" to confirm"}
 	}

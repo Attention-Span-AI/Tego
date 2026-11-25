@@ -73,7 +73,7 @@ func TestRowActionsOfferBlockOnLiveRuns(t *testing.T) {
 	}
 	// The run names no contract file (as a tego watch run), so no row can become a rule: no Rule link at all.
 	if strings.Contains(body, `class="link row-act" href="/runs/`+harmRun+`/lines/`) {
-		t.Error("a run with no contract file offers Rule links")
+		t.Error("a run with no rules file offers Rule links")
 	}
 	logs := do(s, "GET", "/logs?run="+harmRun, "127.0.0.1:8484", c).Body.String()
 	if !strings.Contains(logs, `?block=exec&amp;value=curl#block`) {
@@ -126,7 +126,7 @@ func TestUnusedTabDoesNotClaimWhatItCannotKnow(t *testing.T) {
 	s := newServer(t, root)
 	c := login(t, s)
 	body := do(s, "GET", "/runs/"+harmRun+"/unused", "127.0.0.1:8484", c).Body.String()
-	if !strings.Contains(body, "Contract unknown here") || strings.Contains(body, `<span class="muted">Not in contract</span>`) {
+	if !strings.Contains(body, "Rules file unknown here") || strings.Contains(body, `<span class="muted">Not in contract</span>`) {
 		t.Errorf("unused tab of a contract that was not recompiled:\n%s", body)
 	}
 }

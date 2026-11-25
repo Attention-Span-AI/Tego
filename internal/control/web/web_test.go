@@ -174,7 +174,7 @@ func TestPagesRender(t *testing.T) {
 		"/logs?verdict=refused&sys=hide":            {"system lines hidden"},
 		"/logs?q=nomatch":                           {"No matching lines"},
 		"/approvals":                                {"tego approve " + harmRun + " ask-7", "tego deny " + harmRun + " ask-7", "example.com", `action="/approvals/answer"`, `value="approve"`, `value="deny"`},
-		"/rules":                                    {"Rules files", "No contracts yet", "tego rules learn"},
+		"/rules":                                    {"Rules files", "No rules files yet", "tego rules learn"},
 		"/rules?run=" + harmRun:                     {"Contract", "demo-harm", "the run left no contract.yaml"},
 	} {
 		w := do(s, "GET", path, "127.0.0.1:8484", c)

@@ -80,7 +80,7 @@ func TestMakeAContractFromThisRunSavesWhereLearnSaves(t *testing.T) {
 	}
 	for _, tab := range []string{"", "/refusals"} {
 		_, top := f.get(t, "/runs/"+watched+tab)
-		if want := `<a class="link" href="/rules/new?mode=run&amp;from=` + watched + `">Make a contract</a>`; !strings.Contains(top, want) {
+		if want := `<a class="link" href="/rules/new?mode=run&amp;from=` + watched + `">Make a rules file</a>`; !strings.Contains(top, want) {
 			i := strings.Index(top, "Watched only")
 			t.Errorf("tab %q: the head's Make a contract does not link to New rules file from this run: %q", tab, top[max(0, i):min(len(top), i+300)])
 		}

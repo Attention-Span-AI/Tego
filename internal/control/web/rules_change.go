@@ -365,7 +365,7 @@ func (s *Server) changeService(w http.ResponseWriter, r *http.Request) (ChangeSe
 	}
 	svc, ok := source.(ChangeService)
 	if !ok {
-		s.fail(w, http.StatusNotFound, "Edit contract", "Contract editing is off here · start it with tego-control serve, or use tego rules edit <run> <line>")
+		s.fail(w, http.StatusNotFound, "Edit rules file", "Rules file editing is off here · start it with tego-control serve, or use tego rules edit <run> <line>")
 	}
 	return svc, ok
 }
@@ -588,7 +588,7 @@ func oneEdit(op, key, entry string) (rules.Edit, string) {
 	case e.Op != "add" && e.Op != "remove" && e.Op != "never":
 		return e, "Add, remove, or turn an ask into Never allow"
 	case !slices.Contains(rules.EditKeys(), e.Key):
-		return e, "Change one of the lists on Edit contract"
+		return e, "Change one of the lists on Edit rules file"
 	case e.Entry == "":
 		return e, "Type the entry to add: " + hintOf(e.Key)
 	case len(e.Entry) > rules.MaxEntry:

@@ -72,7 +72,7 @@ func TestDenyFlashLinksToTheRule(t *testing.T) {
 	plain := newServer(t, fixture(t))
 	plain.cfg.Rules = &rules.Service{Ledger: plain.cfg.Ledger, Now: plain.cfg.Now}
 	if b := deny(plain, ""); strings.Contains(b, "Make it permanent") {
-		t.Error("a run with no contract file offers to make a denial permanent")
+		t.Error("a run with no rules file offers to make a denial permanent")
 	}
 }
 
