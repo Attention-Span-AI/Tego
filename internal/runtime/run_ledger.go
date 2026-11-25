@@ -93,7 +93,7 @@ func (r *runner) mintRun() error {
 			"taken", string(id), "attempt", attempt)
 	}
 	r.id = id
-	// Every line this run logs from here on carries run=<id> (OPERATIONS.md "Logs of tego itself"),
+	// Every line this run logs from here on carries run=<id> (docs/development/operations.md "Logs of tego itself"),
 	// including the supervisor's, the ledger's and the budget watcher's, which are all handed this
 	// logger after this point: the own log is shared by every run on the machine.
 	r.log = r.log.With("run", string(id))

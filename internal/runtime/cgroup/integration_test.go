@@ -93,7 +93,7 @@ func TestIntegrationLifecycle(t *testing.T) {
 	}
 
 	l := Limits{CPUMax: "max 100000", CPUWeight: 50, MemoryMax: 256 << 20, MemoryHigh: 200 << 20, PidsMax: 64}
-	// A machine whose root cgroup has cpu off (stock RHEL 9: subtree_control "memory pids", until the TIERS.md setup)
+	// A machine whose root cgroup has cpu off (stock RHEL 9: subtree_control "memory pids", until the docs/site/tiers.md setup)
 	// can give no scope cpu, and Missing saying so is the package's answer there: the cpu limits are left out and
 	// the rest of the lifecycle is still held. cpu missing below a root that has it is still a failure.
 	cpu := true

@@ -46,7 +46,7 @@ func TestKernelLineTakesLandlockRowsFromTheProbe(t *testing.T) {
 }
 
 // TestKernelLineUnchangedWhereTheProbeAgreesWithTheRelease: Ubuntu 24.04's 6.8 answers ABI 4, which its release
-// promises, so its line is the one docs/INSTALL.md and QUICKSTART.md print, byte for byte. A Landlock probe that
+// promises, so its line is the one docs/site/install.md and docs/site/getting-started.md print, byte for byte. A Landlock probe that
 // gave no answer (an error other than ENOSYS or EOPNOTSUPP, such as a container filter's EPERM) leaves the
 // release's rows as they were.
 func TestKernelLineUnchangedWhereTheProbeAgreesWithTheRelease(t *testing.T) {

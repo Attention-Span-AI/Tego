@@ -375,7 +375,7 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 		// enforcement handle computes during the run. The runtime calls this once it has one, and
 		// only for a tier that writes a ring buffer at all.
 		ObserveFactory: recorderFor(rt, ownLogger(m)),
-		// tego's own log, never the agent's stderr, which the child owns (OPERATIONS.md): the
+		// tego's own log, never the agent's stderr, which the child owns (docs/development/operations.md): the
 		// runtime tags every line with the run id and hands the logger to the supervisor, the
 		// ledger writer and the budget watcher.
 		Logger: ownLogger(m),
