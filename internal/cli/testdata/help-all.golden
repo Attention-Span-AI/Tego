@@ -20,6 +20,8 @@ write the rules (see also: tego help rules)
    rules check      Check a rules file and show what it enforces
    rules learn      Create a rules file from what a session did
    rules list       List the rules files on this machine and check them
+   rules history    Show the changes made to a rules file
+   rules undo       Undo the newest change to a rules file
 
 check this machine
    machine check    Check what this machine can enforce

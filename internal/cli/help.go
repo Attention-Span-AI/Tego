@@ -27,7 +27,7 @@ func commonGroups(all bool) []helpGroup {
 	rules := []string{"rules create", "rules edit", "rules check", "rules learn"}
 	if all {
 		session = append(session, "session pause", "session resume")
-		rules = append(rules, "rules list")
+		rules = append(rules, "rules list", "rules history", "rules undo")
 	}
 	return []helpGroup{
 		{"get started", []string{"start", "dashboard"}},
