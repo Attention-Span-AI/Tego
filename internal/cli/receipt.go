@@ -76,18 +76,18 @@ func cmdReceipt() Command {
 			})
 			if ciChecking {
 				if verifyCI == "" || expect == "" || checksums == "" || fs.NArg() != 0 || checking || verify || last || requireEnded || statusFile != "" || bundle != "" {
-					message(stderr, "", 0, 0, "tego receipt: use --verify-ci <evidence> --expect <file> --checksums <file> [--json]", codeUsage)
+					message(stderr, "", 0, 0, "tego session show: use --verify-ci <evidence> --expect <file> --checksums <file> [--json]", codeUsage)
 					return identity.ExitUsage
 				}
 				return runReceiptCI(ctx, verifyCI, expect, checksums, trustedRoot, cosign, cosignHash, asJSON, stdout, stderr)
 			}
 			if (bundle == "" && (expect != "" || trustedRoot != "" || cosign != "" || cosignHash != "")) || checksums != "" || (bundle != "" && (!checking || expect == "" || trustedRoot == "" || cosign == "" || cosignHash == "")) || (!checking && (requireEnded || statusFile != "")) || (statusFile != "" && !requireEnded) {
-				message(stderr, "", 0, 0, "tego receipt: CI flags require --verify-ci; --require-ended and --status-file require --check", codeUsage)
+				message(stderr, "", 0, 0, "tego session show: CI flags require --verify-ci; --require-ended and --status-file require --check", codeUsage)
 				return identity.ExitUsage
 			}
 			if checking {
 				if check == "" || fs.NArg() != 1 || fs.Arg(0) == "" || verify || last {
-					message(stderr, "", 0, 0, "tego receipt: --check takes a receipt file and one run folder (or its "+
+					message(stderr, "", 0, 0, "tego session show: --check takes a receipt file and one run folder (or its "+
 						"events.jsonl), and no --verify or --last: tego session show --check receipt.json <run folder>", codeUsage)
 					return identity.ExitUsage
 				}
@@ -97,12 +97,12 @@ func cmdReceipt() Command {
 				return runReceiptCheck(ctx, check, fs.Arg(0), asJSON, requireEnded, statusFile, stdout, stderr)
 			}
 			if fs.NArg() > 1 || (fs.NArg() == 1 && last) {
-				message(stderr, "", 0, 0, "tego receipt: at most one run id or run directory; none (or --last) means the newest run", codeUsage)
+				message(stderr, "", 0, 0, "tego session show: at most one run id or run directory; none (or --last) means the newest run", codeUsage)
 				return identity.ExitUsage
 			}
 			if fs.NArg() == 1 && fs.Arg(0) == "" {
 				// An unset "$RUN" named no run, and the receipt of whichever run was newest answered for it.
-				message(stderr, "", 0, 0, "tego receipt: the run is an empty string; none (or --last) means the newest run", codeUsage)
+				message(stderr, "", 0, 0, "tego session show: the run is an empty string; none (or --last) means the newest run", codeUsage)
 				return identity.ExitUsage
 			}
 			return runReceipt(ctx, fs.Arg(0), asJSON, verify, stdout, stderr)
@@ -117,7 +117,7 @@ func runReceipt(ctx context.Context, ref string, asJSON, verify bool, stdout, st
 	if ref == "" {
 		dir, err = newestRunDir(mc)
 		if err != nil {
-			message(stderr, "", 0, 0, "tego receipt: "+err.Error()+"; run tego rules create --preset no-secrets,repo-only-writes --write ./out, then tego run agent.yaml", codeNotFound)
+			message(stderr, "", 0, 0, "tego session show: "+err.Error()+"; run tego rules create --preset no-secrets,repo-only-writes --write ./out, then tego run agent.yaml", codeNotFound)
 			return identity.ExitError
 		}
 	} else if dir, err = resolveRunDir("receipt", ref, true, mc); err != nil {
@@ -126,10 +126,10 @@ func runReceipt(ctx context.Context, ref string, asJSON, verify bool, stdout, st
 	r, err := ledger.OpenReader(dir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			message(stderr, "", 0, 0, fmt.Sprintf("tego receipt: no run record at %s", dir), codeIO)
+			message(stderr, "", 0, 0, fmt.Sprintf("tego session show: no run record at %s", dir), codeIO)
 			return identity.ExitError
 		}
-		message(stderr, "", 0, 0, "tego receipt: "+err.Error(), codeIO)
+		message(stderr, "", 0, 0, "tego session show: "+err.Error(), codeIO)
 		return identity.ExitError
 	}
 	defer func() { _ = r.Close() }()
@@ -146,7 +146,7 @@ func runReceipt(ctx context.Context, ref string, asJSON, verify bool, stdout, st
 	rc, err := receipt.Compute(ctx, r, opt)
 	if err != nil {
 		if errors.Is(err, receipt.ErrNoRun) {
-			message(stderr, "", 0, 0, fmt.Sprintf("tego receipt: %s: %v", dir, err), codeIO)
+			message(stderr, "", 0, 0, fmt.Sprintf("tego session show: %s: %v", dir, err), codeIO)
 			return identity.ExitError
 		}
 		return readFailed(stderr, "receipt", err)
@@ -163,12 +163,12 @@ func runReceipt(ctx context.Context, ref string, asJSON, verify bool, stdout, st
 	if asJSON {
 		write = rc.JSON
 		if b := rc.Binding; b != nil && b.Error != "" {
-			message(stderr, "", 0, 0, fmt.Sprintf("warning: tego receipt: %s: the receipt is not bound to its record: %s",
+			message(stderr, "", 0, 0, fmt.Sprintf("warning: tego session show: %s: the receipt is not bound to its record: %s",
 				filepath.Join(dir, ledger.EventsFile), b.Error), codeUnverified)
 		}
 	}
 	if err := write(stdout); err != nil {
-		message(stderr, "", 0, 0, "tego receipt: "+err.Error(), codeIO)
+		message(stderr, "", 0, 0, "tego session show: "+err.Error(), codeIO)
 		return identity.ExitError
 	}
 	if verify {
@@ -184,21 +184,21 @@ func runReceipt(ctx context.Context, ref string, asJSON, verify bool, stdout, st
 func verifyReceiptChain(ctx context.Context, dir string, asJSON bool, mc *machineOnce, stdout, stderr io.Writer) int {
 	m, err := mc.load()
 	if err != nil {
-		message(stderr, "", 0, 0, "tego receipt: machine config: "+err.Error(), identity.CodeConfigUntrusted)
+		message(stderr, "", 0, 0, "tego session show: machine config: "+err.Error(), identity.CodeConfigUntrusted)
 		return identity.ExitError
 	}
 	anchor, err := anchorPath(m)
 	if err != nil {
-		message(stderr, "", 0, 0, "tego receipt: "+err.Error(), codeIO)
+		message(stderr, "", 0, 0, "tego session show: "+err.Error(), codeIO)
 		return identity.ExitError
 	}
 	rep, verr := ledger.VerifyRunDir(ctx, dir, ledger.NewFileChainAnchor(anchor))
 	if verr != nil && !errors.Is(verr, ledger.ErrUnverified) {
-		message(stderr, "", 0, 0, "tego receipt: verify "+dir+": "+verr.Error(), codeIO)
+		message(stderr, "", 0, 0, "tego session show: verify "+dir+": "+verr.Error(), codeIO)
 		return identity.ExitError
 	}
 	if verr != nil {
-		message(stderr, "", 0, 0, fmt.Sprintf("tego receipt: %s does not verify: %v", rep.Run, verr), codeUnverified)
+		message(stderr, "", 0, 0, fmt.Sprintf("tego session show: %s does not verify: %v", rep.Run, verr), codeUnverified)
 		return identity.ExitFinding
 	}
 	out := stdout
@@ -352,7 +352,7 @@ func runReceiptCheck(ctx context.Context, receiptFile, record string, asJSON, re
 		write = res.JSON
 	}
 	if err := write(stdout); err != nil {
-		message(stderr, "", 0, 0, "tego receipt: "+err.Error(), codeIO)
+		message(stderr, "", 0, 0, "tego session show: "+err.Error(), codeIO)
 		return identity.ExitError
 	}
 	return res.ExitCode()
@@ -429,12 +429,12 @@ func readCIInput(path string, limit int64) ([]byte, error) {
 	}
 	dir, err := openDirectoryNoLinks(filepath.Dir(abs))
 	if err != nil {
-		return nil, fmt.Errorf("tego receipt: CI input: %w", err)
+		return nil, fmt.Errorf("tego session show: CI input: %w", err)
 	}
 	defer func() { _ = dir.Close() }() // directory held only while reading this input
 	f, err := ledger.OpenRegularAt(dir, filepath.Base(abs), path)
 	if err != nil {
-		return nil, fmt.Errorf("tego receipt: %w", err)
+		return nil, fmt.Errorf("tego session show: %w", err)
 	}
 	defer func() { _ = f.Close() }() // read-only descriptor
 	st, err := f.Stat()
@@ -442,14 +442,14 @@ func readCIInput(path string, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	if stat, ok := st.Sys().(*syscall.Stat_t); !ok || stat.Nlink != 1 {
-		return nil, fmt.Errorf("tego receipt: CI input must have exactly one link")
+		return nil, fmt.Errorf("tego session show: CI input must have exactly one link")
 	}
 	b, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
 		return nil, err
 	}
 	if int64(len(b)) > limit {
-		return nil, fmt.Errorf("tego receipt: %s exceeds %d bytes", path, limit)
+		return nil, fmt.Errorf("tego session show: %s exceeds %d bytes", path, limit)
 	}
 	return b, nil
 }
@@ -579,7 +579,7 @@ func independentCIInputs(evidence string, paths []string) error {
 		for _, pair := range [][2]string{{base, abs}, {resolvedBase, resolved}} {
 			rel, err := filepath.Rel(pair[0], pair[1])
 			if err != nil || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
-				return errors.New("tego receipt: expectations, roots and verifier must be supplied independently outside evidence")
+				return errors.New("tego session show: expectations, roots and verifier must be supplied independently outside evidence")
 			}
 		}
 	}
