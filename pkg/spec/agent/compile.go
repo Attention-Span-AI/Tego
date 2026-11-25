@@ -1429,7 +1429,7 @@ func (k *compiler) pinnedNotBuilt(auto, machinePin bool) {
 		pos, by = k.cpos, "the machine config pins it at "+k.m.Tier.Source.String()
 	}
 	k.ds.warnf(pos, backend.CodeTierUnavailable, "tier %s is not built into this tego, and %s: every run of this contract is refused", k.rt.Tier, by).
-		fix("pin a tier this tego builds (tego doctor lists them), use a build with tier %s, or leave tier: auto", k.rt.Tier)
+		fix("pin a tier this tego builds (tego machine check lists them), use a build with tier %s, or leave tier: auto", k.rt.Tier)
 }
 
 // highestBuilt is the highest tier at or below ceiling this binary builds, when WithTiers said which; the

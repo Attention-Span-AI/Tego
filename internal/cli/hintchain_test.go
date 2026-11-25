@@ -197,7 +197,7 @@ func TestDoctorRequireHintKeepsTheTier(t *testing.T) {
 		want string
 	}{
 		{doctor.Report{Tier: backend.TierLandlock, Require: backend.TierCgroup, Fix: "run as root"},
-			"\nnext: do what the fix: line above says, then check again:\n  " + selfSudo(t, "doctor --require cgroup") + "\n"},
+			"\nnext: do what the fix: line above says, then check again:\n  " + selfSudo(t, "machine check --require cgroup") + "\n"},
 		{doctor.Report{Tier: backend.TierCgroup, Require: backend.TierBPFLSM, Root: true, Fix: "boot with lsm=bpf"},
 			"\nnext: do what the fix: line above says, then run this check again.\n"},
 		{doctor.Report{Require: backend.TierLandlock, Fix: "start tego inside a cgroup of your own"},

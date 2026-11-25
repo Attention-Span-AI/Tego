@@ -126,9 +126,9 @@ func refuseSetup(name string, stderr io.Writer) bool {
 	}
 	if learnEUID() == 0 {
 		if uid, _ := config.InvokingUID(); uid != 0 {
-			doctorAsRoot, why := sudoTego("doctor")
+			doctorAsRoot, why := sudoTego("machine check")
 			if why != "" {
-				doctorAsRoot = "tego doctor as root (" + strings.TrimSuffix(why, ".") + ")"
+				doctorAsRoot = "tego machine check as root (" + strings.TrimSuffix(why, ".") + ")"
 			}
 			message(stderr, "", 0, 0, "tego "+name+": as root for another user: the stored check would be root's, in that "+
 				"user's ~/.tego; nothing was written; run tego "+name+" without sudo, and "+doctorAsRoot+
