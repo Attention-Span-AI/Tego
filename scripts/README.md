@@ -1,7 +1,8 @@
 Operator scripts: `install.sh`, `release.sh`. Plain POSIX sh, reviewed like code. `install.sh` is
 also a release asset (`.goreleaser.yaml`). Turning on BPF LSM at boot is the machine owner's step;
-`tego doctor` says whether it is on. `install.ps1` is the Windows route: PowerShell that imports a dedicated Ubuntu 24.04 distribution in
-WSL2 when it is missing and runs `install.sh` inside it. PowerShell stand-ins run on Linux; real Windows runs and browser handoff remain pending.
+`tego machine check` says whether it is on. `install.ps1` is the Windows route: PowerShell that imports a dedicated Ubuntu 24.04 distribution in
+WSL2 when it is missing and runs `install.sh` inside it. PowerShell stand-ins run on Linux, and the install steps passed in a Windows 11 virtual machine; runs on Windows hardware and the
+browser handoff are not tested yet.
 `install_windows_test.sh` uses Pester 5.7.1 and PSScriptAnalyzer 1.25.0, supplied on PSModulePath.
 The two Windows command scripts and the guest provision/entry files are verified release assets.
 

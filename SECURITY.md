@@ -6,7 +6,7 @@ Report it privately through GitHub: open
 [Report a vulnerability](https://github.com/Attention-Span-AI/Tego/security/advisories/new) on this repository's Security tab.
 Please do not open a public issue, pull request or discussion for it.
 
-A useful report says what you did, what you expected, what happened, the output of `tego version` and `tego doctor`,
+A useful report says what you did, what you expected, what happened, the output of `tego version` and `tego machine check`,
 and the kernel and distribution. A contract that reproduces it, with any secrets removed, helps most.
 
 There is no promised response time. We will answer reports we can reproduce, tell you what we decide, and credit you in

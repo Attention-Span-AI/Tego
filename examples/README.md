@@ -18,5 +18,5 @@ registry and restarts it after a crash or a limit, `tego-agent-restart@.timer` r
 agent restarts one service, since no contract can grant it the user manager's socket (docs/site/built-in-refusals.md).
 
 `lima/` holds `tego.yaml`, the Lima template for macOS: an Ubuntu 24.04 VM that installs Tego with the one-line
-install when it first boots (docs/site/supported-systems.md, "macOS"). `limactl validate` passes on it; it has not been booted on a
-Mac.
+install when it first boots (docs/site/supported-systems.md, "macOS"). `limactl validate` passes on it, and CI tests it on
+`macos-15` and `macos-15-intel` runners with the real installer (`.github/workflows/mac-install.yml`).

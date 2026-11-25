@@ -610,7 +610,7 @@ accepted; the older-minor valid fixture pins it. The minor-31 valid fixture
 exercises both TCP and UDP history.
 
 Record minors 32 to 35 are reserved. Their fields are declared and validated ahead of any writer (`Event.ValidateAt`) and
-refused in a ledger below their revision; their writers remain absent. No-baseline launches retain revision 31; nonempty baseline snapshots use MinorBaseline (39). Readers refuse reserved revisions 36 through 38 and anything above 39.
+refused in a ledger below their revision; their writers remain absent. Every launch and adoption writes revision 41 (`MinorEveryLaunch`, below). Readers accept revisions 0 through 35, 37, 39, 40 and 41, and refuse the reserved revisions 36 and 38 and anything above 41.
 
 At `record_minor` 11 (2026-10-16), `run_start` also
 carries the optional `runtime_grants`: the rule name of every grant the run makes on its own authority
@@ -1030,7 +1030,7 @@ new reason. The native Unix peer plane emits an ordinary refused net/sendmsg lin
 
 ### Machine baseline evidence (ADR 0144 slice 6)
 
-`MinorBaseline` names the allocated baseline revision in `pkg/spec/record/record.go`. This build understands revisions 0 through 35, `MinorLocalRoles` (37), `MinorBaseline` and `MinorAppliedLimits`. Reserved revisions 36 and 38 are unsupported here, just like a revision above this build’s ceiling: record decoding and validation, receipts, drift, historical replay, rulesview and metadata projection refuse them with an unsupported-revision reason. No writer for the declared revisions 32 through 35 is added.
+`MinorBaseline` names the allocated baseline revision in `pkg/spec/record/record.go`. This build understands revisions 0 through 35, `MinorLocalRoles` (37), `MinorBaseline` (39), `MinorAppliedLimits` (40) and `MinorEveryLaunch` (41), the revision every launch writes. Reserved revisions 36 and 38 are unsupported here, just like a revision above this build’s ceiling: record decoding and validation, receipts, drift, historical replay, rulesview and metadata projection refuse them with an unsupported-revision reason. No writer for the declared revisions 32 through 35 is added.
 
 A nonempty configured snapshot selects `MinorBaseline`; its block and effective hash are mandatory, including with zero rules. Earlier supported revisions refuse these fields (`below-minor`).
 

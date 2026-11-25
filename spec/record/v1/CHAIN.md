@@ -160,6 +160,7 @@ the chain, the run, the shape), then the tail, then the anchor. A finding
 about one line names it (`line`, its number from 0). `lines` counts the lines the chain held through; `head` is the
 last of their ids. A validating reader (Go's `tego events --verify`) may also report a schema finding of its own.
 
-`tego-verify` exits 0 for `match`, 1 for `mismatch`, 125 for `cannot-check` and 2 for a usage error, and labels every
-result with `scope: integrity` and `checked_by` (the checker and its version). Two implementations agree when their
-verdict, reason, `line`, `lines` and `head` agree; their words and `checked_by` differ by design.
+Tego ships no standalone checker. Its check of a record is `tego events <run> --verify` (`--json` prints one JSON
+object), which exits 0 for `match`, 1 for `mismatch`, 125 for `cannot-check` and 2 for a usage error. An independent
+checker of this section agrees with it when their verdict, reason, `line`, `lines` and `head` agree; their words may
+differ.

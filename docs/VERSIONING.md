@@ -67,14 +67,15 @@ No historical line is rewritten.
   build needs no clang.
 
 ## 5. Releases
-- Two Linux binaries per target (*added 2026-10-24*, ADR 0100 (1a)): `tego` and `tego-control`, raw, side by side. The
+- Two Linux binaries per target (*added 2026-10-24*, ADR 0100 (1a)): `tego` and `tego-control`, raw, side by side.
+  Windows gets one more, the `tego.exe` command (`cmd/tego-windows`), which runs the Linux `tego` inside WSL. The
   tego build's pre hook (`scripts/control-pin.sh`) builds tego-control with the tego-control build's own flags and
   links its SHA-256 into tego (`internal/handoff.controlSHA256`); release.yml fails the draft unless each tego pins
   the tego-control it ships (`scripts/check-control-pin.sh --static`), its `reproduce` job rebuilds and compares
   both binaries, and CI's `reproducible` job runs the same check. `make build` writes the pair the same way.
 - `.goreleaser.yaml`: `CGO_ENABLED=0`, `-trimpath`, `-tags tegobpf`, `-buildmode=exe` (static and not PIE, a
   release choice for portability: since ADR 0021 (4) tier 2 runs a dynamically linked or PIE build too, and the guest
-  run of a PIE build is that ADR's open condition), `tego` and `tego-control` for `linux` only, `amd64` and
+  run of a PIE build is that ADR's open condition), `tego` and `tego-control` for `linux`, `tego-windows` for `windows`, each `amd64` and
   `arm64`, sha256 checksums, raw binaries, one SPDX SBOM per binary. `make release` stays the snapshot build (no SBOM, nothing
   signed or published); `.github/workflows/release.yml` runs on `v*` tags only.
 - Every release also includes `tego_<version>_licenses.tar.gz`, covered by those checksums and the release

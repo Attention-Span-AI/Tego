@@ -79,7 +79,8 @@ Work handed to a pre-existing daemon starts outside the run's process lineage. W
    enforce-none, record-by-API: every create/start/exec/build request is a `boundary` event, the dangerous fields are
    refused, and the run gets `gap what=enforce` and `gap what=record` for the container.
 2. **A per-run Docker API proxy; no PATH shims** (the only PATH shim in the product is E70's `tego-priv`).
-   When the contract has a `docker:` section, `tego run` listens on `$XDG_RUNTIME_DIR/tego/<run>/docker.sock`,
+   *Not built:* the proxy is a design. The schema accepts `docker:` and `containers:` (other than `none`), and this
+   build refuses a contract that sets either when it compiles. As designed: when the contract has a `docker:` section, `tego run` listens on `$XDG_RUNTIME_DIR/tego/<run>/docker.sock`,
    sets `DOCKER_HOST` to it and unsets `DOCKER_CONTEXT`, and resolves the real daemon as the Docker CLI does
    (`DOCKER_HOST`, then `DOCKER_CONTEXT`, then `currentContext` in the config file, then the default socket; verified
    in docker/cli). CLI, compose, docker-py and the Go client all take `DOCKER_HOST` first. Only `--context`/`-H` flags
@@ -287,6 +288,9 @@ uprobe source names threads by tid; `time` is the step-by-time rule, the fallbac
 Every attributed action is `likely`; `exact` is never written. Views never present `unattributed` as fact.
 
 ## 9. Docker and daemons: the API proxy
+
+*Not built.* This section is the design. This build refuses a contract that sets `docker:` or `containers:` (other
+than `none`) when it compiles, so no proxy runs.
 
 On the first request of a run the proxy reads `GET /info` (`CgroupDriver`, `CgroupVersion`, `SecurityOptions`,
 capability booleans) and caches it. In the root tiers, before the first `create` is forwarded, it pre-creates the

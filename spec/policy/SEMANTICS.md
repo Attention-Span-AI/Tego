@@ -25,11 +25,14 @@ here is undefined and must be added here before it is coded.
 lists concatenate, scalars in the contract win, `deny_read` entries are never removed by an extending contract, and
 `fs.assurance` keeps the stricter value (`kernel` over `best-effort`; amended 2026-10-05, ADR 0041 D1 (a)).
 *Amended 2026-10-25 (ADR 0068):* a name under `tego/` is a built-in profile, never a file (ADR 0066 D2); the presets
-are three, each meaning a row of the table above: `tego/no-secrets` passes only an allow-list of variables
+are four, the first three each meaning a row of the table above: `tego/no-secrets` passes only an allow-list of variables
 (`env.pass`) and keeps the built-in `deny_read` list on as any contract that does not write `deny_read: []` does,
 `tego/no-prod` is `net.allow: []` (all connects refused but the contract's own `net.allow` entries; the resolver
 stays reachable under `net.dns.mode: system`), and `tego/repo-only-writes` is `fs.write: [/dev/null]` (every write
-refused but `/dev/null` and the contract's own `fs.write` entries). `tego/<preset>@<n>` pins revision `n`.
+refused but `/dev/null` and the contract's own `fs.write` entries). The fourth, `tego/ci`, is for CI runners:
+`reason.reads: on`, an `env.deny` list of the runner's token variables (`GITHUB_TOKEN`, `GH_TOKEN`, the `ACTIONS_*`
+token and URL variables, `SIGSTORE_ID_TOKEN`, `INPUT_TOKEN`, `INPUT_GITHUB_TOKEN`) and `fs.deny_write: ["./.github/"]`.
+`tego/<preset>@<n>` pins revision `n`.
 *Amended 2026-10-24 (ADR 0069 D1):* `fs.reads` (`auto` | `held` | `direct`, default `auto`) keeps the stricter value,
 `held` over `auto` over `direct`; `direct` counts only from the top-level contract, and a profile's is ignored with
 `profile-cannot-loosen`. `auto` holds the run's read opens at tier landlock while a `deny_read` target lies at or
@@ -295,10 +298,11 @@ it (union, not nearest-wins). So:
   `deny_read` entry that is the nearest entry deciding a read there, nested or not (a nested target directory itself
   included), so `.env` inside a writable worktree is enforced at tier landlock too. `compile` warns `held-reads` at
   each such target, with the cost (about 0.1 ms per read open), and `compile --test` answers its read refused.
-  `O_WRONLY` and `O_PATH` opens are not held. What it does not catch: the target renamed or hard-linked to another
-  name and read there (capability `fs.deny_read.moved`, false at tier landlock until ADR 0069's identity pinning);
-  one written or replaced during the run from outside it and then moved; a device outside the mem and tty classes is
+  `O_WRONLY` and `O_PATH` opens are not held. What it does not catch: one written or replaced during the run from outside it and then moved; a device outside the mem and tty classes is
   refused while reads are held. `fs.reads: direct` keeps the entry `unenforced` as before.
+  A target renamed or hard-linked to another name and read there is caught under held reads: the launch pins each
+  target's identity, so the read is refused under any name (capability `fs.deny_read.moved`, true at tier landlock,
+  `pkg/spec/backend/matrix.go`).
 - Globs in `deny_read` are expanded at compile time to existing matches under `$HOME` and the worktree in every tier;
   files created later are not covered and `compile` says so. *Note 2026-09-30 (ADR 0039, a design, not built):* at
   tier bpflsm a glob whose last component is an exact name (the built-in `.env` scan's) will also be a name-keyed
