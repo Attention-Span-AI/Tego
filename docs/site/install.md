@@ -8,7 +8,7 @@ order: 1
 
 One command installs Tego. Tego needs a Linux kernel, so on a Mac or a Windows PC the installer also sets up a small Linux virtual machine (VM) and a `tego` command that runs Tego inside it. The requirements for each system are on [Supported systems](/docs/supported-systems/).
 
-<span id="platforms"></span>
+<a id="platforms"></a>
 
 <div class="os-tabs">
 <section data-os="linux" aria-label="Linux">

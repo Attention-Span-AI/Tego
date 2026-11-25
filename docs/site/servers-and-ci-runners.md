@@ -88,7 +88,7 @@ printf '[Slice]\nCPUWeight=100\n' | sudo tee /etc/systemd/system/system.slice.d/
 
 The first file offers `cpu` to each user's systemd. The second makes the user's systemd turn it on. The third keeps `cpu` on for sessions started as root.
 
-<span id="a-service-account"></span>
+<a id="a-service-account"></a>
 
 ## Run as a service account
 
@@ -117,6 +117,8 @@ A service account is a user with a `nologin` shell that you reach with `sudo -u`
 Without `sudo -u svc`, the line in step 4 opens a shell in your own user manager, and `tego setup` answers for you. Linger keeps the account's processes running after logout and starts its manager at boot. Turn it off with `sudo loginctl disable-linger svc` when the account no longer runs agents.
 
 To run the agent as a systemd unit under that account, see [Services](/docs/services/).
+
+<a id="process-inspection-setting-ptrace-scope"></a>
 
 ## Process inspection setting (`ptrace_scope`)
 

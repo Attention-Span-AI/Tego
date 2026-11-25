@@ -52,7 +52,7 @@ limits:
 | `keep_descendants` | bool | The session keeps running while processes the agent started are alive. | `false`: they are stopped with the agent. | All |
 | `learn` | `{run, withheld}` | Written by `tego rules learn`: addresses held back after a secret read. A note only; it never allows anything. Top-level file only. | None. | All |
 
-<span id="fs"></span>
+<a id="fs"></a>
 
 ## Files (`fs`)
 
@@ -70,7 +70,7 @@ Rules for files. The [built-in refusals](/docs/built-in-refusals/) apply with or
 | `fs.reads` | `auto`, `held`, `direct` | `held` makes Tego check each read open, so a secret inside a write folder stays refused. `direct` only in the top-level file. | `auto`: held at Basic while a `deny_read` path lies inside a write folder. | All |
 | `fs.apparmor_assume_root_namespace` | bool | For administrators: states that the session sees the root AppArmor policy namespace. Top-level file only. | `false` | All |
 
-<span id="net"></span>
+<a id="net"></a>
 
 ## Network (`net`)
 
@@ -115,7 +115,7 @@ These fields shape model traffic through Tego's forwarder. They need a `models:`
 | `net.proxy.tunnel_idle` | duration | Idle time before a tunnel closes. | `30s` |
 | `net.proxy.tunnel_wall` | duration | Longest tunnel life. | `5m` |
 
-<span id="exec"></span>
+<a id="exec"></a>
 
 ## Programs (`exec`)
 

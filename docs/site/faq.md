@@ -27,7 +27,7 @@ No. The agent works in your real project and can read any path your rules and th
 
 ### Who makes Tego?
 
-Attention Span. Tego is open source under Apache-2.0, on [GitHub](https://github.com/Attention-Span-AI/Tego), and [About Attention Span](/about/) says how to reach us.
+Attention Span. Tego is open source under Apache-2.0, on [GitHub](https://github.com/Attention-Span-AI/Tego), and [About Attention Span](https://attention-span.ai/about/) says how to reach us.
 
 ### Is Tego free, and under which license?
 
