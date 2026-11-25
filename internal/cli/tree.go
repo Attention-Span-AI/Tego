@@ -36,6 +36,7 @@ func trees() []noun {
 			{"edit", "Edit a rules file, then check it", "", cmdRulesEdit, "<agent | file>"},
 			{"check", "Check a rules file and show what it enforces", "compile", nil, "<agent | file> [--json]"},
 			{"learn", "Create a rules file from what a session did", "learn", nil, "<session> [--save <name> | --out <file>]"},
+			{"list", "List the rules files on this machine and check them", "contracts", nil, "[<name|path>] [--json] [-v]"},
 			{"history", "Show the changes made to a rules file", "", cmdRulesHistory, "<agent | file> [--json]"},
 			{"undo", "Undo the newest change to a rules file", "", cmdRulesUndo, "<agent | file> [<id>] [--yes]"},
 		}},

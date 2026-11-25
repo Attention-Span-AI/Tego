@@ -2,6 +2,7 @@ usage: tego rules create [--name <agent>] [--agent <program>] [--preset <list>] 
    or: tego rules edit <agent | file>
    or: tego rules check <agent | file> [--json]
    or: tego rules learn <session> [--save <name> | --out <file>]
+   or: tego rules list [<name|path>] [--json] [-v]
    or: tego rules history <agent | file> [--json]
    or: tego rules undo <agent | file> [<id>] [--yes]
    or: tego rules <session> | --last [--json]
@@ -10,6 +11,7 @@ usage: tego rules create [--name <agent>] [--agent <program>] [--preset <list>] 
    edit             Edit a rules file, then check it
    check            Check a rules file and show what it enforces
    learn            Create a rules file from what a session did
+   list             List the rules files on this machine and check them
    history          Show the changes made to a rules file
    undo             Undo the newest change to a rules file
 

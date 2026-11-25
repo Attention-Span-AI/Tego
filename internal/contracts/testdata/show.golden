@@ -1,7 +1,7 @@
-Contract fixture
+Rules file fixture
 File: <PROJECT>/agent.yaml
 Check: compiles
-Contract hash: 496c8de636f7f9af8c977cd4a8bfbd163d9434a5f47a2a7b1532f79f122466f2
+Hash: 496c8de636f7f9af8c977cd4a8bfbd163d9434a5f47a2a7b1532f79f122466f2
   tier bpflsm [tier]
     from built-in default
   capture uprobe [capture]
@@ -9,9 +9,9 @@ Contract hash: 496c8de636f7f9af8c977cd4a8bfbd163d9434a5f47a2a7b1532f79f122466f2
   record summary [record]
     from built-in default
   Can run fixture, the command it starts with [command]
-    from contract <PROJECT>/agent.yaml:3
+    from rules file <PROJECT>/agent.yaml:3
   Gets PATH from your shell [env.pass]
-    from contract <PROJECT>/agent.yaml:5
+    from rules file <PROJECT>/agent.yaml:5
   Can never read the usual secret files: SSH and cloud keys, browser profiles, .env files and similar [built-in.deny_read]
     from built in
   Cannot reach session services, non-SSH credential agents, system D-Bus, X11 or the listed multiplexer and editor sockets; protects their folders from changes [builtin.host_ipc]
@@ -31,16 +31,16 @@ Contract hash: 496c8de636f7f9af8c977cd4a8bfbd163d9434a5f47a2a7b1532f79f122466f2
   Writes every refusal and question to a record that cannot be changed unnoticed, and a summary of the rest [record]
     from built in
   Can read any other file on this computer, except the ones under Never reads and Always on. [read.default]
-    from contract <PROJECT>/agent.yaml:1
+    from rules file <PROJECT>/agent.yaml:1
   Cannot change any file. [change.default]
     from built-in default
   Can run any program. [programs.default]
     from built-in default
   Cannot connect anywhere. [network.default]
-    from contract <PROJECT>/agent.yaml:7
+    from rules file <PROJECT>/agent.yaml:7
   Every other variable in your shell, secrets included, is removed before it starts. [env.default]
-    from contract <PROJECT>/agent.yaml:5
+    from rules file <PROJECT>/agent.yaml:5
   No limits of its own: this computer's defaults apply. [limits.default]
-    from contract <PROJECT>/agent.yaml:1
-Checked offline with today's files and machine config. DNS is deferred; the contract's program is not executed and no backend is probed. PATH is the current caller's, not a recorded run's. Hash equality compares merged contract text, not enforcement or comments.
-These are the contracts Tego found in these registries and runs. Files outside them may be missing. Contracts in folders Tego has never seen are not included. Other users' contracts are not included without root. No other homes are searched.
+    from rules file <PROJECT>/agent.yaml:1
+Checked offline with today's files and machine config. DNS is deferred; the rules file's program is not executed and no backend is probed. PATH is the current caller's, not a recorded run's. Hash equality compares merged rules text, not enforcement or comments.
+These are the rules files Tego found in these registries and runs. Files outside them may be missing. Rules files in folders Tego has never seen are not included. Other users' rules files are not included without root. No other homes are searched.

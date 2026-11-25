@@ -19,6 +19,7 @@ write the rules (see also: tego help rules)
    rules edit       Edit a rules file, then check it
    rules check      Check a rules file and show what it enforces
    rules learn      Create a rules file from what a session did
+   rules list       List the rules files on this machine and check them
 
 check this machine
    machine check    Check what this machine can enforce
@@ -51,7 +52,6 @@ supervise other programs
    adopt            (root) Supervise an agent that is already running
    agents           (root) List the agent processes running here (observes only)
    scan             Look for your running agents, installed candidates and settings metadata
-   contracts        Find contracts and check today's files without running an agent
 
 tools for agents
    mcp              Set the MCP tool rules of a running session
@@ -62,6 +62,7 @@ older names
    init             Same as 'tego rules create'
    compile          Same as 'tego rules check'
    learn            Same as 'tego rules learn'
+   contracts        Same as 'tego rules list'
    receipt          Same as 'tego session show'
    doctor           Same as 'tego machine check'
    test             Same as 'tego machine test'

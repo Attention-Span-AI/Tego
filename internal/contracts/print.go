@@ -59,14 +59,14 @@ func PrintList(w io.Writer, c Catalog, verbose bool) error {
 		line("Machine baseline: locked. Configured entries are NOT YET APPLIED to runs.")
 		line("Agents outside a Tego run are not held to these rules. Existing own contracts keep their rules until you choose to migrate them.")
 	}
-	line("Contracts found: %d", len(c.Contracts))
+	line("Rules files found: %d", len(c.Contracts))
 	if len(c.Contracts) == 0 {
-		line("No contracts were found.")
+		line("No rules files were found.")
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	if len(c.Contracts) > 0 {
 		if err == nil {
-			_, err = fmt.Fprintln(tw, "NAME\tFILE\tCHECK\tCONTRACT HASH\tLAST RAN\tTIER\tSAME TEXT AS LAST RUN")
+			_, err = fmt.Fprintln(tw, "NAME\tFILE\tCHECK\tHASH\tLAST RAN\tTIER\tSAME TEXT AS LAST RUN")
 		}
 		for _, e := range c.Contracts {
 			check := e.State
@@ -108,7 +108,7 @@ func PrintList(w io.Writer, c Catalog, verbose bool) error {
 				if hash == "" {
 					hash = "unknown"
 				}
-				line("  last run %s; recorded contract hash %s", e.LastRun.ID, hash)
+				line("  last run %s; recorded hash %s", e.LastRun.ID, hash)
 			}
 		}
 		first := true
@@ -140,14 +140,17 @@ func PrintList(w io.Writer, c Catalog, verbose bool) error {
 }
 
 // PrintShow writes each compiled rule with provenance, using the existing rule
-// view's words. Verbose appends exactly the table that tego compile prints.
+// view's words. Verbose appends exactly the table that tego rules check prints.
 func PrintShow(w io.Writer, s Show, verbose bool) error {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Contract %s\nFile: %s\nCheck: %s\nContract hash: %s\n", record.Printable(s.Contract.Name), record.Printable(s.Contract.Path), s.Contract.State, s.Contract.Hash)
+	fmt.Fprintf(&b, "Rules file %s\nFile: %s\nCheck: %s\nHash: %s\n", record.Printable(s.Contract.Name), record.Printable(s.Contract.Path), s.Contract.State, s.Contract.Hash)
 	for _, r := range s.Rules {
 		fmt.Fprintf(&b, "  %s [%s]\n", record.Printable(r.Words), record.Printable(r.Key))
 		for _, source := range r.Sources {
 			where := source.Kind
+			if where == "contract" {
+				where = "rules file" // the JSON keeps its kind; a person reads the file's name for it
+			}
 			if source.File != "" {
 				where += " " + source.File
 				if source.Line > 0 {
@@ -163,7 +166,7 @@ func PrintShow(w io.Writer, s Show, verbose bool) error {
 		}
 	}
 	if verbose && s.Table != "" {
-		b.WriteString("\nCompiled table (tego compile):\n")
+		b.WriteString("\nCompiled table (tego rules check):\n")
 		b.WriteString(s.Table)
 	}
 	fmt.Fprintf(&b, "%s\n%s\n", s.Context, s.Footer)

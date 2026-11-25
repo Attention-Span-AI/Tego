@@ -38,7 +38,8 @@ func TestContractsCLIListShowAndSchema(t *testing.T) {
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{{"contracts"}, {"contracts", "--verbose"}, {"contracts", "--json"}, {"contracts", "show", "fixture"}, {"contracts", "show", "fixture", "-v"}, {"contracts", "--json", "show", path}} {
+	for _, args := range [][]string{{"rules", "list"}, {"rules", "list", "--verbose"}, {"rules", "list", "--json"}, {"rules", "list", "fixture"}, {"rules", "list", "fixture", "-v"}, {"rules", "list", "--json", path},
+		{"contracts"}, {"contracts", "show", "fixture"}, {"contracts", "--json", "show", path}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			code, out, errs := run(t, args...)
 			if code != identity.ExitOK {
@@ -55,19 +56,19 @@ func TestContractsCLIListShowAndSchema(t *testing.T) {
 			}
 		})
 	}
-	code, out, errs := run(t, "contracts", "show", "fixture", "-v")
-	if code != 0 || !strings.Contains(out, "Compiled table (tego compile):") || !strings.Contains(out, "from contract "+path) {
+	code, out, errs := run(t, "rules", "list", "fixture", "-v")
+	if code != 0 || !strings.HasPrefix(out, "Rules file fixture\n") || !strings.Contains(out, "Compiled table (tego rules check):") || !strings.Contains(out, "from rules file "+path) {
 		t.Fatalf("show exit %d %s %s", code, out, errs)
 	}
 	// An ambiguous name is refused; an explicit path is still usable.
 	if err := os.WriteFile(filepath.Join(w.project, "agent.yaml"), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	code, _, errs = run(t, "contracts", "show", "fixture")
-	if code != identity.ExitFinding || !strings.Contains(errs, "more than one") {
+	code, _, errs = run(t, "rules", "list", "fixture")
+	if code != identity.ExitFinding || !strings.Contains(errs, "tego rules list: ") || !strings.Contains(errs, "more than one rules file") {
 		t.Fatalf("ambiguity exit %d: %s", code, errs)
 	}
-	code, _, errs = run(t, "contracts", "show", path)
+	code, _, errs = run(t, "rules", "list", path)
 	if code != identity.ExitOK {
 		t.Fatalf("path exit %d %s", code, errs)
 	}
@@ -79,21 +80,22 @@ func TestContractsCLIUsageAndFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 	newRegistryWorld(t)
-	for _, args := range [][]string{{"contracts", "show"}, {"contracts", "show", ""}, {"contracts", "add"}, {"contracts", "show", "a", "b"}, {"contracts", "--force-break"}} {
+	for _, args := range [][]string{{"contracts", "show"}, {"contracts", "show", ""}, {"contracts", "show", "a", "b"}, {"contracts", "--force-break"},
+		{"rules", "list", ""}, {"rules", "list", "a", "b"}, {"rules", "list", "--force-break"}} {
 		code, _, errs := run(t, args...)
 		if code != identity.ExitUsage {
 			t.Errorf("%v exit %d: %s", args, code, errs)
 		}
 	}
-	code, out, errs := run(t, "contracts", "--json")
+	code, out, errs := run(t, "rules", "list", "--json")
 	if code != identity.ExitOK || !strings.Contains(out, `"contracts":[]`) {
 		t.Fatalf("empty exit %d: %s %s", code, out, errs)
 	}
-	code, _, errs = run(t, "contracts", "show", "missing")
-	if code != identity.ExitFinding || !strings.Contains(errs, "no contract named") {
+	code, _, errs = run(t, "rules", "list", "missing")
+	if code != identity.ExitFinding || !strings.Contains(errs, "no rules file named") {
 		t.Fatalf("missing name exit %d %s", code, errs)
 	}
-	code, out, errs = run(t, "contracts", "show", "./missing.yaml", "--json")
+	code, out, errs = run(t, "rules", "list", "./missing.yaml", "--json")
 	if code != identity.ExitFinding || !strings.Contains(out, `"state":"missing"`) {
 		t.Fatalf("missing file exit %d: %s %s", code, out, errs)
 	}
@@ -102,7 +104,7 @@ func TestContractsCLIUsageAndFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("TEGO_CONFIG", cfg)
-	code, out, errs = run(t, "contracts", "--json")
+	code, out, errs = run(t, "rules", "list", "--json")
 	if code != identity.ExitError {
 		t.Fatalf("bad machine exit %d %s %s", code, out, errs)
 	}
@@ -124,7 +126,7 @@ func TestContractsCLIOutputFailure(t *testing.T) {
 		t.Fatal(rerr)
 	}
 	var errs bytes.Buffer
-	code := runContracts(context.Background(), nil, contracts.Options{Machine: m, Places: places}, false, false, contractBrokenWriter{}, &errs)
+	code := runContracts(context.Background(), "", contracts.Options{Machine: m, Places: places}, false, false, contractBrokenWriter{}, &errs)
 	if code != identity.ExitError || !strings.Contains(errs.String(), "write output") {
 		t.Fatalf("exit %d %s", code, errs.String())
 	}

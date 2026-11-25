@@ -24,13 +24,15 @@ type helpGroup struct {
 // commonGroups are `tego help`'s groups; `tego help -a` shows them with every verb (all), then advancedGroups.
 func commonGroups(all bool) []helpGroup {
 	session := []string{"run", "session list", "session show", "session stop"}
+	rules := []string{"rules create", "rules edit", "rules check", "rules learn"}
 	if all {
 		session = append(session, "session pause", "session resume")
+		rules = append(rules, "rules list")
 	}
 	return []helpGroup{
 		{"get started", []string{"start", "dashboard"}},
 		{"supervise an agent", session},
-		{"write the rules (see also: tego help rules)", []string{"rules create", "rules edit", "rules check", "rules learn"}},
+		{"write the rules (see also: tego help rules)", rules},
 		{"check this machine", []string{"machine check", "machine test"}},
 	}
 }
@@ -39,9 +41,9 @@ var advancedGroups = []helpGroup{
 	{"answer what a session asks", []string{"ask", "approve", "deny", "alternate"}},
 	{"change a running session's rules", []string{"block", "unblock", "grant", "lift", "restore", "rule", "rules <session>"}},
 	{"read the record", []string{"events", "drift", "measure", "status", "gc"}},
-	{"supervise other programs", []string{"watch", "adopt", "agents", "scan", "contracts"}},
+	{"supervise other programs", []string{"watch", "adopt", "agents", "scan"}},
 	{"tools for agents", []string{"mcp", "route", "dns"}},
-	{"older names", []string{"init", "compile", "learn", "receipt", "doctor", "test", "stop", "pause", "resume"}},
+	{"older names", []string{"init", "compile", "learn", "contracts", "receipt", "doctor", "test", "stop", "pause", "resume"}},
 	{"about Tego", []string{"setup", "serve", "version", "licenses", "uninstall"}},
 }
 

@@ -63,12 +63,12 @@ func (c Catalog) Select(name string) (*Entry, error) {
 			continue
 		}
 		if found != nil {
-			return nil, fmt.Errorf("%w: %q names more than one contract; give the path of the one you mean", ErrAmbiguous, name)
+			return nil, fmt.Errorf("%w: %q names more than one rules file; give the path of the one you mean", ErrAmbiguous, name)
 		}
 		found = e
 	}
 	if found == nil {
-		return nil, fmt.Errorf("%w: no contract named %q was found in these registries and runs; give its path", ErrNotFound, name)
+		return nil, fmt.Errorf("%w: no rules file named %q was found in these registries and runs; give its path", ErrNotFound, name)
 	}
 	return found, nil
 }
