@@ -67,7 +67,7 @@ func TestGuideWorksAsRoot(t *testing.T) {
 	learnEUID = func() int { return 0 }
 	t.Cleanup(func() { learnEUID = old })
 	t.Chdir(f.Home)
-	code, out, errs := runGuide(t, "1\n2\nsk-test-root\n1\n1\n1\n")
+	code, out, errs := runGuide(t, "2\n2\nsk-test-root\n1\n1\n1\n")
 	if code != identity.ExitOK || !strings.Contains(out, "Ready") {
 		t.Fatalf("root guide: %d\n%s\n%s", code, out, errs)
 	}

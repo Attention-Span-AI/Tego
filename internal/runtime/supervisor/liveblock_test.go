@@ -235,7 +235,7 @@ func TestLiveBlockReachesWhatTheLocalTableSendsHere(t *testing.T) {
 func newTestLoopOpts(t *testing.T, f *fakeKernel, pol *Policy, opts Options) (*Loop, *testSink) {
 	t.Helper()
 	sink := &testSink{}
-	opts.kernel, opts.Workers = f, 1
+	opts.kernel, opts.Workers, opts.LandlockTruncate = f, 1, true
 	l, err := New(testListener(), pol, sink, opts)
 	if err != nil {
 		t.Fatalf("New: %v", err)

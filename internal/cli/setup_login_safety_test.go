@@ -139,7 +139,7 @@ func TestSavedLoginOrdinaryLayouts(t *testing.T) {
 				}
 			}
 			t.Chdir(f.Home)
-			code, out, errs := runGuide(t, "1\n2\nsk-layout\n1\n1\n1\n")
+			code, out, errs := runGuide(t, "2\n2\nsk-layout\n1\n1\n1\n")
 			if code != 0 || !strings.Contains(out, "Ready") || strings.Contains(out, "Couldn't save") {
 				t.Fatalf("guide: %d %s %s", code, out, errs)
 			}
@@ -207,7 +207,7 @@ func TestGuideContinuesAfterUnsafeLoginFile(t *testing.T) {
 				t.Fatalf("unsafe read: %v %s", got, &diag)
 			}
 			t.Chdir(f.Home)
-			code, out, errs := runGuide(t, "1\n2\nsk-session\n1\n1\n1\n")
+			code, out, errs := runGuide(t, "2\n2\nsk-session\n1\n1\n1\n")
 			if code != 0 || !strings.Contains(out, "Ready") || !strings.Contains(out, "Couldn't save the login") || os.Getenv("ANTHROPIC_API_KEY") != "sk-session" {
 				t.Fatalf("guide lost session login or stopped: %d %s %s", code, out, errs)
 			}

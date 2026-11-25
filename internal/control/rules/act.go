@@ -255,7 +255,7 @@ func (s *Service) ActOn(ctx context.Context, r ActReq) (*ActPlan, error) {
 		p.Sentences = append(p.Sentences, Sentence{Before: sn.Before, After: after, Direction: d})
 	}
 	if direction == rule.Narrows {
-		p.Now = s.nowOptions(ctx, s.liveRunsOf(found.Contract), res.Changes, cwd, entriesOf(res.Text))
+		p.Now = s.nowOptions(ctx, s.liveRunsOf(found.Contract), res.Changes, cwd, s.restOf(res.Text, cwd))
 	}
 	if !r.Write {
 		p.Unresolved = s.unresolved(ctx, res.Changes)

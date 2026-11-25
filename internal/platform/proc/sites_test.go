@@ -279,13 +279,24 @@ var startSites = []startSite{
 			"tego start's guide, a command that starts no run: its process holds no fanotify group, since only enforce/cgroup's listener in a launcher calls proc.Arm",
 	},
 	{
+		file: "internal/cli/setup_guide.go", fn: "guideDemoRun", call: "proc.Start", n: 1, rel: guarded,
+		when: "the demonstration run, `tego run` of the demonstration agent as a child process of tego start's guide on the " +
+			"guide's terminal, in tego start's guide, a command that starts no run: its process holds no fanotify group, since only enforce/cgroup's " +
+			"listener in a launcher calls proc.Arm (the child is a launcher of its own and arms in its own process, after its own starts)",
+	},
+	{
+		file: "internal/cli/setup_guide.go", fn: "walk.firstRun", call: "cli.guideDemoRun", n: 1, rel: beforeArm,
+		when: "the demonstration run, through the guide's terminal handoff, in tego start's guide, a command that starts no run: " +
+			"its process holds no fanotify group (guideDemoRun's own row says why its start is before any mark)",
+	},
+	{
 		file: "internal/cli/setup_guide.go", fn: "guideDashboard", call: "cli.startGuideCommand", n: 1, rel: beforeArm,
 		when: "systemctl and systemd-run, which start the dashboard as a user unit, in " +
 			"tego start's guide, a command that starts no run: its process holds no fanotify group, since only enforce/cgroup's listener in a launcher calls proc.Arm",
 	},
 	{
-		file: "internal/cli/setup_input.go", fn: "walk.setupToken", call: "cli.guideSetupToken", n: 2, rel: beforeArm,
-		when: "the agent's own login, with and without the guide's own terminal reader, in tego start's guide, a command that starts no run: its process holds no fanotify group",
+		file: "internal/cli/setup_input.go", fn: "walk.setupToken", call: "cli.guideSetupToken", n: 1, rel: beforeArm,
+		when: "the agent's own login, through the guide's terminal handoff (which runs it with or without the guide's own terminal reader), in tego start's guide, a command that starts no run: its process holds no fanotify group",
 	},
 	{
 		file: "internal/cli/rules_edit.go", fn: "cmdRulesEdit", call: "cli.editCopy", n: 1, rel: beforeArm,

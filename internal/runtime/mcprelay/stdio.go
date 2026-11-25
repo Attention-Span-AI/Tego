@@ -279,7 +279,8 @@ func (c *stdioConn) clientLine(raw []byte) {
 // clientBatch decides a batch member by member (ADR 0126 §4, amended 2026-11-21): each tools/call on its own rule, and no
 // member rides on another's decision. What is allowed goes to the server as a batch of its own members; each refused
 // member that has an id is answered with an error of its own, in one array, at once; a member the rules ask about is
-// held like a single call, on its own goroutine, and goes on alone when a person approves it. Every refused member
+// held like a single call, on its own goroutine, and goes on alone when a person approves it. The asked members are held
+// only after the allowed ones have been written, so an approval never reaches the server before them. Every refused member
 // is a line of the record, whether or not it has an id to answer.
 func (c *stdioConn) clientBatch(calls []call) {
 	var pass, answers []json.RawMessage

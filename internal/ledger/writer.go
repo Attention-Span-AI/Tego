@@ -36,6 +36,10 @@ const (
 	// launcher, so the launcher records run_end reason=stopped, not reason=signal. internal/runtime names it as StopRequestFile too; it lives here so tego-control can place it without
 	// linking the engine.
 	StopRequestFile = "stop.request"
+	// ReceiptFile is the run's bound receipt, placed once by `tego run` after the run ended (PlaceRunFile; ADR 0159).
+	// The record does not need it: `tego receipt` rebuilds the receipt from events.jsonl every time. It is a kept copy
+	// that `tego receipt --verify` compares with that rebuild.
+	ReceiptFile = "receipt.json"
 )
 
 // Sink is the pipeline's terminal type: internal/runtime composes stages in front of a Writer's Append.
@@ -340,7 +344,8 @@ func (w *Writer) openFiles(create bool) error {
 }
 
 // sweepRunTemps removes the temp files writeFileAt leaves in a run directory when its writer dies between
-// creating one and renaming it: ".contract.yaml.<n>" and ".last-refusal.json.<n>". Nothing else removed them.
+// creating one and renaming it: ".contract.yaml.<n>" and ".last-refusal.json.<n>", and the one PlaceRunFile leaves
+// when it dies between its temporary file and the link: ".receipt.json.<n>". Nothing else removed them.
 // It runs from Open, under the run's lock, like blobStore.sweepTemp.
 func sweepRunTemps(at *sys.FD, dir string) int {
 	names, err := readDirNames(at, dir)
@@ -349,7 +354,7 @@ func sweepRunTemps(at *sys.FD, dir string) int {
 	}
 	n := 0
 	for _, name := range names {
-		if !strings.HasPrefix(name, "."+ContractFile+".") && !strings.HasPrefix(name, "."+LastRefusalFile+".") {
+		if !strings.HasPrefix(name, "."+ContractFile+".") && !strings.HasPrefix(name, "."+LastRefusalFile+".") && !strings.HasPrefix(name, "."+ReceiptFile+".") {
 			continue
 		}
 		if unlinkAt(at, name) == nil {

@@ -34,6 +34,11 @@ const (
 	// mark that it reads it (TakesLink): a launcher that predates it would refuse the whole file and ignore every later
 	// change, so the writer places the whole-file block there instead, which refuses more, never less.
 	VersionLink = 5
+	// VersionWords adds the command-word block: an exec entry whose value is a program name and words (IsWords, ADR
+	// 0171). It is written only to a run whose launcher made the mark that it reads one (TakesWords): a launcher that
+	// predates it refuses the whole file by its version and ignores every later change, and a whole-program block put
+	// there instead would refuse more than the rules the person changed do, so the writer refuses such a run in words.
+	VersionWords = 6
 )
 
 // Bounds on one overlay. The writer refuses a block past MaxBlocks and keeps the newest MaxChanges changes; the
@@ -181,7 +186,7 @@ func (o *Overlay) Find(kind Kind, value string) (Entry, bool) {
 // add is no longer listed (the overlay keeps the newest MaxChanges changes), and when the file has no Epoch: in each
 // case the caller cannot show the block is its own and must treat it as not.
 func (o *Overlay) AddIdentity(kind Kind, value string) (Own, bool) {
-	v, err := Normalize(kind, value)
+	v, err := NormalizeKey(kind, value)
 	if err != nil || o.Epoch == "" {
 		return Own{}, false
 	}
@@ -200,7 +205,7 @@ func (o *Overlay) AddIdentity(kind Kind, value string) (Own, bool) {
 // limit on both clocks (as the launcher judges, Ended) and not dormant under an unblock for a while that has not run
 // out (Begun). A block held and not in force is one an add re-arms, which is then the add's.
 func (o *Overlay) InForce(kind Kind, value string, c Clock) bool {
-	v, err := Normalize(kind, value)
+	v, err := NormalizeKey(kind, value)
 	if err != nil {
 		return false
 	}
@@ -333,7 +338,7 @@ func (o *Overlay) Remove(kind Kind, value, by string, at time.Time) (Change, boo
 // so does an until at or after the block's own end (it would never refuse again). It reports false (and changes
 // nothing) when the overlay holds no such block, or holds it dormant until the same instant.
 func (o *Overlay) RemoveUntil(kind Kind, value, by string, at, until time.Time) (Change, bool, error) {
-	v, err := Normalize(kind, value)
+	v, err := NormalizeKey(kind, value)
 	if err != nil {
 		return Change{}, false, err
 	}
@@ -444,10 +449,22 @@ func (o *Overlay) Encode() ([]byte, error) {
 	return append(b, '\n'), nil
 }
 
-// MinVersion is the lowest version that holds o: VersionLink when an entry has a Match, VersionReal when an entry has a
-// Real, VersionModes when a change it lists is a lift or a restore, VersionTimed when an entry or a change has an until
+// MinVersion is the lowest version that holds o: VersionWords when an entry is a command (IsWords), VersionLink when an
+// entry has a Match, VersionReal when an entry has a Real, VersionModes when a change it lists is a lift or a restore, VersionTimed when an entry or a change has an until
 // or a from, Version otherwise.
 func (o *Overlay) MinVersion() int {
+	for _, e := range o.Blocks {
+		if e.IsWords() {
+			return VersionWords
+		}
+	}
+	// A change that names a command is the launcher's gap line; an older launcher refuses a file that lists one, by
+	// its version, rather than by a value it cannot normalize.
+	for _, c := range o.Changes {
+		if (c.Op == OpAdd || c.Op == OpRemove) && c.Kind == KindExec && IsWords(c.Value) {
+			return VersionWords
+		}
+	}
 	for _, e := range o.Blocks {
 		if e.Match != "" {
 			return VersionLink
@@ -500,14 +517,15 @@ func Decode(b []byte, run string) (*Overlay, error) {
 // lists none and dropped none, false). From VersionTimed, an entry or a change may carry an until after its at, and an
 // entry a from before its until; from VersionModes, a change may be a lift (a fence kind, a MAC of 64 lower-case hex
 // digits) or a restore (a fence kind, no MAC and no until); from VersionReal, an entry may carry a real path; from
-// VersionLink, an exec entry on an absolute program path may carry the match MatchLink. Nothing newer than its version
+// VersionLink, an exec entry on an absolute program path may carry the match MatchLink; from VersionWords, an exec entry may
+// be a command (IsWords). Nothing newer than its version
 // is accepted in a file.
 func (o *Overlay) Validate(run string) error {
 	switch {
 	case o == nil:
 		return fmt.Errorf("%w: no overlay", ErrInvalid)
-	case o.V < Version || o.V > VersionLink:
-		return fmt.Errorf("%w: overlay version %d, want %d to %d", ErrInvalid, o.V, Version, VersionLink)
+	case o.V < Version || o.V > VersionWords:
+		return fmt.Errorf("%w: overlay version %d, want %d to %d", ErrInvalid, o.V, Version, VersionWords)
 	case run != "" && o.Run != run:
 		return fmt.Errorf("%w: overlay of run %q, want %q", ErrInvalid, o.Run, run)
 	case len(o.Blocks) > MaxBlocks:
@@ -520,6 +538,9 @@ func (o *Overlay) Validate(run string) error {
 	seen := map[string]bool{}
 	for _, e := range o.Blocks {
 		if err := normalized(e.Kind, e.Value); err != nil {
+			return err
+		}
+		if err := o.wordsOf(e); err != nil {
 			return err
 		}
 		if seen[e.Key()] {
@@ -546,6 +567,9 @@ func (o *Overlay) Validate(run string) error {
 		case OpAdd, OpRemove:
 			if err := normalized(c.Kind, c.Value); err != nil {
 				return err
+			}
+			if c.Kind == KindExec && IsWords(c.Value) && o.V < VersionWords {
+				return fmt.Errorf("%w: change %d names a command with words, which a version %d overlay cannot hold", ErrInvalid, c.Serial, o.V)
 			}
 		case OpPause, OpResume:
 			if c.Kind != "" || c.Value != "" || !c.Until.IsZero() {
@@ -671,6 +695,20 @@ func (o *Overlay) realOf(e Entry) error {
 		return fmt.Errorf("%w: %s carries its own value as its real path", ErrInvalid, e.Key())
 	}
 	return normalized(e.Kind, e.Real)
+}
+
+// wordsOf checks that a command entry (IsWords) is held by an overlay that can hold one: from VersionWords, and with
+// no real path or match, which only a path or a program path may carry.
+func (o *Overlay) wordsOf(e Entry) error {
+	switch {
+	case !e.IsWords():
+		return nil
+	case o.V < VersionWords:
+		return fmt.Errorf("%w: %s is a command with words, which a version %d overlay cannot hold", ErrInvalid, e.Key(), o.V)
+	case e.Real != "" || e.Match != "":
+		return fmt.Errorf("%w: %s is a command with words and carries a real path or a match, which a program path alone may", ErrInvalid, e.Key())
+	}
+	return nil
 }
 
 // matchOf checks an entry's Match: none, or, from VersionLink, MatchLink on an exec block of an absolute program path.

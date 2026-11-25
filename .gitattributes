@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+# Line endings. Every text file is stored with LF and checked out with LF on every platform, so a clone on Windows
+# (Git for Windows defaults to core.autocrlf=true, which would write CRLF) still holds shell and Python scripts that
+# run under WSL and fixtures whose bytes a test compares. eol=lf overrides core.autocrlf and core.eol.
+* text=auto eol=lf
+# A file cmd.exe runs needs CRLF. None is tracked today; the rule keeps a future one right.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+# Files whose committed bytes must never change, CR and LF as they are: fixtures that hold CRLF or mixed endings on
+# purpose, and binary data that content detection need not guess at.
+pkg/spec/agent/testdata/good/bom-crlf.yaml -text
+pkg/spec/agent/testdata/additional-mountinfo/nspawn-selfbind.mountinfo -text
+pkg/spec/agent/testdata/chroot-mountinfo/nspawn.mountinfo -text
+internal/bpf/testdata/verifierstats/*.log -text
+tools/spike/walk/results-2026-09-29.tsv -text
+*.bin -text
+*.o -text
+*.gz -text
+*.png -text
+*.ttf -text
+*.woff2 -text

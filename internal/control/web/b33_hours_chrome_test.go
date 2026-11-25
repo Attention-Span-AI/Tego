@@ -45,7 +45,7 @@ func TestRefusalHoursInChrome(t *testing.T) {
 						}
 					}
 					if span == "week" {
-						// N124: at phone width the week is drawn by day, each day a bar and a label at least 24 px wide and
+						// At phone width the week is drawn by day, each day a bar and a label at least 24 px wide and
 						// 44 px tall to tap; the 168 hourly bars are drawn from 601 px up.
 						probe := `(function(){var v=function(s){var e=document.querySelector(s);return !!e&&e.getBoundingClientRect().width>0};` +
 							`var labels=[].map.call(document.querySelectorAll('.hr-days a'),function(a){var r=a.getBoundingClientRect();return [Math.round(r.width),Math.round(r.height)]});` +

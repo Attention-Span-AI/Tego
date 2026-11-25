@@ -209,18 +209,23 @@ func callNames(cs []planeCall) []string {
 }
 
 // TestPlaneFilterKeepsTheErrnoArms: the plane skips notifications only. The truncation arms below ABI 3 (an O_TRUNC
-// on a read-only open refused, truncate(2) refused) and every errno arm stay as they are, since they decide
-// without a round trip and hold with no listener.
+// on a read-only open refused, truncate(2) refused) stay as they are, and every errno arm stays an errno. Below ABI 3 the
+// truncation pair is a notification the supervisor answers EPERM (a refusal with a line), not an errno return, and the
+// plane never skips it: it decides neither call, so an arm skipped there would let the file be emptied (they are
+// asked of the plane filter as of the plain one, TestTruncationArmsRefuseWhatTheyAlwaysDid).
 //
 // The Landlock domain and the filter are not weakened.
 func TestPlaneFilterKeepsTheErrnoArms(t *testing.T) {
 	all := planeSkips(hookSet(append(append([]string(nil), stepAHooks...), stepBHooks...)...), false, false)
 	o := filterOpts{abi: 2, plane: all}
-	if got := planeVerdict(t, ArchX86_64, o, 76); got != retEPERM {
-		t.Errorf("truncate(2) below ABI 3: got %#x, want EPERM", got)
+	if got := planeVerdict(t, ArchX86_64, o, 76); got != retNotify {
+		t.Errorf("truncate(2) below ABI 3 with the plane loaded: got %#x, want the notification the supervisor refuses", got)
 	}
-	if got := planeVerdict(t, ArchX86_64, o, 257, 0, 0, uint64(unix.O_RDONLY|unix.O_TRUNC)); got != retEPERM {
-		t.Errorf("O_RDONLY|O_TRUNC below ABI 3: got %#x, want EPERM", got)
+	if got := planeVerdict(t, ArchX86_64, o, 257, 0, 0, uint64(unix.O_RDONLY|unix.O_TRUNC)); got != retNotify {
+		t.Errorf("O_RDONLY|O_TRUNC below ABI 3 with the plane loaded: got %#x, want the notification the supervisor refuses", got)
+	}
+	if got := planeVerdict(t, ArchX86_64, o, 257, 0, 0, uint64(unix.O_WRONLY|unix.O_TRUNC)); got != retAllow {
+		t.Errorf("a write O_TRUNC open below ABI 3 with the plane loaded: got %#x, want allow (the plane's file_open decides it)", got)
 	}
 	o.rootTier = true
 	if got := planeVerdict(t, ArchX86_64, o, 321); got != retEPERM {

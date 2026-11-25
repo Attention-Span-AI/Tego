@@ -152,7 +152,18 @@ func TestEveryLimitsKeyIsAppliedOrRefusedByAnAdoption(t *testing.T) {
 				want["limits."+key] != applied)
 		}
 	}
-	if n := reflect.TypeFor[agent.Limits]().NumField(); n != len(want) {
-		t.Errorf("agent.Limits has %d fields and %d keys are classified: classify the new contract key", n, len(want))
+	// limits.window is a contract key with no machine ceiling: it only turns tokens and cost_usd into totals across
+	// restarts (ADR 0165), and an adoption meters neither, so a table that holds one is refused for the budget it
+	// qualifies, and one with a window and no budget has a window of nothing (the compile drops it).
+	lines := unenforceableForAdoption(compileAdoptTable(t, "limits:\n  tokens: 1000\n  window: 1h\n"))
+	if !slices.ContainsFunc(lines, func(l string) bool { return strings.HasPrefix(l, "limits.tokens: ") }) {
+		t.Errorf("a boundary contract's tokens budget with a window is not refused: %q", lines)
+	}
+	if rt := compileAdoptTable(t, "limits:\n  window: 1h\n"); rt.Limits.Window != 0 {
+		t.Errorf("a window with no budget to count is kept (%v): an adoption would carry a window it cannot meter", rt.Limits.Window)
+	}
+	const contractOnlyKeys = 1 // limits.window
+	if n := reflect.TypeFor[agent.Limits]().NumField(); n != len(want)+contractOnlyKeys {
+		t.Errorf("agent.Limits has %d fields and %d keys are classified: classify the new contract key", n, len(want)+contractOnlyKeys)
 	}
 }

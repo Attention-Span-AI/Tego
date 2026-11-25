@@ -72,6 +72,7 @@ func (m *Machine) Effective() []Value {
 	settingRow("bpf.ring_budget", m.BPF.RingBudget.Value.String(), m.BPF.RingBudget.Source)
 	settingRow("bpf.plane", m.BPF.Plane.Value, m.BPF.Plane.Source)
 	settingRow("tomoyo.facts_dir", m.TOMOYO.FactsDir.Value, m.TOMOYO.FactsDir.Source)
+	settingRow("lsm.list_file", m.LSM.ListFile.Value, m.LSM.ListFile.Source)
 	settingRow("resolver", m.Resolver.Value.String(), m.Resolver.Source)
 	settingRow("denied_resolved_addresses", formatPrefixes(m.DeniedResolved.Value), m.DeniedResolved.Source)
 	settingRow("forwarder.listen", m.Forwarder.Listen.Value, m.Forwarder.Listen.Source)

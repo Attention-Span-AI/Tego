@@ -6,7 +6,7 @@ import "testing"
 
 func guideDumbRoutes() []guidePTYRoute {
 	return []guidePTYRoute{{"dumb", []guidePTYStep{
-		{"Which agent do you want to supervise?", "1\n"},
+		{"Which agent do you want to supervise?", "2\n"},
 		{"How do you want to log in to Claude Code?", "2\n"},
 		{"Paste your Anthropic API key", "test-token\n"},
 		{"Save the login for later sessions?", "2\n"},

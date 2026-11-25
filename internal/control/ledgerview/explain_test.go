@@ -128,6 +128,7 @@ func TestExplainEveryKeyOfTheRecordFixtures(t *testing.T) {
 	x.add(100, `"kind":"gap","source":"supervisor","what":"enforce","why":"live-block-added","live_block":{"op":"add","kind":"exec","value":"curl","rule":"live.block[exec:curl]","by":"uid:1000 pid:5 dashboard","serial":1,"at":"2026-10-26T03:40:00Z"}`)
 	x.add(100, `"kind":"gap","source":"supervisor","what":"record","why":"ringbuf-full","dropped":12,"count":12`)
 	x.add(100, `"kind":"answer","source":"supervisor","ask_id":"q-9","by":"uid:1000 pid:5","after_s":2,"approved":false,"op":"open","target":"/p/a","ask_rule":"fs.ask[./]","alternate":"/p/b","alternate_dev":1,"alternate_ino":2`)
+	x.add(400, `"kind":"exec","source":"kernel","rule":"unmatched","verdict":"observed","authority":"rule","path":"/usr/bin/tool","argv":["tool"],"exec_id":"r/400/9","argv_from":"attempt","syscall_ret":-13,"decision_lost":["exec-fragment-overflow","ringbuf-full"]`)
 	x.add(400, `"kind":"fs","source":"seccomp","rule":"unmatched","verdict":"allow","authority":"rule","op":"open","flags":0,"path":"/etc/hosts","zz_injected":"a key no writer has"`)
 	x.add(100, `"kind":"run_end","source":"supervisor","reason":"exit","exit_code":0,"resources":{"memory_peak":1024,"pids_peak":3,"cpu_usage_usec":10,"memory_events":{"oom":0,"oom_kill":0}},"supervisor":{"notifications":5,"held_ms":3,"anomalies":0,"exec_missing":1}`)
 	r := x.write(t)
@@ -379,5 +380,45 @@ func TestDroppedExecAndLostLinesHaveDifferentLabels(t *testing.T) {
 				t.Errorf("%s: %q", raw, f.Label)
 			}
 		}
+	}
+}
+
+// TestExplainSaysWhatIsKnownOfAnExecWhoseDecisionWasLost (public issue 65): the sentence of an exec line that is only the
+// call's own result, whose decision record the run lost, says the program did not start, that permission was denied, that the
+// record of what decided it was read while the run lost records, and that Tego cannot say who refused it. It is not "recorded only, nothing was decided",
+// and it does not say Tego refused it.
+func TestExplainSaysWhatIsKnownOfAnExecWhoseDecisionWasLost(t *testing.T) {
+	x, _ := codexShaped(t)
+	seq := x.add(400, `"kind":"exec","source":"kernel","rule":"unmatched","verdict":"observed","authority":"rule","path":"/usr/bin/tool","argv":["tool"],"exec_id":"r/400/9","argv_from":"attempt","syscall_ret":-13,"decision_lost":["ringbuf-full"]`)
+	plain := x.add(400, `"kind":"exec","source":"kernel","rule":"unmatched","verdict":"observed","authority":"rule","path":"/usr/bin/tool","argv":["tool"],"exec_id":"r/400/10","argv_from":"attempt","syscall_ret":-13`)
+	r := x.write(t)
+	lv, err := Explain(x.root, r, seq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"the program did not start (permission denied)", "no record of what decided that was read", "cannot say whether its own rules or another security module refused it"} {
+		if !strings.Contains(lv.Sentence, want) {
+			t.Errorf("sentence %q lacks %q", lv.Sentence, want)
+		}
+	}
+	if strings.Contains(lv.Sentence, "nothing was decided") || strings.Contains(lv.Sentence, "Tego refused it") {
+		t.Errorf("sentence %q calls the line a refusal or a non-decision", lv.Sentence)
+	}
+	var shown string
+	for _, f := range lv.Fields {
+		if f.Key == "decision_lost" {
+			shown = f.Label + ": " + f.Value
+		}
+	}
+	if !strings.Contains(shown, "Decision record may be lost to") || !strings.Contains(shown, "kernel events were dropped") {
+		t.Errorf("field shown as %q", shown)
+	}
+	// The same failure with no loss stated keeps its old words.
+	pv, err := Explain(x.root, r, plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(pv.Sentence, "recorded only, nothing was decided") {
+		t.Errorf("the failure without a loss says %q", pv.Sentence)
 	}
 }

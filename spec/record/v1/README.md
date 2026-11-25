@@ -35,8 +35,10 @@ the execs it refuses itself.
 unprivileged tier), `tier`, `capture` (the mechanism that runs: `off|forwarder|uprobe`, never the contract's wish, and never a source that
 started only to report its own `mechanism-unavailable` gap),
 `kernel`, `contract_hash`, `parsers` (`{anthropic, openai, mcp}`), `stop_grace`,
-`limits{tokens,cost_usd,wall,stall_after,repeats}` (the compiled values, so views never re-run the compiler; a key is
-present exactly when the run had that budget, and `0` is a budget), and the optional `capabilities` (the run's
+`limits{tokens,cost_usd,wall,stall_after,repeats,window}` (the compiled values, so views never re-run the compiler; a key is
+present exactly when the run had that budget, and `0` is a budget; `window` is a duration, present exactly when the contract
+set `limits.window`, and then `tokens` and `cost_usd` are a total over that span across the agent's runs, see
+"A budget over a window" below), and the optional `capabilities` (the run's
 capability line: one boolean per row of `spec/backend/CAPABILITIES.md`, keyed by `pkg/spec/backend`'s row name, every
 row written, `true` only for what this run could do; absent in ledgers that predate it), and the optional `stdio`
 (`{stdin, stdout, stderr}`, the kind of each descriptor the agent kept from its caller:
@@ -62,7 +64,7 @@ there is none, which at `record_minor` 9 or later means none; additive within v1
 [ADR 0057](../../../docs/adr/0057-fs-ask-read-and-alternates.md) D4).
 Kinds `ask` and `answer` are written by the bounded local approval broker (minor 5); `boundary` remains declared for the container roadmap.
 
-Action events (`exec fs net mcp`) carry `rule` (the declared entry or `unmatched`), `verdict`
+Action events (`exec fs net mcp`) carry `rule` (the declared entry, `unmatched`, or a built-in rule string such as `builtin.standard_devices`, below), `verdict`
 (`allow|ask|refused|observed`), `authority` (`rule|gate|human`), and
 
 ```json
@@ -327,6 +329,15 @@ a live block's or fence entry's (`live.block[read:...]`, `live.block[path:...]`,
 read. A fanotify mark of a whole mount, filesystem or mount namespace is refused (`EPERM`) under the rule
 `deny-read-watch`. A watch that is continued has no line: v1 has no watch kind. Before, no watch was refused or
 recorded, so a ledger without such a line says nothing about watches.
+*Added 2026-11-24, no new minor or code:* on a kernel whose Landlock has no truncate right (ABI below 3, kernel below 6.2 unless
+backported), a `truncate(2)`, and an `open` or `openat` whose flags carry `O_TRUNC` with an access mode that is neither
+`O_WRONLY` nor `O_RDWR`, is refused by the supervisor and is a `refused` `fs` line: `op` `truncate` (`open`, with the
+flags, for the open), `path` the file named, reason `write-outside-contract`, rule `landlock-no-truncate`, source
+`seccomp`, whatever the contract says of that path and under every record mode, with `EPERM` to the agent. Before, the
+filter returned that `EPERM` itself and the ledger held no line for it. A reader that keys on `fs.write[...]`-style
+rule names for write refusals sees these as a refusal no declared entry names. The line is the refusal's own: it does
+not say whether the contract would have allowed the truncate, because the kernel could not tell and the refusal does not
+ask. From ABI 3 a truncate is Landlock's or the plane's and is recorded as before.
 At `record_minor` 19 (`MinorUserDenyWrite`; 2026-10-25, [ADR 0071](../../../docs/adr/0071-user-deny-write.md)), a contract may declare
 its own `fs.deny_write` entries: a modification at or beneath one is refused with the rule `fs.deny_write[<entry as
 declared>]` (`fs.deny_write[./deploy/]`), the entry's text as the author wrote it, where a built-in target's rule holds
@@ -998,6 +1009,15 @@ Readers of older ledgers still use the bounded legacy pairing heuristic: a mirro
 already displaced beyond that window has no reliable action reference and can count
 as a separate refusal. A failed pair append may leave its action without its mirror.
 
+### Built-in allows (ADR 0158, 2026-11-25)
+
+An allowed open of one of the five standard data devices (`/dev/null`, `/dev/zero`, `/dev/full`, `/dev/random`,
+`/dev/urandom`) by a contract with an `fs:` section carries `rule: "builtin.standard_devices"` and verdict `allow`
+(it said `unmatched` and `refused` before the grant, and still does under a contract with no `fs:` section). It is an
+ordinary `fs` action line: no new event kind, field, reason or record minor, and a reader that keys on `rule` meets a
+built-in string it already meets from the refusals below. An entry of the contract that names a device decides it
+instead, and the line names that entry.
+
 ### Built-in refusals (ADR 0113, implemented 2026-11-03)
 
 Ordinary refusal lines use the existing `rule` strings `builtin.host_ipc`, `builtin.tego_surface` and
@@ -1100,7 +1120,9 @@ what it wrote. A launch, a record-only adoption and an adoption whose table held
 their revision and their bytes; a ledger below 40 says nothing either way. Below 40 the block is refused (`below-minor`).
 A revision above 39 holds the baseline block only when the run had a baseline to record; at 39 itself it is mandatory
 (ADR 0144), so a reader asks the run_start whether it recorded one (`BaselineRecorded`) and not whether its revision is
-at least 39. A released reader (v0.1.3 and earlier) has no table of supported revisions and ignores a field it does not know, so it reads such a ledger without the block; a build that has the table refuses a revision it does not list as unsupported.
+at least 39.
+
+A released reader (v0.1.3 and earlier) has no table of supported revisions and ignores a field it does not know, so it reads such a ledger without the block; a build that has the table refuses a revision it does not list as unsupported.
 
 *A launch, 2026-11-20 (GAPS C221, no new revision):* a launch's `run_start` carries the same block at revision 41, for
 each limit file its launcher wrote (`cpu.max`, `cpu.weight`, `memory.max`, `memory.high`, `pids.max`), as the kernel reports
@@ -1108,7 +1130,7 @@ the file back after the write, not as the contract worded it: memory is held in 
 reads back 999,424. Two members join the three, `memory_max` and `memory_high` (bytes, 0 or more; `0` is a cap of nothing),
 valid from revision 41 and refused below it (`below-minor`). A limit that reads back `max`, a file that could not be read and
 a value the record cannot state (a `pids.max` of 0) are absent, and a run that wrote no limit writes no block. *Amended
-(GAPS N85, no new revision):* a launch's member is the lowest ceiling along the chain of cgroups above the scope, up to the
+(no new revision):* a launch's member is the lowest ceiling along the chain of cgroups above the scope, up to the
 cgroup2 mount, read once at the run's start: the kernel holds the run to that one, so `memory_max`, `memory_high`, `pids_max`
 and `cpu_max` (compared by quota over period) are the smaller of the scope's file and every ancestor's, `max` being no
 ceiling. `cpu_weight` is a share and stays the scope's own. A member whose ancestors could not all be read is absent, not the
@@ -1134,7 +1156,7 @@ At `record_minor` 41 (`MinorEveryLaunch`; 2026-11-20) every launch and every ado
 on, whether or not a live block ever comes: a block can come at any time after `run_start`, and the revision its line
 needs can only be declared there. Revision 41 **includes everything 39 and 40 allow**: the machine baseline block is
 mandatory at 39 itself and carried at 41 when the run had one (`BaselineRecorded`), and `applied_limits` is allowed from 40.
-A ledger at 31, 39 or 40 reads exactly as before. Three fields are new:
+A ledger at 31, 39 or 40 reads exactly as before. Five fields are new:
 
 - `run_start.home`: the home directory the run resolved (the passwd home of the launching user, never `$HOME`; of the agent's
   owner for an adoption), a clean absolute path of at most 4096 bytes with no control character, absent when the run
@@ -1154,14 +1176,42 @@ A ledger at 31, 39 or 40 reads exactly as before. Three fields are new:
   absent when the lift had none. A reader shows it and never interprets it. It is not `reason`, which on a line is the
   closed reason set. The launcher writes it as its writer signed it: the note is one more field of the lift's MAC
   (a second HMAC domain, `tego-live-lift-v2`; a lift with no note keeps `tego-live-lift-v1` and its inputs), so a lift
-  whose note was changed or taken off in the overlay is refused (`refused: mac`). Minor 41 never shipped in a release
+  whose note was changed or taken off in the overlay is refused (`refused: mac`). Minor 41 first shipped in v0.2.0
   (v0.1.3 ends at 30), so the field is part of 41, not a new revision. Below 41 it is refused (`below-minor`); on any other
   why, over the bound, or with a character that is not printable it is refused `live-block`. Fixtures:
   `fixtures/live/valid/live-rule-lifted-note*.json` and `fixtures/live/invalid/*note*.json`.
 
+- `exec.decision_lost` (strings), on an `exec` line that says only what the exec's own result said (public issue 65,
+  [ADR 0048](../../../docs/adr/0048-exec-command-rules.md), amendment 2026-11-24): the call failed with `EACCES`
+  (`syscall_ret` -13), `verdict` `observed`, `rule` `unmatched`, `argv_from` `attempt`, and no decision record of the
+  attempt was read, because the ring that carries the kernel decision plane's samples was overrun or the recorder's
+  fragment table was full. The kernel decision plane refuses an exec with `EACCES`, and so can another security module or
+  the file's own mode, so the line cannot say which refused it; it can say that this run lost records a decision may be
+  among. The list names those gaps of the run, sorted with no repeat, from `exec-fragment-overflow` and `ringbuf-full`
+  (each is a gap line the run holds, with its count). Its meaning is the run's, not the attempt's: it names the gaps the run
+  had lost when the line was written, never one that was lost for this attempt, so after one early loss every later exec
+  that fails with `EACCES` for any cause (a mount marked `noexec`, a file with no execute bit, another security module)
+  carries it too. Reading it as "this exec was refused by Tego" is wrong; it says only that no decision of this attempt
+  was read and that the run's record has holes. This version marks the line with the run's stated losses and does not narrow them to the attempt's own time. A narrower rule
+  would be sound (mark only a loss seen at or after the attempt's start, which the supervisor stamps before it lets the exec
+  continue), and is a later improvement; a rule that marks only a rise since the previous exec result is not, because exec
+  results arrive in any order and an attempt whose loss another result had already read would be left with no mark. The line is no refusal and no run of the program: a receipt counts it
+  as neither (`execs_decision_lost`, an additive receipt key). A line with no such loss is a failure of another module or the file's mode
+  and carries no field; a line whose attempt metadata is missing carries none either. An exec a command rule admitted carries its `command_*` fields
+  and `argv_facts` `copied_syscall` (the gate's own mark that its decision read the supervisor's copy of argv) beside the
+  field, as such a line does without it. A refused or allowed line, another errno, or a line with `mechanism`,
+  `plane_reason`, `decision_plane`, `signal`, `errno`, `by`, `detected_bypass`, `kill_failed`, `argv_decided` or
+  `pin_unavailable` (each refused by its presence, whatever its value), a rule other than `unmatched`, a seccomp source, or an
+  `argv_facts` other than `copied_syscall` (`kernel_pinned` and `unproven` are the plane's), with the field is refused
+  `decision-lost`, as is an empty list, a name outside the two, an unsorted
+  list or a repeat; below 41 it is refused (`below-minor`). The other result kinds that can lose a decision sample (an
+  open, a connect, a bind) have no result record apart from the decision's own sample, so a lost sample leaves no line to
+  mark: the run's `ringbuf-full` gap and its count are all the record can say. Fixtures:
+  `fixtures/mvp/valid/exec-decision-lost*.json` and `fixtures/mvp/invalid/*decision-lost*.json`.
+
 A released reader (v0.1.3 and earlier) has no table of supported revisions: it reads and verifies a revision 41 ledger and
-ignores the fields it does not know (checked by running v0.1.3's ledger and record code on a ledger this build wrote and on
-a lift line with a note; the v0.1.3 command line was not run on one). A v0.1.3 launcher refuses a lift that carries a note.
+ignores the fields it does not know (checked by running v0.1.3's ledger and record code on a ledger this build wrote, on
+a lift line with a note and on an exec line with `decision_lost`; the v0.1.3 command line was not run on one). A v0.1.3 launcher refuses a lift that carries a note.
 A build that has the table (`SupportsMinor`) refuses a revision it does not list, 36, 38 and any above 41, as unsupported.
 
 ### Local approval authority, optional profile at revision 37
@@ -1225,3 +1275,35 @@ identify the answer sender; decision-time namespace, cgroup, current real UID
 and start facts come from the validated process handle. Those later readings
 do not establish namespace or scope at the send. A completed final snapshot is not revoked by later
 changes the sender makes to itself.
+
+## A budget over a window (`run_start.limits.window`, additive within revision 41)
+
+A contract with `limits.window` makes `tokens` and `cost_usd` one total over the last `window` across every run of the
+same agent, this run included. The `limit` line such a run writes carries that total in `value`. Everything needed to
+recompute it is in the records, and a verifier recomputes it like this:
+
+1. The agent is the run's `run_start.contract_source`: for `registry` `user` the pair `(registry, name)`; for `registry`
+   `project` the pair `(name, path)` (a project registry is the working directory's, so the same name in two folders is two
+   agents); with no `name`, the `path`. Another run is of the same agent when its `run_start` gives the same identity.
+2. The earlier spend is the `usage` of every `ssl_response` of every other run of that agent in the same ledger root whose
+   chain verifies (and, for a run that ended, matches its `chain.log` line). `tokens` count `input + output` (cache reads
+   and writes are not tokens here). A `ssl_response` with no `usage` counts nothing.
+3. A response is placed in the minute of its line's `ts` (UTC, whole minutes since the epoch). A line stamped later than
+   this run's `run_start.ts` (a clock set back since) is placed at the run's start. This run's own responses are placed at the
+   run's start plus the monotonic time since it (`mono_ns` against `run_start`'s); `ts` gives the same minute unless the
+   wall clock was stepped during the run.
+4. At the time `n` of a response of this run, a minute counts while the end of that minute is after `n - window` (both in
+   whole seconds), so spend leaves the window up to one minute late and never early. `value` is the sum of the minutes
+   that count: `input + output` summed for `tokens`.
+5. `cost_usd` is the same sum of each response's cost under the run's price table: the machine's table when it has one,
+   else the built-in one of the run's `tego_version`, applied to every response as `tego measure` applies it. A response of
+   a model the table does not list is charged at the table's highest prices. The record does not carry the table: a
+   verifier that has it recomputes `cost_usd` exactly, one that has not recomputes `tokens` exactly and `cost_usd` to the
+   table it holds.
+6. A run that never ended counts to its last line, a run whose `chain.log` line is missing counts as its chain holds it, and
+   a run whose chain does not verify is not countable: the start that needed it was refused, so no `limit` line rests on one.
+   When the earlier runs counted include runs of those two last kinds, the run's ledger says so with a `gap` `what=limits`
+   and `why` `window-unanchored` (`count` is the number of runs with no `chain.log` line) and `window-unattributed` (`count`
+   is the number of run directories whose first line named no agent and were not counted); `window-carried` carries the
+   number of earlier runs of the agent that were read, and is written only when it is above 0.
+

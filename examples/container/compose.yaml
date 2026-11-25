@@ -41,7 +41,10 @@ services:
     # no_new_privs before tego starts: neither tego nor the agent holds any of them.
     #   SYS_ADMIN  remount /sys/fs/cgroup read-write (Docker mounts it read-only in a container that is not
     #              privileged). Docker's default seccomp profile also answers clone3 with ENOSYS unless the
-    #              container has it, and tego starts every agent with clone3(CLONE_INTO_CGROUP).
+    #              container has it, and tego starts every agent with clone3(CLONE_INTO_CGROUP). It is also what lets
+    #              the entrypoint mount securityfs for a moment to read the kernel's list of security modules, which a
+    #              container's own /sys does not show, and hand it to tego (/run/tego-lsm/lsm-list): without the list tego
+    #              refuses every file open it holds for the agent.
     #   SYS_PTRACE Docker's default seccomp profile allows pidfd_getfd only to a container that has it, and tego's
     #              supervisor takes the agent's seccomp listener with pidfd_getfd.
     #   CHOWN      hand the cgroup subtree and the state directories to the tego user.
@@ -49,7 +52,7 @@ services:
     cap_drop: [ALL]
     cap_add: [SYS_ADMIN, SYS_PTRACE, CHOWN, SETUID, SETGID, SETPCAP]
     security_opt:
-      # AppArmor's docker-default profile denies every mount, the remount above included. Hosts without AppArmor
+      # AppArmor's docker-default profile denies every mount, the remount above and the securityfs mount included. Hosts without AppArmor
       # ignore this; with it, a profile of your own that allows `mount options=(rw,remount) -> /sys/fs/cgroup/` can
       # replace it.
       - apparmor=unconfined

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/cilium/ebpf"
 	"golang.org/x/sys/unix"
 )
 
@@ -31,13 +32,6 @@ const planeVerifiedBudget = 20000
 // A loop-form walk still costs more than this allowance alone on every measured kernel (T0's a-rd 35,855 on 5.14 the
 // least of them).
 const planeBlockWalkBudget = 8000
-
-// planeListenVerifiedBudget is socket_listen's own budget. That hook walks no path, so form d's figures say
-// nothing about it: its body is decide_listen.h's bound-address and autobind checks, which the verifier walked
-// 16,945 to 18,295 times on 6.17 and 43,850 to 44,096 times on 7.0 (GitHub's runners, 7.0.0-1017-azure),
-// the program unchanged. A loop form would still show as a jump far past this; the kernel's own
-// limit is a million. Linux 6.19.4 did not move it (16,768 on 6.19.3 and on 6.19.4 to 6.19.14), so it does not scale.
-const planeListenVerifiedBudget = 64000
 
 // planeMeasuredHeadroomPercent is the headroom a charged family's budget leaves over the count measured there: the
 // largest plane program's verified instructions, plus this many percent, rounded up. Verifier counts of one object on
@@ -96,6 +90,46 @@ var planeCharges = []planeCharge{{
 	baseline:   map[Object]uint32{ObjectPlaneRdonly: 14562, ObjectPlaneProbe: 11582},
 }}
 
+// planeListenFamily is a kernel family's verifier count for socket_listen, the plane's largest program (6,872
+// instructions of its own: decide_listen.h's listener checks, the unix listen reason and marker inlined), which walks no
+// path, so form d's figures say nothing about it. It is verified in about 2.4 times the instructions on Linux 7.0 and
+// later than before, with the object unchanged: 18,892 at the most on every kernel measured from 5.14 to 6.19.14 and 44,023
+// on Fedora's 7.0.14, Ubuntu 26.04's 7.0.0-38 and Fedora's 7.2.9 (43,850 and 44,096 on GitHub's 7.0.0-1017-azure); the
+// same kernels charge socket_bind and unix_may_send 2 to 5 times more as well, so it is the verifier's walk of branching
+// code, not this program's body (the 6.19.4 family, which charges bpf_loop callbacks more, did not move it). The
+// budget of each family is its measured count plus planeMeasuredHeadroomPercent, as a charged family's of the path
+// programs: a flat allowance for every kernel, as there was (64,000), let a 6.x kernel's 18,892 grow 3.4 times unseen.
+type planeListenFamily struct {
+	family     string
+	matches    func(major int) bool
+	measuredOn string
+	measured   uint32
+}
+
+// planeListenFamilies are the kernels' socket_listen counts, the first for any kernel that is not in a later family and
+// for a release this test cannot read (so it fails there, with its count in the log, and does not pass silently).
+var planeListenFamilies = []planeListenFamily{
+	{family: "Linux before 7.0", matches: func(major int) bool { return major < 7 }, measuredOn: "Debian 12's 6.1.0-56 (2026-11-24)", measured: 18892},
+	{family: "Linux 7.0 and later", matches: func(major int) bool { return major >= 7 }, measuredOn: "Fedora's 7.0.14-201.fc44 (2026-11-24)", measured: 44023},
+}
+
+// planeListenFamilyFor is the family of release: the first when release has no version this test can read.
+func planeListenFamilyFor(release string) *planeListenFamily {
+	if major, _, _, ok := planeRelease(release); ok {
+		for i := len(planeListenFamilies) - 1; i > 0; i-- {
+			if planeListenFamilies[i].matches(major) {
+				return &planeListenFamilies[i]
+			}
+		}
+	}
+	return &planeListenFamilies[0]
+}
+
+// planeWithHeadroom is measured plus planeMeasuredHeadroomPercent, rounded up.
+func planeWithHeadroom(measured uint32) uint32 {
+	return uint32((uint64(measured)*(100+planeMeasuredHeadroomPercent) + 99) / 100)
+}
+
 // planeRelease parses a kernel release such as 6.19.10-300.fc44.x86_64 into its version, ok false when it has not
 // three numbers.
 func planeRelease(release string) (major, minor, patch int, ok bool) {
@@ -135,16 +169,17 @@ func planeChargeFor(release string) *planeCharge {
 
 // planeBudgetFor is the verified-instruction budget of o's plane program serving hook ("" for the exec-pin
 // program) on a kernel of release: planeVerifiedBudget plus planeBlockWalkBudget, or where release is in a charged
-// family the count measured there plus planeMeasuredHeadroomPercent, rounded up; socket_listen's own budget everywhere.
+// family the count measured there plus planeMeasuredHeadroomPercent, rounded up; socket_listen's own family's count plus
+// the same headroom (planeListenFamilies).
 func planeBudgetFor(hook string, o Object, release string) uint32 {
 	if hook == "socket_listen" {
-		return planeListenVerifiedBudget
+		return planeWithHeadroom(planeListenFamilyFor(release).measured)
 	}
 	c := planeChargeFor(release)
 	if c == nil || c.measured[o] == 0 {
 		return planeVerifiedBudget + planeBlockWalkBudget
 	}
-	return uint32((uint64(c.measured[o])*(100+planeMeasuredHeadroomPercent) + 99) / 100)
+	return planeWithHeadroom(c.measured[o])
 }
 
 // planeBudgetLogged is the set of builds whose budget this test binary has logged.
@@ -167,8 +202,44 @@ func planeBudget(t *testing.T, o Object, hook string) uint32 {
 		} else {
 			t.Logf("%s on %s: a plane program's budget is %d", o, release, planeBudgetFor("", o, release))
 		}
+		f := planeListenFamilyFor(release)
+		t.Logf("%s on %s: socket_listen's budget is %d (%s: %d measured on %s, %d %% over)", o, release,
+			planeBudgetFor("socket_listen", o, release), f.family, f.measured, f.measuredOn, planeMeasuredHeadroomPercent)
 	}
 	return b
+}
+
+// planeMustReportCounts says whether a kernel of release reports a loaded program's verified instructions
+// (bpf_prog_info's verified_insns, Linux 5.16; RHEL 9's 5.14 has it backported and reports it, so a kernel that does
+// not and is 5.16 or later has lost it, and a release this test cannot read is asked to report).
+func planeMustReportCounts(release string) bool {
+	major, minor, _, ok := planeRelease(release)
+	return !ok || major > 5 || (major == 5 && minor >= 16)
+}
+
+// planeHeldToBudget logs the verified-instruction count of p, the plane program named name that serves hook of object
+// o ("" for the exec-pin program), and fails it over its budget. A program whose count is not there to be held (its
+// info unreadable, or a kernel that should report it and does not) fails the test: it went unchecked.
+func planeHeldToBudget(t *testing.T, o Object, hook, name string, p *ebpf.Program) {
+	t.Helper()
+	info, err := p.Info()
+	if err != nil {
+		t.Errorf("%s: its program info is unreadable (%v): it was held to no budget", name, err)
+		return
+	}
+	n, ok := info.VerifiedInstructions()
+	if !ok {
+		var uts unix.Utsname
+		_ = unix.Uname(&uts)
+		if release := unix.ByteSliceToString(uts.Release[:]); planeMustReportCounts(release) {
+			t.Errorf("%s: kernel %s reports no verified instructions for it: it was held to no budget", name, release)
+		}
+		return
+	}
+	t.Logf("%s: %d instructions verified", name, n)
+	if b := planeBudget(t, o, hook); n > b {
+		t.Errorf("%s: %d instructions verified, over the budget of %d", name, n, b)
+	}
 }
 
 // TestPlaneBudgetFollowsTheKernelsChargeForTheSameBytes holds the plane's verified-instruction budget per kernel
@@ -209,9 +280,22 @@ func TestPlaneBudgetFollowsTheKernelsChargeForTheSameBytes(t *testing.T) {
 		{"6.19.10-300.fc44.x86_64", "path_rename", ObjectPlaneRdonly, 110459, 100417},
 		{"6.19.10-300.fc44.x86_64", "", ObjectPlaneProbe, 65326, 59387},
 		{"6.19.14-300.fc44.x86_64", "path_rename", ObjectPlaneProbe, 65326, 28681},
-		// socket_listen walks no path and has its own budget, which 6.19.4 did not move (16,768 on both).
-		{"6.19.10-300.fc44.x86_64", "socket_listen", ObjectPlaneRdonly, planeListenVerifiedBudget, 16768},
-		{"7.0.14-201.fc44.x86_64", "socket_listen", ObjectPlaneProbe, planeListenVerifiedBudget, 43978},
+		// socket_listen walks no path and has a budget of its own per kernel family (planeListenFamilies): its largest
+		// count measured on each kernel (2026-11-24, one test binary) plus 10 %, which 6.19.4 did not move.
+		{"5.14.0-687.61.1.el9_8.x86_64", "socket_listen", ObjectPlaneRdonly, 20782, 18248},
+		{"6.1.0-56-cloud-amd64", "socket_listen", ObjectPlaneProbe, 20782, 18892},
+		{"6.8.0-147-generic", "socket_listen", ObjectPlaneRdonly, 20782, 18717},
+		{"6.12.115+deb13.1-cloud-amd64", "socket_listen", ObjectPlaneRdonly, 20782, 18248},
+		{"6.17.0-41-generic", "socket_listen", ObjectPlaneRdonly, 20782, 18296},
+		{"6.18.0-061800-generic", "socket_listen", ObjectPlaneProbe, 20782, 18352},
+		{"6.19.10-300.fc44.x86_64", "socket_listen", ObjectPlaneRdonly, 20782, 18322},
+		{"6.19.14-061914-generic", "socket_listen", ObjectPlaneProbe, 20782, 18352},
+		{"7.0.14-201.fc44.x86_64", "socket_listen", ObjectPlaneProbe, 48426, 44023},
+		{"7.0.0-38-generic", "socket_listen", ObjectPlaneRdonly, 48426, 44023},
+		{"7.0.0-1017-azure", "socket_listen", ObjectPlaneRdonly, 48426, 44096},
+		{"7.2.9-300.fc45.x86_64", "socket_listen", ObjectPlaneRdonly, 48426, 43880},
+		// A release this test cannot read is held to the first family, which fails with its count in the log.
+		{"", "socket_listen", ObjectPlaneRdonly, 20782, 0},
 		// A release this test cannot read is held to the unscaled budget.
 		{"", "file_open", ObjectPlaneRdonly, 28000, 0},
 		{"6.19", "file_open", ObjectPlaneRdonly, 28000, 0},
@@ -242,6 +326,24 @@ func TestPlaneBudgetFollowsTheKernelsChargeForTheSameBytes(t *testing.T) {
 		}
 		if grown := measured + measured/100*(planeMeasuredHeadroomPercent+1); grown <= b {
 			t.Errorf("%s: a program grown 11 %% to %d is inside the budget %d", o, grown, b)
+		}
+	}
+	// socket_listen: a program that costs what Linux 7.x charges the plane's (44,023) is over the budget of every kernel
+	// before 7.0, where it costs at most 18,892, and the measured counts of each family are inside its own; a program
+	// grown more than the headroom is over both. A flat allowance for every kernel (it was 64,000) admitted all of
+	// them.
+	for _, release := range []string{"6.1.0-56-cloud-amd64", "6.19.14-061914-generic", "5.14.0-687.61.1.el9_8.x86_64", ""} {
+		if b := planeBudgetFor("socket_listen", ObjectPlaneRdonly, release); b >= 44023 {
+			t.Errorf("%q: socket_listen's budget %d admits what Linux 7.x charges it (44,023), a growth of 2.4 times there", release, b)
+		}
+	}
+	for _, f := range planeListenFamilies {
+		b := planeWithHeadroom(f.measured)
+		if f.measured > b {
+			t.Errorf("%s: the measured %d is over its budget %d", f.family, f.measured, b)
+		}
+		if grown := f.measured + f.measured/100*(planeMeasuredHeadroomPercent+1); grown <= b {
+			t.Errorf("%s: socket_listen grown 11 %% to %d is inside the budget %d", f.family, grown, b)
 		}
 	}
 	// Elsewhere, the cheapest loop-form walk T0 measured alone (a-rd, 35,855 on 5.14) still costs more than the budget.

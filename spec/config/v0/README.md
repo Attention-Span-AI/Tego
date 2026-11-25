@@ -93,6 +93,19 @@ tomoyo:
                                   # only on securityfs, with mount root /tomoyo, read-only; anything else refuses
                                   # held opens as before. No setting assumes TOMOYO enforces nothing (ADR 0041;
                                   # added 2026-11-22)
+lsm:
+  list_file: ""                   # honoured from /etc/tego/config.yaml only (set in any other layer it is ignored
+                                  # with a warning): "" uses no file; a clean absolute path names a file a held open
+                                  # reads the active security-module list from when lsm_list_modules(2) and
+                                  # /sys/kernel/security/lsm both cannot be read, as in a container under Docker's
+                                  # default profile. The file is believed only when it is the host's
+                                  # /sys/kernel/security/lsm bound read-only (securityfs, mount root /lsm), or the
+                                  # three-line file the container's entrypoint wrote as root at this boot (root's,
+                                  # not writable by group or others, in directories only root can write, not on a
+                                  # FUSE or network filesystem, this boot's id), and only for a task that holds no
+                                  # capability that could rewrite it (and, for the written file, is not root);
+                                  # anything else refuses held opens as before. It decides held opens only, never a
+                                  # tier. No key supplies a list inline (ADR 0041; added 2026-11-25)
 resolver: auto                    # unprivileged-tier UDP rule: auto = nameservers of /etc/resolv.conf at run start;
                                   # or a list of ip[:port] that replaces the file (port 53 when omitted); the
                                   # exception covers port 53 only, so a server on another port needs net.allow

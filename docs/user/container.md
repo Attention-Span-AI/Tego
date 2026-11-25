@@ -39,7 +39,8 @@ programs it needs. A program being installed allows nothing: the contract's `exe
 | ---- | ---------- |
 | `/usr/local/bin/tego`, `/usr/local/bin/tego-control` | The matched pair: static, not PIE, BPF objects embedded, `tego-control`'s SHA-256 pinned in `tego` (`tego serve` hands off only to that file). |
 | `/usr/local/bin/tego-entrypoint` | The entrypoint (`examples/container/tego-entrypoint.sh`), below. |
-| `/etc/tego/config.yaml` | The machine config: `ledger_root: /var/lib/tego/runs`. Root's, mode 0644, as tego's trust check wants. |
+| `/etc/tego/config.yaml` | The machine config: `ledger_root: /var/lib/tego/runs` and `lsm.list_file: /run/tego-lsm/lsm-list`. Root's, mode 0644, as tego's trust check wants. |
+| `/run/tego-lsm/lsm-list` | The list of the kernel's active security modules, which the entrypoint writes as root at each start ([below](#held-file-opens-and-the-list-of-security-modules)). Not in the image: it appears when the container starts. |
 | `/home/tego` | The home of the user `tego` (uid 10001 unless built with `TEGO_UID`), which every run is started as. `~/.tego` holds the chain anchor (`chain.log`) and tego's own log. |
 | `/var/lib/tego/runs` | The ledger. |
 | `/work` | The agent's working folder; `/work/out` is the one the example contract lets it write. |
@@ -78,11 +79,16 @@ namespace and then gives everything up:
 4. It hands `~tego/.tego`, `/var/lib/tego/runs` and `/work` themselves (not their contents) to the user, for a bind
    mount of a host folder that belongs to someone else, and makes `/run/user/<uid>` the user's `XDG_RUNTIME_DIR`, as
    a login session would (tego keeps a Codex run's `CODEX_HOME` there and refuses such a run without one).
-5. It becomes the user with `setpriv`: the user's uid, gid and groups, no inheritable, ambient or bounding
+5. It reads the list of the kernel's active security modules, which the container usually cannot read once it is the
+   user, and writes it to `/run/tego-lsm/lsm-list` as root, with this boot's id, so that Tego can hold file opens
+   ([Held file opens](#held-file-opens-and-the-list-of-security-modules)). Where it cannot read the list it says why.
+6. It becomes the user with `setpriv`: the user's uid, gid and groups, no inheritable, ambient or bounding
    capabilities, and `no_new_privs`. Neither `tego` nor the agent holds any capability the container was given.
 
 `TEGO_DELEGATE=auto` (the default) says why when step 1, 2 or 3 cannot be done and starts the command anyway, so
-`tego machine check` can show what the host gave; `yes` stops the container instead; `no` skips the cgroup steps. Started as
+`tego machine check` can show what the host gave; `yes` stops the container instead; `no` skips the cgroup steps.
+`TEGO_LSM_LIST` does the same for step 5: `auto` (the default) says why when the list could not be read and starts
+anyway, `yes` stops the container, `no` leaves `/run/tego-lsm/lsm-list` alone. Started as
 any user other than root (`docker run --user`, compose's `user:`), the entrypoint does nothing and runs the command
 as given; the dashboard service starts that way.
 
@@ -93,7 +99,7 @@ found in `/init`, where the runtime puts it beside PID 1, and joins the subtree 
 ## Tiers inside a container
 
 Tego's three tiers need different things from the host and from
-the container. Only tier landlock is the image's supported setting; the table says what each of the others would
+the container. Only tier landlock has been tried in the image; the table says what each of the others would
 need and that no run has shown it working.
 
 | Tier | Host | Container | State |
@@ -104,7 +110,7 @@ need and that no run has shown it working.
 
 ### Tier landlock: each setting and what it buys
 
-This section is about the image's supported tier, landlock.
+This section is about the tier tried in the image, landlock.
 
 - `cgroup: private`: the entrypoint builds the subtree only in the container's own cgroup namespace.
 - `cap_add: [SYS_ADMIN, ...]` with `cap_drop: [ALL]`: the capabilities are the entrypoint's, for setting up, and
@@ -212,29 +218,87 @@ A run holds file opens when its contract says `gate.completion: held`, asks abou
 reads (`fs.reads`, which a `.env` inside a writable folder turns on, as above). Tego then opens each file itself on
 the agent's behalf, and before it does it learns which security modules are active on the machine (AppArmor, SELinux,
 Smack, TOMOYO) and compares the agent's label with its own. The list is read by `lsm_list_modules(2)` (Linux 6.8 and
-later) and, where that fails, from the file `/sys/kernel/security/lsm`. **When neither can be read, every held open is
+later), where that fails from the file `/sys/kernel/security/lsm`, and where that fails too from the list file the
+machine config names (`lsm.list_file`, below). **When none can be read, every held open is
 refused** (`held-label-unavailable`, errno `EACCES`) and the run says so at launch (`[held-label]`) and in `tego
 doctor` (`FAIL lsm: doctor: cannot read the active LSM list: ...`). That is deliberate: without the list Tego cannot
 know that no module labels the agent's task differently from its own, and a label it does not compare could admit an
 open the agent's own would not get. Nothing is opened that should not be; the run loses the held opens, and a dynamic
 program under held reads can then fail loading its libraries.
 
-What a container can read, as measured on Debian guests with `docker.io` 26.1.5:
+What a container can read, as measured on Debian guests with `docker.io` 26.1.5, under the image's entrypoint or without:
 
-| Host kernel | Container settings | The list |
-| ----------- | ------------------ | -------- |
-| Debian 13 (6.12) | Docker's default seccomp profile and `docker-default` AppArmor | Not readable: the profile refuses `lsm_list_modules(2)` and the file cannot be read either (why was not recorded: the container's sysfs may have no securityfs, or a policy refuses the file; the launch note says which it met). Held opens are refused. |
-| Debian 13 (6.12) | `--security-opt seccomp=unconfined` (or a profile that allows `lsm_list_modules`) | Read by the syscall. Held opens work, subject to the TOMOYO and AppArmor facts below. |
-| Debian 12 (6.1) | Docker's defaults | Not readable, and there is nothing to permit: the kernel has no `lsm_list_modules(2)`, and the file cannot be read (the same open question as above). Held opens are refused, and the TOMOYO bind of [the operations guide](../OPERATIONS.md) does not help, because the list is read first. |
+| Host kernel | Container settings | What the container itself reads | Held opens |
+| ----------- | ------------------ | ------------------------------- | ---------- |
+| Debian 13 (6.12) | Docker's default seccomp profile and `docker-default` AppArmor | `lsm_list_modules(2)` answers `ENOSYS` (the profile does not know the call), and `/sys/kernel/security/lsm` is not there: the container's own sysfs has no securityfs | Refused, unless the list is handed in (below), and on Debian the TOMOYO and AppArmor facts too |
+| Debian 13 (6.12) | `--security-opt seccomp=unconfined` (or a profile that allows `lsm_list_modules`) | The syscall reaches the kernel and answers. | Work, subject to the TOMOYO and AppArmor facts (below) |
+| Debian 12 (6.1) | Docker's defaults | `lsm_list_modules(2)` answers `ENOSYS` (this kernel has no such call), and `/sys/kernel/security/lsm` is not there | Refused, unless the list is handed in, and on Debian the TOMOYO and AppArmor facts too |
 
-So on a kernel before 6.8 under Docker's defaults, Tego cannot hold file opens in a container. The
-choices are a host kernel 6.8 or later with a seccomp profile that allows `lsm_list_modules`, a container whose
-`/sys/kernel/security/lsm` is readable, or a contract that holds no opens (no `gate.completion: held`, no
-`fs.ask_read`, and for a secret inside the work folder `fs.reads: direct`, which leaves that target unenforced at tier
-landlock as compile warns). Tego does not guess the list from the boot line, `/proc` or the kernel log for this
-decision: the boot line does not say which modules started, the per-task `/proc/<pid>/attr` directories are fixed when the
-kernel is built and TOMOYO shows no label there, and the kernel log can be restricted or overwritten. The note
-at launch names what each way answered, and offers only the options that exist for that answer.
+**Handing the list in.** The one process in the container that can still read the list is the entrypoint, because it
+starts as root, with the `SYS_ADMIN` capability and without AppArmor's `docker-default` profile that compose.yaml gives
+it. It reads the kernel's list (mounting securityfs read-only on a private directory for the moment, since the
+container's own `/sys` has none), writes it to `/run/tego-lsm/lsm-list` and only then becomes the `tego` user. The image's
+`/etc/tego/config.yaml` names that file as `lsm.list_file`, so the documented flow needs nothing more from you:
+
+```yaml
+lsm:
+  list_file: /run/tego-lsm/lsm-list
+```
+
+(`lsm.list_file` is read from `/etc/tego/config.yaml` only; a user's own config that sets it is ignored with a warning.)
+The file has a directory of its own, `/run/tego-lsm`, and not `/run/tego`: the entrypoint makes the list's directory mode
+0755 at every start, and `/run/tego` is Tego's host state directory, which a root `tego` (`TEGO_LAUNCHER=root`) opens only as
+root's and mode 0700. Do not give `/run/tego-lsm` to a volume the agent can write: the file is refused there.
+Tego uses the file only when the call and `/sys/kernel/security/lsm` both failed, and believes it only when it is what
+root wrote in this boot, checked again at every open:
+
+- it and every directory above it belong to root and cannot be written by anyone else, and no part of the path is a link;
+- it is a regular file on the container's own filesystem (not FUSE, NFS, 9p or another network filesystem);
+- it has exactly the three lines the entrypoint writes: the format name, the **boot id** of the running kernel, and the list
+  (so a file left from an earlier boot, copied from another machine or baked into an image is refused as stale), and a
+  list whose names are the ones the kernel prints, with `capability` among them;
+- the task the open is for is not root and holds none of `CAP_CHOWN`, `CAP_DAC_OVERRIDE`, `CAP_FOWNER` or `CAP_SYS_ADMIN` in its
+  permitted set (the effective set is not enough to look at: a task could rewrite the file and then drop what is effective),
+  which could rewrite or replace the file. The entrypoint's `setpriv` leaves the agent none of them.
+
+A file that fails one of these is refused with the reason, and held opens stay refused. The file is never used to decide a
+tier: `tego doctor`'s `lsm` row then reads `skip lsm: ... held file opens read this list`, and says that whether `bpf` is
+active is unknown. Where the kernel's own answer is readable, the file is not read at all.
+
+Without this entrypoint (your own image, `docker run` as root, a shell in the container), two other ways give Tego the list:
+
+- bind the host's list into the container read-only, at a path outside `/sys/kernel/security`, and name that path:
+  `docker run -v /sys/kernel/security/lsm:/run/tego-kernel-lsm:ro ...` with `lsm: {list_file: /run/tego-kernel-lsm}` in
+  `/etc/tego/config.yaml`. Tego accepts it only as the host's securityfs file `lsm` on a read-only mount, so another file bound
+  there, a copy and a writable bind are refused;
+- write the file yourself as root before the agent starts, in the format of `examples/container/tego-entrypoint.sh`.
+
+**The list is not the only fact a held open reads.** Debian's kernels, and Ubuntu's, run AppArmor, and Debian's run TOMOYO,
+next to the modules that need no check, and a held open compares what those two say about the agent's task with what they say
+about Tego's own opener. A container cannot read either from its own `/sys`, so on such a host, with the list handed in, the
+held opens are still refused until the other two are given (each refusal says which):
+
+- **TOMOYO:** bind the host's TOMOYO files read-only and name them in the machine config
+  (`-v /sys/kernel/security/tomoyo:/run/tego-tomoyo:ro`, and `tomoyo: {facts_dir: /run/tego-tomoyo}` next to `lsm.list_file`
+  in `/etc/tego/config.yaml`; [the operations guide](../OPERATIONS.md) has the checks Tego makes of that bind). The image's
+  config does not name it, because most hosts do not run TOMOYO: mount your own config over the image's.
+- **AppArmor:** the namespace depth the comparison needs cannot be read in a container, so the contract carries the
+  administrator's assertion that the container sits in the root policy namespace, `fs: {apparmor_assume_root_namespace: true}`
+  (accepting the hidden-ancestor risk the operations guide describes). With neither a readable
+  `/sys/kernel/security/apparmor/.ns_level` nor the assertion, the held opens are refused.
+
+On a host that runs neither (check the `lsm` line of `tego doctor` on the host, or `cat /sys/kernel/security/lsm`), the list
+alone is enough.
+
+If the entrypoint cannot read the list either (it prints `tego-entrypoint: no security-module list handed in: ...`), there
+is nothing to hand in, and the fix is the compose file's settings: `cap_add: [SYS_ADMIN]` and `security_opt:
+[apparmor=unconfined]` let it mount securityfs, and a host kernel 6.8 or later with a seccomp profile that allows
+`lsm_list_modules` lets Tego read the list itself. Otherwise the choices are a contract that holds no opens (no
+`gate.completion: held`, no `fs.ask_read`, and for a secret inside the work folder `fs.reads: direct`, which leaves that
+target unenforced at tier landlock as compile warns). Tego does not guess the list from the boot line, `/proc` or the
+kernel log for this decision: the boot line does not say which modules started, the per-task `/proc/<pid>/attr` directories
+are fixed when the kernel is built and TOMOYO shows no label there, and the kernel log can be restricted or overwritten.
+The note at launch names what each way answered, and offers only the options that exist for that answer.
 
 ### Tiers that need root
 
@@ -332,6 +396,9 @@ Verified without a container runtime:
   handed over, itself moved, and the later join.
 - `examples/container`'s tests: the entrypoint over a stand-in tree (every refusal included), the compose settings,
   the Dockerfile's digests and Go version, and the hello contract's verdicts through `tego rules check --test`.
+- The hand-in of the security-module list: the entrypoint over a stand-in tree (the kernel's file, securityfs mounted for a
+  moment, every case it cannot read, a stale file removed), and Tego's reader of the file against every way a file can be
+  wrong (another owner, group- or other-writable, a link, a stale boot id, a task that could rewrite it).
 - `shellcheck` over the scripts and `actionlint` over the workflow.
 
 What CI's `container` workflow checks first, on GitHub's ubuntu-24.04 runner: the image builds; `tego machine check
@@ -345,7 +412,9 @@ A secret inside the work folder, without a container runtime (KVM guest, as root
 a local directory bind-mounted into it as the work folder starts held reads and refuses a nested `.env` after a
 rename; a project on the overlay itself is refused at launch. No Docker container has run it.
 
-Not verified anywhere yet: the remount and the delegation inside a real Docker container (CI is the first run);
+Not verified anywhere yet: the remount and the delegation inside a real Docker container (CI is the first run); the
+entrypoint's mount of securityfs and the held opens that then work, on Debian 12 and 13 under Docker's defaults (a guest
+run is owed), and the bind of the host's list under `docker-default`;
 Podman, Kubernetes, SELinux hosts and arm64 images; the dashboard's changes and live-run actions from its container;
 running tego as root in a container (`TEGO_LAUNCHER=root`).
 
@@ -357,7 +426,7 @@ running tego as root in a container (`TEGO_LAUNCHER=root`).
 | `... this container shares a cgroup namespace` | `--cgroupns=host` | `cgroup: private` (`--cgroupns=private`) |
 | `... is not a cgroup v2 hierarchy` | A cgroup v1 or hybrid host | Boot the host with cgroup v2 (`systemd.unified_cgroup_hierarchy=1`) |
 | `tego run: ... clone3 is being filtered` | The seccomp profile refuses `clone3` | `CAP_SYS_ADMIN` in the container, or a profile that allows it |
-| `the host's security modules could not be read (lsm_list_modules(2) ...); a file open that tego checks and makes for the agent is refused ...` or `held-label-unavailable` in the record | The container can read neither `lsm_list_modules(2)` (Docker's default seccomp profile refuses it; kernels before 6.8 lack it) nor `/sys/kernel/security/lsm` (the file is absent or refused; the note says which) | [Held file opens and the list of security modules](#held-file-opens-and-the-list-of-security-modules) |
+| `the host's security modules could not be read (lsm_list_modules(2) ...); a file open that tego checks and makes for the agent is refused ...` or `held-label-unavailable` in the record | The container can read neither `lsm_list_modules(2)` (Docker's default seccomp profile refuses it or does not know it; kernels before 6.8 lack it) nor `/sys/kernel/security/lsm` (a container's own `/sys` has no securityfs), and no list was handed in or the one named was refused (the note says why: another boot, writable by the agent, not root's, and so on) | [Held file opens and the list of security modules](#held-file-opens-and-the-list-of-security-modules): run the image's entrypoint as root with compose.yaml's settings, or bind the host's list |
 | `tego machine check`: `FAIL landlock` | The host kernel has no Landlock in its LSM list | Add `landlock` to the host's `lsm=` boot line |
 | `tego machine check`: `yama ptrace_scope=2 without CAP_SYS_PTRACE` | The host's Yama setting | Set the host's `kernel.yama.ptrace_scope` to 1 |
 | `held-read stable identities/replacement events unavailable on filesystem 0x794c7630` | A secret the agent's write entry holds (a `.env` in the project) lies on the container's own layer (overlayfs, `0x794c7630`) or another unsupported filesystem | Put the project on a named volume or a bind mount of a local folder ([A secret inside the work folder](#a-secret-inside-the-work-folder)) |

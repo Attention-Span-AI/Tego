@@ -291,3 +291,50 @@ func TestFactsSeamsOnTheRealKernel(t *testing.T) {
 		t.Errorf("mount %d of %s = %+v, %v", id, p, m, err)
 	}
 }
+
+// TestCheckSecurityfsBindForTheModuleList: the security-module list's bind (a container's -v /sys/kernel/security/lsm:...:ro)
+// passes only as securityfs's own /lsm on a read-only mount, with the words of a check that is not about TOMOYO.
+func TestCheckSecurityfsBindForTheModuleList(t *testing.T) {
+	const ok = "ro,nosuid,nodev,noexec,relatime"
+	dir := t.TempDir()
+	p := filepath.Join(dir, "lsm-list")
+	if err := os.WriteFile(p, []byte("capability\n"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	line := func(root, opts, fstype string) string {
+		return "50 20 0:19 " + root + " " + p + " " + opts + " - " + fstype + " securityfs rw\n"
+	}
+	for _, tc := range []struct {
+		name string
+		k    fakeKernel
+		want string // "" accepted
+	}{
+		{"the kernel's own file, read-only", fakeKernel{magic: securityfsMagic, mountID: 50, mountinfo: line("/lsm", ok, "securityfs")}, ""},
+		{"another securityfs file bound in its place", fakeKernel{magic: securityfsMagic, mountID: 50, mountinfo: line("/apparmor/profiles", ok, "securityfs")}, "is at path /apparmor/profiles in its filesystem, not /lsm"},
+		{"TOMOYO's file bound in its place", fakeKernel{magic: securityfsMagic, mountID: 50, mountinfo: line("/tomoyo/stat", ok, "securityfs")}, "not /lsm"},
+		{"a writable bind", fakeKernel{magic: securityfsMagic, mountID: 50, mountinfo: line("/lsm", "rw,relatime", "securityfs")}, "is on a writable mount"},
+		{"a tmpfs copy", fakeKernel{magic: unix.TMPFS_MAGIC, mountID: 50, mountinfo: line("/", ok, "tmpfs")}, "is not on securityfs"},
+		{"mountinfo says another filesystem", fakeKernel{magic: securityfsMagic, mountID: 50, mountinfo: line("/lsm", ok, "tmpfs")}, "mounted as tmpfs"},
+		{"a link in the path", fakeKernel{magic: securityfsMagic, mountID: 50, mountinfo: line("/lsm", ok, "securityfs"), link: "/sys/kernel/security/lsm"}, "is reached through a link"},
+		{"no mount id", fakeKernel{magic: securityfsMagic, mountIDEr: errors.New("no STATX_MNT_ID"), mountinfo: line("/lsm", ok, "securityfs")}, "mount id"},
+		{"unreadable mountinfo", fakeKernel{magic: securityfsMagic, mountID: 50, miErr: errors.New("no /proc")}, "mountinfo cannot be read"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.k.install(t)
+			f, err := os.Open(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = f.Close() }()
+			err = CheckSecurityfsBind(p, f, "/lsm")
+			switch {
+			case tc.want == "" && err != nil:
+				t.Errorf("refused: %v", err)
+			case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)):
+				t.Errorf("err %v, want %q", err, tc.want)
+			case err != nil && strings.Contains(err.Error(), "TOMOYO"):
+				t.Errorf("the words name TOMOYO for a list that is not TOMOYO's: %v", err)
+			}
+		})
+	}
+}

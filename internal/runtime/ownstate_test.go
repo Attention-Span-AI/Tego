@@ -453,3 +453,55 @@ func TestRestoreOwnStateGivesBackTheRunDirectoriesUnderTheRoot(t *testing.T) {
 		t.Errorf("another user's run directory has mode %04o, want it left at 0000", mode)
 	}
 }
+
+// TestRestoreOwnStateGivesBackAWindowLock: chmod is the one thing a held agent can still do to the ledger root, and the
+// name of an agent's window lock follows from its identity, so an agent can take the lock's mode; every later start of
+// that agent (and of no other) would then be refused at the lock's open until a person ran chmod. The restore gives the
+// owner their rights back on it, as it does on a run's directory, and on nothing that only looks like a lock: S3, another
+// agent never blocks this one, holds when the start restores it.
+func TestRestoreOwnStateGivesBackAWindowLock(t *testing.T) {
+	g := newWindowRig(t)
+	first, _, _, err := g.start(windowLimits(1000), thirtyDays)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.end(first)
+	asOwnerOf(t, filepath.Dir(g.root))
+	t.Cleanup(func() { ownerRightsBack(filepath.Dir(g.root)) })
+	locks, _ := filepath.Glob(filepath.Join(g.root, ".window-*.lock"))
+	if len(locks) != 1 {
+		t.Fatalf("locks %v, want one", locks)
+	}
+	lookalikes := []string{filepath.Join(g.root, ".window-notahash.lock"), filepath.Join(g.root, "x.lock")}
+	for _, p := range lookalikes {
+		if err := os.WriteFile(p, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	chmodAll(t, 0, append([]string{locks[0]}, lookalikes...)...)
+	if os.Geteuid() != 0 { // root opens a file whatever its mode: the refusal below is a non-root launcher's
+		if _, _, _, err := g.start(windowLimits(1000), thirtyDays); !errors.Is(err, ErrBudgetWindow) {
+			t.Fatalf("a taken lock: err = %v, want the start refused before the restore", err)
+		}
+	}
+	got, err := RestoreOwnState(OwnState{Root: g.root})
+	if err != nil {
+		t.Fatalf("RestoreOwnState: %v", err)
+	}
+	if want := []ModeRestored{{locks[0], 0, 0o600}}; !slices.Equal(got, want) {
+		t.Fatalf("restored %v, want only the lock: %v", got, want)
+	}
+	for _, p := range lookalikes {
+		if mode := modeOf(t, p); mode != 0 {
+			t.Errorf("%s has mode %04o: a name that is not a lock's is nobody's to restore here", p, mode)
+		}
+	}
+	second, _, _, err := g.start(windowLimits(1000), thirtyDays)
+	if err != nil {
+		t.Fatalf("after the restore the agent starts: %v", err)
+	}
+	g.end(second)
+	if again, err := RestoreOwnState(OwnState{Root: g.root}); err != nil || again != nil {
+		t.Fatalf("a second pass restored %v, %v; want nothing", again, err)
+	}
+}

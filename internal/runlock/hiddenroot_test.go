@@ -21,7 +21,7 @@ import (
 // root without CAP_SYS_PTRACE (Docker's default root) reads an undumpable launcher's /proc/<pid>/fd directory, which root's
 // DAC override lets it list, and is refused every descriptor's fdinfo. Such a reader used to be told "no descriptor
 // proves the run's flock", a sentence that says nothing of why, and on a filesystem that prints its superblock's device
-// (btrfs, overlayfs, bcachefs) never that /proc/locks lists the flock and why the reader does not take that row (N81).
+// (btrfs, overlayfs, bcachefs) never that /proc/locks lists the flock and why the reader does not take that row.
 
 // fakeLauncher is a /proc of one process, pid, whose descriptor directory lists one entry that is the lock file, under a
 // temporary root, and the file's stat. Its fdinfo is whatever readProofFile is made to say.
@@ -129,7 +129,7 @@ func TestARootCallerWithoutPtraceIsToldWhatItDidNotTake(t *testing.T) {
 // A launcher in exit has released its address space and its descriptor table, and the task work that drops its flock and
 // the exit that turns its pidfd readable come after: for that moment the run's lock is held by a process with no
 // descriptor. A reader that looks then used to be told "no descriptor proves the run's flock" (an [io] failure, exit
-// 125), when the run was ending (N109, the third window of the lost approve race).
+// 125), when the run was ending (the third window of the lost approve race).
 
 // childProcess is a live process of this test, its identity as a lock line names it, and a pidfd of the test's own to wait
 // for its exit without sleeping.
@@ -254,7 +254,7 @@ func TestALauncherThatExitedWhileItsProofWasReadIsGone(t *testing.T) {
 
 // The ledger's close releases the run's flock before the launcher process exits (it prints its summary, closes its other
 // files): for that time the lock is not held and the launcher is alive with its full descriptor table, and a proof that it
-// holds the lock fails. The run has ended, and a reader told "the pid does not hold the lock" calls it unknown (N109). The
+// holds the lock fails. The run has ended, and a reader told "the pid does not hold the lock" calls it unknown. The
 // judging readers say gone; OpenStopTargetFor stays a refusal and never ErrStale, which the sweep reads as a launcher gone
 // with the lock held and answers by killing the run's tree.
 func TestALockReleasedWhileItsHolderWasBeingProvedIsTheRunEnding(t *testing.T) {

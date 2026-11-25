@@ -9,8 +9,8 @@ tier works in a container, and how the ledger and the chain anchor are kept.
 | `Dockerfile` | The image: build from the repository root with Docker BuildKit, `docker build -f examples/container/Dockerfile -t tego:local .` |
 | `Dockerfile.dockerignore` | What the build leaves out of its context. |
 | `compose.yaml` | The agent service (`tego run`) and the dashboard service (`tego-control serve`). |
-| `tego-entrypoint.sh` | Hands the `tego` user a cgroup subtree, then drops every capability and runs the command as that user. |
-| `config.yaml` | The image's machine config: the ledger on its own volume. |
+| `tego-entrypoint.sh` | Hands the `tego` user a cgroup subtree and the kernel's list of security modules (`/run/tego-lsm/lsm-list`), then drops every capability and runs the command as that user. |
+| `config.yaml` | The image's machine config: the ledger on its own volume, and the list file the entrypoint writes (`lsm.list_file`). |
 | `hello.yaml`, `hello-agent.sh` | The example agent and its contract. |
 | `smoke.sh` | The image's own check, which CI runs inside it. |
 

@@ -73,6 +73,12 @@ type Receipt struct {
 
 	// home is Options.Home, or the home the run recorded, for the text layout only.
 	home string
+	// startBy is the tego build run_start names (tego_version and commit): the build that ran the run, as the record
+	// says it. CheckResult.RecordBy carries it to a caller; it is no receipt field and is never written.
+	startBy MadeBy
+	// startMinor is the record revision run_start opens (record_minor, 0 when it is absent or not read as one): which
+	// revision a build wrote says whether it keeps a receipt at all. CheckResult.RecordMinor carries it to a caller.
+	startMinor int
 	// sayNoHome is Options.SayNoHome: the text layout owes the line that the record names no home.
 	sayNoHome bool
 	// ulpTLS and ulpOther count the refusals Refusals.ByRule holds under unmatched and net-not-allowed that are tego's

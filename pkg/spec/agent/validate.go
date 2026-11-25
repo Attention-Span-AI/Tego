@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/attention-span-ai/tego/pkg/policy/execmatch"
 	"github.com/attention-span-ai/tego/pkg/policy/execmatch/rows"
@@ -422,6 +423,10 @@ func validateModels(ds *diags, c *Contract) {
 
 func validateLimits(ds *diags, c *Contract) {
 	l := c.Limits
+	if w := l.Window; w != nil && (time.Duration(*w) < MinWindow || time.Duration(*w) > MaxWindow) {
+		ds.errorf(c.origins["limits.window"], CodeLimitWindowRange, "limits.window %s is outside %s to %s", w, Duration(MinWindow), Duration(MaxWindow)).
+			fix("use a window from a minute to 30 days, such as 24h")
+	}
 	if l.Memory != nil && l.MemoryHigh != nil && *l.MemoryHigh > *l.Memory {
 		ds.errorf(c.origins["limits.memory_high"], CodeContradiction, "memory_high %s is above memory %s", l.MemoryHigh, l.Memory).
 			fix("memory_high is the throttle point and must not exceed the memory cap")

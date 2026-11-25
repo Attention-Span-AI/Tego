@@ -782,6 +782,30 @@ func (k *compiler) limits() {
 	repeats, ok := clamp(k, "repeats", l.Repeats, ceilPtr[int, int](ceil.Repeats))
 	r.Repeats = repeats
 	mark(BudgetRepeats, ok)
+
+	k.resolveWindow(l, r)
+}
+
+// MinWindow and MaxWindow bound limits.window: a window under a minute is finer than the minute buckets the watcher
+// counts in, and one over 30 days (the default retention) makes every launch read a month of ledgers (ADR 0165).
+const (
+	MinWindow = time.Minute
+	MaxWindow = 30 * 24 * time.Hour
+)
+
+// resolveWindow reads limits.window. It is the contract's own value (a machine ceiling does not set one), kept only
+// where there is something for it to count: with neither tokens nor cost_usd bounded it does nothing, and a limit
+// that silently does nothing is what compile exists to name.
+func (k *compiler) resolveWindow(l Limits, r *ResolvedLimits) {
+	if l.Window == nil {
+		return
+	}
+	if !r.Bounded(BudgetTokens) && !r.Bounded(BudgetCostUSD) {
+		k.ds.warnf(k.pos("limits.window"), CodeRedundantRule, "limits.window %s counts tokens and cost_usd across restarts, and neither is set, so it limits nothing", l.Window).
+			fix("set limits.tokens or limits.cost_usd, or remove limits.window")
+		return
+	}
+	r.Window = time.Duration(*l.Window)
 }
 
 // The least a run's own start takes in the run's cgroup, before the agent exists: the child stage is a Go process and

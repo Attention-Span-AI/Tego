@@ -65,7 +65,7 @@ class OverlayTests(unittest.TestCase):
         self.assertIn('peer_pid', changed)
         self.assertIn('peer_uid', changed)
         self.assertIn('panic("broker witness append")', changed)
-        # a refusal written to a connection the broker's shutdown closed reaches no one: not a witness failure (N109)
+        # a refusal written to a connection the broker's shutdown closed reaches no one: not a witness failure
         self.assertIn('if errors.Is(err, net.ErrClosed) { return }', changed)
         self.assertLess(changed.index('if errors.Is(err, net.ErrClosed) { return }'), changed.index('panic("broker witness peer")'))
         self.assertNotIn('r.Ready', MODULE.BROKER_WITNESS)

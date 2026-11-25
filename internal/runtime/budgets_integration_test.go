@@ -198,3 +198,107 @@ func assertOwnLogNames(t *testing.T, f *fixture, runID, msg string) {
 	}
 	t.Fatalf("no %q line for run %s in %s/.tego/tego.log; the run's lines there: %q", msg, runID, f.logHome, seen)
 }
+
+// TestIntegrationABudgetWindowCarriesAcrossRuns is the restart row (AO-7) on the real CLI and a real kernel: the model-agent answers 60 tokens
+// a call, `tokens: 150, window: 24h`. The first run makes two calls (120 tokens, under the ceiling) and ends 0. A
+// restart of the same contract, which without a window would make three calls before it crossed 150, is ended at its
+// first response (120 + 60 = 180), exit 124, with the gap that says it counted an earlier run; a third start while no run
+// is live reads both and is ended at its first response again.
+func TestIntegrationABudgetWindowCarriesAcrossRuns(t *testing.T) {
+	agentBin := modelAgentBinary(t)
+	host, port, caFile := modelUpstream(t)
+	f := newFixture(t, modelContract("iwindow", agentBin, host, port, "\n  tokens: 150\n  window: 24h"))
+	missing := filepath.Join(t.TempDir(), "no-prices.yaml")
+	cfg := writeMachineConfigWith(t, f, "prices: "+missing+"\n")
+	start := func(calls int) (int, string, []*record.Event) {
+		t.Helper()
+		run := exec.Command(tegoBinary(t), "run", filepath.Join(f.dir, "agent.yaml"), "--", agentBin)
+		run.Dir = f.dir
+		run.Env = append(os.Environ(), "TEGO_CONFIG="+cfg, "SSL_CERT_FILE="+caFile, "MODEL_CALLS="+strconv.Itoa(calls))
+		out, err := run.CombinedOutput()
+		dirs := runDirs(t, f.root)
+		if len(dirs) == 0 {
+			t.Fatalf("no run directory\n%s", out)
+		}
+		return exitCodeOf(t, err), string(out), events(t, dirs[len(dirs)-1])
+	}
+	code, out, evs := start(2)
+	if code != 0 {
+		t.Fatalf("the first run exited %d, want 0 (120 tokens under 150)\n%s", code, out)
+	}
+	if n := windowGaps(t, evs); n != 0 {
+		t.Fatalf("the first run, with nothing before it, wrote %d window-carried gaps", n)
+	}
+	for i := 2; i <= 3; i++ {
+		code, out, evs = start(loopCalls)
+		lim := assertStoppedBy(t, code, out, evs, record.LimitTokens)
+		if lim.Ceiling != 150 || lim.Value < 180 {
+			t.Fatalf("run %d: limit %+v, want tokens at 180 or more over 150: the earlier runs were not counted", i, lim)
+		}
+		if n := responsesBeforeLimit(evs); n > 2 {
+			t.Fatalf("run %d: %d responses were recorded before the limit: without the carried spend it would have taken three to cross", i, n)
+		}
+		if n := windowGaps(t, evs); n != 1 {
+			t.Fatalf("run %d wrote %d window-carried gaps, want 1", i, n)
+		}
+	}
+}
+
+// responsesBeforeLimit counts the ssl_response lines that stand before the first limit line in a run's ledger. The
+// limit line follows the response that crossed (the watcher trips on that response, on the pipeline's own goroutine), so
+// this is the number of responses it took to cross. It is not the number of calls the agent made: the stop is a kill,
+// and an agent that loops makes more calls in the time that takes, which the ledger records after the limit line. Counting
+// every response would fail a run that was stopped at the right one (seen once in five on a host).
+func responsesBeforeLimit(evs []*record.Event) int {
+	n := 0
+	for _, e := range evs {
+		switch e.Kind {
+		case record.KindSSLResponse:
+			n++
+		case record.KindLimit:
+			return n
+		}
+	}
+	return n
+}
+
+// windowGaps counts the gaps what=limits why=window-carried in a run's ledger.
+func windowGaps(t *testing.T, evs []*record.Event) int {
+	t.Helper()
+	n := 0
+	for _, e := range evs {
+		if e.Kind != record.KindGap {
+			continue
+		}
+		var p record.GapPayload
+		if err := e.DecodePayload(&p); err != nil {
+			t.Fatal(err)
+		}
+		if p.What == record.GapLimits && p.Why == GapWindowCarried {
+			n++
+		}
+	}
+	return n
+}
+
+// TestResponsesBeforeLimitCountsToTheLimitLine: the responses that stand after the limit line are an agent's calls
+// while the kill landed, not the ones it took to cross.
+func TestResponsesBeforeLimitCountsToTheLimitLine(t *testing.T) {
+	ev := func(k record.Kind) *record.Event { return &record.Event{Kind: k} }
+	for _, c := range []struct {
+		name string
+		evs  []*record.Event
+		want int
+	}{
+		{"crossed at the first, two more calls while the kill landed",
+			[]*record.Event{ev(record.KindSSLRequest), ev(record.KindSSLResponse), ev(record.KindLimit), ev(record.KindSSLRequest),
+				ev(record.KindSSLResponse), ev(record.KindSSLResponse)}, 1},
+		{"crossed at the third", []*record.Event{ev(record.KindSSLResponse), ev(record.KindSSLResponse), ev(record.KindSSLResponse),
+			ev(record.KindLimit)}, 3},
+		{"no limit line: every response", []*record.Event{ev(record.KindSSLResponse), ev(record.KindSSLResponse)}, 2},
+	} {
+		if got := responsesBeforeLimit(c.evs); got != c.want {
+			t.Errorf("%s: %d, want %d", c.name, got, c.want)
+		}
+	}
+}

@@ -34,6 +34,8 @@ func Words(ruleKey string) string {
 		return "Tego control refused"
 	case "builtin.other_tty":
 		return "Other terminal refused"
+	case "builtin.standard_devices":
+		return "Standard device"
 	}
 	for _, m := range []struct{ key, label string }{
 		{"fs.write", "Write: "}, {"fs.deny_read", "Never read: "}, {"fs.deny_write", "No changes: "},

@@ -46,6 +46,13 @@ const (
 	// overlay once it is VersionLink, keeps the blocks it last read and ignores every later change. Like ControlName it
 	// is a mark of capability, not of authority.
 	LinkName = "live-link"
+	// WordsName is the launcher's mark that it reads a command-word block (an exec entry whose value has words, IsWords,
+	// VersionWords, ADR 0171): an empty file it makes once its live-block poll runs (MarkWords). A writer places such a
+	// block only on a run whose directory has it (TakesWords) and refuses the run otherwise, in words: a launcher from
+	// before it refuses the whole overlay once it is VersionWords, keeps the blocks it last read and ignores every
+	// later change, and a whole-program block placed instead would refuse more than the rules the person changed do.
+	// Like ControlName it is a mark of capability, not of authority.
+	WordsName = "live-words"
 	// NoteName is the launcher's mark that it reads a lift's note (Change.Note, LiftMAC's second domain): an empty file it
 	// makes once its live-block poll runs (MarkNote). A writer signs and writes a note only for a run whose directory
 	// has it (TakesNote): a launcher from before the note checks the lift's MAC without it and refuses the lift
@@ -145,6 +152,14 @@ func MarkLink(dir string) error { return mark(dir, LinkName) }
 // TakesLink reports whether the launcher of the run in dir reads a block that matches by link: dir holds LinkName as
 // MarkLink makes it (as TakesControl checks ControlName).
 func TakesLink(dir string) bool { return marked(dir, LinkName) }
+
+// MarkWords makes dir's WordsName, the launcher's mark that it reads a command-word block (0600, no symlink followed);
+// one already there is kept.
+func MarkWords(dir string) error { return mark(dir, WordsName) }
+
+// TakesWords reports whether the launcher of the run in dir reads a command-word block: dir holds WordsName as
+// MarkWords makes it (as TakesControl checks ControlName).
+func TakesWords(dir string) bool { return marked(dir, WordsName) }
 
 // Read is the overlay in dir, decoded and validated against run. A file that is not there is os.ErrNotExist (no live
 // blocks). A file is read only when it is a regular file, reached with no symlink followed, owned by this process's

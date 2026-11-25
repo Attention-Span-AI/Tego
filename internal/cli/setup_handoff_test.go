@@ -13,7 +13,7 @@ import (
 
 func guideHandoffRoutes() []guidePTYRoute {
 	steps := []guidePTYStep{
-		{"Which agent do you want to supervise?", "\r"},
+		{"Which agent do you want to supervise?", "\x1b[B\r"},
 		{"How do you want to log in to Claude Code?", "\r"},
 		{"[handoff-ready]", "/SECOND_SECRET\r"},
 		{"Paste the token Claude Code printed", "test-token\r"},

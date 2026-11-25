@@ -685,6 +685,13 @@ func (l *Loop) heldFloors(h *heldPlan, c *compiled) bool {
 		l.heldRefuse(h, rule, reason, h.d.gate)
 		return false
 	}
+	// The grant of a standard device (ADR 0158) is the object's, not its name's: the verdict above was taken on the
+	// pinned object's path, so a write is delivered only where that object is the device the entry grants (a
+	// look-alike, a link or a mount of something else at the name is a file outside every entry).
+	if standardDeviceRefused(rule, h.flags, h.resolved, &h.st) {
+		l.heldRefuse(h, ruleUnmatched, reasonFor(record.FSOpen), h.d.gate)
+		return false
+	}
 	h.d.rule, h.d.verdict, h.d.reason = rule, record.VerdictAllow, ""
 	if !isRead(record.FSOpen, h.flags) {
 		if t, denied := c.denyWriteOpen(h.resolved, h.flags); denied {
@@ -693,6 +700,13 @@ func (l *Loop) heldFloors(h *heldPlan, c *compiled) bool {
 		}
 	}
 	return l.heldReadFloors(h, c)
+}
+
+// standardDeviceRefused is the check above: a write-capable open the product's standard-device rule allowed (ADR 0158)
+// on an object that is not the character device with that name's numbers. The rule is the object's, never the name's.
+func standardDeviceRefused(rule string, flags int, resolved string, st *unix.Stat_t) bool {
+	return rule == agent.BuiltinStandardDevices && !isRead(record.FSOpen, flags) &&
+		!agent.StandardDeviceAt(resolved, st.Mode, uint64(st.Rdev)) //nolint:unconvert // Rdev is uint64 on amd64 and arm64, not everywhere
 }
 
 // heldAskFloors is what gateOpen checks before it asks a person about an open (D3 step 3 for the ask range): the

@@ -26,7 +26,7 @@ var labels = map[string]string{
 	"syscall_ret": "Kernel return value", "operation_completed": "Operation completed", "fd_delivered": "File handle handed to the agent",
 	"verdict_from": "Verdict came from", "by": "By", "argv": "Command line", "argv_blob": "Command line (stored apart)",
 	"argv_truncated": "Command line cut", "argv_facts": "How the command line was read", "argv_from": "Command line taken from",
-	"argv_read": "Command line arguments read", "argv_decided": "Command line decided on", "exec_id": "Process id (this run)",
+	"argv_read": "Command line arguments read", "decision_lost": "Decision record may be lost to", "argv_decided": "Command line decided on", "exec_id": "Process id (this run)",
 	"parent_exec_id": "Parent process id", "attempt_path": "Path the agent asked for", "path_search": "A PATH lookup",
 	"fileless": "Executable in memory", "exec.dropped": "Program file written by the agent", "command_rule": "Command rule", "command_list": "Command list",
 	"command_match": "Command match", "command_via": "Command matched by", "closure_of": "Allowed as part of",
@@ -190,7 +190,14 @@ func Value(key string, raw []byte) (words string, ok bool) {
 		if len(list) == 0 {
 			return "none", true
 		}
-		return strings.Join(list, ", "), false
+		// An exec line's decision_lost names gaps: say each in the gap's own words.
+		said := leaf == "decision_lost"
+		if said {
+			for i, why := range list {
+				list[i], _ = GapWhy(why)
+			}
+		}
+		return strings.Join(list, ", "), said
 	}
 	return string(raw), false
 }
@@ -456,6 +463,7 @@ var gapWhys = map[string]string{
 	"argv-truncated":                     "a command line too long to record whole",
 	"path-truncated":                     "a path too long to record whole",
 	"ringbuf-full":                       "some kernel events were dropped (the buffer was full)",
+	"exec-fragment-overflow":             "the recorder dropped records of program starts it could not hold until their result came",
 	"memory-swap-uncapped":               "the memory cap does not cover swap on this machine",
 	"ledger-ceiling-overshoot":           "the record grew past its size limit before the run stopped; the count is the bytes over",
 	"plane-identity-mismatch":            "the kernel plane refused files that changed identity while checked",

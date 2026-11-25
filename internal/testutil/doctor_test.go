@@ -57,10 +57,24 @@ func TestRequireTierSkipsOnlyWhenTheMachineSaysSo(t *testing.T) {
 		{"killed", fake("kill -9 $$"), false, true},
 		{"missing binary", filepath.Join(dir, "absent"), false, true},
 	} {
-		r := &recordingTB{TB: t}
-		RequireTier(r, exec.Command(c.bin, "doctor", "--require", "cgroup"), "cgroup")
-		if r.skipped != c.skipped || r.failed != c.failed {
-			t.Errorf("%s: skipped %t failed %t, want skipped %t failed %t", c.name, r.skipped, r.failed, c.skipped, c.failed)
+		for _, withOutputFile := range []bool{false, true} {
+			cmd := exec.Command(c.bin, "doctor", "--require", "cgroup")
+			// The fake doctors read nothing of the invoking user's home; the command still gets the isolated environment
+			// every run of a doctor gets, with a config of the test's own that does not exist.
+			cmd.Env = TegoEnv(t, t.TempDir(), "TEGO_CONFIG="+filepath.Join(dir, "no-such-config.yaml"))
+			if withOutputFile { // a case helper's command, as internal/runtime's crossOwner.command makes it
+				f, err := os.Create(filepath.Join(t.TempDir(), "out"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = f.Close() })
+				cmd.Stdout, cmd.Stderr = f, f
+			}
+			r := &recordingTB{TB: t}
+			RequireTier(r, cmd, "cgroup")
+			if r.skipped != c.skipped || r.failed != c.failed {
+				t.Errorf("%s (output file set %t): skipped %t failed %t, want skipped %t failed %t", c.name, withOutputFile, r.skipped, r.failed, c.skipped, c.failed)
+			}
 		}
 	}
 }

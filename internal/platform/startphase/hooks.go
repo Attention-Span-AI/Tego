@@ -9,6 +9,8 @@ import (
 	"os"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
@@ -21,6 +23,20 @@ const EnvTestPhaseTiming = "TEGO_TEST_PHASE_TIMING"
 // EnvTestPhaseTiming): each program's verifier statistics and the kernel stacks of a slow load (Attributing).
 const EnvTestLoadStats = "TEGO_TEST_LOAD_STATS"
 
+// EnvTestPhaseCPU adds the CPU time each phase used to the timing lines ("tego-phase-cpu <name> <microseconds>"; any
+// non-empty value, and only with EnvTestPhaseTiming): the process's user plus system time between the phase's start
+// and end, every thread, so a phase that overlaps another counts the other's CPU as well.
+const EnvTestPhaseCPU = "TEGO_TEST_PHASE_CPU"
+
+// processCPU is the process's user plus system CPU time so far.
+func processCPU() time.Duration {
+	var ru unix.Rusage
+	if err := unix.Getrusage(unix.RUSAGE_SELF, &ru); err != nil {
+		return 0
+	}
+	return time.Duration(ru.Utime.Nano() + ru.Stime.Nano())
+}
+
 func init() {
 	if os.Getenv(EnvTestPhaseTiming) == "" {
 		return
@@ -30,6 +46,12 @@ func init() {
 	}
 	Default = func(name string, d time.Duration) {
 		fmt.Fprintf(os.Stderr, "tego-phase %s %d\n", name, d.Microseconds())
+	}
+	if os.Getenv(EnvTestPhaseCPU) != "" {
+		CPUNow = processCPU
+		CPUSink = func(name string, cpu time.Duration) {
+			fmt.Fprintf(os.Stderr, "tego-phase-cpu %s %d\n", name, cpu.Microseconds())
+		}
 	}
 	if os.Getenv(EnvTestLoadStats) == "" {
 		return

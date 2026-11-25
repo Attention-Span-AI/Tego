@@ -431,6 +431,9 @@ func (r FSRule) RuleName() string {
 	if r.BuiltinRule != "" {
 		return r.BuiltinRule
 	}
+	if r.StdDevice {
+		return BuiltinStandardDevices
+	}
 	if r.Fence {
 		return LiveFenceRule(LiveKindRead, r.Path)
 	}

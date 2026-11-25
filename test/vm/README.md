@@ -46,7 +46,7 @@ Fedora's loop driver the embedded btrfs image cannot mount. `VM_MODULES` overrid
 empty value for missing-feature tests. Other rows keep their previous empty list. The matrix runs it as
 `TEGO_VM_ROW=$KERNEL test/vm/root-suites.sh ...`.
 
-`measure-plane-verifier.sh` (*added 2026-11-24*, ADR 0024 N100) boots each kernel under `$TEGO_VM_CACHE/kernel` it is given (default: the cached mainline 6.18 to 6.19.14 and Fedora 7.0 and 7.2) and runs `internal/bpf`'s `TestPlaneLoadsAndAttaches` as root in it, printing the largest verified-instruction count of the rd and pr plane builds beside the budget the test held them to. It is how a kernel family's budget in `plane_budget_integration_test.go` is measured before it is set; it takes the guest queue's lock when `TEGO_VM_QUEUE_LOCK` names one.
+`measure-plane-verifier.sh` (*added 2026-11-24*, ADR 0024) boots each kernel under `$TEGO_VM_CACHE/kernel` it is given (default: the cached mainline 6.18 to 6.19.14 and Fedora 7.0 and 7.2) and runs `internal/bpf`'s `TestPlaneLoadsAndAttaches` as root in it, printing the largest verified-instruction count of the rd and pr plane builds beside the budget the test held them to. The largest path-walking program is in the table, `socket_listen` (its own budget per kernel family) in `listen.txt`. It is how a kernel family's budget in `plane_budget_integration_test.go` is measured before it is set; it takes the guest queue's lock when `TEGO_VM_QUEUE_LOCK` names one.
 
 ## The tier-3 perf suite: `make vm-perf`
 
@@ -638,8 +638,9 @@ What the guest reproduces is `sudo go test ...` typed in the shell you ran it fr
   `subtree_control` and its delegated owner.
 - The working directory is the package's own directory in a copy of the tree (`/src/<package>`), as
   `go test` would set it.
-- `/usr/local/bin/go` is `go-shim.sh`. It serves the three helpers that tests build at run time with
-  `go build` (`cmd/tego`, `memhog`, `model-agent`). They are prebuilt on the host from the same tree,
+- `/usr/local/bin/go` is `go-shim.sh`. It serves the helpers that tests build at run time with
+  `go build` (`cmd/tego`, `memhog`, `model-agent`, `ledger-attacker` and the others `HELPERS` in `test/vm/suites.sh`
+  names: a test that builds a new one adds it there, or its guest run fails with "no prebuilt binary"). They are prebuilt on the host from the same tree,
   and a helper is the tegobpf build when `GOFLAGS` or the build's own `-tags` names that tag, and the
   tegotesthooks build when the build names that one (internal/runtime's CLI tests do, to keep tego's
   chain anchor and own log in their own directories).

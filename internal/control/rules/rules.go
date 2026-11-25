@@ -70,6 +70,7 @@ type Service struct {
 	readsHeld  func(run string) (bool, string)
 	block      func(ctx context.Context, run, kind, value string) (runact.Blocked, error)
 	facts      func(run string) livestatus.Facts
+	wordsMark  func(run string) bool // a run's launcher reads a block on a command's words (alsonow.go takesWords)
 	unblock    func(ctx context.Context, run, kind, value string, own liveblock.Own) error
 	overlay    func(run string) map[string]liveblock.Own
 	clock      func() time.Time

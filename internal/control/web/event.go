@@ -137,6 +137,10 @@ func lineVerdict(e ledgerview.Event) (class, icon, word string) {
 		return "allowed", "i-check", "Allowed"
 	case e.Verdict == "ask", e.Kind == "ask" && e.Verdict == "":
 		return "asked", "i-hand", "Asked"
+	case e.DecisionLost():
+		// An exec's own result: it failed with permission denied and no record of what decided that was read, in a run that lost records. Not
+		// a refusal (no decision was read) and not an ordinary observed line either.
+		return "observed", "i-eye", "Failed, no decision read"
 	case e.Verdict == "observed":
 		return "observed", "i-eye", "Observed"
 	case e.Kind == "answer" && e.Verdict == "":

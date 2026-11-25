@@ -111,6 +111,9 @@ type Facts struct {
 	// or the ledger cannot be read. Waiting does not make it readable, so a writer never says "try again"
 	// (liveblock.ErrStartUnreadable). Started is false with it.
 	StartUnreadable bool
+	// RunCommandGrant is run_start's run_command_grant: the file the command given on tego run's command line was
+	// granted as, with any arguments. "" when the run was started from the contract's own command.
+	RunCommandGrant string
 }
 
 // ReadsDecided reports whether a read block refuses the run's reads: its supervisor sees every read open (ReadsSeen),
@@ -199,6 +202,7 @@ func FromStart(p *record.RunStartPayload) Facts {
 	}
 	f := facts(p.Tier, p.FSReads, p.ReadsNotified, p.DecisionPlane)
 	f.RecordMinor = p.RecordMinor
+	f.RunCommandGrant = p.RunCommandGrant
 	f.live(p.LiveMode, p.LiveFence)
 	f.Started = true
 	return f
@@ -237,12 +241,15 @@ func FromStartJSON(raw []byte) Facts {
 		DecisionPlane string                `json:"decision_plane"`
 		LiveMode      string                `json:"live_mode"`
 		LiveFence     *record.LiveFence     `json:"live_fence"`
+
+		RunCommandGrant string `json:"run_command_grant"`
 	}
 	if json.Unmarshal(raw, &p) != nil {
 		return Facts{StartUnreadable: true}
 	}
 	f := facts(p.Tier, p.FSReads, p.ReadsNotified, p.DecisionPlane)
 	f.RecordMinor = p.RecordMinor
+	f.RunCommandGrant = p.RunCommandGrant
 	f.live(p.LiveMode, p.LiveFence)
 	f.Started = true
 	return f

@@ -11,7 +11,7 @@ import (
 )
 
 // TestRootOwnedDecidesFromThreeFacts: a permission refusal, a caller that is not root, and a folder root owns; any
-// other combination is not a root-launched run and keeps the system's own words (N125 (a): the commands and the
+// other combination is not a root-launched run and keeps the system's own words (the commands and the
 // dashboard ask this one helper).
 func TestRootOwnedDecidesFromThreeFacts(t *testing.T) {
 	denied := &fs.PathError{Op: "open", Path: "x/lock", Err: fs.ErrPermission}

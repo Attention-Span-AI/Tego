@@ -3,3 +3,9 @@
 # keeps in the run user's ~/.tego whatever ledger_root says. A file named by TEGO_CONFIG, or ~tego/.tego/config.yaml,
 # adds to this one.
 ledger_root: /var/lib/tego/runs
+# The security-module list is not readable from inside a container under Docker's default profile (the profile refuses
+# lsm_list_modules(2), older kernels lack it, and the container's /sys has no securityfs), so the entrypoint, which is
+# root until it drops its privileges, writes it here at each start, with this boot's id; tego believes the file only
+# while root alone can change it, and only for file opens it holds for the agent (docs/user/container.md).
+lsm:
+  list_file: /run/tego-lsm/lsm-list

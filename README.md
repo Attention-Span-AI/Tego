@@ -12,7 +12,7 @@
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
   <a href="docs/INSTALL.md"><img alt="Go 1.27" src="https://img.shields.io/badge/go-1.27-00ADD8?logo=go&amp;logoColor=white"></a>
   <a href="docs/TIERS.md"><img alt="Platform: Linux" src="https://img.shields.io/badge/platform-Linux-FCC624?logo=linux&amp;logoColor=black"></a>
-  <a href="docs/CHANGELOG.md"><img alt="Release: v0.1.3" src="https://img.shields.io/badge/release-v0.1.3-F26327"></a>
+  <a href="docs/CHANGELOG.md"><img alt="Release: v0.2.0" src="https://img.shields.io/badge/release-v0.2.0-F26327"></a>
 </p>
 
 <p align="center">
@@ -89,7 +89,7 @@ before it runs.
 What each was tested on: the installer put the published v0.1.1 on AlmaLinux 9.8, Ubuntu 24.04, Debian 13, Fedora 44,
 Amazon Linux 2023 and Ubuntu 26.04.1, and a new user's `tego machine check`, `tego machine test` and a governed run reached tier
 landlock on each
-([docs/TIERS.md](docs/TIERS.md#the-published-release-as-a-new-user)). On a Mac it was walked through by hand on Apple silicon and is checked in CI on GitHub's hosted macOS runners ([details](docs/INSTALL.md#macos)). Windows was measured in a Windows 11 Enterprise evaluation guest, build 26300.9457 under KVM, WSL 3.0.5.0; the guide was blocked there until the rule was switched on for WSL, and the ordinary build then passed the six beginner steps there from the one-line installer served by a local mirror, with the browser dashboard opened from Windows PowerShell 5.1, PowerShell 7 and cmd. These guest measurements establish installation, the containment rows, the home alias, Windows-drive and GUI/audio checks among them, and the browser relay on that guest; they do not cover a signed executable, a real HTTPS release, a real keyboard and mouse, ARM64, Windows 10, or what the setup guide lists as unproven.
+([docs/TIERS.md](docs/TIERS.md#the-published-release-as-a-new-user)). Release files built from v0.2.0's code were tested the same way, as a user and as root, on AlmaLinux 9.8, Amazon Linux 2023, Ubuntu 24.04, Ubuntu 26.04.1 and Fedora 44, and an update from v0.1.3 passed on Ubuntu 24.04 and Debian 13 ([details](docs/TIERS.md#platforms-checked-for-v020)). On a Mac it was walked through by hand on Apple silicon and is checked in CI on GitHub's hosted macOS runners ([details](docs/INSTALL.md#macos)). Windows was measured in a Windows 11 Enterprise evaluation guest, build 26300.9457 under KVM, WSL 3.0.5.0; the guide was blocked there until the rule was switched on for WSL, and the ordinary build then passed the six beginner steps there from the one-line installer served by a local mirror, with the browser dashboard opened from Windows PowerShell 5.1, PowerShell 7 and cmd. These guest measurements establish installation, the containment rows, the home alias, Windows-drive and GUI/audio checks among them, and the browser relay on that guest; they do not cover a signed executable, a real HTTPS release, a real keyboard and mouse, ARM64, Windows 10, or what the setup guide lists as unproven.
 
 ### 2. Set up
 
@@ -99,14 +99,21 @@ tego start
 
 Four questions, one at a time:
 
-1. **Agent:** Claude Code, Codex or another program. Tego offers to install Claude Code or Codex if it's missing.
-2. **Login:** your Claude subscription or an API key, saved for later sessions if you want.
+1. **Agent:** Tego looks at what is on this machine and puts first an agent that is installed and signed in (Claude
+   Code or Codex). With none, the first choice is a small demonstration agent that needs no account and no network, and
+   the guide says why. Another program is always a choice, and Tego offers to install Claude Code or Codex if you pick
+   one that is missing.
+2. **Login:** your Claude subscription or an API key, saved for later sessions if you want. The demonstration agent
+   has nothing to log in to. Leave an installer or a sign-in with Ctrl-C to come back to the question, or choose
+   another agent.
 3. **Project:** a test project Tego makes for you, or one of yours.
 4. **Rules:** Base development, Read-only review, rules you pick one by one, or your own rules file
    ([presets](docs/user/presets.md)).
 
 It then starts the dashboard (on Linux it prints the sign-in link, on a Mac it opens your browser) and prints the
-command for the next step. It never starts the agent for you.
+command for the next step. It never starts an agent of yours for you. The demonstration agent is Tego's own script, so
+the guide runs it once: it tries one write its rules allow and one they refuse, and `tego session show --last` shows
+both. With no agent account, that is a complete first run.
 
 ### 3. Run your agent under the rules
 

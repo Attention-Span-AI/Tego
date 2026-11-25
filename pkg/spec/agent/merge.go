@@ -126,6 +126,7 @@ var contractMergeRows = []mergeRow{
 	keyRow("limits.wall", classContractWins),
 	keyRow("limits.stall_after", classContractWins),
 	keyRow("limits.repeats", classContractWins),
+	keyRow("limits.window", classContractWins),
 
 	keyRow("record", classContractWins),
 	keyRow("tier", classContractWins),

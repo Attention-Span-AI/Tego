@@ -149,6 +149,16 @@ func (e *Event) PID() int { return e.pid }
 // ByteOffset is the position of this line in its run's events file.
 func (e *Event) ByteOffset() int64 { return e.off }
 
+// DecisionLost reports whether the line is an exec that failed with permission denied (EACCES) and whose decision record the
+// run may have lost (decision_lost): not a refusal, and not a program that ran.
+func (e *Event) DecisionLost() bool {
+	if e.Kind != string(record.KindExec) || e.Verdict != string(record.VerdictObserved) || !strings.Contains(e.Raw, `"decision_lost"`) {
+		return false
+	}
+	var p payload
+	return json.Unmarshal([]byte(e.Raw), &p) == nil && p.SyscallRet == -13 && len(p.DecisionLost) > 0
+}
+
 // Refused reports whether the line records a refusal: a refused line, or an action whose verdict is refused.
 func (e *Event) Refused() bool {
 	return e.Kind == string(record.KindRefused) || e.Verdict == string(record.VerdictRefused)
@@ -537,6 +547,8 @@ type payload struct {
 	// ArgvBlob and CommandBlob name the blob an argv or a command too long for the line went to (blobargv.go).
 	ArgvBlob    string `json:"argv_blob"`
 	CommandBlob string `json:"command_blob"`
+	// DecisionLost is an exec line's decision_lost (record revision 41).
+	DecisionLost []string `json:"decision_lost"`
 }
 
 // DisplayDst names a destination for people: family(16) is a netlink socket.

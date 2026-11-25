@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -65,6 +66,12 @@ func TestReadOnlyGuideCompiledWriteSet(t *testing.T) {
 			writes := 0
 			for _, rule := range rt.FS {
 				if rule.Kind != agent.FSWrite {
+					continue
+				}
+				if rule.IsStandardDevice() { // the product's own grant of the five data devices, no file (ADR 0158); its tests hold the set
+					if !slices.Contains([]string{"/dev/null", "/dev/zero", "/dev/full", "/dev/random", "/dev/urandom"}, rule.Resolved) {
+						t.Errorf("a standard-device row at %s", rule.Resolved)
+					}
 					continue
 				}
 				p := strings.TrimSuffix(rule.Resolved, "/")

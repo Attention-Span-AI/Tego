@@ -19,6 +19,8 @@ type viewRequest struct {
 	Operation, Root, Run, Key, Anchor, PATH string
 	Machine                                 []byte
 	Profiles                                bool
+	// Scan is the run's ledger scan made by the caller (nil: the worker scans the ledger itself).
+	Scan *scanWire
 }
 type viewReply struct {
 	Contract        Contract
@@ -49,6 +51,11 @@ func remoteView(o Options) bool {
 	return true
 }
 func viewCall(ctx context.Context, operation, root, run, key, anchor string, o Options) (viewReply, error) {
+	return viewCallScanned(ctx, operation, root, run, key, anchor, o, nil)
+}
+
+// viewCallScanned is viewCall with the run's ledger scan the caller made, sent with the request (nil: the worker scans).
+func viewCallScanned(ctx context.Context, operation, root, run, key, anchor string, o Options, scanned *runScan) (viewReply, error) {
 	ctx = contracts.WithCallerContext(ctx)
 	req := viewRequest{Operation: operation, Root: root, Run: run, Key: key, Anchor: anchor, PATH: contracts.CallerContext(ctx).PATH, Profiles: o.Profiles != nil}
 	if o.Anchor != "" {
@@ -60,6 +67,9 @@ func viewCall(ctx context.Context, operation, root, run, key, anchor string, o O
 		if err != nil {
 			return viewReply{}, err
 		}
+	}
+	if scanned != nil {
+		req.Scan = scanned.toWire()
 	}
 	var reply viewReply
 	var encoded []byte
@@ -89,14 +99,21 @@ func viewOperation(ctx context.Context, payload []byte) ([]byte, error) {
 	if req.Profiles {
 		o.Profiles = profilesrc.Chain(o.Machine, *o.Caller)
 	}
+	var scanned *runScan
+	if req.Scan != nil {
+		var err error
+		if scanned, err = req.Scan.decode(); err != nil {
+			return nil, err
+		}
+	}
 	reply := viewReply{}
 	switch req.Operation {
 	case "load":
 		reply.Contract = Load(ctx, req.Root, req.Run, o)
 	case "inforce-copy":
-		reply.InForce = inForceWithSource(ctx, req.Root, req.Run, o, false)
+		reply.InForce = inForceWithSource(ctx, req.Root, req.Run, o, false, scanned)
 	case "inforce":
-		reply.InForce = InForce(ctx, req.Root, req.Run, o)
+		reply.InForce = inForceWithSource(ctx, req.Root, req.Run, o, true, scanned) // InForce, which in the worker reads in place
 	case "learn":
 		reply.Learned = Learn(ctx, req.Root, req.Anchor, req.Run)
 	case "drift":

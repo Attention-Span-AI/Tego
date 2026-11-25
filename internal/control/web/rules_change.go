@@ -664,7 +664,7 @@ func hintOf(key string) string {
 }
 
 // previewPath is the preview's address. A single change asks for it by GET (its address carries one entry); the Several
-// changes at once form posts (N124: sixteen entries of up to rules.MaxEntry bytes pass the server's 16 KiB header limit
+// changes at once form posts (sixteen entries of up to rules.MaxEntry bytes pass the server's 16 KiB header limit
 // as an address, and the browser got a bare "431" page). A preview writes nothing, so a peer inside a run may ask for
 // it either way (ServeHTTP, baselinePostAllowed).
 const previewPath = "/rules/change/preview"
@@ -838,7 +838,7 @@ func (s *Server) rulesChangePost(w http.ResponseWriter, r *http.Request) {
 		back := previewPath + "?" + q.Encode()
 		if len(back) > previewBackMax && r.Header.Get(inlineHeader) == "" {
 			// Too long to carry as an address (the server refuses a request line past 16 KiB, and the browser would
-			// show a bare 431): plan the same edits again here and say the same line above the preview (N124).
+			// show a bare 431): plan the same edits again here and say the same line above the preview.
 			s.rulesPreview(&flashWriter{w, &flash{Text: text}}, r, svc, q)
 			return
 		}

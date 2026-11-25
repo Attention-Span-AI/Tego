@@ -525,6 +525,9 @@ func runLimits(l agent.ResolvedLimits, ledgerBytes int64) *record.Limits {
 	if l.Bounded(agent.BudgetStallAfter) {
 		out.StallAfter = max(l.StallAfter, 0).String()
 	}
+	if l.Window > 0 {
+		out.Window = l.Window.String()
+	}
 	if out == (record.Limits{}) {
 		return nil
 	}

@@ -129,7 +129,7 @@
 <details class="panel live-panel live-fold" id="block-fold"><summary class="live-fold-s"><h2 class="live-fold-h" id="h-block"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-ban"/></svg>Block now<span class="live-fold-c" aria-hidden="true"></span></h2><span class="soft live-fold-n">No live blocks on this run</span></summary>
 <div class="live-fold-b" id="block"><p class="soft">Applies to the next action; the contract file is unchanged. Remove allows again only what the contract allows.</p><div class="panel-body stack-lg"><form class="row" id="block-form" method="post" action="/runs/r-aaaaaaaa-0000000000006-askedx/block"><input type="hidden" name="csrf" value="CSRF">
 <label class="field">Kind<select class="select" name="kind"><option value="exec">Program</option><option value="net">Destination</option><option value="path">File or folder</option></select></label>
-<label class="field grow">Program, destination, or file or folder<input class="input" type="text" name="value" required maxlength="4096" value="" placeholder="curl, example.com:443, 127.0.0.1:8080, /home/you/.aws/"></label>
+<label class="field grow">Program, destination, or file or folder<input class="input" type="text" name="value" required maxlength="4096" value="" placeholder="curl, git push, example.com:443, 127.0.0.1:8080, /home/you/.aws/"></label>
 <button class="btn btn-danger" type="submit"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-ban"/></svg>Block now</button></form>
 
 

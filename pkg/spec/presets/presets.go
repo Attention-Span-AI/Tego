@@ -50,11 +50,13 @@ var catalog = []Preset{
 
 // released is the sha256 of every released revision's bytes, by its pinned name without the prefix
 // (no-secrets@1). A revision listed here is frozen: TestReleasedRevisionsAreFrozen fails when its file changes,
-// and a change is a new revision (README.md). v0.1.0, the first release, carries revision 1 of the original three.
+// and a change is a new revision (README.md). v0.1.0, the first release, carries revision 1 of the original three,
+// and v0.2.0 adds ci@1.
 var released = map[string]string{
 	"no-secrets@1":       "1a57482703807021e712fe717dd3f12483c9e5b7f97761dbe8546788541c51a4",
 	"no-prod@1":          "bb02323c70e8d7ffe2198e00b04c7853cda7d4c6d760e8d1f8cf56bdf8f7fcc4",
 	"repo-only-writes@1": "3790f38bb816736507f46382764e0ff59e3f7552965e80d7f2f17729a7280d71",
+	"ci@1":               "a7bce7b240b37abe9eba64ee64ca1bb0ed326513853b78afe35a727a277b60d1",
 }
 
 // List returns every preset, in catalog order.

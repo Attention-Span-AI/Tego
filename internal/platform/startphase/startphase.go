@@ -27,8 +27,26 @@ func Begin(sink Sink, name string) func() {
 		return func() {}
 	}
 	t := time.Now()
+	if CPUNow != nil && CPUSink != nil {
+		c := CPUNow()
+		return func() {
+			sink(name, time.Since(t))
+			CPUSink(name, CPUNow()-c)
+		}
+	}
 	return func() { sink(name, time.Since(t)) }
 }
+
+// CPUNow is the process's CPU time so far (user plus system, every thread), and CPUSink receives what a phase used
+// of it: the CPU the whole process spent between a phase's Begin and its end, beside the phase's wall time, so a
+// phase that waits (a link's close) is told from one that works (a program's verification, which runs in the
+// loading thread's system time). A phase that overlaps another counts the other's CPU too. A test build sets both in
+// its init when TEGO_TEST_PHASE_CPU is set beside TEGO_TEST_PHASE_TIMING, and never after; a product build has
+// neither, and Begin reads one comparison more.
+var (
+	CPUNow  func() time.Duration
+	CPUSink func(name string, cpu time.Duration)
+)
 
 // Report sends an already measured phase to sink (Default when nil), for a phase whose name is known only at its end
 // (an object that was adopted or loaded).

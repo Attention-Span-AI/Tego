@@ -959,6 +959,8 @@ type TableLimits struct {
 	Wall       *string  `json:"wall"`
 	StallAfter *string  `json:"stall_after"`
 	Repeats    *int     `json:"repeats"`
+	// Window is limits.window, the span tokens and cost_usd add up over across restarts (ADR 0165); absent when none.
+	Window *string `json:"window,omitempty"`
 }
 
 // boundedValue returns &v when the dimension carries a budget, nil when it does not.
@@ -1082,6 +1084,7 @@ func tableJSON(rt *agent.RuleTable) Table {
 			Wall:       boundedValue(rt.Limits, agent.BudgetWall, durationText(rt.Limits.Wall)),
 			StallAfter: boundedValue(rt.Limits, agent.BudgetStallAfter, durationText(rt.Limits.StallAfter)),
 			Repeats:    boundedValue(rt.Limits, agent.BudgetRepeats, rt.Limits.Repeats),
+			Window:     windowText(rt.Limits.Window),
 		},
 		FS:               []TableFS{},
 		Reads:            tableReads(rt),
@@ -1148,4 +1151,13 @@ func durationText(d time.Duration) string {
 		return "0s"
 	}
 	return fmt.Sprint(d)
+}
+
+// windowText is limits.window as the table prints it, nil when the contract sets none.
+func windowText(d time.Duration) *string {
+	if d <= 0 {
+		return nil
+	}
+	s := durationText(d)
+	return &s
 }

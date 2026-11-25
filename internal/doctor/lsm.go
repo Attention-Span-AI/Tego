@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unsafe"
 
+	"github.com/attention-span-ai/tego/internal/platform/lsmlist"
 	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/internal/platform/tomoyo"
 	"golang.org/x/sys/unix"
@@ -59,7 +60,9 @@ const (
 	LSMSourceSyscall    = "lsm_list_modules(2)"
 	LSMSourceSecurityFS = securityFSLSM
 	LSMSourceKernelLog  = kernelLogDevice
-	LSMSourceNone       = "none"
+	// LSMSourceListFile is ReadHeldOpenList's third way: the file the machine config's lsm.list_file names.
+	LSMSourceListFile = "lsm.list_file"
+	LSMSourceNone     = "none"
 )
 
 // LSMState is what D6 learned about this kernel's active LSMs.
@@ -75,6 +78,14 @@ type LSMState struct {
 	// Functional carries the root-only counting probe's answer: "" when it did not run.
 	Functional string `json:"functional,omitempty"`
 }
+
+// The ways the list is read, variables so tests can stand in for each without a kernel that refuses them.
+var (
+	lsmSyscall   = listModulesSyscall
+	lsmFile      = os.ReadFile
+	lsmKernelLog = readKernelLog
+	lsmListFile  = lsmlist.Read
+)
 
 // ErrLSMList is a failure to read the active LSM list by any of the three mechanisms.
 var ErrLSMList = errors.New("doctor: cannot read the active LSM list")
@@ -122,11 +133,11 @@ func (s LSMState) bpfInactive() (string, string) {
 // unprivileged), then securityfs, then the kernel log. The first that answers wins; the source is
 // reported so an operator can tell a definitive answer from a parsed boot line.
 func ReadLSMState() (LSMState, error) {
-	mods, sysErr := listModulesSyscall()
+	mods, sysErr := lsmSyscall()
 	if sysErr == nil && len(mods) > 0 {
 		return lsmState(mods, LSMSourceSyscall), nil
 	}
-	b, fsErr := os.ReadFile(securityFSLSM)
+	b, fsErr := lsmFile(securityFSLSM)
 	if fsErr == nil {
 		if mods := ParseLSMList(b); len(mods) > 0 {
 			return lsmState(mods, LSMSourceSecurityFS), nil
@@ -136,7 +147,7 @@ func ReadLSMState() (LSMState, error) {
 	if sysErr == nil {
 		sysErr = errors.New("it listed no module")
 	}
-	if b, err := readKernelLog(); err == nil {
+	if b, err := lsmKernelLog(); err == nil {
 		if mods, ok := ParseLSMLog(b); ok {
 			return lsmState(mods, LSMSourceKernelLog), nil
 		}
@@ -144,13 +155,17 @@ func ReadLSMState() (LSMState, error) {
 	return LSMState{Source: LSMSourceNone}, &LSMReadError{Syscall: sysErr, SecurityFS: fsErr}
 }
 
-// LSMReadError is ErrLSMList with what each of the two mechanisms that name a cause answered: lsm_list_modules(2) and
-// /sys/kernel/security/lsm (the kernel log is the third, and says nothing a person can act on). errors.Is(err,
-// ErrLSMList) holds. Why and Remedy are sys.LSMListUnread's words for a person: the cause, and the seccomp or
-// securityfs option that would let Tego read the list.
+// LSMReadError is ErrLSMList with what each of the mechanisms that name a cause answered: lsm_list_modules(2),
+// /sys/kernel/security/lsm and, for a held open's list (ReadHeldOpenList), the file lsm.list_file names (the kernel log is
+// the other mechanism of ReadLSMState, and says nothing a person can act on). errors.Is(err, ErrLSMList) holds. Why and
+// Remedy are sys.LSMListUnreadVia's words for a person: the cause, and the seccomp, securityfs or list-file option that
+// would let Tego read the list.
 type LSMReadError struct {
 	Syscall    error
 	SecurityFS error
+	// ListFile is the configured lsm.list_file ("" when none is set) and ListErr why it was not believed.
+	ListFile string
+	ListErr  error
 }
 
 func (e *LSMReadError) Error() string { return ErrLSMList.Error() }
@@ -159,12 +174,53 @@ func (e *LSMReadError) Error() string { return ErrLSMList.Error() }
 func (e *LSMReadError) Unwrap() error { return ErrLSMList }
 
 // Why is what could not be read and the cause of each failure.
-func (e *LSMReadError) Why() string { why, _ := sys.LSMListUnread(e.Syscall, e.SecurityFS); return why }
+func (e *LSMReadError) Why() string {
+	why, _ := sys.LSMListUnreadVia(e.Syscall, e.SecurityFS, e.ListFile, e.ListErr)
+	return why
+}
 
 // Remedy is what the person can change so that the list can be read.
 func (e *LSMReadError) Remedy() string {
-	_, remedy := sys.LSMListUnread(e.Syscall, e.SecurityFS)
+	_, remedy := sys.LSMListUnreadVia(e.Syscall, e.SecurityFS, e.ListFile, e.ListErr)
 	return remedy
+}
+
+// ReadHeldOpenList reads the list a held file open's label check reads (the supervisor's checkOpenLabelAuthority), in
+// its order: lsm_list_modules(2), then /sys/kernel/security/lsm, then the file the machine config's lsm.list_file names
+// when one is set (internal/platform/lsmlist: the kernel's own bytes bound read-only, or what root wrote in this boot).
+// The kernel log is not one of its ways, and neither is the file for tier decisions: ReadLSMState alone decides those, so
+// a list handed in can leave a held open working and can never make tier bpflsm available. The task's own credentials
+// are checked at each open, not here.
+func ReadHeldOpenList() (LSMState, error) {
+	st, _, err := readHeldOpenList()
+	return st, err
+}
+
+// readHeldOpenList is ReadHeldOpenList with which shape the list file passed as, when it answered.
+func readHeldOpenList() (LSMState, lsmlist.Kind, error) {
+	mods, sysErr := lsmSyscall()
+	if sysErr == nil && len(mods) > 0 {
+		return lsmState(mods, LSMSourceSyscall), "", nil
+	}
+	b, fsErr := lsmFile(securityFSLSM)
+	if fsErr == nil {
+		if mods := ParseLSMList(b); len(mods) > 0 {
+			return lsmState(mods, LSMSourceSecurityFS), "", nil
+		}
+		fsErr = errors.New("it lists no module")
+	}
+	if sysErr == nil {
+		sysErr = errors.New("it listed no module")
+	}
+	var listErr error
+	if lsmlist.Configured() {
+		list, kind, err := lsmListFile(0, os.ReadFile)
+		if err == nil {
+			return lsmState(ParseLSMList([]byte(list)), LSMSourceListFile), kind, nil
+		}
+		listErr = err
+	}
+	return LSMState{Source: LSMSourceNone}, "", &LSMReadError{Syscall: sysErr, SecurityFS: fsErr, ListFile: lsmlist.File(), ListErr: listErr}
 }
 
 // lsmState fills the derived fields of a state.
@@ -334,9 +390,29 @@ func readKernelLog() ([]byte, error) {
 func probeLSM(root bool) (Result, LSMState) {
 	state, err := ReadLSMState()
 	if err != nil {
-		return Result{ID: CheckLSM, Detail: lsmUnreadDetail(err), Fix: lsmUnreadFixFor(err)}, state
+		// The tier cannot be decided, but a held open may still be answerable from the list file the administrator named.
+		held, kind, herr := readHeldOpenList()
+		if herr == nil {
+			return Result{ID: CheckLSM, Skipped: true, Fix: lsmUnreadFix,
+				Detail: fmt.Sprintf("%s via %s (%s); held file opens read this list, and tier bpflsm is not decided from it, so whether bpf is an active LSM is unknown",
+					strings.Join(held.Modules, ","), lsmlist.File(), kind) + tomoyoHeldOpenDetail(held, tomoyo.ReadFile)}, state
+		}
+		return Result{ID: CheckLSM, Detail: lsmUnreadDetail(herr), Fix: lsmUnreadFixFor(herr)}, state
 	}
 	detail := fmt.Sprintf("%s via %s", strings.Join(state.Modules, ","), state.Source) + tomoyoHeldOpenDetail(state, tomoyo.ReadFile)
+	if state.Source == LSMSourceKernelLog {
+		// The kernel log answers this row only: a held open reads the call, the file and the list file, so the row can
+		// pass here while every held open is refused.
+		held, kind, herr := readHeldOpenList()
+		if herr != nil {
+			detail += "; held file opens do not read the kernel log and are refused until the list can be read (held-label-unavailable): " + lsmUnreadDetail(herr)
+		} else {
+			detail += "; held file opens read the list from " + held.Source
+			if kind != "" {
+				detail += fmt.Sprintf(" %s (%s)", lsmlist.File(), kind)
+			}
+		}
+	}
 	if !state.BPFActive {
 		return Result{ID: CheckLSM, Detail: detail + "; bpf is not active: tier 3 (bpflsm) is unavailable, tiers 1 and 2 are not affected",
 			Fix: state.GRUBFix()}, state

@@ -56,6 +56,12 @@ const (
 	// count it with (no capture runs for it, or no price table that prices a model for cost_usd), refused rather
 	// than run with a limit that never trips; compile reports the same contracts under this code.
 	CodeBudgetUnmetered = "budget-unmetered"
+	// CodeBudgetWindow is a run whose contract sets limits.window and whose window the ledgers cannot prove: an
+	// earlier run of the agent whose record does not verify, a run of it still live, a contract that names no agent
+	// across restarts, a retention shorter than the window, a record-only run (whose agent could reach the records
+	// the count is read from) or more of the agent's ledgers in the window than a start may read (ADR 0165). Refused
+	// rather than started with a count that could be low.
+	CodeBudgetWindow = "budget-window"
 	// CodeContradiction is a contract whose write entries cover the run directory or the contract file.
 	CodeContradiction = "contradiction"
 	// CodePrivilegedPathUnsupported is a launcher that gained privilege without being root of the initial user

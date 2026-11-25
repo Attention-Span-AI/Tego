@@ -552,64 +552,91 @@ func bigRun(tb testing.TB, n int) *fixture {
 	return f
 }
 
-// inForceTarget is the CPU time the Rules page's refresh was designed for: one InForce over a 55k-line run read from
-// disk (no read model, so the whole ledger is scanned), the page rendering on every refresh. It was measured at 60 to 70
-// ms on the reference box on 2026-10-27, when the read ran in the calling process. Since the read runs in a worker
-// process (inforce.go's remoteView; two exchanges, each scanning the run, and a worker's start) the caller's and the
-// worker's CPU time together is 450 to 550 ms on a lightly loaded development box (the in-process read alone, 230 ms
-// there), and the test no longer meets it: budget mode prints TARGET-MISS, as it does for every budget it misses.
+// inForceTarget is the CPU time the Rules page's refresh was designed for: one InForce over a 55k-line run the
+// dashboard's read model holds (the page always has the run there), the page rendering on every refresh. It was
+// measured at 60 to 70 ms on the reference box on 2026-10-27, when the read ran in the calling process. Since the read
+// runs in a worker process (inforce.go's remoteView: two exchanges and a worker's start for each) it has cost 40 to 60
+// ms of CPU in the caller and its workers together with the run's findings taken from the read model, which is what the
+// page's refresh is; it cost 450 to 550 ms before the caller sent the findings to the worker, each of two exchanges
+// then scanning the whole ledger in a process that lives for that exchange alone. Budget mode prints TARGET-MISS above it.
 const inForceTarget = 150 * time.Millisecond
 
-// inForceLimit is the CPU time over which the read fails in budget mode, where the machine is quiet: about twice what it
-// costs today. inForceCeiling is the unit gate's, where it runs beside other work: a busy machine slows CPU work by a
-// lower clock and a busy sibling hyperthread (8 busy loops on the reference box's 16 threads made today's 0.4 s read
-// 1.3 s; 20 made it 1.5 s), so the ceiling is more than six times today's cost, 3 s. Either fails a read that does
-// several times the work it does now, on any machine.
+// The CPU time of the process tree (the caller's and its worker's) over which the read fails, for each of the two reads
+// of a 55k-line run. In budget mode, where the machine is quiet, the limit is a figure of the reference box: warm (the
+// page: the run's findings from the read model) measures 40 to 60 ms there, cold (`tego rules`, which has no read model
+// and scans the whole ledger once, in the caller) 210 to 280 ms with the box loaded to 8 to 10 and a floor of about
+// 150 ms of that in the scan itself (record.Strings over each line, which checks the line is valid JSON and reads its
+// members) and 40 ms in the two worker processes' start and compile. The limits are 1.8 times the cold and 5 times the
+// warm figures, the worst of the loaded measurements. The ceiling is the unit gate's, where the read runs beside other
+// work: a busy machine slows CPU work by a lower clock and a busy sibling hyperthread (beside 8 busy loops and a box loaded to 9 the read measured 82 ms warm and
+// 423 ms cold, 1.5 and 1.8 times its figures; 20 busy loops made the old read 3.5 times its cost), so each ceiling is
+// 2 to 3.5 times that. Either fails a read that does several times the work it does now, on any machine.
 const (
-	inForceLimit   = time.Second
-	inForceCeiling = 3 * time.Second
+	inForceLimitCold   = 500 * time.Millisecond
+	inForceLimitWarm   = 300 * time.Millisecond
+	inForceCeilingCold = 1500 * time.Millisecond
+	inForceCeilingWarm = 600 * time.Millisecond
 )
 
-// inForceWallBound is the loose bound on the wall clock of the same read: far over what it takes (0.35 to 0.45 s on the
-// box, 0.26 to 0.33 s on a hosted runner) on purpose, so that it fails a wait (a sleep, a lock, a pipe that is never
+// inForceWallBound is the loose bound on the wall clock of the same read: far over what it takes (0.15 to 0.3 s cold,
+// 30 to 50 ms warm on the box) on purpose, so that it fails a wait (a sleep, a lock, a pipe that is never
 // answered, a timeout run to its end) on any machine and not the machine's ordinary load. A busy machine also
-// stretches the wall clock (1.15 s beside 8 busy loops, 2 s beside 20), by waits for a CPU that its CPU time keeps out,
-// so the bound holds only where the wall clock is also over twice the CPU time: a wait is wall clock the work does
-// not account for.
+// stretches the wall clock (1.15 s beside 8 busy loops, 2 s beside 20, before the read was cut), by waits for a CPU that
+// its CPU time keeps out, so the bound holds only where the wall clock is also over twice the CPU time: a wait is wall
+// clock the work does not account for.
 const inForceWallBound = time.Second
 
-// inForceCostRatio is the most the 55k-line read may cost over the 11k-line one, in CPU time. Five times the lines is
-// five times the cost at the most (the worker's start-up is the same for both, so the ratio reads about 3), and one
-// more for the run's own spread.
-const inForceCostRatio = 6.0
+// inForceCostRatio is the most the 55k-line read may cost over the 11k-line one, in CPU time, cold. Five times the lines
+// is five times the cost at the most (the workers' start-up is the same for both, so the ratio reads about 2.5), and one
+// more for the run's own spread. inForceWarmRatio is the same for the read from the read model, whose cost does not
+// depend on the run's lines at all (it reads run_start and takes the rest from memory): it reads about 1.
+//
+// inForceWarmOverCold is the most the read from the read model may cost of the read with none, in the same measurement:
+// it measures 0.2 and it costs the whole when the read scans the ledger as the other does. Both sides run on the same
+// machine, so the figure is the machine's load alike, which the CPU limits cannot be (a loaded box makes the page's
+// 55 ms 200 ms, and the page's old 490 ms fits the ceiling that allows that).
+const (
+	inForceCostRatio    = 6.0
+	inForceWarmRatio    = 3.0
+	inForceWarmOverCold = 0.5
+)
 
 // TestInForceLongRunIsFast: a 55k-line run reads in a time the Rules page can refresh in, and what the read costs grows
 // with the run's size and no faster. InForce does its work in a worker process, which a short launcher starts and
 // leaves (so it is nobody's child), and which the calling thread's clock, the unit gate's usual figure
 // (testutil.MinOfThread), never sees: the first form of this test read 3.9 ms of CPU for a read that takes 450 ms, and
 // the one before it held the wall clock to the 150 ms budget on a hosted runner with other tenants (261 and 332 ms,
-// with the CPU time flat). Three bounds, each for one fault and none for the machine's load:
+// with the CPU time flat). The read is made twice a run, as the two callers make it: warm, with the run as the dashboard's
+// read model holds it (Options.Run: the Rules page, every refresh), and cold, with none (`tego rules`). Each bound is
+// for one fault and none for the machine's load:
 //   - CPU time of the process tree, the caller's and its worker's (testutil.MinOfTree, the fastest of five reads of each
-//     run, interleaved), at most inForceLimit in budget mode and inForceCeiling in the unit gate: the work the read does,
-//     which a scan that does more of it, or a read that copies more, exceeds. A busy machine slows CPU work by a lower
-//     clock and a busy sibling hyperthread, not by the waits for a CPU, so the figure keeps the room for that.
-//   - The same figure of the 55k-line run over an 11k-line run, at most inForceCostRatio: a scan that is quadratic in
-//     the run (a rescan for every line, a lookup that walks what it has seen) costs 25 times and fails on any machine,
-//     however slow, since both sides run on it alike.
-//   - The wall clock of the 55k-line read, at most inForceWallBound unless it is under twice the CPU time: a read that
+//     run, interleaved), at most the limit of its read in budget mode and the ceiling in the unit gate: the work the read
+//     does, which a scan that does more of it, a second scan, or a read that copies more, exceeds (the page's read made
+//     two scans of the ledger in two worker processes, 450 to 550 ms, until the caller took one scan or the read model's
+//     findings and sent them on). A busy machine slows CPU work by a lower clock and a busy sibling hyperthread, not by
+//     the waits for a CPU, so the ceiling keeps the room for that.
+//   - The same figure of the 55k-line run over an 11k-line run, at most inForceCostRatio cold and inForceWarmRatio warm:
+//     a scan that is quadratic in the run (a rescan for every line, a lookup that walks what it has seen) costs 25 times
+//     and fails on any machine, however slow, since both sides run on it alike; a warm read that scans the ledger
+//     again is cold's ratio, over the warm bound.
+//   - The warm figure over the cold figure of the 55k-line run, at most inForceWarmOverCold: the read model's findings
+//     must be what the page's read is made from (it scanned the ledger twice, as the read with none does, while the
+//     findings stayed in the caller), whatever the machine's load.
+//   - The wall clock of each 55k-line read, at most inForceWallBound unless it is under twice the CPU time: a read that
 //     waits (a sleep, a lock, a worker that is slow to answer) fails it, and the message gives the machine's load, the
 //     other reading of it. No budget is read on the wall clock, because a wall clock beside other tenants has no bound
 //     the code controls.
 //
 // In budget mode (testutil.BudgetsEnv, scripts/timing-budgets.sh, which runs it alone) the same bounds hold, three
-// reads a side instead of five, and a CPU time over inForceTarget prints TARGET-MISS; the race detector's slowdown and
-// -short skip it.
+// reads a side instead of five, and a warm CPU time over inForceTarget prints TARGET-MISS; the race detector's slowdown
+// and -short skip it.
 func TestInForceLongRunIsFast(t *testing.T) {
 	if raceEnabled || testing.Short() {
 		t.Skip("timing under -race or -short says nothing")
 	}
 	mode := testutil.TimingMode(t)
 	big, small := bigRun(t, 55000), bigRun(t, 11000)
+	held := map[*fixture]*ledgerview.Run{}
 	for _, tc := range []struct {
 		f     *fixture
 		lines int
@@ -618,11 +645,23 @@ func TestInForceLongRunIsFast(t *testing.T) {
 		if hits := rule(t, v, "exec.allow", "git").Hits; v.Lines != tc.lines || hits != tc.lines/5 {
 			t.Fatalf("%d lines: read %d lines, git hits %d, want %d and %d", tc.lines, v.Lines, hits, tc.lines, tc.lines/5)
 		}
+		r, err := ledgerview.Open(tc.f.root).Run(tc.f.run)
+		if err != nil {
+			t.Fatal(err)
+		}
+		held[tc.f] = r
+		if w := InForce(context.Background(), tc.f.root, tc.f.run, Options{Machine: tc.f.m, Run: r}); w.Err != "" || w.Lines != tc.lines {
+			t.Fatalf("%d lines, from the read model: err %q, lines %d", tc.lines, w.Err, w.Lines) // also fills its memo, as the page's first view does
+		}
 	}
-	read := func(f *fixture, lines int) func() {
+	read := func(f *fixture, lines int, warm bool) func() {
+		o := Options{Machine: f.m}
+		if warm {
+			o.Run = held[f]
+		}
 		return func() {
-			if got := InForce(context.Background(), f.root, f.run, Options{Machine: f.m}); got.Err != "" || got.Lines != lines {
-				t.Errorf("timed InForce: err %q, lines %d, want none and %d", got.Err, got.Lines, lines)
+			if got := InForce(context.Background(), f.root, f.run, o); got.Err != "" || got.Lines != lines {
+				t.Errorf("timed InForce (read model %v): err %q, lines %d, want none and %d", warm, got.Err, got.Lines, lines)
 			}
 		}
 	}
@@ -630,33 +669,46 @@ func TestInForceLongRunIsFast(t *testing.T) {
 	if mode.Budgets() {
 		rounds = 3
 	}
-	// Interleaved, the order rotated: a change in the machine's load over the measurement is on both runs alike.
-	fig := testutil.MinOfTree(rounds, read(big, 55000), read(small, 11000))
-	b, s := fig[0], fig[1]
-	ratio := float64(b.CPU) / float64(max(s.CPU, time.Millisecond))
+	// Interleaved, the order rotated: a change in the machine's load over the measurement is on every run alike.
+	fig := testutil.MinOfTree(rounds, read(big, 55000, false), read(small, 11000, false), read(big, 55000, true), read(small, 11000, true))
+	cold, coldSmall, warm, warmSmall := fig[0], fig[1], fig[2], fig[3]
+	ratio := func(b, s testutil.TreeFigure) float64 { return float64(b.CPU) / float64(max(s.CPU, time.Millisecond)) }
+	coldRatio, warmRatio := ratio(cold, coldSmall), ratio(warm, warmSmall)
 	suffix := ""
 	if mode.Budgets() {
 		suffix = ", budget mode"
 	}
-	t.Logf("InForce over a 55k-line run: %v of CPU time (the caller's and its worker's; target %v, limit %v, ceiling %v), %v of wall clock (bound %v); "+
-		"the 11k-line run %v of CPU time, ratio %.2f (limit %.1f); the Rules page renders on every refresh%s)",
-		b.CPU, inForceTarget, inForceLimit, inForceCeiling, b.Wall, inForceWallBound, s.CPU, ratio, inForceCostRatio, suffix)
-	if mode.Budgets() && b.CPU > inForceTarget {
-		t.Logf("TARGET-MISS: InForce over a 55k-line run %v of CPU time > %v (the Rules page renders on every refresh)", b.CPU, inForceTarget)
+	t.Logf("InForce over a 55k-line run, from the read model (the Rules page): %v of CPU time (the caller's and its worker's; target %v), %v of wall clock; the 11k-line run %v, ratio %.2f (limit %.1f%s)",
+		warm.CPU, inForceTarget, warm.Wall, warmSmall.CPU, warmRatio, inForceWarmRatio, suffix)
+	t.Logf("InForce over a 55k-line run, with none (`tego rules`): %v of CPU time, %v of wall clock; the 11k-line run %v, ratio %.2f (limit %.1f%s)",
+		cold.CPU, cold.Wall, coldSmall.CPU, coldRatio, inForceCostRatio, suffix)
+	if mode.Budgets() && warm.CPU > inForceTarget {
+		t.Logf("TARGET-MISS: InForce over a 55k-line run %v of CPU time > %v (the Rules page renders on every refresh)", warm.CPU, inForceTarget)
 	}
-	limit := inForceCeiling
+	limitCold, limitWarm := inForceCeilingCold, inForceCeilingWarm
 	if mode.Budgets() {
-		limit = inForceLimit
+		limitCold, limitWarm = inForceLimitCold, inForceLimitWarm
 	}
-	if b.CPU > limit {
-		t.Errorf("InForce over a 55k-line run: %v of CPU time of the caller and its worker, over the %v limit", b.CPU, limit)
+	if warm.CPU > limitWarm {
+		t.Errorf("InForce over a 55k-line run from the read model: %v of CPU time of the caller and its worker, over the %v limit", warm.CPU, limitWarm)
 	}
-	if ratio > inForceCostRatio {
-		t.Errorf("InForce costs %.1f times as much CPU time over 55k lines (%v) as over 11k (%v), more than %.0f: the read grows faster than the run", ratio, b.CPU, s.CPU, inForceCostRatio)
+	if cold.CPU > limitCold {
+		t.Errorf("InForce over a 55k-line run with no read model: %v of CPU time of the caller and its worker, over the %v limit", cold.CPU, limitCold)
 	}
-	if b.Wall > inForceWallBound && b.Wall > 2*b.CPU {
-		load, _ := os.ReadFile("/proc/loadavg")
-		t.Errorf("InForce over a 55k-line run took %v of wall clock for %v of CPU time, over the %v bound and over twice its CPU time: the read waits on something, or the machine is loaded beyond what a wait of this size says (load average %s)", b.Wall, b.CPU, inForceWallBound, strings.TrimSpace(string(load)))
+	if float64(warm.CPU) > inForceWarmOverCold*float64(cold.CPU) {
+		t.Errorf("InForce from the read model costs %v of CPU time over a 55k-line run, over %.0f%% of the %v the read with none costs: the read model's findings are not what the page's view is made from", warm.CPU, inForceWarmOverCold*100, cold.CPU)
+	}
+	if coldRatio > inForceCostRatio {
+		t.Errorf("InForce costs %.1f times as much CPU time over 55k lines (%v) as over 11k (%v), more than %.0f: the read grows faster than the run", coldRatio, cold.CPU, coldSmall.CPU, inForceCostRatio)
+	}
+	if warmRatio > inForceWarmRatio {
+		t.Errorf("InForce from the read model costs %.1f times as much CPU time over 55k lines (%v) as over 11k (%v), more than %.0f: it reads the ledger again", warmRatio, warm.CPU, warmSmall.CPU, inForceWarmRatio)
+	}
+	for name, b := range map[string]testutil.TreeFigure{"from the read model": warm, "with no read model": cold} {
+		if b.Wall > inForceWallBound && b.Wall > 2*b.CPU {
+			load, _ := os.ReadFile("/proc/loadavg")
+			t.Errorf("InForce over a 55k-line run %s took %v of wall clock for %v of CPU time, over the %v bound and over twice its CPU time: the read waits on something, or the machine is loaded beyond what a wait of this size says (load average %s)", name, b.Wall, b.CPU, inForceWallBound, strings.TrimSpace(string(load)))
+		}
 	}
 }
 

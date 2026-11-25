@@ -6,7 +6,7 @@
 #   sudo tego adopt --pid <agent> --boundary <contract>   then   sudo tego adopt --release --pid <agent>
 # Usage: adopt-release-guest.py <ordinary tego> <workdir> [shell|lone]. Prints a JSON object and "VERDICT ...".
 # shell: a shell stays in the origin scope beside the agent, so the release puts the agent back in its own scope.
-# lone (N73): the agent is the scope's only process, systemd removes the scope when it leaves, and the release must put
+# lone: the agent is the scope's only process, systemd removes the scope when it leaves, and the release must put
 # the agent in a leaf (tego-released-<run>) beside where it was, outside tego.slice, not leave it in the Tego scope.
 # The agent is a shell reading commands from a fifo; before the adoption `/usr/bin/id` runs, during it the contract's
 # exec allow-list refuses it, after the release it runs again. Not part of CI: a guest run by hand.
@@ -175,7 +175,7 @@ try:
         # the origin scope is gone (systemd removed it when its only process left): the agent goes to a leaf beside where it was
         leaf_now = cg(agent)
         facts["leaf"] = leaf_now
-        check("the agent is in a cgroup made for it beside its removed origin, outside tego.slice (N73)",
+        check("the agent is in a cgroup made for it beside its removed origin, outside tego.slice",
               leaf_now.startswith(os.path.dirname(cg_before) + "/tego-released-") and not leaf_now.startswith("/tego.slice"), "%s vs %s" % (leaf_now, cg_before))
         check("the agent's old scope is not back (systemd removed it)", not os.path.exists("/sys/fs/cgroup" + cg_before), cg_before)
     else:

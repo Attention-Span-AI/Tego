@@ -12,6 +12,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/runtime/supervisor"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
+	"golang.org/x/sys/unix"
 )
 
 // An attempt can open a script, its interpreter and an ELF loader. These are fragments of the exec, not
@@ -271,6 +272,11 @@ func (r *Recorder) handleExecResult(rec *Record) {
 			} else {
 				rule, verdict, reason = r.execOpenRefusal(refused, &p)
 			}
+		} else if ret == -int64(unix.EACCES) {
+			// The plane refuses an exec with EACCES, and so can another security module or the file's own mode. No
+			// decision record of this attempt survived: if this run lost records, its refusal may be among them. The
+			// line says that and no more (record.ExecPayload.DecisionLost); it is still no refusal.
+			p.DecisionLost = r.decisionLostGaps()
 		}
 		if naming.Path != "" && naming.Path != p.Path {
 			p.AttemptPath = naming.Path
@@ -283,6 +289,23 @@ func (r *Recorder) handleExecResult(rec *Record) {
 	ev := r.event(rec, record.KindExec, rule, verdict, reason)
 	r.setPayload(ev, p)
 	r.emitAction(ev)
+}
+
+// decisionLostGaps names the gaps of this run, so far, that lost records a decision of an exec may be among
+// (record.DecisionLostWhys), in that order: nil when the run has lost none. The kernel's own lost counter is read first:
+// a sample the ring refused was counted before the exec's result that follows it was reserved, so the count taken now
+// includes it, though the periodic poll has not reached it yet.
+func (r *Recorder) decisionLostGaps() []string {
+	r.pollLost()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []string
+	for _, why := range record.DecisionLostWhys {
+		if r.gaps[why] > 0 {
+			out = append(out, why)
+		}
+	}
+	return out
 }
 
 func (r *Recorder) execOpenRefusal(f *execFragment, p *execOutcomePayload) (string, record.Verdict, record.Reason) {

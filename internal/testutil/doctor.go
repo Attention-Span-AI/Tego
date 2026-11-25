@@ -21,7 +21,12 @@ const (
 // machine offers the tier: true on exit 0, false on doctor's own "not offered" answers (211, or 1 when no tier can run
 // at all). Any other end (a refused machine config, a usage error, a crash, a binary that did not start) is an error:
 // it is no answer about the machine. Its output is returned either way, for the caller's message.
+//
+// A command made by a case helper that sends its output to a file (Stdout and Stderr set) is read as well as one that
+// has none: DoctorOffers collects the output itself, so it takes those two fields back, where exec would otherwise fail
+// the call with "Stdout already set" and the answer would be "no answer about this machine" on a machine that has one.
 func DoctorOffers(cmd *exec.Cmd) (bool, []byte, error) {
+	cmd.Stdout, cmd.Stderr = nil, nil
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		return true, out, nil

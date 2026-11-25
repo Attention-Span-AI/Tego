@@ -87,6 +87,8 @@ $r[0] as $R | $v[0] as $V | $s[0] as $S | ($c[0] // null) as $C | $m[0] as $M
   "#### Refused actions", "",
   (if $R.refusals.total == 0 then "No refusals recorded. See the limits above."
    else "Recorded refusals: \($R.refusals.total | code)." end),
+  (($R.execs_decision_lost // 0) as $L
+   | if $L > 0 then "\($L | tostring | code) \(if $L == 1 then "command failed" else "commands failed" end) with permission denied; the record of what decided \(if $L == 1 then "it was" else "them was" end) lost, so \(if $L == 1 then "it is" else "they are" end) not counted as refusals." else empty end),
   (bullets($R.refusals.by_rule; 10; (.rule | code) + " (" + (.reason | code) + ") count " + (.count | code))),
   "| Time (UTC) | Operation | Target | Rule |", "|---|---|---|---|",
   ([$R.refusals.list[0:25][]? | "| \(.ts[11:19] | cell) | \(.op | cell) | \(.target | rel | cell) | \(.rule | cell) |"] | join("\n")),

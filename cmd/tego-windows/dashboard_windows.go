@@ -312,6 +312,6 @@ func stopDashboard() int {
 		fmt.Println("No dashboard relay is running.")
 		return 0
 	}
-	fmt.Println("Stopped the dashboard's connection to your browser. To open the dashboard again, run: tego dashboard")
+	fmt.Println(dashboardStoppedWords())
 	return 0
 }

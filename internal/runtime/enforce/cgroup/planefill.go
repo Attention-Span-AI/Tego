@@ -21,6 +21,7 @@ import (
 
 	ebpfbindings "github.com/attention-span-ai/tego/internal/bpf"
 	"github.com/attention-span-ai/tego/internal/policy/decide"
+	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
 // The plane's fill (ADR 0025 (2)). A slot's rows are keyed by the
@@ -143,6 +144,39 @@ func parseFDInfo(b []byte) (mntID, ino uint64, err error) {
 
 // heldFD returns the held O_PATH descriptor of a canonical path.
 type heldFD func(path string) (fd int, ok bool)
+
+// checkStandardDevices is the plane's half of ADR 0158: a row the decision plane keys for a standard-device grant
+// (a row whose modification answer is a table entry compile marked StdDevice) is keyed on the object the held
+// descriptor names, so that object must be that character device. The Landlock plan the descriptors come from checked
+// the same when it held them; the plane asks again of the descriptor it is about to key, so its own rows never rest
+// on another tier's check. A row that fails stops the fill (Prepare fails, nothing runs).
+func checkStandardDevices(rt *agent.RuleTable, rows *decide.PlaneRows, held heldFD) error {
+	if rt == nil || rows == nil {
+		return nil
+	}
+	for _, row := range rows.FS {
+		if row.Modify.Section != decide.PlaneFSRule || row.Modify.Index < 0 || row.Modify.Index >= len(rt.FS) {
+			continue
+		}
+		r := rt.FS[row.Modify.Index]
+		if !r.IsStandardDevice() || row.Path != r.Canonical() {
+			continue
+		}
+		fd, ok := held(row.Path)
+		if !ok {
+			return fmt.Errorf("plane fill: the standard device %s is keyed by the plane and no descriptor holds it", row.Path)
+		}
+		var st unix.Stat_t
+		if err := unix.Fstat(fd, &st); err != nil {
+			return fmt.Errorf("plane fill: standard device %s: %w", row.Path, err)
+		}
+		if !agent.StandardDeviceAt(row.Path, st.Mode, uint64(st.Rdev)) { //nolint:unconvert // Rdev is uint64 on amd64 and arm64, not everywhere
+			return fmt.Errorf("plane fill: %s is not the standard character device it was when the run was compiled (mode %#o, device %d:%d): the plane keys no row on it",
+				row.Path, st.Mode&unix.S_IFMT, unix.Major(uint64(st.Rdev)), unix.Minor(uint64(st.Rdev))) //nolint:unconvert // as above
+		}
+	}
+	return nil
+}
 
 // planPlaneFill turns a compiled table's rows into the fill's plan: one entry per fs row and per exec row, each at
 // the descriptor held for its path. It refuses a table over the slot's maps (decide.ErrPlaneCap), a path nothing

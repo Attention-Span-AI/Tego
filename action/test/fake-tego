@@ -8,6 +8,11 @@ set -euo pipefail
 d="${FAKE_TEGO_DATA:?}"
 case "$*" in
 "receipt --check "*) cat "$d/check.json" ;;
+"receipt "*" --verify --json")
+	# FAKE_KEPT_RC stands for the exit a receipt.json kept in the run folder gives (1: it differs, 125: it cannot be read)
+	cat "$d/receipt.json"
+	exit "${FAKE_KEPT_RC:-0}"
+	;;
 "receipt "*" --json") cat "$d/receipt.json" ;;
 "events "*" --verify --json")
 	jq --arg anchor "${FAKE_ANCHOR:-}" 'if $anchor == "" then . else .anchor = $anchor end' "$d/verify.json"

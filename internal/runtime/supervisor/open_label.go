@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/attention-span-ai/tego/internal/platform/lsmlist"
 	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/internal/platform/tomoyo"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -32,7 +33,15 @@ var errOpenLabelDiffers = errors.New("open completer's LSM label differs from th
 // cannot change its own credentials while trapped; openLabel brackets these
 // reads with ID_VALID so de_thread or TID reuse cannot substitute another task.
 func (k sysKernel) CheckOpenLabel(tid, opener, flags int) error {
-	return checkOpenLabelAuthority(tid, opener, flags, readOpenLabelFile, sys.LSMListModules, k.assumeAppArmorRoot)
+	return checkOpenLabelAuthority(tid, opener, flags, readOpenLabelFile, sys.LSMListModules, handedInList, k.assumeAppArmorRoot)
+}
+
+// handedInList is the third way to learn the active module list (ADR 0041, 2026-11-25): the file the machine config's
+// lsm.list_file names, believed only when it is the kernel's own bytes or what root wrote in this boot, and only for a
+// task that could not rewrite it. It is read fresh for every open, with the trapped task's own credentials.
+func handedInList(tid int) (string, error) {
+	list, _, err := lsmlist.Read(tid, readOpenLabelFile)
+	return list, err
 }
 
 // readOpenLabelFile bounds labels and other LSM facts without truncation. The
@@ -64,16 +73,20 @@ var openLSMNames = map[uint64]string{
 	112: "evm", 113: "ipe",
 }
 
-func checkOpenLabelAuthority(tid, opener, flags int, read func(string) ([]byte, error), modules func() ([]uint64, error), assumeAppArmorRoot bool) error {
+func checkOpenLabelAuthority(tid, opener, flags int, read func(string) ([]byte, error), modules func() ([]uint64, error), handed func(tid int) (string, error), assumeAppArmorRoot bool) error {
 	// The unprivileged syscall is authoritative even when securityfs is masked
 	// in a container. Older kernels or container seccomp can deny it; only then
-	// use securityfs. Neither proc directory names (built at CONFIG time) nor
-	// one readable label establishes the complete active module set.
+	// use securityfs, and only when that cannot be read the file the
+	// administrator named (lsm.list_file: the kernel's own bytes bound read-only,
+	// or what root wrote in this boot). Neither proc directory names (built at
+	// CONFIG time) nor one readable label establishes the complete active module
+	// set, and a missing module name is the dangerous direction: no label is
+	// compared for it.
 	var b []byte
-	var listErr error
+	var syscallErr error
 	if modules != nil {
 		ids, e := modules()
-		listErr = e
+		syscallErr = e
 		if e == nil {
 			var names []string
 			for _, id := range ids {
@@ -89,10 +102,17 @@ func checkOpenLabelAuthority(tid, opener, flags int, read func(string) ([]byte, 
 	if b == nil {
 		var err error
 		b, err = read("/sys/kernel/security/lsm")
+		var listErr error
+		if err != nil && lsmlist.Configured() && handed != nil {
+			var list string
+			if list, listErr = handed(tid); listErr == nil {
+				b, err = []byte(list), nil
+			}
+		}
 		if err != nil {
 			// Said as what each way answered: ENOSYS on a kernel older than 6.8 has no filter to relax, and a refusal
-			// of the call or the file names the seccomp or AppArmor policy outside Tego (sys.LSMListUnread).
-			why, remedy := sys.LSMListUnread(listErr, err)
+			// of the call or the file names the seccomp or AppArmor policy outside Tego (sys.LSMListUnreadVia).
+			why, remedy := sys.LSMListUnreadVia(syscallErr, err, lsmlist.File(), listErr)
 			return fmt.Errorf("active LSM list could not be read, so no module's labels can be checked (%s); %s; the AppArmor namespace assertion does not waive module discovery: %w", why, remedy, err)
 		}
 	}

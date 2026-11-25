@@ -27,14 +27,16 @@ func LSMListModules() ([]uint64, error) {
 	return ids[:n], nil
 }
 
-// LSMListUnread says, in words, why the active LSM list could not be read and what can be done, from the two errors a
-// reader met: syscallErr from lsm_list_modules(2) (Linux 6.8 and later; the error LSMListModules returned) and fileErr
-// from reading /sys/kernel/security/lsm. Tego refuses a held file open while the list is unread (the supervisor's
-// held-label-unavailable): without the list it cannot tell which module labels the agent's task, and a label the
-// completing process lacks could let the open succeed where the agent's own would not. A nil error means that way was
-// not tried and is left out. The text says only what the two errors show: ENOSYS is either a kernel older than 6.8 or a
-// filter that hides the call, so it says both.
-func LSMListUnread(syscallErr, fileErr error) (why, remedy string) {
+// LSMListUnreadVia says, in words, why the active LSM list could not be read and what can be done, from what each way
+// answered: syscallErr from lsm_list_modules(2) (Linux 6.8 and later; the error LSMListModules returned), fileErr from
+// reading /sys/kernel/security/lsm, and the third way, the machine config's lsm.list_file: listFile is its path ("" when
+// none is set) and listErr why it was not believed (its error already names the file). Tego refuses a held file open
+// while the list is unread (the supervisor's held-label-unavailable): without the list it cannot tell which module labels
+// the agent's task, and a label the completing process lacks could let the open succeed where the agent's own would
+// not. A nil error means that way was not tried and is left out. The text says only what the errors show: ENOSYS is
+// either a kernel older than 6.8 or a filter that hides the call, so it says both. When a file is named, what is wrong
+// with it comes first in the remedy; when none is, the remedy says that a list can be handed in and how.
+func LSMListUnreadVia(syscallErr, fileErr error, listFile string, listErr error) (why, remedy string) {
 	var parts []string
 	if syscallErr != nil {
 		switch {
@@ -58,6 +60,9 @@ func LSMListUnread(syscallErr, fileErr error) (why, remedy string) {
 			parts = append(parts, fmt.Sprintf("/sys/kernel/security/lsm could not be read (%v)", fileErr))
 		}
 	}
+	if listErr != nil {
+		parts = append(parts, listErr.Error())
+	}
 	why = strings.Join(parts, "; ")
 	switch {
 	case syscallErr != nil && errors.Is(syscallErr, unix.ENOSYS):
@@ -65,5 +70,8 @@ func LSMListUnread(syscallErr, fileErr error) (why, remedy string) {
 	default:
 		remedy = "permit lsm_list_modules in the outer seccomp filter (Linux 6.8 and later) or expose a readable /sys/kernel/security/lsm in the container"
 	}
-	return why, remedy
+	if listFile != "" {
+		return why, "make the list file " + listFile + " what the entrypoint writes at each start (it is refused for the reason above; an entrypoint that cannot read the list itself needs the container settings of examples/container/compose.yaml, or a read-only bind of the host's /sys/kernel/security/lsm); or " + remedy
+	}
+	return why, remedy + "; or hand the list in from where it can be read: the image's tego-entrypoint writes it as root before it drops its privileges and /etc/tego/config.yaml names it (lsm.list_file), or bind the host's /sys/kernel/security/lsm read-only into the container and name that path"
 }

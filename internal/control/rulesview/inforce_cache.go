@@ -10,12 +10,13 @@ import (
 
 // An open Rules page or line page of a busy run asks for InForce about once a second, and cachedScan opened the
 // ledger for run_start and decoded up to maxExecScan exec payloads every time: about two thirds of a warm InForce
-// on a 55k-line run (r7 debt lane). What it finds depends only on the run's lines, so it is kept per run
+// on a 55k-line run. What it finds depends only on the run's lines, so it is kept per run
 // version: the run's directory, the read model's revision of the run (it moves with any appended line, a replaced
 // file or a live-state change, and it starts at the clock, so a restarted dashboard never repeats one), its line
 // count and its newest line's seq. The compile, the live blocks, the rules file and the journal are still read on
 // every call: they change without a line being written. A Run with no revision (one built for the line bound, or a
-// test's literal) is scanned every time.
+// test's literal) is scanned every time. The memo lives in the process that calls InForce, which sends the findings to
+// its worker (scanWire): a worker is a new process for each exchange and would keep nothing.
 
 // scanKey is the run version a cached scan was read from.
 type scanKey struct {

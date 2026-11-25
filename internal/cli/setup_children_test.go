@@ -33,9 +33,26 @@ func guideChildRoutes() []guidePTYRoute {
 	return routes
 }
 
+// guideSigninRoute is a sign-in that blocks until Ctrl-C: the agent's own browser login, on the terminal.
+func guideSigninRoute() guidePTYRoute {
+	ordinary := guidePTYRoutes()[0]
+	return guidePTYRoute{"child-signin", []guidePTYStep{ordinary.steps[0], {"How do you want to log in to Claude Code?", "\r"}, {"[child-signin-ready]", ""}}}
+}
+
+// TestGuideLeavesWhatItStarted: one key leaves an installer or a sign-in the guide started, and the guide asks the
+// question that started it again, with the terminal as it was.
+func TestGuideLeavesWhatItStarted(t *testing.T) {
+	for _, route := range []guidePTYRoute{guideChildRoutes()[6], guideSigninRoute()} {
+		t.Run(route.name, func(t *testing.T) { t.Parallel(); runGuidePTY(t, route, len(route.steps)-1, "leave", false) })
+	}
+}
+
 func TestGuideChildrenStop(t *testing.T) {
 	for _, route := range guideChildRoutes() {
 		for _, how := range []string{"key", "signal", "term", "hup"} {
+			if route.name == "child-installer" && how == "key" {
+				continue // the key leaves the installer and not the guide (TestGuideLeavesWhatItStarted)
+			}
 			t.Run(route.name+"/"+how, func(t *testing.T) { t.Parallel(); runGuidePTY(t, route, len(route.steps)-1, how, false) })
 		}
 	}
@@ -57,6 +74,20 @@ func prepareGuideChild(t *testing.T, route string) {
 		return path
 	}
 	look := guideLookPath
+	if stage == "signin" {
+		// The agent's own sign-in: it waits on the terminal, and its default reaction to Ctrl-C is to end.
+		program := write("claude", "[ \"$1\" = setup-token ] || exit 0\necho $$ > \"$TEGO_TEST_GUIDE_CHILD_PID\"\nprintf '[child-signin-ready]' > /dev/tty\nexec sleep 300\n")
+		guideLookPath = func(name string) (string, error) {
+			if name == "claude" {
+				return program, nil
+			}
+			if name == "script" {
+				return "", os.ErrNotExist
+			}
+			return look(name)
+		}
+		_ = os.Unsetenv("CLAUDE_CODE_OAUTH_TOKEN")
+	}
 	if stage == "version" || stage == "stty" {
 		program := write("claude", map[bool]string{true: sleeper, false: "exit 0\n"}[stage == "version"])
 		guideLookPath = func(name string) (string, error) {
@@ -105,7 +136,7 @@ var realGuideChildInstall = guideInstall
 func guideChildActions(route string) {
 	guideDashboard = realGuideChildDashboard
 	guideInstall = realGuideChildInstall
-	if route == "child-stty" {
+	if route == "child-stty" || route == "child-signin" {
 		guideSetupToken = realGuideChildLogin
 	}
 }

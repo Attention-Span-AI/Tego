@@ -192,6 +192,18 @@ type TOMOYOConfig struct {
 	FactsDir Setting[string]
 }
 
+// LSMConfig holds the security-module list setting (ADR 0041, the 2026-11-25 amendment).
+type LSMConfig struct {
+	// ListFile names a file a held open reads the active security-module list from when neither lsm_list_modules(2)
+	// nor /sys/kernel/security/lsm can be read, as in a container under Docker's default profile. It is either the
+	// host's /sys/kernel/security/lsm bound read-only into the container, or the file the container's entrypoint wrote
+	// as root before it dropped its privileges; either is accepted only when it passes the checks of
+	// internal/platform/lsmlist, and anything else refuses held opens as before. It must be a clean absolute path. ""
+	// (the default) uses no file. Honoured only from /etc/tego/config.yaml (LayerEtc): which file stands for the
+	// kernel's answer is the administrator's to say. The list read this way decides held opens only, never a tier.
+	ListFile Setting[string]
+}
+
 // The bpf.plane values.
 const (
 	PlaneAuto    = "auto"
@@ -281,6 +293,7 @@ type Machine struct {
 	Record           RecordConfig
 	BPF              BPFConfig
 	TOMOYO           TOMOYOConfig
+	LSM              LSMConfig
 	Resolver         Setting[ResolverMode]
 	DeniedResolved   Setting[[]netip.Prefix] // ranges no net.allow host name admits, on top of the built-in classes (union across layers, merge.go)
 	Forwarder        ForwarderConfig

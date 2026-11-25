@@ -548,11 +548,52 @@ limit, which the family keeps by a wide margin (110,459 against 1,000,000). If a
 family.
 
 Not measured: mainline 6.19.4 and 6.19.14 with the block walk (they were measured before it, at 63,939 and 28,681);
-they take this family's budget, and a program there over it fails with its counts logged. 6.18 and 7.2.9 (N100) were
+they take this family's budget, and a program there over it fails with its counts logged. 6.18 and 7.2.9 were
 not measured either; `test/vm/measure-plane-verifier.sh` runs the plane's load test on every kernel under
-`~/.cache/tego-vm/kernel` and prints each program's count beside the budget. Paths of the live blocks that stay
-unit-tested only (no guest has run them on a real kernel): identity-mismatch (a row whose key inode lost its identity),
-the dormant state, the class-overflow answer and the name-row collision; arm64 has no run at all.
+`~/.cache/tego-vm/kernel` and prints each program's count beside the budget. The paths of the live blocks that had unit
+tests only are driven in a root run by the 2026-11-25 amendment below; arm64 has no run at all.
+
+### Verifier budget amendment (2026-11-25): socket_listen's family budget, and the live blocks' paths run on a real kernel
+
+`socket_listen` is the plane's largest program (6,872 instructions of its own: the listener checks, with the unix listen
+reason and marker inlined) and walks no path, so form d's figures say nothing about it. Its budget was one flat 64,000,
+set on 2026-11-02 when GitHub's 7.0.0-1017-azure verified it in 43,850. The counts of one object by kernel (one test
+binary, 2026-11-24, both plane builds): at most 18,892 on every kernel measured from 5.14 to 6.19.14 (RHEL 9's 5.14
+18,248, Debian 12's 6.1 18,892, Ubuntu 24.04's 6.8 18,717, 6.12 18,248 to 18,296, 6.17 18,296, mainline 6.18 to 6.19.14 18,352,
+Fedora's 6.19.10 18,322), and 43,797 to 44,023 on 7.0 and later (Fedora's 7.0.14 44,023, Ubuntu 26.04's 7.0.0-38
+44,023, Fedora's 7.2.9 43,880). A flat 64,000 let a 6.x kernel take 3.4 times its count unseen, which is what a body
+that left form d would cost.
+
+Why 7.x counts it 2.4 times higher is not a property of the listener's code, and the count says what it can: the
+same kernels count `socket_bind` 4.6 to 4.9 times higher (3,019 to 14,796), `unix_may_send` 2.4 times (4,222 to
+10,106), `mmap_file` and `file_mprotect` 2 times and the path programs 1.6 to 1.8 times (`path_unlink` 13,867 to
+22,714; counts of 6.18 against 7.0.14), while the largest path program costs far less on 7.0 than on 6.19.4 to 6.19.y
+(24,167 against 100,417). So the whole plane is verified at a different price on 7.x, not this program. For
+`socket_listen` the verifier's own statistics on 6.19.14 and on 7.0.14 are 18,352 instructions processed with 703 states
+(peak 703) and 44,023 processed with 1,231 states (peak 738): the program is walked 2.4 times as often for 1.8 times
+the states and a peak no higher, so on 7.x the same branches are explored on more paths and the states are released
+sooner. Which change in the 7.0 verifier does this (its pruning of equal states, or what it counts as live) is not
+shown by these counts; the budget does not depend on it.
+
+Chosen, as for the path programs: the budget of each family is the count measured there plus 10 %, rounded up
+(`planeListenFamilies`): 20,782 for kernels before 7.0 and 48,426 for 7.0 and later, 44,096 (the 2026-11-02 count)
+inside it. A release the test cannot read is held to the first. A program grown more than 10 % fails, and a program
+that costs what 7.x counts it is over the budget of every earlier kernel. The same test now fails a plane program whose
+count the kernel does not give (a kernel of 5.16 or later; RHEL 9's 5.14 reports it) instead of skipping it:
+`planeHeldToBudget` is the one place the plane tests hold a program to its budget. arm64 verifies the same bytecode, but
+no arm64 kernel has been measured.
+
+The live blocks' paths that only unit tests reached are run on a real kernel by `internal/runtime`'s
+`TestRootLiveBlockIdentityMismatch` (a file's row and a name row's directory with their identity changed in the slot's
+map: refused whatever class was asked, and the identity-mismatch counter moves), `TestRootLiveBlockPathUnresolved` (a
+file the contract allows more than 64 levels from the root fails the block walk once any block is in the slot, and not
+before or after), `TestRootLiveBlockDormantBlockWaitsForItsInstant` (the rows of an unblocked-for-a-while block hold a
+`from_ns` in the future, read back, and nothing is refused until it passes) and `TestRootLiveBlockNameKeys` (two names
+of one length and first 32 bytes share a key, and a key another row holds makes the fill answer DUP, so the class is
+refused whole). Not run on a real kernel: a run that gives out all 16,383 block ids (a unit test holds the count; the
+refusal it ends in is the class overflow the full map shows), a collision of two names over the whole 63-bit hash
+(the DUP answer is shown by changing a row's identity), and arm64. The overflow of a run's ids is named by the last
+id, which is also the last block's own, so a refusal that names it may be that block's or the overflow's.
 
 ### Startup prerequisite order amendment (2026-11-17)
 
@@ -649,12 +690,12 @@ that answer there and `listen(2)` is refused on every kernel.
 Verifier: the added arm is a few instructions in `socket_listen`, which has its own budget (64,000; `planeListenVerifiedBudget`).
 See the measured counts per kernel in the guest proof.
 
-### Retry amendment (2026-11-24, N131): a mode that fails on a row is probed once more, and two answers that differ are a fault
+### Retry amendment (2026-11-24): a mode that fails on a row is probed once more, and two answers that differ are a fault
 
 (3) says a mode is selected only when every hook counted and that the result is cached per boot and build. A mode that
 failed its probe without a fault was therefore cached as failed for the whole boot (`recordWith` keeps every answer but
 a Faulted one), so one false answer cost the machine the stronger plane until reboot. On 2026-11-24 a guest run of the
-root suites failed the `lsm/key_permission` row once in a boot of dozens of lsm probes (row N131): a goroutine of the
+root suites failed the `lsm/key_permission` row once in a boot of dozens of lsm probes: a goroutine of the
 probe's own key fixture most likely moved to another thread and read an EACCES as the hook's refusal (inferred, not seen). The fixture is fixed
 (the doctor probe fix); the cost of the next false answer from anywhere else is the same, and `R21`'s concern, that a hook which
 decides intermittently must stay visible, is not served by a mode cached as failed on one sample either.
@@ -689,3 +730,38 @@ both probes fail the same way, since that failed answer is then cached. A mode t
 then (`recordWith` drops the whole plane answer), so every run probes that mode twice and the other mode again, at
 the cost above, until the answers agree or the boot ends. The known answers' cache (`planeknowncache.go`) is separate: it keeps only cells that
 matched, and is read by a later probe as before.
+
+### Probe amendment (2026-11-24): a run stops at the mode selection takes
+
+(3)'s probe loads every hook of each mode, and a run's probe now stops after the first mode that selection takes:
+under `bpf.plane` auto or lsm, a LSM mode that passed every hook is selected whatever fmod_ret mode would answer, so a
+run does not load or probe fmod_ret mode (`planeDecides`, `probePlaneModes`). Nothing weaker is selected: a mode is
+still selected only when every hook counted, selection is the same walk over the modes that were probed, and the
+result is equal to that of the probe of both modes for every pin and every pass or fail of the two modes
+(`TestStoppingAtTheSelectedModeNeverChangesSelection`). Where LSM mode failed or was ruled out, under a pin naming
+fmod_ret, or for `tego doctor` (which keeps no cache and reports each mode), both modes are probed as before. The
+run-probe cache's key does not hold `bpf.plane`, so an answer that holds LSM mode alone answers a run under auto or lsm
+only (`PlaneState.answers`); a run pinned to fmod_ret probes and keeps the fuller answer. The saving is the second
+mode's load, exercise and link removal, which on Linux 6.17 is a kernel grace period per tracing link; it is not a
+claim about kernels that remove links quickly, where it is a fraction of a second.
+
+How the retry and the stop compose. Each mode's probe is `probePlaneModeTwice` around `probePlaneMode`, and
+`probePlaneModes` decides after that whole answer whether to go on. A mode that passes its first probe is not probed
+again, and on a run that stops at it the later mode is not probed. A mode that fails on a row verdict is probed a
+second time before the next mode is probed, and `planeDecides` is false for any mode that is not OK, so the next mode
+is always probed after a failed or Faulted mode. The four outcomes under `bpf.plane` auto, for a run (a cache is kept):
+LSM passes: one probe, fmod_ret mode is not probed, the answer holds LSM mode alone and is cached. LSM fails twice the
+same way and fmod_ret passes: three probes, the answer holds both modes, LSM mode failed (cached as failed) and
+fmod_ret mode is selected, and the whole answer is cached. LSM answers differently: LSM mode is Faulted with both
+probes' rows, fmod_ret mode is probed and, if it passes, selected, and nothing is cached, so the next run probes again.
+Both fail: LSM twice, fmod_ret twice, no mode selected (fanotify), the answer is cached unless one of them is Faulted.
+`tego doctor` probes every mode and applies the retry to each.
+
+### Probe amendment (2026-11-24): probing D7's tier rows together is designed and measured, not shipped
+
+D7 (the tier rows' program loads) is probed one row after another. A version that asked up to four rows at once, so
+that one row's load overlaps another's close, was designed and built, with the rule that a row that did not complete is
+asked again alone after every other row has closed and that second answer is kept. It was measured in one guest, in
+alternating rounds with a control that changes nothing: its gain was inside the measurement noise. It is not part of
+the probe. The probe a run makes is as before this note, except for the stop at the selected mode (above, "Retry
+amendment"). A later release may take the design up again if a clean measurement separates it from the noise.

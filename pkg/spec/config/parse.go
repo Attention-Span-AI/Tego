@@ -54,6 +54,7 @@ type layerData struct {
 	ringBudget       field[ByteSize]
 	bpfPlane         field[string]
 	tomoyoFactsDir   field[string]
+	lsmListFile      field[string]
 	resolver         field[ResolverMode]
 	deniedResolved   field[[]netip.Prefix]
 	users            field[map[string]UserPolicy]
@@ -229,6 +230,8 @@ func (p *parser) topLevel(d *layerData, key, v *yaml.Node) {
 		p.bpf(d, v)
 	case "tomoyo":
 		p.tomoyo(d, v)
+	case "lsm":
+		p.lsm(d, v)
 	case "resolver":
 		d.resolver = p.resolver(v)
 	case "denied_resolved_addresses":
@@ -430,6 +433,29 @@ func (p *parser) tomoyo(d *layerData, v *yaml.Node) {
 		}
 	}
 }
+
+// lsm parses lsm.list_file: a clean absolute path (ValidListFile). It is read from /etc/tego/config.yaml only
+// (merge.go).
+func (p *parser) lsm(d *layerData, v *yaml.Node) {
+	for _, kv := range p.mapping(v) {
+		switch kv.name {
+		case "list_file":
+			d.lsmListFile = p.str(kv.value, "lsm.list_file")
+			if d.lsmListFile.set {
+				if why := ValidListFile(d.lsmListFile.value); why != "" {
+					p.errorf(kv.value, "lsm.list_file: %s", why)
+					d.lsmListFile.set = false
+				}
+			}
+		default:
+			p.errorf(kv.key, "unknown key lsm.%s", kv.name)
+		}
+	}
+}
+
+// ValidListFile says why path cannot name the file the active security-module list is read from, or "" when it can: a
+// clean absolute path that is not the root.
+func ValidListFile(path string) string { return ValidFactsDir(path) }
 
 // ValidFactsDir says why dir cannot name TOMOYO's facts directory, or "" when it can: a clean absolute path that is not
 // the root.

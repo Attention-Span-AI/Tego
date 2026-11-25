@@ -297,7 +297,7 @@ func TestOpenSweepsTheTempFilesOfADeadWriter(t *testing.T) {
 	}
 	w.release() // died without run_end
 	w.closeDirs()
-	for _, name := range []string{".contract.yaml.123", ".last-refusal.json.456"} {
+	for _, name := range []string{".contract.yaml.123", ".last-refusal.json.456", ".receipt.json.789"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("partial"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -307,7 +307,7 @@ func TestOpenSweepsTheTempFilesOfADeadWriter(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = again.Close(record.RunEndPayload{Reason: record.RunEndOrphaned}) })
-	for _, name := range []string{".contract.yaml.123", ".last-refusal.json.456"} {
+	for _, name := range []string{".contract.yaml.123", ".last-refusal.json.456", ".receipt.json.789"} {
 		if _, err := os.Lstat(filepath.Join(dir, name)); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("%s survived the reopen: %v", name, err)
 		}

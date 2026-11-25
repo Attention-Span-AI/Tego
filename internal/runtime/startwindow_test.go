@@ -32,7 +32,7 @@ func (b *holdingBackend) Prepare(ctx context.Context, _ *agent.RuleTable, _ enfo
 	return nil, ctx.Err()
 }
 
-// TestARunHoldsItsLockBeforeItNamesItsAgent pins the window behind N111 (`tego stop` right after a run started):
+// TestARunHoldsItsLockBeforeItNamesItsAgent pins the window between a run's start and its first line that names the agent (`tego stop` right then):
 // the launcher takes the run's lock when it opens the ledger, and run_start, the first line that names the agent, is
 // written only after the run's enforcement is prepared. While Prepare runs the run exists and is live, with no
 // agent id on record; anything that needs the agent id of a live run (stop's backstop kill finds the run's scope by

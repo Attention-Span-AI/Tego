@@ -72,6 +72,11 @@ type Receipt struct {
 	ProgramsMore int       `json:"programs_more,omitempty"`
 	// ProgramsOverflowAttempts counts starts whose program identity was not retained.
 	ProgramsOverflowAttempts int `json:"programs_overflow_attempts,omitempty"`
+	// ExecsDecisionLost counts the execs that failed with permission denied (EACCES) and whose line says its decision
+	// record may be among those this run lost (exec decision_lost, record revision 41). It is neither a refusal (Refusals
+	// does not count it: the record cannot say Tego's rules refused it, another security module may have) nor a program that
+	// ran (Programs does not count it). Absent when there is none. Additive; receipt_v stays 1.
+	ExecsDecisionLost int `json:"execs_decision_lost,omitempty"`
 	// SensitiveReads is every file the run opened, or tried to, that looks like a secret by its name
 	// (secretpath.Is) or that an fs.deny_read or fs.ask_read rule guards, in the order first seen, with what
 	// happened to the tries.

@@ -331,8 +331,12 @@ func (p *planeBlocks) syncPass(entries []liveblock.Entry, others map[string][]st
 		}
 		// What the block keyed before stays keyed, by the descriptor that pins it, wherever its object is now, with the
 		// row it asked there: a later walk that meets the object in a weaker role (a moved target met as a guard) adds
-		// its row to it and never replaces it.
+		// its row to it and never replaces it. The row's instant is the block's now, not the one it was keyed with: an
+		// unblock for a while is always of a block already in force, whose held rows carry from 0, and the earlier of two
+		// instants would keep that 0 and the block in force through the whole window.
+		from := p.fromOf(e, pins, now)
 		for key, row := range p.held[k] {
+			row.from = from
 			if fresh, ok := cur[key]; ok {
 				cur[key] = fresh.merge(row)
 				w.add(key, w.rows[key].fd, w.rows[key].ino, row)
@@ -524,13 +528,7 @@ func (p *planeBlocks) wantBlock(w *want, e liveblock.Entry, others map[string][]
 		w.overflow(c, bpf.PlaneBlockIDMax) // no id is left to name it by: its classes are refused whole
 		return
 	}
-	var from uint64
-	if !e.From.IsZero() {
-		pin, ok := pins[liveblock.DeadlineKey(e.Key(), e.From)]
-		if !liveblock.Begun(e.From, pin, ok, now) && ok && p.bootOK && pin > 0 {
-			from = uint64(pin)
-		}
-	}
+	from := p.fromOf(e, pins, now)
 	target := blockRow{flags: bpf.PlaneBlockSelf | bpf.PlaneBlockBeneath, guard: id, from: from}
 	if c&bpf.PlaneBlockRead != 0 {
 		target.read = id
@@ -562,6 +560,20 @@ func (p *planeBlocks) wantBlock(w *want, e liveblock.Entry, others map[string][]
 			w.overflow(c, id)
 		}
 	}
+}
+
+// fromOf is the from_ns of block e's rows at now: its from's CLOCK_BOOTTIME pin while it has not begun (a dormant
+// block, ADR 0125 decision 4), else 0 (in force). Without a pin, or where the launcher's boot clock is not the kernel's,
+// a dormant block's rows refuse now.
+func (p *planeBlocks) fromOf(e liveblock.Entry, pins map[string]time.Duration, now liveblock.Clock) uint64 {
+	if e.From.IsZero() {
+		return 0
+	}
+	pin, ok := pins[liveblock.DeadlineKey(e.Key(), e.From)]
+	if !liveblock.Begun(e.From, pin, ok, now) && ok && p.bootOK && pin > 0 {
+		return uint64(pin)
+	}
+	return 0
 }
 
 // frame is one directory a walk stands in: its path as reached (no link in it) and its descriptor.

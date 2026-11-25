@@ -233,6 +233,8 @@ type Watcher struct {
 	gapped      map[string]bool
 	// unpricedModels counts the models named in an unpriced-model gap line so far (maxUnpricedModels).
 	unpricedModels int
+	// win is WithWindow's: tokens and cost_usd as a total over a span across runs. Nil counts per run.
+	win *windowState
 }
 
 // NewWatcher returns a watcher for one run.
@@ -259,6 +261,9 @@ func NewWatcher(ceiling agent.ResolvedLimits, prices *PriceTable, mgr Killer, cg
 	}
 	for _, o := range opts {
 		o(w)
+	}
+	if w.win != nil {
+		w.win.start(w)
 	}
 	return w
 }
@@ -435,13 +440,16 @@ func (w *Watcher) usageLocked(ev *record.Event) []gapRequest {
 	cost, priced := w.prices.Cost(u)
 	if priced {
 		w.state.CostUSD += cost
+		w.windowAddLocked(u, cost, 0)
 		return nil
 	}
 	w.state.Unpriced++
 	var out []gapRequest
+	var unpricedMax float64
 	if w.ceiling.Bounded(agent.BudgetCostUSD) {
 		if c, ok := w.prices.MaxCost(u); ok {
 			w.state.UnpricedMaxUSD += c
+			unpricedMax = c
 		} else if w.prices.UnfeedServerTool(u) {
 			// No fee bounds these requests, and charging them $0 would let a cost ceiling pass unseen spend: the
 			// response is unmetered, as a capture source's unreadable one is (ADR 0037).
@@ -453,7 +461,16 @@ func (w *Watcher) usageLocked(ev *record.Event) []gapRequest {
 			out = append(out, gapRequest{unmetered: true, why: "price table prices no model"})
 		}
 	}
+	w.windowAddLocked(u, 0, unpricedMax)
 	return append(w.unpricedGapLocked(u), out...)
+}
+
+// windowAddLocked puts one response's spend into the window, at the run's wall time now. w.mu must be held.
+func (w *Watcher) windowAddLocked(u ledger.TokenUsage, cost, unpricedMax float64) {
+	if w.win == nil {
+		return
+	}
+	w.win.add(w.win.now(w).Unix()/60, ledger.SatAdd(u.In, u.Out), cost, unpricedMax)
 }
 
 // unpricedGapLocked is the gap, at most once per reason and model, that an unpriced response records.
@@ -506,7 +523,11 @@ func (w *Watcher) tokenBreachLocked() *Breach {
 	// A negative ceiling would convert into an enormous uint64 and waive the budget it asked for;
 	// there is no budget below zero, so it is one.
 	ceiling := max(w.ceiling.Tokens, 0)
-	if got := w.state.Tokens(); got > uint64(ceiling) {
+	got := w.state.Tokens()
+	if w.win != nil {
+		got, _ = w.win.totals(w.win.now(w))
+	}
+	if got > uint64(ceiling) {
 		return &Breach{Which: record.LimitTokens, Value: float64(got), Ceiling: float64(ceiling)}
 	}
 	return nil
@@ -519,7 +540,11 @@ func (w *Watcher) costBreachLocked() *Breach {
 		return nil
 	}
 	ceiling := max(w.ceiling.CostUSD, 0)
-	if cost := w.state.CostUSD + w.state.UnpricedMaxUSD; cost > ceiling {
+	cost := w.state.CostUSD + w.state.UnpricedMaxUSD
+	if w.win != nil {
+		_, cost = w.win.totals(w.win.now(w))
+	}
+	if cost > ceiling {
 		return &Breach{Which: record.LimitCostUSD, Value: cost, Ceiling: ceiling}
 	}
 	return nil

@@ -62,7 +62,7 @@ type hoursData struct {
 	Records    []hourRecord
 	Week       bool
 	// Days are the week's hours added up by local calendar day (the first and last may be part days), DayChart their
-	// bars: the phone view of the week, where 168 hourly bars are under 2 px each and cannot be tapped (N124).
+	// bars: the phone view of the week, where 168 hourly bars are under 2 px each and cannot be tapped.
 	Days     []dayBar
 	DayChart *svgChart
 }

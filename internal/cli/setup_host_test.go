@@ -99,7 +99,7 @@ func TestGuideHostReadyGoldens(t *testing.T) {
 			t.Setenv("TEGO_HOST_KIND", string(host))
 			fakeProgram(t, "python3")
 			t.Chdir(f.Home)
-			code, out, errs := runGuide(t, "3\npython3 bot.py\n1\n1\n")
+			code, out, errs := runGuide(t, "4\npython3 bot.py\n1\n1\n")
 			if code != identity.ExitOK {
 				t.Fatalf("exit %d: %s\n%s", code, out, errs)
 			}

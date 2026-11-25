@@ -30,7 +30,7 @@ RHEL 9 correction: v0.1.0 included the listener outcome hooks, but used the wron
 syscall exits. On RHEL 9's 5.14, root-tier runs declaring `net.listen` failed before the agent started with
 `attach tego_bind_result: cannot create bpf perf link: permission denied`. Ordinary outbound networking without
 `net.listen` did not require that hook. The corrected build uses the individual syscall event's context for bind,
-listen and exec outcomes; it keeps the required listener hooks and their coverage. The RHEL 9 support claim does
+listen and exec outcomes; it keeps the required listener hooks and their coverage. The statement that Tego was tested on RHEL 9 does
 not establish that v0.1.0's listener controls worked. See [GAPS.md](GAPS.md) B5 for the measured boundary.
 RHEL's proc-directory oracle test covers its private `fd` directory; the newer `fdinfo` directory permission
 check is absent there, and the test reports that coverage distinction.
@@ -89,6 +89,41 @@ running kernel's own symbols, not its version. Measured in the test kernels: the
 Fedora 7.0. Other vendor kernels, and older point releases of these, are not measured: run `sudo "$(command -v tego)" doctor` there.
 Doctor states this listener-cleanup exposure where kernel code can be preempted or its preemption mode is unknown;
 an adoption reports detected skips without ending the agent. See [GAPS C53](GAPS.md).
+
+## Platforms checked for v0.2.0
+
+Measured on 2026-11-24 in local virtual machines, with release files built from this release's code the way the
+release workflow builds them. The installer ran from a local folder with the checksum check only, since no signature
+exists for a local build. The tagged build was not rerun on these systems. On each system a new user installed Tego,
+ran `tego doctor` and `tego test`, and made a governed run at tier landlock: one allowed write, one refused write and
+one refused program start, then checked the record and the receipt. As root, the same run was made at each root tier
+the machine offers, and `tego uninstall --yes` ended the row.
+
+| System | Kernel | Tier as a user | Highest tier as root | Checks |
+|---|---|---|---|---|
+| AlmaLinux 9.8 (RHEL 9) | 5.14.0-687.61.1.el9_8 | landlock | bpflsm | 69 passed, 0 failed |
+| Amazon Linux 2023 | 6.1.189-236.400.amzn2023 | landlock | bpflsm | 67 passed, 1 failed (below) |
+| Ubuntu 24.04 | 6.8.0-147-generic | landlock | cgroup | 58 of 58 |
+| Ubuntu 26.04.1 | 7.0.0-38-generic | landlock | cgroup | 56 of 56 |
+| Fedora 44 | 6.19.10-300.fc44 | landlock | bpflsm | 68 of 68 |
+
+Ubuntu has no `bpf` in its boot LSM list, so its root tier is cgroup ([below](#tier-3-on-ubuntu)). The rows on
+AlmaLinux 9.8, Amazon Linux 2023, Ubuntu 24.04 and Fedora 44 also ran the decision plane's load tests and its
+live-block test in a second guest, on the kernel the project keeps for that system (5.14, 6.1, 6.8, and Fedora's 7.0
+for the Fedora row), with and without `bpf` in the LSM list. Ubuntu 26.04 has no such kernel, so it has no plane rows.
+
+The one failed check, on Amazon Linux 2023, was the live-block test's expectation, not the product. Below Landlock ABI
+3 (kernels older than 6.2) the first-tier filter answers a path-based `truncate` with `EPERM` before the decision
+plane's `EACCES`, and on a file system with no user extended attributes the plane's refusal comes before the file
+system's "not supported". The file is refused in every case. The test now accepts those answers, and it passed on Amazon
+Linux 2023's 6.1 kernel and on its 6.12 kernel afterwards.
+
+Two more kinds of row ran on release files built from this release's code. An update from the published v0.1.3 passed on
+Ubuntu 24.04 and on Debian 13 (see Upgrading from v0.1.3 in the [changelog](CHANGELOG.md)). A fresh install, run through
+the release's `install.sh`, passed on Ubuntu 24.04 and Debian 12: `tego doctor --require landlock`, the self-test, three
+first runs (one allowed, one refused a read, one held on a nested `deny_read` file, the case of TOMOYO on Debian),
+the record's checks and the uninstall. The full root test suites (`test/vm/root-suites.sh`) are not part of these
+rows.
 
 ## Platforms checked for v0.1.1
 
@@ -159,8 +194,9 @@ records, with the fixed build too.
 
 v0.1.1's root test suites (`test/vm/root-suites.sh`) do not all pass there. Every failure and both hangs below are
 now explained. Apart from the overlayfs case, which v0.1.1 fixes, each is a bug in a test or a test that assumes a
-host unlike RHEL 9; no product bug was found. Those tests are fixed in v0.2.0: with the fixes, every
-suite that failed or hung there runs to the end and its tests pass, with the skips named below. The suites ran as
+host unlike RHEL 9; no product bug was found. Those tests were fixed after v0.1.1: with the fixes as they stood on
+2026-11-10, every suite that failed or hung there ran to the end and its tests passed, with the skips named below.
+The suites have not been rerun on RHEL 9 for v0.2.0 (its plane tests were, above). The suites ran as
 root in local guests, one suite at a time, not in CI's shards. As of 2026-11-10:
 
 - **Runs:** the first run reached 31 of 33 suites: 5817 top-level tests passed, 14 failed and 247 skipped. The
@@ -235,7 +271,9 @@ grew by up to 9.5 times, and the programs without `bpf_loop` did not change. Fed
 mainline 6.19.10 does, and on Fedora's 7.0.14 and 7.2.9 kernels the programs that call `bpf_loop` verify in at most
 19,834. The likely cause is the stable backport, in 6.19.4, of upstream commit f597664454bd ("bpf: bpf_scc_visit
 instance and backedges accumulation for bpf_loop()"). That is named from a bisection over releases, not isolated: no
-kernel was built without it. The tests' budget is fixed for Linux 6.19.4 to 6.19.y in v0.2.0.
+kernel was built without it. v0.2.0 sets the budget for Linux 6.19.4 to 6.19.y from the measured count plus 10 %, and
+the test passed in guests on seven kernels: the mainline builds 6.18, 6.19.3, 6.19.4, 6.19.10 and 6.19.14, and Fedora's
+7.0 and 7.2. Fedora 44's own 6.19.10 kernel was measured before the change, not after it.
 
 ## Choosing
 
@@ -308,8 +346,10 @@ outside the denied folder is refused at tier bpflsm and at cgroup after plane fa
 no remedy for that case. Remove the duplicate mount, or use a tier and kernel with a decision plane only where
 it holds the whole contract. `tego machine check` says which plane modes the machine offers. When it can see a second
 place for home or another built-in protected target, it names both places and says which mechanisms refuse or
-hold that layout. The run still checks its whole contract at startup. The no-root tier, landlock, retains its
-documented alias limit for another name beneath a folder it lets the agent read.
+hold that layout. The run still checks its whole contract at startup. The no-root tier, landlock, refuses a denied
+file under every other name the mount table gives it (a bind mount, a btrfs top-level volume, WSLg's
+`/mnt/wslg/distro`). In v0.1.3 it did not: that was its stated alias limit. A different file system instance that shows
+the same data is still not recognised (below).
 
 At tier cgroup without a plane mode, a `setuid: true` contract with a `deny_read` or protected-name rule is also
 refused. The built-in secret list adds these rules, so ordinary contracts using it are refused in this combination.

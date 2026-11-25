@@ -25,7 +25,7 @@ func TestStartNextCommandQuotesProject(t *testing.T) {
 	if err := os.Mkdir(app, 0700); err != nil {
 		t.Fatal(err)
 	}
-	code, out, errs := runGuide(t, "3\npython3\n2\n"+app+"\n1\n")
+	code, out, errs := runGuide(t, "4\npython3\n2\n"+app+"\n1\n")
 	if code != identity.ExitOK {
 		t.Fatalf("%d %s %s", code, out, errs)
 	}
@@ -82,7 +82,7 @@ func TestGuideNextStepsRepairThisShell(t *testing.T) {
 				path = bin + ":" + path
 			}
 			t.Setenv("PATH", path)
-			code, out, errs := runGuide(t, "2\n1\n1\n1\n")
+			code, out, errs := runGuide(t, "3\n1\n1\n1\n")
 			if code != identity.ExitOK {
 				t.Fatalf("%d %s %s", code, out, errs)
 			}
@@ -109,7 +109,7 @@ func TestGuideNextStepsRepairThisShell(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Setenv("CODEX_API_KEY", old)
-			code, out, errs := runGuide(t, "2\n2\nnew-token\n1\n1\n1\n")
+			code, out, errs := runGuide(t, "1\n2\n1\nnew-token\n1\n1\n1\n")
 			if code != identity.ExitOK {
 				t.Fatalf("%d %s %s", code, out, errs)
 			}
@@ -135,7 +135,7 @@ func TestGuideNextStepsRepairThisShell(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Setenv("CODEX_API_KEY", "old-token")
-		code, out, errs := runGuide(t, "2\n2\nnew-token\n1\n1\n1\n")
+		code, out, errs := runGuide(t, "1\n2\n1\nnew-token\n1\n1\n1\n")
 		if code != identity.ExitOK {
 			t.Fatalf("%d %s %s", code, out, errs)
 		}

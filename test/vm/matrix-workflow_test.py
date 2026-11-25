@@ -116,7 +116,7 @@ class MatrixWorkflow(unittest.TestCase):
                             cwd=td, env=env, text=True).splitlines()
                         self.assertEqual(dispatched[:2], [row, boot])
                         self.assertEqual(dispatched[4:], list(PACKAGES))
-                        memory = "3G" if row in ("debian-13", "rhel-9") else "2560M"
+                        memory = "3G"  # every row since 2026-11-24: 32 launchers no longer fit 2560M on 6.17 and fedora-7.0
                         self.assertEqual(dispatched[2], "internal/runtime/enforce/cgroup=" + memory)
                         default = 1500
                         overrides = {}

@@ -13,7 +13,7 @@ func TestExtraHostsRetryInField(t *testing.T) {
 	noLogins(t)
 	fakeProgram(t, "python3")
 	t.Chdir(f.Home)
-	code, out, errs := runGuide(t, "3\npython3\n1\n3\n0\nhttps://bad.example\napi.github.com, pypi.org\n")
+	code, out, errs := runGuide(t, "4\npython3\n1\n3\n0\nhttps://bad.example\napi.github.com, pypi.org\n")
 	if code != identity.ExitOK {
 		t.Fatalf("invalid host aborted guide instead of retrying: %d %s %s", code, out, errs)
 	}

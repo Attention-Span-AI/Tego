@@ -2294,7 +2294,7 @@ No behaviour changed.
 - A seccomp refusal of `execveat(AT_EMPTY_PATH)`: closes one spelling, since glibc's `fexecve` falls back to
   `/proc/self/fd/N`, which goes back to the walk.
 
-### N114, 2026-11-24: an unreadable module list stays a refusal; the words say why; a bind of the list file is the design if it is wanted
+### Public issue 76, 2026-11-24: an unreadable module list stays a refusal; the words say why; a bind of the list file is the design if it is wanted
 
 **What the code does when it cannot read the active LSM list.** Two readers, one answer. The supervisor's check of every
 held open (`checkOpenLabelAuthority`, `internal/runtime/supervisor/open_label.go`) reads `lsm_list_modules(2)` first and,
@@ -2323,7 +2323,7 @@ the kernel's own answer, so none may decide a held open; doctor's use of (c) is 
 list came from the kernel log does not mean a held open would pass.
 
 **What changed (words only; no open that was refused is now allowed, and none that was allowed is now refused).**
-`sys.LSMListUnread` turns the two errors into what could not be read and why: `ENOSYS` is "older than Linux 6.8 or a
+`sys.LSMListUnread` (since 2026-11-25 `LSMListUnreadVia`, which adds the list file) turns the two errors into what could not be read and why: `ENOSYS` is "older than Linux 6.8 or a
 filter hides it", `EPERM` from the call is "a seccomp filter outside Tego, such as Docker's default profile", the file
 missing is "securityfs is not mounted here" and the file refused is "a security policy such as docker-default AppArmor".
 The remedy follows the cause: permit `lsm_list_modules` (6.8 and later) or expose a readable list, and on a kernel older
@@ -2332,14 +2332,127 @@ words, and the doctor line says what the unread list stops (tier bpflsm is undec
 the note told a Debian 12 container to "permit lsm_list_modules in the outer seccomp filter", a call that kernel does not
 have. `docs/user/container.md` has the table of what Docker's defaults give on Debian 12 and 13.
 
-**Design if it is wanted for Debian 12 under Docker's defaults to hold opens (not built; needs a guest).** The same shape
-as D55: a machine setting `lsm.list_file` in `/etc/tego/config.yaml` (honoured like `tomoyo.facts_dir`; a user layer's value
-ignored with a warning) names a path at which the administrator bound the host's `/sys/kernel/security/lsm` read-only
-(`-v /sys/kernel/security/lsm:/run/tego-lsm:ro`, a path outside `/sys/kernel/security`; whether `docker-default` allows such a bind is not measured). The reader opens it, passes the
-`fstatfs` securityfs check and the D55 mountinfo check (securityfs, read-only per mount, mount root plus the path below the
-mount point exactly `/lsm`), reads it with a 4 KiB bound and parses it as the kernel writes it. Used only when the syscall
-fails and the kernel's path is unreadable, and the result is exactly the kernel's own file, so it is as trustworthy as the
-kernel's path (mounting securityfs needs `CAP_SYS_ADMIN` in the initial user namespace; a container cannot forge one).
-It would give Debian 12 under Docker's defaults the one remedy it lacks. Owed to build it: the setting and its layer
-rule, the reader and doctor line, unit tests for each wrong file (another securityfs file, a tmpfs copy, a writable bind,
-a link), and a guest row on Debian 12 and 13 with `docker-default` and Docker's seccomp profile in force.
+**A way to hand the list in** was written here as a design (a read-only bind of the host's list) and is built by the
+amendment below, with a second shape (a file the entrypoint writes) that the first measurement showed was needed.
+
+### Public issue 76, 2026-11-25: the list can be handed in (`lsm.list_file`)
+
+**What the first guest run showed.** On Debian 12 and Debian 13 under Docker's defaults the call answered `ENOSYS` (a
+seccomp profile that does not know it, and a Debian 12 kernel that lacks it), and `/sys/kernel/security/lsm` was **not
+there**: the container's own sysfs has no securityfs, `/sys/kernel/security` is an empty directory and no mount of
+securityfs is in `mountinfo`. So the unreadable list is not an AppArmor refusal of a file that exists (the first note
+guessed that, and the review took the guess out); it is a file that is absent. Debian 13 with `seccomp=unconfined`
+reached the kernel (`EFAULT` for a null buffer), so the call works there; the stock Debian 13 container is as stuck as
+Debian 12's. A bind of the host's file needs the operator to ask for it, and the documented container flow
+(`compose.yaml`: the entrypoint starts as root with `SYS_ADMIN`) gives the one process that can read the list the means to
+do so, for a moment, before it becomes the agent's user.
+
+**Decision.** A machine setting `lsm.list_file` in `/etc/tego/config.yaml` (honoured like `tomoyo.facts_dir`; a user layer's
+value is ignored with a warning; default empty; a value that is not a clean absolute path refuses every read and never
+falls back to "no file") names a third source of the active module list. The supervisor asks it only after
+`lsm_list_modules(2)` and `/sys/kernel/security/lsm` have both failed, so a machine that can read the kernel's answer
+never reads a file instead. Nothing else changes: the same module names, the same per-module checks, the same refusal
+(`held-label-unavailable`) when no source answers. The file is read afresh on every held open, with the credentials of
+the trapped task; no observation is kept (about 50 microseconds a read on the development machine, added only on
+machines where both kernel ways failed). The list it gives decides held opens and nothing else: `ReadLSMState`, which
+every tier decision reads, is unchanged, so a file can never make tier bpflsm available (a `bpf` name in a wrong list
+would attach programs that never run, ARCHITECTURE section 10). `internal/platform/lsmlist` is the reader.
+
+**Who may supply the list, and what Tego believes.** Two shapes, told apart by the filesystem the file is on:
+
+1. *The kernel's own bytes.* The host's `/sys/kernel/security/lsm` bound read-only into the container
+   (`-v /sys/kernel/security/lsm:/run/tego-kernel-lsm:ro`, a path outside `/sys/kernel/security`). The file must be on securityfs
+   (`fstatfs`), on a mount that is read-only, whose file in its filesystem is exactly `/lsm` (mount root joined with the path
+   below the mount point, D55's check, shared in `tomoyo.CheckSecurityfsBind`), and reached without a link. Securityfs is one
+   kernel instance and mounting it needs `CAP_SYS_ADMIN` in the initial user namespace, so what passes is the kernel's file:
+   always current, nothing to match to a boot. Another securityfs file bound in its place, a tmpfs copy and a writable bind
+   are refused. Whether Docker's default AppArmor profile lets a container read such a bind was **not** measured on a
+   guest before this change; the guest row does (below).
+2. *What root wrote in this boot.* The container's entrypoint, while it is still root, reads the list (the kernel's file, or
+   securityfs mounted read-only on a private directory for the moment, which needs `CAP_SYS_ADMIN` and a profile that allows
+   `mount`, as the cgroup remount it already does) and writes `/run/tego-lsm/lsm-list`, in a directory of its own, never `/run/tego`: that is tego's host state directory, which
+   `hoststate.Open` accepts only as root's and mode 0700, and the entrypoint sets the list's directory to 0755 at every
+   start (a first draft kept the list in `/run/tego` and would have cost a root `tego` in the same image its rootmark, its
+   uprobe library locks and the cgroup backend's state directory, while a `chmod 0700` that doctor would then suggest would
+   have shut the unprivileged user out of the list): three lines (`tego-lsm-list 1`,
+   `boot_id <this boot's id>`, `lsm <list>`), mode 0644, in a directory of mode 0755, written whole under another name
+   and renamed into place; it removes a file left from an earlier start when it cannot read the list now. Tego believes
+   it only when, afresh at every read: every directory from `/` to the file is a directory (no link: each step is an
+   `openat` with `O_NOFOLLOW`, the file itself with `O_NOFOLLOW|O_NONBLOCK`) owned by uid 0 and not writable by group or
+   others; the file is a regular file, owned by uid 0, not writable by group or others, on a filesystem that is not FUSE,
+   NFS, CIFS, SMB, 9p, Ceph, AFS or vboxsf (whose owner and content another program chooses); it is at most 4 KiB, ends in a
+   newline, is exactly the three lines with the version it knows, names the boot id in `/proc/sys/kernel/random/boot_id`,
+   and its list is names the kernel prints (lower case, digits, underscore), none twice, at most 64, with `capability` among
+   them (every kernel has it active, so a list without it is cut or invented).
+
+**Where the agent stands (an attacker who controls the agent but not the container's start).** The agent runs as the
+entrypoint's unprivileged user with no capability and `no_new_privs`. It cannot write the file (not its owner, no write
+bit for group or others), cannot rename or replace a directory above it (root's, not writable), cannot put a link in the
+path (refused), cannot mount over it (needs `CAP_SYS_ADMIN`; a namespace it makes for itself changes its own view, not the
+supervisor's, which reads in its own), and cannot make a stale file pass (the boot id must be this boot's). The check also
+runs against the task the list is read for: it is refused when any of the task's four user ids is 0 for shape 2 (a saved id
+of 0 lets it take 0 back), and, for either shape, when its **permitted** capabilities hold `CAP_CHOWN`, `CAP_DAC_OVERRIDE`,
+`CAP_FOWNER` or `CAP_SYS_ADMIN`, which could rewrite, re-own or mount over the file. The permitted set, not the effective
+one (which a first draft read): a task that holds `CAP_DAC_OVERRIDE` permitted can rewrite the file and then clear its
+effective set with `capset` before the open that is trapped, so the effective set would read empty at the check; the
+permitted set contains the effective and the ambient sets, and the peer check (`internal/platform/peer`) reads it for the
+same reason. A task that is root in the container
+without the entrypoint's drop (`docker run` as root, no entrypoint) therefore gets no list from a file root owns, which is
+right: it could rewrite the file. What the agent could do **at the container's start** (a hostile image or entrypoint, an
+operator who mounts an agent-writable volume at `/run/tego-lsm`) is not a case the check can see through; a volume the agent
+writes is refused (writable by others, or not root's), and an image whose root-run code lies is the trust every container
+already places in its image.
+
+**What a wrong or stale list would let through, by decision.** The list's names pick which labels a held open compares
+(`checkOpenLabelAuthority`): `apparmor`, `selinux` and `tomoyo` each turn on their per-task comparison (attr/current and,
+for SELinux creation, fscreate; AppArmor's namespace depth; TOMOYO's domain and policy facts), and `smack` turns on the
+refusal that Smack cannot be established. **A missing name is the dangerous direction**: a list without `apparmor` on a
+host that runs it lets the deputy complete an open under its own AppArmor profile that the agent's profile would deny, with
+no comparison; likewise `selinux` (the domain), `tomoyo` (the domain and its never-updated proof) and `smack` (the refusal).
+The names `capability`, `landlock`, `yama`, `lockdown`, `bpf`, `ima`, `evm`, `integrity`, `loadpin`, `safesetid` and `ipe`
+carry no per-task label here, so adding or omitting them changes nothing for a held open. **An extra name is the safe
+direction**: an `apparmor`, `selinux` or `tomoyo` the machine does not run makes the attribute or fact reads fail or compare
+equal (refusing, or admitting nothing the agent lacks), an `smack` refuses, and an unknown name refuses
+(`unsupported active LSM`). That asymmetry is why the file is trusted only on the stated provenance and a boot id, never on
+a path alone, and why no key supplies a list inline: an image's config cannot know the host's modules, and a list baked into
+an image would be right only on the host it was built on (rejected: `lsm.list: [...]`, with no boot to match it to).
+
+**The list is not the only fact (found when the guest row was designed).** A Debian guest's own list is
+`lockdown,capability,landlock,yama,apparmor,tomoyo,bpf` (Debian 13 adds `ipe,ima,evm`), so a held open in a container there
+also reads TOMOYO's facts (D55: `tomoyo.facts_dir`, a read-only bind of the host's directory) and AppArmor's namespace depth
+(`/sys/kernel/security/apparmor/.ns_level`, unreadable in a container, so the contract's `fs.apparmor_assume_root_namespace:
+true`). The image's config names only the list file, since most hosts run neither module, and the guide says what a host
+that runs them adds. The row takes each of the three prerequisites away in turn, and the list is the only difference between
+the working run and the refused one.
+
+**If the entrypoint cannot read the list either.** There is nothing to hand in. It says why and starts (`TEGO_LSM_LIST=yes`
+stops the container instead), and a stale file from an earlier start is removed. The documented fix is the compose file's
+settings: `cap_add: [SYS_ADMIN]` and `security_opt: [apparmor=unconfined]` (what the cgroup remount already needs), which
+let the entrypoint mount securityfs; or a host kernel 6.8 or later with a seccomp profile that allows
+`lsm_list_modules(2)`, where Tego reads the kernel's answer itself and needs no file; or the read-only bind of the host's
+list (shape 1) named in a machine config; or a contract that holds no opens.
+
+**Words.** `sys.LSMListUnreadVia` adds the file to the cause and the remedy (what is wrong with the named file first; with
+none named, that a list can be handed in and how). The supervisor's error, the launch note (`runtime.warnHeldLabel`, now
+reading `doctor.ReadHeldOpenList`: the call, the file, the list file, and not the kernel log), and `tego doctor`'s `lsm`
+row use them. The row is **skipped**, not passed, when the list file answers (the tier is decided from the kernel's answer
+only, so whether bpf is active stays unknown); and a row that passes from the kernel log now says that held opens do not
+read the kernel log and are refused, which it used to leave unsaid.
+
+**Rejected.** Reading the list from `/proc/cmdline`, `/proc/<pid>/attr` or the kernel log (above). An assume-style opt-in that
+replaces the list with "none": it would make every label comparison vanish, as the TOMOYO assume key would (D55). Keeping
+the file's content between opens: the list cannot change within a boot, but the file's checks (owner, mode, path) can, and
+each read costs microseconds. Trusting a file by its path or a hash recorded in the image: neither says it is this boot's.
+
+**Proof built.** Unit tests for every refusal of a bad file (`internal/platform/lsmlist`: missing, directory, pipe, link as
+the file, link in the path, a file where a directory should be, another owner, group or others able to write the file or a
+directory above it, FUSE and the other refused filesystems, a path outside the walk, every malformed shape, another boot,
+an unreadable boot id, bad and duplicate and too many names, no `capability`, too long; the kernel's shape with a writable
+bind or a wrong file; the task checks: each of the four user ids at 0, each of the four capabilities, unreadable and
+malformed status), a mutation run (seventeen removals of one check each, every one caught), the supervisor's use of the
+file only after the two kernel ways fail and with the trapped task's id, the missing-name consequence pinned
+(`TestHandedInListIsUsedOnlyWhenTheKernelsTwoWaysFail`), the entrypoint over a stand-in tree (the kernel's file, securityfs
+mounted for a moment, every case it cannot read, a stale file removed, the bytes it writes parsed by the reader's own parser),
+and the config layer rule. Owed in a guest (the guest row for public issue 76): Docker's defaults on Debian 12 and 13 with the
+documented flow: held opens work when the list was handed in, are refused with the true words when it was not, and a list
+file the agent's uid can write is refused; the read-only bind of the host's list under `docker-default`.

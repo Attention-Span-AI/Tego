@@ -24,10 +24,6 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
-// planeRetryHook is the hook whose outside leg the test makes fail: socket_create is in every kernel's plane, and its
-// outside leg is a plain socket(2) of doctor's own that passes.
-const planeRetryHook = "socket_create"
-
 // TestIntegrationPlaneProbeRetryOnARealKernel is the retry (planeretry.go, ADR 0024's amendment of 2026-11-24)
 // on a real kernel, as root, built with tegotesthooks: one probe row is made to fail on its outside leg
 // (PlaneRowForceForTest) while the mode's programs are really loaded, attached and run, so the second probe of one
@@ -265,14 +261,10 @@ func runDoctorForRetry(t *testing.T, ctx context.Context) *Report {
 	return rep
 }
 
-// planeRetryRow is the forced hook's row among a mode's rows.
-func planeRetryRow(rows []HookResult) *HookResult {
-	i := slices.IndexFunc(rows, func(r HookResult) bool { return strings.HasSuffix(r.Hook, "/"+planeRetryHook) })
-	if i < 0 {
-		return nil
-	}
-	return &rows[i]
-}
+// planeRetryRow is the forced hook's row among a mode's rows, found by the hook's own name in the mode of the rows
+// (planeRowOfHook), as the probe's forcing finds it: a row is "lsm/socket_create" in LSM mode and
+// "fmod_ret/security_socket_create" in fmod_ret mode.
+func planeRetryRow(rows []HookResult) *HookResult { return planeRowOfHook(rows, planeRetryHook) }
 
 // readRunCacheEntry is the run-probe cache's entry under key as the file holds it, an empty one when there is none.
 func readRunCacheEntry(t *testing.T, c *runCache, k runCacheKey) runCacheEntry {

@@ -264,3 +264,287 @@ func TestPlaneBlocksDormantBlockWaitsForItsPin(t *testing.T) {
 		}
 	}
 }
+
+// TestPlaneBlocksUnblockForAWhileLoosensKeyedRows: the unblock for a while is always of a block already in force, whose
+// rows the kernel holds with from 0. The sync that sees its from must rewrite those rows with the pin (the block's held
+// objects take the block's instant, never the stale in-force one), and the sync after the instant puts them in force
+// again. A second block in force on the same object keeps that object refused: the earlier instant of two blocks wins.
+func TestPlaneBlocksUnblockForAWhileLoosensKeyedRows(t *testing.T) {
+	root := t.TempDir()
+	f := filepath.Join(root, "f.txt")
+	if err := os.WriteFile(f, []byte("f"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	now := liveblock.Clock{Wall: time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC), Boot: time.Hour}
+	from := now.Wall.Add(10 * time.Minute)
+	pin := now.Boot + 10*time.Minute
+	inForce := liveblock.Entry{Kind: liveblock.KindWrite, Value: f}
+	dormant := inForce
+	dormant.From = from
+	pins := map[string]time.Duration{liveblock.DeadlineKey(dormant.Key(), from): pin}
+	w := &fakeBlockWriter{}
+	p := newPlaneBlocks(w, &liveRules{}, nil, true, nil)
+	p.sync([]liveblock.Entry{inForce}, nil, nil, nil, now)
+	if r := w.rows[statKey(t, f)]; r.From != 0 || r.Write == 0 {
+		t.Fatalf("the block in force: target row %+v, want a write id and from 0", r)
+	}
+	p.sync([]liveblock.Entry{dormant}, nil, nil, pins, now)
+	for k, r := range w.rows {
+		if r.From != uint64(pin) {
+			t.Errorf("after the unblock for a while the row %+v holds from %d, want the pin %d", k, r.From, uint64(pin))
+		}
+	}
+	begun := liveblock.Clock{Wall: from.Add(time.Second), Boot: pin + time.Second}
+	p.sync([]liveblock.Entry{dormant}, nil, nil, pins, begun)
+	for k, r := range w.rows {
+		if r.From != 0 {
+			t.Errorf("after the instant the row %+v holds from %d, want 0 (in force)", k, r.From)
+		}
+	}
+	// Another block in force on the same file: the file's row stays in force while the first is dormant.
+	other := liveblock.Entry{Kind: liveblock.KindRead, Value: f}
+	w2 := &fakeBlockWriter{}
+	p2 := newPlaneBlocks(w2, &liveRules{}, nil, true, nil)
+	p2.sync([]liveblock.Entry{inForce, other}, nil, nil, nil, now)
+	p2.sync([]liveblock.Entry{dormant, other}, nil, nil, pins, now)
+	if r := w2.rows[statKey(t, f)]; r.From != 0 {
+		t.Errorf("a file another block holds in force: target row %+v, want from 0", r)
+	}
+}
+
+// TestPlaneBlocksRunOutOfIDsRefuseTheClassWhole: a run gives each block an id once (bpf.PlaneBlockIDMax of them, 14 bits
+// of a rule index), and the block that finds none left cannot be named in a row, so its classes are refused whole,
+// named by the last id, while every block that has an id stays keyed. The blocks it displaced keep their rows and the
+// class is released once the block is removed.
+func TestPlaneBlocksRunOutOfIDsRefuseTheClassWhole(t *testing.T) {
+	root := t.TempDir()
+	for _, d := range []string{"a", "b", "c"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := liveblock.Clock{Wall: time.Now(), Boot: time.Hour}
+	w := &fakeBlockWriter{}
+	rules := &liveRules{}
+	p := newPlaneBlocks(w, rules, nil, true, nil)
+	p.next = bpf.PlaneBlockIDMax - 2 // two ids left
+	a := liveblock.Entry{Kind: liveblock.KindWrite, Value: filepath.Join(root, "a")}
+	b := liveblock.Entry{Kind: liveblock.KindRead, Value: filepath.Join(root, "b")}
+	c := liveblock.Entry{Kind: liveblock.KindWrite, Value: filepath.Join(root, "c")}
+	p.sync([]liveblock.Entry{a, b}, nil, nil, nil, now)
+	if st := w.states[len(w.states)-1]; st.Over != 0 || st.OverRead != 0 || st.OverWrite != 0 {
+		t.Fatalf("state %+v with an id for each block, want no overflow", st)
+	}
+	if ida, idb := p.ids[a.Key()], p.ids[b.Key()]; ida != bpf.PlaneBlockIDMax-1 || idb != bpf.PlaneBlockIDMax {
+		t.Fatalf("ids %d and %d, want the last two (%d, %d)", ida, idb, bpf.PlaneBlockIDMax-1, bpf.PlaneBlockIDMax)
+	}
+	p.sync([]liveblock.Entry{a, b, c}, nil, nil, nil, now)
+	st := w.states[len(w.states)-1]
+	if st.Over != bpf.PlaneBlockWrite || st.OverWrite != bpf.PlaneBlockIDMax || st.OverRead != 0 {
+		t.Errorf("state %+v with no id left for a write block, want the write class in overflow named by %d", st, bpf.PlaneBlockIDMax)
+	}
+	if _, ok := p.ids[c.Key()]; ok {
+		t.Errorf("the block that found no id was given one: %v", p.ids)
+	}
+	if _, ok := rules.rule(0); ok {
+		t.Error("a rule is named for id 0")
+	}
+	for _, e := range []liveblock.Entry{a, b} {
+		if _, ok := w.rows[statKey(t, e.Value)]; !ok {
+			t.Errorf("the block %s that has an id lost its row when another found none", e.Value)
+		}
+	}
+	// Known limit, stated: the overflow is named by the last id, which is also the last block's own, so a refusal
+	// naming it may be that block's or the overflow's; the rule the recorder gives it is that block's.
+	if r, ok := rules.rule(bpf.PlaneBlockIDMax); !ok || r != b.Rule() {
+		t.Errorf("rule of id %d is %q, want the last block's %q", bpf.PlaneBlockIDMax, r, b.Rule())
+	}
+	// The block removed, the class is no longer refused whole.
+	p.sync([]liveblock.Entry{a, b}, nil, nil, nil, now)
+	if st := w.states[len(w.states)-1]; st.Over != 0 || st.OverWrite != 0 {
+		t.Errorf("state %+v after the block that found no id was removed, want no overflow", st)
+	}
+}
+
+// liftFixture is a folder, a file in it, a clock and the pins of an unblock for a while at two instants.
+type liftFixture struct {
+	root, f string
+	now     liveblock.Clock
+}
+
+func newLiftFixture(t *testing.T) liftFixture {
+	t.Helper()
+	root := t.TempDir()
+	f := filepath.Join(root, "f.txt")
+	if err := os.WriteFile(f, []byte("f"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return liftFixture{root: root, f: f, now: liveblock.Clock{Wall: time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC), Boot: time.Hour}}
+}
+
+// lift is e lifted for d from the fixture's now, and the pin map that gives its instant.
+func (x liftFixture) lift(e liveblock.Entry, d time.Duration) (liveblock.Entry, map[string]time.Duration, uint64) {
+	e.From = x.now.Wall.Add(d)
+	pin := x.now.Boot + d
+	return e, map[string]time.Duration{liveblock.DeadlineKey(e.Key(), e.From): pin}, uint64(pin)
+}
+
+// TestPlaneBlocksLiftOneOfTwoBlocksOnAKey: a block lifted for a while never loosens a row another block in force also
+// needs. A folder block in force over a file block lifted for a while: the folder's row and every guard row keep from 0,
+// and only the row that belongs to the lifted block alone takes the pin.
+func TestPlaneBlocksLiftOneOfTwoBlocksOnAKey(t *testing.T) {
+	x := newLiftFixture(t)
+	folder := liveblock.Entry{Kind: liveblock.KindWrite, Value: x.root}
+	file := liveblock.Entry{Kind: liveblock.KindWrite, Value: x.f}
+	lifted, pins, pin := x.lift(file, 10*time.Minute)
+	for _, order := range []string{"folder first", "file first"} {
+		w := &fakeBlockWriter{}
+		p := newPlaneBlocks(w, &liveRules{}, nil, true, nil)
+		inForce := []liveblock.Entry{folder, file}
+		during := []liveblock.Entry{folder, lifted}
+		if order == "file first" {
+			inForce = []liveblock.Entry{file, folder}
+			during = []liveblock.Entry{lifted, folder}
+		}
+		p.sync(inForce, nil, nil, nil, x.now)
+		p.sync(during, nil, nil, pins, x.now)
+		fk, dk := statKey(t, x.f), statKey(t, x.root)
+		if len(w.rows) < 3 {
+			t.Fatalf("%s: %d rows, want the file, the folder and the guards above it", order, len(w.rows))
+		}
+		for k, r := range w.rows {
+			want := uint64(0)
+			if k == fk {
+				want = pin
+			}
+			if r.From != want {
+				t.Errorf("%s: row %+v (folder %v, file %v) holds from %d, want %d", order, k, k == dk, k == fk, r.From, want)
+			}
+		}
+		if r := w.rows[fk]; r.Write != p.ids[file.Key()] || r.Write == 0 {
+			t.Errorf("%s: the lifted file's row %+v, want the file block's write id", order, r)
+		}
+		if r := w.rows[dk]; r.Write != p.ids[folder.Key()] || r.Write == 0 {
+			t.Errorf("%s: the folder's row %+v, want the folder block's write id and from 0", order, r)
+		}
+	}
+}
+
+// TestPlaneBlocksLiftedWriteBesideReadInForce: a read block in force and a write block lifted for a while on one file
+// share the file's row, which keeps from 0 and carries the read id. Known limit, stated: the row has one from for read,
+// write and guard together and merge keeps the write id the lifted block gave, so the kernel keeps refusing writes
+// there during the window; it never refuses less than the block in force asks.
+func TestPlaneBlocksLiftedWriteBesideReadInForce(t *testing.T) {
+	x := newLiftFixture(t)
+	read := liveblock.Entry{Kind: liveblock.KindRead, Value: x.f}
+	write := liveblock.Entry{Kind: liveblock.KindWrite, Value: x.f}
+	lifted, pins, _ := x.lift(write, 10*time.Minute)
+	w := &fakeBlockWriter{}
+	p := newPlaneBlocks(w, &liveRules{}, nil, true, nil)
+	p.sync([]liveblock.Entry{read, write}, nil, nil, nil, x.now)
+	p.sync([]liveblock.Entry{read, lifted}, nil, nil, pins, x.now)
+	r := w.rows[statKey(t, x.f)]
+	if r.From != 0 {
+		t.Errorf("the shared row %+v holds from %d, want 0", r, r.From)
+	}
+	if r.Read == 0 || r.Read != p.ids[read.Key()] {
+		t.Errorf("the shared row %+v, want the read block's id %d", r, p.ids[read.Key()])
+	}
+	if r.Write != p.ids[write.Key()] || r.Write == 0 {
+		t.Errorf("the shared row %+v, want the lifted write block's id %d too (writes stay refused in the window)", r, p.ids[write.Key()])
+	}
+}
+
+// TestPlaneBlocksLiftedThenBlockedAgainBeforeTheWindowEnds: a block lifted for a while and put back in force before the
+// instant reads from 0 at the next sync, and stays so after the instant.
+func TestPlaneBlocksLiftedThenBlockedAgainBeforeTheWindowEnds(t *testing.T) {
+	x := newLiftFixture(t)
+	file := liveblock.Entry{Kind: liveblock.KindWrite, Value: x.f}
+	lifted, pins, pin := x.lift(file, 10*time.Minute)
+	w := &fakeBlockWriter{}
+	p := newPlaneBlocks(w, &liveRules{}, nil, true, nil)
+	p.sync([]liveblock.Entry{file}, nil, nil, nil, x.now)
+	p.sync([]liveblock.Entry{lifted}, nil, nil, pins, x.now)
+	if r := w.rows[statKey(t, x.f)]; r.From != pin {
+		t.Fatalf("lifted: the file's row %+v, want from %d", r, pin)
+	}
+	soon := liveblock.Clock{Wall: x.now.Wall.Add(time.Minute), Boot: x.now.Boot + time.Minute}
+	p.sync([]liveblock.Entry{file}, nil, nil, nil, soon)
+	for k, r := range w.rows {
+		if r.From != 0 {
+			t.Errorf("blocked again: the row %+v holds from %d, want 0", k, r.From)
+		}
+	}
+	after := liveblock.Clock{Wall: lifted.From.Add(time.Second), Boot: time.Duration(pin) + time.Second}
+	p.sync([]liveblock.Entry{file}, nil, nil, nil, after)
+	for k, r := range w.rows {
+		if r.From != 0 {
+			t.Errorf("after the old instant: the row %+v holds from %d, want 0", k, r.From)
+		}
+	}
+}
+
+// TestPlaneBlocksLiftedTwiceTakesTheLatestInstant: lifting a block a second time, for a longer or a shorter while, gives
+// the rows the new instant at the next sync (a block's own rows follow its current from, not the earlier of the two).
+// Pinned so that a change of that rule is noticed.
+func TestPlaneBlocksLiftedTwiceTakesTheLatestInstant(t *testing.T) {
+	x := newLiftFixture(t)
+	file := liveblock.Entry{Kind: liveblock.KindWrite, Value: x.f}
+	for _, tc := range []struct {
+		name          string
+		first, second time.Duration
+	}{
+		{"later then earlier", 20 * time.Minute, 5 * time.Minute},
+		{"earlier then later", 5 * time.Minute, 20 * time.Minute},
+	} {
+		w := &fakeBlockWriter{}
+		p := newPlaneBlocks(w, &liveRules{}, nil, true, nil)
+		p.sync([]liveblock.Entry{file}, nil, nil, nil, x.now)
+		e1, pins1, pin1 := x.lift(file, tc.first)
+		p.sync([]liveblock.Entry{e1}, nil, nil, pins1, x.now)
+		if r := w.rows[statKey(t, x.f)]; r.From != pin1 {
+			t.Errorf("%s: after the first lift the row %+v holds from %d, want %d", tc.name, r, r.From, pin1)
+		}
+		e2, pins2, pin2 := x.lift(file, tc.second)
+		p.sync([]liveblock.Entry{e2}, nil, nil, pins2, x.now)
+		for k, r := range w.rows {
+			if r.From != pin2 {
+				t.Errorf("%s: after the second lift the row %+v holds from %d, want %d", tc.name, k, r.From, pin2)
+			}
+		}
+	}
+}
+
+// TestPlaneBlocksMovedObjectOfABlockInForceStaysRefused: a block in force keeps the object it keyed wherever it has
+// moved; another block lifted for a while on that object's new name must not loosen the row.
+func TestPlaneBlocksMovedObjectOfABlockInForceStaysRefused(t *testing.T) {
+	for _, order := range []string{"moved name's block first", "block in force first"} {
+		x := newLiftFixture(t)
+		g := filepath.Join(x.root, "g.txt")
+		named := liveblock.Entry{Kind: liveblock.KindWrite, Value: x.f}
+		other := liveblock.Entry{Kind: liveblock.KindWrite, Value: g}
+		lifted, pins, _ := x.lift(other, 10*time.Minute)
+		w := &fakeBlockWriter{}
+		p := newPlaneBlocks(w, &liveRules{}, nil, true, nil)
+		p.sync([]liveblock.Entry{named}, nil, nil, nil, x.now)
+		ino := statKey(t, x.f)
+		if err := os.Rename(x.f, g); err != nil {
+			t.Fatal(err)
+		}
+		inForce := []liveblock.Entry{named, other}
+		during := []liveblock.Entry{named, lifted}
+		if order == "moved name's block first" {
+			inForce = []liveblock.Entry{other, named}
+			during = []liveblock.Entry{lifted, named}
+		}
+		p.sync(inForce, nil, nil, nil, x.now)
+		p.sync(during, nil, nil, pins, x.now)
+		if statKey(t, g) != ino {
+			t.Fatalf("%s: the moved file is not the keyed inode", order)
+		}
+		r := w.rows[ino]
+		if r.From != 0 || r.Write == 0 {
+			t.Errorf("%s: the moved object's row %+v, want from 0 and a write id", order, r)
+		}
+	}
+}

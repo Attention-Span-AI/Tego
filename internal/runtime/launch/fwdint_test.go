@@ -5,6 +5,7 @@ package launch
 import (
 	"net"
 	"os"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ type provenanceRig struct {
 	launcherIn   chan os.Signal
 	outerIn      chan os.Signal
 	outerHandled chan os.Signal // what the outer process would forward by kill(2)
+	delivering   sync.Mutex     // held while one send reaches both processes: the outer loop starts nothing until it is let go
 	stop         chan struct{}
 	stopped      chan struct{}
 }
@@ -35,6 +37,7 @@ func newProvenanceRig(t *testing.T) *provenanceRig {
 			case <-r.stop:
 				return
 			case s := <-r.outerIn:
+				r.afterDelivery()
 				if IsMarker(s) {
 					continue
 				}
@@ -42,6 +45,7 @@ func newProvenanceRig(t *testing.T) *provenanceRig {
 					r.outerHandled <- s
 				}
 			case <-r.gate.Queries():
+				r.afterDelivery()
 				for _, o := range r.gate.Answer(r.outerIn) {
 					r.outerHandled <- o
 				}
@@ -63,7 +67,22 @@ func newProvenanceRig(t *testing.T) *provenanceRig {
 	return r
 }
 
+// afterDelivery waits for a send to both processes that is in progress (see send).
+func (r *provenanceRig) afterDelivery() {
+	r.delivering.Lock()
+	defer r.delivering.Unlock()
+}
+
+// A group-directed signal is pending in both processes before either one's loop looks at its own: the kernel sets it on
+// each before kill(2) returns, and each process then reads it ahead of the marker it queues for itself (a standard
+// signal is taken before a real-time one). Two channel sends are not that, so the outer loop is held while both are made (afterDelivery):
+// a test goroutine descheduled between them (a loaded runner under the race detector) would otherwise be two separate
+// sends, and the protocol is right to count them as two.
 func (r *provenanceRig) send(to string, sig syscall.Signal) {
+	if to == "group" {
+		r.delivering.Lock()
+		defer r.delivering.Unlock()
+	}
 	if to != "outer" {
 		r.launcherIn <- sig
 	}

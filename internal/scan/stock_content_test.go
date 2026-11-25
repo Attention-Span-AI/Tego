@@ -61,7 +61,7 @@ func TestStockUnitContentCompatibility(t *testing.T) {
 					}
 					err = os.Symlink(target, path)
 				case "file":
-					content, readErr := os.ReadFile(filepath.Join(filepath.Dir(manifest), "root", entry.Path))
+					content, readErr := os.ReadFile(filepath.Join(filepath.Dir(manifest), "root", storedFixtureName(entry.Path)))
 					if readErr != nil {
 						t.Fatal(readErr)
 					}
@@ -88,6 +88,9 @@ func TestStockUnitContentCompatibility(t *testing.T) {
 			}
 			if files < 150 {
 				t.Fatalf("fixture lost original files: %d", files)
+			}
+			if filepath.Base(filepath.Dir(manifest)) == "fedora-44-workstation" {
+				requireEscapedNames(t, base, 8)
 			}
 
 			o := commandOptions(t)

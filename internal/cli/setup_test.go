@@ -46,6 +46,9 @@ func ownShell(t *testing.T) {
 // root suite), and as GitHub's runner user uid 1001.
 const danaUID = 1000
 
+// demoRuns is what the demonstration agent's stand-in run was asked to run: the project folder and the agent's name.
+var demoRuns []string
+
 // onFixture points every machine read of this test at fixture f, as `tego setup` run by its user from its agent's
 // folder, in the user's own shell (ownShell): the machine config is f's file alone, the passwd home is f's home, the
 // chain anchor is f's, and the probe, the clock and the host are the fixture's. It returns the fixture.
@@ -65,6 +68,13 @@ func onFixture(t *testing.T, name string) *guidetest.Fixture {
 		return src, f.Home, diags
 	}
 	useAnchor(t, f.Anchor)
+	prevDemo := guideDemoRun
+	guideDemoRun = func(_ context.Context, dir, agent string) error {
+		demoRuns = append(demoRuns, dir+" "+agent)
+		return nil
+	}
+	demoRuns = nil
+	t.Cleanup(func() { guideDemoRun = prevDemo })
 	prevProbe, prevNow, prevInputs := setupProbe, setupNow, setupInputs
 	setupProbe = func(context.Context, *config.Machine) (probeAnswer, error) {
 		return probeAnswer{tier: backend.Tier(f.Probe.Tier), fix: f.Probe.FirstFix,

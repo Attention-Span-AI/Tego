@@ -836,7 +836,7 @@ func TestEffective(t *testing.T) {
 	for _, v := range values {
 		byKey[v.Key] = v
 	}
-	if len(values) != 35 {
+	if len(values) != 36 {
 		t.Errorf("%d values", len(values))
 	}
 	cases := []struct {

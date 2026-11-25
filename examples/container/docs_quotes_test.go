@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// TestContainerGuideQuotesTheRefusalTheProductPrints (N123): on Docker's defaults the cgroup mount is read-only and
+// TestContainerGuideQuotesTheRefusalTheProductPrints: on Docker's defaults the cgroup mount is read-only and
 // `tego run` refuses before it starts the agent. A guest run printed
 // "no enforcement tier available on this machine [tier-unavailable] missing for landlock: cgroupv2: cgroup: no
 // delegated cgroup v2 subtree for uid ...", not "runtime: cgroup: ...", which the guide had quoted. Each fragment the
@@ -36,7 +36,32 @@ func TestContainerGuideQuotesTheRefusalTheProductPrints(t *testing.T) {
 	}
 }
 
-// TestInstallContainerSectionVerifiesTheRecord (N123): the install guide's container section ends with a step that
+// TestContainerGuideQuotesTheListHandIn: the guide's account of the handed-in security-module list quotes words
+// the entrypoint and Tego print, names the setting and the file the image's config names, and each check it lists is one
+// the reader still makes. Line breaks in the guide do not matter.
+func TestContainerGuideQuotesTheListHandIn(t *testing.T) {
+	guide := strings.Join(strings.Fields(readText(t, "../../docs/user/container.md")), " ")
+	for _, q := range []struct{ quote, file, holds string }{
+		{"tego-entrypoint: no security-module list handed in:", "tego-entrypoint.sh", `say "no security-module list handed in: $LSM_LIST_WHY"`},
+		{"held file opens read this list", "../../internal/doctor/lsm.go", "held file opens read this list"},
+		{"whether `bpf` is active is unknown", "../../internal/doctor/lsm.go", "whether bpf is an active LSM is unknown"},
+		{"`TEGO_LSM_LIST`", "tego-entrypoint.sh", "TEGO_LSM_LIST"},
+		{"/run/tego-lsm/lsm-list", "config.yaml", "list_file: /run/tego-lsm/lsm-list"},
+		{"/run/tego-lsm/lsm-list", "tego-entrypoint.sh", "/run/tego-lsm/lsm-list"},
+		{"`CAP_CHOWN`, `CAP_DAC_OVERRIDE`, `CAP_FOWNER` or `CAP_SYS_ADMIN`", "../../internal/platform/lsmlist/lsmlist.go", `{0, "CAP_CHOWN"}, {1, "CAP_DAC_OVERRIDE"}, {3, "CAP_FOWNER"}, {21, "CAP_SYS_ADMIN"}`},
+		{"the **boot id** of the running kernel", "../../internal/platform/lsmlist/lsmlist.go", "/proc/sys/kernel/random/boot_id"},
+		{"bind the host's list into the container read-only", "../../internal/platform/lsmlist/lsmlist.go", `checkBind(p, f, "/lsm")`},
+	} {
+		if !strings.Contains(guide, q.quote) {
+			t.Errorf("docs/user/container.md no longer says %q", q.quote)
+		}
+		if src := readText(t, q.file); !strings.Contains(src, q.holds) {
+			t.Errorf("the guide says %q but %s no longer holds %q", q.quote, q.file, q.holds)
+		}
+	}
+}
+
+// TestInstallContainerSectionVerifiesTheRecord: the install guide's container section ends with a step that
 // reads and checks the run's record from a fresh container, with the user and the two volumes it needs.
 func TestInstallContainerSectionVerifiesTheRecord(t *testing.T) {
 	// The private tree keeps the public install guide as an overlay; the public tree has it at docs/INSTALL.md.

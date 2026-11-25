@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/attention-span-ai/tego/internal/platform/lsmlist"
 	"github.com/attention-span-ai/tego/internal/platform/tomoyo"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
@@ -35,6 +36,9 @@ func loadMachine(mode config.TrustMode) (*config.Machine, []config.Diagnostic, e
 		// once here for every command; an unusable value refuses every fact (the setter says why) and is never read
 		// from the kernel's path instead.
 		_ = tomoyo.SetFactsDir(m.TOMOYO.FactsDir.Value) // the refusal is the error SetFactsDir keeps for each fact
+		// lsm.list_file (the same layer) names the file a held open reads the security-module list from when the kernel's
+		// own two ways fail (ADR 0041, 2026-11-25); an unusable value refuses and is never read as "no file".
+		_ = lsmlist.SetFile(m.LSM.ListFile.Value) // the refusal is the error SetFile keeps for each read
 	}
 	return m, append(diags, more...), err
 }

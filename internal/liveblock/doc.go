@@ -19,7 +19,10 @@
 // from an exec.allow entry removed matches by link instead (Entry.Match, MatchLink): it refuses what the running
 // contract grants under that entry, the file and the path the entry resolved to when the run started, by any name
 // that reaches it there (Grant), and the whole file only where the contract holds no such entry. SameFileNote says,
-// for a reader, when a refusal came through another name of the blocked file. A path, read or write value written
+// for a reader, when a refusal came through another name of the blocked file. An exec value may also be a command, a bare
+// program name and words ("git push", words.go, ADR 0171): it refuses what the same text in exec.deny refuses, decided by the
+// contract's own command matcher in the supervisor (Set.Words, WordOn), and is written only to a run whose launcher made the
+// words mark (MarkWords, CheckWords). A path, read or write value written
 // through a link is resolved once, when it is added (RealPath, AddReal), and refuses where it led too (Entry.Real).
 // docs/OPERATIONS.md ("Live blocks") lists what that leaves out.
 //
@@ -32,7 +35,8 @@
 // (lift.go); a lift is MAC'ed under the run's own key, and the launcher alone decides what takes effect. Encode writes
 // the lowest version that holds the content, so an overlay with neither is byte for byte the version 1 file. A
 // launcher marks in the run directory what it reads beyond version 1 (MarkControl: a pause; MarkReal: a real path;
-// MarkLink: a block that matches by link), and a writer asks those only of a run so marked.
+// MarkLink: a block that matches by link; MarkWords: a block on a command's words), and a writer asks those only of a run so
+// marked.
 //
 // Every writer makes the same checks before it writes and says the same words (check.go: Target, CheckBlock,
 // CheckFence, CheckLoosening, LiftKey, BlockWord), so `tego block` and the dashboard's Block now never answer one change
@@ -44,6 +48,7 @@
 // trust boundary): <ledger_root>/<run>/live-block.json. Both binaries import this package (the engine's launcher
 // reads, `tego block` and tego-control write), so it links neither of them: it is a leaf.
 //
-// Imports: the standard library, golang.org/x/sys/unix, internal/platform/sys and pkg/policy/thishost only.
+// Imports: the standard library, golang.org/x/sys/unix, internal/platform/sys, pkg/policy/thishost and the command matcher's
+// grammar (pkg/policy/execmatch and its rows) only: a command block's value is parsed by the one parser the contract's entries are.
 // Must not import: internal/runtime, internal/control, internal/ledger, internal/policy, pkg/spec.
 package liveblock

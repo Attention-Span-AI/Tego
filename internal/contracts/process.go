@@ -544,8 +544,6 @@ type helperWorker struct {
 	cmd           *proc.Cmd
 	send, receive *os.File
 	started       bool
-	// governed says the worker also holds a governedWorkers slot.
-	governed bool
 	// release gives its slots back to the pools it took them from (admitWorker); nil for a worker that holds none.
 	release func()
 	once    sync.Once
@@ -1114,7 +1112,7 @@ func startHelper(ctx context.Context, as helperCredentials) (*helperWorker, erro
 		closePipe(receive)
 		return fail(fmt.Errorf("start filesystem helper: %w", err))
 	}
-	return &helperWorker{cmd: cmd, send: send, receive: receive, governed: governed, slot: slot, release: release}, nil
+	return &helperWorker{cmd: cmd, send: send, receive: receive, slot: slot, release: release}, nil
 }
 
 // transact runs one request on the worker. events, when not nil, is called for each control frame that arrives before

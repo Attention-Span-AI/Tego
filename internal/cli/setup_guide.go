@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/platform/proc"
 	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/internal/registry"
+	"github.com/attention-span-ai/tego/internal/selfbin"
 	"github.com/attention-span-ai/tego/internal/setup"
 	"github.com/attention-span-ai/tego/internal/shellword"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
@@ -60,19 +62,96 @@ type guideAgent struct {
 	host    string // the model host its rules reach
 	install string // the line that installs it
 	logins  []guideLogin
+	blurb   string // what the choice says about the agent, before what is on this machine
+	demo    bool   // Tego's own demonstration agent: no program on PATH, no login, no network
 }
 
 var guideAgents = []guideAgent{
-	{label: "Claude Code", harness: "claude-code", command: "claude", host: "Claude's API",
+	{label: "Claude Code", harness: "claude-code", command: "claude", host: "Claude's API", blurb: "Anthropic's agent",
 		install: "curl -fsSL https://claude.ai/install.sh | bash",
 		logins: []guideLogin{
 			{label: "Claude subscription", desc: "Log in with your Claude account in a browser", envVar: "CLAUDE_CODE_OAUTH_TOKEN", setupToken: true},
 			{label: "Anthropic API key", desc: "A key from console.anthropic.com", envVar: "ANTHROPIC_API_KEY", example: "sk-ant-api03-…"},
 		}},
-	{label: "Codex", harness: "codex", command: "codex", host: "OpenAI's API",
+	{label: "Codex", harness: "codex", command: "codex", host: "OpenAI's API", blurb: "OpenAI's agent",
 		install: "mkdir -p ~/.local/bin && curl -fsSL https://github.com/openai/codex/releases/latest/download/codex-$(uname -m)-unknown-linux-musl.tar.gz | tar -xzO > ~/.local/bin/codex && chmod 0755 ~/.local/bin/codex",
 		logins:  []guideLogin{{label: "OpenAI API key", envVar: "CODEX_API_KEY", example: "sk-…"}}},
-	{label: "Another program"},
+	{label: "Another program", blurb: "Any command, such as a script or a bot"},
+}
+
+// guideDemo is the demonstration agent: a short script Tego writes into the agent's rules (the command tego init writes
+// when it is given none), run on the test project. It needs no account, no program on PATH and no network, tries one
+// action its rules allow and one they refuse, so a first run shows a rule working and leaves a record.
+var guideDemo = guideAgent{label: "Demonstration agent", blurb: "Tego's own short script", demo: true}
+
+// guideDemoName is the demonstration agent's name in the registry; guideDemoOut is the one folder its rules let it write.
+const (
+	guideDemoName = "tego-demo"
+	guideDemoOut  = "demo-out"
+)
+
+// guideState is what this machine has for one agent, as far as it can be told without running the agent's own login:
+// its program is on PATH, and a login Tego can pass to it is set in this shell or saved by tego start.
+type guideState struct{ installed, signedIn bool }
+
+func (s guideState) ready() bool { return s.installed && s.signedIn }
+
+func (s guideState) words() string {
+	switch {
+	case !s.installed:
+		return "not installed"
+	case s.signedIn:
+		return "installed, signed in"
+	}
+	return "installed, not signed in"
+}
+
+// agentState looks at one agent. It reads the environment and the saved logins (readSavedLogins) and looks for the
+// program; it starts nothing and contacts nothing.
+func agentState(a guideAgent, saved map[string]string) guideState {
+	var s guideState
+	if _, err := guideLookPath(a.command); err == nil {
+		s.installed = true
+	}
+	for _, l := range a.logins {
+		if os.Getenv(l.envVar) != "" || saved[l.envVar] != "" {
+			s.signedIn = true
+		}
+	}
+	return s
+}
+
+// agentChoices is the first question's items and, in the same order, the agents they stand for. An agent that is
+// installed and signed in comes first. When there is none, the demonstration agent comes first, and why says so in
+// one line; otherwise it comes last, after the choices that existed before it.
+func agentChoices(home string) (items []choice, agents []guideAgent, why string) {
+	saved := readSavedLogins(home, nil)
+	var ready, other []guideAgent
+	desc := map[string]string{}
+	for _, a := range guideAgents {
+		if a.harness == "" {
+			continue
+		}
+		st := agentState(a, saved)
+		desc[a.label] = a.blurb + " · " + st.words()
+		if st.ready() {
+			ready = append(ready, a)
+		} else {
+			other = append(other, a)
+		}
+	}
+	another := guideAgents[len(guideAgents)-1]
+	desc[another.label], desc[guideDemo.label] = another.blurb, guideDemo.blurb+" · needs no account and no network"
+	if len(ready) > 0 {
+		agents = append(append(append(ready, other...), another), guideDemo)
+	} else {
+		agents = append(append([]guideAgent{guideDemo}, other...), another)
+		why = "No agent here is installed and signed in, so the demonstration agent is first: it needs no account and no network."
+	}
+	for i, a := range agents {
+		items = append(items, choice{name: a.label, desc: desc[a.label], recommended: i == 0})
+	}
+	return items, agents, why
 }
 
 // guideShell names the shell the next steps will be typed in: the guide's parent when that is a shell, otherwise the
@@ -618,6 +697,10 @@ func yesNoItems(yesDesc, noDesc string, yesFirst bool) []choice {
 // errStopped is the person leaving the guide.
 var errStopped = errors.New("stopped")
 
+// errGuideBack sends the guide back to its first question: the person left an installer or a sign-in, or chose another
+// agent where a login is asked.
+var errGuideBack = errors.New("back to the first question")
+
 // lineReader hands its reader over one line per Read, so each plain prompt, which opens its own scanner, reads only its
 // own answer.
 type lineReader struct {
@@ -663,6 +746,31 @@ type rulesChoice struct {
 	hosts        []string
 	summary      string // what the rules mean, in one line
 	file         string // a rules file of the person's own, used as it is
+	demo         bool   // the demonstration agent's rules: it writes only in guideDemoOut, with its own short command
+}
+
+// guideSignals is the process-long subscription holdSignalsToExit makes. Nothing reads it: a full channel drops the
+// signal, and a subscription is all the runtime asks about.
+var (
+	guideSignals     = make(chan os.Signal, 1)
+	guideSignalsOnce sync.Once
+)
+
+// holdSignalsToExit subscribes to INT, TERM and HUP for the rest of the process. The guide's own subscription ends
+// with the guide, which is before the process does: Main has already released its first-signal handler, and Go's
+// default action for a signal nobody subscribed to ends the process with that signal. A second signal in that gap
+// (an interrupt and a terminate sent together, a hang-up as the window closes) turned the exit the guide chose, 1 for
+// "Stopped", into 130 or 143 after the terminal was already back. The guide is the last thing its command does, so
+// nothing is left that a signal could stop.
+func holdSignalsToExit() {
+	guideSignalsOnce.Do(func() { signal.Notify(guideSignals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP) })
+}
+
+// runSetupGuideCommand is how tego start and tego setup run the guide: the guide, then the process's exit with its own
+// status whatever signal comes between them.
+func runSetupGuideCommand(ctx context.Context, stdout, stderr io.Writer) int {
+	holdSignalsToExit()
+	return runSetupGuide(ctx, os.Stdin, stdout, stderr, true)
 }
 
 // runSetupGuide is tego start: it connects the agent the person wants to supervise, logs it in, picks its project and
@@ -742,51 +850,66 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 		g.line("%s  %s", colTop, upperFirst(guide.ThroughScopeFact)+".")
 	}
 
-	// 1/4: the agent.
-	g.step(1, "Agent")
-	pick, err := g.chooseOne("Which agent do you want to supervise?", []choice{
-		{name: "Claude Code", desc: "Anthropic's coding agent", recommended: true},
-		{name: "Codex", desc: "OpenAI's coding agent"},
-		{name: "Another program", desc: "Any command, such as a script or a bot"},
-	})
-	if err != nil {
-		return 0, err
-	}
-	a := guideAgents[pick]
-	command := a.command
-	if a.harness == "" {
-		// The placeholder below is only an example: the test project has no bot.py, and a person without an agent
-		// account who takes the placeholder reads it as the way to try Tego (the Windows walkthrough, 2026-11-19).
-		g.detail("python3 bot.py is only an example. To try Tego on its test project, type: " + guideTestCommand)
-		if command, err = g.typeText("What command starts it?", "python3 bot.py", false, func(s string) error {
-			if strings.TrimSpace(s) == "" {
-				return errors.New("type the command, for example python3 bot.py")
-			}
-			program := strings.Fields(s)[0]
-			if strings.Contains(program, "/") && !filepath.IsAbs(program) {
-				return errGuideRelativeProgram
-			}
-			return nil
-		}); err != nil {
+	// 1/4 and 2/4: the agent and its login. Leaving an installer or a sign-in, or choosing "another agent" at the
+	// login, comes back here: the first question again.
+	var (
+		a             guideAgent
+		command, name string
+	)
+	for {
+		g.step(1, "Agent")
+		items, agents, why := agentChoices(home)
+		if why != "" {
+			g.detail(why)
+		}
+		pick, err := g.chooseOne("Which agent do you want to supervise?", items)
+		if err != nil {
 			return 0, err
 		}
-	}
-	name := a.label
-	program := strings.Fields(command)[0]
-	if a.harness == "" {
-		name = program
-		a.command = program
-	}
-	if code, err := g.installed(ctx, a, name, program, home); code != identity.ExitOK || err != nil {
-		return code, err
-	}
+		a = agents[pick]
+		if a.demo {
+			return g.demonstration(ctx, m, home, host, stderr)
+		}
+		command = a.command
+		if a.harness == "" {
+			// The placeholder below is only an example: the test project has no bot.py, and a person without an agent
+			// account who takes the placeholder reads it as the way to try Tego (the Windows walkthrough, 2026-11-19).
+			g.detail("python3 bot.py is only an example. To try Tego on its test project, type: " + guideTestCommand)
+			if command, err = g.typeText("What command starts it?", "python3 bot.py", false, func(s string) error {
+				if strings.TrimSpace(s) == "" {
+					return errors.New("type the command, for example python3 bot.py")
+				}
+				program := strings.Fields(s)[0]
+				if strings.Contains(program, "/") && !filepath.IsAbs(program) {
+					return errGuideRelativeProgram
+				}
+				return nil
+			}); err != nil {
+				return 0, err
+			}
+		}
+		name = a.label
+		program := strings.Fields(command)[0]
+		if a.harness == "" {
+			name = program
+			a.command = program
+		}
+		if code, err := g.installed(ctx, a, name, program, home); errors.Is(err, errGuideBack) {
+			continue
+		} else if code != identity.ExitOK || err != nil {
+			return code, err
+		}
 
-	// 2/4: its login.
-	g.step(2, "Login")
-	if len(a.logins) == 0 {
-		g.ok("Nothing to log in to: " + name + " brings its own")
-	} else if code, err := g.signIn(ctx, a, home); code != identity.ExitOK || err != nil {
-		return code, err
+		// 2/4: its login.
+		g.step(2, "Login")
+		if len(a.logins) == 0 {
+			g.ok("Nothing to log in to: " + name + " brings its own")
+		} else if code, err := g.signIn(ctx, a, home); errors.Is(err, errGuideBack) {
+			continue
+		} else if code != identity.ExitOK || err != nil {
+			return code, err
+		}
+		break
 	}
 
 	// 3/4: its project.
@@ -815,8 +938,43 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 		return code, err
 	}
 	rememberProject(home, abs)
+	return g.guideRecap(ctx, home, host, guideOutcome{name: name, agentName: agentName, abs: abs, rc: rc})
+}
 
-	// The recap, the dashboard and what to type next. The person starts the session: Tego never starts the agent.
+// guideOutcome is what the four steps decided, for the recap and the next steps.
+type guideOutcome struct {
+	name, agentName, abs string
+	rc                   rulesChoice
+	demo                 bool // the demonstration agent: the guide runs it once, as the first governed run
+}
+
+// demonstration is the three steps after the demonstration agent is picked: nothing to log in to, the test project, and
+// rules Tego fixes (the demonstration's refused action is part of what it shows, so there is no rules question). The
+// first run follows in guideRecap.
+func (g *walk) demonstration(ctx context.Context, m *config.Machine, home string, host guideHost, stderr io.Writer) (int, error) {
+	g.step(2, "Login")
+	g.ok("Nothing to log in to: the demonstration agent runs on this machine, with no account and no network")
+
+	g.step(3, "Project")
+	dir, err := g.sampleProject(home)
+	if err != nil {
+		return 0, err
+	}
+
+	g.step(4, "Rules")
+	rc := rulesChoice{label: "Demonstration rules", presets: []string{"no-secrets", "no-prod", "repo-only-writes"}, writeProject: true, demo: true,
+		summary: "Writes only in " + guideDemoOut + "/ · never reads secrets · reaches no host"}
+	if code, err := g.saveAgent(ctx, m, guideDemo, "", guideDemoName, dir, &rc, true, stderr); code != identity.ExitOK || err != nil {
+		return code, err
+	}
+	rememberProject(home, dir)
+	return g.guideRecap(ctx, home, host, guideOutcome{name: guideDemo.label, agentName: guideDemoName, abs: dir, rc: rc, demo: true})
+}
+
+// guideRecap is the recap, the dashboard and what to type next. The person starts the session: Tego never starts the agent
+// of the person's choice. The demonstration agent is Tego's own script, so the guide runs it once, after the recap, and
+// the first run is then over when the guide ends.
+func (g *walk) guideRecap(ctx context.Context, home string, host guideHost, o guideOutcome) (int, error) {
 	if ctx.Err() != nil {
 		return 0, errStopped
 	}
@@ -833,9 +991,9 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 	g.line("")
 	g.top(g.bold + "Ready" + g.offEsc)
 	row := func(k, v string) { g.line("%s  %-12s%s", colTop, k, v) }
-	row("Agent", agentName+" · "+name)
-	row("Project", tildeHome(abs, home))
-	row("Rules", rc.label)
+	row("Agent", o.agentName+" · "+o.name)
+	row("Project", tildeHome(o.abs, home))
+	row("Rules", o.rc.label)
 	for i, v := range dashboardRows(host, url, busProblem, windowsNative(), g.dim, g.offEsc) {
 		k := ""
 		if i == 0 {
@@ -848,6 +1006,13 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 	} else if host != hostLinux {
 		row("Shell", "Tego's Linux VM · type exit to return to "+host.returnTo())
 	}
+	code := identity.ExitOK
+	if o.demo {
+		var err error
+		if code, err = g.firstRun(ctx, o); err != nil {
+			return 0, err
+		}
+	}
 	g.line("")
 	g.top(g.bold + "Next steps" + g.offEsc)
 	next := func(what, c string) { g.line("%s  %-30s%s%s%s", colTop, what, g.bold, c, g.offEsc) }
@@ -857,15 +1022,78 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 	if len(g.unsetLogins) > 0 {
 		next("Use the saved login", unsetLine(guideShell(), g.unsetLogins))
 	}
-	next("Run "+name+" under Tego", "cd "+shellword.Quote(abs)+" && tego run "+agentName)
+	if o.demo {
+		next("Show what the run did", "tego session show --last")
+		next("Run it again", "cd "+shellword.Quote(o.abs)+" && tego run "+o.agentName)
+		next("Edit the rules", "tego rules edit "+o.agentName)
+		next("Supervise an agent of your own", "tego start")
+		g.line("")
+		return code, nil
+	}
+	next("Run "+o.name+" under Tego", "cd "+shellword.Quote(o.abs)+" && tego run "+o.agentName)
 	if host == hostWindows {
 		g.detail("To start, copy the line above that begins with cd and press Enter.")
 	}
 	next("List your sessions", "tego session list")
 	next("Show the last session", "tego session show --last")
-	next("Edit the rules", "tego rules edit "+agentName)
+	next("Edit the rules", "tego rules edit "+o.agentName)
 	g.line("")
 	return identity.ExitOK, nil
+}
+
+// firstRun runs the demonstration agent under its rules, once: the terminal is handed to the run as it is to a sign-in,
+// and comes back when the run ends. A run that fails or is stopped with Ctrl-C ends in a line saying how to run it
+// again; the guide's next steps still follow.
+func (g *walk) firstRun(ctx context.Context, o guideOutcome) (int, error) {
+	g.line("")
+	g.top(g.bold + "First run" + g.offEsc)
+	g.detail("Tego runs the demonstration agent now, under the rules above. It tries one action they allow and one they refuse.")
+	if g.tty {
+		g.detail("Press Ctrl-C to stop it and come back here.")
+	}
+	g.line("")
+	err := g.handoff(func() error { return guideDemoRun(ctx, o.abs, o.agentName) })
+	if ctx.Err() != nil {
+		return 0, errStopped
+	}
+	if err != nil {
+		g.line("")
+		g.bad("The demonstration run did not finish: " + err.Error())
+		g.detail("Run it again with the command under Next steps.")
+		return identity.ExitFinding, nil
+	}
+	g.line("")
+	g.ok("The demonstration run finished. One action was allowed and one refused; both are in its record.")
+	return identity.ExitOK, nil
+}
+
+// guideDemoRun runs `tego run <agent>` as this program, from the project, on the guide's terminal: the person's own
+// command, as they would type it, so the run takes its own user scope and its own tier. A variable so a test starts no run.
+var guideDemoRun = func(ctx context.Context, dir, agent string) (err error) {
+	self, why := selfbin.Path(os.Executable)
+	if why != "" {
+		return errors.New("this program's own path cannot be used to start the run (" + why + ")")
+	}
+	c := proc.Command(self, "run", agent)
+	c.Dir = dir
+	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+	c.WaitDelay = time.Second
+	restore, err := foregroundGuideLogin(c)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if e := restore(); err == nil {
+			err = e
+		}
+	}()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if _, err := proc.Start(c); err != nil {
+		return err
+	}
+	return waitGuideLogin(ctx, c)
 }
 
 // guideDashboard starts the dashboard for this user as a systemd user unit (tego-dashboard), as the Mac's tego dashboard
@@ -1018,21 +1246,33 @@ func (g *walk) installed(ctx context.Context, a guideAgent, name, program, home 
 	}
 	g.detail("This fetches and runs the current upstream installer with your permissions:")
 	g.cmd(a.install)
-	pick, err := g.chooseOne("Install "+name+" now?", yesNoItems("Runs "+name+"'s own installer", "Shows the install line instead", true))
-	if err != nil {
-		return 0, err
-	}
-	if pick != 0 {
-		g.todo("Install " + name + " with this line, then run tego start again:")
-		g.cmd(a.install)
-		return identity.ExitFinding, nil
-	}
-	g.detail("Installing " + name + "…")
-	if !g.installAgent(ctx, a, home) {
-		if ctx.Err() != nil {
-			return 0, errStopped // Ctrl-C while it installed: the same ending as at a question
+	for {
+		pick, err := g.chooseOne("Install "+name+" now?", yesNoItems("Runs "+name+"'s own installer", "Shows the install line instead", true))
+		if err != nil {
+			return 0, err
 		}
-		return identity.ExitFinding, nil
+		if pick != 0 {
+			g.todo("Install " + name + " with this line, then run tego start again:")
+			g.cmd(a.install)
+			return identity.ExitFinding, nil
+		}
+		g.detail("Installing " + name + "…")
+		if g.tty {
+			g.detail("Press Ctrl-C to stop the installer and come back to the question above.")
+		}
+		ok := false
+		left, err := g.leavable(ctx, func(c context.Context) { ok = g.installAgent(c, a, home) })
+		if err != nil {
+			return 0, err // Ctrl-C while it installed, with the guide's own context: the same ending as at a question
+		}
+		if left && !ok {
+			g.todo("Stopped the installer. Tego asks again; the installer may have left a half-finished install behind.")
+			continue
+		}
+		if !ok {
+			return identity.ExitFinding, nil
+		}
+		break
 	}
 	// The installers put the program in ~/.local/bin, which this shell's PATH may not have yet.
 	_ = os.Setenv("PATH", filepath.Join(home, ".local", "bin")+":"+os.Getenv("PATH"))
@@ -1053,6 +1293,26 @@ func (g *walk) installed(ctx context.Context, a guideAgent, name, program, home 
 	}
 	g.ok(strings.TrimSpace("Installed " + name + " " + guideVersion(ctx, program)))
 	return identity.ExitOK, nil
+}
+
+// leavable runs step, an installer or a sign-in the guide started, so that one key leaves it: Ctrl-C ends step's context
+// and not the guide's, and the guide goes on at the question that started it. left reports that the key was pressed;
+// err is errStopped when the guide itself was stopped (a signal, or Ctrl-C when nothing was running).
+func (g *walk) leavable(ctx context.Context, step func(context.Context)) (left bool, err error) {
+	sctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	if g.terminal != nil {
+		g.terminal.setLeave(cancel)
+		defer g.terminal.setLeave(nil)
+	}
+	step(sctx)
+	switch {
+	case ctx.Err() != nil:
+		return false, errStopped
+	case sctx.Err() != nil:
+		return true, nil
+	}
+	return false, nil
 }
 
 // installAgent runs a's install line with its output in ~/.tego/setup-install.log; on failure it shows the log's last
@@ -1133,31 +1393,46 @@ func (g *walk) signIn(ctx context.Context, a guideAgent, home string) (int, erro
 			return identity.ExitOK, nil
 		}
 	}
-	login := a.logins[0]
-	if len(a.logins) > 1 {
-		items := make([]choice, len(a.logins))
+	// The choice is asked for every agent, one login or several, because it also holds the way back: a person with no
+	// account for this agent leaves here, or leaves its browser sign-in with Ctrl-C, and picks another agent.
+	var login guideLogin
+	token := ""
+	for {
+		items := make([]choice, 0, len(a.logins)+1)
 		for i, l := range a.logins {
-			items[i] = choice{name: l.label, desc: l.desc, recommended: i == 0}
+			items = append(items, choice{name: l.label, desc: l.desc, recommended: i == 0})
 		}
+		items = append(items, choice{name: "Choose another agent", desc: "Back to the first question, without an account"})
 		pick, err := g.chooseOne("How do you want to log in to "+a.label+"?", items)
 		if err != nil {
 			return 0, err
 		}
+		if pick == len(a.logins) {
+			return 0, errGuideBack
+		}
 		login = a.logins[pick]
-	}
-	token := ""
-	q, example := "Paste your "+login.label, login.example
-	if login.setupToken {
+		token = ""
+		if !login.setupToken {
+			break
+		}
 		g.todo("Open the link " + a.label + " shows, log in, and paste the code back here.")
+		if g.tty {
+			g.detail("Press Ctrl-C to leave the sign-in and come back to the question above.")
+		}
 		got, err := g.setupToken(ctx, a.command, home)
 		if err != nil {
 			if ctx.Err() != nil {
 				return 0, errStopped
 			}
-			g.bad(a.label + "'s login didn't finish: " + err.Error() + ". Run tego start to try again.")
-			return identity.ExitFinding, nil
+			g.todo(a.label + "'s sign-in ended without a login. Tego asks again.")
+			g.detail(record.Printable(err.Error()))
+			continue
 		}
 		token = got
+		break
+	}
+	q, example := "Paste your "+login.label, login.example
+	if login.setupToken {
 		q, example = "Paste the token "+a.label+" printed", "sk-ant-oat01-…"
 	}
 	if token == "" {
@@ -1462,15 +1737,9 @@ func (g *walk) project(name, home string, host guideHost) (string, bool, error) 
 	}
 	switch items[pick].name {
 	case "Tego test project":
-		dir := filepath.Join(home, guideSample)
-		_, statErr := os.Stat(dir)
-		if err := makeSample(dir); err != nil {
-			return "", false, fmt.Errorf("making the test project: %w", err)
-		}
-		if statErr == nil {
-			g.ok("Using " + tildeHome(dir, home))
-		} else {
-			g.ok("Created " + tildeHome(dir, home))
+		dir, err := g.sampleProject(home)
+		if err != nil {
+			return "", false, err
 		}
 		g.detail("A small app whose test dependency tries to steal a fake secret.")
 		g.detail("Files: " + sampleURL)
@@ -1493,6 +1762,21 @@ func (g *walk) project(name, home string, host guideHost) (string, bool, error) 
 	abs, _ := projectPath(path, home, host)
 	g.ok("Using " + tildeHome(abs, home))
 	return abs, false, nil
+}
+
+// sampleProject makes the test project under home, or fills in what is missing, and says which it did.
+func (g *walk) sampleProject(home string) (string, error) {
+	dir := filepath.Join(home, guideSample)
+	_, statErr := os.Stat(dir)
+	if err := makeSample(dir); err != nil {
+		return "", fmt.Errorf("making the test project: %w", err)
+	}
+	if statErr == nil {
+		g.ok("Using " + tildeHome(dir, home))
+	} else {
+		g.ok("Created " + tildeHome(dir, home))
+	}
+	return dir, nil
 }
 
 // projectPath turns a typed path into the project folder, or says in one line what is wrong with it.
@@ -1543,7 +1827,7 @@ func (g *walk) rules(ctx context.Context, m *config.Machine, name string, a guid
 		host = "the hosts you name"
 	}
 	pick, err := g.chooseOne("Which rules should "+name+" follow?", []choice{
-		{name: "Base development", desc: "Edits and tests the project · never reads secrets", recommended: true},
+		{name: "Base development", desc: "Changes files in the project · never reads secrets", recommended: true},
 		{name: "Read-only review", desc: "Project content stays read-only · agent state and temporary files stay writable"},
 		{name: "Choose each rule", desc: "Pick the rules one by one"},
 		{name: "Use my own rules file", desc: "A rules file you wrote"},
@@ -1554,7 +1838,7 @@ func (g *walk) rules(ctx context.Context, m *config.Machine, name string, a guid
 	switch pick {
 	case 0:
 		return rulesChoice{label: "Base development", presets: all, writeProject: true,
-			summary: "Edits and tests the project · never reads secrets · reaches only " + host}, nil
+			summary: "Changes files in the project · never reads secrets · reaches only " + host}, nil
 	case 1:
 		return rulesChoice{label: "Read-only review", presets: all, summary: "Project content stays read-only · writes state and temporary files only in " + reviewState(a) + " · file attributes can change · reaches only " + host}, nil
 	case 3:
@@ -1660,7 +1944,10 @@ func rulesFileName(file string) string {
 
 // withRulesLine puts the rules' name, as tego run's start line shows it, after the marker line every composed file opens with.
 func withRulesLine(text []byte, rc rulesChoice) []byte {
-	what := rc.label + " rules"
+	what := rc.label
+	if !strings.HasSuffix(what, " rules") {
+		what += " rules"
+	}
 	if rc.label == "Your own choice" {
 		what = "rules " + strings.Join(rc.presets, ", ")
 	}
@@ -1774,9 +2061,14 @@ func guideSaveRules(ctx context.Context, m *config.Machine, a guideAgent, comman
 	if rc.writeProject {
 		po.Writes = []string{dir + "/"}
 	}
-	if a.harness == "" {
+	switch {
+	case rc.demo:
+		// The command is left empty: Compose then writes the one tego init writes, which writes in the first folder
+		// and tries one write outside it. That folder is the demonstration's own, never the whole project.
+		po.Writes = []string{dir + "/" + guideDemoOut + "/"}
+	case a.harness == "":
 		po.Command = command
-	} else {
+	default:
 		po.Interactive = true
 	}
 	env, code := initCheckEnv(stderr)

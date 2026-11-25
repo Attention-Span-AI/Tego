@@ -97,6 +97,12 @@ type InForceView struct {
 // (inforce.Declared), with no enforcement claim.
 func InForce(ctx context.Context, root, run string, o Options) *InForceView {
 	if remoteView(o) {
+		// The ledger is read here, once, or taken from the read model's memo, and travels with both requests: the
+		// worker is a new process for each exchange, so a scan it made would be made twice and never kept.
+		sc, err := ledgerScan(ctx, root, run, o, nil)
+		if err != nil {
+			return viewOfUnreadRun(root, run, err)
+		}
 		// Secure a display projection before touching today's source. Both
 		// exchanges share one worker and one overall deadline; an abandoned
 		// source check cannot take the already received copy with it.
@@ -104,11 +110,11 @@ func InForce(ctx context.Context, root, run string, o Options) *InForceView {
 		defer closeSession()
 		ctx, cancel := pathcheck.Bound(ctx)
 		defer cancel()
-		recorded, err := viewCall(ctx, "inforce-copy", root, run, "", "", o)
+		recorded, err := viewCallScanned(ctx, "inforce-copy", root, run, "", "", o, sc)
 		if err != nil {
 			return &InForceView{Run: run, Err: err.Error(), Positions: PositionsCopy, PositionsWhy: err.Error(), View: emptyView(err.Error())}
 		}
-		reply, err := viewCall(ctx, "inforce", root, run, "", "", o)
+		reply, err := viewCallScanned(ctx, "inforce", root, run, "", "", o, sc)
 		if err != nil {
 			v := recorded.InForce
 			v.SourceUnavailable, v.PositionsWhy = err.Error(), err.Error()
@@ -119,31 +125,53 @@ func InForce(ctx context.Context, root, run string, o Options) *InForceView {
 	return inForce(ctx, root, run, o)
 }
 
-func inForce(ctx context.Context, root, run string, o Options) *InForceView {
-	return inForceWithSource(ctx, root, run, o, true)
+// errNotRunID is what ledgerScan says of a name that is no run's: nothing is read for it.
+var errNotRunID = errors.New("not a run id")
+
+// ledgerScan is the findings of the run's ledger: the caller's (scanned), the read model's, kept per run version
+// (inforce_cache.go), or one read of the ledger (scanRun).
+func ledgerScan(ctx context.Context, root, run string, o Options, scanned *runScan) (*runScan, error) {
+	if !ledger.IsRunID(run) {
+		return nil, errNotRunID
+	}
+	dir := filepath.Join(root, run)
+	switch {
+	case scanned != nil:
+		return scanned, nil
+	case o.Run != nil && o.Run.ID == run:
+		return memoScan(dir, o.Run)
+	}
+	return scanRun(ctx, dir)
 }
 
-func inForceWithSource(ctx context.Context, root, run string, o Options, check bool) *InForceView {
+// viewOfUnreadRun is the view of a run whose ledger could not be scanned.
+func viewOfUnreadRun(root, run string, err error) *InForceView {
 	v := &InForceView{Run: run, Positions: PositionsCopy}
-	if !ledger.IsRunID(run) {
-		v.Err = "not a run id"
+	if errors.Is(err, errNotRunID) {
+		v.Err = err.Error()
 		v.View = emptyView("Not a run id.")
 		return v
 	}
+	v.CopyPath = filepath.Join(root, run, ledger.ContractFile)
+	v.Err = err.Error()
+	v.View = emptyView("The run's record could not be read.")
+	return v
+}
+
+func inForce(ctx context.Context, root, run string, o Options) *InForceView {
+	return inForceWithSource(ctx, root, run, o, true, nil)
+}
+
+// inForceWithSource is the view, scanned the ledger's findings when the caller made them (nil: made here, from the read
+// model's or from the ledger), check whether today's rules file is read.
+func inForceWithSource(ctx context.Context, root, run string, o Options, check bool, scanned *runScan) *InForceView {
+	v := &InForceView{Run: run, Positions: PositionsCopy}
 	dir := filepath.Join(root, run)
-	v.CopyPath = filepath.Join(dir, ledger.ContractFile)
-	var sc *runScan
-	var err error
-	if o.Run != nil && o.Run.ID == run {
-		sc, err = memoScan(dir, o.Run) // kept per run version (inforce_cache.go)
-	} else {
-		sc, err = scanRun(ctx, dir)
-	}
+	sc, err := ledgerScan(ctx, root, run, o, scanned)
 	if err != nil {
-		v.Err = err.Error()
-		v.View = emptyView("The run's record could not be read.")
-		return v
+		return viewOfUnreadRun(root, run, err)
 	}
+	v.CopyPath = filepath.Join(dir, ledger.ContractFile)
 	v.Started, v.Ended, v.Lines = sc.started, sc.ended, sc.lines
 	if s := sc.start.ContractSource; s != nil {
 		v.Source, v.SourceName = s.Path, s.Name

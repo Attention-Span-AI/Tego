@@ -49,6 +49,7 @@ func run(args []string) int {
 		// The guide's last step: open the dashboard it started, then the project shell. A browser failure is
 		// told in one line and does not keep the person out of their shell.
 		_ = openDashboard()
+		fmt.Println(keepAttachedWords)
 		return linuxCommand([]string{"shell"}, interrupts)
 	}
 	return code

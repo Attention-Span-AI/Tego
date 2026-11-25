@@ -11,7 +11,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
 )
 
-// TestInForceScanIsKeptPerRunVersion checks the helper-local cache: the Rules page asked twice for the same version of a run scans its ledger once
+// TestInForceScanIsKeptPerRunVersion checks the per-version memo (in the process that makes the view): the Rules page asked twice for the same version of a run scans its ledger once
 // and shows the same hits; after the run gains a line it scans again and the new line counts.
 func TestInForceScanIsKeptPerRunVersion(t *testing.T) {
 	f := bigRun(t, 500)

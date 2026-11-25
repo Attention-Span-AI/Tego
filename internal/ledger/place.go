@@ -63,6 +63,23 @@ func placeNewFileAt(dfd *sys.FD, dir, name string, b []byte, placed *unix.Stat_t
 	return nil
 }
 
+// PlaceRunFile places a new file name holding b in the run directory dir, as placeNewFileAt does (its doc is the
+// contract), through the §3 walk to dir: a name already there, whatever it is, is os.ErrExist and is left as it was, no
+// link is followed, the file is 0600 and, when the caller is root in a directory another uid owns, handed to that uid.
+// It leaves nothing but the file: a crash between the temporary file and the link leaves ".<name>.<n>", which the
+// next Open of the run removes (sweepRunTemps; only for the names it lists).
+func PlaceRunFile(dir, name string, b []byte) error {
+	if name == "" || name == "." || name == ".." || filepath.Base(name) != name {
+		return fmt.Errorf("ledger: place %q in %s: not a file name", name, dir)
+	}
+	dfd, err := openDir(dir, false)
+	if err != nil {
+		return fmt.Errorf("ledger: place %s: %w", filepath.Join(dir, name), err)
+	}
+	defer func() { _ = dfd.Close() }()
+	return placeNewFileAt(dfd, dir, name, b, nil)
+}
+
 // placeLockWait bounds a marker publisher waiting for a concurrent delivery.
 const placeLockWait = 2 * time.Second
 

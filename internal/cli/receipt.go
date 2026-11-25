@@ -22,6 +22,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/check/receipt"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 func init() { register(cmdReceipt) }
@@ -37,8 +38,9 @@ var receiptStamp = func() receipt.MadeBy {
 // programs run, sensitive files read, each refused action with its rule, refusals over time, stall minutes, tests
 // result, times it asked, tokens and their estimated cost, and what the ledger could not cover), built from the
 // ledger by internal/check/receipt, the builder tego run's end summary and the dashboard's Receipt tab use too. No run means the newest run under the ledger root. It is a
-// report: exit 0 when printed, 1 only with --verify when the chain does not verify, 2 for usage, 125 for an
-// unreadable ledger or no run record. Under --json the receipt is bound to the record it read (receipt.Binding).
+// report: exit 0 when printed, 1 only with --verify when the chain does not verify or the receipt.json kept in the run
+// folder differs from the record (verifyKeptReceipt), 2 for usage, 125 for an unreadable ledger or no run record, or a
+// kept receipt that could not be checked. Under --json the receipt is bound to the record it read (receipt.Binding).
 //
 // `tego receipt --check <receipt.json> <run folder>` compares a bound receipt with a record from the two files alone
 // (receipt.Check), never reading chain.log: exit 0 when they match, 1 when they do not, 2 for usage, 125 when it could
@@ -204,7 +206,140 @@ func verifyReceiptChain(ctx context.Context, dir string, asJSON bool, mc *machin
 		out = stderr // stdout holds exactly one JSON object
 	}
 	fmt.Fprintln(out, "\nChain: "+verifiedLine(rep, anchor))
-	return identity.ExitOK
+	return verifyKeptReceipt(ctx, dir, out, stderr)
+}
+
+// verifyKeptReceipt is the second half of --verify (ADR 0159): when the run directory holds the receipt.json that
+// `tego run` placed at the run's end, compare it with the record as `tego receipt --check` does (receipt.Check; the
+// price and clock a machine alone gives are not compared). The record's own chain has just verified, so every finding
+// below is about the kept copy only, and the messages say so. A run with no kept receipt (a run from before it, one
+// tego run was interrupted or did not place one, a watch of another machine) says nothing: the receipt printed above
+// was rebuilt from the record. Exit 0 when it matches (a receipt whose coverage the record says is incomplete still
+// matches: the receipt says so itself) or when only another build's figures were not compared (keptByAnotherBuild),
+// 1 when it differs, naming the first check that failed, or names a maker the record does not, 125 when it could not
+// be checked (an unreadable file, or a receipt or binding version this tego does not read).
+func verifyKeptReceipt(ctx context.Context, dir string, out, stderr io.Writer) int {
+	path := filepath.Join(dir, ledger.ReceiptFile)
+	st, err := os.Lstat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return identity.ExitOK
+	}
+	if err == nil && !st.Mode().IsRegular() {
+		// tego run places a regular file and nothing else: a link, a pipe or a directory at the name was put there. It is
+		// not opened (a pipe would block, a link would be followed).
+		message(stderr, "", 0, 0, fmt.Sprintf("tego receipt: the record verified; only the kept receipt %s differs from it: "+
+			"it is a %s, not the file tego run places", path, fileKind(st.Mode())), codeKeptReceipt)
+		return identity.ExitFinding
+	}
+	res := receipt.Check(ctx, receipt.CheckInput{Receipt: path, Record: dir, By: receiptStamp()})
+	switch res.Result {
+	case receipt.CheckMatch, receipt.CheckMatchUnended, receipt.CheckIncomplete:
+		fmt.Fprintf(out, "Kept receipt: %s matches the record.\n", path)
+		return identity.ExitOK
+	case receipt.CheckMismatch:
+		s := firstStep(res.Checks, receipt.StepFail)
+		message(stderr, "", 0, 0, fmt.Sprintf("tego receipt: the record verified; only the kept receipt %s differs from it: %s: %s",
+			path, s.Name, record.Printable(s.Why)), codeKeptReceipt)
+		return identity.ExitFinding
+	}
+	s := firstStep(res.Checks, receipt.StepNotChecked)
+	if note, ok := otherBuildNote(res.Checks); ok {
+		// Only the figures were left uncompared, and only because the checking tego is not the build that made the
+		// copy. A copy kept by tego run was made by the tego that ran the run, which run_start names, so a copy that
+		// names another maker, or one no tego can ever have kept (no exact build), was not kept by tego run: its
+		// figures cannot be taken as the run's, however its seal reads.
+		by, ran := res.ReceiptBy, res.RecordBy
+		switch {
+		case by == nil || ran == nil:
+		case res.RecordMinor < record.MinorEveryLaunch:
+			// A record of an older revision was made by a build that never kept a copy, however exactly that build is
+			// named (an upgrade is no reason to take a file an agent of such a run could have written): the copy is not
+			// tego's, and only the record's own chain is left to trust.
+			message(stderr, "", 0, 0, fmt.Sprintf("tego receipt: the record verified; only the kept receipt %s differs from it: "+
+				"the run was made by tego %s at record revision %d, a build that keeps no receipt",
+				path, record.Printable(ran.TegoVersion), res.RecordMinor), codeKeptReceipt)
+			return identity.ExitFinding
+		case *by != *ran:
+			message(stderr, "", 0, 0, fmt.Sprintf("tego receipt: the record verified; only the kept receipt %s differs from it: "+
+				"it names tego %s (commit %s) as its maker, and this run was made by tego %s (commit %s)",
+				path, record.Printable(by.TegoVersion), record.Printable(by.Commit),
+				record.Printable(ran.TegoVersion), record.Printable(ran.Commit)), codeKeptReceipt)
+			return identity.ExitFinding
+		case !receipt.Exact(*by):
+			message(stderr, "", 0, 0, fmt.Sprintf("tego receipt: the record verified; only the kept receipt %s differs from it: "+
+				"it names tego %s (commit %s) as its maker, a build that keeps no receipt",
+				path, record.Printable(by.TegoVersion), record.Printable(by.Commit)), codeKeptReceipt)
+			return identity.ExitFinding
+		default:
+			fmt.Fprintf(out, "Kept receipt: %s: the record's chain, head and bytes are the ones it names; its figures were not compared: %s.\n",
+				path, note)
+			return identity.ExitOK
+		}
+	}
+	why := record.Printable(s.Why)
+	if s.Name == "receipt" && res.VersionNotRead() {
+		// A later release's copy, which this tego cannot read: not a finding, and not a pass either (any file can claim a
+		// later version), so it is the exit that says "could not check", with the way to check it.
+		message(stderr, "", 0, 0, fmt.Sprintf("tego receipt: the kept receipt %s was made in a form this tego does not read (%s); "+
+			"the record itself verified, so only the kept copy is unchecked: check it with the tego that ran the run, or a later one",
+			path, why), codeIO)
+		return identity.ExitError
+	}
+	if s.Name == "receipt" {
+		// Whatever stands at the name and is no receipt this tego reads is not what tego run places: only the copy differs.
+		message(stderr, "", 0, 0, fmt.Sprintf("tego receipt: the record verified; only the kept receipt %s differs from it: it is no receipt: %s",
+			path, why), codeKeptReceipt)
+		return identity.ExitFinding
+	}
+	message(stderr, "", 0, 0, fmt.Sprintf("tego receipt: the kept receipt %s could not be checked: %s: %s", path, s.Name, why), codeIO)
+	return identity.ExitError
+}
+
+// fileKind names what mode says a file is, for a message.
+func fileKind(m fs.FileMode) string {
+	switch {
+	case m&fs.ModeSymlink != 0:
+		return "symbolic link"
+	case m.IsDir():
+		return "directory"
+	case m&fs.ModeNamedPipe != 0:
+		return "named pipe"
+	case m&fs.ModeSocket != 0:
+		return "socket"
+	case m&fs.ModeDevice != 0:
+		return "device file"
+	}
+	return "file of another kind"
+}
+
+// otherBuildNote is made_by's own words and true when the only check that did not run is the one that needs the tego
+// that made the receipt (made_by, and facts, which repeats it) and every other check passed: the kept receipt names this
+// record, its chain, head and byte count, which are compared by any tego. The figures are compared only by the exact
+// build that made it, so after an upgrade, or by a dirty build or one with no version stamp, they are not, which is not a
+// failure of the run: the chain the line above vouched for is the record's own proof (ADR 0159 §4). The note itself
+// proves nothing about who wrote the copy: the caller gives it only to a copy that names the build run_start names.
+func otherBuildNote(steps []receipt.CheckStep) (string, bool) {
+	note := ""
+	for _, s := range steps {
+		switch {
+		case s.Name == "made_by" && s.Result == receipt.StepNotChecked:
+			note = record.Printable(s.Why)
+		case s.Name == "facts" && s.Result == receipt.StepNotChecked:
+		case s.Result != receipt.StepPass:
+			return "", false
+		}
+	}
+	return note, note != ""
+}
+
+// firstStep is the first of steps with result, or the zero step.
+func firstStep(steps []receipt.CheckStep, result string) receipt.CheckStep {
+	for _, s := range steps {
+		if s.Result == result {
+			return s
+		}
+	}
+	return receipt.CheckStep{}
 }
 
 // runReceiptCheck is `tego receipt --check <receipt.json> <record>`: receipt.Check, then its result as text or one

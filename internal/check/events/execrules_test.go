@@ -34,3 +34,16 @@ func TestExecSummaryNamesFilelessAndDropped(t *testing.T) {
 		}
 	}
 }
+
+// TestExecSummaryNamesAFailureWhoseDecisionWasLost (public issue 65): an observed exec line with decision_lost says the exec
+// failed with permission denied and which gaps lost its decision record; the same key on any other verdict adds nothing.
+func TestExecSummaryNamesAFailureWhoseDecisionWasLost(t *testing.T) {
+	payload := []byte(`{"path":"/usr/bin/tool","argv":["tool","-x"],"syscall_ret":-13,"decision_lost":["exec-fragment-overflow","ringbuf-full"]}`)
+	if got, want := Summary(&record.Event{Kind: record.KindExec, Verdict: record.VerdictObserved, Payload: payload}),
+		"tool -x [failed: permission denied; decision record may be lost: exec-fragment-overflow, ringbuf-full]"; got != want {
+		t.Errorf("Summary = %q, want %q", got, want)
+	}
+	if got := Summary(&record.Event{Kind: record.KindExec, Verdict: record.VerdictRefused, Payload: payload}); got != "tool -x" {
+		t.Errorf("a refused line's summary = %q", got)
+	}
+}

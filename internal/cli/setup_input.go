@@ -28,6 +28,29 @@ type guideTerminal struct {
 	input   *guideEvents
 	stop    context.CancelFunc
 	pending []tea.Msg
+
+	// leave, while an installer or a sign-in the guide started runs, takes Ctrl-C in place of stop: the key ends that
+	// step and the guide goes on (setLeave, walk.leavable).
+	leaveMu sync.Mutex
+	leave   context.CancelFunc
+}
+
+func (t *guideTerminal) setLeave(f context.CancelFunc) {
+	t.leaveMu.Lock()
+	t.leave = f
+	t.leaveMu.Unlock()
+}
+
+// leaving ends the running step when there is one, and reports whether it did.
+func (t *guideTerminal) leaving() bool {
+	t.leaveMu.Lock()
+	f := t.leave
+	t.leaveMu.Unlock()
+	if f == nil {
+		return false
+	}
+	f()
+	return true
 }
 
 func openGuideTerminal(in io.Reader, stop context.CancelFunc) (*guideTerminal, error) {
@@ -35,7 +58,13 @@ func openGuideTerminal(in io.Reader, stop context.CancelFunc) (*guideTerminal, e
 	if !ok || !isTerminalFile(file) {
 		return nil, nil
 	}
-	term := &guideTerminal{file: file, stop: stop}
+	term := &guideTerminal{file: file}
+	// Ctrl-C ends the step the guide started, an installer or a sign-in, when there is one; otherwise it ends the guide.
+	term.stop = func() {
+		if !term.leaving() {
+			stop()
+		}
+	}
 	if err := sys.FileDo(file, func(fd int) error {
 		var err error
 		term.saved, err = unix.IoctlGetTermios(fd, unix.TCGETS)
@@ -373,22 +402,35 @@ func (t *guideTerminal) runForm(ctx context.Context, form *huh.Form, field *hint
 	}
 	return err
 }
-func (g *walk) setupToken(ctx context.Context, program, home string) (string, error) {
+
+// handoff gives the terminal to run, a program started on it: the guide stops reading keys and puts the line settings
+// back as it found them; when run returns it takes the terminal again and drops what was typed in the meantime (a
+// secret's tail included), keeping the keys that cancel.
+func (g *walk) handoff(run func() error) error {
 	if g.terminal == nil {
-		return guideSetupToken(ctx, program, home)
+		return run()
 	}
 	g.terminal.pause()
 	g.terminal.pending = nil
 	if err := g.terminal.restore(); err != nil {
-		return "", err
+		return err
 	}
-	token, err := guideSetupToken(ctx, program, home)
+	err := run()
 	if rawErr := g.terminal.raw(); err == nil {
 		err = rawErr
 	}
 	if startErr := g.terminal.discardInput(); err == nil {
 		err = startErr
 	}
+	return err
+}
+
+func (g *walk) setupToken(ctx context.Context, program, home string) (token string, err error) {
+	err = g.handoff(func() error {
+		var e error
+		token, e = guideSetupToken(ctx, program, home)
+		return e
+	})
 	return token, err
 }
 

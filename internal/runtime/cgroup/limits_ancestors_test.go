@@ -48,7 +48,7 @@ func scopeWrote(t *testing.T, c Cgroup) Limits {
 	return Limits{CPUMax: "200000 100000", CPUWeight: 50, MemoryMax: 1_000_000, MemoryHigh: 800_000, PidsMax: 64}
 }
 
-// TestReadEffectiveIsTheLowestCeilingOfTheChain (GAPS N85): each limit the run wrote reads as the smallest along the
+// TestReadEffectiveIsTheLowestCeilingOfTheChain: each limit the run wrote reads as the smallest along the
 // chain, wherever in it the smallest is; "max" above is no ceiling; a limit lower than every ancestor's is its own.
 func TestReadEffectiveIsTheLowestCeilingOfTheChain(t *testing.T) {
 	c, agent, top, root := ancestorTree(t)

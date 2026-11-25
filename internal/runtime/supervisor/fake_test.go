@@ -1327,7 +1327,7 @@ func unixRuleOf(raw, path string, abstract bool) agent.NetRule {
 func newTestLoop(t *testing.T, f *fakeKernel, pol *Policy) (*Loop, *testSink) {
 	t.Helper()
 	sink := &testSink{}
-	l, err := New(testListener(), pol, sink, Options{kernel: f, Workers: 1})
+	l, err := New(testListener(), pol, sink, Options{kernel: f, Workers: 1, LandlockTruncate: true})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

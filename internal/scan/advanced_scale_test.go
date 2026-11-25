@@ -93,7 +93,7 @@ func advancedManyAccountsStockUserUnits(t *testing.T, systemCount int) {
 				t.Fatal(err)
 			}
 		case "file":
-			content, err := os.ReadFile(filepath.Join(fixture, "root", entry.Path))
+			content, err := os.ReadFile(filepath.Join(fixture, "root", storedFixtureName(entry.Path)))
 			if err != nil {
 				t.Fatal(err)
 			}

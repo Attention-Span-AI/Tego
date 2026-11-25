@@ -113,6 +113,26 @@ func TestDevicesWhenOpened(t *testing.T) {
 	}
 }
 
+// TestTheStandardDevicesGrantNeedsNoEntry: an open of /dev/null or /dev/zero under the product's own standard-device rule
+// (every contract grants them, ADR 0158) proposes nothing, neither an entry nor an observed-not-allowed line, while the
+// terminal, which is not granted by default, is still proposed when the run opened it.
+func TestTheStandardDevicesGrantNeedsNoEntry(t *testing.T) {
+	r := newRun(t, ws)
+	for _, d := range []string{"/dev/null", "/dev/zero", "/dev/full", "/dev/random", "/dev/urandom"} {
+		r.fs(record.FSOpen, d, "", wronly)
+		r.events[len(r.events)-1].Rule = agent.BuiltinStandardDevices
+		r.events[len(r.events)-1].Verdict = record.VerdictAllow
+	}
+	r.open("/dev/tty", rdonly)
+	c := r.propose(Options{}).Contract()
+	if got, want := entries(c, "fs"), []string{"/dev/tty"}; !slices.Equal(got, want) {
+		t.Errorf("fs.write = %q, want %q\n%s", got, want, c)
+	}
+	if strings.Contains(c, "/dev/zero") || strings.Contains(c, "writes under /dev/") {
+		t.Errorf("an allowed open of a standard device is proposed or reported:\n%s", c)
+	}
+}
+
 // TestStateDirectoriesAreNeverWritable: an entry that is, is inside or holds tego's own state directory is never
 // proposed, because tego refuses a contract that lets the agent write them.
 func TestStateDirectoriesAreNeverWritable(t *testing.T) {

@@ -137,7 +137,7 @@ func TestStartProgramWithAbsolutePath(t *testing.T) {
 				versionPrograms = append(versionPrograms, program)
 				return "1.2.3"
 			}
-			answers := "3\n"
+			answers := "4\n"
 			if relativeFirst {
 				answers += "./bot.sh\n"
 			}
@@ -218,7 +218,7 @@ func TestStartTestProjectWithClaude(t *testing.T) {
 	fakeProgram(t, "claude")
 	t.Chdir(f.Home)
 
-	code, out, errs := runGuide(t, "1\n2\nsk-test-123\n1\n1\n1\n")
+	code, out, errs := runGuide(t, "2\n2\nsk-test-123\n1\n1\n1\n")
 	if code != identity.ExitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errs)
 	}
@@ -282,7 +282,7 @@ func TestStartSubscriptionNotSaved(t *testing.T) {
 		return "sk-ant-oat01-read-from-the-sign-in-0123456789", nil
 	}
 
-	code, out, errs := runGuide(t, "1\n1\n2\n1\n2\n")
+	code, out, errs := runGuide(t, "2\n1\n2\n1\n2\n")
 	if code != identity.ExitOK || ran != "claude" {
 		t.Fatalf("exit %d, setup-token ran %q\n%s\n%s", code, ran, out, errs)
 	}
@@ -301,7 +301,7 @@ func TestStartSubscriptionNotSaved(t *testing.T) {
 	// A login whose token can't be read: the guide asks for it.
 	guideSetupToken = func(context.Context, string, string) (string, error) { return "", nil }
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
-	code, out, errs = runGuide(t, "1\n1\ntok-pasted\n2\n1\n2\n1\n")
+	code, out, errs = runGuide(t, "2\n1\ntok-pasted\n2\n1\n2\n1\n")
 	if code != identity.ExitOK || !strings.Contains(out, "Paste the token Claude Code printed") {
 		t.Fatalf("fallback: exit %d\n%s\n%s", code, out, errs)
 	}
@@ -323,7 +323,7 @@ func TestStartOwnProjectOnMac(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	code, out, errs := runGuide(t, "3\npython3 bot.py\n2\n~/nope\n~/app\n3\n0\napi.github.com\n")
+	code, out, errs := runGuide(t, "4\npython3 bot.py\n2\n~/nope\n~/app\n3\n0\napi.github.com\n")
 	if code != identity.ExitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errs)
 	}
@@ -410,13 +410,13 @@ func TestStartInstallsTheAgent(t *testing.T) {
 		return os.WriteFile(filepath.Join(bin, "claude"), []byte("#!/bin/sh\n"), 0o755)
 	}
 
-	code, out, _ := runGuide(t, "1\n2\n")
+	code, out, _ := runGuide(t, "2\n2\n")
 	if code != identity.ExitFinding || installed {
 		t.Fatalf("no: exit %d installed %v\n%s", code, installed, out)
 	}
 	wantAll(t, "no", out, "Install Claude Code now?", "curl -fsSL https://claude.ai/install.sh | bash")
 
-	code, out, errs := runGuide(t, "1\n1\n1\n1\n")
+	code, out, errs := runGuide(t, "2\n1\n1\n1\n")
 	if code != identity.ExitOK || !installed {
 		t.Fatalf("yes: exit %d installed %v\n%s\n%s", code, installed, out, errs)
 	}
@@ -492,7 +492,7 @@ func TestStartSavedLogin(t *testing.T) {
 	noLogins(t)
 	fakeProgram(t, "claude")
 	t.Chdir(f.Home)
-	if code, out, errs := runGuide(t, "1\n2\nsk-test-123\n1\n1\n1\n"); code != identity.ExitOK {
+	if code, out, errs := runGuide(t, "2\n2\nsk-test-123\n1\n1\n1\n"); code != identity.ExitOK {
 		t.Fatalf("first run: exit %d\n%s\n%s", code, out, errs)
 	}
 	if err := saveLogin(f.Home, "CODEX_API_KEY", "sk-codex"); err != nil {

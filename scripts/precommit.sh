@@ -159,6 +159,7 @@ shellcheck_all() {
 }
 shellcheck_files() { "$SHELLCHECK" -e SC1091 "$@"; }
 check_spdx() { ./scripts/check-spdx.sh; }
+check_paths() { python3 -I ./scripts/check-paths.py; }
 check_licenses() { GO="$GO" ./scripts/check-licenses.sh; }
 check_skiplists() { ./scripts/check-skiplists.sh; }
 check_exits() { GO="$GO" ./scripts/check-exits.sh; }
@@ -185,7 +186,7 @@ script_tests() {
 	local t st=0
 	# The python helpers some self-tests run leave no __pycache__ in the tree.
 	export PYTHONDONTWRITEBYTECODE=1
-	for t in scripts/install_test.sh scripts/install_mac_test.sh scripts/install_windows_test.sh scripts/coverage_test.sh scripts/bench-gate_test.sh scripts/timing-budgets_test.sh scripts/gate-cost_test.sh scripts/check-spdx_test.sh scripts/check-licenses_test.sh scripts/scrub-capture_test.sh scripts/fuzz-corpus_test.sh scripts/deadcode-report_test.sh scripts/skipgate_test.sh \
+	for t in scripts/install_test.sh scripts/install_mac_test.sh scripts/install_windows_test.sh scripts/coverage_test.sh scripts/bench-gate_test.sh scripts/timing-budgets_test.sh scripts/gate-cost_test.sh scripts/check-spdx_test.sh scripts/check-paths_test.sh scripts/check-licenses_test.sh scripts/scrub-capture_test.sh scripts/fuzz-corpus_test.sh scripts/deadcode-report_test.sh scripts/skipgate_test.sh \
 		scripts/demo-credentials_test.sh scripts/demo-reset_test.sh scripts/cleanup-guards_test.sh \
 		scripts/check-skiplists_test.sh scripts/release_test.sh scripts/check-control-pin_test.sh scripts/bpf-toolchain_test.sh scripts/tree-files_test.sh \
 		scripts/precommit_test.sh scripts/check-bpf-objects_test.sh scripts/fd-churn_test.sh scripts/check-fd_test.sh scripts/check-edgelint_test.sh test/vm/kvm-step_test.sh test/vm/held-label_test.sh test/vm/python-pkgs_test.sh test/vm/fetch-kernel_test.sh \
@@ -242,6 +243,7 @@ add_full() {
 	pc_add static lint "golangci-lint" step lint_tagged ./...
 	pc_add static lint "golangci-lint (the files the tags leave out)" step lint_untagged
 	pc_add static spdx "check-spdx" step check_spdx
+	pc_add static paths "check-paths (no path a Windows checkout cannot hold)" step check_paths
 	pc_add static licenses "check-licenses" step check_licenses
 	if command -v "$SHELLCHECK" >/dev/null; then
 		pc_add static shellcheck "shellcheck" step shellcheck_all

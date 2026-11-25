@@ -267,6 +267,14 @@ type Options struct {
 	// EACCES of a held open (snapshotRead). Nil when the run's ruleset enumerated nothing, or the tier keeps no
 	// snapshot.
 	DenyReadSnapshot func(path string) bool
+	// LandlockTruncate says the run's Landlock ruleset decides truncate(2), which it does from ABI 3 (kernel 6.2, or
+	// a backport): the call is then continued with a line, as a write open is. The zero value is the safe one. On a
+	// kernel without the right the filter notifies every truncate(2) and every open that truncates through a
+	// read-only access mode instead (landlock.truncateTest, readOnlyTruncateTest), and this loop answers each of them
+	// EPERM, the errno the filter itself answered before, with a refused line under the rule landlock-no-truncate. A
+	// run whose handle does not say, which is also a run with no such filter, therefore refuses rather than continues
+	// what no kernel decision backs. An observe run refuses nothing and ignores it.
+	LandlockTruncate bool
 	// BuiltinDirectories are Prepare-pinned device/inode identities. The handle
 	// keeps their O_PATH references alive until the supervisor has stopped.
 	BuiltinDirectories map[[2]uint64]string
@@ -476,6 +484,8 @@ type Loop struct {
 	runtimeDir string
 	// snapshotRefuses is Options.DenyReadSnapshot.
 	snapshotRefuses func(path string) bool
+	// landlockTruncate is Options.LandlockTruncate.
+	landlockTruncate bool
 	// mcpRelayed is Options.MCPRelayed.
 	mcpRelayed func(server string, callerPID int) bool
 	mcpStage   func(int, uint64, uint64, []string) string
@@ -529,7 +539,9 @@ type compiled struct {
 	pol *Policy
 	// live is Options.LiveBlocks: the run's live blocks, which change while the table does not (blocks).
 	live func() *liveblock.Set
-	unix []unixRule
+	// liveWords is the matcher of the live command-word blocks compiled from the Set live last gave (liveCommands).
+	liveWords atomic.Pointer[liveWordsCache]
+	unix      []unixRule
 	// planeKeyed is the files a decision plane keys at their own inodes, by identity (planeKeyedAt).
 	planeKeyed planeKeyedIndex
 	// unixAsk is net.ask's unix: scopes (askUnix): approval candidates, never admitted without a person's answer.
@@ -826,6 +838,7 @@ func New(listener *sys.FD, pol *Policy, sink Sink, opts Options) (_ *Loop, err e
 	}
 	l.planeAttrs = opts.PlaneAttrs
 	l.snapshotRefuses = opts.DenyReadSnapshot
+	l.landlockTruncate = opts.LandlockTruncate
 
 	l.mcpRelayed = opts.MCPRelayed
 	l.mcpStage = opts.MCPStage

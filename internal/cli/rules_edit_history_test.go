@@ -22,7 +22,7 @@ func editWith(t *testing.T, line string) {
 	t.Setenv("VISUAL", script)
 }
 
-// TestRulesEditIsInTheChangeHistory (N113): a saved `tego rules edit` is one journal entry, written through the writer
+// TestRulesEditIsInTheChangeHistory: a saved `tego rules edit` is one journal entry, written through the writer
 // the dashboard uses (rulefile.Replace): the same journal that tego rules history and the dashboard read, in the
 // dashboard's own wording for a whole-text edit, direction mixed (so an undo of it asks for the word), via "cli", with
 // the old text kept as <file>.bak. The output says so, and says where the history lists it.
@@ -67,7 +67,7 @@ func TestRulesEditIsInTheChangeHistory(t *testing.T) {
 	}
 }
 
-// TestRulesEditSaysWhenItCannotBeUndone (N113): where the writer cannot keep the history (no ledger root yet, or a file
+// TestRulesEditSaysWhenItCannotBeUndone: where the writer cannot keep the history (no ledger root yet, or a file
 // its guards refuse), the edit is still saved as before and the output says it is not in the history and cannot be
 // undone, instead of leaving that unsaid.
 func TestRulesEditSaysWhenItCannotBeUndone(t *testing.T) {

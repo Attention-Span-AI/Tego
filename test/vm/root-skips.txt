@@ -379,6 +379,7 @@ internal/runtime/capture/uprobe TestIntegrationRecordOffTLSCallCost # untagged: 
 internal/runtime/capture/uprobe TestIntegrationRecordOffActivityStartCost # untagged: needs the compiled objects
 internal/runtime/enforce/cgroup TestUnixApprovalOnRealKernel # a kernel below 6.7 has no cgroup/connect_unix to hold to the one-connect grant; TestPlaneUnixApprovalOnRealKernel holds the plane's socket_connect to the same cells there
 internal/runtime TestRootAskUnix/bpflsm # the same, for the unix ask at tier bpflsm: a boot without BPF LSM (doctor --require bpflsm says so)
+internal/runtime TestRootStandardDevices/bpflsm # the standard devices at tier bpflsm: a boot without BPF LSM (doctor --require bpflsm says so)
 internal/runtime TestRootAskUDP/bpflsm # the UDP ask at tier bpflsm: a boot without BPF LSM (doctor --require bpflsm says so)
 internal/runtime TestRootRetrieverRunTiesActionsToReplies/bpflsm # tier bpflsm needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and VM_BOOTS' default-lsm boot lack; the lsm-bpf boot runs it
 internal/runtime/enforce/cgroup TestApprovalReapHelper # helper process only
@@ -407,6 +408,22 @@ internal/runtime TestRootStrictHeldOpens/gate.completion:_held/cgroup/lsm # the 
 internal/runtime TestRootLiveBlockInPlane/bpflsm/lsm # tier bpflsm needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out (ADR 0124's amendment of 2026-11-21); the lsm-bpf boot runs it
 internal/runtime TestRootLiveBlockInPlane/bpflsm/fmod_ret # tier bpflsm decides in the plane's lsm mode wherever bpf is an active LSM, so this machine never runs it in fmod_ret mode, and with bpf absent there is no tier bpflsm at all (ADR 0124's amendment of 2026-11-21)
 internal/runtime TestRootLiveBlockInPlane/cgroup/lsm # the plane's lsm mode needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out; fmod_ret mode runs either way (ADR 0124's amendment of 2026-11-21)
+internal/runtime TestRootLiveBlockIdentityMismatch/bpflsm/lsm # tier bpflsm needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out (ADR 0124's amendment of 2026-11-21); the lsm-bpf boot runs it
+internal/runtime TestRootLiveBlockIdentityMismatch/bpflsm/fmod_ret # tier bpflsm decides in the plane's lsm mode wherever bpf is an active LSM, so this machine never runs it in fmod_ret mode, and with bpf absent there is no tier bpflsm at all (ADR 0124's amendment of 2026-11-21)
+internal/runtime TestRootLiveBlockIdentityMismatch/cgroup/lsm # the plane's lsm mode needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out; fmod_ret mode runs either way (ADR 0124's amendment of 2026-11-21)
+internal/runtime TestRootLiveBlockPathUnresolved/bpflsm/lsm # tier bpflsm needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out (ADR 0124's amendment of 2026-11-21); the lsm-bpf boot runs it
+internal/runtime TestRootLiveBlockPathUnresolved/bpflsm/fmod_ret # tier bpflsm decides in the plane's lsm mode wherever bpf is an active LSM, so this machine never runs it in fmod_ret mode, and with bpf absent there is no tier bpflsm at all (ADR 0124's amendment of 2026-11-21)
+internal/runtime TestRootLiveBlockPathUnresolved/cgroup/lsm # the plane's lsm mode needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out; fmod_ret mode runs either way (ADR 0124's amendment of 2026-11-21)
+internal/runtime TestRootLiveBlockDormantBlockWaitsForItsInstant/bpflsm/lsm # tier bpflsm needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out (ADR 0124's amendment of 2026-11-21); the lsm-bpf boot runs it
+internal/runtime TestRootLiveBlockDormantBlockWaitsForItsInstant/bpflsm/fmod_ret # tier bpflsm decides in the plane's lsm mode wherever bpf is an active LSM, so this machine never runs it in fmod_ret mode, and with bpf absent there is no tier bpflsm at all (ADR 0124's amendment of 2026-11-21)
+internal/runtime TestRootLiveBlockDormantBlockWaitsForItsInstant/cgroup/lsm # the plane's lsm mode needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out; fmod_ret mode runs either way (ADR 0124's amendment of 2026-11-21)
+internal/runtime TestRootLiveBlockNameKeys/bpflsm/lsm # tier bpflsm needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out (ADR 0124's amendment of 2026-11-21); the lsm-bpf boot runs it
+internal/runtime TestRootLiveBlockNameKeys/bpflsm/fmod_ret # tier bpflsm decides in the plane's lsm mode wherever bpf is an active LSM, so this machine never runs it in fmod_ret mode, and with bpf absent there is no tier bpflsm at all (ADR 0124's amendment of 2026-11-21)
+internal/runtime TestRootLiveBlockNameKeys/cgroup/lsm # the plane's lsm mode needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out; fmod_ret mode runs either way (ADR 0124's amendment of 2026-11-21)
+internal/runtime TestRootLiveBlockOnCommandWords/bpflsm/lsm/* # tier bpflsm needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out; the lsm-bpf boot runs it (ADR 0171)
+internal/runtime TestRootLiveBlockOnCommandWords/bpflsm/fmod_ret/* # tier bpflsm decides in the plane's lsm mode wherever bpf is an active LSM, so this machine never runs it in fmod_ret mode (ADR 0171)
+internal/runtime TestRootLiveBlockOnCommandWords/cgroup/lsm/* # the plane's lsm mode needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out; fmod_ret mode runs either way (ADR 0171)
+internal/runtime TestRootOlderLauncherRefusesACommandBlock # it needs a tego built from the revision before command blocks (VM_FIXTURE_ROOT stages it at /older-tego/tego), which only the row that proves the older launcher stages (ADR 0171)
 internal/runtime TestRootRouteChangesRefused/bpflsm # a root agent at tier bpflsm needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out; tier cgroup runs either way (ADR 0128)
 internal/runtime/enforce/cgroup TestCompactedTableStaysAtBPFLSM/bpflsm # tier bpflsm needs the plane's lsm mode: bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and the default-lsm boot lack (the lsm-bpf boot runs it)
 
@@ -488,3 +505,6 @@ internal/control/web TestBuilderGovernedPreviewsCannotEvictPersonsReview/* # hos
 internal/platform/sys TestMakeUndumpableHelper # helper process for TestMakeUndumpable
 internal/ledger TestModeAdviceNamesTheStateAndTheOneCommand # root reads through any mode, so the mode that advice names cannot be provoked; the unprivileged steps run it
 internal/runtime TestPlaneBlocksRefuseWholeWhatTheyCannotKey # root opens a mode-0 folder's child, so the class the block cannot key is not provoked; the unprivileged steps run it
+internal/doctor TestIntegrationAPlaneProbeOfARunStopsAtTheSelectedMode # untagged: the plane probe loads decide.bpf.c's builds
+internal/runtime TestIntegrationAWindowHoldsAgainstItsOwnAgent/root-cgroup # needs tier cgroup: skipped only on doctor's answer that the machine offers none (a hosted runner without a delegated cgroup)
+internal/runtime TestIntegrationAWindowHoldsAgainstItsOwnAgent/root-bpflsm # needs BPF LSM; unavailable on default-lsm boot

@@ -13,6 +13,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/doctor"
+	"github.com/attention-span-ai/tego/internal/platform/lsmlist"
 	"github.com/attention-span-ai/tego/pkg/policy/gate"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
@@ -169,7 +170,7 @@ func TestHeldLabelWarningModuleCombinations(t *testing.T) {
 	}
 }
 
-// TestHeldLabelWarningNamesWhyTheListWasUnreadable (N114): the launch note for an unreadable module list says what each
+// TestHeldLabelWarningNamesWhyTheListWasUnreadable: the launch note for an unreadable module list says what each
 // way answered, offers the option that exists for that cause, and keeps the refusal's reason. A kernel before 6.8 has no
 // call to permit.
 func TestHeldLabelWarningNamesWhyTheListWasUnreadable(t *testing.T) {
@@ -187,6 +188,13 @@ func TestHeldLabelWarningNamesWhyTheListWasUnreadable(t *testing.T) {
 		{"Debian 12", &doctor.LSMReadError{Syscall: fmt.Errorf("lsm_list_modules(2): %w", unix.ENOSYS), SecurityFS: absent},
 			[]string{"older than Linux 6.8", "is not there", "only the file can answer", "refused when its security labels cannot be verified"},
 			[]string{"doctor:"}},
+		{"Debian 12, no list file named", &doctor.LSMReadError{Syscall: fmt.Errorf("lsm_list_modules(2): %w", unix.ENOSYS), SecurityFS: absent},
+			[]string{"hand the list in", "lsm.list_file", "bind the host's /sys/kernel/security/lsm read-only"},
+			[]string{"make the list file"}},
+		{"Debian 12, a list file that was not believed", &doctor.LSMReadError{Syscall: fmt.Errorf("lsm_list_modules(2): %w", unix.ENOSYS), SecurityFS: absent,
+			ListFile: "/run/tego-lsm/lsm-list", ListErr: &lsmlist.Unusable{Path: "/run/tego-lsm/lsm-list", Why: "was written in another boot (its boot id is \"a\", this boot's is \"b\"): it is stale"}},
+			[]string{"lsm.list_file /run/tego-lsm/lsm-list was written in another boot", "make the list file /run/tego-lsm/lsm-list what the entrypoint writes at each start", "refused when its security labels cannot be verified"},
+			[]string{"hand the list in"}},
 	} {
 		got := heldLabelWarning("fs.reads: held", nil, tc.err)
 		for _, w := range tc.wants {

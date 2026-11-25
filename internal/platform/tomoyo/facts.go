@@ -122,40 +122,68 @@ func checkFactsDirFile(p, cfg string, f *os.File) error {
 	if err := CheckSecurityfs(f); err != nil {
 		return err
 	}
+	if why := securityfsBindWhy(p, f, "/tomoyo/"+name); why != "" {
+		return refuseFact(p, why)
+	}
+	return nil
+}
+
+// CheckSecurityfsBind is the check a securityfs file bound into a container gets (the facts directory's, and the
+// security-module list's, which is /lsm): f, opened at p, must be on securityfs (the filesystem magic), on a mount that
+// is read-only, whose file is exactly wantInFS (the root of the bind joined with the path below its mount point, so
+// another securityfs file bound in its place is refused), and p must be the path the kernel resolved for the descriptor
+// (no link in it). Securityfs is one kernel instance and mounting it needs CAP_SYS_ADMIN in the initial user
+// namespace, so what passes is the kernel's own file. The error says what is wrong and nothing about what it is for.
+func CheckSecurityfsBind(p string, f *os.File, wantInFS string) error {
+	typ, err := statfsType(f)
+	if err != nil {
+		return fmt.Errorf("%s: cannot tell what filesystem it is on: %w", p, err)
+	}
+	if typ != uint32(unix.SECURITYFS_MAGIC) {
+		return fmt.Errorf("%s is not on securityfs (filesystem type %#x)", p, typ)
+	}
+	if why := securityfsBindWhy(p, f, wantInFS); why != "" {
+		return fmt.Errorf("%s %s", p, why)
+	}
+	return nil
+}
+
+// securityfsBindWhy is why f, opened at p, is not the securityfs file wantInFS on a read-only mount, or "" when it
+// is. The magic check is the caller's.
+func securityfsBindWhy(p string, f *os.File, wantInFS string) string {
 	link, err := fdPath(f)
 	if err != nil {
-		return refuseFact(p, "has no path of its own the check can read: "+err.Error())
+		return "has no path of its own the check can read: " + err.Error()
 	}
 	if link != p {
-		return refuseFact(p, "is reached through a link (the descriptor's path is "+link+")")
+		return "is reached through a link (the descriptor's path is " + link + ")"
 	}
 	id, err := statxMountID(f)
 	if err != nil {
-		return refuseFact(p, "has a mount id that cannot be read: "+err.Error())
+		return "has a mount id that cannot be read: " + err.Error()
 	}
 	raw, err := readMountinfo()
 	if err != nil {
-		return refuseFact(p, "cannot be placed: mountinfo cannot be read: "+err.Error())
+		return "cannot be placed: mountinfo cannot be read: " + err.Error()
 	}
 	m, err := findMount(raw, id)
 	if err != nil {
-		return refuseFact(p, err.Error())
+		return err.Error()
 	}
 	if m.fstype != "securityfs" {
-		return refuseFact(p, "is on a mount mounted as "+m.fstype+", not securityfs")
+		return "is on a mount mounted as " + m.fstype + ", not securityfs"
 	}
 	if !slices.Contains(strings.Split(m.options, ","), "ro") {
-		return refuseFact(p, "is on a writable mount ("+m.options+")")
+		return "is on a writable mount (" + m.options + ")"
 	}
 	rel, err := filepath.Rel(m.point, p)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
-		return refuseFact(p, "is not under the mount point "+m.point+" mountinfo names for it")
+		return "is not under the mount point " + m.point + " mountinfo names for it"
 	}
-	inFS := filepath.Join(m.root, rel)
-	if want := "/tomoyo/" + name; inFS != want {
-		return refuseFact(p, "is at path "+inFS+" in its filesystem, not "+want)
+	if inFS := filepath.Join(m.root, rel); inFS != wantInFS {
+		return "is at path " + inFS + " in its filesystem, not " + wantInFS
 	}
-	return nil
+	return ""
 }
 
 // mount is the fields of one mountinfo line the check reads.

@@ -56,7 +56,7 @@ PKGS=(
 #              internal/control/cli's suites fail without it (2026-10-27)
 GUEST_MODULES=(overlay btrfs unix_diag tcp_diag)
 # Helpers the tests `go build` at run time; go-shim.sh serves them by last path element.
-HELPERS=(cmd/tego test/conformance/cmd/actor internal/runtime/cgroup/testdata/memhog test/workloads/model-agent test/workloads/retriever-agent test/workloads/signaller test/workloads/sigio test/workloads/procscope test/workloads/uringsock test/workloads/uringbind test/workloads/execracer test/workloads/ifaces test/workloads/strictimport test/vm/cmd/permlistener)
+HELPERS=(cmd/tego test/conformance/cmd/actor internal/runtime/cgroup/testdata/memhog test/workloads/model-agent test/workloads/ledger-attacker test/workloads/retriever-agent test/workloads/signaller test/workloads/sigio test/workloads/procscope test/workloads/uringsock test/workloads/uringbind test/workloads/execracer test/workloads/ifaces test/workloads/strictimport test/vm/cmd/permlistener)
 # The packages whose suites run as parts, "<name>|<package>|<n>": each of the package's two suites (plain and tegobpf) in
 # n guests, part j of n running the tests at positions j, j+n, j+2n ... of the suite's list (read from its sources), and
 # part n also every test the list does not hold (the fuzz targets, an example): root-suites.sh's split_part. Every test of

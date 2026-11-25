@@ -720,6 +720,16 @@ func recordModeOf(m agent.RecordMode) ebpfbindings.RecordMode {
 // BuiltinRefusals reports whether the inherited domain installs ADR 0113.
 func (h *Handle) BuiltinRefusals() bool { return h.table != nil && h.table.Builtins != nil }
 
+// LandlockDecidesTruncate forwards the inherited tier-1 handle's word that its ruleset decides truncate(2) (ABI 3, kernel
+// 6.2): the filter this tier installs is the one tier 1 composed, so the supervisor continues a notified truncate only
+// where that handle says so and refuses it with EPERM otherwise. False when nothing inherited says.
+func (h *Handle) LandlockDecidesTruncate() bool {
+	if inherited, ok := h.inherited.(interface{ LandlockDecidesTruncate() bool }); ok {
+		return inherited.LandlockDecidesTruncate()
+	}
+	return false
+}
+
 // BuiltinSocketDirectories forwards the inherited Prepare-pinned socket roots.
 func (h *Handle) BuiltinSocketDirectories() map[[2]uint64]string {
 	if inherited, ok := h.inherited.(interface{ BuiltinSocketDirectories() map[[2]uint64]string }); ok {

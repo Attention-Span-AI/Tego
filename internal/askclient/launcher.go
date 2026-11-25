@@ -31,7 +31,7 @@ func Launcher(dir string) (*runlock.StopTarget, error) {
 	if errors.Is(err, runlock.ErrStale) {
 		// The process the lock line names is gone (exited, reaped or not, even while this look at it was made), or is
 		// another process now: no live launcher holds the run's lock, as `tego stop` and `tego status` read the same
-		// refusal. The run is over; nothing here serves its ask socket (N109).
+		// refusal. The run is over; nothing here serves its ask socket.
 		return nil, fmt.Errorf("%w: %w", ErrNoBroker, err)
 	}
 	if errors.Is(err, runlock.ErrNotLockHolder) && lockFree(dir) {

@@ -10,7 +10,7 @@ import (
 	bpfobj "github.com/attention-span-ai/tego/internal/bpf"
 )
 
-// A mode whose probe fails on a row's verdict is probed once more (ADR 0024, amendment of 2026-11-24, N131). The
+// A mode whose probe fails on a row's verdict is probed once more (ADR 0024, amendment of 2026-11-24). The
 // run-probe cache keeps a failed mode for the whole boot, so one false answer of a probe's syscall, or of a hook,
 // would cost the machine the stronger plane until reboot. The rule keeps R21's invariant (a mode is selected only
 // when every hook counted) and keeps an intermittently mis-deciding hook visible:

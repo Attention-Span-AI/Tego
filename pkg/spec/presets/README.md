@@ -36,8 +36,8 @@ runs that test with `TEGO_RELEASE_VERSION` set, which then fails for every catal
 prints the line to add; `scripts/release.sh tag` runs it before the gate and `release.yml` before it builds
 (docs/VERSIONING.md §5). A run records an unpinned preset by its name and the sha256 of the bytes it merged, which
 `released` maps to the revision. v0.1.0, the first release, froze revision 1 of the original three presets: a change to one is now
-revision 2. `ci@1` is new for v0.2.0 and is not released yet; the release cut adds its hash to `released` by the
-same rule, without changing any of those three frozen files.
+revision 2. `ci@1` is new in v0.2.0, which froze it by the same rule, without changing any of those three frozen
+files.
 
 ## What a preset may set
 

@@ -20,7 +20,7 @@ fail() { echo "FAIL $*" >&2; exit 1; }
 repo="$tmp/repo"
 mkdir -p "$repo/test/vm" "$tmp/cache/kernel" "$tmp/bin" "$tmp/consoles"
 cp "$here/measure-plane-verifier.sh" "$repo/test/vm/"
-for k in k-ok k-over k-noboot; do
+for k in k-ok k-over k-noboot k-nolisten; do
 	mkdir -p "$tmp/cache/kernel/$k"
 	: >"$tmp/cache/kernel/$k/vmlinuz"
 done
@@ -49,18 +49,22 @@ exit "$(cat "$STUB_CONSOLES/$TEGO_VM_KERNEL.rc")"
 STUB_KVM
 chmod +x "$tmp/bin/go" "$repo/test/vm/kvm-run.sh"
 
-console() { # console KERNEL RD PR RDBUDGET PRBUDGET [over]
+console() { # console KERNEL RD PR RDBUDGET PRBUDGET [over]; socket_listen's 44023 is beside them and in no rd or pr column
 	cat >"$tmp/consoles/$1.console" <<CONSOLE
 [    0.000000] Linux version 6.19.4-test (build@host)
 === RUN   TestPlaneLoadsAndAttaches/decide_rd
 === RUN   TestPlaneLoadsAndAttaches/decide_rd/lsm
     plane_load_integration_test.go:122: lsm_path_rename: $2 instructions verified
     plane_load_integration_test.go:122: lsm_path_mknod: 1000 instructions verified
+    plane_load_integration_test.go:122: lsm_socket_listen: 44023 instructions verified
     plane_budget_integration_test.go:1: decide_rd on 6.19.4-test: a plane program's budget is $4
+    plane_budget_integration_test.go:2: decide_rd on 6.19.4-test: socket_listen's budget is 48426 (Linux 7.0 and later: 44023 measured on x, 10 % over)
 === RUN   TestPlaneLoadsAndAttaches/decide_pr
 === RUN   TestPlaneLoadsAndAttaches/decide_pr/lsm
     plane_load_integration_test.go:122: lsm_path_rename: $3 instructions verified
+    plane_load_integration_test.go:122: lsm_socket_listen: 43859 instructions verified
     plane_budget_integration_test.go:1: decide_pr on 6.19.4-test: a plane program's budget is $5
+    plane_budget_integration_test.go:2: decide_pr on 6.19.4-test: socket_listen's budget is 48426 (Linux 7.0 and later: 44023 measured on x, 10 % over)
 CONSOLE
 	if [ -n "${6:-}" ]; then
 		echo "    plane_load_integration_test.go:123: lsm_x: $3 instructions verified, over the budget of $5" >>"$tmp/consoles/$1.console"
@@ -80,6 +84,8 @@ run "$script" -o "$tmp/out1" k-ok
 [ "$rc" -eq 0 ] || fail "ok kernel: exit $rc, want 0: $out $(cat "$tmp/err")"
 echo "$out" | grep -qE '^k-ok +6\.19\.4-test +100417 +59387 +110459 +65326 +PASS$' || fail "ok kernel: table row: $out"
 [ -f "$tmp/out1/k-ok.console" ] && [ -f "$tmp/out1/table.txt" ] || fail "ok kernel: logs kept in the output folder"
+# socket_listen's counts are in their own table with their own budget, and not in the rd and pr columns
+echo "$out" | grep -qE '^k-ok +6\.19\.4-test +44023 +43859 +48426 +48426$' || fail "ok kernel: socket_listen row: $out"
 
 # a program over its budget fails the run with exit 1 and says so
 console k-over 111463 59387 110459 65326 over
@@ -88,6 +94,14 @@ run "$script" -o "$tmp/out2" k-ok k-over
 [ "$rc" -eq 1 ] || fail "over budget: exit $rc, want 1: $out"
 echo "$out" | grep -qE '^k-over .* FAIL\(rc=1,over=1\)$' || fail "over budget: table row: $out"
 echo "$out" | grep -qE '^k-ok .* PASS$' || fail "over budget: the passing kernel is still listed: $out"
+
+# a kernel whose log has no socket_listen count is not a pass: that program would be held to no budget
+console k-nolisten 100417 59387 110459 65326
+grep -v socket_listen "$tmp/consoles/k-nolisten.console" >"$tmp/consoles/k-nolisten.tmp" && mv "$tmp/consoles/k-nolisten.tmp" "$tmp/consoles/k-nolisten.console"
+echo 0 >"$tmp/consoles/k-nolisten.rc"
+run "$script" -o "$tmp/out8" k-nolisten
+[ "$rc" -eq 1 ] || fail "no socket_listen count: exit $rc, want 1: $out"
+echo "$out" | grep -qE '^k-nolisten .* FAIL\(rc=0,over=0\)$' || fail "no socket_listen count: table row: $out"
 
 # a guest that cannot boot (97) is not a pass and ends the exit code at 97 even beside a failure
 console k-noboot 0 0 0 0

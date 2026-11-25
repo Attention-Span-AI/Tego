@@ -13,7 +13,7 @@ its folders, its hosts, its model, the variables it needs. There are four:
 
 | Choice | Presets | What the agent may do |
 |---|---|---|
-| **Base development** | all three | Change any file in the project, install packages and run tests. Never read your secret files. Connect only to its model's API. |
+| **Base development** | all three | Change files in the project and use the tools the agent needs. Never read your secret files. Connect only to its model's API. |
 | **Read-only review** | all three | Read the project and its git history. Change nothing in the project, except Tego's own folder for the agent's state (`.tego/`). Never read your secret files. Connect only to its model's API. |
 | **Choose each rule** | the ones you pick | The same building blocks, switched on or off, plus any other hosts you name. |
 | **Use my own rules file** | the ones your file names | Exactly what your file says, once it checks. |
@@ -120,7 +120,8 @@ the agent sends it.
 
 Under `tego/repo-only-writes` every write is refused except in
 the folders your contract's `fs.write` names, and to `/dev/null`, which many tools open for writing and which stores
-nothing. A write here is a change to a file's contents and the making, removing, renaming or linking of a file or
+nothing (a contract with an `fs:` section may also write `/dev/zero`, `/dev/full`, `/dev/random` and `/dev/urandom`, which hold no file
+either: see below). A write here is a change to a file's contents and the making, removing, renaming or linking of a file or
 folder. With no folder in the contract, the agent writes nothing else.
 
 What it does not cover:
@@ -136,6 +137,13 @@ What it does not cover:
   the whole project writable.
 - A tool that writes its temporary files to `/tmp` is refused there: give it a folder of yours, for example `TMPDIR`
   under one of your write folders.
+- Five standard devices are writable in every contract that has an `fs:` section, with no preset and no entry: `/dev/null`, `/dev/zero`,
+  `/dev/full`, `/dev/random` and `/dev/urandom`. They hold no file, so `> /dev/null` and `2>/dev/null` work. The grant is
+  to the device itself, found by its major and minor numbers: another file at the same name, a link to another file, or
+  a node made with `mknod` somewhere else has none. Nothing else under `/dev` is granted. `/dev/tty`, `/dev/ptmx` and
+  the pseudo-terminals are not: they are a person's screen, so a tool that needs `/dev/tty` needs the entry. Records show
+  an open of one of them with the rule `builtin.standard_devices`. An entry of your own that names a device, or a
+  folder over it, decides it instead: a rule of yours that refuses writes there still refuses them.
 
 ### CI (From source)
 
@@ -316,5 +324,5 @@ non-SSH GnuPG agents, Tego control sockets or other terminals. An exact containe
 is the documented exception, with an escape warning.
 
 The CI acceptance check is `test/vm/ci-preset-check.sh`, for a disposable guest. `tego/ci` deliberately adds no
-write grants: contracts that use shell redirection to `/dev/null` must grant that path themselves, or extend
-`tego/repo-only-writes` as well. This keeps the preset composable with the caller's selected write policy.
+write grants. A shell redirection to `/dev/null` works without one: every contract with an `fs:` section may write
+the standard data devices (see "Writes only in your folders"). This keeps the preset composable with the caller's selected write policy.

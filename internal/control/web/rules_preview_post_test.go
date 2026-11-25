@@ -21,7 +21,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
-// N124: sixteen entries of up to rules.MaxEntry bytes do not fit in an address. Serve's server reads at most 16 KiB of a
+// Sixteen entries of up to rules.MaxEntry bytes do not fit in an address. Serve's server reads at most 16 KiB of a
 // request's header (the request line included), and past it the browser got a bare "431" page. The Several changes at
 // once form therefore posts, and a refused Save does not send the person back to an address that long.
 
@@ -186,7 +186,9 @@ func TestSeveralPreviewPostKeepsTheGetsReach(t *testing.T) {
 		t.Errorf("a governed peer's save was answered %d", code)
 	}
 	f.s.governed = func(*http.Request) error { return nil }
-	f.s.cfg.Machine = machineWithMode(t, 0o666) // untrusted, so unknown as root too: root reads a mode-000 file
+	// Unknown for every user: mode 000 reads as unknown only to a user whose DAC applies, and root's does not (a root run of
+	// this test got a known baseline and its save went through).
+	f.s.cfg.Machine = machineWithMode(t, 0o666)
 	if code, body := f.post(t, "/rules/change/preview", q()); code != http.StatusOK {
 		t.Errorf("a preview post with the baseline unknown: %d %.300s", code, body)
 	}

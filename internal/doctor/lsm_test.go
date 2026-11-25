@@ -292,7 +292,7 @@ func TestTOMOYOHeldOpenDetailNamesTheFactsPath(t *testing.T) {
 	}
 }
 
-// TestUnreadLSMListDoctorWords (N114): a list no mechanism could read is said with the cause of each failure, what it
+// TestUnreadLSMListDoctorWords: a list no mechanism could read is said with the cause of each failure, what it
 // stops (tier bpflsm cannot be decided; held file opens are refused) and the option that would let tego read it, in
 // place of the host-only "mount securityfs" line. errors.Is(ErrLSMList) still holds.
 func TestUnreadLSMListDoctorWords(t *testing.T) {

@@ -598,7 +598,8 @@ table:
     "Repeats": 5,
     "StallAfter": null,
     "Tokens": null,
-    "Wall": 1800000000000
+    "Wall": 1800000000000,
+    "Window": null
    },
    "MCP": null,
    "Models": [
@@ -1722,6 +1723,90 @@ table:
     "RuntimeDev": 0,
     "RuntimeIno": 0,
     "Unenforced": false
+   },
+   {
+    "Access": 49154,
+    "AskRead": false,
+    "BuiltIn": true,
+    "Kind": "write",
+    "Missing": false,
+    "Path": "/dev/zero",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/dev/zero",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "StdDevice": true,
+    "Unenforced": false
+   },
+   {
+    "Access": 49154,
+    "AskRead": false,
+    "BuiltIn": true,
+    "Kind": "write",
+    "Missing": false,
+    "Path": "/dev/full",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/dev/full",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "StdDevice": true,
+    "Unenforced": false
+   },
+   {
+    "Access": 49154,
+    "AskRead": false,
+    "BuiltIn": true,
+    "Kind": "write",
+    "Missing": false,
+    "Path": "/dev/random",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/dev/random",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "StdDevice": true,
+    "Unenforced": false
+   },
+   {
+    "Access": 49154,
+    "AskRead": false,
+    "BuiltIn": true,
+    "Kind": "write",
+    "Missing": false,
+    "Path": "/dev/urandom",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/dev/urandom",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "StdDevice": true,
+    "Unenforced": false
    }
   ],
   "FSAsk": null,
@@ -1777,7 +1862,8 @@ table:
    "Set": 724,
    "StallAfter": 0,
    "Tokens": 0,
-   "Wall": 1800000000000
+   "Wall": 1800000000000,
+   "Window": 0
   },
   "Listen": null,
   "NameDeny": [

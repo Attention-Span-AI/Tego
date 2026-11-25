@@ -15,7 +15,7 @@ import (
 )
 
 // TestRootLaunchedRunIsSaidToBeSudos: a run launched with sudo keeps its folder root's, so a person's dashboard cannot read
-// it (N72). Every page that meets that says what is true (the run was launched with sudo, its folder is root's until it
+// it. Every page that meets that says what is true (the run was launched with sudo, its folder is root's until it
 // ends, so this dashboard cannot show or change it live; run the command with sudo or open the dashboard as root), never
 // the failed system call, and a refusal for another reason keeps its own words.
 func TestRootLaunchedRunIsSaidToBeSudos(t *testing.T) {

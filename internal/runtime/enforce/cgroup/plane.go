@@ -101,6 +101,8 @@ type planeKernel interface {
 type planeFillRequest struct {
 	Slot, Gen uint32
 	Rows      *decide.PlaneRows
+	// Table is the run's compiled table, which the standard-device rows are read from (checkStandardDevices).
+	Table *agent.RuleTable
 	// Held is the Landlock plan's O_PATH descriptor of a keyed path.
 	Held           heldFD
 	ListenHeld     heldFD
@@ -923,6 +925,9 @@ func innerOf(outer *ebpf.Map, slot uint32, name string) (*ebpf.Map, error) {
 // the slot's previous rows to take a userspace row is cleared of them (keeping this gen) and written once more, as
 // the fill does for its own.
 func (p *bpfPlane) fill(req planeFillRequest) (planeFillReport, error) {
+	if err := checkStandardDevices(req.Table, req.Rows, req.Held); err != nil {
+		return planeFillReport{}, err
+	}
 	plan, err := planPlaneFill(req.Rows, req.Slot, req.Gen, req.Held, hostIdentity{})
 	if err != nil {
 		return planeFillReport{}, err

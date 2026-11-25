@@ -57,3 +57,21 @@ func TestNetAdded(t *testing.T) {
 		t.Errorf("NetAdded(nil) = %q", got)
 	}
 }
+
+// TestRunCommands: the contract's command and each MCP server's command are listed in file order; a command that is not
+// a list of plain strings is left out; text that is not a mapping is an error.
+func TestRunCommands(t *testing.T) {
+	got, err := RunCommands([]byte("command: [git, status]\nmcp:\n  - name: a\n    command: [npx, -y, srv]\n  - name: b\n  - name: c\n    command: [{x: 1}]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := [][]string{{"git", "status"}, {"npx", "-y", "srv"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("commands = %q, want %q", got, want)
+	}
+	if got, _ := RunCommands([]byte("version: 0\n")); len(got) != 0 {
+		t.Errorf("a contract with no command lists %q", got)
+	}
+	if _, err := RunCommands([]byte("- a list\n")); err == nil {
+		t.Error("a YAML list is not an error")
+	}
+}

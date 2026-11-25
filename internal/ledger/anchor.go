@@ -149,6 +149,13 @@ func (a *fileChainAnchor) Head(run string) (string, bool, error) {
 	return h.Head, h.OK, h.Err
 }
 
+// Heads is Head for many runs from one read of the file: what AnchorHeads returns for it, so a caller that asks about
+// every run in a ledger root pays for one pass over chain.log and not one per run.
+func (a *fileChainAnchor) Heads(runs []string) map[string]AnchorHead {
+	h, _ := AnchorHeads(a.path, runs)
+	return h
+}
+
 // AnchorHead is what chain.log says of one run (chaincheck.AnchorHead): the head it anchors (OK), no line for it, or
 // Err, which wraps ErrCorruptLedger when the file is not an anchor.
 type AnchorHead = chaincheck.AnchorHead

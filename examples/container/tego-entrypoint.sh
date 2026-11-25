@@ -17,11 +17,24 @@
 #   2. makes sure the state directories (~tego/.tego, which holds the chain anchor, and the ledger root) and /work
 #      belong to the user, for a bind mount of a host directory that does not.
 #
+#   3. hands tego the list of the kernel's active security modules, which a container usually cannot read itself: under
+#      Docker's default profile lsm_list_modules(2) is refused (kernels before 6.8 lack it) and /sys/kernel/security is an
+#      empty directory, and without the list tego refuses every file open it holds for the agent. Root reads it here,
+#      from the kernel's own file (or by mounting securityfs read-only for the moment, which needs CAP_SYS_ADMIN and a
+#      profile that allows `mount`) and writes /run/tego-lsm/lsm-list as root, mode 0644, in a root-only directory, with
+#      this boot's id; /etc/tego/config.yaml names it (lsm.list_file) and tego believes it only while root alone can
+#      change it (internal/platform/lsmlist, docs/user/container.md). The directory is /run/tego-lsm, its own: /run/tego
+#      is tego's host state directory, which a root tego opens only as root's, mode 0700, and this step sets its
+#      directory to 0755 at every start. A container that cannot read the list here says
+#      why and starts anyway: held file opens are then refused, as they were.
+#
 # Then it drops to the user for good: setpriv with the user's uid, gid and groups, no inheritable, ambient or
 # bounding capabilities, and no_new_privs, so neither tego nor the agent holds anything the container was given for
 # step 1. Started as any other user (`--user`, compose's `user:`), it does nothing and runs the command as given:
 # tego-control serve is started that way.
 #
+# TEGO_LSM_LIST: auto (default) writes the list when it can and otherwise says why and carries on; yes fails the
+# container instead; no leaves /run/tego-lsm/lsm-list alone.
 # TEGO_DELEGATE: auto (default) builds the subtree when it can and otherwise says why and carries on, so `tego doctor`
 # can report the machine; yes fails the container instead; no never touches the cgroup tree.
 # TEGO_LAUNCHER: user (default) as above; root, experimental, keeps tego root for the root tiers (cgroup, bpflsm) in a
@@ -197,6 +210,100 @@ own_dir() {
 	fi
 }
 
+# read_lsm_list KERNEL_FILE SECFS_DIR: the kernel's active security-module list in LSM_LIST (as /sys/kernel/security/lsm
+# prints it, without the newline) and the way it was read in LSM_LIST_WAY. First the kernel's file; where securityfs is not
+# mounted (every container's own /sys), securityfs mounted read-only on SECFS_DIR for the moment. Fails, with the reason in
+# LSM_LIST_WHY, when neither can be read.
+read_lsm_list() {
+	local kernel_file=$1 secfs=$2 list="" rc
+	LSM_LIST="" LSM_LIST_WHY="" LSM_LIST_WAY=""
+	if list=$(cat -- "$kernel_file" 2>/dev/null) && [ -n "$list" ]; then
+		LSM_LIST_WAY=$kernel_file LSM_LIST=${list%$'\n'}
+		return 0
+	fi
+	if ! mkdir -p -- "$secfs" 2>/dev/null; then
+		LSM_LIST_WHY="$kernel_file is not readable and $secfs cannot be made for a securityfs mount"
+		return 1
+	fi
+	# A new securityfs mount shows the same kernel instance the host has; read-only, and gone again as soon as it is read.
+	if mount -t securityfs -o ro,nosuid,nodev,noexec securityfs "$secfs" 2>/dev/null; then
+		list=$(cat -- "$secfs/lsm" 2>/dev/null) && rc=0 || rc=1
+		umount -- "$secfs" 2>/dev/null || say "could not unmount the securityfs mount at $secfs"
+		rmdir -- "$secfs" 2>/dev/null || true
+		if [ "$rc" -eq 0 ] && [ -n "$list" ]; then
+			LSM_LIST_WAY="securityfs mounted read-only at $secfs" LSM_LIST=${list%$'\n'}
+			return 0
+		fi
+		LSM_LIST_WHY="securityfs mounted but its lsm file could not be read"
+		return 1
+	fi
+	rmdir -- "$secfs" 2>/dev/null || true
+	LSM_LIST_WHY="$kernel_file is not readable here and securityfs cannot be mounted (it needs CAP_SYS_ADMIN and a profile that allows mount: compose.yaml's cap_add and security_opt)"
+	return 1
+}
+
+# lsm_list_ok LIST: whether LIST is a list the kernel could print: module names (lower case, digits, underscore) separated by
+# commas, at most 64, with capability among them, which every kernel has active. tego checks the same on the file it reads.
+lsm_list_ok() {
+	local list=$1 n
+	[[ $list =~ ^[a-z0-9_]+(,[a-z0-9_]+)*$ ]] || return 1
+	[[ ",$list," == *,capability,* ]] || return 1
+	n=$(printf '%s' "$list" | tr ',' '\n' | wc -l)
+	[ "$n" -lt 64 ]
+}
+
+# hand_in_lsm_list FILE KERNEL_FILE SECFS_DIR BOOT_ID_FILE MODE: step 3, with MODE auto|yes|no. Writes FILE (root's, 0644, in
+# a directory only root can write, written whole under another name and renamed into place) in the format lsmlist reads:
+#   tego-lsm-list 1 / boot_id <this boot's id> / lsm <the list>
+# and removes a FILE that is left from an earlier start when no list can be read now, so a stale one is never taken. Returns
+# non-zero only under yes.
+hand_in_lsm_list() {
+	local out=$1 kernel_file=$2 secfs=$3 bootid_file=$4 mode=$5 dir list boot tmp=""
+	case "$mode" in
+	no) return 0 ;;
+	auto | yes) ;;
+	*)
+		say "TEGO_LSM_LIST=$mode: want auto, yes or no"
+		return 2
+		;;
+	esac
+	dir=$(dirname -- "$out")
+	if ! read_lsm_list "$kernel_file" "$secfs"; then
+		rm -f -- "$out"
+		say "no security-module list handed in: $LSM_LIST_WHY"
+		say "held file opens are refused until it is: docker run --cap-add SYS_ADMIN with apparmor=unconfined (compose.yaml), or bind the host's /sys/kernel/security/lsm read-only and name it in /etc/tego/config.yaml lsm.list_file (docs/user/container.md)"
+		[ "$mode" = yes ] && return 1
+		return 0
+	fi
+	list=$LSM_LIST
+	if ! lsm_list_ok "$list"; then
+		rm -f -- "$out"
+		say "no security-module list handed in: what was read ($LSM_LIST_WAY) is not a list the kernel prints"
+		[ "$mode" = yes ] && return 1
+		return 0
+	fi
+	if ! read -r boot <"$bootid_file" 2>/dev/null || [ -z "$boot" ]; then
+		rm -f -- "$out"
+		say "no security-module list handed in: $bootid_file cannot be read, so the list could not be tied to this boot"
+		[ "$mode" = yes ] && return 1
+		return 0
+	fi
+	# Root's, in a directory only root can write: tego refuses the file otherwise (and anything under a directory the user
+	# can write), so the mode and owner are set on the directory every time, not only when it is made.
+	if ! { mkdir -p -- "$dir" && chmod 0755 -- "$dir" && chown 0:0 -- "$dir" &&
+		tmp=$(mktemp -- "$dir/.lsm-list.XXXXXX") &&
+		printf 'tego-lsm-list 1\nboot_id %s\nlsm %s\n' "$boot" "$list" >"$tmp" &&
+		chmod 0644 -- "$tmp" && chown 0:0 -- "$tmp" && mv -f -- "$tmp" "$out"; }; then
+		[ -z "$tmp" ] || rm -f -- "$tmp"
+		rm -f -- "$out"
+		say "no security-module list handed in: $out could not be written"
+		[ "$mode" = yes ] && return 1
+		return 0
+	fi
+	say "security-module list handed in at $out (read from $LSM_LIST_WAY): $list"
+	return 0
+}
+
 # has_cap BIT: whether this process's effective set has capability BIT (capabilities(7) numbering).
 has_cap() {
 	local eff
@@ -226,6 +333,7 @@ main() {
 	own_dir "$home/.tego" "$uid" "$gid"
 	own_dir /var/lib/tego/runs "$uid" "$gid"
 	own_dir /work "$uid" "$gid"
+	hand_in_lsm_list "${TEGO_LSM_LIST_FILE:-/run/tego-lsm/lsm-list}" /sys/kernel/security/lsm /run/tego-lsm/.securityfs /proc/sys/kernel/random/boot_id "${TEGO_LSM_LIST:-auto}"
 	if [ "$launcher" = root ]; then
 		# Experimental (docs/user/container.md, "Tiers that need root"): tego stays root with the container's
 		# capabilities, which the root tiers need, and runs the agent as the tego user, as `sudo tego run` runs it as

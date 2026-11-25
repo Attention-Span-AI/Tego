@@ -66,11 +66,24 @@ fi
 if [ -f "$DIR/state/binary-asset" ]; then
   /usr/bin/python3 -I "$(/usr/bin/dirname "$0")/signing.py" producer "$DIR" >"$ev/producer.json"
 fi
-"$TEGO" receipt "$run" --verify --json >"$ev/receipt.json" || die "tego receipt $run failed"
+# tego run keeps its own copy of the receipt in the run folder, and `receipt --verify` also compares that copy with the
+# record. The agent's user may write that name first, so a copy that differs (exit 1) or cannot be read (exit 125) must
+# not fail the action when the record itself verifies: this action never reads the kept copy. It checks the receipt it
+# has just printed from the record (below), and the record's chain on its own.
 set +e
+"$TEGO" receipt "$run" --verify --json >"$ev/receipt.json"
+rrc=$?
 "$TEGO" events "$run" --verify --json >"$ev/verify.json"
 vrc=$?
 set -e
+if [ "$rrc" != 0 ]; then
+  if { [ "$rrc" = 1 ] || [ "$rrc" = 125 ]; } && [ "$vrc" = 0 ] && [ "$(/usr/bin/jq -r .verified "$ev/verify.json" 2>/dev/null)" = true ] &&
+    [ -s "$ev/receipt.json" ]; then
+    warn "the receipt.json kept in the run folder of $run was not accepted by tego receipt --verify (exit $rrc); the record itself verified, and this action reads the receipt from the record, never that file"
+  else
+    die "tego receipt $run failed"
+  fi
+fi
 [ "$vrc" = 0 ] || [ "$vrc" = 1 ] || die "tego events $run --verify could not check the record (exit $vrc)"
 
 /usr/bin/mkdir -p "$ev/run"

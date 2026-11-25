@@ -24,6 +24,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/runtime/source"
 
 	"github.com/attention-span-ai/tego/internal/runtime/ask"
+	"github.com/attention-span-ai/tego/internal/runtime/budgetwindow"
 	"github.com/attention-span-ai/tego/internal/runtime/cgroup"
 	"github.com/attention-span-ai/tego/internal/runtime/deputy"
 	"github.com/attention-span-ai/tego/internal/runtime/derive"
@@ -303,6 +304,14 @@ type runner struct {
 	dir     string
 
 	writer *ledger.Writer
+	// window is what limits.window carries into this run (openWindow), nil for a contract with none; windowLock holds
+	// the agent's window for the run's life and is released with the run (closeWindow).
+	window     *limits.Window
+	windowLock *budgetwindow.Lock
+	windowRuns int
+	// windowUnanchored and windowUnattributed count the runs the window counted with no chain.log line and the run directories it
+	// left out, for their gaps (emitWindowGap).
+	windowUnanchored, windowUnattributed int
 	// listed says the run is in the ledger root's live index (openLedger), for clearLive.
 	listed bool
 	// kernelRecord is the tier's own recorder, built in prepareEnforcement once the handle has named
@@ -607,6 +616,7 @@ func newRunner(rt *agent.RuleTable, cmd []string, deps Deps) (*runner, error) {
 // run is the §4.1 sequence: prepare (everything before the first ledger line), run_start, ack, wait,
 // shutdown. Only prepare can fail the whole call; after run_start every outcome is a run_end.
 func (r *runner) run(ctx context.Context) (Result, error) {
+	defer r.closeWindow()
 	group, gctx := newGroup(ctx)
 	r.group = group
 	if err := r.prepare(gctx); err != nil {
@@ -693,6 +703,7 @@ var postStartGaps = []func(*runner){
 	(*runner).emitReasonUnavailableGap,
 	(*runner).emitLandlockAuditGap,
 	(*runner).emitLimitsGap,
+	(*runner).emitWindowGap,
 }
 
 // emitPostStartGaps queues every gap of postStartGaps, in order.
@@ -744,6 +755,9 @@ func (r *runner) prepare(ctx context.Context) error {
 	// a launcher that never learned it should stop.
 	r.subscribeSignals()
 	if err := r.openLedger(); err != nil {
+		return err
+	}
+	if err := r.openWindow(ctx); err != nil {
 		return err
 	}
 	if err := r.createCgroup(); err != nil {

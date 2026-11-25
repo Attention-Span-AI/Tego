@@ -31,6 +31,10 @@ type Limits struct {
 	Wall       string   `json:"wall,omitempty"`        // duration
 	StallAfter string   `json:"stall_after,omitempty"` // duration
 	Repeats    *int     `json:"repeats,omitempty"`
+	// Window is the contract's limits.window, a duration, present exactly when the contract set one (ADR 0165): tokens
+	// and cost_usd above are then a total over this span across every run of the agent, not a count of this run.
+	// Additive within revision 41 (which no release carries yet).
+	Window string `json:"window,omitempty"`
 	// LedgerBytes is the machine's record.max_run_bytes the run was started under (MinorLedgerCap): its
 	// events.jsonl and blobs together (blobs counted by later builds, at the same minor) end the run as a limit,
 	// which=ledger_bytes, once they hold that many bytes.
@@ -202,7 +206,7 @@ type RunStartPayload struct {
 }
 
 // AppliedLimits is RunStartPayload.AppliedLimits. Each member is the value of the cgroup file the run wrote and, for a
-// launch, the lowest ceiling along the cgroups above it up to the cgroup2 mount (GAPS N85), read once at the start; a
+// launch, the lowest ceiling along the cgroups above it up to the cgroup2 mount, read once at the start; a
 // member whose ancestors could not be read (or are hidden above a private cgroup namespace's root) is absent. It is absent too when the run wrote that file no value; at least one
 // is present. The members are pointers or strings so a written
 // zero is not read as absent; a limit that reads back as "max" is absent.
@@ -642,7 +646,25 @@ type ExecPayload struct {
 	Signal         string   `json:"signal,omitempty"`
 	KillFailed     int64    `json:"kill_failed,omitempty"`
 	DetectedBypass bool     `json:"detected_bypass,omitempty"`
+	// DecisionLost (record_minor 41, MinorEveryLaunch) is on an exec line that says only what the exec's own result said:
+	// the call failed with EACCES (syscall_ret -13), verdict observed, rule unmatched, and no decision record of it was
+	// read (the line may carry the gate's own command_* fields and argv_facts copied_syscall, as an admitted exec's does). It
+	// names the gaps the run had lost when the line was written (DecisionLostWhys), not a loss of this attempt's, sorted,
+	// none twice. The line does not say whether the kernel decision plane or another security module refused the exec,
+	// and it is no refusal: a ledger that lost nothing and shows such a line has no field. Absent elsewhere.
+	DecisionLost []string `json:"decision_lost,omitempty"`
 }
+
+// The gaps an exec line's decision_lost may name (ExecPayload.DecisionLost): the two ways the recorder itself loses a
+// decision record of an exec before it can join it to the exec's result. ringbuf-full is the kernel's own lost-sample counter
+// for the run's ring, exec-fragment-overflow a decision fragment the recorder dropped for lack of room.
+const (
+	DecisionLostRingbufFull      = "ringbuf-full"
+	DecisionLostFragmentOverflow = "exec-fragment-overflow"
+)
+
+// DecisionLostWhys is the closed set of DecisionLost values, in the order a line lists them.
+var DecisionLostWhys = [...]string{DecisionLostFragmentOverflow, DecisionLostRingbufFull}
 
 // Values of ExecPayload.ArgvFacts (ADR 0048 (8)).
 const (

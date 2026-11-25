@@ -210,7 +210,7 @@ func TestRulesHistoryIsTheDashboardsHistory(t *testing.T) {
 	}
 }
 
-// TestRulesEditIsListedAndUndone (N113): what `tego rules edit` writes (internal/cli/rules_edit.go: rulefile.Replace under
+// TestRulesEditIsListedAndUndone: what `tego rules edit` writes (internal/cli/rules_edit.go: rulefile.Replace under
 // the ledger root's guard, via "cli", the dashboard's summary for a whole-text edit, direction mixed) is one entry of the
 // history the dashboard and these commands read: listed in the same words, current while the file holds its text, and
 // undone like a free edit, with the word (here --yes).
@@ -376,7 +376,7 @@ func TestRulesUndoExitTable(t *testing.T) {
 			t.Errorf("exit %d stdout %q stderr %q", code, out, errs)
 		}
 	})
-	// N112: a run's own rules can hide the ledger root, so from inside a run the rules files runs here ran are not listed.
+	// A run's own rules can hide the ledger root, so from inside a run the rules files runs here ran are not listed.
 	// The undo then cannot be shown to narrow: the governed refusal comes first (exit 1, [governed], nothing written),
 	// not a usage error about a file "no run here has run".
 	t.Run("an undo from inside a run that lists no rules file is refused as governed", func(t *testing.T) {
