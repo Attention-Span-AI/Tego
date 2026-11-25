@@ -20,11 +20,6 @@ import termios
 import time
 
 
-# The two questions of the Mac command's tego uninstall; the check in mac-install-ci_test.py keeps them equal to install.sh.
-UNINSTALL_FIRST = b'Remove what is listed under "Tego will remove"?'
-UNINSTALL_SECOND = b'Also delete the VM and your records and contracts in it?'
-
-
 def require_hosted():
     if os.environ.get('GITHUB_ACTIONS') != 'true' or os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted':
         print('this script installs the real product and is only for GitHub-hosted machines', file=sys.stderr)
@@ -62,23 +57,37 @@ def bound(seconds, path, command):
     return code
 
 
+def number_of(label):
+    # The answer to a numbered question: the number of the item that offers label, once the whole list is drawn. The guide
+    # orders its first question by what the machine has (a demonstration agent is first when no agent is installed and
+    # signed in), so the number of "Another program" is read from the list and never assumed.
+    item = re.compile(rb'^[ \t]*(\d+)\. ' + re.escape(label), re.M)
+    def pick(shown):
+        if b'Enter a number' not in shown:
+            return None
+        found = item.search(shown)
+        if found is None:
+            raise RuntimeError('the question does not offer ' + label.decode() + ': ' + repr(bytes(shown[-600:])))
+        return found.group(1) + b'\n'
+    return pick
+
+
 def terminal(seconds, path, mode, command):
     require_hosted()
     # TERM=dumb chooses the guide's accessible prompts, as runGuide in
     # internal/cli/setup_guide_test.go does. It remains a real terminal, so the
     # guide starts the real dashboard, and limactl allocates the guest terminal.
+    # The VM has no agent installed and signed in, so the guide lists its demonstration agent first and
+    # "Another program" fourth; internal/cli/hosted_drivers_test.go keeps that number equal to the guide's.
     actions = {
         'install': [],
-        'guide': [(b'Which agent do you want to supervise?', b'3\n'),
+        'guide': [(b'Which agent do you want to supervise?', number_of(b'Another program')),
                   (b'What command starts it?', b'/bin/sh\n'),
                   (b'Which project should', b'1\n'),
                   (b'Which rules should', b'1\n'),
                   (b'TEGO_CI_PROJECT_SHELL>', b'pwd; test -f README.md && echo CHECK_PROJECT_FILES; exit\n')],
         'shell': [(b'TEGO_CI_PROJECT_SHELL>', b'pwd; test -f README.md && echo CHECK_PROJECT_FILES; exit\n')],
         'dashboard': [(b'Open it, or start a new one?', b'1\n')],
-        # tego uninstall asks twice on a terminal; the words are the Mac command's own, written by scripts/install.sh.
-        'uninstall-decline': [(UNINSTALL_FIRST, b'n\n')],
-        'uninstall-keep': [(UNINSTALL_FIRST, b'\n'), (UNINSTALL_SECOND, b'\n')],
     }[mode]
     gate_read, gate_write = os.pipe()
     pid, fd = pty.fork()
@@ -110,9 +119,13 @@ def terminal(seconds, path, mode, command):
                     break
                 output.extend(data)
                 if pending and pending[0][0] in output:
-                    prompt, answer = pending.pop(0)
-                    print('CHECK PTY answered ' + prompt.decode(), flush=True)
-                    os.write(fd, answer)
+                    prompt, answer = pending[0]
+                    if callable(answer):
+                        answer = answer(output[output.index(prompt):])
+                    if answer is not None:
+                        pending.pop(0)
+                        print('CHECK PTY answered ' + prompt.decode(), flush=True)
+                        os.write(fd, answer)
                     # Do not allow an old prompt to answer a later question.
                     # Each prompt in this sequence is unique.
         else:

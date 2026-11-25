@@ -17,9 +17,24 @@ driver = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(driver)
 
 
+# The first question as the guide draws it on a terminal of its accessible kind (TERM=dumb), in both orders it uses.
+MENU_DEMO_FIRST = (b'? Which agent do you want to supervise? \r\n'
+                   b"1. Demonstration agent (recommended)   Tego's own short script \xc2\xb7 needs no account and no network\r\n"
+                   b"2. Claude Code                         Anthropic's agent \xc2\xb7 not installed\r\n"
+                   b"3. Codex                               OpenAI's agent \xc2\xb7 not installed\r\n"
+                   b'4. Another program                     Any command, such as a script or a bot\r\n'
+                   b'Enter a number between 1 and 4: ')
+MENU_CLAUDE_READY = (b'? Which agent do you want to supervise? \r\n'
+                     b"1. Claude Code (recommended)           Anthropic's agent \xc2\xb7 installed, signed in\r\n"
+                     b"2. Codex                               OpenAI's agent \xc2\xb7 not installed\r\n"
+                     b'3. Another program                     Any command, such as a script or a bot\r\n'
+                     b"4. Demonstration agent                  Tego's own short script \xc2\xb7 needs no account and no network\r\n"
+                     b'Enter a number between 1 and 4: ')
+
+
 class DriverTests(unittest.TestCase):
     def test_terminal_drains_ready_after_child_exit(self):
-        messages = [b'Which agent do you want to supervise?', b'What command starts it?',
+        messages = [MENU_DEMO_FIRST, b'What command starts it?',
                     b'Which project should python3 work in?', b'Which rules should python3 follow?',
                     b'2/4  Login\nReady\n']
         child = SimpleNamespace(poll=lambda: 0 if len(messages) <= 1 else None, wait=lambda: 0)
@@ -30,8 +45,24 @@ class DriverTests(unittest.TestCase):
                 mock.patch.object(driver.subprocess, 'Popen', return_value=child), \
                 mock.patch.object(driver.sys, 'stdout', SimpleNamespace(buffer=io.BytesIO())):
             driver.terminal()
-            self.assertEqual(write.call_count, 4)
+            self.assertEqual([call.args[1] for call in write.call_args_list],
+                             [b'4\n', b'python3 tests/test_notes.py\n', b'1\n', b'1\n'])
             self.assertEqual(messages, [])
+
+    def test_the_first_answer_is_read_from_the_list_the_guide_drew(self):
+        # What tego start asks first follows the machine: with no agent installed and signed in, the demonstration
+        # agent is first and "Another program" is fourth; with one ready, it is third.
+        pick = driver.number_of(b'Another program')
+        self.assertEqual(pick(MENU_DEMO_FIRST), b'4\n')
+        self.assertEqual(pick(MENU_CLAUDE_READY), b'3\n')
+        # The list is drawn before its prompt: until then there is no answer, and none may be guessed.
+        self.assertIsNone(pick(MENU_DEMO_FIRST.split(b'Enter a number')[0]))
+        self.assertIsNone(pick(b'Which agent do you want to supervise?\n'))
+        # A list without the item is a failure naming the list, not a wrong number.
+        with self.assertRaises(RuntimeError):
+            pick(b'Which agent do you want to supervise?\n1. Codex  x\nEnter a number between 1 and 1: ')
+        # The label may not be matched inside another item's words.
+        self.assertEqual(driver.number_of(b'Codex')(MENU_DEMO_FIRST), b'3\n')
 
     def test_only_a_new_sample_secret_refusal_proves_the_run(self):
         for case in ['stale', 'wrong-agent', 'wrong-rule', 'sample']:

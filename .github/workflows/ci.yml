@@ -44,7 +44,10 @@ env:
 jobs:
   build-test:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # Every step but the last took 18 minutes on a quiet hosted runner and 21.5 on a slower one, which also ran about
+    # two minutes of new tests; the last step, the integration tier, took 9 minutes on the quiet one and had run 9 when
+    # the slower one's 30 minutes ended. Expected on the slower runner: 21.5 plus 11, so 33 minutes, more if the integration tier gained tests; 50 is 1.5 times that.
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

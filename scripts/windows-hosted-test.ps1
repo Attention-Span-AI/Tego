@@ -2,6 +2,10 @@
 # Only GitHub's Windows runner executes this. Linux stand-ins never run it.
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+# Text piped to a native command (bash -s, python3 -) is encoded with $OutputEncoding. Windows PowerShell 5.1 on the hosted
+# image encodes with a byte-order mark, which bash reads as part of its first word ("set: command not found", so
+# "set -eu" never took effect). Say what is meant, in every edition: UTF-8, no mark.
+$global:OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 $wsl = Join-Path $env:SystemRoot 'System32/wsl.exe'
 function Get-RegisteredDistributions {
     $lxss='HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss'
@@ -32,6 +36,27 @@ $folder = Join-Path $env:RUNNER_TEMP $preflight
 [void](New-Item -ItemType Directory $folder)
 $image = Join-Path $folder 'ubuntu.wsl'
 $imported = $false
+# The mirror is reached at the host address WSL's NAT network gives the virtual machine (the gateway the preflight
+# distribution reports), and that address exists only while the machine runs: WSL stops the machine a short while after
+# its last distribution stops, and a restarted network may pick another address. The first run of this test was
+# refused at that address 20 seconds after the preflight distribution had been removed. So the preflight distribution is
+# kept running (a sleeping process in it) until the install and its checks are over, as another distribution of a real
+# person's would be, and the mirror and its firewall rule are made before anything else, not in the time the machine
+# might be going away.
+$release = Join-Path $env:RUNNER_TEMP 'windows-release'
+$firewall = 'Tego CI mirror ' + $preflight
+$keepalive = $null
+function Stop-Mirror {
+    Remove-NetFirewallRule -DisplayName $firewall -ErrorAction Continue
+    if ($server) { Stop-Process -Id $server.Id -ErrorAction Continue }
+}
+function Remove-Preflight {
+    if ($keepalive) { Stop-Process -Id $keepalive.Id -ErrorAction Continue }
+    if ($imported) { & $wsl --unregister $preflight }
+}
+$server = Start-Process -FilePath 'python' -ArgumentList @('-m','http.server','8765','--bind','0.0.0.0','--directory',$release) -PassThru -RedirectStandardOutput (Join-Path $folder 'http.log') -RedirectStandardError (Join-Path $folder 'http.err')
+New-NetFirewallRule -DisplayName $firewall -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8765 | Out-Null
+$mirrorStartedAt = Get-Date
 try {
     & $wsl --version
     if ($LASTEXITCODE -ne 0) {
@@ -67,18 +92,35 @@ except KeyError:
     if($LASTEXITCODE -or !$controlUser){throw 'Ordinary-user positive control setup failed'}
     $executionProbe.Replace('@KIND@','open') | & $wsl -d $preflight -u $controlUser --exec python3 -
     if ($LASTEXITCODE) { throw 'Windows execution positive control failed' }
-} finally {
-    if ($imported) { & $wsl --unregister $preflight }
+    $keepalive = Start-Process -FilePath $wsl -ArgumentList @('-d',$preflight,'-u','root','--exec','sleep','7200') -PassThru -WindowStyle Hidden
+} catch {
+    Stop-Mirror
+    Remove-Preflight
+    throw
 }
-$release = Join-Path $env:RUNNER_TEMP 'windows-release'
-$server = Start-Process -FilePath 'python' -ArgumentList @('-m','http.server','8765','--bind','0.0.0.0','--directory',$release) -PassThru -RedirectStandardOutput (Join-Path $folder 'http.log') -RedirectStandardError (Join-Path $folder 'http.err')
-$firewall = 'Tego CI mirror ' + $preflight
 try {
-    New-NetFirewallRule -DisplayName $firewall -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8765 | Out-Null
     $env:TEGO_BASE_URL = "http://${gateway}:8765"
     $env:TEGO_TEST_HTTP = '1'
     $env:TEGO_VERSION = 'v0.2.0'
     $env:TEGO_VERIFY = 'sha256'
+    # The installer downloads once and does not retry, so the test makes sure first that the mirror answers at the
+    # address it will be given, and says what it saw when it does not (a mirror still starting, one that ended, or a
+    # host address that went away with WSL's machine are three different faults).
+    $probeUrl = $env:TEGO_BASE_URL + '/v0.2.0/tego_0.2.0_checksums.txt'
+    $mirrorDeadline = (Get-Date).AddSeconds(90)
+    $mirrorUp = $false
+    while (-not $mirrorUp) {
+        if ($server.HasExited) { throw ('The HTTP mirror ended with exit code ' + $server.ExitCode + ': ' + (Get-Content -Raw (Join-Path $folder 'http.err'))) }
+        try { $mirrorUp = ((Invoke-WebRequest -UseBasicParsing -Uri $probeUrl -TimeoutSec 5).StatusCode -eq 200) }
+        catch {
+            if ((Get-Date) -gt $mirrorDeadline) {
+                $seen = (Get-NetIPAddress -AddressFamily IPv4 | Format-Table IPAddress,InterfaceAlias | Out-String) + (Get-NetTCPConnection -LocalPort 8765 -ErrorAction SilentlyContinue | Format-Table LocalAddress,LocalPort,State | Out-String)
+                throw ("The HTTP mirror did not answer at $probeUrl for 90 seconds: $_`n" + $seen)
+            }
+            Start-Sleep -Seconds 1
+        }
+    }
+    Write-Host ('CHECK: the HTTP mirror answers at ' + $env:TEGO_BASE_URL + ' ' + [int]((Get-Date) - $mirrorStartedAt).TotalSeconds + ' s after it was started')
     $installer = Join-Path $release 'v0.2.0/install.ps1'
     Write-Host 'CHECK: installing this commit under the current PowerShell edition'
     & $installer -Yes
@@ -86,7 +128,7 @@ try {
     $shim = Join-Path $env:LOCALAPPDATA 'Tego/bin/tego.exe'
     Write-Host 'CHECK: only the dedicated tego distribution was added'
     $after = @(Get-RegisteredDistributions)
-    if ((($before | Sort-Object) -join "`n") -cne (($after | Where-Object { $_.Trim() -ne 'tego' } | Sort-Object) -join "`n")) { throw 'An unrelated distribution list changed' }
+    if ((($before | Sort-Object) -join "`n") -cne (($after | Where-Object { $_.Trim() -ne 'tego' -and $_.Trim() -ne $preflight } | Sort-Object) -join "`n")) { throw 'An unrelated distribution list changed' }
     Write-Host 'CHECK: the identical cmd.exe bytes are refused for the dedicated user'
     $executionProbe.Replace('@KIND@','closed') | & $wsl -d tego -u tego --exec python3 -
     if ($LASTEXITCODE) { throw 'Windows execution negative control failed' }
@@ -180,8 +222,8 @@ set VAR=EXPANDED
     $deadline=(Get-Date).AddSeconds(20)
     while((Test-Path $root) -and (Get-Date) -lt $deadline){Start-Sleep -Milliseconds 100}
     $left = @(Get-RegisteredDistributions | Where-Object { $_ -eq 'tego' })
-    if ($left.Count -or (Test-Path $root)) { Write-Error 'Removal left tego or its command' }
-    Remove-NetFirewallRule -DisplayName $firewall -ErrorAction Continue
-    Stop-Process -Id $server.Id -ErrorAction Continue
+    Stop-Mirror
+    Remove-Preflight
     Get-Content (Join-Path $folder 'http.err') -ErrorAction Continue
+    if ($left.Count -or (Test-Path $root)) { Write-Error 'Removal left tego or its command' }
 }

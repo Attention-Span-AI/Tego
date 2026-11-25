@@ -672,11 +672,10 @@ What this release does not do, or has not proved, in plain words.
 - `tego ask` on a run whose socket is gone exits 1 with `[not-found]`.
 - The reason channel (the Claude Code hook) is tested without a real Claude Code session.
 - The CI receipt's signing was not tried with real GitHub permission delegation. The Mac uninstall was tested against
-  stand-ins for Lima and SSH, not on a real Mac, and the hosted Mac job's uninstall step has not been run on this
-  release's build. The Windows launcher's request to keep a command open is checked by a unit test, and has not been
-  seen on a Windows console on this release's build. The Windows walk-through used no real keyboard or mouse, no signed
-  executable, no real HTTPS release, no Windows 10 and no ARM64. Windows is unsigned and not fully qualified; the Mac
-  was walked through by hand on Apple silicon only.
+  stand-ins for Lima and SSH, not on a real Mac or in a real Lima VM. The Windows launcher's request to keep a command
+  open is checked by a unit test, and has not been seen on a Windows console on this release's build. The Windows
+  walk-through used no real keyboard or mouse, no signed executable, no real HTTPS release, no Windows 10 and no ARM64.
+  Windows is unsigned and not fully qualified; the Mac was walked through by hand on Apple silicon only.
 - Root-only local approval (`local_roles: owner_only`) was qualified in one Ubuntu 25.10 guest.
 - The update from v0.1.3 was tried with release files built from this release's code and installed from a local folder,
   not with the published v0.2.0 files. What the notes say about v0.1.3 reading this release's records comes from
@@ -694,6 +693,11 @@ What this release does not do, or has not proved, in plain words.
   agent's window lock or change its mode; that only makes later starts of the agent refuse, and it never lowers the
   count. A restart into a full window ends at its first model response, so a service with `Restart=on-failure` stops
   after its start limit until `systemctl --user reset-failed`.
+- When Ctrl-C reaches both the `tego run` command and its launcher, the same Ctrl-C can in rare orderings be counted as
+  two (seen about once in 30 runs on one busy CPU, not on an idle multi-core machine); the run then ends as it would after
+  a second Ctrl-C. The test that holds this is skipped until it is fixed (public issue 81).
+- A budget (`limits:`) stops a run by ending it. Calls the agent makes in the instant between the limit being recorded and
+  the run ending are still answered and recorded.
 - Tego's own test suite has a few load-sensitive tests that can fail on a very busy machine.
 
 ### Upgrading from v0.1.3

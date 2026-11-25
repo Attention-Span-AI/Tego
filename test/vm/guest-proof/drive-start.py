@@ -5,8 +5,8 @@
 Usage: drive-start.py TRANSCRIPT [TEGO]
 
 The answers take the shortest path: "Another program" running python3's unittest, on the test project, with the
-recommended rules, typing arrow keys into the menus. An agent of that name left by an earlier run keeps its rules. The transcript is the raw terminal
-output. The exit status is tego's own, or 124 when it did not end in 150 seconds (it is then ended by its pid).
+recommended rules, typing arrow keys into the menus. An agent of that name left by an earlier run keeps its rules. The
+transcript is the raw terminal output. The exit status is tego's own, or 124 when it did not end in 150 seconds (it is then ended by its pid).
 """
 import fcntl
 import os
@@ -24,8 +24,23 @@ DOWN, ENTER = b"\x1b[B", b"\r"
 # (text that asks, what to type). A terminal always gets the arrow-key menus (TERM only switches the colour off), so a
 # menu answer is arrow keys and Enter: a digit is ignored. Each question is answered once: a menu draws its question
 # again, marked done, after the answer, and that second drawing is not a new question.
+#
+# The first question's list follows what the guest has: a demonstration agent is first when no agent is installed and
+# signed in, and last after one that is ready. So "Another program" is reached by counting the items drawn above it,
+# never by a fixed number of arrow keys. An answer may be a function of the text drawn since its question: bytes to
+# type, or None while the list is not drawn yet.
+AGENTS = (b"Demonstration agent", b"Claude Code", b"Codex")
+
+
+def to_another_program(shown: bytes):
+    at = shown.find(b"Another program")
+    if at < 0:
+        return None
+    return DOWN * sum(1 for agent in AGENTS if agent in shown[:at]) + ENTER
+
+
 ANSWERS = [
-    (b"Which agent do you want to supervise", DOWN + DOWN + ENTER),  # Another program
+    (b"Which agent do you want to supervise", to_another_program),
     (b"What command starts it", b"python3 -m unittest -v" + ENTER),
     (b"Which project should", ENTER),
     (b"Which rules should", ENTER),
@@ -61,9 +76,13 @@ def main() -> int:
                 out.flush()
                 seen += ANSI.sub(b"", data)
                 for ask, answer in pending:
-                    if seen.find(ask, mark) >= 0:
+                    at = seen.find(ask, mark)
+                    if at >= 0:
+                        typed = answer(seen[at:]) if callable(answer) else answer
+                        if typed is None:
+                            continue  # the list is still being drawn; the next read asks again
                         time.sleep(0.4)  # let the question finish drawing
-                        os.write(fd, answer)
+                        os.write(fd, typed)
                         pending.remove((ask, answer))
                         mark = len(seen)
                         break

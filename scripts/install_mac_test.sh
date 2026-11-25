@@ -755,12 +755,16 @@ un_home() { # un_home NAME: a fresh home with the command, a zsh start-up file a
 	printf 'master\n' >"$uh/.lima/tego/tego-dashboard.sock"
 	: >"$tmp/log"
 }
-un_exec() { # un_exec HOME COMMAND_FILE: runs the Mac command's uninstall with no terminal to ask on; un_args and un_vars are its arguments and its FAKE_* settings
-	ue_home=$1 ue_cmd=$2
+# un_exec HOME COMMAND_FILE [VM_STATE]: runs the Mac command's uninstall with no terminal to ask on; un_args and un_vars are
+# its arguments and its FAKE_* settings, and the optional third word (empty: no VM at all) is the fake VM's state, Running
+# when left out. Nothing is set in front of a call to this function: the system sh of a Mac keeps such a setting after the
+# function returns, and an empty VM state would then follow every later case.
+un_exec() {
+	ue_home=$1 ue_cmd=$2 ue_vm=${3-Running}
 	code=0
 	# shellcheck disable=SC2086 # the arguments are fixed words of this test
 	python3 -c 'import os,sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' \
-		env -i HOME="$ue_home" TMPDIR="$ue_home/tmp" PATH="$bin:/usr/bin:/bin" FAKE_VM="${FAKE_VM_STATE-Running}" FAKE_LOG="$tmp/log" $un_vars \
+		env -i HOME="$ue_home" TMPDIR="$ue_home/tmp" PATH="$bin:/usr/bin:/bin" FAKE_VM="$ue_vm" FAKE_LOG="$tmp/log" $un_vars \
 		sh "$ue_cmd" uninstall $un_args </dev/null >"$tmp/out" 2>&1 || code=$?
 }
 un_run() { # un_run NAME ARGS... [VAR=value...]
@@ -803,13 +807,17 @@ absent_log "uninstall never deletes an unmarked VM" "limactl delete"
 
 un_home missingvm
 rm -rf "$tmp/un-missingvm/.lima"
-un_args=--yes un_vars='' FAKE_VM_STATE='' un_exec "$tmp/un-missingvm" "$tmp/un-missingvm/.local/bin/tego"
+un_args=--yes
+un_vars=''
+un_exec "$tmp/un-missingvm" "$tmp/un-missingvm/.local/bin/tego" 
 check "uninstall works when the VM is already gone" 0 "Tego is removed."
 [ ! -e "$tmp/un-missingvm/.local/bin/tego" ] || { echo "FAIL uninstall with no VM: the command is still there"; fails=$((fails + 1)); }
 
 # a second run: the command is gone, so a copy of it runs against the same home and finds nothing to do
 cp "$tmp/.local/bin/tego" "$tmp/un-missingvm-copy"
-un_args=--yes un_vars='' FAKE_VM_STATE='' un_exec "$tmp/un-missingvm" "$tmp/un-missingvm-copy"
+un_args=--yes
+un_vars=''
+un_exec "$tmp/un-missingvm" "$tmp/un-missingvm-copy" 
 check "uninstall twice is safe" 0 "Tego is removed."
 cmp -s "$tmp/un-missingvm/.zshrc" "$tmp/un-keep/.zshrc" || { echo "FAIL uninstall twice: .zshrc changed again"; fails=$((fails + 1)); }
 [ ! -e "$tmp/un-missingvm/.zshrc.tego-backup-1" ] || { echo "FAIL uninstall twice: a second backup was made"; fails=$((fails + 1)); }

@@ -93,4 +93,7 @@ jobs:
           wsl.exe -d tego -u root --exec journalctl -b --no-pager -n 200
           wsl.exe -d tego -u root --exec cat /etc/wsl.conf
           wsl.exe -d tego -u root --exec cat /proc/self/mountinfo
-          Get-ChildItem $env:LOCALAPPDATA/wsl -ErrorAction Continue
+          Get-ChildItem $env:LOCALAPPDATA/wsl -ErrorAction SilentlyContinue
+          # This step only reports. The acceptance step's own failure is what fails the job; a distribution that is
+          # already gone, or the last wsl.exe's exit code, must not turn the report into a second failure.
+          $global:LASTEXITCODE = 0
