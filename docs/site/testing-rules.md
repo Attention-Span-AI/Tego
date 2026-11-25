@@ -107,6 +107,7 @@ tego rules check agent.yaml --exec 'git -C . push'
 - **Deny the short form.** `rm -rf` does not cover `rm -r`, and `rm -r` removes the same tree. Write `deny: [rm -r]`.
 - **Options an allow rule leaves out are free.** `allow: [git push origin main]` still allows `--force`. Deny the option.
 - **Rules see programs started, not effects.** `deny: [git push]` does not stop a git library in the agent's own code, `git send-pack`, or `curl` to the server. Limit those with `net` and `fs` rules.
+- **Put no `--` ahead of the subcommand.** An allow entry does not admit its command when the command line puts `--` before the subcommand; write the command without it.
 - **Code passed inline is not read.** `python -c '...'`, `sh -c '...'` and `node -e '...'` are not commands to the rules.
 - **Aliases from config files are not read.** cargo, gh and aws aliases, and settings such as `NPM_CONFIG_*` and `GIT_CONFIG_PARAMETERS`, change what a command does without changing its words.
 - **The check is a preview.** `tego rules check` never allows what the session refuses, but the session can refuse what the check allows (a missing interpreter, a file it cannot read).

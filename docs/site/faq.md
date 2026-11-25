@@ -25,6 +25,10 @@ No. Tego never calls a model; your rules file decides, and the kernel and Tego's
 
 No. The agent works in your real project and can read any path your rules and the [built-in refusals](/docs/built-in-refusals/) do not refuse. [Security and limits](/docs/security-and-limits/) says where the line is.
 
+### Who makes Tego?
+
+Attention Span. Tego is open source under Apache-2.0, on [GitHub](https://github.com/Attention-Span-AI/Tego), and [About Attention Span](/about/) says how to reach us.
+
 ### Is Tego free, and under which license?
 
 Yes. Tego is open source under Apache-2.0, and its kernel programs are dual licensed GPL-2.0-only or BSD-2-Clause. The code is on [GitHub](https://github.com/Attention-Span-AI/Tego).
@@ -67,7 +71,7 @@ Yes. An `ask:` rule holds the action until you approve or refuse it in the dashb
 
 ### Can Tego keep an agent away from my SSH keys and .env files?
 
-Yes. Every rules file refuses reads of SSH keys, cloud logins, token stores and `.env` files unless it sets `deny_read: []`, and the `tego/no-secrets` preset keeps secret variables out of the agent's environment. See [Built-in refusals](/docs/built-in-refusals/) and [Secrets](/docs/secrets/).
+Yes. Every rules file refuses reads of SSH keys, cloud logins, token stores and `.env` files unless it sets `deny_read: []`, and the `tego/no-secrets` preset keeps secret variables out of the agent's environment. A file shown through a separate file system, or mounted after the session starts, is outside these rules: see [File aliases and mount limits](/docs/security-and-limits/#file-aliases-and-mount-limits). See [Built-in refusals](/docs/built-in-refusals/) and [Secrets](/docs/secrets/).
 
 ### Can Tego stop data leaving my machine?
 

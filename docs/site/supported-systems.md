@@ -49,6 +49,7 @@ Tego needs Linux 5.14 or later and Landlock ABI 2. Landlock is the Linux feature
 - Root, through `sudo`.
 - The kernel's BTF type information, which BPF programs (small programs the kernel runs) use to read kernel data.
 - cgroup v2.
+- A readable tracefs, the kernel's tracing file system at `/sys/kernel/tracing` or `/sys/kernel/debug/tracing`. Tego reads the layout of system call events there.
 - The machine's own process-ID namespace. A session started inside a container or another private process-ID namespace, such as WSL's, cannot use Plus or Max.
 - Kernel checks that `sudo "$(command -v tego)" machine check` runs. Where one fails, it withholds Plus and Max and says why.
 

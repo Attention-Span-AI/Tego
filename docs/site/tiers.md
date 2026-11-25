@@ -81,7 +81,7 @@ By platform:
 - **macOS:** in Tego's Linux VM, Basic with no setup, Plus with `sudo`, and Max after one boot setting.
 - **Windows:** in WSL, Basic only.
 
-[Supported systems](/docs/supported-systems/) lists what each level needs and how to turn on Max.
+Plus and Max also need a readable tracefs, the kernel's tracing file system. [Supported systems](/docs/supported-systems/#plus) lists what each level needs and how to turn on Max.
 
 ## Next steps
 

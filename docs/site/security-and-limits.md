@@ -30,6 +30,13 @@ Tego never calls a model and never answers for the agent. It refuses, and it rec
 - **The agent can read the network setup**: interface names and addresses, routes, and nearby machines it has talked to.
 - **`host_sockets: true` opens local daemon sockets**, which can include your desktop session's.
 
+### File aliases and mount limits
+
+A file can have more than one name: a bind mount, a container volume or WSL's `/mnt/wslg/distro` shows the same file under another path. When a session starts, Tego reads the mount table and applies every file rule to each name the table gives that file. A rules file Tego cannot hold this way fails to start, and the error names the file and its other name. Two cases stay outside these rules:
+
+- **Separate file system instances.** A second network mount of the same export, a FUSE mirror or a loop image shows the same data through a different file system. Tego does not know it is the same file. Deny that path too, or do not mount the data twice where the agent can read it.
+- **Mounts made after the session starts.** Tego reads the mount table once, before the session. A mount that appears later is covered from the next session.
+
 ### Where it runs
 
 - **Linux only.** On macOS and Windows, Tego and the agent run inside a Linux VM. In WSL, your Windows drives under `/mnt` are readable unless your rules deny them. [Supported systems](/docs/supported-systems/) lists each platform.
