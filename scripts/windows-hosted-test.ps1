@@ -2,11 +2,18 @@
 # Only GitHub's Windows runner executes this. Linux stand-ins never run it.
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-# Text piped to a native command (bash -s, python3 -) is encoded with $OutputEncoding. Windows PowerShell 5.1 on the hosted
-# image encodes with a byte-order mark, which bash reads as part of its first word ("set: command not found", so
-# "set -eu" never took effect). Say what is meant, in every edition: UTF-8, no mark.
+# Text piped to a native command (python3 -, bash -s) is encoded by Windows PowerShell 5.1 WITH a byte-order mark even when
+# $OutputEncoding is UTF-8 without one (hosted runs 45728952833 and 45871838507 show bash reading it as part of its first
+# word: "set: command not found", so "set -eu" never took effect). Python skips the mark, bash does not, so a script for
+# bash goes in as base64 in an argument (see Invoke-GuestBash), never through the pipeline.
 $global:OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 $wsl = Join-Path $env:SystemRoot 'System32/wsl.exe'
+function Invoke-GuestBash([string]$Text) {
+    # The bytes are chosen here: UTF-8, no mark, LF lines, and an explicit end so bash reads nothing after the script. The
+    # argument has no space, quote or glob character, so every PowerShell edition hands it over unchanged.
+    $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes((($Text -replace "`r", '') + "`nexit`n"))
+    & $wsl -d tego -u tego --exec sh -c 'printf %s $1 | base64 -d | bash -s' sh ([Convert]::ToBase64String($bytes))
+}
 function Get-RegisteredDistributions {
     $lxss='HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss'
     if (Test-Path $lxss) { Get-ChildItem $lxss | ForEach-Object { (Get-ItemProperty $_.PSPath).DistributionName } }
@@ -141,7 +148,7 @@ case "$PATH" in *'/mnt/'*) echo 'Windows PATH leaked'; exit 1;; esac
 export XDG_RUNTIME_DIR=/run/user/$(id -u)
 systemd-run --user --scope --quiet sh -c 'cat /proc/self/cgroup; grep -q "/user@$(id -u).service/" /proc/self/cgroup'
 '@
-    (($check -replace "`r", '') + "`nexit`n") | & $wsl -d tego -u tego --exec bash -s
+    Invoke-GuestBash $check
     if ($LASTEXITCODE -ne 0) { throw 'Closed host-channel or cgroup check failed' }
     Write-Host 'CHECK: literal hostile arguments through the installed native command'
     $probe = @'
