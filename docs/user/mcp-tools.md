@@ -154,6 +154,37 @@ A switch lasts for the run. To keep a rule for the next run, change the contract
   (`PR_SET_DUMPABLE 0`) is named when it is the only such process in the run, and when it cannot be told from another the
   call is refused `ask-unavailable`. Event streams, a GET's too, are read by whole events and every `tools/list` answer in them is filtered.
 - Tego does not add credentials to MCP calls.
+- Do not put a secret in an `mcp:` entry's command arguments or URL: they are copied as written into `TEGO_MCP_CONFIG` (and
+  are in the contract and the record). Pass it as an environment variable the rules pass (`env.pass`) and have the server read
+  it from there.
+- `TEGO_MCP_CONFIG` is a file the agent's own account reads, and Tego decides nothing from it. Its place depends on who
+  launches. Started as yourself, it is `tego-mcp.json` in the run's private runtime directory under `$XDG_RUNTIME_DIR/tego/`
+  (mode 0444, your own). Started with `sudo "$(command -v tego)" run` (a root tier, and tier landlock under sudo), root
+  makes the run its own directory, `/run/tego-agent/<run id>` (root's, mode 0711: one can walk through it to a name one
+  knows, never list it or add to it), and writes the file there, mode 0400, owned by the account the agent runs as (the one
+  that ran sudo). That account can read it. No other user can read it, whatever group they share, and nobody but root can
+  add, rename or remove a file beside it, the agent's own account included. Tego removes the directory when the run ends
+  (a launcher that was killed first leaves it to the next root run's cleanup). The agent can still change its own copy of
+  the file: that changes what its own client starts, and nothing the relay decides, since the relay admits only the
+  servers and commands the contract declares and never reads the file back.
+- A run whose contract has an `mcp:` server and no place to put that file is refused, exit 125, with the cause and the fix.
+  Launched as yourself, that is an `XDG_RUNTIME_DIR` that is not set (log in through a session that sets it, or export it as a
+  folder only you can write), is not an absolute path (export an absolute one), does not exist (create it, mode 0700), or is
+  not yours or is writable by group or others (use a folder only you can write). Launched as root, it is a `/run` that is not
+  root's or is writable by group or others without the sticky bit, or a `/run/tego-agent` that is not a folder of root's
+  (a link, a file, another user's folder). Builds before v0.2.0 started the run without the file in the unprivileged cases.
+- Claude Code run directly at a root tier is not given `--mcp-config` (that provision needs the run's runtime directory, which a
+  root launcher does not make): from a wrapper that reads the variable (for example `sh -c 'claude --mcp-config "$TEGO_MCP_CONFIG"'`). A server it starts around the
+  relay is refused at every tier.
+- Seen in an Ubuntu 24.04 guest (kernel 6.8) with a plain stdio server and a client with no library that starts the server as
+  the file says: the same rules at tier landlock as the user, tier landlock under sudo and tier cgroup (sudo) each had the
+  allowed tool called and recorded, the denied tool refused by the relay (-32001) and recorded and never run, the file's
+  mode, owner and folder as above, another user unable to read it or to list or add to its folder, the agent's own account
+  unable to add to the folder, and nothing left after the run. A launch with no `XDG_RUNTIME_DIR` was refused, exit 125, and
+  a link planted at `/run/tego-agent` was refused with nothing written through it. Tier bpflsm is not in that row (the
+  guest's boot has no `bpf` in its security-module list); the privileged test suite, run as root in a guest whose boot has
+  it, passed the same checks at tiers landlock, cgroup and bpflsm (`TestRootMCPRelayGate`). A real LangChain or LangGraph
+  agent at a root tier has not been repeated since the fix (examples/agents/README.md).
 
 [Submitted refund rules](business-rules.md) have a validated contract declaration.
 This build refuses runs carrying it because the trusted worker, exclusive route

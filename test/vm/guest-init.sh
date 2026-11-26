@@ -191,13 +191,21 @@ else
 	say "no /.vm/cmd in the initramfs; nothing to run"
 fi
 
+# The exit marker goes out BEFORE any diagnostics: the console is a serial line, slow beside a long dmesg (a SELinux
+# boot's has a hundred lines of "Class ... not defined in policy"), and poweroff cuts whatever it has not yet sent. The
+# held-labels job on fedora-7.0 passed both tests and then lost its guest because the marker followed the dmesg and
+# never went out (public issue 91). The tty keeps order, so a marker sent first is whole when the diagnostics are cut;
+# it is sent again after them, for a console read from the end, and the host takes the last one (same code).
+$bb sync
+printf '\nTEGO-VM-EXIT:%s:%s\n' "$nonce" "$code"
 if [ -f /.vm/dmesg ]; then
 	echo "---- tego-vm: dmesg ----"
 	$bb dmesg
 	echo "---- tego-vm: end of dmesg ----"
+	printf '\nTEGO-VM-EXIT:%s:%s\n' "$nonce" "$code"
+	# only the trailing diagnostics wait: let the serial line send what is queued before the power goes
+	$bb sleep 1
 fi
-$bb sync
-printf '\nTEGO-VM-EXIT:%s:%s\n' "$nonce" "$code"
 $bb poweroff -f
 # poweroff -f returns only when the power-off syscall failed; ending PID 1 panics the kernel, and
 # panic=-1 plus qemu's -no-reboot turn that into a qemu exit, so the host never hangs here.

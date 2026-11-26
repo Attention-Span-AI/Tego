@@ -385,10 +385,18 @@ func (c *Catalog) check(ctx context.Context, e *Entry, o Options) {
 }
 
 func (c *Catalog) checkSource(ctx context.Context, e *Entry, o Options, read sourceReader) {
-	ctx, cancel := context.WithTimeout(ctx, CheckTimeout)
+	// A check of a local location is given the local bound, and is interrupted in the disk's words (location.go).
+	bound := CheckTimeout
+	if localCheck(ctx) {
+		bound = localCap()
+	}
+	ctx, cancel := context.WithTimeout(ctx, bound)
 	defer cancel()
 	defer func() {
 		if err := ctx.Err(); err != nil {
+			if localCheck(ctx) && errors.Is(err, context.DeadlineExceeded) {
+				err = &unavailableError{err: err, fault: faultDisk}
+			}
 			e.interrupted(err)
 			c.Incomplete = true
 		}

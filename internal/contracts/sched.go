@@ -237,7 +237,17 @@ func (w *Watch) Resume() {
 }
 
 // Judge closes the window and says what it showed. The window that follows begins now.
-func (w *Watch) Judge() Verdict {
+func (w *Watch) Judge() Verdict { return w.JudgeAt(false) }
+
+// JudgeAt is Judge for a check whose location is local or not (ADR 0144, "A local location is a busy disk, not a stuck
+// mount"). For a local location a helper with a thread in uninterruptible sleep (state D) is waiting for this
+// computer's own disk, and it is BlockedDisk whatever the wait function says or whether it can be read at all: the
+// kernel hides it for every undumpable helper. Only that evidence counts: a helper that is merely asleep (state S: a
+// deadlock of Tego's own code, a pipe to the dashboard) and counters that cannot be read keep the verdict they have for
+// every class. The wait function can only make a verdict more exact: a thread that does wait in a network or
+// user-space filesystem (the location was remounted since it was classified, or something else is at fault) keeps
+// Blocked, the mount words. For any other location it is Judge exactly.
+func (w *Watch) JudgeAt(local bool) Verdict {
 	var threads map[int]Thread
 	if w.paused {
 		threads = nil
@@ -252,6 +262,9 @@ func (w *Watch) Judge() Verdict {
 		verdict = BlockedDisk
 	case anyUninterruptible(threads):
 		verdict = Blocked
+		if local && !anyNetworkWait(threads) {
+			verdict = BlockedDisk
+		}
 	case w.window > 0 && w.wait*starvedShare >= w.window:
 		verdict = Starved
 	case w.window > 0 && w.run*runningShare >= w.window:
@@ -262,6 +275,17 @@ func (w *Watch) Judge() Verdict {
 		w.open()
 	}
 	return verdict
+}
+
+// anyNetworkWait reports whether a thread in state D waits in a function the wchan table knows as a network or
+// user-space filesystem's.
+func anyNetworkWait(threads map[int]Thread) bool {
+	for _, t := range threads {
+		if t.State == 'D' && classifyWchan(t.WChan) == wchanNetwork {
+			return true
+		}
+	}
+	return false
 }
 
 func anyUninterruptible(threads map[int]Thread) bool {

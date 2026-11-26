@@ -77,6 +77,9 @@ type checkRequest struct {
 	// caller decides when the check ends; the worker's clock only ends an operation whose caller has gone. Zero
 	// means the most.
 	Within time.Duration
+	// Local says the caller classed the location as local (location.go): the helper's own check bound is then the local
+	// one and an interrupted source is in the disk's words.
+	Local bool
 }
 
 type wireError struct {
@@ -159,6 +162,9 @@ func requestCheck(ctx context.Context, req checkRequest) (checkReply, error) {
 	req.OwnerPresent = req.Owner != nil
 	req.MountInfoPresent = req.CompileContext.MountInfo != nil
 	req.Caller = CallerContext(ctx)
+	// The class of the location, decided once for this check from the mount table (location.go).
+	ctx = withClass(ctx, requestLocations(&req)...)
+	req.Local = localCheck(ctx)
 	req.Within = workerWithin(ctx)
 
 	data, err := encodeCheck(req)
@@ -206,14 +212,21 @@ func handleRequestContext(parent context.Context, data []byte) ([]byte, error) {
 		}
 	}
 	within := req.Within
-	if within <= 0 || within > locationCap()+workerBackstop() {
-		within = locationCap() + workerBackstop()
+	most := locationCap() + workerBackstop()
+	if req.Local {
+		most = localCap() + workerBackstop()
+	}
+	if within <= 0 || within > most {
+		within = most
 	}
 	reply := checkReply{}
 	// The location clock of this operation: it runs only while the operation touches the location (PauseLocation).
 	clock, cancel := newLocationClock(parent, within)
 	defer cancel()
 	var ctx context.Context = clock
+	if req.Local {
+		ctx = context.WithValue(ctx, localKey{}, true)
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

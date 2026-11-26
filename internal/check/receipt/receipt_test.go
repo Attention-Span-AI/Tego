@@ -654,3 +654,25 @@ func TestBuiltInKindNamesEachListedULPRefusal(t *testing.T) {
 		t.Errorf("BuiltInKind = %q, want %q", got, want)
 	}
 }
+
+// An OpenAI-style exchange is recorded with the same usage counters as any other (the prompt's cached part is
+// cache_read and is not in input, ADR 0037's amendment of 2026-11-26), and the receipt's token figures add them as they do
+// for every provider.
+func TestTokensOfAnOpenAIStyleExchange(t *testing.T) {
+	usage := func(in, out, cached int) map[string]any {
+		return map[string]any{"request_seq": 2, "status": 200, "parser_version": "openai-2026-11-1", "model": "gpt-x-2026", "latency_ms": 1,
+			"usage": map[string]int{"input": in, "output": out, "cache_read": cached, "cache_write": 0}}
+	}
+	rc := compute(t, []line{
+		start("forwarder", false),
+		{kind: record.KindSSLRequest, at: time.Second, payload: record.SSLRequestPayload{Endpoint: "chat/completions", Method: "POST", Host: "h"}},
+		{kind: record.KindSSLResponse, at: 2 * time.Second, payload: usage(100, 30, 20)},
+		{kind: record.KindSSLRequest, at: 3 * time.Second, payload: record.SSLRequestPayload{Endpoint: "chat/completions", Method: "POST", Host: "h"}},
+		{kind: record.KindSSLResponse, at: 4 * time.Second, payload: usage(5, 2, 0)},
+		end(5*time.Second, 0),
+	}, Options{})
+	tk := rc.Tokens
+	if !tk.Recorded || tk.ModelCalls != 2 || tk.Metered != 2 || tk.In != 105 || tk.Out != 32 || tk.CacheRead != 20 || tk.CacheWrite != 0 {
+		t.Errorf("tokens = %+v, want 2 metered calls: in 105, out 32, cache read 20", tk)
+	}
+}

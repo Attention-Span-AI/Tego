@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"github.com/attention-span-ai/tego/internal/contracts"
 	"github.com/attention-span-ai/tego/internal/nextrun"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"io"
@@ -81,7 +83,7 @@ func TestCompilerCancellationAndAdmission(t *testing.T) {
 	}
 	waitSlots(t, cap(slots))
 	start := time.Now()
-	_, err := Check(context.Background(), Request{Text: []byte("stall")})
+	_, err := Check(WithGoverned(context.Background()), Request{Text: []byte("stall")}) // a governed request is refused at the admission wait
 	if err == nil || !strings.Contains(err.Error(), "busy, try again") {
 		t.Fatalf("capacity exceeded: %v", err)
 	}
@@ -189,5 +191,61 @@ func TestCompilerDoesNoDNS(t *testing.T) {
 	}
 	if calls.Load() != 0 {
 		t.Fatalf("untrusted compile sent %d DNS lookups", calls.Load())
+	}
+}
+
+// A person's own check is not refused as busy after the admission wait: both slots held by governed compilations cost
+// it a wait, bounded by its own request, and it is admitted when one is free; a governed request is refused at the
+// admission wait as before. A person whose request ends while it waits is told the check did not finish.
+func TestAPersonsCheckWaitsForASlotAndIsNeverRefusedAsBusy(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 2)
+	var running sync.WaitGroup
+	t.Cleanup(func() {
+		cancel()
+		if !joinedWithin(&running, joinBound) {
+			t.Errorf("a cancelled compilation did not return within %v of the cancel: its slot is still held", joinBound)
+		}
+	})
+	for i := 0; i < cap(slots); i++ {
+		running.Add(1)
+		go func() {
+			defer running.Done()
+			_, err := Check(WithGoverned(ctx), Request{Text: []byte("stall")})
+			done <- err
+		}()
+	}
+	waitSlots(t, cap(slots))
+
+	// Past the admission wait, with the slots still held, the person is still waiting; its request's end is the end of
+	// the wait, said as a check that did not finish and never as busy.
+	person, endPerson := context.WithTimeout(context.Background(), 4*AdmissionWait+200*time.Millisecond)
+	defer endPerson()
+	begin := time.Now()
+	_, err := Check(person, Request{Text: []byte("stall")})
+	if !contracts.IsCompileUnfinished(err) || strings.Contains(err.Error(), contracts.CompileBusy) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a person's check that waited out its request: %v", err)
+	}
+	if waited := time.Since(begin); waited < 3*AdmissionWait {
+		t.Fatalf("a person's check gave up after %v, inside the admission wait of a governed one (%v)", waited, AdmissionWait)
+	}
+
+	// A slot freed during the wait admits the person: it is not refused for having waited.
+	admitted := make(chan error, 1)
+	go func() { _, err := Check(context.Background(), Request{Text: []byte("quick")}); admitted <- err }()
+	time.Sleep(3 * AdmissionWait)
+	select {
+	case err := <-admitted:
+		t.Fatalf("a person's check was answered while both slots were held: %v", err)
+	default:
+	}
+	cancel() // the governed compilations end; the person takes a freed slot
+	select {
+	case err := <-admitted:
+		if strings.Contains(fmt.Sprint(err), contracts.CompileBusy) {
+			t.Fatalf("a person's check was refused as busy after a slot freed: %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("a person's check was not admitted after the slots were freed")
 	}
 }

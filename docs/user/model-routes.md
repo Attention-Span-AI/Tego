@@ -71,6 +71,21 @@ change is one line, *a model endpoint's requests were sent to another approved b
 endpoint whose route moved (a removal reverts to `direct`, by `forwarder: ...`). A route set as the run started, before
 the forwarder first read the file, gets its line too. `tego events <run>` and the run's timeline show both.
 
+## Which model APIs a token or cost budget counts
+
+A route moves requests; it does not change what a budget can count. `limits.tokens` and `limits.cost_usd` count a
+model's answers only in the API styles Tego reads usage from, and which style an endpoint speaks is what its `models:`
+entry's `provider` says: Anthropic's Messages API (`provider: anthropic`), and OpenAI's Chat Completions and Responses
+APIs (`provider: openai`; `POST /v1/chat/completions` and `POST /v1/responses`, whole or streamed, on the host the entry
+declares). Tego never changes a request, so a streamed chat completion is counted only when the client asked the API to put
+usage in the stream (`stream_options: {"include_usage": true}`). An answer that states no usage Tego reads (such a stream
+without it, another path, an API of another provider) spends tokens no budget can count, and a budget that cannot be
+counted is never silently ignored: the run ends at that answer, exit 125, and the closing lines of `tego run` say which
+request it was, that its usage could not be read, and what to do (a stream's client option, or remove the budget, or use a
+model API whose usage Tego reads). `tego rules check` warns `[budget-uncounted]` for a contract that sets `limits.tokens`
+or `limits.cost_usd` beside a `models:` entry whose provider is not one of those. OpenAI-style counting is tested against a stand-in written from the provider's reference; the guest run with a real client is still owed. A route to a backend that speaks
+another API than its endpoint declares is read as the endpoint's style, so route only to a backend of the same style.
+
 ## What it does not do
 
 - A route is a host and a port; a gateway that needs a path prefix (`https://gateway/anthropic/v1`) cannot be a route

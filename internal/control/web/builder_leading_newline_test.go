@@ -52,7 +52,7 @@ func TestBuilderNewLeadingNewlinesSurviveRenderedForms(t *testing.T) {
 					t.Fatalf("%s Save form changed reviewed bytes: want %q, got %q", view, want, got)
 				}
 			}
-			w = post(f.s, "/rules/new", builderParsedNewForm(t, body, "builder-save"), own, "", f.c)
+			w = postSave(t, f.s, "/rules/new", builderParsedNewForm(t, body, "builder-save"), own, "", f.c)
 			if w.Code != http.StatusSeeOther {
 				t.Fatalf("Save reviewed blank lines: %d %s", w.Code, w.Body.String())
 			}

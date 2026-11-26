@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/platform/whereami"
 	"github.com/attention-span-ai/tego/internal/relaymux"
 	"github.com/attention-span-ai/tego/internal/runscope"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
@@ -37,26 +38,38 @@ func init() { register(cmdDashboardRelay) }
 //	       by this process, so the dashboard's peer check sees the person's uid and its governed check this scope
 //	open   prints the one line the Windows command opens the browser with: the dashboard's port, a one-time open
 //	       code, and a fresh identity challenge with its expected proof
+//	release  what tego dashboard --stop asks of Tego's Linux after it ended the relay: stop the dashboard's user unit
+//	       when no run is going, so that nothing the dashboard command started keeps the distribution running, and
+//	       leave everything as it is when a run is (relayRelease)
 //
-// Both refuse inside a tego run, and both take the dashboard's address from the dashboard's own log and identity
+// All three refuse inside a tego run (release goes through the same outsideRuns as serve and open before it stops
+// anything), and both take the dashboard's address from the dashboard's own log and identity
 // proof, never from the Windows side.
 func cmdDashboardRelay() Command {
 	return Command{
 		Name:    "dashboard-relay",
 		Summary: "the Linux end of the Windows dashboard relay",
-		Usage:   "serve|open",
+		Usage:   "serve|open|release",
 		Hidden:  true,
 		Flags:   func(*flag.FlagSet) {},
 		Run: func(ctx context.Context, fs *flag.FlagSet, stdout, stderr io.Writer) int {
-			if fs.NArg() != 1 || fs.Arg(0) != "serve" && fs.Arg(0) != "open" {
-				message(stderr, "", 0, 0, "tego dashboard-relay: takes serve or open", codeUsage)
+			if fs.NArg() != 1 || fs.Arg(0) != "serve" && fs.Arg(0) != "open" && fs.Arg(0) != "release" {
+				message(stderr, "", 0, 0, "tego dashboard-relay: takes serve, open or release", codeUsage)
 				return identity.ExitUsage
 			}
-			scope := realRelayScope()
+			scope := newRelayScope()
 			// Inside a run is refused before anything is read; what the rule cannot decide waits for the dashboard.
-			if a := scope.answer(); !a.Outside() && !runscope.CouldNotTell(a) {
-				message(stderr, "", 0, 0, "tego dashboard-relay: this process is inside a tego run; the dashboard relay runs only outside every tego run", codeGoverned)
+			if relayInsideRun(scope, stderr) {
 				return identity.ExitError
+			}
+			if fs.Arg(0) == "release" {
+				return relayRelease(ctx, scope, func() (relayTarget, error) {
+					m, _, err := loadMachine(config.TrustWarn)
+					if err != nil {
+						return relayTarget{}, fmt.Errorf("machine config: %w", err)
+					}
+					return findRelayTarget(m.Home, relayDashboardAt, dashboardProof)
+				}, stdout, stderr)
 			}
 			m, _, err := loadMachine(config.TrustWarn)
 			if err != nil {
@@ -87,6 +100,91 @@ func cmdDashboardRelay() Command {
 			return r.serve(ctx, os.Stdin, os.Stdout, stderr)
 		},
 	}
+}
+
+// relayInsideRun refuses, with the words every mode uses, a process the rule's answer shows inside a run; one it cannot
+// tell goes on to the check that decides it (outsideRuns).
+func relayInsideRun(scope relayScope, stderr io.Writer) bool {
+	if a := scope.answer(); !a.Outside() && !runscope.CouldNotTell(a) {
+		message(stderr, "", 0, 0, "tego dashboard-relay: this process is inside a tego run; the dashboard relay runs only outside every tego run", codeGoverned)
+		return true
+	}
+	return false
+}
+
+// relayReleaseLine starts the one line `tego dashboard-relay release` prints for the Windows command:
+//
+//	TEGO_DASHBOARD_RELEASE released was=running|none   the dashboard's unit is stopped (or was not running)
+//	TEGO_DASHBOARD_RELEASE kept runs=N                 N runs are going: nothing was stopped
+//	TEGO_DASHBOARD_RELEASE unknown                     the runs could not be counted or the unit could not be stopped
+const relayReleaseLine = "TEGO_DASHBOARD_RELEASE"
+
+// The three seams of relayRelease; variables so a test starts no unit and reads no ledger.
+var (
+	releaseLiveRuns   = realLiveRuns
+	releaseUnitActive = func(ctx context.Context) bool {
+		_, err := userSystemctl(ctx, "is-active", "--quiet", unitDashboard)
+		return err == nil
+	}
+	releaseStopUnit = func(ctx context.Context) error {
+		_, err := userSystemctl(ctx, "stop", unitDashboard)
+		return err
+	}
+)
+
+// relayRelease is `tego dashboard-relay release`. On Windows, the dashboard command starts the dashboard as a user unit
+// whose systemd-run --pipe client stays alive in the session of the command that started it, and WSL does not stop a
+// distribution while such a client lives: after tego dashboard --stop ended the relay, Tego's Linux stayed up. With no
+// run going, this stops the unit, and the client ends with it. With a run going (a supervised run needs the
+// distribution to stay up, since Windows stopping it ends the run) or when that cannot be told, it stops nothing and
+// says so. It prints the one line above and exits 0 whenever it printed one.
+//
+// It is admitted as serve and open are, because it ends the person's dashboard: nothing is stopped unless the dashboard
+// that runs proves its identity and scope.outsideRuns shows this process outside every run (a "could not tell" answer
+// is then decided by the dashboard's own governed check, as for them). A unit that is not running needs no admission:
+// there is nothing to stop. The run count must not be a caller's to choose, so a caller-supplied config layer
+// ($TEGO_CONFIG, which can name another ledger root) refuses the verb: the stricter of that and reading the dashboard's
+// own configuration, and one the Windows launcher's call never meets (the entry sets no $TEGO_CONFIG). The count is
+// then tego session list's, from the invoking user's ledger root of the machine config.
+func relayRelease(ctx context.Context, scope relayScope, target func() (relayTarget, error), stdout, stderr io.Writer) int {
+	ctx, cancel := context.WithTimeout(ctx, 40*time.Second)
+	defer cancel()
+	say := func(format string, a ...any) int {
+		_, _ = fmt.Fprintf(stdout, relayReleaseLine+" "+format+"\n", a...)
+		return identity.ExitOK
+	}
+	refuse := func(why string) int {
+		message(stderr, "", 0, 0, "tego dashboard-relay: "+why+"; the dashboard relay runs only outside every tego run", codeGoverned)
+		return identity.ExitError
+	}
+	if os.Getenv(config.EnvConfigVar) != "" {
+		message(stderr, "", 0, 0, "tego dashboard-relay: release counts runs from the machine's own configuration and refuses when $"+config.EnvConfigVar+" is set", config.CodeUntrusted)
+		return identity.ExitError
+	}
+	if !releaseUnitActive(ctx) {
+		return say("released was=none")
+	}
+	t, err := target()
+	if err != nil {
+		message(stderr, "", 0, 0, "tego dashboard-relay: "+err.Error(), codeIO)
+		return identity.ExitError
+	}
+	if err := scope.outsideRuns(func() error { _, err := mintOpenCode(ctx, t); return err }); err != nil {
+		return refuse(err.Error())
+	}
+	runs, err := releaseLiveRuns(ctx)
+	if err != nil {
+		message(stderr, "", 0, 0, "tego dashboard-relay: could not tell whether a run is going: "+err.Error(), codeIO)
+		return say("unknown")
+	}
+	if runs > 0 {
+		return say("kept runs=%d", runs)
+	}
+	if err := releaseStopUnit(ctx); err != nil && releaseUnitActive(ctx) {
+		message(stderr, "", 0, 0, "tego dashboard-relay: could not stop the dashboard: "+err.Error(), codeIO)
+		return say("unknown")
+	}
+	return say("released was=running")
 }
 
 // relayProbeLimit is how long the relay waits for the dashboard's identity proof: a dashboard busy serving a page
@@ -347,6 +445,9 @@ type relayScope struct {
 	selfCgroup func() ([]byte, error)
 }
 
+// newRelayScope is the scope the command reads; a variable so a test names a process that cannot tell, or one in a run's cgroup.
+var newRelayScope = realRelayScope
+
 func realRelayScope() relayScope {
 	return relayScope{
 		answer:     selfAnswer,
@@ -371,7 +472,7 @@ func (s relayScope) outsideRuns(prove func() error) error {
 	if !runscope.CouldNotTell(a) {
 		return errors.New("this process is inside a tego run")
 	}
-	why := runscope.Why(a)
+	why := runscope.WhyWith(a, whereami.Words())
 	b, rerr := s.selfCgroup()
 	if rerr != nil {
 		return fmt.Errorf("this process cannot be shown outside every tego run: %w", rerr)

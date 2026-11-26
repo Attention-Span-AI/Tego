@@ -137,6 +137,10 @@ func (d *Dispatcher) Handle(req, resp *Message, meta Meta) (Result, error) {
 		// A parser claimed the exchange and could not read it: on a successful answer that is spend the
 		// facts do not count (R25). An error answer spent nothing whatever its body says.
 		res.Facts.Unmetered = Success(resp.Status)
+		var noter UnmeteredNoter
+		if res.Facts.Unmetered && errors.As(err, &noter) {
+			res.Facts.UnmeteredNote = noter.UnmeteredNote()
+		}
 		return res, nil
 	}
 	if facts.ParserVersion == "" {

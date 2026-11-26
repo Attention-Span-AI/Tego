@@ -488,7 +488,7 @@ func TestFullPoolOfUnknownHelpersKeepsTheWaitAndSaysWhatIsKnown(t *testing.T) {
 	names := stuckPool(t, 2)
 	// One slot is held by a stuck check of this process, the other by a helper nothing is known about (another
 	// command's): nothing the wait knows would free either.
-	markStuck(&helperWorker{slot: names[0], pid: os.Getpid(), start: processStart(os.Getpid())})
+	markStuck(&helperWorker{slot: names[0], pid: os.Getpid(), start: processStart(os.Getpid())}, false)
 	ctx, closeSession := WithHelperSession(context.Background())
 	defer closeSession()
 	ctx = context.WithValue(ctx, budgetKey{}, &budget{startup: 400 * time.Millisecond, location: 5 * time.Second})
@@ -508,11 +508,11 @@ func TestFullPoolOfUnknownHelpersKeepsTheWaitAndSaysWhatIsKnown(t *testing.T) {
 // A record of a stuck check whose helper has ended is no knowledge: a slot taken again is another helper's.
 func TestStuckRecordEndsWithItsHelper(t *testing.T) {
 	names := stuckPool(t, 2)
-	markStuck(&helperWorker{slot: names[0], pid: os.Getpid(), start: processStart(os.Getpid())})
+	markStuck(&helperWorker{slot: names[0], pid: os.Getpid(), start: processStart(os.Getpid())}, false)
 	if !stuckAt(names[0]) {
 		t.Fatal("a live helper's record was not kept")
 	}
-	markStuck(&helperWorker{slot: names[1], pid: os.Getpid(), start: processStart(os.Getpid()) + 1}) // not this process's start time
+	markStuck(&helperWorker{slot: names[1], pid: os.Getpid(), start: processStart(os.Getpid()) + 1}, false) // not this process's start time
 	if stuckAt(names[1]) {
 		t.Fatal("a slot taken again by another process was counted as stuck")
 	}

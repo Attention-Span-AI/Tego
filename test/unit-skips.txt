@@ -111,4 +111,3 @@ internal/cli TestGuideChildrenStop/* # requires an available pseudo-terminal
 internal/cli TestGuideDumbInterrupt/* # requires an available pseudo-terminal
 
 # Known defects, stated and not fixed in this release.
-internal/cli TestScopeInterruptReachesTheLauncherOnce # known defect, public issue 81: one Ctrl-C can be counted as two when a process handles its marker signal before its own interrupt (exit 38, want 37, about once in 30 runs on one busy CPU); the whole test is skipped until it is fixed

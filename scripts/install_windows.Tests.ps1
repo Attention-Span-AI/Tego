@@ -113,6 +113,31 @@ Describe 'dedicated Windows install state machine (Linux stand-ins)' {
         $script:Messages[-1] | Should -Match 'irm .*install.ps1.*iex'
         Should -Invoke Invoke-TegoWsl -Times 0
     }
+    It 'keeps a chosen version in the line to paste after the restart' -TestCases @(
+        @{Version='v0.2.0-rc.1';Base='';Line='$env:TEGO_VERSION=''v0.2.0-rc.1''; irm ''https://github.com/{repo}/releases/download/v0.2.0-rc.1/install.ps1'' | iex'},
+        @{Version='0.2.0-rc.1';Base='';Line='$env:TEGO_VERSION=''0.2.0-rc.1''; irm ''https://github.com/{repo}/releases/download/v0.2.0-rc.1/install.ps1'' | iex'},
+        @{Version='v0.2.0';Base='https://mirror.invalid/tego/';Line='$env:TEGO_BASE_URL=''https://mirror.invalid/tego/''; $env:TEGO_VERSION=''v0.2.0''; irm ''https://mirror.invalid/tego/v0.2.0/install.ps1'' | iex'},
+        @{Version='v1;bad';Base='';Line='irm https://github.com/{repo}/releases/latest/download/install.ps1 | iex'},
+        @{Version='';Base='https://mirror.invalid/tego';Line='irm https://github.com/{repo}/releases/latest/download/install.ps1 | iex'}
+    ) {
+        # The line is read by a person after Windows has restarted: nothing set in this window is left, so the line itself
+        # must name the version and fetch that version's installer. A value the installer would refuse is never built into it.
+        $script:Version=$null
+        $env:SystemRoot=$TestDrive
+        $script:Messages=New-Object 'System.Collections.Generic.List[string]'
+        Mock Write-Host { $script:Messages.Add([string]$Object) }
+        $names=@('TEGO_VERSION','TEGO_BASE_URL','TEGO_TEST_HTTP','TEGO_CHECKSUMS_SHA256')
+        $saved=@{}; foreach ($name in $names) { $saved[$name]=[Environment]::GetEnvironmentVariable($name) }
+        try {
+            foreach ($name in $names) { [Environment]::SetEnvironmentVariable($name,$null) }
+            if ($Version) { $env:TEGO_VERSION=$Version }
+            if ($Base) { $env:TEGO_BASE_URL=$Base }
+            Invoke-TegoInstall $true | Should -Be 2
+        } finally { foreach ($name in $names) { [Environment]::SetEnvironmentVariable($name,$saved[$name]) } }
+        ($script:Messages -join "`n") | Should -Match 'Windows must restart now'
+        $script:Messages[-1].Trim() | Should -BeExactly $Line.Replace('{repo}',$TegoRepository)
+        Should -Invoke Invoke-TegoWsl -Times 0
+    }
     It 'does not elevate or import when the WSL question is declined' {
         $script:Version=$null
         Mock Confirm-TegoStep { return $false }

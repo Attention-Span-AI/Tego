@@ -89,7 +89,7 @@ func wantWaitKept(t *testing.T, took time.Duration, err error, budget time.Durat
 
 func TestFullPoolOfHoldersOlderThanAnyCheckRefusesAtOnce(t *testing.T) {
 	names := stuckPool(t, 2)
-	limit := helperMaxLifetime()
+	limit := helperMaxLifetime(false)
 	now := 10 * limit
 	f := fixHolders(t, now, map[string]time.Duration{names[0]: 0, names[1]: now - limit - time.Second}, nil, nil)
 	const budget = 3 * time.Second
@@ -102,7 +102,7 @@ func TestFullPoolOfHoldersOlderThanAnyCheckRefusesAtOnce(t *testing.T) {
 
 func TestFullPoolWithOneYoungHolderKeepsTheWait(t *testing.T) {
 	names := stuckPool(t, 2)
-	limit := helperMaxLifetime()
+	limit := helperMaxLifetime(false)
 	now := 10 * limit
 	fixHolders(t, now, map[string]time.Duration{names[0]: 0, names[1]: now - limit/2}, nil, nil)
 	const budget = 400 * time.Millisecond
@@ -112,7 +112,7 @@ func TestFullPoolWithOneYoungHolderKeepsTheWait(t *testing.T) {
 
 func TestFullPoolWithOneHolderAgeUnreadableKeepsTheWait(t *testing.T) {
 	names := stuckPool(t, 2)
-	now := 10 * helperMaxLifetime()
+	now := 10 * helperMaxLifetime(false)
 	// The second holder is not found (no entry): another uid's, another pid namespace's, or its stat could not be read.
 	fixHolders(t, now, map[string]time.Duration{names[0]: 0}, nil, nil)
 	const budget = 400 * time.Millisecond
@@ -121,7 +121,7 @@ func TestFullPoolWithOneHolderAgeUnreadableKeepsTheWait(t *testing.T) {
 }
 
 func TestFullPoolWhoseHoldersCannotBeIdentifiedKeepsTheWait(t *testing.T) {
-	now := 10 * helperMaxLifetime()
+	now := 10 * helperMaxLifetime(false)
 	t.Run("the reader failed", func(t *testing.T) {
 		stuckPool(t, 2)
 		fixHolders(t, now, nil, errors.New("no /proc"), nil)
@@ -148,7 +148,7 @@ func TestFullPoolWhoseHoldersCannotBeIdentifiedKeepsTheWait(t *testing.T) {
 // A holder exactly as old as the longest a healthy helper lives is not older than it: the wait stays. One nanosecond
 // more and it is stuck.
 func TestHolderAtTheBoundaryOfTheMaximumLifetime(t *testing.T) {
-	limit := helperMaxLifetime()
+	limit := helperMaxLifetime(false)
 	now := 10 * limit
 	t.Run("exactly the maximum", func(t *testing.T) {
 		names := stuckPool(t, 2)
@@ -170,8 +170,8 @@ func TestHolderAtTheBoundaryOfTheMaximumLifetime(t *testing.T) {
 // about are, and the refusal names the whole pool.
 func TestFullPoolOfOwnStuckAndOldOtherHoldersRefusesAtOnce(t *testing.T) {
 	names := stuckPool(t, 2)
-	markStuck(&helperWorker{slot: names[0], pid: os.Getpid(), start: processStart(os.Getpid())})
-	now := 10 * helperMaxLifetime()
+	markStuck(&helperWorker{slot: names[0], pid: os.Getpid(), start: processStart(os.Getpid())}, false)
+	now := 10 * helperMaxLifetime(false)
 	f := fixHolders(t, now, map[string]time.Duration{names[1]: 0}, nil, nil)
 	const budget = 3 * time.Second
 	took, err := waitForSlot(t, budget)
@@ -195,7 +195,7 @@ func TestPoolWithAFreeSlotDoesNotReadTheHolders(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = holder.Close() })
 	}
-	f := fixHolders(t, 10*helperMaxLifetime(), map[string]time.Duration{}, nil, nil)
+	f := fixHolders(t, 10*helperMaxLifetime(false), map[string]time.Duration{}, nil, nil)
 	reservation, lease, err := reserveHelper(admissionCtx(t), uint32(os.Geteuid()), false)
 	if err != nil {
 		t.Fatalf("a pool with a free slot refused: %v", err)
@@ -207,22 +207,61 @@ func TestPoolWithAFreeSlotDoesNotReadTheHolders(t *testing.T) {
 	}
 }
 
-// The maximum lifetime is made of the constants of the bounds a helper is abandoned at, so it cannot drift from them.
+// The maximum lifetime is made of the constants of the bounds a helper is abandoned at, so it cannot drift from them: the
+// ordinary cap for a request that is not local (as it was before the local wait), the local cap for one that is.
 func TestHelperMaxLifetimeIsMadeOfTheBounds(t *testing.T) {
-	want := StartTimeout + 4*CheckTimeout + PauseLimit + helperLifetimeMargin
-	if got := helperMaxLifetime(); got != want {
-		t.Fatalf("helperMaxLifetime() = %v, want the start-up budget, the location cap, the pause allowance and the margin: %v", got, want)
+	if got, want := helperMaxLifetime(false), StartTimeout+4*CheckTimeout+PauseLimit+helperLifetimeMargin; got != want {
+		t.Fatalf("helperMaxLifetime(false) = %v, want the start-up budget, the location cap, the pause allowance and the margin: %v", got, want)
 	}
-	if 4*CheckTimeout != locationCap() {
-		t.Fatalf("the location cap is %v, the lifetime counts %v", locationCap(), 4*CheckTimeout)
+	if got, want := helperMaxLifetime(true), StartTimeout+6*CheckTimeout+PauseLimit+helperLifetimeMargin; got != want {
+		t.Fatalf("helperMaxLifetime(true) = %v, want the start-up budget, the local location cap, the pause allowance and the margin: %v", got, want)
+	}
+	if 4*CheckTimeout != locationCap() || 6*CheckTimeout != localCap() || StartTimeout != localCap() {
+		t.Fatalf("the location cap is %v and the local one %v, the lifetime counts %v and %v", locationCap(), localCap(), 4*CheckTimeout, 6*CheckTimeout)
 	}
 	// The worker's own clock may outlive the cap by its backstop; the margin covers it, and the start of a process.
 	if helperLifetimeMargin <= workerBackstop() {
 		t.Fatalf("the margin %v does not cover the worker's backstop %v", helperLifetimeMargin, workerBackstop())
 	}
 	// Longer than anything one request can keep a healthy helper for.
-	if helperMaxLifetime() <= startTimeout+locationCap()+PauseLimit {
-		t.Fatalf("the maximum lifetime %v is not past the bounds", helperMaxLifetime())
+	if helperMaxLifetime(true) <= startTimeout+localCap()+PauseLimit || helperMaxLifetime(false) <= startTimeout+locationCap()+PauseLimit {
+		t.Fatalf("the maximum lifetimes %v, %v are not past the bounds", helperMaxLifetime(false), helperMaxLifetime(true))
+	}
+}
+
+// A holder aged between the ordinary lifetime and the local one (its helper may legitimately be in the local check's
+// extra ten seconds) is stuck for a request that is not local, refused at once exactly as before the local wait
+// existed, and not yet for a local request, whose own class's lifetime it is within.
+func TestHolderInTheLocalExtraTimeIsStuckOnlyForANonLocalRequest(t *testing.T) {
+	old, long := helperMaxLifetime(false), helperMaxLifetime(true)
+	if long <= old {
+		t.Fatal("the local lifetime is not longer: the window is empty")
+	}
+	now := 10 * long
+	age := old + (long-old)/2
+	for name, c := range map[string]struct {
+		local bool
+		stuck bool
+	}{"not local": {false, true}, "local": {true, false}} {
+		t.Run(name, func(t *testing.T) {
+			names := stuckPool(t, 2)
+			fixHolders(t, now, map[string]time.Duration{names[0]: now - age, names[1]: now - age}, nil, nil)
+			const wait = 600 * time.Millisecond
+			ctx, closeSession := WithHelperSession(context.Background())
+			defer closeSession()
+			if c.local {
+				ctx = context.WithValue(ctx, localKey{}, true)
+			}
+			ctx = context.WithValue(ctx, budgetKey{}, &budget{startup: wait, location: 5 * time.Second})
+			begin := time.Now()
+			_, err := exchange(ctx, nil)
+			took := time.Since(begin)
+			if c.stuck {
+				wantStuckAtOnce(t, took, err, wait, 2)
+			} else {
+				wantWaitKept(t, took, err, wait)
+			}
+		})
 	}
 }
 

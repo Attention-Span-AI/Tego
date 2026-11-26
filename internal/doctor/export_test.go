@@ -10,7 +10,7 @@ import (
 // What this file exports, only this package's tests (and its external test package) call.
 
 // WriteResults is writeResults with no probe reported off.
-func WriteResults(w io.Writer, rs []Result) error { return writeResults(w, rs, nil) }
+func WriteResults(w io.Writer, rs []Result) error { return writeResults(w, rs, nil, nil) }
 
 // Probe runs every probe of R27 in order — D1 kernel, D2 BTF, D3 cgroup v2 delegation, D4 Landlock
 // ABI, D5 the seccomp ADDFD/SEND self-test, D6 the active LSM list, D7 the program load tests and

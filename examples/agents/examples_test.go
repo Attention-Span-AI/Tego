@@ -111,7 +111,7 @@ func bareMachine(t *testing.T) standIn {
 func machine(t *testing.T) standIn {
 	t.Helper()
 	m := bareMachine(t)
-	for _, s := range []setupStep{installProfiles, installSDK, makeConfigDir, codexFiles, codexChatGPTHome} {
+	for _, s := range []setupStep{installProfiles, installSDK, makeConfigDir, codexFiles, codexChatGPTHome, makeVenv, mcpServerFile, tegoBinary} {
 		s.do(t, m)
 	}
 	if err := os.MkdirAll(filepath.Join(m.work, "in"), 0o755); err != nil {

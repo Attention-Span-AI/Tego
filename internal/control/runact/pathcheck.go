@@ -48,7 +48,7 @@ func alternateRemote(ctx context.Context, root, run, ask, path string, always bo
 	ctx, cancel := pathcheck.Bound(ctx)
 	defer cancel()
 	var reply alternateReply
-	if err := pathcheck.Call(ctx, "control.alternate", alternateRequest{Root: root, Run: run, Ask: ask, Path: path, Always: always}, &reply); err != nil {
+	if err := pathcheck.Call(pathcheck.WithLocations(ctx, root, path), "control.alternate", alternateRequest{Root: root, Run: run, Ask: ask, Path: path, Always: always}, &reply); err != nil {
 		return Answered{}, err
 	}
 	if reply.Error != "" {
@@ -104,7 +104,7 @@ func blockRemote(ctx context.Context, req blockRequest) (Blocked, error) {
 	ctx, cancel := pathcheck.Bound(ctx)
 	defer cancel()
 	var reply blockReply
-	if err := pathcheck.Call(ctx, "control.block", req, &reply); err != nil {
+	if err := pathcheck.Call(pathcheck.WithLocations(ctx, req.Root), "control.block", req, &reply); err != nil {
 		return Blocked{}, err
 	}
 	if reply.Error != "" {

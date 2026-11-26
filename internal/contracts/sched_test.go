@@ -67,7 +67,7 @@ func useLocationTimeout(t *testing.T, d time.Duration) {
 
 // scopeOf is a scope as newBudget makes it, with the test's short budgets.
 func scopeOf(startup time.Duration) *budget {
-	return &budget{startup: startup, location: locationTimeout, extra: locationCap() - locationTimeout}
+	return &budget{startup: startup, location: locationTimeout, extra: locationCap() - locationTimeout, localExtra: localCap() - locationCap()}
 }
 
 // holdsSlot says the scripted worker of ctx holds a kernel slot of this name, as a real one does, and is this process
@@ -343,18 +343,18 @@ func TestScopeLocationTimeNeverExceedsTheCap(t *testing.T) {
 // Without a scope, one check is bounded by the same cap.
 func TestWorkerClockOutlivesTheCallersCap(t *testing.T) {
 	useLocationTimeout(t, 300*time.Millisecond)
-	if got, want := workerWithin(context.Background()), locationCap()+workerBackstop(); got != want {
+	if got, want := workerWithin(context.Background()), locationCap()+workerBackstop(); got != want || workerWithin(context.WithValue(context.Background(), localKey{}, true)) != localCap()+workerBackstop() {
 		t.Fatalf("a check outside any scope: the worker's clock is %v, want %v", got, want)
 	}
 	b := scopeOf(time.Second)
-	if got := b.within(); got != locationCap()+workerBackstop() {
+	if got := b.within(false); got != locationCap()+workerBackstop() || b.within(true) != localCap()+workerBackstop() {
 		t.Fatalf("a fresh scope: %v", got)
 	}
 	b.chargeLocation(200 * time.Millisecond)
-	if got := b.within(); got != locationCap()-200*time.Millisecond+workerBackstop() {
+	if got := b.within(false); got != locationCap()-200*time.Millisecond+workerBackstop() || b.within(true) != localCap()-200*time.Millisecond+workerBackstop() {
 		t.Fatalf("after 200ms: %v", got)
 	}
-	if got := b.within(); got <= locationCap()-locationTimeout {
+	if got := b.within(false); got <= locationCap()-locationTimeout {
 		t.Fatalf("the worker's clock %v would end before the caller's last step", got)
 	}
 }

@@ -124,7 +124,7 @@ func TestCompileInfrastructureFailuresHaveTheirOwnWords(t *testing.T) {
 		go func() { _, err := Check(ctx, Request{Text: []byte("stall")}); done <- err }()
 	}
 	waitSlots(t, cap(slots))
-	_, err := Check(context.Background(), Request{Text: []byte("stall")})
+	_, err := Check(WithGoverned(context.Background()), Request{Text: []byte("stall")})
 	if !contracts.IsCompileUnfinished(err) || !strings.Contains(err.Error(), contracts.CompileBusy) || !strings.Contains(err.Error(), "busy, try again") ||
 		strings.Contains(err.Error(), "does not compile") || strings.Contains(err.Error(), "very busy") {
 		t.Fatalf("a full compiler slot: %v", err)

@@ -240,6 +240,7 @@ func (u *Uprobe) emitResponse(m *httpstream.Message) {
 	var (
 		derived   []*record.Event
 		unmetered bool
+		note      string // the parser's word on why the usage was unreadable (derive.Facts.UnmeteredNote)
 	)
 	if u.opts.Deriver != nil && req != nil && req.Msg != nil {
 		res, err := u.opts.Deriver.Handle(req.Msg, deriveMessage(m), u.meta(m, req.Host))
@@ -253,7 +254,7 @@ func (u *Uprobe) emitResponse(m *httpstream.Message) {
 			}
 			res.Facts.Apply(&payload)
 			derived = res.Events
-			unmetered = res.Facts.Unmetered
+			unmetered, note = res.Facts.Unmetered, res.Facts.UnmeteredNote
 		}
 	}
 	// A successful answer on a model host whose body the byte budget cut: what it spent past the cut, a
@@ -286,7 +287,7 @@ func (u *Uprobe) emitResponse(m *httpstream.Message) {
 	u.emit(record.KindSSLResponse, m, payload, pair)
 	u.emitDerived(derived)
 	if unmetered && req != nil {
-		u.reportUnmetered(1, derive.Route(req.Method, req.Path)+": usage unreadable")
+		u.reportUnmetered(1, derive.UnreadableWhy(req.Method, req.Path, note))
 	}
 }
 

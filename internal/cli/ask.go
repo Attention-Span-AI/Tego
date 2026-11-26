@@ -184,10 +184,16 @@ func runAskByID(ctx context.Context, name, id string, approve, always, asJSON bo
 
 // askByIDUnder is runAskByID under the ledger root root.
 func askByIDUnder(ctx context.Context, root, name, id string, approve, always, asJSON bool, alternate string, out, errs io.Writer, ownerOnly ...bool) int {
-	runID, dir, err := findAsk(ctx, root, id)
+	runID, dir, skipped, err := findAsk(ctx, root, id)
 	if err != nil {
 		message(errs, "", 0, 0, "tego "+name+": "+err.Error(), readCode(err))
 		return identity.ExitError
+	}
+	if runID == "" {
+		// No run holds the id; a run that could not be asked is not known not to hold it, so each is named.
+		for _, s := range skipped {
+			message(errs, "", 0, 0, "note: tego "+name+": "+s.words, s.code)
+		}
 	}
 	if runID == "" && len(ownerOnly) == 1 && ownerOnly[0] && name != "ask" && os.Geteuid() != 0 {
 		message(errs, "", 0, 0, "tego "+name+": "+askproto.ErrOwnerOnly.Error(), codeIO)
@@ -221,31 +227,45 @@ func runningRuns(root string) ([]string, error) {
 }
 
 // findAsk is the running run under root whose broker holds ask id, "" when none does. Each broker is reached as
-// `tego ask <run> <id>` reaches it, through the run's verified launcher and the broker's own peer check, so finding a
+// `tego ask <run>` reaches it, through the run's verified launcher and the broker's own peer check, so finding a
 // run by its ask id reaches no broker the caller could not already reach by the run id. An ask id is 128 random
-// bits, so at most one run holds a given one.
-func findAsk(ctx context.Context, root, id string) (runID, dir string, err error) {
+// bits, so at most one run holds a given one. A run that could not be asked because it is ending (its launcher left
+// between the probe and the look, or its broker closed, and its start record says it served approvals or does not say)
+// is returned in skipped, with what to tell a person who looked for the id there; a run that holds no approvals by
+// its contract is not.
+func findAsk(ctx context.Context, root, id string) (runID, dir string, skipped []skippedAsk, err error) {
 	runs, err := runningRuns(root)
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	for _, r := range runs {
 		if err := ctx.Err(); err != nil {
-			return "", "", err
+			return "", "", nil, err
 		}
 		d := filepath.Join(root, r)
-		target, err := askclient.Launcher(d)
+		target, err := askLauncher(d)
 		if err != nil {
+			if errors.Is(err, askclient.ErrNoBroker) {
+				skipped = append(skipped, skippedAsk{fmt.Sprintf("%s ended while %s was looked for, so it was skipped; nothing waits for an answer in it (%s)", r, id, endedWords(r)), codeNotRunning})
+			}
 			continue // ended between the probe and now, or not one this caller can reach
 		}
 		_, err = ask.DetailFor(ctx, d, target.PID(), id)
 		_ = target.Close() // askAt verifies the launcher again for the exchange itself
 		if err == nil {
-			return r, d, nil
+			return r, d, nil, nil
+		}
+		if noAskSocket(err) || brokerWentAway(err) {
+			if _, none := noApprovalsWords(r, d); !none {
+				skipped = append(skipped, skippedAsk{fmt.Sprintf("%s was skipped while %s was looked for: it is ending (its ask socket is gone), so it could not be asked; ask again in a moment, or %s", r, id, endedWords(r)), codeNotFound})
+			}
 		}
 	}
-	return "", "", nil
+	return "", "", skipped, nil
 }
+
+// skippedAsk is a run findAsk could not ask, in the words of a note on standard error and the code that goes with it.
+type skippedAsk struct{ words, code string }
 
 // askPending is one running run's pending asks in `tego ask --json` with no run.
 type askPending struct {
@@ -277,7 +297,7 @@ func askAcross(ctx context.Context, root string, asJSON bool, out, errs io.Write
 	brokers := 0 // running runs whose broker answered: the ones that could hold an ask
 	for _, r := range runs {
 		d := filepath.Join(root, r)
-		target, err := askclient.Launcher(d)
+		target, err := askLauncher(d)
 		var pending []ask.Summary
 		reached := err == nil
 		if reached {
@@ -290,14 +310,20 @@ func askAcross(ctx context.Context, root string, asJSON bool, out, errs io.Write
 			// start record cannot say, or that ended after the probe, is named, so a list that leaves it out is not
 			// read as the whole.
 			if !reached {
-				message(errs, "", 0, 0, fmt.Sprintf("note: tego ask: %s ended while the list was made; nothing waits for an answer in it", r), codeNotRunning)
+				message(errs, "", 0, 0, fmt.Sprintf("note: tego ask: %s ended while the list was made; nothing waits for an answer in it (%s)", r, endedWords(r)), codeNotRunning)
 			} else if words, none := noApprovalsWords(r, d); !none {
 				message(errs, "", 0, 0, "note: tego ask: "+words+"; it is not in this list", codeNotFound)
 			}
 			continue
 		}
 		if err != nil {
-			message(errs, "", 0, 0, fmt.Sprintf("tego ask: %s: %v", r, err), codeIO)
+			if brokerWentAway(err) {
+				// The socket is there but nobody answers, or the broker closed the connection under the call: the run's
+				// broker is closing as the run ends. Its requests are not in this list; the exit code is the same.
+				message(errs, "", 0, 0, fmt.Sprintf("tego ask: %s's broker went away while the list was made, so the run is ending and its requests are not in this list: ask again in a moment, or %s", r, endedWords(r)), codeIO)
+			} else {
+				message(errs, "", 0, 0, fmt.Sprintf("tego ask: %s: %v", r, err), codeIO)
+			}
 			failed = true
 			continue
 		}

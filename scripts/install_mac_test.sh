@@ -258,13 +258,22 @@ PYTTY
 
 latest="https://github.com/Attention-Span-AI/Tego/releases/download/v0.1.3/tego.yaml"
 
+# Public issue 87: the folders the installer makes for the tego command are never group-writable, even under the login
+# umask 0002 (the VM's install makes its own the same way: scripts/install_test.sh).
+login_umask=$(umask)
+umask 0002
 run fresh TEGO_YES=1
+umask "$login_umask"
 check "fresh Mac: installs Lima, sets up the VM, adds tego" 0 "Lima isn't installed. Tego uses this free program to run its Linux VM." "Install Lima now with Homebrew?" "brew install lima" \
 	"limactl start --tty=false --name=tego --mount-none --param=tego_version=v0.1.3" "--param=checksums_sha256=$(suite_sha256 "$tmp/fresh/bin/checksums" | awk '{print $1}')" "verified local template in private directory" "✓ Lima 2.3.0" "✓ Tego's VM is ready" "✓ tego command added" \
 	"Next steps" "Open a new Terminal window, then type tego start"
 [ -x "$tmp/.local/bin/tego" ] || { echo "FAIL fresh Mac: no tego command in ~/.local/bin"; fails=$((fails + 1)); }
 grep -q 'added by the Tego installer' "$tmp/.zshrc" 2>/dev/null || { echo "FAIL fresh Mac: PATH line not added to ~/.zshrc"; fails=$((fails + 1)); }
 absent "fresh Mac: hides Lima's own output" "INFO["
+# shellcheck disable=SC2012 # the symbolic mode ls prints reads the same on every system; find has no portable way to print it
+folder_modes=$(ls -ld "$tmp/.local" "$tmp/.local/bin" | cut -c1-10 | tr '\n' ' ')
+[ "$folder_modes" = "drwxr-xr-x drwxr-xr-x " ] ||
+	{ echo "FAIL fresh Mac under umask 0002: the folders made for the tego command are not 755: $folder_modes"; fails=$((fails + 1)); }
 
 # bash: the PATH line goes in the profile a login bash already reads, never a new .bash_profile that would hide it
 mkdir -p "$tmp/bashhome" && echo '# mine' >"$tmp/bashhome/.profile"

@@ -499,6 +499,20 @@ func (f *FD) Release(name string) (*os.File, error) {
 // are Release's.
 func (f *FD) ReleaseNumber() (int, error) { return f.give() }
 
+// SetCloexec sets FD_CLOEXEC on the number. An inherited descriptor arrives without it (Inherited owns what exec
+// left open), so an owner that must not hand it to every process it starts calls this once it has adopted the number;
+// a process started before the call, or one that races it with a fork, can still inherit it.
+func (f *FD) SetCloexec() error {
+	if f == nil || !f.acquire() {
+		return ErrClosed
+	}
+	defer f.unlease()
+	if _, err := unix.FcntlInt(uintptr(f.num), unix.F_SETFD, unix.FD_CLOEXEC); err != nil {
+		return fmt.Errorf("fcntl(%d, F_SETFD, FD_CLOEXEC): %w", f.num, err)
+	}
+	return nil
+}
+
 // Dup duplicates the number (F_DUPFD_CLOEXEC, at 3 or above) into a new owner whose lifetime is its own. The
 // new FD is not strict; a caller that needs it strict wraps the call in Strict.
 func (f *FD) Dup() (*FD, error) {

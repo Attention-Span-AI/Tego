@@ -20,6 +20,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/guide"
 	"github.com/attention-span-ai/tego/internal/platform/proc"
 	"github.com/attention-span-ai/tego/internal/platform/sys"
+	"github.com/attention-span-ai/tego/internal/platform/whereami"
 	"github.com/attention-span-ai/tego/internal/runscope"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
 	rtcgroup "github.com/attention-span-ai/tego/internal/runtime/cgroup"
@@ -119,7 +120,7 @@ func enterUserScope(ctx context.Context, stderr io.Writer) (int, bool) {
 type scopeNotOutside struct{ answer runscope.Answer }
 
 func (e *scopeNotOutside) Error() string {
-	return "this process cannot be shown to be outside every tego run: " + runscope.Why(e.answer)
+	return "this process cannot be shown to be outside every tego run: " + runscope.WhyWith(e.answer, whereami.Words())
 }
 
 // scopeInitCgroup is a fact, never a distribution-name or environment heuristic: pid 1's cgroup file names exactly
@@ -245,9 +246,6 @@ func executeUserScope(ctx context.Context, p scopePlan, stderr io.Writer) (int, 
 	job := tegoruntime.NewJobControl(tegoruntime.Stdio{In: os.Stdin, Out: os.Stdout, Err: os.Stderr})
 	defer job.Close()
 	sigs, stop := launch.Notify()
-	if gate != nil {
-		sigs, stop = launch.NotifyMarked()
-	}
 	defer stop()
 	if _, err = proc.Start(cmd); err != nil {
 		return 0, err
@@ -340,20 +338,17 @@ func executeUserScope(ctx context.Context, p scopePlan, stderr io.Writer) (int, 
 			return ws.ExitStatus(), nil
 		case sig := <-sigs:
 			scopeHandle(cmd, gate, sig)
-		case <-gateQueries(gate):
-			for _, other := range gate.Answer(sigs) {
-				scopeHandle(cmd, gate, other)
-			}
 		}
 	}
 }
 
 // scopeHandle is what the outer process does with one signal. An INT or QUIT the launcher judges from the counts
-// both processes keep (launch.Gate) is not forwarded: a group-directed one reached the launcher already, and
-// forwarding it by kill(2) made one Ctrl-C two. Without a listening launcher the old rule applies.
+// both processes keep (launch.Gate, which reports this process's running count to it) is not forwarded: a
+// group-directed one reached the launcher already, and forwarding it by kill(2) made one Ctrl-C two. Without a
+// listening launcher the old rule applies.
 func scopeHandle(cmd *proc.Cmd, gate *launch.Gate, sig os.Signal) {
 	s, ok := sig.(syscall.Signal)
-	if !ok || launch.IsMarker(sig) {
+	if !ok {
 		return
 	}
 	if gate != nil && gate.Note(s) {
@@ -362,14 +357,6 @@ func scopeHandle(cmd *proc.Cmd, gate *launch.Gate, sig os.Signal) {
 	if shouldForwardScope(s) {
 		_ = cmd.Process.Signal(s) // ESRCH means Wait4 is already ready
 	}
-}
-
-// gateQueries is the gate's questions, or a channel that never yields when there is no gate.
-func gateQueries(g *launch.Gate) <-chan struct{} {
-	if g == nil {
-		return nil
-	}
-	return g.Queries()
 }
 
 // scopeSignalChannel makes the stream socket the two processes count interrupts over. Both ends are owned at birth
@@ -389,7 +376,7 @@ func scopeSignalChannel() (*launch.Gate, *os.File) {
 		_ = local.Close()
 		return nil, nil
 	}
-	return launch.NewGate(local, nil), remote
+	return launch.NewGate(local), remote
 }
 
 // scopeNotify is launch.Notify for the launcher's run: with an interrupt channel to the outer process the INT and
@@ -401,8 +388,8 @@ func scopeNotify(ctx context.Context) (sigs <-chan os.Signal, stop func(), ready
 		sigs, stop = launch.Notify()
 		return sigs, stop, nil
 	}
-	raw, unsubscribe := launch.NotifyMarked()
-	arb := launch.NewArbiter(in.outer, raw, nil)
+	raw, unsubscribe := launch.Notify()
+	arb := launch.NewArbiter(in.outer, raw)
 	return arb.Signals(), func() { arb.Close(); unsubscribe() }, arb.Ready()
 }
 
@@ -483,23 +470,52 @@ func scopeManagerVar(name string) bool {
 	return strings.HasPrefix(name, "LC_")
 }
 
+// scopeAdoptInherited owns the descriptors the outer process passed: the request FIFO (3), the readiness FIFO (4)
+// and, when the outer process is of this build, the interrupt channel's socket (5, nil otherwise). Each arrives without
+// close-on-exec, because exec left it open on purpose, and is marked as soon as it is owned: the launcher starts
+// processes of its own (the ask notice, the reaper and cgroup helpers, the MCP relay), and none of them may hold a
+// way to write the channel or the handshake. The run's agent never had them (the child stage marks every descriptor
+// from 3 up). A socket that cannot be marked is closed and left out, so the outer process forwards by signal.
+func scopeAdoptInherited() (request, response, signals *sys.FD, err error) {
+	if request, err = sys.Inherited(3, sys.KindFIFO, "scope-request"); err != nil {
+		return nil, nil, nil, err
+	}
+	if err = request.SetCloexec(); err != nil {
+		_ = request.Close()
+		return nil, nil, nil, err
+	}
+	if response, err = sys.Inherited(4, sys.KindFIFO, "scope-ready"); err != nil {
+		_ = request.Close()
+		return nil, nil, nil, err
+	}
+	if err = response.SetCloexec(); err != nil {
+		_ = request.Close()
+		_ = response.Close()
+		return nil, nil, nil, err
+	}
+	if sock, serr := sys.Inherited(5, sys.KindSocket, "scope-signals"); serr == nil {
+		if sock.SetCloexec() != nil {
+			_ = sock.Close()
+		} else {
+			signals = sock
+		}
+	}
+	return request, response, signals, nil
+}
+
 // scopedMain is the single re-entry. It never opens another scope. Placement and the go-ahead are checked before
 // dispatch, so forging this verb or its environment cannot cause an unplaced run, nor let a governed caller escape.
 func scopedMain(ctx context.Context, stdout, stderr io.Writer) int {
-	request, err := sys.Inherited(3, sys.KindFIFO, "scope-request")
+	request, response, signals, err := scopeAdoptInherited()
 	if err != nil {
 		return identity.ExitLauncher
 	}
-	defer request.Close() //nolint:errcheck // owns nothing once released below; closes only on an early return
-	response, err := sys.Inherited(4, sys.KindFIFO, "scope-ready")
-	if err != nil {
-		return identity.ExitLauncher
-	}
+	defer request.Close()  //nolint:errcheck // owns nothing once released below; closes only on an early return
 	defer response.Close() //nolint:errcheck // same
 	// An outer process of this build offers descriptor 5; any other process or build leaves it out and the outer
 	// process keeps forwarding by signal.
 	var outer launch.Conn
-	if signals, serr := sys.Inherited(5, sys.KindSocket, "scope-signals"); serr == nil {
+	if signals != nil {
 		if f, rerr := signals.Release("scope-signals"); rerr == nil {
 			outer = f
 			defer f.Close() //nolint:errcheck // the channel's launcher end: the arbiter closes it first, a second close loses nothing

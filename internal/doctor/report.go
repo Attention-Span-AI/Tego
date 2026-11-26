@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/attention-span-ai/tego/internal/platform/whereami"
 	"github.com/attention-span-ai/tego/internal/runtime/enforce"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
@@ -283,7 +284,8 @@ func (r *Report) ExitCode() int {
 // The summary comes before the table so that the answer is not below the table's rows; the tier line
 // stays after the table, where scripts read it.
 func (r *Report) WriteText(w io.Writer) error {
-	if err := writeResults(w, r.Results, r.optionalOff); err != nil {
+	var fold repeatFold
+	if err := writeResults(w, r.Results, r.optionalOff, &fold); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintf(w, "\n%s\n", r.summary()); err != nil {
@@ -333,7 +335,7 @@ func (r *Report) WriteText(w io.Writer) error {
 		}
 	}
 	if r.Fix != "" {
-		if _, err := fmt.Fprintf(w, "fix: %s\n", r.Fix); err != nil {
+		if _, err := fmt.Fprintf(w, "fix: %s\n", fold.line(r.printedFix())); err != nil {
 			return fmt.Errorf("doctor: write fix: %w", err)
 		}
 	}
@@ -459,6 +461,22 @@ func (r *Report) placementFailed() bool {
 		}
 	}
 	return false
+}
+
+// printedFix is the one-line fix as WriteText prints it after the table. The container's cure of a failed cgroup check
+// (whereami.ContainerCgroupCure) is long, and the cgroupv2 line above has already printed it, so here it is a pointer to
+// that line, which keeps the cure to one appearance in a report. Any other fix, and the fix of a host, is printed
+// as it is.
+func (r *Report) printedFix() string {
+	if !strings.Contains(r.Fix, whereami.ContainerCgroupCure) {
+		return r.Fix
+	}
+	for _, res := range r.Results {
+		if res.ID == CheckCgroupV2 && !res.OK && res.Fix == whereami.ContainerCgroupCure {
+			return strings.ReplaceAll(r.Fix, whereami.ContainerCgroupCure, "what the cgroupv2 line above says the container needs")
+		}
+	}
+	return r.Fix
 }
 
 // summary is the line WriteText prints between the probes and the matrix: the tier, a machine config that caps

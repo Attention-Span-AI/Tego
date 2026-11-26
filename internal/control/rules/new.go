@@ -357,7 +357,10 @@ func (s *Service) planNew(ctx context.Context, req NewReq) (*NewPlan, *setup.Res
 		s.proposalBuilt("new")
 	}
 	p := &NewPlan{FromRun: strings.TrimSpace(req.FromRun), Command: strings.TrimSpace(req.Command)}
-	dir, problem := s.projectDir(ctx, req.Dir)
+	dir, problem, unfinished := s.projectDir(ctx, req.Dir)
+	if unfinished != nil {
+		problem = unfinished.Error()
+	}
 	if problem != "" {
 		p.Problems = append(p.Problems, problem)
 		return p, nil, nil
@@ -823,17 +826,28 @@ func builtInSecretRules() []NewRule {
 // returns again with no symlink followed, so a link swapped into that path after this check is refused, never
 // followed out of the project. The acknowledgement binds the resolved destination and directory identity;
 // the publisher verifies that identity against the descriptor beneath which it creates the file.
-func (s *Service) projectDir(ctx context.Context, typed string) (dir, problem string) {
+func (s *Service) projectDir(ctx context.Context, typed string) (dir, problem string, unfinished error) {
 	g := s.guard()
 	refuse := append([]string{g.LedgerRoot}, g.Refuse...)
 	if home := s.home(); home != "" {
 		refuse = append(refuse, filepath.Join(home, ".tego"))
 	}
-	dir, err := draftcompile.ProjectDirectory(ctx, draftcompile.DirectoryRequest{Typed: typed, Home: s.home(), Refuse: refuse})
-	if err != nil {
-		return "", err.Error()
+	req := draftcompile.DirectoryRequest{Typed: typed, Home: s.home(), Refuse: refuse}
+	var err error
+	if s.directory != nil { // a test says the check did not finish; production never sets it
+		dir, err = s.directory(ctx, req)
+	} else {
+		dir, err = draftcompile.ProjectDirectory(ctx, req)
 	}
-	return dir, ""
+	switch {
+	case pathcheck.IsNotFinished(err):
+		// The folder was not checked: the error keeps its type, so a caller can tell a folder not known to differ from
+		// one that does.
+		return "", "", err
+	case err != nil:
+		return "", err.Error(), nil
+	}
+	return dir, "", nil
 }
 
 // home is the invoking user's home: the service's, else the machine config's.

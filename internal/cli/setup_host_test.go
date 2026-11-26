@@ -154,9 +154,95 @@ func TestDashboardHostKinds(t *testing.T) {
 			if strings.Contains(out, "Open the link above") != (c.host == hostLinux) {
 				t.Fatal(out)
 			}
-			if strings.Contains(out, "type exit, then run: tego dashboard") != (c.host == hostWindows && c.native == "") {
+			if strings.Contains(out, "type exit, then run tego dashboard in Windows") != (c.host == hostWindows && c.native == "") {
 				t.Fatal(out)
 			}
 		})
+	}
+}
+
+// TestDashboardNotStartedNamesALogWindowsCanRead: when the dashboard does not start, a Windows person is told the
+// command that reads the log inside Tego's Linux, and sees its last lines, the sign-in token hidden; a Linux
+// host is told the path as it always was, and its log's lines are not printed.
+func TestDashboardNotStartedNamesALogWindowsCanRead(t *testing.T) {
+	token := strings.Repeat("ab12", 8)
+	logText := "tego serve: starting\ntego serve: open http://127.0.0.1:8484/?t=" + token + "\n" + "listen tcp 127.0.0.1:8484: bind: address already in use\n"
+	for _, c := range []struct {
+		host, native string
+	}{{"linux", ""}, {"mac", ""}, {"windows", ""}, {"windows", "1"}} {
+		t.Run(c.host+c.native, func(t *testing.T) {
+			f := onFixture(t, "fresh")
+			t.Setenv("TEGO_HOST_KIND", c.host)
+			t.Setenv("TEGO_WINDOWS_NATIVE", c.native)
+			old := guideDashboard
+			t.Cleanup(func() { guideDashboard = old })
+			guideDashboard = func(context.Context, string) string { return "" }
+			if err := os.MkdirAll(filepath.Join(f.Home, ".tego"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(f.Home, ".tego", "dashboard.log"), []byte(logText), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			code, out, errs := run(t, "dashboard")
+			if code != identity.ExitError || strings.Contains(out+errs, token) {
+				t.Fatalf("exit %d, the token must stay hidden: %s%s", code, out, errs)
+			}
+			if c.host == "windows" && c.native == "1" {
+				for _, want := range []string{`Its log is inside Tego's Linux; to read it, run: tego shell -c "tail -n 40 ~/.tego/dashboard.log"`,
+					"address already in use", "t=(hidden)", "tego serve: starting"} {
+					if !strings.Contains(out, want) {
+						t.Errorf("lacks %q: %s", want, out)
+					}
+				}
+				return
+			}
+			if !strings.Contains(out, "The dashboard didn't start. Its log: ~/.tego/dashboard.log") || strings.Contains(out, "address already in use") || strings.Contains(out, "tego shell") {
+				t.Errorf("the other hosts say what they said: %s", out)
+			}
+		})
+	}
+}
+
+func TestDashboardLogTail(t *testing.T) {
+	home := t.TempDir()
+	if got := dashboardLogTail(home, 3); got != nil {
+		t.Fatalf("no log: %q", got)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".tego"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	long := strings.Repeat("x", 300)
+	text := "one\ntwo\n\nlink http://127.0.0.1:1/?t=0123456789abcdef0123456789abcdef&x=1\nbell\a\x1b[31mred\n" + long + "\n"
+	if err := os.WriteFile(filepath.Join(home, ".tego", "dashboard.log"), []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := dashboardLogTail(home, 3)
+	if len(got) != 3 || got[0] != "link http://127.0.0.1:1/?t=(hidden)&x=1" || got[1] != "bell[31mred" || len([]rune(got[2])) != 161 {
+		t.Fatalf("%q", got)
+	}
+}
+
+// The sign-in token is hidden wherever it can appear in a line: a link, the start of a line, a fragment, after a space.
+func TestDashboardLogTailHidesTheTokenEverywhere(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".tego"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const tok = "0123456789abcdef0123456789abcdef"
+	lines := []string{"http://127.0.0.1:8484/?t=" + tok, "x=1&t=" + tok, "t=" + tok, "#t=" + tok, "http://h/#t=" + tok + "&y=2", "opened with t=" + tok + ", done", "a;t=" + tok, "set=1 not a token"}
+	if err := os.WriteFile(filepath.Join(home, ".tego", "dashboard.log"), []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := dashboardLogTail(home, 20)
+	if len(got) != len(lines) {
+		t.Fatalf("%q", got)
+	}
+	for i, l := range got {
+		if strings.Contains(l, tok) {
+			t.Errorf("line %d shows the token: %q", i, l)
+		}
+	}
+	if got[2] != "t=(hidden)" || got[3] != "#t=(hidden)" || got[7] != "set=1 not a token" {
+		t.Errorf("%q", got)
 	}
 }

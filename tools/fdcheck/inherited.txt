@@ -7,6 +7,6 @@ internal/runtime/launch/child.go stage.setup 1
 internal/runtime/mcprelay/server.go ServerMain 1
 internal/runtime/reap.go inheritReapFDs 5
 # The user-scope re-entry receives its request and readiness FIFOs at exec as 3 and 4, and the interrupt channel's socket
-# as 5 (an outer process of an older build offers none), before config or run state.
+# as 5 (an outer process of an older build offers none), before config or run state, and marks each close-on-exec as it adopts it.
 # TestScopeEntryInMainAcceptsInheritedPipesBeforeAnyOwner follows cmd/tego main through cli.Main and pins the seal.
-internal/cli/runscope.go scopedMain 3
+internal/cli/runscope.go scopeAdoptInherited 3

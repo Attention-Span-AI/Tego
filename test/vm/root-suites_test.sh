@@ -143,7 +143,7 @@ cat >"$repo/test/vm/kvm-run.sh" <<'EOF'
 #!/bin/sh
 # The stand-in guest: it records one line per boot (the kernel it was given, then every argument), writes the console and
 # the status the real one does, and reports that the command ran.
-{ printf 'KERNEL=%s LSM=%s ' "${TEGO_VM_KERNEL:-unset}" "${TEGO_VM_LSM:-unset}"; printf '%s ' "$@" | tr '\n\t' '  '; echo; } >>"$STUB_BOOTS"
+{ printf 'KERNEL=%s LSM=%s MEM=%s ' "${TEGO_VM_KERNEL:-unset}" "${TEGO_VM_LSM:-unset}" "${TEGO_VM_MEM:-unset}"; printf '%s ' "$@" | tr '\n\t' '  '; echo; } >>"$STUB_BOOTS"
 log="" status=""
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -240,6 +240,29 @@ for row in fedora-7.0 fedora-7.2; do
 done
 run_stub VM_HOST=kvm TEGO_VM_ROW=debian-13 TEGO_VM_KERNEL=matrix-debian-13
 if grep -qF -- "TEGO_TEST_PLANE_PREEMPT" "$tmp/boots"; then fail "debian-13 was given the preemption waiver: $(cat "$tmp/boots")"; fi
+
+# Guest memory never goes under suites.sh's SUITE_MIN_MEM, whatever TEGO_VM_MEM and VM_SUITE_MEM say (public issue 91: a
+# 1536M guest could not unpack its initramfs, and the conformance binary, its last file, never arrived).
+run_stub VM_HOST=kvm TEGO_VM_MEM=1536M
+grep -qF -- "MEM=2560M " "$tmp/boots" || fail "a 1536M guest was not raised to the floor: $(cat "$tmp/boots")"
+grep -qF -- "raised to 2560M" "$tmp/stub.log" || fail "the raise is not said: $(cat "$tmp/stub.log")"
+run_stub VM_HOST=kvm TEGO_VM_MEM=6G
+grep -qF -- "MEM=6144M " "$tmp/boots" || fail "a guest above the floor was changed: $(cat "$tmp/boots")"
+run_stub VM_HOST=kvm
+grep -qF -- "MEM=4096M " "$tmp/boots" || fail "an unset memory (kvm-run.sh's 4G) was not kept: $(cat "$tmp/boots")"
+sed -n '/^mem_mb() {/,/^}/p;/^mem_floor() {/,/^}/p' "$here/root-suites.sh" >"$tmp/mem_floor.sh"
+[ -s "$tmp/mem_floor.sh" ] || fail "root-suites.sh has no mem_floor"
+floor_is() { # ROW PKG SIZE WANT
+	got=$(bash -c '. "$1/suites.sh"; . "$2"; mem_floor "$3" "$4" "$5"' _ "$here" "$tmp/mem_floor.sh" "$3" "$2" "$1" 2>/dev/null)
+	[ "$got" = "$4" ] || fail "mem_floor $3 for $2 on '$1' = $got, want $4"
+}
+cg=internal/runtime/enforce/cgroup
+floor_is debian-13 $cg 3G 4096M
+floor_is rhel-9 $cg 3G 4096M
+floor_is fedora-7.0 $cg 3G 3072M
+floor_is "" $cg 3G 3072M
+floor_is debian-13 internal/bpf 3G 3072M
+floor_is debian-13 test/conformance 1536M 2560M
 
 # With no row named, no guest is told one, and the kernel is whatever the caller set.
 run_stub VM_HOST=kvm

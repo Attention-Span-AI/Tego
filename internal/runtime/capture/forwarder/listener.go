@@ -166,6 +166,9 @@ type Options struct {
 	Activity func(monoNS uint64)
 	// Credentials is nil (keylayer.go): every header is forwarded as the agent sent it.
 	Credentials KeyLayer
+	// LimitGate is asked before a request is admitted toward the model (limitgate.go); nil is a run no budget can end
+	// before its kill, which pays nothing. The runtime sets it through Manager.SetLimitGate.
+	LimitGate LimitGate
 }
 
 // maxBodyOf is Options.MaxBody with its documented zero meaning filled in. NewListener normalizes its own
@@ -591,6 +594,9 @@ func (l *Listener) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		l.refusePeer(w, r, err)
 		return
 	}
+	if l.refuseAtLimit(w, r, pid) {
+		return
+	}
 	if l.creds != nil && l.creds.refuseTunnel(l, w, r, pid) {
 		return
 	}
@@ -725,6 +731,16 @@ func (l *Listener) forward(w http.ResponseWriter, r *http.Request, pid int) {
 			}
 			return
 		}
+	}
+	// Every hold has ended (the body, an approval, a route, a credential). A budget crossed while the request waited closes the
+	// door to it too: it is refused here, as one arriving now would be, and never sent (limitgate.go).
+	if l.refuseAtLimit(w, r, pid) {
+		l.budget.give(x.held)
+		x.held = 0
+		if x.guard != nil {
+			x.guard.retire()
+		}
+		return
 	}
 	// From here the rest of the body is read by the upstream leg's own goroutine: a failure there is
 	// recorded, and marked on the reply below, on this goroutine, before a status is written. It can
@@ -1132,7 +1148,7 @@ func (l *Listener) derive(x *exchange, r *upstreamResult) {
 	switch {
 	case facts.Unmetered:
 		// A model call whose spend nothing could read: a run with a token or cost budget ends here.
-		l.reportUnmetered(derive.Route(x.method, x.path) + ": usage unreadable")
+		l.reportUnmetered(derive.UnreadableWhy(x.method, x.path, facts.UnmeteredNote))
 	case r == nil && !x.neverSent && !l.silent(x):
 		// A request to the model host that got no byte of an answer: the upstream failed or went away, the
 		// client left, or the run ended first. The upstream may have read the prompt and spent on it all

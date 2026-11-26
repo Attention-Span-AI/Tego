@@ -44,6 +44,40 @@ type Facts struct {
 	// IncompleteUsage means an accounting frame was unreadable, so known counters are lower bounds.
 	// A request's max_tokens bounds output alone and cannot make this exchange metered.
 	IncompleteUsage bool
+	// UnmeteredNote is, for an Unmetered exchange whose parser could say why beyond "unreadable", a note a person
+	// is told with the cause (UnreadableWhy): one of the Note constants. "" for any other.
+	UnmeteredNote string
+}
+
+// UnmeteredNoter is an error a Parser returns that carries a note for the person told of the unmetered exchange it
+// causes (Facts.UnmeteredNote).
+type UnmeteredNoter interface {
+	error
+	UnmeteredNote() string
+}
+
+// NoteStreamWithoutUsage is the note of a streamed answer that ended without stating its token usage: the API states
+// it in a stream only when the client asks for it (an OpenAI chat completion's stream_options.include_usage), and
+// Tego never changes a request to ask for it.
+const NoteStreamWithoutUsage = "stream without usage"
+
+// NoteAnswerCutOff is the note of an answer a connection closing early, or a capture cap, cut short before its usage
+// could be read: the client or the agent left, or the answer was longer than the part of a body Tego keeps. It is never
+// the case for the stream_options note, since the client may well have asked for usage.
+const NoteAnswerCutOff = "answer cut off"
+
+// UnreadableSuffix ends the account of an exchange whose usage could not be read ("POST /v1/chat/completions: usage
+// unreadable"), which a run's end message and a test read back; a note follows it in parentheses.
+const UnreadableSuffix = ": usage unreadable"
+
+// UnreadableWhy is the account a capture source gives of an exchange whose usage could not be read: the route, then
+// UnreadableSuffix, then the parser's note in parentheses when it had one.
+func UnreadableWhy(method, target, note string) string {
+	why := Route(method, target) + UnreadableSuffix
+	if note != "" {
+		why += " (" + note + ")"
+	}
+	return why
 }
 
 // Apply writes the facts onto an ssl_response payload the capture source built. It never clears a field

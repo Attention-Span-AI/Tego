@@ -29,6 +29,7 @@ func TestWordsNameEachCaseOfACheckThatDidNotFinish(t *testing.T) {
 		{"cancelled", contracts.CompileNotFinished(context.Canceled), "cancelled"},
 		{"cancelled check", &RemoteError{Message: contracts.CancelledCheck}, "cancelled"},
 		{"stuck", contracts.CheckUnavailable(fmt.Errorf("%w", contracts.ErrHelpersStuck)), "earlier checks are stuck"},
+		{"disk-stuck holders", &RemoteError{Message: Disk + ": 2 earlier checks are still waiting for this computer's disk, and each holds a filesystem helper slot"}, "the disk of this computer did not finish writing in time"},
 		{"location", contracts.CheckUnavailable(errors.New("open: i/o timeout")), "the location does not answer"},
 		{"compile busy", contracts.CompileUnavailable(true, errors.New("slot")), "compiler is busy"},
 		{"compile late", contracts.CompileNotFinished(context.DeadlineExceeded), "did not finish in time"},

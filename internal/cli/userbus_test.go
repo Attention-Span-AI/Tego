@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -234,5 +235,39 @@ func TestDoctorReportCarriesTheUserBusFinding(t *testing.T) {
 	fakeUserBus(t, ok)
 	if _, out, _ := run(t, "doctor", "--no-scope"); strings.Contains(out, "dashboard service") {
 		t.Errorf("doctor warns on a machine with a bus:\n%s", out)
+	}
+}
+
+// Public issue 88. scripts/install.sh ends with the same sentence and package line tego start gives when the
+// user manager has no bus, and names the no-manager case in the same words; the installer is a shell script and
+// cannot call classifyUserBus, so this holds the two together. It also holds the installer's reading of help: it
+// says nothing of the dashboard unless tego help -a lists start, at the width its grep '^ {2,3}start ' reads.
+func TestInstallerSpeaksOfTheBusAsTegoStartDoes(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "scripts", "install.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	installer := string(raw)
+	p := classifyUserBus(stockDebian())
+	if len(p.Fix) != 2 || !strings.HasPrefix(p.Fix[0], "sudo ") {
+		t.Fatalf("the Debian problem's fix changed shape: %q", p.Fix)
+	}
+	for _, want := range []string{
+		`echo "The dashboard cannot start: ` + p.Why + `."`,
+		`echo "  ` + p.Fix[0] + `"`,
+		`echo "` + p.Fix[1] + `"`,
+	} {
+		if !strings.Contains(installer, want) {
+			t.Errorf("scripts/install.sh lacks %q: it no longer says what tego start says", want)
+		}
+	}
+	none := classifyUserBus(userBusFacts{Systemd: true, UID: 1000, Debian: true})
+	head, _, _ := strings.Cut(none.Why, ", and ")
+	if !strings.Contains(installer, strings.Replace(head, "/run/user/1000", "${rundir}", 1)) {
+		t.Errorf("scripts/install.sh does not name a login with no user manager as %q", head)
+	}
+	code, out, _ := run(t, "help", "-a")
+	if code != identity.ExitOK || !regexp.MustCompile(`(?m)^ {2,3}start `).MatchString(out) {
+		t.Errorf("tego help -a exited %d and has no line starting \"   start \" on stdout: the installer would say nothing of the dashboard:\n%s", code, out)
 	}
 }

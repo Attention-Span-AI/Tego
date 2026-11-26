@@ -1,0 +1,4 @@
+# Only for openai_loop.py, the check of what a token budget does to a model call of another API shape. Read from PyPI on
+# 2026-11-26, when this was the current release; not part of requirements.txt, so a project that installs that file
+# does not install it.
+langchain-openai==1.8.5

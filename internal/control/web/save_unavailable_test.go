@@ -63,6 +63,11 @@ func TestSaveUnavailableExplainsRecovery(t *testing.T) {
 		{"remote-disk", &pathcheck.RemoteError{Message: pathcheck.Disk + ": context deadline exceeded"}, "the disk of this computer did not finish writing in time (it is very busy or nearly full)"},
 		{"stuck", contracts.CheckUnavailable(fmt.Errorf("3 earlier checks hold every slot: %w", contracts.ErrHelpersStuck)), "earlier checks are stuck on a location"},
 		{"cancelled", contracts.CompileNotFinished(context.Canceled), "the request was cancelled before the check finished"},
+		// A busy or unfinished compile step is a check that did not finish, never "the contract changed since you looked"
+		// (409): with its own words, and across the helper pipe as the typed cause and the text.
+		{"compile-busy", contracts.CompileUnavailable(true, errors.New("compiler busy, try again")), "the compiler is busy with other checks"},
+		{"compile-not-finished", contracts.CompileNotFinished(context.DeadlineExceeded), "the machine is very busy: the contract check did not finish in time"},
+		{"remote-compile-busy", &pathcheck.RemoteError{Message: contracts.CompileBusy + ": compiler busy, try again", Causes: []error{contracts.ErrCompileUnfinished}}, "the compiler is busy with other checks"},
 	} {
 		for _, mode := range []string{"structured", "raw", "raw-catalogue", "raw-current", "new"} {
 			t.Run(cause.name+"/"+mode, func(t *testing.T) {
@@ -100,6 +105,9 @@ func TestSaveUnavailableExplainsRecovery(t *testing.T) {
 					if !strings.Contains(body, want) {
 						t.Errorf("recovery page lacks %q: %s", want, body)
 					}
+				}
+				if strings.Contains(body, "changed since you looked") {
+					t.Error("a check that did not finish was reported as a changed contract")
 				}
 				if strings.Contains(body, "Nothing was saved") || strings.Contains(body, "Not saved") {
 					t.Error("uncertain write was reported as definitely unwritten")

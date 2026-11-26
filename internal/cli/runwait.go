@@ -11,6 +11,9 @@ import (
 
 const codeStartupWait = "startup-wait"
 
+// codeDiskWait is the code of the note a command prints when a check waits for a slow local disk (contracts.DiskWaitNote).
+const codeDiskWait = "disk-wait"
+
 // startupWaitAfter is how long a start is silent before startupWait explains it. A variable so a test that pins a run's
 // whole stderr can keep a host that is slow to start from adding the note to it (TestRunLegacyOutput).
 var startupWaitAfter = time.Second

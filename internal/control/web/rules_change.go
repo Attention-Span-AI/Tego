@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/attention-span-ai/tego/internal/contracts"
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
 	"github.com/attention-span-ai/tego/internal/control/pathcheck"
 	"github.com/attention-span-ai/tego/internal/control/rules"
@@ -386,7 +385,7 @@ func (s *Server) changeChrome(w http.ResponseWriter, title string) (chrome, bool
 // checkUnavailable explains a bounded check failure without claiming whether a
 // submitted mutation reached disk (ADR 0144). Retrying a POST blindly is unsafe.
 func (s *Server) checkUnavailable(w http.ResponseWriter, err error) bool {
-	if err == nil || !pathcheck.IsUnanswered(err) && !contracts.IsCompileUnfinished(err) && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+	if !pathcheck.IsNotFinished(err) {
 		return false
 	}
 	s.checkNotFinished(w, err)

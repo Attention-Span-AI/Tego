@@ -40,7 +40,11 @@ const helperLimit = 32
 // worker needs only scheduling time to release its lease), starting the helper, and its report that it is alive and
 // about to touch the location (the ready frame). It is separate from CheckTimeout, which only a helper that has said
 // it is ready can use up: a machine too busy to start a process must never read as a location that does not answer.
-// 30 s, times raceScale in a race build. A stuck mount costs at most StartTimeout plus CheckTimeout, never a hang.
+// 30 s, times raceScale in a race build. A stuck mount costs at most StartTimeout plus CheckTimeout, never a hang. A
+// location on this computer's own disk (location.go) whose helper is in uninterruptible sleep is waited for longer: up
+// to localCap (30 s) of location time, so at most StartTimeout plus localCap (60 s) for a caller with no request scope
+// of its own (the command line), and no more than the request's bound (25 s in all, start-up included) in a dashboard
+// request. The start-up part is spent only on a machine too busy to start a process; the usual cost is the location's.
 const StartTimeout = 30 * time.Second * raceScale
 
 // startTimeout is StartTimeout, a variable so a test with a synthetic pool can end its slot wait early.
@@ -353,7 +357,7 @@ func reserveHelperWith(ctx context.Context, euid uint32, governed bool, listen f
 	// after the helper had said it was ready and used up its location budget, and is still alive (stuckAt: a check
 	// stuck on a location). Every other slot is held by a helper nothing is known about: another command's, or a
 	// healthy worker not yet gone. When every slot is held by a stuck check of this process nothing can free one by
-	// waiting, and the refusal comes at once, in the mount's words. Otherwise the wait goes on until the start-up
+	// waiting, and the refusal comes at once, in the disk's words when every one of them is stuck on this computer's own disk, in the mount's when any is stuck on a mount. Otherwise the wait goes on until the start-up
 	// budget ends, and says only how many helpers are alive.
 	//
 	// The first time every slot is found taken, the holders nothing is known about are looked at once (fix29): when each
@@ -368,7 +372,7 @@ func reserveHelperWith(ctx context.Context, euid uint32, governed bool, listen f
 			return nil, nil, &slotsTaken{alive: cap(processWorkers), err: err}
 		}
 		slots := helperSlots(governed)
-		taken, stuckN := 0, 0
+		taken, stuckN, diskN := 0, 0, 0
 		var unknown []string // the taken slots whose holder this process knows nothing about
 		for _, slot := range slots {
 			name := fmt.Sprintf("@%s.%d.%d", helperReservationPool, euid, slot)
@@ -377,6 +381,9 @@ func reserveHelperWith(ctx context.Context, euid uint32, governed bool, listen f
 				taken++
 				if stuckAt(name) {
 					stuckN++
+					if stuckOnDisk(name) {
+						diskN++
+					}
 				} else {
 					unknown = append(unknown, name)
 				}
@@ -394,11 +401,16 @@ func reserveHelperWith(ctx context.Context, euid uint32, governed bool, listen f
 			return reservation, lease, nil
 		}
 		if taken > 0 && taken == len(slots) && stuckN == taken {
+			if diskN == stuckN {
+				// Every slot is held by a helper stuck on this computer's own disk: the disk's words, as for the checks
+				// themselves. One holder stuck on a mount is enough for the mount's (below): the stricter reading wins.
+				return nil, nil, &unavailableError{err: &stuckHelpers{err: fmt.Errorf("%d earlier checks are still waiting for this computer's disk, and each holds a filesystem helper slot, so no helper can start: %w", stuckN, context.DeadlineExceeded)}, fault: faultDisk}
+			}
 			return nil, nil, CheckUnavailable(&stuckHelpers{err: fmt.Errorf("%d earlier checks are still stuck on a location, and each holds a filesystem helper slot, so no helper can start: %w", stuckN, context.DeadlineExceeded)})
 		}
 		if taken > 0 && taken == len(slots) && !judged {
 			judged = true
-			if holdersStuckForGood(unknown) {
+			if holdersStuckForGood(unknown, localCheck(ctx)) {
 				return nil, nil, CheckUnavailable(&stuckHelpers{err: fmt.Errorf("%d earlier checks are still stuck on a location that does not answer, and each holds a filesystem helper slot, so no helper can start: %w", taken, context.DeadlineExceeded)})
 			}
 		}
@@ -934,14 +946,18 @@ func exchange(ctx context.Context, request []byte) (body []byte, err error) {
 	// working on a CPU or was waiting for this computer's disk, and the scope may give it another step (the clock then runs on), and otherwise the refusal,
 	// in the words of what the counters said. A helper that was blocked is stuck on its slot (stuck says so); one
 	// that could not be read, or that was starved or working to the cap, is not known to be.
+	local := localCheck(ctx)
 	expire := func(stuck bool) error {
-		verdict := watch.Judge()
+		verdict := watch.JudgeAt(local)
 		switch verdict {
 		case Starved, Running, BlockedDisk:
 			// grant gives nothing past the request scope's bound, so a helper still starved, working or waiting for the
 			// disk at that bound is refused as one at the cap. A wait for this computer's own disk is slow, not stuck:
 			// the disk will answer, so it is given the steps a starved helper is; a wait in a mount is not.
-			if step := budget.grant(); step > 0 {
+			if step := budget.grant(local && verdict == BlockedDisk); step > 0 {
+				if local && verdict == BlockedDisk {
+					noteDiskWait(ctx, budget)
+				}
 				granted += step
 				left += step
 				clock.Reset(max(left-time.Since(running), 0))
@@ -953,7 +969,7 @@ func exchange(ctx context.Context, request []byte) (body []byte, err error) {
 			case BlockedDisk:
 				// The helper holds its slot until the disk answers.
 				if stuck {
-					markStuck(worker)
+					markStuck(worker, local)
 				}
 				return budget.refuse(&unavailableError{err: context.DeadlineExceeded, fault: faultDisk})
 			}
@@ -962,7 +978,7 @@ func exchange(ctx context.Context, request []byte) (body []byte, err error) {
 			return budget.refuse(&unavailableError{err: context.DeadlineExceeded, fault: faultUnread})
 		}
 		if stuck {
-			markStuck(worker)
+			markStuck(worker, false)
 		}
 		return budget.refuse(&unavailableError{err: context.DeadlineExceeded})
 	}

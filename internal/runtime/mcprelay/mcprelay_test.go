@@ -683,7 +683,7 @@ func TestChildPIDFDClosedOnDisconnect(t *testing.T) {
 func TestVarsConfigEndpoints(t *testing.T) {
 	s, _, _ := start(t, nil, filesServer(), Server{Name: "web", URL: "http://127.0.0.1:9/mcp", Rules: mcptool.Rules{Deny: []string{"x"}}})
 	rt := t.TempDir()
-	if err := s.UseRuntimeDir(rt); err != nil {
+	if err := s.UseClientDir(rt, nil, -1, -1); err != nil {
 		t.Fatal(err)
 	}
 	v := s.Vars()

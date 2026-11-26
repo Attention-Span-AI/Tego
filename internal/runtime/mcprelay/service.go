@@ -216,14 +216,22 @@ func addrPort(a net.Addr) netip.AddrPort {
 	return ap
 }
 
-// UseRuntimeDir writes the run's MCP client config into dir (the run's runtime directory, readable by the agent),
-// before Vars is read. A run with no runtime directory gets no TEGO_MCP_CONFIG.
-func (s *Service) UseRuntimeDir(dir string) error {
+// ErrNoClientDir is a run that has a relayed server and no directory to put the client config in. The relay's
+// other variable, TEGO_MCP_RELAY, would still be set and the agent would find no config, so the run is refused.
+var ErrNoClientDir = errors.New("mcprelay: the run has no directory for its client config (TEGO_MCP_CONFIG)")
+
+// UseClientDir writes the run's MCP client config into the directory at path, before Vars is read: the directory the
+// agent reads it from. For a root launcher fd is that directory held open (made by it, see runtime's makeClientDir;
+// the file is made through fd) and uid and gid name who owns the file; with fd nil and uid < 0, path is the run's own
+// runtime directory, private to the user the agent runs as. It is ConfigName in dir
+// and nothing else: what the relay enforces never reads it back, the servers it admits and the commands it allows come
+// from the contract the launcher compiled (the admission in stdio.go), so an agent that changes its copy changes what
+// its own client starts and nothing the relay decides. An empty path is ErrNoClientDir.
+func (s *Service) UseClientDir(dir string, fd *sys.FD, uid, gid int) error {
 	if dir == "" {
-		s.opts.Logger.Warn("mcp relay: the run has no runtime directory, so no TEGO_MCP_CONFIG file is written")
-		return nil
+		return ErrNoClientDir
 	}
-	p, err := writeClientConfig(dir, s.opts.Exe, s.Servers(), s.httpURLs())
+	p, err := writeClientConfig(dir, fd, s.opts.Exe, s.Servers(), s.httpURLs(), uid, gid)
 	if err != nil {
 		return err
 	}

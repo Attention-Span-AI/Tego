@@ -1,0 +1,15 @@
+# The packages of the LangGraph example's test agents (test/workloads/langgraph, examples/agents/langgraph.yaml).
+#
+# Read from the projects' own documentation and PyPI on 2026-11-26, when these were the current releases:
+# LangGraph's quickstart (https://docs.langchain.com/oss/python/langgraph/quickstart) installs langgraph, with
+# langchain-anthropic for its model; the MCP adapters' README names langchain-mcp-adapters, which needs mcp below 2.
+# Only the packages the two scripts import are pinned; their own dependencies (pydantic, httpx, anthropic, ...) are
+# whatever pip resolves inside those releases' ranges, and no hashes are listed: a hash-checked file lists every
+# dependency too (test/workloads/build/python/requirements.txt does), `tego scan` does not read a requirements.txt
+# that carries hashes ("not read: unsupported", docs/user/scan.md), and a project's own requirements.txt is what the
+# scan reads to name LangGraph. The guest row records `pip freeze` of what it installed.
+langgraph==1.2.24
+langchain-core==1.8.5
+langchain-anthropic==1.7.13
+langchain-mcp-adapters==0.3.2
+mcp==1.30.0

@@ -14,38 +14,43 @@ import (
 
 // Interrupt provenance (A51, ADR 0142). A user-scope run has two Tego processes in one job: the outer process that
 // the person started and the launcher that systemd-run made in a new scope. They share a process group, so a
-// group-directed INT (a background job's `kill -INT -- -pgid`) reaches both, while `kill -INT <pid>` reaches one.
-// The outer process used to forward every INT it saw to the launcher with kill(2), so a group-directed one arrived
-// twice, and the second read as the person's deliberate repeat (the double-interrupt window escalates at once).
-// os/signal hands a process the signal and no sender, so neither process can tell the cases apart alone.
+// group-directed INT (a terminal's Ctrl-C, a background job's `kill -INT -- -pgid`) reaches both, while
+// `kill -INT <pid>` reaches one. The outer process used to forward every INT it saw to the launcher with kill(2), so a
+// group-directed one arrived twice, and the second read as the person's deliberate repeat (the double-interrupt
+// window escalates at once). os/signal hands a process the signal and no sender, so neither process can tell the
+// cases apart alone.
 //
-// The two processes now ask each other instead of signalling each other. Both count the INT and QUIT arrivals they
-// see. The launcher, after each arrival of its own or a note from the outer process, drains its pending signals
-// behind a marker it sends itself, asks the outer process (which does the same) for its counts, and takes for each
-// signal the larger of the two new counts: an INT both saw is one interrupt, one that only one saw is one interrupt,
-// and two separate sends are two. No time window decides anything. The arrivals are paired only by their counts, so
-// two deliberate sends to two different processes within one round trip (microseconds) read as one interrupt.
+// The two processes now count instead of signalling each other. Each counts the INT and QUIT arrivals it received
+// itself, and the outer process tells the launcher its running count over one stream socket. The number of
+// interrupts the pair has seen is, per signal, the larger of the two counts. The launcher acts on every increase of
+// that number at once, so the first interrupt waits for nothing and the second acts when either count reaches two.
+// Nothing but counts travels, and a count only grows, so no order between a signal, a report and anything else is
+// relied on: an INT both processes received is one interrupt whichever arrives first, however late the other is
+// read by its process or its report reaches the launcher, and no time window decides anything.
 //
-// The channel is one stream socket. Frames: H (launcher to outer: I am listening), A (outer to launcher: so is
-// the channel), N (outer to launcher: I counted an arrival), Q (launcher to outer: your counts), R plus two
-// uint64 (outer to launcher: INT then QUIT). An outer process that has seen no H, or whose channel failed, still
-// forwards with kill(2) as before, and a launcher whose outer process does not answer in provenanceWait counts its
-// own arrivals alone. Both fall back to the old behaviour, never to a dropped interrupt.
+// What the rule cannot tell apart: one signal to each of the two processes sent separately (the launcher alone,
+// then the outer process alone, in either order) is (1,1), the same two counts as one signal to the group, so it
+// reads as one interrupt at any gap. A second signal to the same process is two. A signal a process coalesces with
+// another that is still pending (os/signal and the kernel keep one pending bit per signal) is one arrival, so the
+// counts are a lower bound; "at least one more since the last settle" is what they say.
+//
+// Frames: H (launcher to outer: I am listening), A (outer to launcher: so is the channel), N plus two uint64
+// (outer to launcher: the outer process's running INT and QUIT counts). An outer process that has seen no H, or
+// whose channel failed, still forwards with kill(2) as before. A peer that falls silent or whose channel closes
+// counts as it last reported, and the launcher's own count still works alone. Both fall back to the old behaviour,
+// never to a dropped interrupt.
 
-// interruptMarker is the signal a process sends itself to know every earlier arrival has been read: the first
-// real-time signal numbers the Go runtime and the C library leave to programs, queued behind INT and QUIT.
-const interruptMarker = syscall.Signal(40)
-
-// provenanceWait bounds every wait on the peer and on the marker. It does not pair anything; it only stops an
-// unresponsive peer from holding an interrupt back.
+// provenanceWait bounds a write to the peer. It does not pair anything; it only stops an unresponsive peer from
+// holding the process back.
 const provenanceWait = time.Second
+
+// maxEmitted is the most interrupts of one kind the arbiter passes on for one arrival or report.
+const maxEmitted = 2
 
 const (
 	frameHello = 'H'
 	frameAck   = 'A'
 	frameNote  = 'N'
-	frameQuery = 'Q'
-	frameReply = 'R'
 )
 
 // counts is the number of INT and QUIT arrivals a process has seen.
@@ -63,7 +68,39 @@ func interruptSlot(sig syscall.Signal) (int, bool) {
 
 var interruptSignals = [2]syscall.Signal{syscall.SIGINT, syscall.SIGQUIT}
 
-func sendMarker() error { return syscall.Kill(os.Getpid(), interruptMarker) }
+// tally is the counting rule and nothing else: the launcher's own arrivals, the largest count the outer process has
+// reported, and what has been acted on. It is pure, so its tests can run every order of arrivals and reports.
+type tally struct {
+	own, peer, acted counts
+}
+
+// arrival counts one INT or QUIT the launcher received itself.
+func (t *tally) arrival(slot int) { t.own[slot]++ }
+
+// report takes the outer process's running counts. A report never lowers a count, so a late or repeated one is
+// harmless.
+func (t *tally) report(c counts) {
+	for i := range c {
+		if c[i] > t.peer[i] {
+			t.peer[i] = c[i]
+		}
+	}
+}
+
+// due returns, per signal, the interrupts the pair has seen since the last call: the larger of the two counts less
+// what was acted on.
+func (t *tally) due() counts {
+	var n counts
+	for i := range n {
+		m := t.own[i]
+		if t.peer[i] > m {
+			m = t.peer[i]
+		}
+		n[i] = m - t.acted[i]
+		t.acted[i] = m
+	}
+	return n
+}
 
 // Conn is the channel's stream: a nonblocking socket as an *os.File (so a deadline and a Close reach a blocked read and
 // write), or any other stream with write deadlines.
@@ -72,7 +109,7 @@ type Conn interface {
 	SetWriteDeadline(time.Time) error
 }
 
-// frameWriter serialises the writes of one end: the reader goroutine acknowledges while the main loop answers.
+// frameWriter serialises the writes of one end: the reader goroutine acknowledges while the owner's loop notes.
 type frameWriter struct {
 	mu   sync.Mutex
 	conn Conn
@@ -86,35 +123,25 @@ func (w *frameWriter) write(b []byte) error {
 	return err
 }
 
-// Arbiter is the launcher's end: it turns the INT and QUIT deliveries of in, and the outer process's notes, into the
+// Arbiter is the launcher's end: it turns the INT and QUIT deliveries of in, and the outer process's counts, into the
 // interrupts the person made, and passes every other signal through.
 type Arbiter struct {
 	conn Conn
 	in   <-chan os.Signal
-	mark func() error
 	w    frameWriter
 
 	out    chan os.Signal
-	frames chan arbiterFrame
+	frames chan counts
 	ready  chan struct{}
 	done   chan struct{}
 	wg     sync.WaitGroup
 	once   sync.Once
 }
 
-type arbiterFrame struct {
-	tag   byte
-	count counts
-}
-
-// NewArbiter starts the launcher's end on conn. in must also deliver interruptMarker (NotifyMarked); mark nil sends
-// it to this process. The caller reads Signals and calls Close when the run is over.
-func NewArbiter(conn Conn, in <-chan os.Signal, mark func() error) *Arbiter {
-	if mark == nil {
-		mark = sendMarker
-	}
-	a := &Arbiter{conn: conn, in: in, mark: mark, w: frameWriter{conn: conn}, out: make(chan os.Signal, 16),
-		frames: make(chan arbiterFrame, 16), ready: make(chan struct{}), done: make(chan struct{})}
+// NewArbiter starts the launcher's end on conn. The caller reads Signals and calls Close when the run is over.
+func NewArbiter(conn Conn, in <-chan os.Signal) *Arbiter {
+	a := &Arbiter{conn: conn, in: in, w: frameWriter{conn: conn}, out: make(chan os.Signal, 16),
+		frames: make(chan counts, 16), ready: make(chan struct{}), done: make(chan struct{})}
 	a.wg.Add(2)
 	go a.read()
 	go a.run()
@@ -140,46 +167,36 @@ func (a *Arbiter) read() {
 	defer a.wg.Done()
 	defer close(a.frames)
 	for {
-		f, err := readFrame(a.conn)
-		if err != nil {
+		var tag [1]byte
+		if _, err := io.ReadFull(a.conn, tag[:]); err != nil {
 			return
 		}
-		if f.tag == frameAck {
+		switch tag[0] {
+		case frameAck:
 			select {
 			case <-a.ready:
 			default:
 				close(a.ready)
 			}
-			continue
-		}
-		select {
-		case a.frames <- f:
-		case <-a.done:
+		case frameNote:
+			var b [16]byte
+			if _, err := io.ReadFull(a.conn, b[:]); err != nil {
+				return
+			}
+			select {
+			case a.frames <- counts{binary.BigEndian.Uint64(b[:8]), binary.BigEndian.Uint64(b[8:])}:
+			case <-a.done:
+				return
+			}
+		default:
+			// Not this protocol. The channel ends for both sides: closing it makes the outer process's next write
+			// fail, so it stops counting for a launcher that no longer listens and forwards by signal again, and
+			// the launcher counts its own arrivals alone. Left open, an interrupt sent to the outer process alone
+			// would be written into a socket nobody reads and lost.
+			_ = a.conn.Close()
 			return
 		}
 	}
-}
-
-func readFrame(r io.Reader) (arbiterFrame, error) {
-	var tag [1]byte
-	if _, err := io.ReadFull(r, tag[:]); err != nil {
-		return arbiterFrame{}, err
-	}
-	f := arbiterFrame{tag: tag[0]}
-	if f.tag == frameReply {
-		var b [16]byte
-		if _, err := io.ReadFull(r, b[:]); err != nil {
-			return arbiterFrame{}, err
-		}
-		f.count[0] = binary.BigEndian.Uint64(b[:8])
-		f.count[1] = binary.BigEndian.Uint64(b[8:])
-	}
-	return f, nil
-}
-
-type arbiterState struct {
-	seen, accSeen, accOuter counts
-	broken                  bool
 }
 
 func (a *Arbiter) run() {
@@ -190,10 +207,9 @@ func (a *Arbiter) run() {
 		a.passThrough()
 		return
 	}
-	var st arbiterState
+	var t tally
 	frames := a.frames
 	for {
-		dirty := false
 		select {
 		case <-a.done:
 			return
@@ -201,17 +217,28 @@ func (a *Arbiter) run() {
 			if !ok {
 				return
 			}
-			dirty = a.arrival(&st, s)
-		case f, ok := <-frames:
-			if !ok {
-				st.broken = true
-				frames = nil
+			sig, isSig := s.(syscall.Signal)
+			slot, isInt := interruptSlot(sig)
+			if !isSig || !isInt {
+				if !a.emit(s, 1) {
+					return
+				}
 				continue
 			}
-			dirty = f.tag == frameNote
+			t.arrival(slot)
+		case c, ok := <-frames:
+			if !ok {
+				frames = nil // the peer counts as it last reported
+				continue
+			}
+			t.report(c)
 		}
-		for dirty {
-			dirty = a.resolve(&st)
+		for i, n := range t.due() {
+			// Two is all a run can use (the second interrupt forces the stop), so a count that jumped further,
+			// such as a report written by another writer of the channel, does not hold the loop emitting.
+			if !a.emit(interruptSignals[i], min(n, maxEmitted)) {
+				return
+			}
 		}
 	}
 }
@@ -241,131 +268,20 @@ func (a *Arbiter) emit(s os.Signal, n uint64) bool {
 	return true
 }
 
-// arrival counts an INT or QUIT, drops a stray marker and passes anything else on. It reports whether a
-// resolution is due.
-func (a *Arbiter) arrival(st *arbiterState, s os.Signal) bool {
-	sig, ok := s.(syscall.Signal)
-	if !ok {
-		a.emit(s, 1)
-		return false
-	}
-	if sig == interruptMarker {
-		return false
-	}
-	i, isInt := interruptSlot(sig)
-	if !isInt {
-		a.emit(s, 1)
-		return false
-	}
-	st.seen[i]++
-	return true
-}
-
-// resolve settles what the counts say since the last one and reports whether more arrivals came meanwhile.
-func (a *Arbiter) resolve(st *arbiterState) bool {
-	if st.broken {
-		a.settle(st, st.seen, st.accOuter)
-		return false
-	}
-	a.drain(st)
-	snap := st.seen
-	outer, ok := a.ask(st)
-	if !ok {
-		st.broken = true
-		outer = st.accOuter
-	}
-	a.settle(st, snap, outer)
-	return st.seen != st.accSeen
-}
-
-// settle emits, per signal, the larger of the arrivals each side counted since the last settle.
-func (a *Arbiter) settle(st *arbiterState, seen, outer counts) {
-	for i, sig := range interruptSignals {
-		mine, theirs := seen[i]-st.accSeen[i], outer[i]-st.accOuter[i]
-		st.accSeen[i], st.accOuter[i] = seen[i], outer[i]
-		n := mine
-		if theirs > n {
-			n = theirs
-		}
-		if !a.emit(sig, n) {
-			return
-		}
-	}
-}
-
-// drain reads in until this process's own marker comes back, so the arrivals already delivered are counted.
-func (a *Arbiter) drain(st *arbiterState) {
-	if a.mark() != nil {
-		return
-	}
-	timer := time.NewTimer(provenanceWait)
-	defer timer.Stop()
-	for {
-		select {
-		case s, ok := <-a.in:
-			if !ok {
-				return
-			}
-			if sig, isSig := s.(syscall.Signal); isSig && sig == interruptMarker {
-				return
-			}
-			a.arrival(st, s)
-		case <-timer.C:
-			return
-		case <-a.done:
-			return
-		}
-	}
-}
-
-// ask returns the outer process's counts, or false when it does not answer.
-func (a *Arbiter) ask(st *arbiterState) (counts, bool) {
-	if a.w.write([]byte{frameQuery}) != nil {
-		return counts{}, false
-	}
-	timer := time.NewTimer(provenanceWait)
-	defer timer.Stop()
-	for {
-		select {
-		case f, ok := <-a.frames:
-			if !ok {
-				return counts{}, false
-			}
-			if f.tag == frameReply {
-				return f.count, true
-			}
-			// A note ahead of the reply is part of it: the outer process wrote it first.
-		case s, ok := <-a.in:
-			if !ok {
-				return counts{}, false
-			}
-			a.arrival(st, s) // counted now, settled by the next round
-		case <-timer.C:
-			return counts{}, false
-		case <-a.done:
-			return counts{}, false
-		}
-	}
-}
-
-// Gate is the outer process's end. Its owner calls Note for every INT or QUIT it receives and answers Queries().
+// Gate is the outer process's end. Its owner calls Note for every INT or QUIT it receives.
 type Gate struct {
-	w       frameWriter
-	live    atomic.Bool
-	queries chan struct{}
-	done    chan struct{}
-	wg      sync.WaitGroup
-	once    sync.Once
-	mark    func() error
-	seen    counts // read and written only by the owner's loop
+	w    frameWriter
+	live atomic.Bool
+	done chan struct{}
+	wg   sync.WaitGroup
+	once sync.Once
+	mu   sync.Mutex // orders Note's count with its frame
+	seen counts
 }
 
-// NewGate starts the outer end on conn. mark nil sends interruptMarker to this process.
-func NewGate(conn Conn, mark func() error) *Gate {
-	if mark == nil {
-		mark = sendMarker
-	}
-	g := &Gate{w: frameWriter{conn: conn}, queries: make(chan struct{}, 1), done: make(chan struct{}), mark: mark}
+// NewGate starts the outer end on conn.
+func NewGate(conn Conn) *Gate {
+	g := &Gate{w: frameWriter{conn: conn}, done: make(chan struct{})}
 	g.wg.Add(1)
 	go g.read()
 	return g
@@ -381,92 +297,43 @@ func (g *Gate) Close() {
 	g.wg.Wait()
 }
 
-// Queries yields once per question of the launcher; answer each with Answer.
-func (g *Gate) Queries() <-chan struct{} { return g.queries }
-
 func (g *Gate) read() {
 	defer g.wg.Done()
 	defer g.live.Store(false)
 	for {
-		f, err := readFrame(g.w.conn)
-		if err != nil {
+		var tag [1]byte
+		if _, err := io.ReadFull(g.w.conn, tag[:]); err != nil {
 			return
 		}
-		switch f.tag {
-		case frameHello:
-			g.live.Store(true)
-			if g.w.write([]byte{frameAck}) != nil {
-				return
-			}
-		case frameQuery:
-			select {
-			case g.queries <- struct{}{}:
-			default: // the launcher asks one question at a time
-			}
-		default:
+		if tag[0] != frameHello {
 			return // not this protocol: end it, and the owner forwards by signal again
+		}
+		g.live.Store(true)
+		if g.w.write([]byte{frameAck}) != nil {
+			return
 		}
 	}
 }
 
-// Note counts an INT or QUIT the outer process received. It reports true when the launcher will judge it from the
-// counts, and false when the owner must forward it itself because no launcher listens (or the signal is another).
+// Note counts an INT or QUIT the outer process received and reports its running counts. It reports true when the
+// launcher will judge it from the counts, and false when the owner must forward it itself because no launcher
+// listens (or the signal is another).
 func (g *Gate) Note(sig syscall.Signal) bool {
 	i, ok := interruptSlot(sig)
 	if !ok || !g.live.Load() {
 		return false
 	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	g.seen[i]++
-	if g.w.write([]byte{frameNote}) != nil {
+	var b [17]byte
+	b[0] = frameNote
+	binary.BigEndian.PutUint64(b[1:9], g.seen[0])
+	binary.BigEndian.PutUint64(b[9:], g.seen[1])
+	if g.w.write(b[:]) != nil {
 		g.live.Store(false)
 		g.seen[i]--
 		return false
 	}
 	return true
-}
-
-// Answer reads in behind a marker so the arrivals already delivered are counted, then replies with the counts. It
-// returns every other signal it read, for the owner to handle as it would have.
-func (g *Gate) Answer(in <-chan os.Signal) []os.Signal {
-	var others []os.Signal
-	if g.mark() == nil {
-		timer := time.NewTimer(provenanceWait)
-		defer timer.Stop()
-	drain:
-		for {
-			select {
-			case s, ok := <-in:
-				if !ok {
-					break drain
-				}
-				sig, isSig := s.(syscall.Signal)
-				if isSig && sig == interruptMarker {
-					break drain
-				}
-				if i, isInt := interruptSlot(sig); isSig && isInt {
-					g.seen[i]++
-					continue
-				}
-				others = append(others, s)
-			case <-timer.C:
-				break drain
-			case <-g.done:
-				break drain
-			}
-		}
-	}
-	var b [17]byte
-	b[0] = frameReply
-	binary.BigEndian.PutUint64(b[1:9], g.seen[0])
-	binary.BigEndian.PutUint64(b[9:], g.seen[1])
-	if g.w.write(b[:]) != nil {
-		g.live.Store(false)
-	}
-	return others
-}
-
-// IsMarker reports whether s is the marker, which the owner of a Gate drops from its own handling.
-func IsMarker(s os.Signal) bool {
-	sig, ok := s.(syscall.Signal)
-	return ok && sig == interruptMarker
 }

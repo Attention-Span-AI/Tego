@@ -480,7 +480,9 @@ The earlier decision to leave scope entry to the person is superseded for `tego 
    sends to two different processes within one round trip read as one, and a group send whose second copy lags
    the first by more than that round trip reads as two (the kernel queues a group send to all members in one
    call, so this needs the sender preempted in it); an unanswered question times out after one second and the
-   launcher counts its own arrivals. The exact real-launcher result is owed in a guest. Exit status passes through.
+   launcher counts its own arrivals. The exact real-launcher result is owed in a guest. (The marker and question
+   protocol described here is replaced by the counting rule of the amendment of 2026-11-25 at the end of this
+   record; the socket, the `H` and `A` frames and the outer process's notes stay.) Exit status passes through.
    Before re-raising a child signal the parent resets the disposition, including signals Go handles specially;
    if still alive after the raise it returns 128 plus the signal number, never an unbounded wait.
    The starting OS thread stays locked until the child is joined. `Pdeathsig=SIGTERM` requests the launcher's normal
@@ -889,3 +891,164 @@ drvfs stand-in by path, by name and as a watch's boundary, and a missing one: no
 words; a rules file that loads goes on to the scope), red at `c012a53a0` (the scope opened in all four). The scope's
 own tests now name a rules file that loads, and `TestScopeBeforeAnyRunState` allows the read-only config load of
 `tego run` before the scope while still refusing any run state there.
+
+
+## Amendment 2026-11-25: the pair agrees on one interrupt by counts only (A51, public issue 81)
+
+Defect. The protocol of point 3 relied on a process reading its own pending INT before the real-time marker it queued
+for itself. os/signal gives the kernel's pending INT and the queued marker to whichever threads the Go runtime has,
+so a descheduled thread lets the marker overtake the interrupt. The traced sequence: the launcher's INT arrives and
+is settled as one interrupt with the outer process's count still 0; the outer process answers the launcher's next
+question before its own INT reached its loop, and counts that INT 2.5 ms later; the next round reads "I have nothing
+new, they have one" and settles a second interrupt. One Ctrl-C then forced the stop: the agent was killed without
+its graceful stop and the record said a person forced it. The test that holds the behaviour,
+`TestScopeInterruptReachesTheLauncherOnce`, exited 38 where it wants 37 about once in 30 runs on one CPU and once
+on a hosted arm64 runner.
+
+Decision. The pair agrees by counts, and nothing else travels. Each process counts the INT and QUIT arrivals it
+received itself; the outer process sends its running counts to the launcher in one frame, `N` plus two big-endian
+uint64 (INT, QUIT), after each arrival it counts; the launcher keeps its own counts. The number of interrupts of
+each kind the pair has seen is the larger of the two counts, and the launcher acts on every increase of it at once
+(`tally` in `internal/runtime/launch/fwdint.go`, a pure type; `Arbiter` and `Gate` only carry it). A count only
+grows (a report never lowers one), so no order between a signal, a report and anything else is relied on: an INT
+both processes received is one interrupt whichever of the two is acted on first, however late the other process
+reads its copy and however late its report arrives. The first interrupt acts when either count reaches one, without
+waiting for the other side; the second acts when the larger count reaches two. The channel is the one stream socket
+of point 3, unchanged in its owners, its descriptor 5 and its `H`/`A` handshake. Removed: the real-time marker
+(signal 40, `interruptMarker`, `sendMarker`, `NotifyMarked`, `IsMarker`), the `Q` and `R` frames, the launcher's
+drain behind its marker and its question with a one-second wait, the outer process's `Answer` and `Queries`, the
+`broken` state, and the arbiter's and gate's `mark` parameters. Nothing else used any of them. Kept: the
+`provenanceWait` bound on a write to the peer; the outer process's fallback to forwarding by `kill(2)` when no
+launcher of this build listens or a note cannot be written; passing every signal that is not INT or QUIT on
+unchanged. Added: the arbiter passes on at most two interrupts of a kind for one arrival or report, so a count that
+jumps far ahead cannot hold its loop. The exit codes, the record's lines for an interrupt and for a forced stop, and
+every message are unchanged: only how the count is agreed changed.
+
+The cases (launcher count, outer count, interrupts): the group once (1,1) is 1; the outer process alone (0,1) is 1;
+the launcher alone (1,0) is 1; the outer process alone and then the group (1,2) is 2; the group and then the
+launcher alone (2,1) is 2; the group twice (2,2) is 2; the launcher twice (2,0) and the outer process twice (0,2)
+are 2; the launcher, the outer process, the launcher (2,1) is 2. `TestTallyAgreesOnTheLargerCountInEveryOrder` runs
+each over every order of the launcher's arrivals and the outer process's reports.
+
+The price, stated. One signal sent to the launcher alone and one to the outer process alone, in either order and at
+any gap, is (1,1): the same two counts one signal to the group makes, and no process can tell them apart, since
+`os/signal` gives no sender and the second one differs from the first only in when its sender sent it. It reads as
+one interrupt. The earlier protocol read it as two if the second came after the first was settled, and as one if it
+came within a round trip; the amendment of 2026-11-20 already said so for that round trip. A person or tool in that
+position sends one more signal to either process (or presses Ctrl-C) and gets the forced stop, since the process
+that receives a signal a second time has then counted two. The two errors are not equal: the defect forced a stop
+nobody asked for and made the record say a person forced it; the price is a second interrupt that needs a third
+signal to be noticed, the graceful stop being the safe side to err on. `TestScopeInterruptReachesTheLauncherOnce`
+changed its "the launcher, then the outer process" case from two interrupts to one and gained the mirror case; the
+cases that pin the rule from the other side are the launcher twice, the outer process twice and the launcher, the
+outer process, the launcher (two each), and `TestProvenanceGroupSendIsOneInterruptAtAnyLag` holds the defect itself:
+one send to the group, one process acted on and the other made to read its copy 0, 5 and 300 ms later, in both
+orders, is one.
+
+What Go coalesces. The kernel keeps one pending bit per standard signal and `os/signal` one pending bit per signal
+until its receiving goroutine drains it, so two INTs that reach one process close together can be delivered as one
+notification. A count is therefore a lower bound: "at least one more since the last settle". The rule copes because
+it needs only that: the other process's count, or a later arrival, makes up the difference, and a deliberate repeat
+is a second arrival a person's second keystroke makes apart from the first. The tests send repeats apart.
+
+Behaviour of the cases around it, and whether it differs from the earlier protocol:
+1. A peer that dies or falls silent counts as it last reported; the survivor's own count still works alone
+   (`TestProvenanceOuterProcessGoneKeepsItsLastCount`, `TestProvenanceSilentOuterProcessDoesNotHoldBackAnInterrupt`,
+   `TestTallyDeadSilentAndStaleReports`). Different: the launcher no longer waits one second for an answer before it
+   counts alone; it acts on its own arrival at once. A channel that closes ends the reading goroutine and nothing else.
+2. Between a process receiving its INT and its report arriving, the other side may act on its own count first, and
+   the larger count makes that harmless: this is the traced defect, held by the lag test above. Different: this was
+   the defect.
+3. A process that is stopped (SIGSTOP, a debugger) keeps its INT pending and counts it when it runs again. The other
+   process acts on its own count meanwhile; when the stopped one continues its count is not larger, so no second
+   interrupt follows. Different: the earlier protocol waited one second for a stopped outer process, and a group
+   send could then count as two when it resumed. A stopped launcher: the outer process's reports (17 bytes each) wait in
+   the socket's buffer and are read when it continues; the outer process does not block on them.
+4. SIGTERM and SIGHUP are not counted and not paired. The launcher's arbiter passes them on in order, and the outer
+   process's gate does not take them, so its owner forwards them by its own rule (`scopeHandle`, `shouldForwardScope`)
+   exactly as before (`TestProvenanceOtherSignalsPassUnchanged`).
+5. The same Ctrl-C delivered to a third process that forwards it to one of the two (a shell wrapper, `sudo`, a
+   process that relays what it receives) is a real second delivery to that process: (2,1), two interrupts, as before,
+   since each process counts what it received itself and the forwarded signal is one more of them. Nothing in this
+   record or the code says what `sudo` or `systemd-run` do with an INT; `systemd-run --scope` executes the command
+   itself (point 3), so it leaves no relaying process between the outer process and the launcher. Whether `sudo`
+   relays a terminal INT is not shown here and is owed in a guest with the rest of point 3.
+6. Runs with no terminal: the counts do not depend on a terminal; the cases without one (a background group, a
+   directed `kill`) are in the test table. Unchanged.
+7. The launcher and the outer process are always one uid: the launcher is a user scope of this uid's manager
+   (`scopeManagerEnv` uses `os.Getuid()`), so a root launcher with a user's outer process does not arise on this
+   path. The channel is an anonymous socketpair with no name in the file system. The outer process's end is close-on-exec
+   from birth; the launcher's end is passed only in `ExtraFiles` of the one start, as its descriptor 5 (an `inherited.txt` row),
+   and the launcher's child stage sets close-on-exec on every descriptor from 3 up before the agent's `execve`
+   (`launch/child.go`, `stage.setup`, invariant 4a), so the agent inherits neither end. Until the amendment's second
+   round the launcher's own descriptors 3, 4 and 5 arrived without the flag (`sys.Inherited` owns what `exec` left
+   open and `Release` does not set it), so the other processes the launcher starts (the ask notice, the reaper and
+   cgroup helpers, the MCP relay) held them; `scopeAdoptInherited` now marks each close-on-exec as it adopts it
+   (`FD.SetCloexec`), and a socket that cannot be marked is closed and left out, so the outer process forwards by
+   signal. Only these three sites were changed: `sys.Inherited`'s other callers (the reaper's five descriptors, the MCP
+   server's, the child stage's control, report and deputy numbers) pass some of their numbers on deliberately and
+   keep their own rules (ADR 0020, 0023). `TestScopeLauncherDescriptorsAreCloseOnExec` starts a child after the
+   adoption and finds none of the three. The writers are the two processes
+   and anything of the same uid that could open their descriptors through `/proc`, which the launcher's undumpable
+   state (`holdSecrets`) refuses; a forged report adds interrupts to a process that caller already controls and
+   cannot remove one, because the launcher counts every INT it received itself; the added bound keeps a large forged count from holding the loop.
+8. A frame the launcher does not know (a tag other than `A` or `N`) is a protocol error and ends the channel for
+   both sides: the launcher's reader closes the socket, so the outer process's next write fails and it forwards by
+   signal as it does for a dead peer, instead of writing counts into a socket nobody reads and losing an interrupt
+   sent to it alone (`TestProvenanceUnknownFrameEndsTheChannel`; the outer process's own fallback when a write fails
+   is `TestProvenanceGateWhoseWriteFailsForwardsItself`). The outer side's reader ends on a tag other than `H` and
+   leaves the gate not live, with the same result.
+
+Stated limits, not changed here.
+- A late copy of an interrupt. A process that has unsubscribed from INT and QUIT has the default action for a copy
+  that reaches it later, and ends with status 130 instead of the exit code it was returning. A group send is
+  delivered to its members one after another in one system call; a sender preempted between two deliveries can make
+  the second copy late. The launcher unsubscribes when its command has returned, after the summary and the receipt are
+  written, the agent is gone and the scope has nothing left, so the loss is the exit status of a forced stop. The
+  outer process unsubscribes when the launcher has exited (`executeUserScope`'s `defer stop()`), and a copy arriving
+  after that reads as 130 (or `Reraise`'s status) in place of the launcher's. The earlier protocol made the outer
+  process answer a question before the launcher acted, which hid this by accident. Ignoring INT and QUIT in place of
+  restoring the default on the way out is not a two-line change here: `executeUserScope` also runs for the rehearsal,
+  after which the same process continues with the command, so a process-wide ignore would leak; the launcher's side
+  runs inside a command that returns to many callers. Not changed here: it is a stated limit.
+- Before the outer process has seen the launcher's hello (`H`, its channel not yet live), an interrupt sent to a
+  background process group counts twice: the outer process forwards it by `kill(2)` since it is not foreground, and the
+  launcher also has its own copy. The same window existed with the marker protocol. Under `sudo` without `use_pty`, a
+  `kill -INT -- <pgid>` from another shell reaches the outer process twice (its group copy and sudo's relay), so it
+  counts two and forces the stop, unless Go coalesced the two; a terminal Ctrl-C under `sudo` is one either way (sudo
+  does not relay a signal the terminal sent, and with `use_pty` the copy goes to the inner terminal's group). This is
+  reasoned from sudo's documented behaviour, not run, and older than this change.
+
+Rejected.
+- Sender-aware delivery (`signalfd`, or a handler with `SA_SIGINFO` and the sender's pid): it would tell the group's
+  copy from a directed signal and keep the case that now reads as one. Go's `os/signal` gives no sender, and `signalfd`
+  needs the signals blocked in every thread, which the runtime does not allow; taking the signals from the runtime
+  takes the runtime's own handling of them with it. Not available here.
+- A timing window (a second INT inside N milliseconds of the first is the same one): the test's own gap between the
+  first being settled and the second send is 0 to 5 ms, the defect's lag was 2.5 ms in the trace and is unbounded on
+  a loaded runner, so any window either keeps the defect or counts a deliberate repeat as one.
+- An extra credit (let the outer process's first count after a settle go uncounted): it breaks "the outer process alone,
+  then the group", which is two.
+- A read order made reliable (drain until the marker, then also look at the pending sets in `/proc/self/status`): the
+  window is a thread holding a signal the runtime has not yet queued, which no file shows, and it keeps a protocol
+  that needs a question and an answer in the path of every interrupt.
+- Keeping the rounds and adding cumulative counts: the rounds were the defect's carrier (what a round settled could
+  not be undone), and the cumulative maximum needs none.
+
+Proof. `internal/runtime/launch/fwdint_test.go` (the rule over every order for the cases above and a dead, silent or
+stale peer; the rig with the real `Gate` and `Arbiter` over a pipe: the group at any lag, directed sends, the
+repeats, other signals, a huge report) and `TestScopeInterruptReachesTheLauncherOnce` in `internal/cli` (real
+processes, a real socketpair), run in loops on one pinned CPU against the old protocol on the same loops (the counts
+are not kept here). The real launcher under a real manager, with
+a real terminal's Ctrl-C, is owed in a guest as before.
+
+Two things the loops on one pinned CPU showed about the test, not the rule. A second signal sent while the first is
+still pending in the kernel, or not yet taken from `os/signal` by its receiving goroutine, is the first again (one
+notification), which no protocol can see; so the test's helper waits for its own copy of the first interrupt (a second subscription sees every arrival)
+before it says the first is settled, and the test waits until neither process has an INT pending
+(`scopeWaitNoInterruptPending`) before it sends a repeat, as a person's second keystroke would. And a helper launcher
+that returns the moment it counts two, with no stop to carry out, can end and unsubscribe before the sender of a group
+signal has delivered its own copy (the sender is preempted between two deliveries), which then ends it by the default
+action; the helper stays subscribed 100 ms, as a real launcher does while it stops the agent. The outer process has the
+same window after a forced stop (it would exit by the default action, not with the run's exit code); it needs the sender
+preempted for as long as the launcher takes to stop an agent, and no test showed it.

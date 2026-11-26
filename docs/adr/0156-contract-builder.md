@@ -188,7 +188,7 @@ validated numeric line location, never its message or source values. Empty poste
 source. New environment values still require a terminal.
 
 Draft checks run in cancellable compiler-only children through the reviewed process-start wrapper. A shared
-limit of two children and a 100 ms admission wait bounds concurrency; a request shares a total 3 second compilation/admission budget across helper calls.
+limit of two children and a 100 ms admission wait bounds concurrency for a governed program's request (it is then refused as busy); a person's own check (a request not marked governed, `draftcompile.WithGoverned`) waits for a slot until its start-up allowance or its request ends, so a burst of governed requests costs the person a wait and never the check (2026-11-26, public issue 92); a request shares a total 3 second compilation/admission budget across helper calls.
 File publication and sync do not consume compilation time; they retain request cancellation.
 The immutable built-in command grammar initializes once; a canceled waiter stops waiting immediately while
 that single initializer finishes for later requests. Cancellation or deadline kills a running child and releases the caller. A slot remains occupied until the child is

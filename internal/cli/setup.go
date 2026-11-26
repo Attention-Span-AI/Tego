@@ -49,7 +49,7 @@ func cmdSetup() Command {
 				message(stderr, "", 0, 0, "tego setup: takes no arguments", codeUsage)
 				return identity.ExitUsage
 			}
-			if refuseSetup(stderr) {
+			if refuseSetup("setup", stderr) {
 				return identity.ExitError
 			}
 			if !noScope {
@@ -118,9 +118,9 @@ var setupInputs = func(in *guide.Inputs) {
 // person's machine check, which would describe the agent's cgroup, not the person's shell; and as root for another
 // user, under sudo (125 [privilege]): the folder and file root makes in that user's ~/.tego would be root's, and that
 // user's own tego setup could not replace them. It reports true when it refused.
-func refuseSetup(stderr io.Writer) bool {
+func refuseSetup(name string, stderr io.Writer) bool {
 	if a := selfAnswer(); !a.Outside() {
-		message(stderr, "", 0, 0, notOutside("setup", a, "cannot check the machine for you", "the machine was not checked",
+		message(stderr, "", 0, 0, notOutside(name, a, "cannot check the machine for you", "the machine was not checked",
 			"nothing was written"), codeGoverned)
 		return true
 	}
@@ -130,8 +130,8 @@ func refuseSetup(stderr io.Writer) bool {
 			if why != "" {
 				doctorAsRoot = "tego doctor as root (" + strings.TrimSuffix(why, ".") + ")"
 			}
-			message(stderr, "", 0, 0, "tego setup: as root for another user: the stored check would be root's, in that "+
-				"user's ~/.tego; nothing was written; run tego setup without sudo, and "+doctorAsRoot+
+			message(stderr, "", 0, 0, "tego "+name+": as root for another user: the stored check would be root's, in that "+
+				"user's ~/.tego; nothing was written; run tego "+name+" without sudo, and "+doctorAsRoot+
 				" for the root tiers", codePrivilege)
 			return true
 		}

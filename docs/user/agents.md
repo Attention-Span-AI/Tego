@@ -44,3 +44,17 @@ The page currently uses minimal HTML. The approved page layout and an explicit
 Forget action follow separately. The external-anchor direct-read case is
 **owed in a guest**; the exact acceptance procedure is in
 [ADR 0145](../adr/0145-tego-scan.md#a4-fix-round-2-own-state-disclosure-and-record-limit-2026-11-12).
+
+## Rules to start from
+
+When the list shows an agent without rules, [examples/agents/](../../examples/agents/README.md) has a rules file for each
+common shape. One of them is for a LangChain or LangGraph agent in a Python virtual environment, `langgraph.yaml`:
+
+| Found as | Rules file | What Tego holds and records |
+|---|---|---|
+| LangGraph (a `langgraph` dependency in `requirements.txt`, or a `langgraph.json`) | `examples/agents/langgraph.yaml` | what the agent's tools do to files, programs and hosts, the tools of an MCP server behind the relay, and the model calls that go through the forwarder; a tool that is a Python function inside the agent's own process is not seen as a tool, only what it does is |
+
+The example's test checks the rules against what the actions of a scripted LangGraph agent's tools would meet, and a run of
+that agent under them on Ubuntu 24.04, at tiers landlock and cgroup, showed each file, program and host action allowed or
+refused and recorded as the rules say (MCP tools: tier landlock only; `examples/agents/README.md`, "Limits seen").
+Tego has no adapter for the library, and `tego scan` reports only that the project declares the dependency.

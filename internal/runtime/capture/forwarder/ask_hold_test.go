@@ -37,11 +37,17 @@ func askBudget(t *testing.T) time.Duration {
 
 func askHarnessWithin(t *testing.T, maxBody int, timeout time.Duration, request func(context.Context, ask.Request) (ask.Decision, error), handler http.HandlerFunc) (*Listener, *fakeSink) {
 	t.Helper()
+	return askHarnessGated(t, maxBody, timeout, nil, request, handler)
+}
+
+// askHarnessGated is askHarnessWithin for a run whose budget can close the listener's door (LimitGate).
+func askHarnessGated(t *testing.T, maxBody int, timeout time.Duration, gate LimitGate, request func(context.Context, ask.Request) (ask.Decision, error), handler http.HandlerFunc) (*Listener, *fakeSink) {
+	t.Helper()
 	up := httptest.NewTLSServer(handler)
 	t.Cleanup(up.Close)
 	host, port := hostPort(t, up.Listener.Addr().String())
 	p := policyFor(t, host, port, []string{"/allowed"}, []string{"POST"})
-	m, err := NewManager([]agent.ModelEndpoint{{Host: host, Port: port}}, Options{HTTPPolicy: p, Transport: up.Client().Transport, MaxBody: maxBody})
+	m, err := NewManager([]agent.ModelEndpoint{{Host: host, Port: port}}, Options{HTTPPolicy: p, Transport: up.Client().Transport, MaxBody: maxBody, LimitGate: gate})
 	if err != nil {
 		t.Fatal(err)
 	}

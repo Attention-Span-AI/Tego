@@ -50,6 +50,7 @@ func (r *runner) startWorkers(ctx context.Context) error {
 	r.newBudget()
 	r.wireStreamActivity()
 	r.wireKernelActivity()
+	r.wireLimitGate()
 	r.pipe = newPipeline(r.queue, terminal, r.writer.RedactStage, r.writer.SplitBlobsStage,
 		runStamp{PID: os.Getpid(), TID: syscall.Gettid(), Cgroup: r.cg.ID},
 		r.attributeStage(), budgets(r.budget, r.deps.Clock), r.log, r.writer.AppendBatch)
@@ -621,7 +622,7 @@ func (r *runner) newBudget() {
 	if r.window != nil {
 		opts = append(opts, limits.WithWindow(*r.window))
 	}
-	r.budget = limits.NewWatcher(r.rt.Limits, r.deps.Prices, r.cgm, r.cg, r.deps.Clock, r.queue.BudgetSink(), opts...)
+	r.budget = limits.NewWatcher(r.rt.Limits, r.deps.Prices, limitKiller(r.cgm), r.cg, r.deps.Clock, r.queue.BudgetSink(), opts...)
 }
 
 // ledgerCeiling is the machine's record.max_run_bytes, 0 for none: the run is ended as a limit, which=ledger_bytes,
@@ -682,6 +683,37 @@ func (r *runner) wireStreamActivity() {
 	for _, s := range r.captureSources() {
 		if a, ok := s.(StreamActivityReporter); ok {
 			a.SetStreamActivity(r.budget.Touch)
+		}
+	}
+}
+
+// wireLimitGate gives each capture source that admits model requests the budget watcher's gate, before any source
+// starts: once a budget is crossed and its limit line is written, a request the agent makes in the time before the kill
+// lands is refused at the door instead of answered (ADR 0037, amendment). A run whose contract bounds none of tokens,
+// cost_usd, repeats, wall or stall_after has no budget that can cross and wires nothing, so the request path of such a run
+// is the one it always was. The limit is still counted, recorded and ended exactly as before: the gate only refuses.
+func (r *runner) wireLimitGate() {
+	if r.budget == nil || r.rt == nil {
+		return
+	}
+	bounded := false
+	for _, k := range []agent.BudgetSet{agent.BudgetTokens, agent.BudgetCostUSD, agent.BudgetRepeats, agent.BudgetWall, agent.BudgetStallAfter} {
+		bounded = bounded || r.rt.Limits.Bounded(k)
+	}
+	if !bounded {
+		return
+	}
+	w := r.budget
+	gate := func() (string, record.Reason, bool) {
+		b, closed := w.Closed()
+		if !closed {
+			return "", "", false
+		}
+		return "limits." + b.Which, b.Reason(), true
+	}
+	for _, s := range r.captureSources() {
+		if g, ok := s.(LimitGateSetter); ok {
+			g.SetLimitGate(gate)
 		}
 	}
 }

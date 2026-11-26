@@ -531,3 +531,13 @@ real run's two asks. Each failed on the old source.
 Not proved: a root-run broker (it reads every peer's namespace, so it never takes this path), `fs.suid_dumpable` 1 (the dashboard
 makes no credential change), a kernel other than the host's and the guest's, a dashboard in a cgroup namespace of its own
 (WSL's isolated distribution is judged by the same rule as every peer there: this process's own answer must be outside).
+
+### Amendment, 2026-11-26 (public issue 84): the words of the unknown depend on where the process is; the rule does not
+
+In a container the cause `init-not-at-root` printed "turn systemd on in /etc/wsl.conf" and "tego setup" under `tego start`. The
+sentence is now one of `runscope.Words`, which a caller that knows where it is (`internal/platform/whereami`: a container by
+`/.dockerenv`, `/run/.containerenv` or a `container` variable in process 1's environment, and no systemd as process 1; WSL by
+this ADR's marks; else a host) may replace. In a container the cause is not a line the person acts on first (the refusal says where to
+run the command instead), and the sentence says a container runs agents with `tego run` in the setup of `examples/container`. No
+function of the rule reads the words, so no verdict, cause or exit code changed; a host and WSL print the sentence they printed. The
+refusals of `tego rules undo` and of the peer sockets still print the table's sentence.

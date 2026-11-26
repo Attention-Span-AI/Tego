@@ -70,6 +70,24 @@ class Summary(unittest.TestCase):
         self.assertTrue(rec["unknown"])
         self.assertEqual(rec.get("failed", 0), 0)
 
+    def run_with(self, code, lines):
+        d = tempfile.mkdtemp(dir=os.environ.get("TMPDIR"))
+        con, js = os.path.join(d, "s.console"), os.path.join(d, "s.json")
+        with open(con, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        open(js, "w").close()
+        return summarize.summarize_suite("test_conformance", "test/conformance", "integration", code, js, con)
+
+    def test_binary_not_found_is_a_harness_fault(self):
+        rec = self.run_with("127", ["[    2.8] Initramfs unpacking failed: write error",
+                                    "/.vm/cmd: 2: exec: /vm/test_conformance.test: not found"])
+        self.assertEqual(rec["result"], "harness-fault")
+        self.assertIn("HARNESS FAULT", rec["failures"][0])
+
+    def test_exit_127_after_tests_ran_stays_a_failure(self):
+        rec = self.run_with("127", ["=== RUN   TestX", "--- FAIL: TestX (0.00s)", "sh: 1: foo: not found"])
+        self.assertEqual(rec["result"], "fail")
+
 
 if __name__ == "__main__":
     unittest.main()

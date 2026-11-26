@@ -48,7 +48,7 @@ esac
 # The tools install.sh itself runs, linked into one directory that becomes the whole system PATH.
 sysbin="$tmp/sysbin"
 mkdir -p "$sysbin"
-for t in sh curl sha256sum awk sed grep uname mktemp rm mkdir cp chmod mv basename cat; do
+for t in sh curl sha256sum awk sed grep uname mktemp rm mkdir cp chmod mv basename cat id; do
 	p=$(command -v "$t") || { echo "install_test: needs $t" >&2; exit 2; }
 	ln -s "$p" "$sysbin/$t"
 done
@@ -611,11 +611,51 @@ else
 	echo "ok   an install script cut short, piped into sh, installs nothing (exit $code)"
 fi
 
+# Public issue 87. The folders the installer itself makes on the way to its prefix are never group- or other-writable,
+# whatever the login umask (Ubuntu's is 0002, so a plain mkdir -p made ~/.local and ~/.local/bin mode 775, and tego's
+# check of the path it prints a sudo line for then withheld the line). A folder that was already there is left as it is,
+# and the installer says nothing about it. mode_of prints the symbolic mode ls shows, which is the same on every system.
+# shellcheck disable=SC2012 # the symbolic mode ls prints reads the same on every system; find has no portable way to print it
+mode_of() { ls -ld -- "$1" | cut -c1-10; }
+want_mode() { # want_mode NAME FOLDER MODE
+	if [ "$(mode_of "$2")" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: $2 is $(mode_of "$2"), want $3" >&2; fail=1; fi
+}
+fresh="$tmp/fresh home/.local/bin"
+rm -rf "$tmp/fresh home"
+(umask 0002; run "" TEGO_VERIFY=sha256 TEGO_PREFIX="$fresh") && code=0 || code=$?
+check "an install into folders that do not exist yet, under umask 0002, installs" 0 "$code"
+want_mode "under umask 0002 the folder the installer made above the prefix is 755" "$tmp/fresh home/.local" drwxr-xr-x
+want_mode "under umask 0002 the prefix the installer made is 755" "$fresh" drwxr-xr-x
+if grep -Eq 'chmod|permission|mode' "$tmp/out"; then echo "FAIL an install that made folders talked about their modes" >&2; sed 's/^/     /' "$tmp/out" >&2; fail=1; fi
+rm -rf "$tmp/fresh home"
+(umask 0077; run "" TEGO_VERIFY=sha256 TEGO_PREFIX="$fresh") && code=0 || code=$?
+check "an install into folders that do not exist yet, under umask 0077, installs" 0 "$code"
+want_mode "a stricter umask is kept for the folder above the prefix" "$tmp/fresh home/.local" drwx------
+want_mode "a stricter umask is kept for the prefix" "$fresh" drwx------
+rm -rf "$tmp/fresh home"
+mkdir -p "$tmp/fresh home/.local/bin"
+chmod 775 "$tmp/fresh home/.local" "$fresh"
+(umask 0002; run_into TEGO_PREFIX="$fresh") && code=0 || code=$?
+check "an install into folders that already exist at 775 installs" 0 "$code"
+want_mode "an existing folder above the prefix keeps its mode" "$tmp/fresh home/.local" drwxrwxr-x
+want_mode "an existing prefix keeps its mode" "$fresh" drwxrwxr-x
+if grep -Eq 'chmod|permission|mode' "$tmp/out"; then echo "FAIL an install into existing folders talked about their modes" >&2; sed 's/^/     /' "$tmp/out" >&2; fail=1; fi
+rm -rf "$tmp/fresh home"
+mkdir -p "$tmp/fresh home/.local"
+chmod 775 "$tmp/fresh home/.local"
+(umask 0002; run_into TEGO_PREFIX="$fresh") && code=0 || code=$?
+check "an install that makes only the prefix under an existing 775 folder installs" 0 "$code"
+want_mode "the existing folder keeps 775 while the prefix under it is made 755" "$tmp/fresh home/.local" drwxrwxr-x
+want_mode "the prefix made under an existing 775 folder is 755" "$fresh" drwxr-xr-x
+rm -rf "$tmp/fresh home"
+
 # The export line only when the prefix is not on PATH, and the scope line only over SSH.
 run "$tmp/prefix" TEGO_VERIFY=sha256 SSH_CONNECTION="192.0.2.1 50000 192.0.2.2 22" && code=0 || code=$?
 check "an install over SSH into a prefix on PATH installs" 0 "$code"
 if grep -q 'export PATH' "$tmp/out"; then echo "FAIL a prefix already on PATH got an export line" >&2; fail=1; fi
-expect "an install over SSH says to start a shell in the user's cgroup" "systemd-run --user --scope bash" "$tmp/out"
+# A tego whose commands the installer cannot read (it lists none) is told nothing about a user scope: the line is no
+# longer printed for every SSH login (Public issue 88).
+if grep -q 'systemd-run\|user scope' "$tmp/out"; then echo "FAIL an install over SSH of a tego with no command list printed a scope line" >&2; fail=1; fi
 # Over SSH tego watch fails too: the line never says such a shell can record.
 if grep -q 'can only record' "$tmp/out"; then echo "FAIL an install over SSH says the shell can only record" >&2; fail=1; fi
 
@@ -647,19 +687,24 @@ ending=$(tail -n 1 "$tmp/out")
 # shellcheck disable=SC2016 # the backslash before the dollar sign is what the line must print
 want_ending=$(printf '  "%s/odd \\$x/tego" setup' "$tmp")
 check "an odd prefix is quoted in the next command" "$want_ending" "$ending"
-# A tego that opens a user scope itself: the line says run, watch and test open one, that the setup command checks it from
-# here, and keeps the manual shell as the one fix when it does not work.
+# A tego that opens a user scope itself (its help says so, as an older build's run line did): over SSH the installer says
+# nothing about a shell in the user manager when a manager runs, and no longer tells a person to open one first.
 # shellcheck disable=SC2016 # The fake binary reads its own $1.
 printf '#!/bin/sh\ncase "$1" in help) printf "commands:\n  run     run a command (opens a user scope when needed)\n  setup   where this machine is\n" ;;\n*) echo "tego %s"; echo "control_sha256=%s" ;; esac\n' \
     "$version" "$pin" >"$rel/$archive"
 resum
-run "$tmp/prefix" TEGO_VERIFY=sha256 SSH_CONNECTION="192.0.2.1 50000 192.0.2.2 22" && code=0 || code=$?
+mkdir -p "$tmp/xdg" "$tmp/sysroot-systemd/run/systemd/system" "$tmp/sysroot-systemd/etc"
+printf 'NAME="Debian"\nID=debian\n' >"$tmp/sysroot-systemd/etc/os-release"
+# The same build on a login with no user manager (no runtime folder): the one line that is true there, and still no scope advice.
+run "$tmp/prefix" TEGO_VERIFY=sha256 TEGO_TEST_SYSROOT="$tmp/sysroot-systemd" XDG_RUNTIME_DIR="$tmp/xdg-absent" SSH_CONNECTION="192.0.2.1 50000 192.0.2.2 22" && code=0 || code=$?
+check "automatic scope build installs over SSH with no user manager" 0 "$code"
+expect "automatic scope build says when there is no user service manager" "this login has no user service manager (there is no $tmp/xdg-absent)" "$tmp/out"
+if grep -q 'systemd-run\|outside your user manager' "$tmp/out"; then echo "FAIL a login with no user manager was told to open a shell in it" >&2; sed 's/^/     /' "$tmp/out" >&2; fail=1; fi
+run "$tmp/prefix" TEGO_VERIFY=sha256 TEGO_TEST_SYSROOT="$tmp/sysroot-systemd" XDG_RUNTIME_DIR="$tmp/xdg" SSH_CONNECTION="192.0.2.1 50000 192.0.2.2 22" && code=0 || code=$?
 check "automatic scope build installs over SSH" 0 "$code"
-expect "automatic scope entry: run, watch and test open a user scope" "run, watch and test open a user scope for each run" "$tmp/out"
-expect "automatic scope entry: the setup command checks it from here" "the setup command below checks that this works from here" "$tmp/out"
-expect "automatic scope build keeps the manual shell as the one fix" "systemd-run --user --scope bash" "$tmp/out"
+if grep -q 'no user service manager' "$tmp/out"; then echo "FAIL a login whose user manager runs was told it has none" >&2; sed 's/^/     /' "$tmp/out" >&2; fail=1; fi
 expect "automatic scope build retains the account copy advice" "install both binaries in that account's ~/.local/bin" "$tmp/out"
-if grep -q 'no shell command is needed first' "$tmp/out"; then echo "FAIL automatic scope build promises an unverified SSH handoff" >&2; fail=1; fi
+if grep -q 'systemd-run\|outside your user manager' "$tmp/out"; then echo "FAIL a tego that opens its own scope was told to open a shell first" >&2; sed 's/^/     /' "$tmp/out" >&2; fail=1; fi
 
 # A release whose tego lists start ends with tego start, the guide, by the same name as the other next commands: the
 # full path while the prefix is off PATH, the bare name when it is on PATH.
@@ -677,6 +722,112 @@ check "an install of a tego with start into a prefix on PATH installs" 0 "$code"
 ending=$(tail -n 2 "$tmp/out")
 want_ending=$(printf 'next: set up Tego and connect your first agent:\n  tego %s' start)
 check "with the prefix on PATH the start line is the bare name" "$want_ending" "$ending"
+
+# Public issue 88: the closing lines about this login's user service manager. A tego that lists start enters a user
+# scope by itself (tego run, watch and test do; start, setup and doctor rehearse it), so no line tells a person to open
+# a shell in the manager first, over SSH or anywhere else. The installer says something in two cases it can see
+# cheaply and surely, the ones tego start and tego doctor word too: this login has no user service manager (no runtime
+# folder), and a manager with no message bus on a Debian or Ubuntu with apt (the dashboard cannot start). TEGO_TEST_SYSROOT
+# stands in for the root of /run/systemd/system and /etc/os-release; XDG_RUNTIME_DIR names the runtime folder, as it
+# does for tego.
+# shellcheck disable=SC2016 # $1 is the fake tego's own argument, expanded when it runs.
+printf '#!/bin/sh\ncase "$1" in help) printf "commands:\\n   start            set up\\n   run              run\\n   setup   where this machine is\\n" ;;\n*) echo "tego %s"; echo "control_sha256=%s" ;; esac\n' \
+	"$version" "$pin" >"$rel/$archive"
+resum
+# sysroot_with NAME ID [ID_LIKE]: a root with systemd as init and an os-release of that distribution.
+sysroot_with() {
+	mkdir -p "$tmp/sysroot-$1/run/systemd/system" "$tmp/sysroot-$1/etc"
+	printf 'NAME="%s"\nID=%s\n' "$1" "$2" >"$tmp/sysroot-$1/etc/os-release"
+	[ -z "${3:-}" ] || printf 'ID_LIKE="%s"\n' "$3" >>"$tmp/sysroot-$1/etc/os-release"
+}
+sysroot_with debian debian
+sysroot_with ubuntu ubuntu debian
+sysroot_with fedora fedora
+mkdir -p "$tmp/sysroot-initd/etc"
+cp "$tmp/sysroot-debian/etc/os-release" "$tmp/sysroot-initd/etc/os-release"
+mkdir -p "$fake/apt"
+printf '#!/bin/sh\nexit 0\n' >"$fake/apt/apt-get"
+chmod +x "$fake/apt/apt-get"
+# A runtime folder with a bus socket (python3 binds it and leaves the file), and one without.
+mkdir -p "$tmp/rt-bus" "$tmp/rt-nobus"
+chmod 700 "$tmp/rt-bus" "$tmp/rt-nobus"
+have_socket=0
+if command -v python3 >/dev/null 2>&1 && python3 -c 'import socket,sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$tmp/rt-bus/bus" 2>/dev/null; then have_socket=1; fi
+ssh_env="192.0.2.1 50000 192.0.2.2 22"
+bus_line="The dashboard cannot start: your user service manager has no message bus (D-Bus), and Tego's dashboard runs in it; Debian and Ubuntu cloud images leave out the package that gives it one."
+quiet_about_session() { # quiet_about_session NAME: nothing about a user manager, a scope or a bus in the output
+	if grep -q 'systemd-run\|user scope\|user service manager\|D-Bus\|dbus-user-session' "$tmp/out"; then
+		echo "FAIL $1: the output speaks of a user manager, a scope or a bus" >&2
+		sed 's/^/     /' "$tmp/out" >&2
+		fail=1
+	else
+		echo "ok   $1"
+	fi
+}
+if [ "$(id -u)" = 0 ]; then
+	echo "skip the closing lines about the user manager and its bus: the installer says nothing to root, and this runs as root"
+else
+	if [ "$have_socket" = 1 ]; then
+		run "$fake/apt" TEGO_VERIFY=sha256 TEGO_TEST_SYSROOT="$tmp/sysroot-debian" XDG_RUNTIME_DIR="$tmp/rt-bus" SSH_CONNECTION="$ssh_env" && code=0 || code=$?
+		check "SSH with a user manager and a bus installs" 0 "$code"
+		quiet_about_session "SSH with a user manager and a bus: no scope line, no bus line"
+		ending=$(tail -n 2 "$tmp/out")
+		check "SSH with a user manager and a bus ends with tego start" "$(printf 'next: set up Tego and connect your first agent:\n  %s/tego start' "$tmp/prefix")" "$ending"
+		run "$fake/apt" TEGO_VERIFY=sha256 TEGO_TEST_SYSROOT="$tmp/sysroot-debian" XDG_RUNTIME_DIR="$tmp/rt-bus" && code=0 || code=$?
+		check "a desktop session installs" 0 "$code"
+		quiet_about_session "a desktop session (no SSH, a manager and a bus): nothing about the manager"
+		run "$fake/apt" TEGO_VERIFY=sha256 TEGO_TEST_SYSROOT="$tmp/sysroot-debian" XDG_RUNTIME_DIR="$tmp/rt-nobus" DBUS_SESSION_BUS_ADDRESS="unix:path=$tmp/rt-bus/bus,guid=x" && code=0 || code=$?
+		check "a bus named by DBUS_SESSION_BUS_ADDRESS installs" 0 "$code"
+		quiet_about_session "a bus socket named by DBUS_SESSION_BUS_ADDRESS counts as there"
+	else
+		echo "skip the cases with a bus socket: python3 cannot make one here"
+	fi
+
+	# SSH without a user manager: the one line that is true, once, before the next step.
+	run "$fake/apt" TEGO_VERIFY=sha256 TEGO_TEST_SYSROOT="$tmp/sysroot-debian" XDG_RUNTIME_DIR="$tmp/rt-absent" SSH_CONNECTION="$ssh_env" && code=0 || code=$?
+	check "SSH without a user manager installs" 0 "$code"
+	want="this login has no user service manager (there is no $tmp/rt-absent), so Tego cannot open a user scope for a run from here; the step below says what to do."
+	if [ "$(grep -cF -- "$want" "$tmp/out")" != 1 ]; then echo "FAIL SSH without a user manager: the line is not printed once" >&2; sed 's/^/     /' "$tmp/out" >&2; fail=1; else echo "ok   SSH without a user manager says so once"; fi
+	if grep -q 'systemd-run\|D-Bus' "$tmp/out"; then echo "FAIL SSH without a user manager: a scope shell or a bus was named" >&2; fail=1; fi
+	ending=$(tail -n 2 "$tmp/out")
+	check "SSH without a user manager still ends with tego start" "$(printf 'next: set up Tego and connect your first agent:\n  %s/tego start' "$tmp/prefix")" "$ending"
+	# systemd is not this machine's init: there is no user manager to speak of, and the installer says nothing.
+	run "$fake/apt" TEGO_VERIFY=sha256 TEGO_TEST_SYSROOT="$tmp/sysroot-initd" XDG_RUNTIME_DIR="$tmp/rt-absent" SSH_CONNECTION="$ssh_env" && code=0 || code=$?
+	check "a machine whose init is not systemd installs" 0 "$code"
+	quiet_about_session "no systemd as init: nothing about a manager"
+
+	# A manager with no bus, on Debian or Ubuntu with apt: tego start's own words and package line, before the next step.
+	for distro in debian ubuntu; do
+		run "$fake/apt" TEGO_VERIFY=sha256 TEGO_TEST_SYSROOT="$tmp/sysroot-$distro" XDG_RUNTIME_DIR="$tmp/rt-nobus" SSH_CONNECTION="$ssh_env" && code=0 || code=$?
+		check "a $distro login with no bus installs" 0 "$code"
+		expect "a $distro login with no bus gets tego start's sentence" "^$bus_line\$" "$tmp/out"
+		expect "a $distro login with no bus gets the package line" "^  sudo apt install dbus-user-session\$" "$tmp/out"
+		expect "a $distro login with no bus is told to log in again" "^then log out and log in again\$" "$tmp/out"
+		if grep -q 'systemd-run' "$tmp/out"; then echo "FAIL a $distro login with no bus was told to open a scope shell" >&2; fail=1; fi
+		ending=$(tail -n 2 "$tmp/out")
+		check "a $distro login with no bus still ends with tego start" "$(printf 'next: set up Tego and connect your first agent:\n  %s/tego start' "$tmp/prefix")" "$ending"
+	done
+	run "$fake/apt" TEGO_VERIFY=sha256 TEGO_TEST_SYSROOT="$tmp/sysroot-debian" XDG_RUNTIME_DIR="$tmp/rt-nobus" && code=0 || code=$?
+	expect "a desktop session with no bus gets the same lines (SSH does not matter)" "^  sudo apt install dbus-user-session\$" "$tmp/out"
+	# Where the installer cannot be sure it says nothing.
+	run "$fake/apt" TEGO_VERIFY=sha256 TEGO_TEST_SYSROOT="$tmp/sysroot-fedora" XDG_RUNTIME_DIR="$tmp/rt-nobus" SSH_CONNECTION="$ssh_env" && code=0 || code=$?
+	quiet_about_session "no bus on another family: nothing (the guide names the package by what it does)"
+	run "" TEGO_VERIFY=sha256 TEGO_TEST_SYSROOT="$tmp/sysroot-debian" XDG_RUNTIME_DIR="$tmp/rt-nobus" SSH_CONNECTION="$ssh_env" && code=0 || code=$?
+	quiet_about_session "no bus on a Debian without apt: nothing"
+	run "$fake/apt" TEGO_VERIFY=sha256 TEGO_TEST_SYSROOT="$tmp/sysroot-debian" XDG_RUNTIME_DIR="$tmp/rt-nobus" DBUS_SESSION_BUS_ADDRESS="unix:abstract=/tmp/dbus-x" && code=0 || code=$?
+	quiet_about_session "a bus address of another kind cannot be checked by a file: nothing"
+	run "$fake/apt" TEGO_VERIFY=sha256 TEGO_TEST_SYSROOT="$tmp/sysroot-debian" XDG_RUNTIME_DIR="relative/rt" SSH_CONNECTION="$ssh_env" HOME="$tmp" && code=0 || code=$?
+	check "a relative XDG_RUNTIME_DIR installs" 0 "$code"
+	# A tego older than start (it lists setup only) is told nothing about a manager or a bus.
+	# shellcheck disable=SC2016 # $1 is the fake tego's own argument, expanded when it runs.
+	printf '#!/bin/sh\ncase "$1" in help) printf "commands:\\n  doctor  check\\n  setup   where this machine is\\n" ;; *) echo "tego %s"; echo "control_sha256=%s" ;; esac\n' \
+		"$version" "$pin" >"$rel/$archive"
+	resum
+	run "$fake/apt" TEGO_VERIFY=sha256 TEGO_TEST_SYSROOT="$tmp/sysroot-debian" XDG_RUNTIME_DIR="$tmp/rt-absent" SSH_CONNECTION="$ssh_env" && code=0 || code=$?
+	quiet_about_session "a tego with no start (no manager line) and no scope line over SSH"
+	run "$fake/apt" TEGO_VERIFY=sha256 TEGO_TEST_SYSROOT="$tmp/sysroot-debian" XDG_RUNTIME_DIR="$tmp/rt-nobus" SSH_CONNECTION="$ssh_env" && code=0 || code=$?
+	quiet_about_session "a tego with no start has no dashboard line either"
+fi
 release
 
 exit "$fail"

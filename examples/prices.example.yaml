@@ -6,9 +6,11 @@
 #
 # The prices are the Claude API's own list prices in USD per million tokens, as Anthropic's pricing page
 # (https://platform.claude.com/docs/en/about-claude/pricing) gave them on the date in `updated:` below, for every model
-# it serves to all accounts. They change: check that page before relying on a budget. Only Anthropic responses are
-# priced in this build; another provider's model (OpenAI's, for codex.yaml) is unmetered whatever this table says. A
-# price below the provider's lets a run spend past its budget; one above it ends the run early. Amazon Bedrock and
+# it serves to all accounts. They change: check that page before relying on a budget. No other provider's
+# model is priced here: an OpenAI-style answer is counted in tokens (provider: openai), but a model this table does not
+# name is charged at this table's dearest rates and recorded unpriced, so add the entry of the model you use, in this format,
+# with the price its provider lists. A price below the provider's lets a run spend past its budget; one above it ends the
+# run early. Amazon Bedrock and
 # Vertex AI set their own prices.
 #
 # Install it where tego reads it, readable and writable by you alone (a table that others may write, or that has a

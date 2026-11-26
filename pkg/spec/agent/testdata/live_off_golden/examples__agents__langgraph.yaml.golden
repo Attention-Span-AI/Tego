@@ -1,0 +1,23 @@
+load:
+compile:
+error: $REPO/examples/agents/langgraph.yaml:59:11: command "./.venv/bin/python": $REPO/examples/agents/.venv/bin/python does not exist [path-missing]
+  fix: fix the path or name the binary by basename to search PATH
+warning: $REPO/examples/agents/langgraph.yaml:68:3: command rules read every image's #! line: at tier landlock, run unprivileged, the supervisor reads as the agent's user, so every exec of an image that user cannot read (an execute-only file, such as RHEL's sudo, mode 4111) is refused image-unreadable with EACCES, even an image no rule names (ADR 0048 R13); a supervisor running as root (sudo tego run, tiers cgroup and bpflsm) reads every image on a local file system, but an NFS export with root_squash serves it as the anonymous user and a FUSE mount without allow_other or allow_root refuses it [exec-rule-coverage]
+  fix: make such images readable by the agent's user, or run at a root tier
+warning: $REPO/examples/agents/langgraph.yaml:68:3: best effort (exec.rules/argv): argv is copied unless the decision plane pins the run's execs (where doctor's exec pin cell, plane.exec_pin, passed in the plane's mode); on the fanotify fallback an allow is a copied fact; a refusal is exact, an allow is recorded in run_start best_effort and never counted as enforced (ADR 0048 (6)) [unenforced]
+  fix: bound effects with fs and net rules: command rules are launch rules
+warning: $REPO/examples/agents/langgraph.yaml:68:3: best effort (exec.rules/argv): argv is copied unless the plane pins the run's execs (where doctor's exec pin cell, plane.exec_pin, passed in the plane's mode); a refusal is exact, an allow is recorded in run_start best_effort and never counted as enforced (ADR 0048 (6)) [unenforced]
+  fix: bound effects with fs and net rules: command rules are launch rules
+warning: $REPO/examples/agents/langgraph.yaml:68:3: best effort (exec.rules/argv): argv is copied: the supervisor decides on its copy, and the kernel copies argv again after an allow; a refusal is exact, an allow is recorded in run_start best_effort and never counted as enforced (ADR 0048 (6)) [unenforced]
+  fix: bound effects with fs and net rules: command rules are launch rules
+error: $REPO/examples/agents/langgraph.yaml:68:11: exec.allow "./.venv/": $REPO/examples/agents/.venv does not exist [path-missing]
+  fix: fix the path or name the binary by basename to search PATH
+error: $REPO/examples/agents/langgraph.yaml:68:30: exec.allow "/home/USER/.local/bin/tego": /home/USER/.local/bin/tego does not exist [path-missing]
+  fix: fix the path or name the binary by basename to search PATH
+error: $REPO/examples/agents/langgraph.yaml:75:15: mcp:files "./.venv/bin/python": $REPO/examples/agents/.venv/bin/python does not exist [path-missing]
+  fix: fix the path or name the binary by basename to search PATH
+warning: $REPO/examples/agents/langgraph.yaml:76:12: mcp "files" is behind Tego's relay: its MCP client starts the server as `tego mcp relay`, which exec.allow must admit [exec-rule]
+  fix: add the tego binary (its absolute path) to exec.allow
+warning: $REPO/examples/agents/langgraph.yaml:83:9: limits.wall 30m is a hard cap on the run's whole time: it ends the run at that mark even while the agent is working or the person is typing [wall-hard-cap]
+  fix: for an interactive session set limits.stall_after (the person's typing counts as activity) and keep wall for a bound on the whole job
+error: invalid contract: $REPO/examples/agents/langgraph.yaml:59:11: command "./.venv/bin/python": $REPO/examples/agents/.venv/bin/python does not exist [path-missing]

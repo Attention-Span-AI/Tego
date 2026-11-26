@@ -200,7 +200,8 @@ func TestGroupPasswordRefusesTheWritableGroupException(t *testing.T) {
 			}
 			if tc.want != Untrusted {
 				folder := tc.nodes[len(tc.nodes)-2].path
-				for _, part := range []string{"no command is shown", "chmod g-w " + folder, "run this step again"} {
+				// Every group-writable folder of the chain is named, the innermost last, in the one chmod.
+				for _, part := range []string{"no command is shown", "chmod g-w ", folder + ", then run this step again"} {
 					if !strings.Contains(got, part) {
 						t.Errorf("refusal %q lacks %q", got, part)
 					}
@@ -536,4 +537,79 @@ func TestAccountEvidenceWaitIsBounded(t *testing.T) {
 			t.Errorf("refusal %q lacks %q", why, want)
 		}
 	}
+}
+
+// Public issue 87. The installer made ~/.local and ~/.local/bin under the login umask 0002, both group-writable, and
+// the refusal named one folder at a time: a person who ran its chmod met the next folder's refusal. One message names
+// every folder whose membership cannot be established, with one command that cures them all, and still shows no sudo
+// command until they are cured.
+func TestOneRefusalNamesEveryFolderAndOneChmodCuresThem(t *testing.T) {
+	const uid, gid = 1000, 1000
+	dir := func(p string, g uint32, m os.FileMode) chainNode { return chainNode{p, uid, g, m | os.ModeDir} }
+	root := chainNode{"/", 0, 0, 0755 | os.ModeDir}
+	chain := func(local, bin os.FileMode) []chainNode {
+		return []chainNode{root, {"/home", 0, 0, 0755 | os.ModeDir}, dir("/home/tego", gid, 0750), dir("/home/tego/.local", gid, local),
+			dir("/home/tego/.local/bin", gid, bin), {"/home/tego/.local/bin/tego", uid, gid, 0755}}
+	}
+	const (
+		ubuntuNSS = "passwd: files systemd\ngroup: files systemd\n"
+		why       = "/etc/nsswitch.conf does not establish files-only passwd and group membership (passwd: files systemd; group: files systemd)"
+	)
+	refuse := func(t *testing.T, nodes []chainNode, nss string) string {
+		t.Helper()
+		policy := fixtureGroups("tego:x:1000:1000::/:/bin/sh\n", "tego:x:1000:\n", nss, uid, gid)
+		byPath := map[string]os.FileInfo{}
+		for _, n := range nodes {
+			byPath[n.path] = chainInfo{n}
+		}
+		stat := func(p string) (os.FileInfo, error) {
+			if n, ok := byPath[p]; ok {
+				return n, nil
+			}
+			return nil, os.ErrNotExist
+		}
+		return chainRefusal(nodes[len(nodes)-1].path, uid, stat, func() groupTrust { return policy }, func(string) bool { return true })
+	}
+	t.Run("two folders, one message, one command", func(t *testing.T) {
+		want := "cannot establish membership of group tego (gid 1000) for folders /home/tego/.local and /home/tego/.local/bin: " + why +
+			"; no command is shown; run chmod g-w /home/tego/.local /home/tego/.local/bin, then run this step again."
+		if got := refuse(t, chain(0775, 0775), ubuntuNSS); got != want {
+			t.Fatalf("got  %q\nwant %q", got, want)
+		}
+	})
+	t.Run("one folder reads as it always did", func(t *testing.T) {
+		want := "cannot establish membership of group tego (gid 1000) for folder /home/tego/.local/bin: " + why +
+			"; no command is shown; run chmod g-w /home/tego/.local/bin, then run this step again."
+		if got := refuse(t, chain(0755, 0775), ubuntuNSS); got != want {
+			t.Fatalf("got  %q\nwant %q", got, want)
+		}
+	})
+	t.Run("none: the command is shown", func(t *testing.T) {
+		if got := refuse(t, chain(0755, 0755), ubuntuNSS); got != "" {
+			t.Fatalf("refused %q", got)
+		}
+		// Files-only sources establish the private group, however many folders it can write (Debian).
+		if got := refuse(t, chain(0775, 0775), "passwd: files\ngroup: files\n"); got != "" {
+			t.Fatalf("refused %q where the private group is established", got)
+		}
+	})
+	t.Run("a refusal chmod cannot cure is not hidden behind the folders", func(t *testing.T) {
+		nodes := chain(0775, 0775)
+		nodes[1] = chainNode{"/home", 0, 0, 0777 | os.ModeDir} // world-writable, not sticky
+		if got := refuse(t, nodes, ubuntuNSS); got != Untrusted {
+			t.Fatalf("got %q, want %q", got, Untrusted)
+		}
+	})
+	t.Run("folders of two groups name each group", func(t *testing.T) {
+		nodes := chain(0775, 0775)
+		nodes[4] = dir("/home/tego/.local/bin", 1000, 0775)
+		nodes[3] = chainNode{"/home/tego/.local", uid, 1001, 0775 | os.ModeDir}
+		got := refuse(t, nodes, ubuntuNSS)
+		for _, part := range []string{"group unknown (gid 1001) for folder /home/tego/.local", "group tego (gid 1000) for folder /home/tego/.local/bin",
+			"run chmod g-w /home/tego/.local /home/tego/.local/bin, then run this step again."} {
+			if !strings.Contains(got, part) {
+				t.Errorf("refusal %q lacks %q", got, part)
+			}
+		}
+	})
 }

@@ -14,16 +14,35 @@ The hello flow below was run by hand once under Docker (a Debian 13 guest, `dock
 ## Quick start
 
 For a local source build, from `examples/container/`, on a Linux host with cgroup v2 and Docker with BuildKit and the
-compose plugin:
+compose plugin. `docker compose` is a package of its own where Docker comes from the distribution, and the first
+command fails without it (`'compose' is not a docker command`):
+
+| Docker from | Install |
+| ----------- | ------- |
+| Debian 13 | `sudo apt-get install docker.io docker-compose docker-buildx` (`docker-compose` is compose 2.26) |
+| Ubuntu 24.04 | `sudo apt-get install docker.io docker-compose-v2 docker-buildx` |
+| Docker's own repository | `docker-ce`, `docker-compose-plugin` and `docker-buildx-plugin`, as [Docker's install guide](https://docs.docker.com/engine/install/) says |
+
+Your user also needs to be in the `docker` group (or use `sudo` for every `docker` line below).
 
 ```sh
 export TEGO_UID=$(id -u) TEGO_GID=$(id -g)   # the dashboard answers only your own uid; see "The dashboard"
-docker compose build
+docker compose build                          # builds the image; the agent service does it, the dashboard uses it
 docker compose run --rm agent tego machine check     # what this host gives the container
 docker compose up agent                       # one run of the example agent
-docker compose up -d control                  # the dashboard
+docker compose up -d control                  # the dashboard (needs the build above)
 docker compose logs control                   # its link: http://127.0.0.1:8484/?t=...
 ```
+
+Build first. The dashboard service does not build and never pulls: `tego:local` is no registry's name, so
+`docker compose up -d control` on a machine that has not built stops with an error that names the missing
+`tego:local`; run `docker compose build` and then the line again. The failed attempt leaves nothing to clean up: it
+made the network and the three empty volumes, and the later `docker compose up` fills and uses them (checked on Debian 13
+with docker.io 26.1.5, where the dashboard printed its link two seconds after the start).
+
+The image built here compiles the source of your checkout, which is not a release, so `tego version` inside it prints
+`tego=dev commit=none`. The published image prints the release's version; to be sure of a release, run that one, by
+the digest the release notes give ([the install guide](https://github.com/Attention-Span-AI/Tego/blob/main/docs/INSTALL.md#run-in-a-container)).
 
 `docker compose up agent` runs `tego run /usr/local/share/tego/hello.yaml`: the hello agent writes
 `/work/out/hello.txt`, tries to write `/work/outside.txt`, is refused, and the run ends with
@@ -32,6 +51,11 @@ agent, mount its contract and its files and set `TEGO_CONTRACT` to the contract'
 `--build-arg EXTRA_PACKAGES="python3 nodejs npm ..."` (or the same `EXTRA_PACKAGES` variable for compose) for the
 programs it needs. A program being installed allows nothing: the contract's `exec.allow` still decides what may run.
 `examples/agents/` has contracts for Claude Code, Codex and agents of your own.
+
+Every `docker compose run` is a new container with a host id of its own, which `tego doctor` shows in its ledger line:
+in a second container it calls your earlier runs in the shared ledger "minted on host `<id>`, not this one". They are
+yours; the line says that no sweep in this container ends or repairs them, and `tego gc` removes them only past
+retention.
 
 ## What the image holds
 
@@ -135,9 +159,16 @@ This section is about the tier tried in the image, landlock.
 On Docker's defaults (no capability added, `docker-default`), the entrypoint says the cgroup mount is read-only
 (`tego-entrypoint: no delegated cgroup subtree: /sys/fs/cgroup is read-only and could not be remounted read-write: ...`),
 and `tego run` refuses before it starts the agent, exit 125:
-`<contract>: no enforcement tier available on this machine [tier-unavailable] missing for landlock: cgroupv2: cgroup: no delegated cgroup v2 subtree for uid 10001 (tried /sys/fs/cgroup/user.slice/user-10001.slice/user@10001.service): statfs(...): no such file or directory; fix: enable systemd user delegation (Delegate=cpu memory pids in ...)`.
-The reason is the one the entrypoint printed above it; the `fix:` tail is the advice for a host with systemd and does
-not apply inside the container, where the cure is the capability and the AppArmor setting of compose.yaml. Were the
+`<contract>: no enforcement tier available on this machine [tier-unavailable] missing for landlock: cgroupv2: cgroup: no delegated cgroup v2 subtree for uid 10001 (tried /sys/fs/cgroup/user.slice/user-10001.slice/user@10001.service): statfs(...): no such file or directory; fix: in a container there is no systemd to delegate a cgroup subtree: Tego needs what the example image's entrypoint and examples/container/compose.yaml give it: ...`.
+The reason is the one the entrypoint printed above it. Tego knows it is in a container from `/.dockerenv` (Docker),
+`/run/.containerenv` (Podman) or a `container` variable in process 1's environment, none of which a host has, and
+where systemd runs as process 1 (LXC, systemd-nspawn) it keeps the host's advice, which is true there. In a container
+the `fix:` names the same things this page does: the delegated cgroup subtree the entrypoint makes (`cgroup: private`
+and `SYS_ADMIN` to remount `/sys/fs/cgroup` read-write), `apparmor=unconfined` where AppArmor runs, and the kernel's
+list of security modules handed in at `/run/tego-lsm/lsm-list`. `tego doctor`, `tego machine check` and `tego run` say it, once per
+report, and never tell you to edit a systemd unit or a WSL setting here. `tego start` and `tego setup` look for a user
+session, which a container does not have: they refuse under their own names, say so, and point to the same settings
+and to `tego run`. A Kubernetes pod under containerd has none of the three marks and so keeps the host's words. Were the
 cgroup there, `clone3` would fail with `ENOSYS` and tego says so, naming the outer seccomp profile (moby#42680).
 `--privileged` works around all of it and gives the container everything; it is not what this image asks for.
 
@@ -339,12 +370,24 @@ user on the host can rewrite both volumes; no file layout on that host changes t
 
 To check a run from outside the container it ran in:
 `docker compose run --rm --no-deps agent tego events <run> --verify` (the service mounts both volumes).
-With plain `docker run`, give the same two volumes and the image's user, which owns the anchor:
+With plain `docker run`, give the same two volumes and the image's user, which owns the anchor. The published image's
+user is 10001:10001; an image you built as the Quick start says has your own uid and gid, the `TEGO_UID` and `TEGO_GID`
+you exported (a different `--user` is refused with `permission denied` on the run's `events.jsonl`). For the published
+image:
 
 ```sh
 docker run --rm --user 10001:10001 --cap-drop ALL --security-opt no-new-privileges:true \
   -v tego-state:/home/tego/.tego -v tego-ledger:/var/lib/tego/runs \
   "$image@$digest" tego events <run> --verify
+```
+
+For the image `docker compose build` made (`tego:local`; the volumes are compose's, named after the project, so
+`tego_tego-state` and `tego_tego-ledger`):
+
+```sh
+docker run --rm --user "$TEGO_UID:$TEGO_GID" --cap-drop ALL --security-opt no-new-privileges:true \
+  -v tego_tego-state:/home/tego/.tego -v tego_tego-ledger:/var/lib/tego/runs \
+  tego:local tego events <run> --verify
 ```
 
 It prints `<run>: verified N lines, run_start to run_end, head ..., anchored in /home/tego/.tego/chain.log` and exits 0.
@@ -353,8 +396,8 @@ own layer, and a verify from another container has no anchor to check against. `
 
 ## The dashboard
 
-`docker compose up -d control` starts `tego-control serve --addr 127.0.0.1:8484` (`TEGO_DASHBOARD_ADDR` changes it),
-and `docker compose logs control` shows its link. The dashboard listens on a loopback address only, so the service
+`docker compose up -d control` (after `docker compose build`) starts `tego-control serve --addr 127.0.0.1:8484`
+(`TEGO_DASHBOARD_ADDR` changes it), and `docker compose logs control` shows its link. The dashboard listens on a loopback address only, so the service
 runs on the host's network (`network_mode: host`): `127.0.0.1` is then the host's own, and a published port could
 not reach a container's loopback anyway. From another machine, forward the port over SSH
 (`ssh -L 8484:127.0.0.1:8484 server`) as the account whose uid the image was built with.

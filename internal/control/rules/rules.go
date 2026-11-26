@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/check/livestatus"
+	"github.com/attention-span-ai/tego/internal/control/draftcompile"
 	"github.com/attention-span-ai/tego/internal/control/runact"
 	"github.com/attention-span-ai/tego/internal/liveblock"
 	"github.com/attention-span-ai/tego/internal/rulefile"
@@ -29,6 +30,8 @@ const ViaCLI = "cli"
 
 // Service makes and changes rules for the runs under Ledger.
 type Service struct {
+	// directory stands in for the bounded project-folder check (draftcompile.ProjectDirectory) in a test; production never sets it.
+	directory     func(context.Context, draftcompile.DirectoryRequest) (string, error)
 	draftLease    bool
 	drafts        draftStore
 	proposalBuilt func(string)

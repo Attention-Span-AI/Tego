@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -184,7 +185,13 @@ func TestBuilderGovernedPreviewsCannotEvictPersonsReview(t *testing.T) {
 				}
 			}
 			if !saved || !strings.Contains(readText(t, c.Path), "/bin/echo") {
-				t.Fatalf("person pending review did not save after 200 governed Previews and under governed load: %d %s: %s", w.Code, w.Header().Get("Location"), w.Body.String())
+				// Say which refusal sent the person back to the preview: the page the redirect names shows it once.
+				said := ""
+				if loc := w.Header().Get("Location"); loc != "" {
+					_, page := f.get(t, loc)
+					said = regexp.MustCompile(`(Nothing was written|Not saved|Already in the contract)[^<]{0,300}`).FindString(page)
+				}
+				t.Fatalf("person pending review did not save after 200 governed Previews and under governed load: %d %s (the page says %q): %s", w.Code, w.Header().Get("Location"), said, w.Body.String())
 			}
 			if count() != before-1 {
 				t.Fatal("person Save did not consume exactly its review")

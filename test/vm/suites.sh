@@ -67,7 +67,7 @@ HELPERS=(cmd/tego test/conformance/cmd/actor internal/runtime/cgroup/testdata/me
 # test (VM_RUN) runs the package whole. CI's shards (ROOT_SHARDS below) are these parts, one runner each.
 #
 # Why 6 (2026-11-20, per-test times of the green KVM run of 2026-11-19, 4 vCPUs, the suite's tests run one at a time): the
-# tegobpf suite took 5093 s whole, the cap of its 5700 s go timeout nearly reached by a host 20% slower (the run on c974e4c64
+# tegobpf suite took 5093 s whole, the cap of its 5700 s go timeout nearly reached by a host 20% slower (an earlier run of it
 # ran out of it); its parts at n=4 take 1542 s at most, and at n=6 1110 s at most (the 3000 s guest cap's go timeout is 2700 s:
 # 41% of it, 59% headroom; at 1.22x slower still 50%). The plain suite is 600 s whole, 218 s at most in a part. The length of the longest part is
 # bounded by the longest tests (TestPlaneRunStallFollowsWhatTheSupervisorAnswers alone takes 209 s), so more parts would
@@ -81,6 +81,21 @@ HELPERS=(cmd/tego test/conformance/cmd/actor internal/runtime/cgroup/testdata/me
 ROOT_SPLITS=(
 	"cgroup|internal/runtime/enforce/cgroup|6"
 	"runtime|internal/runtime|3"
+)
+# The least guest memory a suite's guest may have, "<row>|<package>|<size>" (a row or a package of "*" matches all), a floor
+# test/vm/root-suites.sh raises TEGO_VM_MEM and VM_SUITE_MEM to and says so: a caller's value cannot go under it.
+#   *|*          every suite's guest unpacks the base userland (221 MB), the prebuilt helpers (427 MB with both tag sets and
+#                the testhooks builds), the copied source (138 MB) and its test binary (19 to 71 MB) into the rootfs, a
+#                tmpfs the kernel caps at half of RAM: 810 MB of conformance's tree needs 1.6 GB before one test runs.
+#                At 1536M (vm-matrix.yml's global value until 2026-11-26) the unpack failed part way ("Initramfs unpacking
+#                failed: write error") and test_conformance's binary, the last file, never arrived: exit 127 on 16 jobs
+#                (public issue 91). 2560M leaves a gigabyte for the tests of the small suites.
+#   cgroup, 4G   debian-13 and rhel-9: 32 concurrent root-tier runs (TestTier2ConcurrentRunsOfOneBuild/32) were
+#                OOM-killed in a 3G guest on both boots; the other rows pass at 3G.
+SUITE_MIN_MEM=(
+	"*|*|2560M"
+	"debian-13|internal/runtime/enforce/cgroup|4G"
+	"rhel-9|internal/runtime/enforce/cgroup|4G"
 )
 # The shards of CI's root-suites job (.github/workflows/ci.yml's root-suites-shard matrix, one runner each), for
 # VM_SHARD=<name> test/vm/root-suites.sh: "<name>|<packages>|<part>". <packages> is a space-separated list of exact

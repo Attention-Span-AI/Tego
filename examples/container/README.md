@@ -8,11 +8,25 @@ tier works in a container, and how the ledger and the chain anchor are kept.
 | ---- | ---------- |
 | `Dockerfile` | The image: build from the repository root with Docker BuildKit, `docker build -f examples/container/Dockerfile -t tego:local .` |
 | `Dockerfile.dockerignore` | What the build leaves out of its context. |
-| `compose.yaml` | The agent service (`tego run`) and the dashboard service (`tego-control serve`). |
+| `compose.yaml` | The agent service (`tego run`), which builds the image, and the dashboard service (`tego-control serve`), which runs it and never pulls: `docker compose build` comes first. |
 | `tego-entrypoint.sh` | Hands the `tego` user a cgroup subtree and the kernel's list of security modules (`/run/tego-lsm/lsm-list`), then drops every capability and runs the command as that user. |
 | `config.yaml` | The image's machine config: the ledger on its own volume, and the list file the entrypoint writes (`lsm.list_file`). |
 | `hello.yaml`, `hello-agent.sh` | The example agent and its contract. |
 | `smoke.sh` | The image's own check, which CI runs inside it. |
+
+To try it on a Linux host with cgroup v2, from this directory (the container guide names the packages that give
+`docker compose` on Debian 13 and Ubuntu 24.04):
+
+```sh
+export TEGO_UID=$(id -u) TEGO_GID=$(id -g)
+docker compose build
+docker compose up agent
+docker compose up -d control && docker compose logs control
+```
+
+An image built here compiles your checkout, so `tego version` inside it prints `tego=dev commit=none`; the published
+image prints the release's version. To read a run's record from a second container, use the guide's `events --verify`
+line for a local image (`--user "$TEGO_UID:$TEGO_GID"`), not the published image's `10001:10001`.
 
 The tests in this directory (`go test ./examples/container/`) hold these files to each other and to the engine
 without a container runtime; `.github/workflows/container.yml` builds and runs the image.

@@ -4,6 +4,7 @@ package container
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -20,7 +21,10 @@ func TestContainerGuideQuotesTheRefusalTheProductPrints(t *testing.T) {
 		{"[tier-unavailable]", "../../pkg/spec/backend/select.go", `"tier-unavailable"`},
 		{"missing for landlock: cgroupv2:", "../../internal/doctor/report.go", "missing for %s: %s"},
 		{"no delegated cgroup v2 subtree", "../../internal/runtime/cgroup/errors.go", "no delegated cgroup v2 subtree"},
-		{"enable systemd user delegation", "../../internal/runtime/cgroup/detect.go", "enable systemd user delegation"},
+		{"in a container there is no systemd to delegate a cgroup subtree: Tego needs what the example image's entrypoint and examples/container/compose.yaml give it",
+			"../../internal/platform/whereami/whereami.go", "in a container there is no systemd to delegate a cgroup subtree: Tego needs "},
+		{"/.dockerenv", "../../internal/platform/whereami/whereami.go", `"/.dockerenv"`},
+		{"/run/.containerenv", "../../internal/platform/whereami/whereami.go", `"/run/.containerenv"`},
 		{"tego-entrypoint: no delegated cgroup subtree:", "tego-entrypoint.sh", `say "no delegated cgroup subtree: $why"`},
 		{"/sys/fs/cgroup is read-only and could not be remounted read-write", "tego-entrypoint.sh", "is read-only and could not be remounted read-write"},
 	} {
@@ -33,6 +37,43 @@ func TestContainerGuideQuotesTheRefusalTheProductPrints(t *testing.T) {
 	}
 	if strings.Contains(guide, "`tego run` refuses with `runtime: cgroup") {
 		t.Error("docs/user/container.md says `tego run` refuses with `runtime: cgroup: ...`, which Docker's defaults do not print")
+	}
+}
+
+// TestContainerGuideOrderMatchesCompose: the quick start builds before it starts the dashboard (the dashboard service
+// never pulls the local name), names the packages that give `docker compose`, and its two `events --verify` lines run
+// as the image's own user: the published image's 10001, and the uid and gid a local build was given. The volumes the
+// local line names are the ones compose.yaml makes under its project name.
+func TestContainerGuideOrderMatchesCompose(t *testing.T) {
+	guide := readText(t, "../../docs/user/container.md")
+	build, dash := strings.Index(guide, "docker compose build"), strings.Index(guide, "docker compose up -d control")
+	if build < 0 || dash < 0 || build > dash {
+		t.Errorf("the quick start must build (%d) before it starts the dashboard (%d)", build, dash)
+	}
+	for _, pkg := range []string{"docker-compose", "docker-compose-v2", "docker-buildx", "docker-compose-plugin", "docker.io"} {
+		if !strings.Contains(guide, pkg) {
+			t.Errorf("the guide does not name the package %s", pkg)
+		}
+	}
+	flat := strings.Join(strings.Fields(guide), " ") // line breaks of the guide do not matter
+	for _, want := range []string{`--user 10001:10001`, `--user "$TEGO_UID:$TEGO_GID"`, "tego:local tego events <run> --verify",
+		"`tego version` inside it prints `tego=dev commit=none`"} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("the guide lacks %q", want)
+		}
+	}
+	compose := readText(t, "compose.yaml")
+	project := regexp.MustCompile(`(?m)^name: (\S+)$`).FindStringSubmatch(compose)
+	if project == nil {
+		t.Fatal("compose.yaml names no project")
+	}
+	for _, vol := range []string{"tego-state", "tego-ledger"} {
+		if !regexp.MustCompile(`(?m)^  ` + vol + `:$`).MatchString(compose) {
+			t.Errorf("compose.yaml has no volume %s", vol)
+		}
+		if name := project[1] + "_" + vol; !strings.Contains(guide, "-v "+name+":") {
+			t.Errorf("the guide's local verify line does not mount %s", name)
+		}
 	}
 }
 

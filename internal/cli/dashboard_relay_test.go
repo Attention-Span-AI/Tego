@@ -19,6 +19,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/relaymux"
 	"github.com/attention-span-ai/tego/internal/runscope"
 	"github.com/attention-span-ai/tego/internal/testutil/answertest"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
@@ -289,5 +290,165 @@ func TestRelayOpenLine(t *testing.T) {
 	out.Reset()
 	if code := relayOpen(context.Background(), relayTarget{port: port, token: strings.Repeat("b", 32), proof: proof}, "", &out, &errs); code == identity.ExitOK || out.Len() != 0 {
 		t.Fatalf("a refused token: exit %d, stdout %q", code, out.String())
+	}
+}
+
+// releaseFixture names a dashboard that proves its token at a fake address, a scope the test chooses, and the three seams
+// of relayRelease; it returns what the seams were asked.
+type releaseFixture struct {
+	runs    int
+	runsErr error
+	active  bool
+	stopErr error
+	stayUp  bool // the unit is still active after a failed stop
+	stopped bool
+	counted bool
+}
+
+func (f *releaseFixture) install(t *testing.T, target func() (relayTarget, error)) {
+	t.Helper()
+	prevRuns, prevActive, prevStop := releaseLiveRuns, releaseUnitActive, releaseStopUnit
+	t.Cleanup(func() { releaseLiveRuns, releaseUnitActive, releaseStopUnit = prevRuns, prevActive, prevStop })
+	t.Setenv(config.EnvConfigVar, "")
+	releaseLiveRuns = func(context.Context) (int, error) { f.counted = true; return f.runs, f.runsErr }
+	releaseUnitActive = func(context.Context) bool { return f.active }
+	releaseStopUnit = func(context.Context) error {
+		f.stopped = true
+		f.active = f.stayUp
+		return f.stopErr
+	}
+}
+
+func outsideScope() relayScope {
+	return relayScope{answer: func() runscope.Answer { return answertest.Outside() }, selfCgroup: func() ([]byte, error) { return nil, nil }}
+}
+
+// TestRelayRelease: with no run going the dashboard's unit is stopped (and a stopped one is no failure); with a run going,
+// or when the runs cannot be counted, nothing is stopped and the one line says so; a unit that will not stop is
+// "unknown", never "released". A unit that is not running is released without a count: there is nothing to keep or stop.
+func TestRelayRelease(t *testing.T) {
+	tok := strings.Repeat("a", 32)
+	_, port := fakeDashboard(t, tok)
+	for _, c := range []struct {
+		name     string
+		f        releaseFixture
+		want     string
+		wantStop bool
+	}{
+		{name: "dashboard up, no run", f: releaseFixture{active: true}, want: "TEGO_DASHBOARD_RELEASE released was=running\n", wantStop: true},
+		{name: "no dashboard, no run", f: releaseFixture{}, want: "TEGO_DASHBOARD_RELEASE released was=none\n"},
+		{name: "no dashboard, a run going", f: releaseFixture{runs: 3}, want: "TEGO_DASHBOARD_RELEASE released was=none\n"},
+		{name: "one run going", f: releaseFixture{runs: 1, active: true}, want: "TEGO_DASHBOARD_RELEASE kept runs=1\n"},
+		{name: "runs cannot be counted", f: releaseFixture{runsErr: errors.New("ledger unreadable"), active: true}, want: "TEGO_DASHBOARD_RELEASE unknown\n"},
+		{name: "stop fails, unit gone anyway", f: releaseFixture{active: true, stopErr: errors.New("exit 1")}, want: "TEGO_DASHBOARD_RELEASE released was=running\n", wantStop: true},
+		{name: "stop fails, unit stays", f: releaseFixture{active: true, stopErr: errors.New("exit 1"), stayUp: true}, want: "TEGO_DASHBOARD_RELEASE unknown\n", wantStop: true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := c.f
+			target := func() (relayTarget, error) { return relayTarget{port: port, token: tok}, nil }
+			f.install(t, target)
+			var out, errs bytes.Buffer
+			if code := relayRelease(context.Background(), outsideScope(), target, &out, &errs); code != identity.ExitOK || out.String() != c.want || f.stopped != c.wantStop {
+				t.Fatalf("exit %d, stdout %q (want %q), stopped %v (want %v), stderr %q", code, out.String(), c.want, f.stopped, c.wantStop, errs.String())
+			}
+		})
+	}
+}
+
+// TestRelayReleaseIsAdmittedAsServeAndOpenAre: nothing is counted or stopped when the process may be inside a run. A
+// "could not tell" answer passes only when its cgroup is no run's and the dashboard's own governed check admits it; a
+// governed cgroup, a dashboard that does not prove itself, a refusing dashboard and a caller-supplied config layer
+// (which could name an empty ledger root, so that the count reads 0) all refuse, and the unit stays.
+func TestRelayReleaseIsAdmittedAsServeAndOpenAre(t *testing.T) {
+	const scopeOK = "0::/user.slice/user-26743.slice/user@26743.service/app.slice/run-u7.scope\n"
+	const inRun = "0::/user.slice/user-26743.slice/user@26743.service/tego.slice/tego-bot.slice/run-r-1.scope\n"
+	unknown := answertest.Recorded(runscope.CauseWSLLauncherUnproven, 0)
+	tok := strings.Repeat("a", 32)
+	_, port := fakeDashboard(t, tok)
+	good := func() (relayTarget, error) { return relayTarget{port: port, token: tok}, nil }
+	for _, c := range []struct {
+		name    string
+		answer  runscope.Answer
+		cgroup  string
+		target  func() (relayTarget, error)
+		config  string
+		refuses string
+	}{
+		{name: "outside", answer: answertest.Outside(), target: good},
+		{name: "could not tell, dashboard admits it", answer: unknown, cgroup: scopeOK, target: good},
+		{name: "could not tell, governed cgroup", answer: unknown, cgroup: inRun, target: good, refuses: "inside a tego run"},
+		{name: "could not tell, above its namespace", answer: unknown, cgroup: "0::/../x\n", target: good, refuses: "cannot be shown outside"},
+		{name: "could not tell, dashboard refuses the token", answer: unknown, cgroup: scopeOK,
+			target: func() (relayTarget, error) { return relayTarget{port: port, token: strings.Repeat("b", 32)}, nil }, refuses: "did not admit it"},
+		{name: "inside a run", answer: answertest.Inside(runscope.CauseGoverned), cgroup: scopeOK, target: good, refuses: "inside a tego run"},
+		{name: "the dashboard does not prove itself", answer: answertest.Outside(),
+			target: func() (relayTarget, error) {
+				return relayTarget{}, errors.New("the dashboard is not running; run tego dashboard")
+			}, refuses: "dashboard is not running"},
+		{name: "a caller's config layer", answer: answertest.Outside(), target: good, config: "/tmp/c.toml", refuses: "refuses when $TEGO_CONFIG is set"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := &releaseFixture{active: true}
+			f.install(t, c.target)
+			if c.config != "" {
+				t.Setenv(config.EnvConfigVar, c.config)
+			}
+			scope := relayScope{answer: func() runscope.Answer { return c.answer }, selfCgroup: func() ([]byte, error) { return []byte(c.cgroup), nil }}
+			var out, errs bytes.Buffer
+			// The command's own guard first, as Run does: only a "could not tell" or an outside answer gets to relayRelease.
+			code := identity.ExitError
+			if !relayInsideRun(scope, &errs) {
+				code = relayRelease(context.Background(), scope, c.target, &out, &errs)
+			}
+			if c.refuses == "" {
+				if code != identity.ExitOK || !f.stopped || !f.counted || out.String() != "TEGO_DASHBOARD_RELEASE released was=running\n" {
+					t.Fatalf("admitted case: exit %d stdout %q stderr %q", code, out.String(), errs.String())
+				}
+				return
+			}
+			if code != identity.ExitError || f.stopped || f.counted || out.Len() != 0 || !strings.Contains(errs.String(), c.refuses) {
+				t.Fatalf("exit %d, stopped %v, counted %v, stdout %q, stderr %q: want a refusal containing %q", code, f.stopped, f.counted, out.String(), errs.String(), c.refuses)
+			}
+		})
+	}
+}
+
+// TestRelayReleaseRefusesInsideARun: like serve and open, the command refuses a process the rule shows inside a run
+// before anything is read, counted or stopped.
+func TestRelayReleaseRefusesInsideARun(t *testing.T) {
+	onFixture(t, "fresh")
+	old, prevStop, prevScope := selfAnswer, releaseStopUnit, newRelayScope
+	t.Cleanup(func() { selfAnswer, releaseStopUnit, newRelayScope = old, prevStop, prevScope })
+	selfAnswer = func() runscope.Answer { return answertest.Inside(runscope.CauseGoverned) }
+	releaseStopUnit = func(context.Context) error { t.Fatal("stopped the dashboard from inside a run"); return nil }
+	code, out, errs := run(t, "dashboard-relay", "release")
+	if code != identity.ExitError || out != "" || !strings.Contains(errs, "inside a tego run") {
+		t.Fatalf("exit %d stdout %q stderr %q", code, out, errs)
+	}
+}
+
+// TestRelayReleaseCommandCouldNotTell: through the command itself, a process whose answer cannot be told and whose
+// cgroup is a run's is refused, and the dashboard's unit is not stopped.
+func TestRelayReleaseCommandCouldNotTell(t *testing.T) {
+	onFixture(t, "fresh")
+	t.Setenv(config.EnvConfigVar, "")
+	prevScope, prevActive, prevStop, prevRuns := newRelayScope, releaseUnitActive, releaseStopUnit, releaseLiveRuns
+	t.Cleanup(func() {
+		newRelayScope, releaseUnitActive, releaseStopUnit, releaseLiveRuns = prevScope, prevActive, prevStop, prevRuns
+	})
+	newRelayScope = func() relayScope {
+		return relayScope{
+			answer: func() runscope.Answer { return answertest.Recorded(runscope.CauseWSLLauncherUnproven, 0) },
+			selfCgroup: func() ([]byte, error) {
+				return []byte("0::/user.slice/user-26743.slice/user@26743.service/tego.slice/tego-bot.slice/run-r-1.scope\n"), nil
+			},
+		}
+	}
+	releaseUnitActive = func(context.Context) bool { return true }
+	releaseLiveRuns = func(context.Context) (int, error) { return 0, nil } // an empty ledger: the count a forged config would give
+	releaseStopUnit = func(context.Context) error { t.Fatal("stopped the dashboard from a governed cgroup"); return nil }
+	code, out, errs := run(t, "dashboard-relay", "release")
+	if code != identity.ExitError || out != "" || strings.Contains(errs, "released") {
+		t.Fatalf("exit %d stdout %q stderr %q", code, out, errs)
 	}
 }

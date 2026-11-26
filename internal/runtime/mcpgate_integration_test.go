@@ -5,6 +5,7 @@
 package runtime
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -57,6 +58,28 @@ save("answer", shim.stdout.readline())
 shim.stdin.close()
 save("shim-err", shim.stderr.read())
 save("shim", "%d" % shim.wait(timeout=20))
+# The client config the run names (TEGO_MCP_CONFIG): where it is, who owns it, what the agent reads in it, and what it
+# may do to the directory around it.
+import os
+cfg = os.environ.get("TEGO_MCP_CONFIG", "")
+save("cfg-path", cfg)
+if cfg:
+    st = os.stat(cfg)
+    save("cfg-stat", "%o %d %d" % (st.st_mode & 0o7777, st.st_uid, st.st_gid))
+    save("cfg-self", "%d %d" % (os.getuid(), os.getgid()))
+    try:
+        save("cfg-body", open(cfg).read())
+    except OSError as e:
+        save("cfg-body", "ERR " + errno.errorcode.get(e.errno, str(e.errno)))
+    d = os.path.dirname(cfg)
+    for name, op in [("add", lambda: open(d + "/x", "w")), ("remove", lambda: os.unlink(cfg)),
+                     ("rename", lambda: os.rename(cfg, d + "/y")), ("list", lambda: os.listdir(d))]:
+        try:
+            op()
+            res = "ok"
+        except OSError as e:
+            res = errno.errorcode.get(e.errno, str(e.errno))
+        save("cfg-" + name, res)
 `
 
 // newMCPGateScene is the run's world. The contract compiles at tier landlock, the one tier the test process offers, and
@@ -125,6 +148,46 @@ func TestIntegrationMCPRelayConstrainedGrant(t *testing.T) {
 		t.Fatalf("shim exit %q, answer %q, stderr %q", got, s.out("answer"), s.out("shim-err"))
 	}
 	assertMCPStageGrant(t, s, evs)
+	assertMCPClientFile(t, s, dir)
+}
+
+// assertMCPClientFile is what the agent found of TEGO_MCP_CONFIG (public issue 98). From a root launcher it is a file in
+// the run's own directory under /run/tego-agent, made by root, 0400, owned by the account the agent runs as, which the
+// agent reads and cannot add to, rename in or remove from; from an unprivileged launcher it is in the run's runtime
+// directory, 0444, the user's own. Either way it names the relay's shim, and it is gone when the run has ended.
+func assertMCPClientFile(t *testing.T, s *askReadScene, runDir string) {
+	t.Helper()
+	path := s.out("cfg-path")
+	if path == "" {
+		t.Fatalf("the agent's environment has no TEGO_MCP_CONFIG (the relay's own variable was there: answer %q)", s.out("answer"))
+	}
+	if body := s.out("cfg-body"); !strings.Contains(body, `"mcp"`) || !strings.Contains(body, "--server") || !strings.Contains(body, "files") {
+		t.Errorf("the agent read %q from %s, want the relay shim's entry for files", body, path)
+	}
+	var mode string
+	var uid, gid int
+	if _, err := fmt.Sscanf(s.out("cfg-stat"), "%s %d %d", &mode, &uid, &gid); err != nil {
+		t.Fatalf("cfg-stat %q: %v", s.out("cfg-stat"), err)
+	}
+	if os.Geteuid() == 0 {
+		auid, agid, _ := agentUID(t)
+		if want := filepath.Join("/run/tego-agent", filepath.Base(runDir), "tego-mcp.json"); path != want {
+			t.Errorf("TEGO_MCP_CONFIG = %q, want %q", path, want)
+		}
+		if mode != "400" || uid != auid || gid != agid {
+			t.Errorf("the file is %s %d:%d, want 400 %d:%d (the account the agent runs as)", mode, uid, gid, auid, agid)
+		}
+		for _, op := range []string{"add", "remove", "rename", "list"} {
+			if got := s.out("cfg-" + op); got != "EACCES" && got != "EPERM" {
+				t.Errorf("the agent's %s in the client directory: %q, want a refusal", op, got)
+			}
+		}
+	} else if mode != "444" || uid != os.Getuid() {
+		t.Errorf("the file is %s owned by %d, want 444 owned by %d", mode, uid, os.Getuid())
+	}
+	if _, err := os.Stat(filepath.Dir(path)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the run's directory for the file outlived the run: %v", err)
+	}
 }
 
 func assertMCPStageGrant(t *testing.T, s *askReadScene, evs []*record.Event) {
@@ -187,6 +250,7 @@ func TestRootMCPRelayGate(t *testing.T) {
 			run, dir := s.start(t)
 			evs := s.finish(t, run, dir)
 			assertMCPStageGrant(t, s, evs)
+			assertMCPClientFile(t, s, dir)
 			var start record.RunStartPayload
 			var refused, started, calls []*record.Event
 			var serverLines []*record.Event
@@ -249,5 +313,31 @@ func TestRootMCPRelayGate(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestIntegrationMCPWithoutRuntimeDirIsRefused: an unprivileged launcher with no absolute XDG_RUNTIME_DIR has no place
+// for the relay's client config. The run used to start with TEGO_MCP_RELAY and no TEGO_MCP_CONFIG, and say so only in
+// tego's log (public issue 98); it is refused before the agent starts, exit 125, naming the fix.
+func TestIntegrationMCPWithoutRuntimeDirIsRefused(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("a root launcher gets a client directory instead (TestRootMCPRelayGate)")
+	}
+	bin := tegoBinary(t)
+	s, _ := newMCPGateScene(t, bin, "landlock", "")
+	s.env = append(s.env, "XDG_RUNTIME_DIR=")
+	run := s.tego(t, "run", filepath.Join(s.f.dir, "agent.yaml"), "--", "/bin/sh", "agent.sh")
+	run.Dir = s.f.dir
+	out, err := run.CombinedOutput()
+	if code := exitCodeOf(t, err); code != 125 {
+		t.Fatalf("tego run exited %d, want 125:\n%s", code, out)
+	}
+	for _, want := range []string{"XDG_RUNTIME_DIR", "TEGO_MCP_CONFIG", "mcp entries"} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("the refusal does not say %q:\n%s", want, out)
+		}
+	}
+	if got := s.out("cfg-path") + s.out("answer"); got != "" {
+		t.Errorf("the agent ran (%q) in a run that was refused", got)
 	}
 }

@@ -432,6 +432,7 @@ func compileContract(c *Contract, m *config.Machine, replay *BaselineReplay, opt
 	k.proxyPolicy()
 	k.budgetsUnseenUnderRecordOff()
 	k.budgetsUnmetered()
+	k.budgetsUncounted()
 	k.modelBypassLowered()
 	k.env()
 	k.secretEnv()
@@ -1240,6 +1241,35 @@ func (k *compiler) budgetsUnmetered() {
 		k.ds.warnf(at, identity.CodeBudgetUnmetered, "%s %s %s where the run lands at tier landlock: no models: endpoint is declared, and there capture is the forwarder alone, which does not run without one, so a run that lands there is refused",
 			budgets, noun, trips).
 			fix("declare the model endpoint under models: (provider, host, port), or remove the %s", noun)
+	}
+}
+
+// budgetsUncounted warns, once per models: entry, that a limits.tokens or limits.cost_usd the contract (or a profile it
+// extends) sets cannot count the answers of an entry whose provider declares an API style Tego does not read: the run
+// would end at that model's first answer (reason error, exit 125), because a budget that cannot be counted is never
+// silently ignored. The contract knows the style by the entry's provider, as the capture parsers are chosen (R25); a
+// provider it has no reading for is any other value, so the warning names the styles that are counted. Only where
+// capture meters model traffic: capture off and a missing endpoint are budgetsUnmetered's, and a machine ceiling alone
+// is not the contract author's to fix.
+func (k *compiler) budgetsUncounted() {
+	declared, _ := k.modelBudgets()
+	var budgets []string
+	for _, b := range declared {
+		if b == "tokens" || b == "cost_usd" {
+			budgets = append(budgets, "limits."+b)
+		}
+	}
+	if len(budgets) == 0 || k.rt.Capture == CaptureOff {
+		return
+	}
+	for i, m := range k.c.Models {
+		if BudgetCounts(m.Provider) {
+			continue
+		}
+		k.ds.warnf(k.pos("models."+strconv.Itoa(i)), CodeBudgetUncounted,
+			"%s counts only answers in these API styles: %s; models: provider %q is not one, so the run would end at that model's first answer (exit 125): a budget that cannot be counted is never silently ignored",
+			strings.Join(budgets, " and "), CountedAPIWords(), m.Provider).
+			fix("remove %s, or declare a model API whose usage Tego reads", strings.Join(budgets, " and "))
 	}
 }
 
