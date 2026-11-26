@@ -5,7 +5,7 @@ lines `docs/VERSIONING.md` requires so a reader can tell what a binary speaks wi
 Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semver.org/), `0.y.z` until 1.0
 (`docs/VERSIONING.md` section 1).
 
-## v0.2.0 - 2026-11-25
+## v0.2.0 - 2026-11-26
 
 This release adds a guided first run (`tego start`), a way to remove Tego (`tego uninstall`), a basic scan for agents
 (`tego scan`), a Windows installer, a rebuilt dashboard and a receipt for CI runs. It also closes a set of security
@@ -753,7 +753,7 @@ or the loadable `unix_diag` module); without them such a socket is refused `unix
 Syscall outcome hooks require readable tracefs event formats with an eight-byte `ret` at offset 16; unsupported
 or unverified layouts withhold root tiers. The kernel version minimum is unchanged.
 
-## v0.2.0-rc.1 - 2026-11-25
+## v0.2.0-rc.1 - 2026-11-26
 
 This is a release candidate for v0.2.0, with the changes listed under v0.2.0 above. It exists to rehearse the release
 run: signed binaries, the container image, the published notes and the published download. Use v0.1.3, or wait for

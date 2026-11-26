@@ -19,9 +19,11 @@ func init() {
 		if executable, err := os.Executable(); err == nil && len(os.Args) > 2 {
 			if fi, err := os.Stat(executable + ".count"); err == nil && fi.IsDir() {
 				// The marker says who started it and when: the parent at that moment, the process's start (field 22 of
-				// /proc/self/stat, in clock ticks since boot) and the time, for a test that counts them and finds more
-				// than it wants (guide_session_test.go).
-				note := "ppid=" + strconv.Itoa(os.Getppid()) + " started=" + procStart() + " at=" + time.Now().Format("15:04:05.000000") + "\n"
+				// /proc/self/stat, in clock ticks since boot), the time, and the request pipe it was given, for a test
+				// that counts them and finds more than it wants (guide_session_test.go). A launcher passes its pipes to
+				// its worker, so a worker is its launcher's by that pipe, which stays when the launcher is gone and its
+				// parent number says init.
+				note := "ppid=" + strconv.Itoa(os.Getppid()) + " started=" + procStart() + " at=" + time.Now().Format("15:04:05.000000") + " requests=" + requestPipe() + "\n"
 				if err := os.WriteFile(filepath.Join(executable+".count", os.Args[2]+"-"+strconv.Itoa(os.Getpid())), []byte(note), 0o600); err != nil {
 					os.Exit(125)
 				}
@@ -43,4 +45,14 @@ func procStart() string {
 		return "?"
 	}
 	return f[19]
+}
+
+// requestPipe names what descriptor 0 is, "pipe:[inode]" for the request pipe of a helper's session, "?" where /proc
+// does not say.
+func requestPipe() string {
+	link, err := os.Readlink("/proc/self/fd/0")
+	if err != nil {
+		return "?"
+	}
+	return link
 }
