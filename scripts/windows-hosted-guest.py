@@ -72,8 +72,12 @@ def terminal():
                     if not data: break
                     sys.stdout.buffer.write(data); sys.stdout.buffer.flush(); output += data
                 break
+        # The terminal ends (the read fails or returns nothing) the moment the guide closes it, a little before the
+        # process is gone and reaped: wait for the exit itself, within what is left of the deadline, and only then
+        # say the guide did not finish.
         if child.poll() is None:
-            raise RuntimeError('guide timed out at '+repr(answers[:1]))
+            try: child.wait(timeout=max(1.0, deadline-time.monotonic()))
+            except subprocess.TimeoutExpired: raise RuntimeError('guide timed out at '+repr(answers[:1]))
         if child.wait()!=0 or answers or b'Ready' not in output or b'2/4  Login' not in output:
             raise RuntimeError('four-step guide did not complete')
     finally:

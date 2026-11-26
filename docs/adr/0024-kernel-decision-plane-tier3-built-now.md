@@ -350,6 +350,14 @@ and scheduling delay, and is not ended or frozen.
 (15)'s arm64 residual: GitHub's arm64 runner's 7.0 kernel is built `SMP PREEMPT`, so fmod_ret mode is ruled out there
 and `build-test-arm64` checks doctor's refusal; of the 2026-10-06 amendment's plane run, the directory walk's stress
 cell still runs there in fmod_ret mode under the waiver, required, and the end-to-end and rename cells no longer do.
+*Note 2026-11-26 (the arm64 runner's LSM list):* the runner image moved from 7.0.0-1017-azure to 7.0.0-1020-azure, built
+`SMP PREEMPT` with `CONFIG_PREEMPT_LAZY=y` as before but booted with `bpf` in `/sys/kernel/security/lsm`. Doctor there
+still rules fmod_ret mode out for the preemption and now selects lsm mode (tiers 2 and 3 decide opens in the kernel):
+the kernel names `__bpf_prog_enter_recur`, so LSM programs take no recursion check and are not skipped under
+preemption (the 2026-11-11 note). The product's rule did not change and holds; `build-test-arm64`'s expectation of the
+fanotify fallback described the old image only. The step now follows doctor's own selection: fanotify leaves the plane
+tests out as before, lsm requires doctor's lsm line to be ok and tested and each plane test to pass its lsm cell, and any
+other selection fails the step. Where the plane tests run in lsm mode the waived fmod_ret stress cell is not run.
 
 ### CI portability amendment (2026-11-04): built-in walk verifier form
 

@@ -82,6 +82,7 @@ func TestScopeHandshakePipesKeepCancelableIO(t *testing.T) {
 const (
 	scopeCloexecHelperEnv = "TEGO_SCOPE_CLOEXEC_HELPER"
 	scopeCloexecChildEnv  = "TEGO_SCOPE_CLOEXEC_CHILD"
+	scopeCloexecIDsEnv    = "TEGO_SCOPE_CLOEXEC_IDS"
 )
 
 // scopeCloexecHelper is the launcher's start: it adopts descriptors 3, 4 and 5 as scopedMain does, then starts a child
@@ -103,19 +104,65 @@ func scopeCloexecHelper() {
 	os.Exit(0)
 }
 
-// scopeCloexecChild prints the descriptors 3, 4 and 5 it holds.
+// scopeCloexecChild prints every descriptor it holds that is one of the three the test passed to the launcher, by
+// identity (device and inode, from scopeCloexecIDsEnv) and at whatever number it has. It never judges a number: a Go
+// process lays out descriptors of its own at the lowest free numbers, and once the launcher has marked 3, 4 and 5
+// those are free, so the child's epoll instance and eventfd (made when its runtime first needs the poller, a timer
+// of the garbage collector's scavenger among the causes, at a moment no test controls) sit at exactly 3 and 4. The
+// child makes such descriptors itself below, as its runtime does, so a check by number cannot pass.
 func scopeCloexecChild() {
-	for _, n := range []int{3, 4, 5} {
-		if _, err := unix.FcntlInt(uintptr(n), unix.F_GETFD, 0); err == nil {
-			fmt.Printf("holds %d\n", n)
+	names := [...]string{"request FIFO", "readiness FIFO", "signal socket"}
+	want := map[[2]uint64]string{}
+	for i, id := range strings.Split(os.Getenv(scopeCloexecIDsEnv), ",") {
+		var dev, ino uint64
+		if _, err := fmt.Sscanf(id, "%d:%d", &dev, &ino); err != nil || i >= len(names) {
+			fmt.Fprintf(os.Stderr, "identity %d of %q: %v\n", i, os.Getenv(scopeCloexecIDsEnv), err)
+			os.Exit(5)
+		}
+		want[[2]uint64{dev, ino}] = names[i]
+	}
+	if len(want) != len(names) {
+		fmt.Fprintf(os.Stderr, "want %d distinct identities, have %d\n", len(names), len(want))
+		os.Exit(5)
+	}
+	// Descriptors of the child's own at the numbers the launcher's had: the poller's epoll instance and eventfd, and
+	// a pipe it watches.
+	r, w, err := os.Pipe()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "child pipe: %v\n", err)
+		os.Exit(5)
+	}
+	defer r.Close()
+	defer w.Close()
+	for n := 3; n < 256; n++ {
+		var st unix.Stat_t
+		if unix.Fstat(n, &st) != nil {
+			continue
+		}
+		if name, ok := want[[2]uint64{uint64(st.Dev), uint64(st.Ino)}]; ok {
+			fmt.Printf("holds %d: the launcher's %s\n", n, name)
 		}
 	}
 	os.Exit(0)
 }
 
+// scopeCloexecIDs is the "device:inode" of each file, joined by commas, for scopeCloexecChild.
+func scopeCloexecIDs(files ...*os.File) (string, error) {
+	var ids []string
+	for _, f := range files {
+		var st unix.Stat_t
+		if err := unix.Fstat(int(f.Fd()), &st); err != nil {
+			return "", err
+		}
+		ids = append(ids, fmt.Sprintf("%d:%d", uint64(st.Dev), uint64(st.Ino)))
+	}
+	return strings.Join(ids, ","), nil
+}
+
 // The launcher's three inherited descriptors (the request and readiness FIFOs, and the interrupt channel's socket) are
 // marked close-on-exec as they are adopted: a process the launcher starts afterwards holds none of them, so none can
-// write the channel or the handshake.
+// write the channel or the handshake. The test names them by what they are (the files it made and passed), not by the
+// numbers 3, 4 and 5, which the child's own descriptors take once they are free.
 func TestScopeLauncherDescriptorsAreCloseOnExec(t *testing.T) {
 	r1, w1, err := os.Pipe()
 	if err != nil {
@@ -136,8 +183,12 @@ func TestScopeLauncherDescriptorsAreCloseOnExec(t *testing.T) {
 	mine, theirs := os.NewFile(uintptr(pair[0]), "mine"), os.NewFile(uintptr(pair[1]), "theirs")
 	defer mine.Close()
 	defer theirs.Close()
+	ids, err := scopeCloexecIDs(r1, r2, theirs)
+	if err != nil {
+		t.Fatal(err)
+	}
 	cmd := exec.Command(os.Args[0])
-	cmd.Env = append(os.Environ(), scopeCloexecHelperEnv+"=1")
+	cmd.Env = append(os.Environ(), scopeCloexecHelperEnv+"=1", scopeCloexecIDsEnv+"="+ids)
 	cmd.ExtraFiles = []*os.File{r1, r2, theirs}
 	out, err := cmd.CombinedOutput()
 	if err != nil {

@@ -328,8 +328,9 @@ jobs:
       # Every program through the verifier, and the decision plane: each mode's hook set loads and
       # attaches, and the step A hooks refuse inside a scratch cgroup and allow outside it. A mode this kernel lacks is
       # a skipped subtest, and a test whose subtests all skip passes, so the second loop names a cell of fmod_ret mode,
-      # the plane's mode where bpf is no active LSM, which is what this runner's kernel is expected to be: a run in
-      # which no fmod_ret cell passed is the plane not running on this kernel, and the log then shows why.
+      # which these two tests load and decide in whatever the kernel's LSM list and preemption (a load is not gated by
+      # either; ADR 0024 (16) rules the mode out of a run, not out of the verifier): a run in which no fmod_ret cell
+      # passed is the plane not loading on this kernel, and the log then shows why.
       - name: every program passes the verifier on its own, and the decision plane loads and decides, as root
         shell: bash
         working-directory: internal/bpf
@@ -366,29 +367,47 @@ jobs:
       # the three packages that hold them, each suite bound to 20 minutes so that a hang names its suite. The script
       # ends with `tego doctor --require cgroup` as root, so doctor's own answer for this kernel is in the log too.
       # The loops require each test to have passed, not skipped (a skipped test is not a pass), and each plane test to
-      # have passed in fmod_ret mode, since a mode this kernel lacks skips its subtest and the test around it passes.
-      # Unless doctor rules fmod_ret mode out before any load because this kernel preempts kernel code (ADR 0024 (16)):
-      # this runner's arm64 7.0 kernel is built SMP PREEMPT, and bpf is in no LSM list, so then no plane mode runs here.
-      # The plane tests are then left out, doctor's refusal must name the preemption, and its fanotify fallback must be
-      # what tier cgroup selects; the step runs no waiver (TEGO_TEST_PLANE_PREEMPT), since under full preemption a run
-      # in fmod_ret mode meets skipped programs, whose hooks proceed undecided. A freeze would fail this runner's job,
-      # not a host.
+      # have passed in the plane mode doctor selects, since a mode this kernel lacks skips its subtest and the test
+      # around it passes: fmod_ret mode, unless doctor rules it out before any load because this kernel preempts kernel
+      # code (ADR 0024 (16)). This runner's arm64 7.0 kernel is built SMP PREEMPT, so fmod_ret mode is ruled out there
+      # and doctor's refusal must name the preemption; the step runs no waiver (TEGO_TEST_PLANE_PREEMPT), since under
+      # full preemption a run in fmod_ret mode meets skipped programs, whose hooks proceed undecided. What tier cgroup
+      # selects then follows the runner image's LSM list, which has changed under this job (ADR 0024 (16) note
+      # 2026-11-26): with bpf in no LSM list no plane mode runs here, so the plane tests are left out and doctor must
+      # select the fanotify fallback; with bpf active (the image's 7.0.0-1020-azure kernel) doctor selects lsm mode,
+      # which LSM programs' exemption from the trampoline's recursion check keeps decided under preemption, and each
+      # plane test must pass its lsm cell. Anything else doctor selects fails the step. A freeze would fail this
+      # runner's job, not a host.
       - name: the freeze, arming, process-start, doctor, plane and stress tests, as root through sudo
         id: arm64root
         shell: bash
         timeout-minutes: 60
         run: |
           plane_tests='TestPlaneRunEndToEnd TestPlaneRunNamesTrueUnderRenamesAndMountMoves TestPlaneSeqcountStress'
+          plane_cell=fmod_ret
           sudo ./bin/tego doctor --json | tee "$RUNNER_TEMP/doctor.json" >/dev/null
+          selected=$(jq -r .plane.selected "$RUNNER_TEMP/doctor.json")
           fmod=$(jq -c '.plane.modes[] | select(.mode == "fmod_ret") | {ok, tested, detail}' "$RUNNER_TEMP/doctor.json")
           echo "doctor's fmod_ret line: $fmod"
           if jq -e '.plane.modes[] | select(.mode == "fmod_ret") | (.tested == false and (.detail | test("preempts kernel code|preemption model is not proven")))' \
               "$RUNNER_TEMP/doctor.json" >/dev/null; then
-            jq -e '.plane.selected == "fanotify"' "$RUNNER_TEMP/doctor.json" >/dev/null ||
-              { echo "::error::doctor ruled fmod_ret mode out on this preemptive kernel but selects $(jq -r .plane.selected "$RUNNER_TEMP/doctor.json")"; exit 1; }
-            echo "::notice::fmod_ret mode is ruled out on this kernel (it preempts kernel code); the plane tests are left out"
-            echo "fmod_ruled_out=yes" >>"$GITHUB_OUTPUT"
-            plane_tests=''
+            case "$selected" in
+            fanotify)
+              echo "::notice::fmod_ret mode is ruled out on this kernel (it preempts kernel code) and no other plane mode passed; the plane tests are left out"
+              echo "plane_tests_left_out=yes" >>"$GITHUB_OUTPUT"
+              plane_tests=''
+              ;;
+            lsm)
+              jq -e '.plane.modes[] | select(.mode == "lsm") | (.ok == true and .tested == true)' "$RUNNER_TEMP/doctor.json" >/dev/null ||
+                { echo "::error::doctor selects lsm mode but its lsm line is not an ok, tested one"; exit 1; }
+              echo "::notice::fmod_ret mode is ruled out on this kernel (it preempts kernel code); the plane tests run in lsm mode, which bpf in the LSM list offers"
+              plane_cell=lsm
+              ;;
+            *)
+              echo "::error::doctor ruled fmod_ret mode out on this preemptive kernel but selects $selected, neither lsm nor the fanotify fallback"
+              exit 1
+              ;;
+            esac
           fi
           run='TestStartIdentityOutlivesPidReuse|TestStageExecUnderGCNeverWaitsOnItsOwnGroup|TestKilledListenerReleasesTheMount|TestUnmarkAllFlushesOnlyTheMountMarks|TestStoppedListenerHoldsItsMountUntilContinued|TestTier2ArmsAfterTheStageExec|TestIntegrationAsRoot'
           for t in $plane_tests; do run="$run|$t"; done
@@ -401,12 +420,12 @@ jobs:
             grep -q -- "--- PASS: $t " "$logs"/*.console || { echo "::error::$t did not pass on arm64"; exit 1; }
           done
           for t in $plane_tests; do
-            grep -q -- "--- PASS: $t/fmod_ret " "$logs"/*.console ||
-              { echo "::error::$t passed no fmod_ret cell on arm64: the plane does not run here (doctor's report is above)"; exit 1; }
+            grep -q -- "--- PASS: $t/$plane_cell " "$logs"/*.console ||
+              { echo "::error::$t passed no $plane_cell cell on arm64: the plane does not run here (doctor's report is above)"; exit 1; }
           done
           [ -z "$plane_tests" ] || grep -h -- 'SEQCOUNT-STRESS' "$logs"/*.console
-      # Where the step above left the plane tests out, the directory walk's stress cell runs here in fmod_ret mode under
-      # the test builds' waiver (TEGO_TEST_PLANE_PREEMPT=waive), and must pass: TestPlaneSeqcountStress is the one run
+      # Where the step above left the plane tests out (no plane mode runs on this kernel), the directory walk's stress
+      # cell runs here in fmod_ret mode under the test builds' waiver (TEGO_TEST_PLANE_PREEMPT=waive), and must pass: TestPlaneSeqcountStress is the one run
       # of the plane's walk, which LSM mode uses too, on a CPU that reorders loads. Under this
       # kernel's full preemption the trampoline skips plane programs, whose calls go on undecided (ADR 0024 (16)), so
       # under the waiver the cell measures the walk and does not hold its wrong allows, which its SEQCOUNT-STRESS line
@@ -417,7 +436,7 @@ jobs:
       # because it is in both builds: the plain build holds no TestPlaneSeqcountStress, and root-suites' skip gate fails
       # a build whose stream holds no result at all.
       - name: the directory walk's stress cell in fmod_ret mode under the test waiver, as root through sudo
-        if: ${{ !cancelled() && steps.arm64root.outputs.fmod_ruled_out == 'yes' }}
+        if: ${{ !cancelled() && steps.arm64root.outputs.plane_tests_left_out == 'yes' }}
         shell: bash
         timeout-minutes: 45
         run: |
