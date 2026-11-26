@@ -16,6 +16,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/runtime/capture/uprobe"
 	"github.com/attention-span-ai/tego/internal/runtime/derive"
 	"github.com/attention-span-ai/tego/internal/runtime/derive/anthropic"
+	"github.com/attention-span-ai/tego/internal/runtime/derive/openai"
 	"github.com/attention-span-ai/tego/internal/runtime/enforce"
 	"github.com/attention-span-ai/tego/internal/runtime/source"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
@@ -223,7 +224,11 @@ func hostsFor(models []agent.ModelEndpoint, provider string) []string {
 // Both readings come from here, so the binary can never claim a parser it does not link or hide one
 // it does. hosts are the contract's declared endpoints for a parser that claims hosts (R25).
 func linkedParsers(models []agent.ModelEndpoint) []derive.Parser {
-	return []derive.Parser{anthropic.New(hostsFor(models, anthropic.Provider)...)}
+	return []derive.Parser{
+		anthropic.New(hostsFor(models, anthropic.Provider)...),
+		// OpenAI-style answers are read only for a models[] entry that declares provider openai (ADR 0037, amended 2026-11-26).
+		openai.New(hostsFor(models, openai.Provider)...),
+	}
 }
 
 // parserNames is linkedParsers' providers, the form `version` prints and run_start records

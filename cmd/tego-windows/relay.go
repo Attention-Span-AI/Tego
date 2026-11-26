@@ -171,7 +171,7 @@ func portTakenWords(port int, owner string) string {
 // networking, where a Linux listener on 127.0.0.1:<port> (the dashboard's own) reserves the port on Windows for
 // every address, so [::1]:<port> cannot be bound while the dashboard runs (docs/adr/0123, "A browser on Windows").
 func portReservedWords(port int) string {
-	return fmt.Sprintf("tego: port %d on this computer is reserved though no Windows program listens there, as WSL's mirrored networking does for the dashboard's own port, so the dashboard cannot open in your browser; it needs WSL's default networking (networkingMode=nat in %%USERPROFILE%%\\.wslconfig, then wsl --shutdown), and meanwhile the terminal shows your sessions: run: tego session list", port)
+	return fmt.Sprintf("tego: port %d on this computer is reserved though no Windows program listens there, as WSL's mirrored networking does for the dashboard's own port, so the dashboard cannot open in your browser; %s", port, mirroredAdvice)
 }
 
 func relayFailedWords(cause string) string {

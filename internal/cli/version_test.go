@@ -74,7 +74,7 @@ func TestVersionText(t *testing.T) {
 	}
 	// parsers was asserted as "none" here while the binary linked the anthropic parser and stamped
 	// anthropic-2026-09-1 on every ssl_response: BuildInfo.Parsers was hard-coded empty (R30).
-	if lines[0] != "tego=v0.1.0" || lines[6] != "record_readers=1" || lines[8] != "parsers=anthropic" || lines[9] != "control_sha256=none" {
+	if lines[0] != "tego=v0.1.0" || lines[6] != "record_readers=1" || lines[8] != "parsers=anthropic,openai" || lines[9] != "control_sha256=none" {
 		t.Fatalf("%q", lines)
 	}
 }

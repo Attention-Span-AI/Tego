@@ -22,14 +22,14 @@ func Words(err error) string {
 	switch {
 	case err == nil:
 		return ""
+	case contracts.IsCheckDisk(err): // before the stuck holders: every holder stuck on the disk is the disk's words
+		return diskWords
 	case contracts.IsHelpersStuck(err):
 		return "earlier checks are stuck on a location and hold every checker slot, so no new check could start"
 	case contracts.IsCheckTooSlow(err):
 		return "the machine is very busy: the checker was too slow to finish"
 	case contracts.IsCheckWorking(err):
 		return "the check was still working when its time ran out"
-	case contracts.IsCheckDisk(err):
-		return diskWords
 	case contracts.IsCheckUnclear(err):
 		return "the check did not finish in time, and Tego cannot tell whether a location is stuck or the machine is very busy"
 	case contracts.IsStartFailure(err):
@@ -44,6 +44,9 @@ func Words(err error) string {
 		var nf interface{ NotFinishedWords() string }
 		if errors.As(err, &nf) {
 			return WordsOf(nf.NotFinishedWords())
+		}
+		if words := WordsOf(err.Error()); words != "" { // the cause crossed the helper pipe as text
+			return words
 		}
 		return "the contract check did not finish in time"
 	case errors.As(err, &remote):

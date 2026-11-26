@@ -206,6 +206,20 @@ func (m *Manager) SetStreamActivity(fn func(monoNS uint64)) {
 	}
 }
 
+// SetLimitGate closes the run's model endpoints to new requests once a budget has ended it (LimitGate,
+// runtime.LimitGateSetter). It must be called before Start, which the runtime does when a budget can trip; once the
+// manager has started or closed it does nothing, so a handler never reads a gate being replaced.
+func (m *Manager) SetLimitGate(g func() (rule string, reason record.Reason, closed bool)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.started || m.closed {
+		return
+	}
+	for _, l := range m.listeners {
+		l.opts.LimitGate = g
+	}
+}
+
 // HoldingRequest reports that some listener holds an agent's request inside Tego: read, not yet sent on, its upstream
 // connection not yet ready (runtime.RequestHolder, limits.WithHeld). While it does, the run's stall check does not
 // count the wait as the agent's silence, since Tego's own approval, route, credential, connect and TLS work is what the

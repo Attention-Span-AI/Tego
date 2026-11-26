@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/attention-span-ai/tego/internal/platform/whereami"
 	"github.com/attention-span-ai/tego/internal/shellword"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
@@ -169,7 +170,8 @@ func hierarchyFix(mount string) string {
 		"systemd.unified_cgroup_hierarchy=1)", mount)
 }
 
-// delegationFix is the remedy for an agreeing mount with no writable user@<uid>.service in it.
+// delegationFix is the remedy for an agreeing mount with no writable user@<uid>.service in it, on a host or on WSL; in a
+// container (internal/platform/whereami) the refusal carries the container's cure instead.
 const delegationFix = "enable systemd user delegation (Delegate=cpu memory pids in " +
 	"/etc/systemd/system/user@.service.d/delegate.conf, then systemctl daemon-reload and re-login)"
 
@@ -325,7 +327,7 @@ func firstWritable(uid int, candidates []string) (*FS, error) {
 		}
 		return NewAt(root)
 	}
-	return nil, refuse(delegationFix, []error{ErrNotDelegated}, "%v for uid %d (tried %s): %v",
+	return nil, refuse(whereami.CgroupCure(delegationFix), []error{ErrNotDelegated}, "%v for uid %d (tried %s): %v",
 		ErrNotDelegated, uid, strings.Join(candidates, ", "), last)
 }
 

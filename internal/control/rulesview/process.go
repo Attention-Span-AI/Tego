@@ -73,7 +73,7 @@ func viewCallScanned(ctx context.Context, operation, root, run, key, anchor stri
 	}
 	var reply viewReply
 	var encoded []byte
-	err := pathcheck.Call(ctx, "control.view", req, &encoded)
+	err := pathcheck.Call(pathcheck.WithLocations(ctx, root, req.Anchor), "control.view", req, &encoded)
 	if err != nil {
 		return reply, err
 	}

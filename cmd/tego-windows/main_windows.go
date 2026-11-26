@@ -77,6 +77,12 @@ func linuxCommand(args []string, interrupts <-chan os.Signal) int {
 		return code
 	}
 	defer ready.close()
+	if opensDashboard(args) && linuxMirrored() {
+		// Said before the dashboard is started, whatever time Linux took to start: with mirrored networking the
+		// dashboard's own port is reserved on Windows for Tego's Linux, so there is no browser connection to make.
+		fmt.Fprintln(os.Stderr, mirroredWords())
+		return 125
+	}
 	return child(systemProgram("wsl.exe"), argv)
 }
 

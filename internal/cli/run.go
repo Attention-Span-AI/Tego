@@ -855,7 +855,7 @@ func compileForRun(ctx context.Context, o runOptions, m *config.Machine, stderr 
 	_ = agent.WriteDiagnostics(stderr, runNotices(agent.ForTier(ds, ""), o.verbose))
 	if err != nil {
 		if !agent.HasErrors(ds) {
-			message(stderr, label, 0, 0, err.Error(), loadCode(err))
+			message(stderr, label, 0, 0, missingFileWhy(err, label), loadCode(err))
 		}
 		return nil, nil, nil, identity.ExitLauncher
 	}
@@ -909,7 +909,7 @@ func loadRunContract(o runOptions, m *config.Machine, stderr io.Writer) (*loaded
 	_ = agent.WriteDiagnostics(stderr, runNotices(ds, o.verbose))
 	if err != nil {
 		if !agent.HasErrors(ds) {
-			message(stderr, ref.label(), 0, 0, err.Error(), loadCode(err))
+			message(stderr, ref.label(), 0, 0, missingFileWhy(err, ref.label()), loadCode(err))
 		}
 		return nil, identity.ExitLauncher
 	}
@@ -1167,6 +1167,7 @@ func writeRunSummary(stderr io.Writer, res tegoruntime.Result) {
 		what = "run stopped"
 	}
 	message(stderr, "", 0, 0, fmt.Sprintf("tego: %s (%s)", what, res.RunID), res.Reason)
+	_, _ = io.WriteString(stderr, uncountedLines(res.Uncounted))
 }
 
 // endedHow is how a run that did not simply exit ended, in a few words ("out of memory", "stopped"); "" for a run

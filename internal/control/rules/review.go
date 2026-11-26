@@ -54,8 +54,11 @@ func (s *Service) reviewOK(got string, r reviewedWrite) bool {
 	return got != "" && want != "" && hmac.Equal([]byte(got), []byte(want))
 }
 
+// openDirectory opens a reviewed folder with no link followed, a variable so a test can say it could not.
+var openDirectory = registry.OpenDirectoryContext
+
 func directoryIdentityContext(ctx context.Context, path string, create bool) (registry.DirectoryIdentity, error) {
-	d, err := registry.OpenDirectoryContext(ctx, filepath.Dir(path), create)
+	d, err := openDirectory(ctx, filepath.Dir(path), create)
 	if err != nil {
 		return registry.DirectoryIdentity{}, err
 	}

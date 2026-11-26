@@ -72,6 +72,7 @@ VMLINUZ="$KDIR/vmlinuz"
 mkdir -p "$CACHE/debs" "$KDIR"
 : >"$CACHE/debs/linux-image-unsigned-${KVER}_1_amd64.deb"
 log() { :; }
+# shellcheck disable=SC2329 # the extracted functions call it
 env_fail() { echo "env_fail: $*" >&2; exit 97; }
 # shellcheck source=/dev/null
 . "$tmp/fetch_kernel.sh"
@@ -192,6 +193,30 @@ end_case our-bound 'x' 124 "qemu-system-x86_64: terminating on signal 15 from pi
 end_case our-escalation 'x' 137 "" 1510 124 timeout 0
 end_case uutils-bound 'x' 125 "" 1500 124 timeout 0
 end_case panic $'Kernel panic - not syncing: Attempted to kill init!\n' 0 "" 5 125 no-report 1
+# An initramfs that did not unpack is an environment failure (97) with its reason, whatever the guest then reported: its
+# command was "not found" (127) for lack of the file, which is no test result.
+nonce_line=$'TEGO-VM-EXIT:c0ffee:127\n'
+unpack=$'[    2.809640] Initramfs unpacking failed: write error\n/.vm/cmd: 2: exec: /vm/test_conformance.test: not found\n'
+# shellcheck disable=SC2034 # read by the extracted guest_end
+MEM=1536M staged_mb=786 EXIT_ENV=97
+# shellcheck disable=SC2329 # guest_end calls it
+env_fail() { echo "kvm-run: FAIL: $*" >&2; status env; }
+end_case unpack-failed "$unpack$nonce_line" 0 "" 5 97 env 0
+grep -q 'Initramfs unpacking failed) in 1536M RAM, with 786 MB staged' "$tmp/end-unpack-failed.err" || fail "the unpack failure's line lacks its reason: $(cat "$tmp/end-unpack-failed.err")"
+[ "$(grep -c 'did not unpack' "$tmp/end-unpack-failed.err")" = 1 ] || fail "the unpack failure is not one line: $(cat "$tmp/end-unpack-failed.err")"
+# a test that prints the words is not the kernel
+end_case unpack-words-in-test $'    foo_test.go:1: Initramfs unpacking failed\nTEGO-VM-EXIT:c0ffee:1\n' 0 "" 5 1 "guest 1" 0
+# (public issue 91: held labels on fedora-7.0) the console cut off in the middle of the dmesg that follows the marker. The marker is
+# printed before the dmesg, so a cut dmesg still carries it; a console with neither the marker nor a result stays lost.
+end_case cut-dmesg-after-marker $'--- PASS: TestX\nTEGO-VM-EXIT:c0ffee:0\n---- tego-vm: dmesg ----\n[    1.693] SELinux:  Class io_uring not defin' 0 "" 51 0 "guest 0" 0
+end_case cut-dmesg-no-marker $'--- PASS: TestX\n---- tego-vm: dmesg ----\n[    1.693] SELinux:  Class io_uring not defin' 0 "" 51 125 no-report 1
+init_marker=$(grep -n 'TEGO-VM-EXIT' "$here/guest-init.sh" | head -1 | cut -d: -f1)
+# shellcheck disable=SC2016 # guest-init.sh's own text
+init_dmesg=$(grep -n '^	\$bb dmesg$' "$here/guest-init.sh" | head -1 | cut -d: -f1)
+{ [ -n "$init_marker" ] && [ -n "$init_dmesg" ] && [ "$init_marker" -lt "$init_dmesg" ]; } ||
+	fail "guest-init.sh prints its exit marker (line ${init_marker:-none}) after the dmesg (line ${init_dmesg:-none})"
+# shellcheck source=/dev/null
+. <(func env_fail) # the real one again, for the cases below
 end_case qemu-failed '' 1 "qemu-system-x86_64: failed to initialize kvm" 0 125 no-report 1
 grep -q 'signal 9' "$tmp/end-sigkill.err" || fail "the GUEST-LOST line does not name the signal: $(cat "$tmp/end-sigkill.err")"
 

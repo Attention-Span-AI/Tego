@@ -31,8 +31,10 @@ cosign verifies the checksums file's signature; gh verifies each asset's build p
 Both require this repository's release workflow at the selected tag; without either the installer says
 that only the checksum was checked, and how to get cosign
 ([Sigstore's install page](https://docs.sigstore.dev/cosign/system_config/installation/)) or log `gh` in (`gh auth login`). It runs the new `tego` before it replaces anything, and it needs no root. It ends
-with the next steps: the `export PATH` line if `~/.local/bin` is not on your `PATH` yet, over SSH the
-`systemd-run --user --scope bash` line (automatic entry is built, with SSH validation owed in a guest), a line that
+with the next steps: the `export PATH` line if `~/.local/bin` is not on your `PATH` yet, a line about your user service
+manager only where it can see the matter (no user manager for this login, or a manager with no message bus on Debian
+or Ubuntu, where the dashboard cannot start and the line gives `sudo apt install dbus-user-session`; it says nothing
+about opening a shell in the manager first, since `tego run`, `watch` and `test` enter their own scope), a line that
 a service account needs its own copy (below), then one next command: `tego start` when the installed `tego` has it, else
 `tego setup`, else `tego doctor`. The installer does not change your `PATH`, so until you run that line, or log in again, the shell
 answers `tego: command not found`; for that reason the next command names `tego` by its full path while the folder is not
@@ -254,7 +256,14 @@ that every version, architecture or PC has been tested. See the exact tested-on 
 The banner identifies Tego's Linux, inside Windows, and says how to return. Projects live there. To copy your
 project, open File Explorer and paste `\\wsl$\tego\home\tego` in its address bar, then drag the project folder in.
 Use `~/my-app` in the guide, or paste the Explorer path itself, with or without its surrounding quotes.
-A Windows drive path such as `C:\code\app` gets the same copy instructions.
+A Windows drive path such as `C:\code\app` gets the same copy instructions. So does a rules file given as a Windows
+path (`C:\work\rules.yaml`, `/mnt/c/...`, or a `\\wsl$` or `\\wsl.localhost` path): Tego's Linux mounts no Windows drive,
+so `tego rules check`, `tego run` and the other commands that take a rules file refuse it with the same exit code and
+`[path-missing]` as before, and the line adds where to copy the file and the Linux path to type. For Tego's own
+`\\wsl$\tego\...` path it names the Linux path (`/home/tego/...`) that the same file has. This is said only in Tego's
+own distribution. If you installed Tego inside another WSL distribution, such as an Ubuntu, a Windows path is told to be
+no Linux path there, with where the file is if the drive is mounted (`/mnt/c/...`), and nothing about `\\wsl$` or
+`/home/tego`.
 
 ### Dashboard connection
 
@@ -266,16 +275,26 @@ yours and that it reaches your dashboard. It admits only programs running as you
 connections from other Windows accounts are refused, and programs inside WSL cannot reach it. Its log is
 `%LOCALAPPDATA%\Tego\relay.log`.
 
-- `tego dashboard --stop` ends the relay. It also ends when you sign out of Windows, when Tego's Linux stops, and
-  before the installer updates or removes Tego. The next `tego dashboard` starts a new one.
-- While the relay runs it keeps Tego's Linux, and so the dashboard, running, also after you close the window.
+- `tego dashboard --stop` ends the relay and, when no run is going, the dashboard in Tego's Linux too, so that
+  Tego's Linux can stop by itself (below). With a run going it ends only the relay, leaves the dashboard and Tego's
+  Linux up, and says how many runs keep it up: Windows stopping Tego's Linux would end them. Run it again when they
+  have ended. The relay also ends when you sign out of Windows, when Tego's Linux stops, and before the installer
+  updates or removes Tego. The next `tego dashboard` starts a new dashboard and a new relay.
+- While the relay runs it keeps Tego's Linux, and so the dashboard, running, also after you close the window. The
+  dashboard itself, started by `tego dashboard`, also keeps Tego's Linux running until it is stopped (measured for
+  `tego dashboard` only; `tego start` starts the same dashboard unit the same way, and was not measured):
+  `tego dashboard --stop` is what lets Tego's Linux stop again.
 - In a shell inside Tego's Linux, `tego dashboard` starts the dashboard but cannot open a Windows browser: type
   `exit`, then run `tego dashboard` in Windows.
 - `http://127.0.0.1:8484` does not work from Windows: WSL's own forwarding answers there, and the dashboard refuses
   connections it cannot trace to your Linux user. No Host, peer, token, cookie or governed check is relaxed.
 - WSL **mirrored networking** (`networkingMode=mirrored` in `.wslconfig`) is not supported for the browser
   dashboard: WSL then reserves the dashboard's port on Windows, so the relay cannot listen there. `tego dashboard`
-  says so and opens nothing; the terminal commands still work.
+  says so and opens nothing; the terminal commands still work. It asks WSL for its networking mode as soon as Tego's
+  Linux is up, before it starts the dashboard, so it says so at once however long Linux took to start. When the
+  dashboard does not start for another reason, the message names the command that reads its log from Windows,
+  `tego shell -c "tail -n 40 ~/.tego/dashboard.log"`, and shows the log's last lines (its sign-in link is hidden).
+  That message is covered by a unit test and has not yet been seen on a Windows PC.
 - Answering a held request with Allow once in the browser works on the ordinary build where WSL shows two of its marks:
   in the Windows guest the held write continued within seconds of the click, with no "unauthorized peer". A guest on
   a build from before the rule was switched on, or a distribution that shows one mark, still refuses it ("Not done:
@@ -319,6 +338,24 @@ Keep a Windows `tego` command or Linux shell attached while work runs. In the me
 `wsl.exe` clients, WSL stopped a live detached supervised user unit within **23.21 seconds**; its receipt ended
 by signal 15 after 22.4 seconds. Linger does not keep the distribution alive. Unattended lifetime is an open limit.
 
+The dashboard is the exception. `tego dashboard` starts it through a connection that stays open in the
+Linux session that started it, and WSL does not stop Tego's Linux while that connection lives, however many Windows
+commands have ended. In a Windows 11 guest (WSL 3.0.5.0), with a plain command Tego's Linux showed Stopped about 12
+seconds after it; after `tego dashboard` and the relay's end, 75 seconds later it was still Running; and it showed
+Stopped 15 seconds after that one connection alone was ended, with the dashboard's unit left running (polled every 3
+seconds). `tego dashboard --stop` ends the relay and, with no run going, the dashboard, and Tego's Linux then showed
+Stopped within 15 seconds (15, 9 and 15 seconds in three runs) with no other `wsl.exe` client; a second
+`tego dashboard` started a new dashboard and a new relay. With a run going, `--stop` leaves the dashboard and Tego's
+Linux up (still Running 45 seconds later) and says how many runs keep it up. Run it again when they have ended. How long
+Tego's Linux stays up if you never type `--stop` was measured only up to 75 seconds; `wsl --terminate tego` stops it at
+once. What was measured was `tego dashboard`; `tego start` starts the same dashboard unit the same way, and was not
+measured.
+
+`--stop` counts the runs of your own Linux user that `tego session list` shows. A run it does not count (root's, another
+account's, one started with its own `--ledger`, a scheduled agent between two of its runs) no longer keeps Tego's Linux
+up after `--stop`: Windows can then stop Tego's Linux, which ends such a run. Keep a `tego` command or a Linux shell open
+while such work runs. `--stop` also refuses, and leaves everything up, when `TEGO_CONFIG` is set in Tego's Linux.
+
 To stop Tego's Linux, type `wsl --terminate tego` in Windows. Save your work first.
 
 To remove Tego, its projects and all run records, type `tego uninstall`. Enter means **no**. To explicitly consent
@@ -353,6 +390,11 @@ A later guest round (same build) opened the dashboard in Edge from PowerShell 5.
 relay, with one relay reused by all three, a second Windows account refused and no Linux connection reaching it. Defender real-time protection was on; the unsigned executable ran without a detected threat,
 prompt or block in that run. A cold native command returned silent exit 37 in 18.41 seconds. Binary stdin/status
 and real-console Ctrl-C were checked from cmd.exe and both PowerShell editions.
+A guest round of 2026-11-26 (same Windows build, WSL 3.0.5.0, release files built from this tree) measured
+`tego dashboard --stop` as described under Repair and removal, ran a rules file given as `C:\...`, `C:/...` and
+`\\wsl$` and `\\wsl.localhost` paths (each refused with the words above), and ran `tego dashboard` three times right after
+`wsl --shutdown` with `networkingMode=mirrored`: each answered the mirrored message after 36 to 49 seconds, and none
+started the dashboard.
 
 **The ordinary build, end to end (2026-11-19).** On the same guest (WSL 3.0.5.0, Windows PowerShell 5.1, Edge 157,
 Defender real-time protection on), the ordinary release build, not a test build, installed from release assets with the
@@ -426,7 +468,8 @@ docker run --rm --init --cgroupns=private --stop-timeout 40 \
 
 The run prints a line such as `tego run: r-... ended (exited with code 0) · tier landlock · refused 1 ... · chain
 verified`: the agent wrote the one file its contract allows and was refused the other. To read and check the record from
-a fresh container, give it the same two volumes and the image's user (copy the run name from that line):
+a fresh container, give it the same two volumes and the image's user, 10001:10001 for this published image (copy the run
+name from that line):
 
 ```sh
 run=r-REPLACE_WITH_THE_RUN_NAME
@@ -437,7 +480,9 @@ docker run --rm --user 10001:10001 --cap-drop ALL --security-opt no-new-privileg
 
 It prints `verified 16 lines, run_start to run_end, ... anchored in /home/tego/.tego/chain.log` and exits 0. Replace
 `events "$run" --verify` with `receipt "$run"` for a plain-words account of what the run wrote and was refused. A
-run started without the `tego-state` volume has no anchor outside its own container to check against.
+run started without the `tego-state` volume has no anchor outside its own container to check against. An image you
+built yourself has the uid and gid you built it with, not 10001, and its line is in
+[the container guide](user/container.md#the-ledger-and-the-chain-anchor).
 
 This flow was run on Debian 13 with Docker 26.1.5 and ended at tier landlock. Inside a container Tego may be unable to
 read the kernel's security-module list (Docker's default seccomp profile refuses the system call, and the file may not be
@@ -532,6 +577,12 @@ user's primary gid by id is allowed, and the folder must still be owned by that 
 local members always refuse. This fallback cannot rule out an unseen account sharing that gid. Non-sticky
 group-writable folders with an access ACL or unavailable ACL metadata also refuse: a named ACL writer need
 not belong to that group. The executable itself must never be group/world writable.
+The installer makes the folders it creates on the way to its prefix (`~/.local` and `~/.local/bin` on a new account)
+without group or other write (mode 755 at most: Ubuntu's login `umask` of 0002 no longer makes them 775, and a stricter
+`umask` is kept), and leaves a folder that already exists as it is.
+When the check does refuse, one message names every such folder and gives one `chmod g-w` for all of them; no
+`sudo` line is shown until they are fixed. The documented `sudo "$(command -v tego)" ...` form is not affected by this
+hint: it ran on Ubuntu 24.04 with both folders still group-writable.
 In the account's own scope shell the lines stay `tego ...`, so `~/.local/bin` must be on that shell's `PATH`
 (measured on AlmaLinux 9.8: it is, with the account's home made by `useradd --create-home`).
 [setup.md](user/setup.md) ("A user with no user manager") gives the whole order.

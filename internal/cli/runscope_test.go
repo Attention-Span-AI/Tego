@@ -320,7 +320,8 @@ func scopeProcessHelper(mode string) {
 		childMode := strings.TrimPrefix(mode, "proxy-")
 		_ = scopeWriteMarker(filepath.Join(os.Getenv("SCOPE_EXPECT_CWD"), "proxy"), []byte(fmt.Sprint(os.Getpid())))
 		scopeCommandFor = func(string, ...string) *proc.Cmd { return proc.Command(os.Args[0]) }
-		p := scopePlan{Runner: "/usr/bin/systemd-run", Binary: "/proc/self/exe", Env: append(os.Environ(), "TEGO_SCOPE_TEST_HELPER="+childMode), Request: scopeRequest{Argv: []string{"tego", "run", "$HOME", "", string([]byte{0xff})}, Env: []string{"EXACT=caller", "INVOCATION_ID=original", "SCOPE_EXPECT_CWD=" + os.Getenv("SCOPE_EXPECT_CWD")}}}
+		p := scopePlan{Runner: "/usr/bin/systemd-run", Binary: "/proc/self/exe", Env: append(os.Environ(), "TEGO_SCOPE_TEST_HELPER="+childMode), Request: scopeRequest{Argv: []string{"tego", "run", "$HOME", "", string([]byte{0xff})}, Env: []string{"EXACT=caller", "INVOCATION_ID=original", "SCOPE_EXPECT_CWD=" + os.Getenv("SCOPE_EXPECT_CWD"),
+			"SCOPE_INTERRUPT_WAIT=" + os.Getenv("SCOPE_INTERRUPT_WAIT"), "SCOPE_FIRST_REACHES_LAUNCHER=" + os.Getenv("SCOPE_FIRST_REACHES_LAUNCHER")}}}
 		code, err := executeUserScope(context.Background(), p, os.Stderr)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)

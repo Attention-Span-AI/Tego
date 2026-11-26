@@ -391,7 +391,24 @@ func (r *runner) shutdown(ctx context.Context) Result {
 		}
 	})
 	statusErr := r.writeRunStatus(released && !deferred && r.scopeConfirmedAbsent(), deferred)
-	return Result{RunID: string(r.id), ExitCode: code, Reason: string(reason), RecordErr: recordErr, StatusErr: statusErr}
+	res := Result{RunID: string(r.id), ExitCode: code, Reason: string(reason), RecordErr: recordErr, StatusErr: statusErr}
+	if reason == identity.ReasonError {
+		res.Uncounted = r.uncountedEnd()
+	}
+	return res
+}
+
+// uncountedEnd is the spend a budget ended the run for, when the run's end is that: the first report captureUnmetered
+// made, if the detail it wrote is the detail the run ended with. An end another worker decided first (a ledger failure)
+// wrote its own detail, and carries nothing.
+func (r *runner) uncountedEnd() *Uncounted {
+	r.termMu.Lock()
+	defer r.termMu.Unlock()
+	if r.uncounted == nil || r.detail != r.uncountedDetail {
+		return nil
+	}
+	u := *r.uncounted
+	return &u
 }
 
 // stopPipeline ends the pipeline goroutine, whose context no worker's failure cancels (runPipeline).
@@ -588,6 +605,7 @@ func (r *runner) releaseKernelState(ctx context.Context, after func(released boo
 		}
 		r.runtimeDir = ""
 	}
+	r.removeClientDir()
 	r.closeRuntimeLock() // after the removal: no sweep meets the directory unlocked while it is still there
 	r.closeDeputy()
 	if r.child != nil {

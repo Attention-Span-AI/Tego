@@ -103,7 +103,7 @@ func builderPresetEnvironmentJourney(t *testing.T, destination string) {
 		t.Fatal("draft token restored assignments into another draft")
 	}
 	form := builderRenderedSaveForm(t, body)
-	w = post(f.s, "/rules/new", form, own, "", f.c)
+	w = postSave(t, f.s, "/rules/new", form, own, "", f.c)
 	if w.Code != http.StatusSeeOther {
 		t.Fatalf("preset Save: %d %s", w.Code, w.Body.String())
 	}

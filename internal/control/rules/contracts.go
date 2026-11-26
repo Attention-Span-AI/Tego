@@ -256,7 +256,7 @@ func resolvedPath(p string) string { return resolvedPathContext(context.Backgrou
 func resolvedPathContext(ctx context.Context, p string) string {
 	if !pathcheck.InHelper() {
 		var out string
-		if err := pathcheck.Call(ctx, "control.resolve", p, &out); err != nil {
+		if err := pathcheck.Call(pathcheck.WithLocations(ctx, p), "control.resolve", p, &out); err != nil {
 			return p
 		}
 		return out

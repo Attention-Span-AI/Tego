@@ -211,6 +211,10 @@ func startsServingApprovals(dir string) (serves, known bool) {
 	return false, false
 }
 
+// endedWords points a person at the run's record for what a run that ended, or is ending, did: its ask socket is gone
+// and no request of it can be shown or answered.
+func endedWords(runID string) string { return "tego events " + runID + " shows what it did" }
+
 // noApprovalsWords says why a live run serves no ask socket, in a sentence led by its id; none is true for the two runs
 // that hold nothing for an answer, a watch run (tego watch records only) and an enforced run whose start record says
 // its broker was not available because its contract has no ask rule. A run whose start record says it served approvals
@@ -225,7 +229,7 @@ func noApprovalsWords(runID, dir string) (words string, none bool) {
 	case known && !serves:
 		return runID + " takes no approvals: its contract has no ask rule", true
 	case known:
-		return runID + " takes approvals, but its ask socket is not there now, so nothing can be answered", false
+		return runID + " takes approvals, but its ask socket is not there now, so nothing can be answered: the run has ended or is ending (" + endedWords(runID) + ")", false
 	}
 	return runID + " has no ask socket now, and its start record does not say whether its contract has an ask rule", false
 }

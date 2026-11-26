@@ -76,6 +76,40 @@ var (
 		}
 	}}
 
+	// makeVenv is the virtual environment langgraph.yaml runs its agent from, `python3 -m venv .venv`: the exec entry
+	// ./.venv/ must exist, and so must the interpreter the command names. The stand-in is a copy of /bin/true.
+	makeVenv = setupStep{says: "python3 -m venv .venv", do: func(t *testing.T, m standIn) {
+		t.Helper()
+		mkdirs(t, filepath.Join(m.work, ".venv", "bin"))
+		stand, err := os.ReadFile("/bin/true")
+		if err != nil {
+			t.Skipf("no /bin/true to stand in for the virtual environment's interpreter: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(m.work, ".venv", "bin", "python"), stand, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}}
+	// mcpServerFile is the MCP server file langgraph.yaml's mcp: entry starts, a file of the project.
+	mcpServerFile = setupStep{says: "./mcp_server.py", do: func(t *testing.T, m standIn) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(m.work, "mcp_server.py"), []byte("# stand-in\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}}
+	// tegoBinary is the tego binary the relay's shim is, which langgraph.yaml's exec.allow line `... mcp relay *`
+	// names under ~/.local/bin, where the installer puts it.
+	tegoBinary = setupStep{says: "mcp relay *", do: func(t *testing.T, m standIn) {
+		t.Helper()
+		stand, err := os.ReadFile("/bin/true")
+		if err != nil {
+			t.Skipf("no /bin/true to stand in for tego: %v", err)
+		}
+		dir := filepath.Join(m.home, ".local", "bin")
+		mkdirs(t, dir)
+		if err := os.WriteFile(filepath.Join(dir, "tego"), stand, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}}
 	// makeConfigDir is the project's ./config, which retriever.yaml watches: a watched directory must exist.
 	makeConfigDir = setupStep{says: "a config/ directory", do: func(t *testing.T, m standIn) {
 		t.Helper()
@@ -122,6 +156,7 @@ var freshSetup = map[string][]setupStep{
 	"codex-chatgpt.yaml":           {codexChatGPTHome, codexFiles},
 	"codex.yaml":                   {codexFiles},
 	"custom-agent.yaml":            {installPrices},
+	"langgraph.yaml":               {makeVenv, installProfiles, mcpServerFile, tegoBinary},
 	"retriever.yaml":               {installProfiles, installPrices, makeConfigDir},
 }
 

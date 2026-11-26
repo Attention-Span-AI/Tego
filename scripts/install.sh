@@ -50,6 +50,62 @@ set -eu
 repo_owner="Attention-Span-AI"
 repo_name="Tego"
 
+# make_folder makes the folder $1 and any parent it lacks the way mkdir -p does, but a folder this makes is never group-
+# or other-writable, whatever the login umask: Ubuntu's is 0002, so a plain mkdir -p made ~/.local and ~/.local/bin mode
+# 775, and tego then withheld the sudo line it prints for the root tiers until both were chmod'ed (the check that
+# decides it, internal/selfbin, stays as strict as it is). The umask used is the caller's with group and other write
+# added, so a stricter one (0077) is kept. A folder that already exists is left exactly as it is, and nothing is said.
+# POSIX sh: the arithmetic reads the umask's leading 0 as octal, and printf is a builtin.
+make_folder() {
+	(
+		umask "$(printf '%04o' $(($(umask) | 022)))" || exit 1
+		mkdir -p "$1"
+	)
+}
+
+# session_notes prints the closing lines about this login's user service manager, for a person who just installed a tego
+# that opens its own user scope (so no line tells them to open a shell in the manager first, over SSH or anywhere: tego
+# run, watch and test enter the scope themselves, and start, setup and doctor say what they find). It says something
+# in two cases it can see cheaply and surely, with tego's own words (internal/cli/userbus.go; a Go test holds the two
+# together): this login has no user service manager, and a manager with no message bus (D-Bus) on a Debian or Ubuntu
+# with apt, where the dashboard cannot start. $1 is 1 when the installed tego has the dashboard check (it lists start).
+# Anything it cannot tell it leaves unsaid: systemd not the init, root, a bus address of another kind than a socket
+# path, another distribution family, no apt-get. The same facts as tego reads them: XDG_RUNTIME_DIR when it is an
+# absolute path, else /run/user/<uid>, is the manager's folder; its bus is <folder>/bus or the unix path
+# DBUS_SESSION_BUS_ADDRESS names. TEGO_TEST_SYSROOT is the root of /run/systemd/system and /etc/os-release for the tests.
+session_notes() {
+	[ -d "${TEGO_TEST_SYSROOT:-}/run/systemd/system" ] || return 0
+	uid=$(id -u 2>/dev/null) || return 0
+	{ [ -n "$uid" ] && [ "$uid" != 0 ]; } || return 0
+	case "${XDG_RUNTIME_DIR:-}" in
+		/*) rundir=$XDG_RUNTIME_DIR ;;
+		*) rundir="/run/user/${uid}" ;;
+	esac
+	if [ ! -d "$rundir" ]; then
+		echo ""
+		echo "this login has no user service manager (there is no ${rundir}), so Tego cannot open a user scope for a run from here; the step below says what to do."
+		return 0
+	fi
+	[ "$1" = 1 ] || return 0
+	bus="${rundir}/bus"
+	case "${DBUS_SESSION_BUS_ADDRESS:-}" in
+		"") ;;
+		unix:path=*)
+			bus=${DBUS_SESSION_BUS_ADDRESS#unix:path=}
+			bus=${bus%%,*}
+			;;
+		*) return 0 ;;
+	esac
+	[ ! -S "$bus" ] || return 0
+	command -v apt-get >/dev/null 2>&1 || return 0
+	sed -n -e 's/^ID=//p' -e 's/^ID_LIKE=//p' "${TEGO_TEST_SYSROOT:-}/etc/os-release" 2>/dev/null | sed "s/[\"']//g" |
+		grep -Eq '(^|[[:space:]])(debian|ubuntu)([[:space:]]|$)' || return 0
+	echo ""
+	echo "The dashboard cannot start: your user service manager has no message bus (D-Bus), and Tego's dashboard runs in it; Debian and Ubuntu cloud images leave out the package that gives it one."
+	echo "  sudo apt install dbus-user-session"
+	echo "then log out and log in again"
+}
+
 # mac_setup runs instead of the Linux install on macOS. Tego needs a Linux kernel, so on a Mac it lives in a Lima
 # VM: this checks the Mac, offers to install or upgrade Lima, to create or start the VM (whose own provisioning runs
 # this script inside it), and to add a `tego` command to the Mac that runs tego in the VM. Each step asks first, on
@@ -294,7 +350,7 @@ BEGIN { print compare(left, right) }'
 			ask "Add it?" && rc=0 || rc=$?
 		fi
 		if [ "$rc" = 0 ]; then
-			mkdir -p "$bin"
+			make_folder "$bin"
 			cat >"$shim" <<EOF
 #!/bin/sh
 # tego on a Mac, written by Tego's installer: runs tego inside Tego's Linux VM (the Lima instance "${vm}").
@@ -980,7 +1036,7 @@ main() {
 	prepare_release
 
 	# ---- install --------------------------------------------------------------------------------------------
-	mkdir -p "$prefix" || die "could not create install directory ${prefix}" 8
+	make_folder "$prefix" || die "could not create install directory ${prefix}" 8
 	# archives.formats is [binary] in .goreleaser.yaml: the verified download already is the executable, nothing
 	# to extract. Land it in $prefix under a temp name first so the final `mv` below is a same-filesystem rename.
 	tmp_bin="${prefix}/.tego.tmp.$$"
@@ -1037,10 +1093,10 @@ main() {
 	fi
 	echo "licence notices: ${base_url}/${tag}/tego_${version_no_v}_licenses.tar.gz"
 
-	# What comes next, short: the PATH block only when it is needed (with the line for this shell's profile), the
-	# scope line only over SSH (tier 1 needs a cgroup the user can place a process in, and an SSH login starts outside
-	# one; docs/INSTALL.md "Check the machine"), then the one next command in tego's own hint format (a line starting
-	# "next: ", the command on the line after it, indented two spaces).
+	# What comes next, short: the PATH block only when it is needed (with the line for this shell's profile), a line about
+	# the login's user service manager only when it can be seen to matter (session_notes: no manager, or no bus for the
+	# dashboard), then the one next command in tego's own hint format (a line starting "next: ", the command on the line
+	# after it, indented two spaces).
 	echo "Quickstart: https://github.com/${repo_owner}/${repo_name}/blob/main/docs/QUICKSTART.md"
 	# tego_cmd is how the next command names tego: by its bare name when this shell finds it there, and by the full path
 	# where it does not. The installer cannot change the PATH of the shell that started it, so a bare name printed right
@@ -1071,19 +1127,15 @@ main() {
 			esac
 			;;
 	esac
-	# A tego that opens a user scope itself makes a shell outside the user manager's cgroup no blocker: tego setup
-	# rehearses that entry from this shell and says whether it works; the manual line is the one fix when it does not
-	# (ADR 0142, amended 2026-11-19, round 4). An older tego needs the manual shell first.
+	# A tego that lists start (or, in an older build's words, a run that opens a user scope) enters a user scope by itself
+	# when its shell is outside the user manager's cgroup, so the installer no longer says to open one (it said
+	# `systemd-run --user --scope bash` to everyone over SSH, which is untrue of this version: Public issue 88). What it
+	# can see it says (session_notes); the rest is left to tego start and tego doctor, which explain. An older tego is told nothing.
 	installed_help=$("$installed" help -a </dev/null 2>/dev/null || :)
-	if [ -n "${SSH_CONNECTION:-}" ]; then
-		echo ""
-		if printf '%s\n' "$installed_help" | grep -Eq '^ {2,3}run .*opens a user scope'; then
-			echo "this shell is outside your user manager's cgroup: run, watch and test open a user scope for each run; the setup command below checks that this works from here, and if it does not, the one fix is a shell inside it:"
-			echo "  systemd-run --user --scope bash"
-		else
-			echo "over SSH, this release needs a shell in your user manager's cgroup before a run:"
-			echo "  systemd-run --user --scope bash"
-		fi
+	has_start=0
+	printf '%s\n' "$installed_help" | grep -Eq '^ {2,3}start ' && has_start=1
+	if [ "$has_start" = 1 ] || printf '%s\n' "$installed_help" | grep -Eq '^ {2,3}run .*opens a user scope'; then
+		session_notes "$has_start"
 	fi
 	# sudo replaces PATH with its own secure_path, which has no ~/.local/bin (and on AlmaLinux no /usr/local/bin):
 	# A bare Tego program name after sudo does not find this copy, and a copy in this home is closed to an account that cannot

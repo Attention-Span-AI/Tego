@@ -57,7 +57,7 @@ func TestOnlyAnOutsideAnswerPermits(t *testing.T) {
 			if refused := refuseSaveGoverned(&b); refused == row.Permits {
 				t.Errorf("refuseSaveGoverned refused = %v", refused)
 			}
-			if refused := refuseSetup(&b); !row.Permits && !refused {
+			if refused := refuseSetup("setup", &b); !row.Permits && !refused {
 				t.Error("refuseSetup did not refuse")
 			} else if row.Permits && refused && os.Geteuid() != 0 {
 				t.Errorf("refuseSetup refused an outside caller: %s", b.String())

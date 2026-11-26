@@ -152,14 +152,6 @@ func Notify() (<-chan os.Signal, func()) {
 	return ch, func() { signal.Stop(ch) }
 }
 
-// NotifyMarked is Notify plus the marker of interrupt provenance on the same channel (fwdint.go), so a process that
-// asks its peer about INT and QUIT can tell the arrivals before its question from the ones after.
-func NotifyMarked() (<-chan os.Signal, func()) {
-	ch := make(chan os.Signal, 16)
-	signal.Notify(ch, append(subscribed(), interruptMarker)...)
-	return ch, func() { signal.Stop(ch) }
-}
-
 // subscribed is HandledSignals less a SIGHUP this process inherited as ignored. nohup ignores SIGHUP
 // before it execs tego; subscribing to it anyway would replace that with a handler, so the hangup started
 // stop_grace and ended the run (129), and the agent, which inherits an ignored disposition across execve but

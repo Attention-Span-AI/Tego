@@ -560,3 +560,75 @@ remote server whose direct endpoint the network policy refuses. The README and U
 process authority. Option (a) changes debugging and descriptor access across every tier and needs lifecycle and
 kernel-matrix proof before a boundary claim is credible. Choosing (b) accepts the remaining C50 risk explicitly;
 it neither closes C50 nor authorizes removing the preview label. No owner decision is recorded here.
+
+## Amendment 2026-11-26: the client file at a root tier (public issue 98)
+
+**What was wrong.** `Vars()` names `TEGO_MCP_CONFIG=<runtime dir>/tego-mcp.json`, and a root launcher has no runtime
+directory: `createRuntimeDir` returns at `os.Geteuid() == 0` ("XDG_RUNTIME_DIR reaches root from the invoking user's
+environment ... the path names a directory that user controls. os.MkdirAll follows symlinks there and os.RemoveAll then
+removes through the same path, which is root writing and deleting where a user points it"). So at tiers cgroup and
+bpflsm, and at tier landlock under `sudo`, a run with an `mcp:` server gave the agent `TEGO_MCP_RELAY` and no
+`TEGO_MCP_CONFIG`, wrote one warning to tego's own log, and no MCP tool of that run went through the relay: no `mcp` line,
+no tool rule. A real LangGraph agent found it (the LangGraph example's guest row). It had a sibling at an unprivileged
+launcher with no absolute `XDG_RUNTIME_DIR`: the same silent start.
+
+**Decision.** The reason a root launcher makes no runtime directory stays: root never writes or deletes through a path
+the invoking user, or anyone, controls. The client file gets a place of its own that no user can rearrange.
+
+- A root launcher makes `/run/tego-agent` (root, `0711`, made when absent and refused when it is a link, a file or another
+  owner's) and under it `/run/tego-agent/<run id>` (root, `0711`), made and locked as a runtime directory is
+  (`makeRunRuntimeDir`: made as `.new-<id>`, flocked, then renamed with `RENAME_NOREPLACE`), and swept as one is: each
+  root launch removes the runs' directories under the parent whose lock nobody holds (`sweepRuntimeParent`), so a launcher
+  killed before its shutdown leaves nothing past the next launch. `/run` is root's, so no one else can have made the name
+  first, and `0711` lets any user walk to a name it knows and never list the parent or add to it.
+- The relay writes `tego-mcp.json` there: `O_CREAT|O_EXCL|O_NOFOLLOW` in a directory only root can write, mode `0400`, then
+  `fchown` by its descriptor to the account the agent drops to (the one `dropTarget` names, SUDO_UID and SUDO_GID). That
+  account reads it. No other user can read it, whatever group they share (it is not group or world readable), and no one
+  but root can add, rename or remove an entry beside it, the agent's own account included (it owns the file, not the
+  directory). A link or a file already at the name is refused. The agent may `chmod` or rewrite its copy.
+- The shutdown sequence removes the directory and then releases its lock. An unprivileged launcher is unchanged: the file is
+  `0444` in its private runtime directory.
+- The run is refused, exit 125, naming the fix, when its rules ask for the file and there is nowhere to put it: an
+  unprivileged launcher with no absolute `XDG_RUNTIME_DIR`, a client directory that cannot be made, a relay that cannot
+  write. The warning that let the run start without the file is gone (`mcprelay.ErrNoClientDir`, `runtime.ErrNoClientDir`).
+
+**The file is no input to enforcement.** The relay admits a shim only when its server is declared in the contract the
+launcher compiled, its image is the launcher's own `tego`, its peer is in the run's cgroup subtree, and the argv after
+`--` equals the declared command (`stdio.go`: `!slices.Equal(hello.Argv, sv.Command)`, with `sv` from the launcher's own
+`servers` map), and it decides each `tools/call` from the contract's rules. Nothing reads `tego-mcp.json` back. An agent
+that rewrites its copy to name another server changes what its own client starts; the relay refuses that start and the
+supervisor's gate refuses an exec of a relayed server around the shim (`TestRelayNeverReadsTheClientFileBack`).
+
+**Rejected.** The child stage writing the file after it has become the agent's user, into that user's own runtime
+directory: the stage would carry the file's bytes, and the account may have no `/run/user/<uid>` at all (sudo from `su`, or
+from ssh without pam_systemd), so the run would still lack the file there. A root directory with the agent's group and
+mode `0750`/`0440`: on systems whose users share a primary group (the passwd comment in `run_child.go` names them) every
+member of the group would read it; `0400` to the account does not.
+
+**What else depends on a runtime directory at a root tier**, and was checked for the same silent loss: the last-refusal
+mirror (`TEGO_REASON`), the Claude Code provision (`--settings`, hook state) and the run's own CODEX_HOME. Each is absent
+at a root tier by an earlier decision that is recorded in the run, not only in a log: `reason-unavailable` in run_start's
+harness for the first two (ADR 0062, 0063), `codex-unrouted` after run_start for the third (the models guard still refuses
+Codex's own calls, E27). None is something the contract asks for by naming it: they are the harness's conveniences, and each
+needs a directory the agent WRITES (hook state, CODEX_HOME) or one root rewrites during the run (the mirror), which this
+file's directory is not. Claude Code run directly under a root tier is not given `--mcp-config`
+(the provision is off); `TEGO_MCP_CONFIG` is set, so `claude --mcp-config "$TEGO_MCP_CONFIG"` works, and a server it starts
+around the shim is refused at every tier.
+
+**Verified.** Unit tests at the seams (`clientdir_test.go`, `mcprelay/clientfile_test.go`: modes, owners, a hostile
+link and a directory at the target, the sweep, the refusal) and the integration scene (`TestRootMCPRelayGate` at tiers
+landlock, cgroup and bpflsm; `TestIntegrationMCPRelayConstrainedGrant` and `TestIntegrationMCPWithoutRuntimeDirIsRefused`
+as a user); the guest row proof is recorded in docs/user/mcp-tools.md.
+
+**Hardening after review (2026-11-26).** The first version looked `/run/tego-agent` up by path at every step after the first,
+and nothing checked `/run`: on a host whose `/run` is writable by others without the sticky bit, a user could swap the
+directory for a link between two steps and have root create a user-owned file where it points. Now `/run` is opened without
+following a link and refused (exit 125, `ErrRuntimeDirUnsafe`) unless it is root's and not writable by group or others,
+or sticky; and every later step acts through an open descriptor: `mkdirat` and `openat` (`O_NOFOLLOW|O_DIRECTORY`) from
+`/run`'s, `fchmod`, `renameat2` and `unlinkat` with single names from the parent's, the lock and the file made with `openat` on
+the run directory's, the file handed over by `fchown` on its own descriptor, the sweep and the removal by name through the
+descriptors. A directory swapped or renamed after it was opened changes nothing. The sweep also takes a `.new-<run id>`
+directory a launcher died making: its lock is free, or, when it has no lock file yet, it is older than five minutes. The
+refusal of an unprivileged run with no runtime directory says which of its four causes it is (not set, not absolute,
+missing, not private to the user). A contract's server arguments and URL path are copied into the file as written, so a
+secret put there is in it (docs/user/mcp-tools.md says not to put one there).

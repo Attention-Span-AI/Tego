@@ -68,7 +68,11 @@ func ContractsFromRunsContext(ctx context.Context, s *ledgerview.Snapshot) []Con
 		}
 	}
 	var checked []ContractRun
-	if err := pathcheck.Call(ctx, "control.locations", out, &checked); err != nil {
+	locations := make([]string, len(out))
+	for i, r := range out {
+		locations[i] = r.Path
+	}
+	if err := pathcheck.Call(pathcheck.WithLocations(ctx, locations...), "control.locations", out, &checked); err != nil {
 		for i := range out {
 			out[i].Why = err.Error()
 			out[i].Resolved = out[i].Path

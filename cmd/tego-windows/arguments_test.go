@@ -86,14 +86,10 @@ func TestKeepAttachedWords(t *testing.T) {
 			t.Errorf("promises or measures something it must not (%q): %s", bad, keepAttachedWords)
 		}
 	}
-	got := dashboardStoppedWords()
-	if !strings.HasPrefix(got, "Stopped the dashboard's connection to your browser. To open the dashboard again, run: tego dashboard\n") || !strings.HasSuffix(got, keepAttachedWords) {
-		t.Errorf("the stop line changed or lost the sentence:\n%s", got)
-	}
 }
 
 // The Windows-only files cannot run here, so this reads them: `tego start` (and setup) says the sentence before it
-// opens the project shell, and `tego dashboard --stop` says it through dashboardStoppedWords. A guest row runs the
+// opens the project shell, and `tego dashboard --stop` says what it did through dashboardStopWords. A guest row runs the
 // real command and reads the console.
 func TestLauncherSaysKeepAttachedWhereItSpeaks(t *testing.T) {
 	read := func(name string) string {
@@ -116,7 +112,10 @@ func TestLauncherSaysKeepAttachedWhereItSpeaks(t *testing.T) {
 	if say < 0 || shell < 0 || say > shell {
 		t.Errorf("tego start must say keepAttachedWords before it opens the shell:\n%s", arm)
 	}
-	if dash := read("dashboard_windows.go"); !strings.Contains(dash, "fmt.Println(dashboardStoppedWords())") {
-		t.Error("tego dashboard --stop does not say dashboardStoppedWords after it stopped a relay")
+	if dash := read("dashboard_windows.go"); !strings.Contains(dash, "fmt.Println(dashboardStopWords(ended, up, rel))") {
+		t.Error("tego dashboard --stop does not say dashboardStopWords after it ended the relay and asked Linux")
+	}
+	if main := read("main_windows.go"); !strings.Contains(main, "opensDashboard(args) && linuxMirrored()") {
+		t.Error("tego dashboard no longer checks for mirrored networking before it starts the dashboard")
 	}
 }

@@ -424,6 +424,14 @@ type RequestHolder interface {
 	HoldingRequest() bool
 }
 
+// LimitGateSetter is a capture source that admits model requests itself and can stop admitting them once a budget has
+// ended the run (forwarder.Manager.SetLimitGate). gate is built from the budget watcher (wireLimitGate); the source
+// calls it before it forwards a request and refuses the request while it reports closed. A source that only reads the
+// agent's own TLS (the uprobe source) admits nothing and has no such door to close.
+type LimitGateSetter interface {
+	SetLimitGate(gate func() (rule string, reason record.Reason, closed bool))
+}
+
 // ActivityStamper is a kernel recorder that reads the run's activity stamp, the newest action the BPF programs saw
 // the run make that no line or sample carries (observe.Recorder.LastActivity): a CLOCK_MONOTONIC reading, 0 for
 // none. The watcher pulls it at each Tick under a stall budget (wireKernelActivity).

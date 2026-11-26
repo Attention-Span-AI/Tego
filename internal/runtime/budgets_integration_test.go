@@ -20,6 +20,10 @@ import (
 // ceiling here allows, so a run that ends with 124 was stopped by the budget and did not simply finish.
 const loopCalls = 200
 
+// limitKillLag is how long after the limit line the test binary writes the kill (EnvTestLimitKillLag): the window a loaded
+// machine leaves between the two, held open on every machine, with an agent that calls without pausing for all of it.
+const limitKillLag = "400ms"
+
 // writeMachineConfigWith is writeMachineConfig plus extra top-level YAML lines.
 func writeMachineConfigWith(t *testing.T, f *fixture, extra string) string {
 	t.Helper()
@@ -42,7 +46,7 @@ func runModelAgent(t *testing.T, f *fixture, cfg, agentBin, caFile string) (int,
 	run := exec.Command(bin, "run", filepath.Join(f.dir, "agent.yaml"), "--", agentBin)
 	run.Dir = f.dir
 	run.Env = append(os.Environ(), "TEGO_CONFIG="+cfg, "SSL_CERT_FILE="+caFile,
-		"MODEL_CALLS="+strconv.Itoa(loopCalls))
+		"MODEL_CALLS="+strconv.Itoa(loopCalls), EnvTestLimitKillLag+"="+limitKillLag)
 	out, err := run.CombinedOutput()
 	dirs := runDirs(t, f.root)
 	if len(dirs) != 1 {
@@ -76,7 +80,98 @@ func assertStoppedBy(t *testing.T, code int, out string, evs []*record.Event, wh
 	if n := responsesBeforeLimit(evs); n < 1 {
 		t.Fatalf("the limit line stands before any captured response: %v", kinds(evs))
 	}
+	assertNothingAdmittedAfterTheGateClosed(t, evs, which)
 	return lim
+}
+
+// assertTheGateTurnedAwayTheLoop is for a run the test made lag its own kill (limitKillLag): the agent, which calls
+// without pausing, was still calling when the limit line was written, so some of its requests were turned away at the door and
+// the model answered only a handful after the limit line, the calls in flight when it closed, where it answered all 200
+// when nothing closed it.
+func assertTheGateTurnedAwayTheLoop(t *testing.T, evs []*record.Event) {
+	t.Helper()
+	if len(limitRefusals(evs)) == 0 {
+		t.Fatalf("no request was turned away in the %s between the limit line and the kill; %d responses after the limit line", limitKillLag, responsesAfterLimit(evs))
+	}
+	if n := responsesAfterLimit(evs); n > inFlightAllowance {
+		t.Fatalf("%d responses recorded after the limit line, want only the calls in flight when the gate closed (at most %d)", n, inFlightAllowance)
+	}
+}
+
+// inFlightAllowance is how many responses may stand after the limit line: the calls in flight when the gate closed, and the
+// exchanges the agent made that the pipeline had not yet counted (the watcher counts from the record, which trails an agent
+// that does not pause: 0 to 4 on a quiet host, 30 once, while the host was loaded). Half the calls the agent makes is far from
+// the 197 to 199 an open gate lets through, which is the number that matters; that no request was admitted after the first
+// refusal, and that some were refused, are the exact assertions.
+const inFlightAllowance = loopCalls / 2
+
+// limitRefusals are the net lines the forwarder wrote for requests it turned away because the run's budget had been
+// crossed: refused, under the rule limits.<which>.
+func limitRefusals(evs []*record.Event) []*record.Event {
+	var out []*record.Event
+	for _, e := range evs {
+		if e.Kind == record.KindNet && e.Verdict == record.VerdictRefused && strings.HasPrefix(e.Rule, "limits.") {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// requestsAfter counts the ssl_request lines stamped later than mono: model requests admitted after it.
+func requestsAfter(evs []*record.Event, mono uint64) int {
+	n := 0
+	for _, e := range evs {
+		if e.Kind == record.KindSSLRequest && e.MonoNS > mono {
+			n++
+		}
+	}
+	return n
+}
+
+// assertNothingAdmittedAfterTheGateClosed is the admission gate on the real CLI: the agent loops far past the ceiling,
+// answered instantly, so it is still calling when the limit line is written and the kill lands. Every request of its after
+// the gate closed is turned away at the forwarder, so the ledger records: refused lines naming the budget's rule and reason
+// and the same limit, and no model request admitted after the first of them. The agent here makes one call at a time, so
+// the requests that finish after the limit line are the one that was in flight when the gate closed and any the pipeline had
+// not yet counted; they are not bounded by how long the kill takes to land, which is what the gate is for. It does not assert
+// that a request was turned away: a kill that lands before the agent's next call leaves nothing to refuse.
+func assertNothingAdmittedAfterTheGateClosed(t *testing.T, evs []*record.Event, which string) {
+	t.Helper()
+	refusals := limitRefusals(evs)
+	t.Logf("budget %s: %d requests turned away at the gate, %d responses recorded after the limit line", which, len(refusals),
+		responsesAfterLimit(evs))
+	if len(refusals) == 0 {
+		return
+	}
+	first := refusals[0].MonoNS
+	for _, e := range refusals {
+		var p record.NetPayload
+		if err := e.DecodePayload(&p); err != nil {
+			t.Fatal(err)
+		}
+		if e.Rule != "limits."+which || e.Reason == "" || !e.Reason.IsLimit() || e.Authority != record.AuthorityRule || p.Op != "http_request" || e.Attr == nil {
+			t.Fatalf("refusal line %+v (payload %+v), want rule limits.%s, a limit-* reason, authority rule, op http_request", e, p, which)
+		}
+		first = min(first, e.MonoNS)
+	}
+	if n := requestsAfter(evs, first); n != 0 {
+		t.Fatalf("%d model requests were admitted after the gate closed (first refusal at mono %d): they reach the model and spend past the limit", n, first)
+	}
+}
+
+// responsesAfterLimit counts the ssl_response lines that stand after the limit line: model answers recorded once the run
+// was known to be over.
+func responsesAfterLimit(evs []*record.Event) int {
+	n, seen := 0, false
+	for _, e := range evs {
+		switch {
+		case e.Kind == record.KindLimit:
+			seen = true
+		case seen && e.Kind == record.KindSSLResponse:
+			n++
+		}
+	}
+	return n
 }
 
 // TestIntegrationRepeatsStopALoopingAgent is the repeat detector on real model traffic: the
@@ -98,6 +193,7 @@ func TestIntegrationRepeatsStopALoopingAgent(t *testing.T) {
 
 	code, out, evs, _ := runModelAgent(t, f, cfg, agentBin, caFile)
 	lim := assertStoppedBy(t, code, out, evs, record.LimitRepeats)
+	assertTheGateTurnedAwayTheLoop(t, evs)
 	if lim.Value != 3 || lim.Ceiling != 3 {
 		t.Fatalf("limit payload %+v, want repeats 3 at a ceiling of 3", lim)
 	}
@@ -155,6 +251,7 @@ func TestIntegrationACostBudgetStopsTheRun(t *testing.T) {
 
 	code, out, evs, runID := runModelAgent(t, f, cfg, agentBin, caFile)
 	lim := assertStoppedBy(t, code, out, evs, record.LimitCostUSD)
+	assertTheGateTurnedAwayTheLoop(t, evs)
 	if lim.Ceiling != 25 || lim.Value < 27.99 || lim.Value > 28.01 {
 		t.Fatalf("limit payload %+v, want $28 (two responses) over a ceiling of $25", lim)
 	}
@@ -224,7 +321,8 @@ func TestIntegrationABudgetWindowCarriesAcrossRuns(t *testing.T) {
 		t.Helper()
 		run := exec.Command(tegoBinary(t), "run", filepath.Join(f.dir, "agent.yaml"), "--", agentBin)
 		run.Dir = f.dir
-		run.Env = append(os.Environ(), "TEGO_CONFIG="+cfg, "SSL_CERT_FILE="+caFile, "MODEL_CALLS="+strconv.Itoa(calls))
+		run.Env = append(os.Environ(), "TEGO_CONFIG="+cfg, "SSL_CERT_FILE="+caFile, "MODEL_CALLS="+strconv.Itoa(calls),
+			EnvTestLimitKillLag+"="+limitKillLag)
 		out, err := run.CombinedOutput()
 		dirs := runDirs(t, f.root)
 		if len(dirs) == 0 {
@@ -242,6 +340,7 @@ func TestIntegrationABudgetWindowCarriesAcrossRuns(t *testing.T) {
 	for i := 2; i <= 3; i++ {
 		code, out, evs = start(loopCalls)
 		lim := assertStoppedBy(t, code, out, evs, record.LimitTokens)
+		assertTheGateTurnedAwayTheLoop(t, evs)
 		if lim.Ceiling != 150 || lim.Value < 180 {
 			t.Fatalf("run %d: limit %+v, want tokens at 180 or more over 150: the earlier runs were not counted", i, lim)
 		}

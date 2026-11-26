@@ -123,7 +123,7 @@ var mountCompatBaseline = []struct {
 	}},
 	{"missing paths", "compile", CodePathMissing, []string{
 		"examples__agents__claude-agent-sdk.yaml", "examples__agents__codex-chatgpt.yaml", "examples__agents__codex.yaml",
-		"examples__agents__retriever.yaml", "examples__container__hello.yaml",
+		"examples__agents__langgraph.yaml", "examples__agents__retriever.yaml", "examples__container__hello.yaml",
 		"examples__demo__contracts__always-on.yaml", "examples__demo__contracts__codex-chatgpt.yaml",
 		"examples__demo__contracts__codex.yaml", "examples__demo__contracts__guarded.yaml",
 		"testdata__good__aliases.yaml", "testdata__good__warnings-only.yaml",
@@ -299,7 +299,7 @@ func checkMountLayoutsCompatibility(t *testing.T, layouts []mountLayout, binaryI
 		t.Errorf("input %s has no expected probe-off outcome", name)
 	}
 	var table strings.Builder
-	fmt.Fprintf(&table, "%d inputs: 19 compile without probing; 5 non-contract YAML files, 3 unfilled templates, 11 missing-path cases, 2 contradictions\n", len(contracts))
+	fmt.Fprintf(&table, "%d inputs: 19 compile without probing; 5 non-contract YAML files, 3 unfilled templates, 12 missing-path cases, 2 contradictions\n", len(contracts))
 	fmt.Fprintf(&table, "%-52s %8s %8s %s\n", "layout", "baseline", "probe-on", "refused by the probe")
 	for _, l := range layouts {
 		on := 0

@@ -1421,3 +1421,148 @@ Generic and untyped declarations (methods, local `any` values and function liter
 are conservative contexts; their calls and calls in evidence-bearing declarations are inventoried
 without guessing a callee's inferred type. This deliberately includes non-readers and constructors. This syntax inventory does not prove arbitrary data flow. New sites
 require an exercised route and a checked-in inventory update. Guest acceptance is still owed.
+
+## A local location is a busy disk, not a stuck mount (amendment, 2026-11-25)
+
+**The defect.** "A starved checker is not a stuck location" (fix23, above) tells a helper that waits for this
+computer's own disk from one that waits in a mount by the function it sleeps in (`/proc/<pid>/task/<tid>/wchan`,
+`wchan.go`, `Watch.Judge`). The amendment expected that name to be hidden only on hardened kernels. It is hidden for
+every helper: the helper makes itself undumpable (`process.go`, `makeUndumpable`), and the kernel gives
+`/proc/<pid>/task/<tid>/wchan` as `0` to every reader without `CAP_SYS_PTRACE` for an undumpable task. So `onlyDiskWaits`
+never matched a real helper, `Judge` said Blocked, and a helper that sat in uninterruptible sleep on a stalled local disk
+for the whole of `CheckTimeout` (5 s) was refused with "this location does not answer (a disconnected or stuck mount?)"
+(public issue 80). The tests of fix23 read the counters through a fake reader, so none ran that path against a real helper.
+Measured on 2026-11-25 on a machine whose disk was 97% full and busy: the helper's thread in state D, `wchan=""`, a few
+milliseconds of CPU time, the five seconds spent on one write exchange.
+
+**Decision.** The wait function is no longer what tells the two cases apart. The location is.
+
+1. **Class of a location.** A check has a class, decided once per check, from the mount table of the dashboard's own
+   process (`/proc/self/mountinfo`, `proc.PathLocal`, `internal/platform/proc/fsclass.go`) and never from the location
+   itself (no `statfs`, `stat` or `open` of the path: that call is the one that could hang). The mount is the one with
+   the longest mount point that is the path or a parent directory of it (a path that does not exist yet is on its
+   parent's mount, a bind mount carries the type of the filesystem underneath, nested mounts take the innermost, and of
+   two mounts at one point the later line, the one stacked over, wins). Fields are decoded from the kernel's octal
+   escapes (`\040`, `\011`, `\012`, `\134`); a malformed line is left out, so a path no remaining line covers is not
+   local. The path is cleaned lexically and never resolved.
+   - **Local**, because the filesystem is on this computer's own storage and answers in the end, only slowly when its disk
+     is busy: ext2, ext3, ext4, xfs, btrfs, f2fs, bcachefs, zfs, jfs, reiserfs, nilfs2; tmpfs, ramfs, hugetlbfs and the
+     kernel's own pseudo filesystems (proc, sysfs, devtmpfs, devpts, cgroup, cgroup2, securityfs, debugfs, tracefs, pstore,
+     bpf, mqueue, configfs, efivarfs, binfmt_misc, nsfs, fusectl, selinuxfs, rpc_pipefs, nfsd); and the formats usually
+     mounted from a partition or an image, vfat, msdos, exfat, ntfs3, hfs, hfsplus, udf, iso9660, squashfs, erofs and
+     cramfs, **only when the mount's source is a device node** (`/dev/...`). A block device that is a network behind a
+     device node (`/dev/nbd*`, `/dev/rbd*`, `/dev/drbd*`, `/dev/ublk*`) is not local whatever it holds.
+   - **May stop answering**, the class that keeps today's behaviour and words: nfs, nfs4, cifs, smb3, smbfs, 9p, ceph,
+     afs, fuse, fuseblk and every `fuse.*` (sshfs, gvfsd-fuse, the desktop portal), autofs, ncpfs, coda, lustre, gfs2,
+     ocfs2, glusterfs, orangefs, virtiofs, vboxsf, vmhgfs, ecryptfs, aufs, panfs, beegfs. The list adds nothing to the
+     rule, which is an allow list: **a type this code does not know is in this class**, and so are a path that is not
+     absolute, a mount table that cannot be read or has no line for the path, and a check that declared no location.
+   - **Overlay** is local only when every directory it is made of (`lowerdir`, `lowerdir+`, `datadir+`, `upperdir`,
+     `workdir`, with `:` between lower layers and `::` before data-only ones) lies on a local mount of this table that is
+     not itself an overlay. It is not shown local, and so is in the second class, when its options name no layer (the
+     new mount API may not), when a layer is not an absolute path, when a layer is on another overlay, and when the layer
+     is on no mount of this table or only on the overlay itself, which is a container's root: its layers are the host's
+     directories, not this table's. A container whose root is such an overlay keeps today's behaviour for paths on it.
+2. **What a check declares.** A helper operation reaches many paths, and only its caller can name them: a check declares
+   the absolute locations it hands the helper (`contracts.WithLocations`, `pathcheck.WithLocations`; the filesystem
+   requests of `contracts` declare their own `Path`, `Entry.Path` and registry directories), and its class is local only
+   if **every** declared location is local. The dashboard's rule service declares its home, ledger, anchor and, from the
+   starts it knows, each contract (as recorded and with its directory resolved) and working directory; the other
+   dashboard operations declare their root, home or path. A check that declares nothing is not local.
+3. **Local checks that are in a disk wait are waited for.** When the location budget (`CheckTimeout`, 5 s) of a **local**
+   check runs out and a thread of its helper is in uninterruptible sleep (state D, which is what a wait for a disk is),
+   the helper has not answered because this computer's disk has not: whatever the wait function says or whether it can
+   be read, the verdict is the disk's (`BlockedDisk`, `Watch.JudgeAt(true)`). **Only that evidence.** A helper that is
+   asleep (state S: a deadlock of Tego's own code, a pipe to the dashboard) and counters that cannot be read keep today's
+   verdict, the first budget and the words they had (the mount's, and "the check did not finish in time"), for every
+   class, so a hang of Tego's own code is never reported as a busy disk. A local check in a disk wait keeps waiting on
+   the same helper, a step at a time, up to a **local cap of six location budgets, 30 s, which
+   is `StartTimeout`** (`localCapSteps`, `budget.localExtra`). Thirty seconds is how long a request may already wait for a
+   checker to start on a busy machine, so a busy disk is given what a busy CPU is; it is not more because a check that
+   outlives a person's patience is no better than a refusal, and the helper's own clocks (`Within`, the lifetime that
+   counts a helper as stuck) are widened to match, never narrower than the caller's. Every other class keeps the ordinary
+   cap of four budgets (20 s), for starved and working helpers as before. A dashboard request is also bounded by its own
+   scope (`WithRequestScope`, the write deadline less five seconds, 25 s), which ends first (a request that waits the
+   whole bound is answered at 25 s, with the page's five seconds left to write it): there the last step is the
+   part of a step that is left, so a local check is waited for until the request's bound, not for whole steps short of
+   it. When the bound or the cap passes the check is refused with the **disk's words**, `CheckDisk`, the fix23 words
+   ("the disk is very busy or nearly full; try again"; on the 503 page "the disk of this computer did not finish writing
+   in time (it is very busy or nearly full)"), with the advice that was always there: reload the contract and its
+   History, then review again before saving, because a submitted save may already have reached the file. The words never
+   say a mount does not answer.
+4. **The wait function stays as an extra signal and nothing depends on it.** A thread that is readably in a network or
+   user-space filesystem's wait (the table of `wchan.go`) keeps the mount's verdict, the first budget and the mount's
+   words even for a location classed local (the filesystem was remounted since, or something else is wrong): it can make a
+   verdict more exact, never less. For a location that may stop answering, `Judge` is exactly what it was: a readable
+   disk wait is extended to the ordinary cap with the disk words, anything else is a stuck mount at the first budget.
+5. **Nothing here weakens the guarantee about a stuck mount.** A check of a network or user-space mount, an unknown type,
+   or an undeclared location is bounded as before (five seconds, the ordinary cap of 20 s for a helper that was starved,
+   the request's 25 s), in the same words. A helper that did not answer still holds its slot (`markStuck`, for both
+   classes), the stuck-helper count and the refusal when every slot is held by one are unchanged, and the scope's later
+   checks still refuse at once. The class is read per check, so a filesystem mounted over a location between two checks is
+   seen by the next one; one remounted between the classification and the answer is not, which costs the longer wait
+   described in 3 and no hang, and a thread seen in a network wait is caught by 4.
+
+   **The worst case.** A request is bounded by its scope, 25 s in all. A caller with no scope of its own (`tego
+   contracts` and the other commands) can wait up to `StartTimeout` for a checker to start and then `localCap` for the
+   disk: 60 s at the most, and that only when the machine could not start a checker for 30 s as well; the usual cost of
+   a slow local disk is its own 30 s. The command prints one note on stderr when the wait goes past the first budget
+   (`contracts.WithWaitNote`, code `disk-wait`: "this computer's disk is slow to answer; still waiting for it (up to 30
+   seconds)"), so the wait is not silent. The longer helper clock (`Within`, the 10 s of `localCap` over the ordinary cap) is a local check's only. The lifetime
+   that counts a holder of another process as stuck (`helperMaxLifetime`) is the REQUEST's class's: a reservation names
+   no location, so the holder's own class is not known, but the one asking is; a request that is not local counts a
+   holder stuck at the age it always did and is refused at once exactly when it was before this change, and only a local
+   request waits its start-up budget for a holder aged within the local extra time (tested with both classes).
+5a. **A refusal for want of a slot says what holds the slots.** The record of an abandoned helper carries why it is
+   stuck (`stuckHelper.disk`): a local check in a disk wait, or any other. A request that finds every slot held by
+   helpers this process abandoned is refused at once, as it always was, and in the disk words when every holder is stuck on
+   the disk and the mount words when any one is stuck on a mount (the stricter reading wins: nobody is told the disk is
+   busy while a slot is held by a mount that does not answer). Holders of other processes are of unknown class and keep
+   the mount words.
+6. **The mount table is read in the caller.** `/proc/self/mountinfo` is the kernel's listing of this process's mount
+   namespace from memory: reading it calls into no mounted filesystem and cannot wait for one, so it is made in the
+   dashboard's own process (the one call of this change made outside a helper). It is read each check and bounded at 2
+   MiB (about fourteen thousand mounts): a larger table is not read to its end and the check is not local.
+
+**Alternatives and why not.**
+- *The helper reports its own wchan in a frame before the reply* (a thread of the same process may read it). Rejected:
+  a new protocol frame and a new reader site in the helper to rebuild a signal the kernel exposes only as a name; the
+  name table would still decide, and a kernel that hides or renames a function would still give the wrong words. The
+  location is known to the caller before anything runs.
+- *Say the unclear words for a hidden wait function in state D.* Rejected: it stops claiming a stuck mount but still
+  refuses a healthy local disk after five seconds, which is the defect.
+- *Leave the helper dumpable.* Rejected: undumpability keeps a caller's other processes from reading the helper's memory
+  and descriptors, which matters more than a diagnostic.
+- *Raise `CheckTimeout` for every check.* Rejected: it lengthens the one thing this ADR promises is short, a stuck mount.
+- *Classify by a `statfs`, `stat` or `open` of the location.* Rejected: that call can block in the kernel on the very
+  mount the answer is about, in the dashboard's own thread.
+- *Call every machine local when its whole mount table is.* Rejected: a desktop always has a FUSE mount (the portal, gvfs),
+  so the fix would never apply where the defect happens; the path decides.
+- *Resolve symbolic links before classifying.* Rejected: resolving can hang on the same mount. The spelling the caller has
+  is classified, together with the resolved spelling where the code already has one (`start.Resolved`).
+
+**What remains.**
+- A directory that is a symbolic link to a mount, in a path no caller declared a resolved spelling of, is classified by
+  where the link lies. A network mount reached that way is then waited for as a local disk, up to the request's 25 s
+  (the helper is still abandoned at the bound, still holds its slot, and the page says the disk is busy). The words are
+  wrong, the bound is not.
+- A helper that touches a path nobody declared (a contract found by the helper in the ledger that the caller had not
+  read yet) is classified by the declared paths alone.
+- A local filesystem on a block device that is a network behind a name this list does not know is local by type, and so
+  is bounded by the longer wait: ext4 on iSCSI (`/dev/sdX`), a device-mapper device (`/dev/mapper/*`, LVM or dm-crypt)
+  over nbd, rbd or iSCSI, and a loop device over a file on NFS (mountinfo names the device, not what is behind it; a
+  `/dev/loop*` or `/dev/mapper/*` source is classed local). The wait is bounded (25 s in a request) and the helper
+  still holds its slot; the words say the disk is busy.
+- Inside a container the fix helps paths on bind and volume mounts (an ext4 or xfs line of the table), not the image's
+  own root, an overlay whose layers are the host's directories: that stays "may stop answering", today's behaviour.
+- fuseblk (an ntfs-3g disk) is in the class that may stop answering though its device is local: a user-space process
+  serves it.
+- A helper that is in state D but not for a disk of this computer (a block device stalled for another reason) is called
+  a busy disk; so is one that waits in a local filesystem that is itself failing.
+- The proof of the disk wait against a real helper uses a thread that is really in state D: it vforks a child that a
+  seccomp user-notification filter holds before its exec, which the kernel shows as D, with no disk and no privilege
+  (`stayInUninterruptibleSleep`). A guest row with a throttled disk (a cgroup `io.max` on a loop device) is still
+  owed for the whole path through a real filesystem.
+- A failing local disk, not a busy one, is still reported as busy: its reads fail with `EIO`, which is its own refusal,
+  but a disk that stalls and never answers ends in the disk words at the cap, not in words about hardware.
+- The wait function of an undumpable helper is still unreadable, so a kernel's exact reason is never shown.

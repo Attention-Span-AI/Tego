@@ -115,7 +115,7 @@ func checkedGuide(ctx context.Context, in guide.Inputs) (guide.State, bool, erro
 		return guide.State{}, false, err
 	}
 	var encoded []byte
-	err = pathcheck.Call(ctx, "control.guide", req, &encoded)
+	err = pathcheck.Call(pathcheck.WithLocations(ctx, in.Home), "control.guide", req, &encoded)
 	if err != nil {
 		return guide.State{}, false, err
 	}
@@ -129,6 +129,6 @@ func checkedGuide(ctx context.Context, in guide.Inputs) (guide.State, bool, erro
 func checkedGuideKeys(ctx context.Context, in guide.Inputs) (guideFileKeys, error) {
 	ctx, in = guideInputsForCaller(ctx, in)
 	var keys guideFileKeys
-	err := pathcheck.Call(ctx, "control.guide-key", guideFileRequest{in.Home, in.UID, in.Host.BootID, in.Now}, &keys)
+	err := pathcheck.Call(pathcheck.WithLocations(ctx, in.Home), "control.guide-key", guideFileRequest{in.Home, in.UID, in.Host.BootID, in.Now}, &keys)
 	return keys, err
 }

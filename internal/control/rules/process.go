@@ -125,6 +125,13 @@ func remoteService[T any](s *Service, ctx context.Context, method string, args a
 		state.Starts = append(state.Starts, st)
 	}
 	s.mu.Unlock()
+	// The locations this operation is given, for the class of its location (contracts.WithLocations): a check of
+	// local locations only is waited for as a busy disk is, not refused as a mount that does not answer.
+	locations := []string{s.Home, s.Ledger, s.Anchor}
+	for _, st := range state.Starts {
+		locations = append(locations, st.Contract, st.Resolved, st.Cwd)
+	}
+	ctx = pathcheck.WithLocations(ctx, locations...)
 	var reply serviceReply
 	if err = pathcheck.Call(ctx, "control.rules", serviceRequest{State: state, Method: method, Args: encoded}, &reply); err != nil {
 		return zero, err

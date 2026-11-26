@@ -763,6 +763,21 @@ past WSL's idle stop. The relay ends at logoff, when the distribution stops (its
 the dashboard stops or moves to another port (the Linux end says so and ends), and before the installer replaces
 or removes `tego.exe`.
 
+*Amended 2026-11-26 (public issue 94).* The relay is not the only thing that keeps the distribution: the dashboard
+command starts the dashboard with `systemd-run --user --unit=tego-dashboard --pipe`, and that client process lives in
+the WSL session of the command that started it until the unit ends, so after the relay was ended Tego's Linux stayed
+Running (measured, WSL 3.0.5.0: still Running 75 s later; Stopped 15 s after only that client was killed; the unit, the
+`/bin/login -f` session and the entry scopes were not holders). `tego dashboard --stop` therefore also runs `tego
+dashboard-relay release` in Tego's Linux: it stops the unit when `tego session list` shows no run going, so that Tego's
+Linux can stop by itself, and with a run going (or a count that cannot be made) it stops nothing and says so, since
+Windows stopping the distribution ends a run. It starts no Linux that is stopped. The relay's own authority is unchanged:
+`release` is a hidden mode of the same command and stops one named user unit. It is admitted as `serve` and `open` are (the
+in-run guard, then `outsideRuns` with the dashboard's own governed check for an answer that cannot be told, before it counts or
+stops anything) and refuses when `$TEGO_CONFIG` is set, so a caller cannot choose the ledger root the count reads; the
+Windows launcher's call sets none. A unit that is not running is released without a count. The count is the invoking user's
+ledger root's: a run of root or another account, a run with its own `--ledger` and a scheduled agent between its runs are not
+counted, and Linux may then stop under them (said in the install guide's Known limits).
+
 **Not claimed.** Programs of the same Windows user are the person's own trust domain, as same-uid programs are on
 Linux: they can connect to the relay, drive the browser, or read the open link while it is unused. Root in any WSL
 distribution is root over the shared kernel (WSL-IDENTITY). Mirrored networking: WSL reserves the dashboard's port

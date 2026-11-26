@@ -36,7 +36,8 @@
 #   passed to kvm-run.sh --module; default test/vm/suites.sh's GUEST_MODULES, "overlay btrfs unix_diag tcp_diag",
 #   which scripts/coverage.sh --vm's guests load too and which says what needs each; VM_MODULES="" loads none),
 #   VM_SUITE_MEM (per-package guest memory, "pkg=size ...", over
-#   TEGO_VM_MEM; e.g. "internal/runtime/enforce/cgroup=3G" for its 32 concurrent runs), plus kvm-run.sh's
+#   TEGO_VM_MEM; e.g. "internal/runtime/enforce/cgroup=3G" for its 32 concurrent runs; neither goes under the floors of
+#   suites.sh's SUITE_MIN_MEM, which the run says it applied), plus kvm-run.sh's
 #   TEGO_VM_* knobs.
 #   TEGO_TEST_PLANE_PREEMPT=waive reaches every suite (PREEMPT_WAIVER below).
 #   VM_FIXTURE_ROOT optionally stages a directory's contents at the guest root,
@@ -566,6 +567,31 @@ if [ -n "${VM_FIXTURE_ROOT:-}" ]; then
 	fixture_args=(--file "$VM_FIXTURE_ROOT/.:/")
 fi
 
+# mem_mb SIZE: SIZE ("3G", "2560M", "4096") in megabytes.
+mem_mb() {
+	case "$1" in
+	*[Gg]) echo $((${1%[Gg]} * 1024)) ;;
+	*[Mm]) echo "${1%[Mm]}" ;;
+	*) echo "$1" ;;
+	esac
+}
+# mem_floor SIZE PACKAGE ROW: SIZE, or the larger of SUITE_MIN_MEM's matching floors (suites.sh), with a line on stderr
+# when it raised it. A guest that is too small fails silently otherwise: its initramfs does not unpack.
+mem_floor() {
+	local size="$1" pkg="$2" row="$3" e r p f best
+	best="$(mem_mb "$size")"
+	for e in "${SUITE_MIN_MEM[@]}"; do
+		IFS='|' read -r r p f <<<"$e"
+		{ [ "$r" = '*' ] || [ "$r" = "$row" ]; } || continue
+		{ [ "$p" = '*' ] || [ "$p" = "$pkg" ]; } || continue
+		[ "$(mem_mb "$f")" -le "$best" ] || best="$(mem_mb "$f")"
+	done
+	if [ "$best" -gt "$(mem_mb "$size")" ]; then
+		echo "root-suites: $pkg's guest memory $size raised to ${best}M (SUITE_MIN_MEM in test/vm/suites.sh)" >&2
+	fi
+	echo "${best}M"
+}
+
 # vm_code turns kvm-run.sh's exit code into the status column: the command's own code when the guest
 # ran it, else vm-<reason> (lost, timeout, no-report, env, usage), because 2, 124 and 125 are codes both
 # kvm-run.sh and the programs under test use.
@@ -636,10 +662,12 @@ for s in "${suites[@]+"${suites[@]}"}"; do
 		[ -z "$PREEMPT_WAIVER" ] || env_args+=(--env "TEGO_TEST_PLANE_PREEMPT=$PREEMPT_WAIVER")
 		[ "$tags" = integration ] || env_args+=(--env "GOFLAGS=-tags=$tags")
 		# VM_SUITE_MEM gives one package's guests their own TEGO_VM_MEM ("pkg=size ..."), where the rest share a
-		# smaller one: 2560M passed historically elsewhere; Debian and RHEL use a 3G pass point, not a measured
-		# minimum. One OOM victim was about 72 MB, so 32 such runs fit 2560M only tightly (test/vm/README.md).
+		# smaller one, never under SUITE_MIN_MEM's floors. One OOM victim was about 72 MB, so 32 such runs fit 2560M only
+		# tightly (test/vm/README.md).
 		suite_mem="${TEGO_VM_MEM:-}"
 		for m in ${VM_SUITE_MEM:-}; do [ "${m%%=*}" != "$pkg" ] || suite_mem="${m#*=}"; done
+		# SUITE_MIN_MEM (suites.sh) is a floor neither value can go under; an unset one is kvm-run.sh's own default.
+		suite_mem="$(mem_floor "${suite_mem:-4G}" "$pkg" "$ROW")"
 		TEGO_VM_MEM="$suite_mem" fwd_run "$here/kvm-run.sh" --sudo --timeout "$SUITE_TIMEOUT" --log "$OUT/logs/$suite.console" --status "$OUT/logs/$suite.status" \
 			"${module_args[@]+"${module_args[@]}"}" --file "$bin:/vm/$(basename "$bin")" --file "$OUT/src:/src" --file "$OUT/prebuilt:/vm/prebuilt" \
 			--file "$here/go-shim.sh:/usr/local/bin/go" --cwd "/src/$pkg" "${env_args[@]+"${env_args[@]}"}" \

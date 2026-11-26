@@ -20,6 +20,12 @@ type budget struct {
 	// helper that ran out of its budget was starved of a CPU (see Watch): the scope's total is capped at
 	// locationCap(), however many checks it makes.
 	extra time.Duration
+	// localExtra is what a check of a local location (ADR 0144, "A local location is a busy disk, not a stuck mount")
+	// may be granted on top of extra, up to localCap(): a local disk does answer, so its wait is bounded
+	// longer than a mount's. It is drawn on only after extra, and only by a check whose location is local.
+	localExtra time.Duration
+	// noted says the scope's caller has been told it waits for a local disk (noteDiskWait).
+	noted bool
 	// asked says a helper of this scope has reported it was about to touch a location.
 	asked bool
 	// until is when a request scope (WithRequestScope) must be done with its helper exchanges, the zero time for a
@@ -54,8 +60,18 @@ func locationCap() time.Duration { return locationCapSteps * locationTimeout }
 // caller has gone, so it must never end first.
 func workerBackstop() time.Duration { return locationTimeout / 5 }
 
+// localCapSteps is how many location budgets the cap of a local location is: six, which is StartTimeout (30 s) with
+// the budgets at their production size. A local location is a filesystem of this computer's own storage: its disk
+// answers in the end however busy it is, so it is waited for as long as a request may wait for a checker to start.
+const localCapSteps = 6
+
+// localCap is the most location time one scope may be given for checks of local locations. It is never less than
+// locationCap(). A request scope's own bound (WithRequestScope) still ends a check before it where it is shorter.
+func localCap() time.Duration { return max(localCapSteps*locationTimeout, locationCap()) }
+
 func newBudget() *budget {
-	return &budget{startup: startTimeout, location: locationTimeout, extra: locationCap() - locationTimeout}
+	return &budget{startup: startTimeout, location: locationTimeout, extra: locationCap() - locationTimeout,
+		localExtra: localCap() - locationCap()}
 }
 
 func budgetOf(ctx context.Context) *budget {
@@ -128,11 +144,16 @@ func LocationLeft(ctx context.Context) time.Duration {
 	return locationTimeout
 }
 
-// workerWithin is how long the worker's own clock runs for a request of ctx: the budget and what a starved helper
-// may be granted, and the backstop.
+// workerWithin is how long the worker's own clock runs for a request of ctx: the budget and what a helper may be
+// granted (the local steps only for a check of a local location, so a check of any other class has the worker clock it
+// always had), and the backstop. The worker never ends before its caller.
 func workerWithin(ctx context.Context) time.Duration {
+	local := localCheck(ctx)
 	if b := budgetOf(ctx); b != nil {
-		return b.within()
+		return b.within(local)
+	}
+	if local {
+		return localCap() + workerBackstop()
 	}
 	return locationCap() + workerBackstop()
 }
@@ -149,31 +170,51 @@ func (b *budget) chargeStart(spent time.Duration) {
 	b.mu.Unlock()
 }
 
+// minLocalStep is the least window a local location's last extension may be: a shorter one, before the request's own
+// bound, says nothing.
+const minLocalStep = 100 * time.Millisecond
+
 // grant adds one more step to the location budget while the cap allows it, and says how much it added (0 at the
-// cap).
-func (b *budget) grant() time.Duration {
+// cap). local says the check's location is a local one, which may be given the steps up to localCap() and not only
+// to locationCap().
+func (b *budget) grant(local bool) time.Duration {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	step := min(locationTimeout, b.extra)
+	avail := b.extra
+	if local {
+		avail += b.localExtra
+	}
+	step := min(locationTimeout, avail)
 	// Extensions are whole steps, and never past the request's own bound: a helper that is starved or working when the
 	// scope has less than a step left is refused as one starved or working to the cap, at once, instead of being given
-	// a window too short to say anything about.
-	if !b.until.IsZero() && time.Until(b.until) < step {
-		return 0
+	// a window too short to say anything about. A local location's last step may be the part of a step that is left to
+	// the bound: its disk is not judged by a window, it is waited for.
+	if !b.until.IsZero() {
+		if left := time.Until(b.until); left < step {
+			if !local || left < minLocalStep {
+				return 0
+			}
+			step = left
+		}
 	}
 	if step <= 0 {
 		return 0
 	}
-	b.extra -= step
+	fromExtra := min(step, b.extra)
+	b.extra -= fromExtra
+	b.localExtra -= step - fromExtra
 	b.location += step
 	return step
 }
 
 // within is the most a worker's clock may run for this scope: what is left of the budget and everything that may
-// still be granted, and the backstop.
-func (b *budget) within() time.Duration {
+// still be granted to a check of this class (local: with the local steps), and the backstop.
+func (b *budget) within(local bool) time.Duration {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if local {
+		return max(b.location, 0) + b.extra + b.localExtra + workerBackstop()
+	}
 	return max(b.location, 0) + b.extra + workerBackstop()
 }
 
@@ -212,6 +253,15 @@ func (b *budget) chargeLocation(spent time.Duration) {
 	b.mu.Lock()
 	b.location -= spent
 	b.mu.Unlock()
+}
+
+// firstNote is true once for the scope.
+func (b *budget) firstNote() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	was := b.noted
+	b.noted = true
+	return !was
 }
 
 func (b *budget) markAsked() {

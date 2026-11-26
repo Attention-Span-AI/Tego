@@ -235,6 +235,11 @@ type Watcher struct {
 	unpricedModels int
 	// win is WithWindow's: tokens and cost_usd as a total over a span across runs. Nil counts per run.
 	win *windowState
+	// closed is the breach that closed the run's admission gate (Closed), stored once by trip after the limit line
+	// and the facade's reason are in place and before the kill is written. It is read without w.mu, by every model
+	// request a capture source is about to forward, so the check costs one atomic load and no lock. Nil until then,
+	// and for a ledger_bytes breach, which spends nothing and has no refusal reason to record.
+	closed atomic.Pointer[Breach]
 }
 
 // NewWatcher returns a watcher for one run.
@@ -724,6 +729,11 @@ func (w *Watcher) trip(b Breach) error {
 	if w.onBreach != nil {
 		w.onBreach(b)
 	}
+	// The gate closes after the callback: a request refused from here on may end the agent before the kill lands, and
+	// the facade must already know this run's terminal reason is the limit, or the exit would read as the agent's own.
+	if b.Reason() != "" {
+		w.closed.Store(&b)
+	}
 	if w.mgr == nil {
 		return nil
 	}
@@ -786,6 +796,20 @@ func (w *Watcher) Tripped() (Breach, bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.breach, w.tripped
+}
+
+// Closed reports the breach that closed this run's admission gate, if one did: a model request a capture source is
+// about to forward is refused from then on (the forwarder's LimitGate). It is the whole of what that source reads,
+// one atomic load with no lock, set once by trip after the limit event is emitted and the facade told, before the
+// cgroup is killed, so it closes the window between the limit line and the kill and changes nothing about how a limit
+// is counted or how the run ends. A ledger_bytes breach never closes it (Breach.Reason has no code for it, and a
+// refusal line would only add to a ledger already at its ceiling). The agent cannot reach it: it is a field of the
+// launcher's own watcher, in a process the agent is not part of.
+func (w *Watcher) Closed() (Breach, bool) {
+	if b := w.closed.Load(); b != nil {
+		return *b, true
+	}
+	return Breach{}, false
 }
 
 // seconds converts a monotonic nanosecond span to the seconds a wall or stall breach reports.

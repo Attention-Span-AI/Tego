@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -27,6 +28,9 @@ const (
 func scopeInterrupt(ctx context.Context) int {
 	sigs, stop, ready := scopeNotify(ctx)
 	defer stop()
+	own := make(chan os.Signal, 16)
+	signal.Notify(own, syscall.SIGINT)
+	defer signal.Stop(own)
 	if ready == nil {
 		return scopeNoChannel
 	}
@@ -54,6 +58,18 @@ func scopeInterrupt(ctx context.Context) int {
 	if !interrupt(time.After(10 * time.Second)) {
 		return 89
 	}
+	// os/signal keeps one pending notification per signal until its receiving goroutine has run, so a second signal
+	// that arrives before that is the first one again (the counts are a lower bound, ADR 0142, amendment of
+	// 2026-11-25), and a person's second keystroke is never that close to the first. The first interrupt may be acted
+	// on from the outer process's report before this process's own copy of it has been taken; the helper therefore
+	// waits for its own copy (a second subscription sees every arrival) before it says the first is settled.
+	if os.Getenv("SCOPE_FIRST_REACHES_LAUNCHER") == "1" {
+		select {
+		case <-own:
+		case <-time.After(5 * time.Second):
+			return 88
+		}
+	}
 	if err := scopeWriteMarker(filepath.Join(dir, "first"), []byte("1")); err != nil {
 		return 87
 	}
@@ -63,22 +79,33 @@ func scopeInterrupt(ctx context.Context) int {
 	if d, err := time.ParseDuration(os.Getenv("SCOPE_INTERRUPT_WAIT")); err == nil {
 		wait = d
 	}
+	// The window of observation starts when the test has made its last send, not when the first was settled: a test
+	// stalled on a loaded machine between two sends would otherwise find the launcher already gone.
+	for end := time.Now().Add(20 * time.Second); time.Now().Before(end); time.Sleep(time.Millisecond) {
+		if _, err := os.Stat(filepath.Join(dir, "sent")); err == nil {
+			break
+		}
+	}
 	timer := time.NewTimer(wait)
 	defer timer.Stop()
 	if interrupt(timer.C) {
+		// A real launcher has a stop to carry out before it ends, and its signal handling lasts as long. This one
+		// has none: it stays subscribed a moment longer, so a group send whose second copy the sender has not yet
+		// delivered (it was preempted between two deliveries) finds a handler and not the default action.
+		time.Sleep(100 * time.Millisecond)
 		return scopeTwoInterrupts
 	}
 	return scopeOneInterrupt
 }
 
 // One person's interrupt is one interrupt for the launcher whichever way it was sent, and a deliberate repeat is two.
-// The red case on the parent-only forwarding of c974e4c64 is the background group: the outer process forwarded the
-// group's INT to a launcher that had already got it.
+// The pair agrees by counts (launch.Arbiter): the number of interrupts is the larger of what each process received
+// itself. A second signal is therefore the one a process receives itself a second time. Two signals sent separately
+// to two DIFFERENT processes of the pair (the launcher alone, the outer process alone) cannot be told from one signal
+// to the group, since each process has then received one, so they are one: the cases below that send to both, in
+// either order, want one interrupt. The red case on the earlier forwarding, which only the outer process did, is the background
+// group: the outer process forwarded the group's INT to a launcher that had already got it.
 func TestScopeInterruptReachesTheLauncherOnce(t *testing.T) {
-	// A known defect, not fixed in this release (public issue 81): a process that handles its marker signal before its
-	// own interrupt counts one Ctrl-C as two (exit 38, want 37), about once in 30 runs on one busy CPU. The test stays
-	// in the file for the fix, and is on test/unit-skips.txt so the unit step allows this skip and no other.
-	t.Skip("known defect, public issue 81: one Ctrl-C can be counted as two when a process handles its marker signal before its own interrupt")
 	for _, tc := range []struct {
 		name  string
 		term  bool
@@ -90,7 +117,11 @@ func TestScopeInterruptReachesTheLauncherOnce(t *testing.T) {
 		{"foreground group with piped stdin", true, []string{"group"}, scopeOneInterrupt},
 		{"background group with piped stdin", false, []string{"group"}, scopeOneInterrupt},
 		{"a deliberate repeat to the group", false, []string{"group", "group"}, scopeTwoInterrupts},
-		{"the launcher, then the outer process", false, []string{"launcher", "outer"}, scopeTwoInterrupts},
+		{"the launcher, then the outer process: one signal to each process is one interrupt", false, []string{"launcher", "outer"}, scopeOneInterrupt},
+		{"the outer process, then the launcher: one signal to each process is one interrupt", false, []string{"outer", "launcher"}, scopeOneInterrupt},
+		{"the launcher twice", false, []string{"launcher", "launcher"}, scopeTwoInterrupts},
+		{"the outer process twice", false, []string{"outer", "outer"}, scopeTwoInterrupts},
+		{"the launcher, the outer process, the launcher: the launcher received two", false, []string{"launcher", "outer", "launcher"}, scopeTwoInterrupts},
 		{"the outer process, then the group", false, []string{"outer", "group"}, scopeTwoInterrupts},
 		{"the group, then the launcher alone", false, []string{"group", "launcher"}, scopeTwoInterrupts},
 	} {
@@ -110,6 +141,9 @@ func TestScopeInterruptReachesTheLauncherOnce(t *testing.T) {
 			if tc.want == scopeOneInterrupt {
 				cmd.Env = append(cmd.Env, "SCOPE_INTERRUPT_WAIT=300ms")
 			}
+			if tc.sends[0] != "outer" {
+				cmd.Env = append(cmd.Env, "SCOPE_FIRST_REACHES_LAUNCHER=1")
+			}
 			if err := cmd.Start(); err != nil {
 				t.Fatal(err)
 			}
@@ -125,10 +159,16 @@ func TestScopeInterruptReachesTheLauncherOnce(t *testing.T) {
 			for i, send := range tc.sends {
 				if i > 0 {
 					scopeWaitFile(t, filepath.Join(cmd.Dir, "first")) // the first one is settled before the next is sent
+					// and delivered to both processes: a signal sent to a process that still has one pending is the
+					// same pending signal (the kernel keeps one), which a person's second keystroke never meets.
+					scopeWaitNoInterruptPending(t, cmd.Process.Pid, child)
 				}
 				if err := syscall.Kill(target[send], syscall.SIGINT); err != nil {
 					t.Fatal(err)
 				}
+			}
+			if err := scopeWriteMarker(filepath.Join(cmd.Dir, "sent"), []byte("1")); err != nil {
+				t.Fatal(err)
 			}
 			select {
 			case <-done:
@@ -140,4 +180,46 @@ func TestScopeInterruptReachesTheLauncherOnce(t *testing.T) {
 			}
 		})
 	}
+}
+
+// scopeWaitNoInterruptPending waits until none of the processes has an INT waiting to be taken by one of its threads,
+// by the pending sets in /proc/<pid>/status (the process's shared set) and in each of its tasks' status files.
+func scopeWaitNoInterruptPending(t *testing.T, pids ...int) {
+	t.Helper()
+	const intBit = 1 << (int(syscall.SIGINT) - 1)
+	pending := func(path string) bool {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return false // the task or the process is gone: nothing is pending there
+		}
+		for _, line := range strings.Split(string(b), "\n") {
+			for _, key := range []string{"SigPnd:", "ShdPnd:"} {
+				if v, ok := strings.CutPrefix(line, key); ok {
+					if n, err := strconv.ParseUint(strings.TrimSpace(v), 16, 64); err == nil && n&intBit != 0 {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+	for end := time.Now().Add(4 * time.Second); time.Now().Before(end); time.Sleep(time.Millisecond) {
+		any := false
+		for _, pid := range pids {
+			root := "/proc/" + strconv.Itoa(pid)
+			if pending(root + "/status") {
+				any = true
+			}
+			tasks, _ := filepath.Glob(root + "/task/*/status")
+			for _, f := range tasks {
+				if pending(f) {
+					any = true
+				}
+			}
+		}
+		if !any {
+			return
+		}
+	}
+	t.Fatalf("an interrupt stayed pending in %v", pids)
 }

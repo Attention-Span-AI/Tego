@@ -715,6 +715,7 @@ if [ "${TEGO_VM_HOST_SYSCTL:-1}" = 1 ]; then
 	done >"$P/.vm/sysctl" || true
 fi
 
+staged_mb=$(($(du -sk "$P" | cut -f1) / 1024))
 (cd "$P" && find . -mindepth 1 | LC_ALL=C sort | cpio --quiet -o -H newc -R 0:0) | gzip -1 >"$run_dir/payload.cpio.gz"
 cat "$run_dir/${CONSOLE_CPIO##*/}" "$run_dir/${BASE##*/}" "$run_dir/payload.cpio.gz" >"$run_dir/initrd"
 
@@ -752,6 +753,16 @@ append="console=ttyS0 panic=-1 quiet ${lsm:+lsm=$lsm} $lockdown_arg ${TEGO_VM_AP
 # exit 137, as "ran past the timeout").
 guest_end() {
 	local console="$1" qst="$2" qerr="$3" elapsed="$4" code sig line
+	# A guest whose initramfs did not unpack lacks files, so its command is "not found" (exit 127, which reads as a test
+	# result). The kernel says it first, so that is the reason, whatever the guest then reported. The kernel's own line
+	# only: it starts with its timestamp, which no test prints.
+	if tr -d '\r' <"$console" | grep -aq '^\[ *[0-9.]*\] Initramfs unpacking failed'; then
+		line="the guest's initramfs did not unpack (kernel: Initramfs unpacking failed) in ${MEM} RAM, with ${staged_mb:-an unknown number of} MB staged on top of the base userland, so files are missing and nothing it ran is a result; the root filesystem is at most half of RAM: raise TEGO_VM_MEM"
+		printf '\n%s\n' "$line" >>"$console" 2>/dev/null || true
+		env_fail "$line" # exits; the return is for a caller that has stubbed it out
+		# shellcheck disable=SC2317
+		return "$EXIT_ENV"
+	fi
 	code="$(tr -d '\r' <"$console" | grep -ao "TEGO-VM-EXIT:$nonce:[0-9]*" | tail -1 | cut -d: -f3 || true)"
 	if [ -n "$code" ]; then
 		status "guest $code"
@@ -779,7 +790,8 @@ guest_end() {
 		code="$EXIT_NOREPORT"
 	fi
 	echo "$line" >&2
-	echo "$line" >>"$console" 2>/dev/null || true
+	# on a line of its own: a console cut mid-line (a dmesg the power-off interrupted) would swallow it
+	printf '\n%s\n' "$line" >>"$console" 2>/dev/null || true
 	return "$code"
 }
 

@@ -169,6 +169,10 @@ var stuck = struct {
 type stuckHelper struct {
 	pid   int
 	start uint64
+	// disk says why the helper is stuck: waiting for this computer's own disk (a local check in uninterruptible sleep:
+	// the disk words), not on a mount. A refusal for want of a slot says what holds the slots, and the mount's
+	// reading wins unless every holder is stuck on the disk.
+	disk bool
 }
 
 // processStart is the start time (in clock ticks since boot) of a process, 0 when it cannot be read or is gone.
@@ -183,13 +187,14 @@ func processStart(pid int) uint64 {
 	return st.StartTicks
 }
 
-// markStuck records that the helper w, abandoned after it had said it was ready, still holds its slot.
-func markStuck(w *helperWorker) {
+// markStuck records that the helper w, abandoned after it had said it was ready, still holds its slot. disk says it
+// was abandoned for a wait for this computer's own disk (a local check in a disk wait), not for a mount.
+func markStuck(w *helperWorker, disk bool) {
 	if w.slot == "" || w.pid <= 0 || w.start == 0 {
 		return
 	}
 	stuck.Lock()
-	stuck.by[w.slot] = stuckHelper{w.pid, w.start}
+	stuck.by[w.slot] = stuckHelper{w.pid, w.start, disk}
 	stuck.Unlock()
 }
 
@@ -198,6 +203,13 @@ func forgetStuck(slot string) {
 	stuck.Lock()
 	delete(stuck.by, slot)
 	stuck.Unlock()
+}
+
+// stuckOnDisk reports whether the helper recorded on slot is stuck for the disk (stuckAt says it is stuck at all).
+func stuckOnDisk(slot string) bool {
+	stuck.Lock()
+	defer stuck.Unlock()
+	return stuck.by[slot].disk
 }
 
 // stuckAt reports whether the helper this process abandoned on slot is still the process that holds it.

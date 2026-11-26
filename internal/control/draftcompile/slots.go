@@ -31,6 +31,20 @@ func WithGoverned(ctx context.Context) context.Context {
 	return context.WithValue(ctx, governedKey{}, true)
 }
 
+// admissionWait is how long a check waits for a compiler slot and the instant it gives up: AdmissionWait for a request
+// marked governed (WithGoverned), after which it is refused as busy; for any other, the person's own, the end of its
+// start-up (what is left of StartAllowance and the request's own limit), a wait of 0 here, which Check reads as "until
+// startCtx ends". Every bound is finite: startCtx always has a deadline.
+func admissionWait(ctx, startCtx context.Context) (wait time.Duration, deadline time.Time) {
+	if governed, _ := ctx.Value(governedKey{}).(bool); governed {
+		return AdmissionWait, time.Now().Add(AdmissionWait)
+	}
+	if end, ok := startCtx.Deadline(); ok {
+		return 0, end
+	}
+	return AdmissionWait, time.Now().Add(AdmissionWait) // not reachable: startContext always sets a deadline
+}
+
 // slotNames are the kernel names a compilation tries, in order: a governed one only the shared names; any other the
 // reserved name first and then the shared ones, so it leaves them to governed compilations while it can.
 func slotNames(ctx context.Context) []int {

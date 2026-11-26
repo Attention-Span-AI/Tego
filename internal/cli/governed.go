@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/attention-span-ai/tego/internal/platform/peer"
+	"github.com/attention-span-ai/tego/internal/platform/whereami"
 	"github.com/attention-span-ai/tego/internal/runscope"
 )
 
@@ -28,19 +29,21 @@ func notOutside(name string, a runscope.Answer, agentCannot, refused, after stri
 	if after != "" {
 		after = "; " + after
 	}
-	advice := runscope.Advice(a)
+	words := whereami.Words()
+	why := runscope.WhyWith(a, words)
+	advice := runscope.AdviceWith(a, words)
 	if advice != "" {
 		advice = "; " + advice
 	}
 	switch {
 	case runscope.SaysGoverned(a):
-		return "tego " + name + ": a governed agent " + agentCannot + ": " + runscope.Why(a) + after + advice
-	case runscope.PlainFirst(a):
-		return "tego " + name + ": " + runscope.Why(a) + "; until then tego cannot show that this process is outside " +
+		return "tego " + name + ": a governed agent " + agentCannot + ": " + why + after + advice
+	case runscope.PlainFirstWith(a, words):
+		return "tego " + name + ": " + why + "; until then tego cannot show that this process is outside " +
 			"every tego run, so " + refused + after
 	}
 	return "tego " + name + ": " + refused + ": this process cannot be shown to be outside every tego run: " +
-		runscope.Why(a) + after + advice
+		why + after + advice
 }
 
 // selfRun is the run this process is inside, read strictly: runscope.GovernedBy of the one cgroup v2 path

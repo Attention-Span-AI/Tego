@@ -181,7 +181,15 @@ func CouldNotTell(a Answer) bool { return a.verdict == Unknown }
 
 // PlainFirst reports whether a's cause has a line the person can act on that comes before any wording about runs:
 // no systemd at the top of the tree, a user session that is not up, and root.
-func PlainFirst(a Answer) bool {
+func PlainFirst(a Answer) bool { return PlainFirstWith(a, Words{}) }
+
+// PlainFirstWith is PlainFirst for a caller that says words: replacing the sentence of init-not-at-root with one that
+// is not a step to take on this machine takes the cause out of the set, so the refusal reads as the general one and its
+// advice says where to run the command.
+func PlainFirstWith(a Answer, words Words) bool {
+	if a.cause == CauseInitNotAtRoot && words.NotAtTop != "" {
+		return false
+	}
 	return a.verdict == Unknown && plainFirst[a.cause]
 }
 
@@ -189,12 +197,27 @@ func PlainFirst(a Answer) bool {
 var plainFirst = map[Cause]bool{CauseInitNotAtRoot: true, CauseNoUserManager: true, CauseManagerNotListening: true,
 	CauseRootCaller: true}
 
+// Words are the sentences a caller that knows where it is says in place of the table's. They change what a refusal
+// says and never whether it refuses: no function here reads them to decide a verdict, and the zero value is the table.
+type Words struct {
+	// NotAtTop replaces the sentence of CauseInitNotAtRoot (no service manager at the top of the cgroup tree), whose
+	// table words are advice for a host or WSL with systemd. When set, that cause is no longer a line the person can
+	// act on first (PlainFirstWith is false) and the refusal says where to run the command instead (AdviceWith).
+	NotAtTop string
+}
+
 // Why is the sentence part that says why a is not Outside, with the failed read when there is one. "" for Outside.
-func Why(a Answer) string {
+func Why(a Answer) string { return WhyWith(a, Words{}) }
+
+// WhyWith is Why with the sentences of words in place of the table's where it has them.
+func WhyWith(a Answer, words Words) string {
 	if a.Outside() {
 		return ""
 	}
 	w := causeWords[a.cause]
+	if a.cause == CauseInitNotAtRoot && words.NotAtTop != "" {
+		w = words.NotAtTop
+	}
 	if w == "" {
 		w = "the check gave no reason (" + a.verdict.String() + ")"
 	}
@@ -206,9 +229,12 @@ func Why(a Answer) string {
 
 // Advice is what a refusal for a adds after its reason: where to run the command instead. "" when the reason itself
 // says what to do (PlainFirst), when there is nothing the person can do (the gate on WSL), and for Outside.
-func Advice(a Answer) string {
+func Advice(a Answer) string { return AdviceWith(a, Words{}) }
+
+// AdviceWith is Advice for a caller that says words (PlainFirstWith).
+func AdviceWith(a Answer, words Words) string {
 	switch {
-	case a.Outside(), PlainFirst(a), a.cause == CauseWSLLauncherUnproven:
+	case a.Outside(), PlainFirstWith(a, words), a.cause == CauseWSLLauncherUnproven:
 		return ""
 	case a.verdict == Inside:
 		return "run it from a terminal outside any tego run"

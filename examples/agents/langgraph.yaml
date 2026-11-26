@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# A LangChain or LangGraph agent in a Python virtual environment: the rules a person can start from. Tego sees a
+# LangGraph agent as any other Linux process (it has no adapter for the library): what the agent does to files, to
+# programs and to the network is held and recorded, and so are the model calls that go through the forwarder and the
+# tools of an MCP server behind the relay. A tool that is a Python function inside the agent's own process is not
+# visible to Tego as a tool: only what that function does to a file, a program or a host is. test/workloads/langgraph/
+# is the small agent the example's tests and its guest row run (a scripted graph with no model account): its tools
+# write inside and outside ./out/, start an allowed and a refused program, fetch from an allowed and a refused host and
+# call an MCP tool the relay allows and one it denies.
+#
+# What the file says, in the order of the agent's life:
+#   - the interpreter and the virtual environment are readable (reads are open by default) and runnable: `command`
+#     names ./.venv/bin/python, and exec.allow names ./.venv/ and the interpreter it points to (base/python-dev);
+#   - one folder is writable, ./out/; every other write, the project's own files included, is refused and recorded;
+#   - the secrets of the built-in deny_read list (~/.ssh, ~/.aws, ~/.netrc, the token stores of other tools, .env files
+#     in the project) cannot be read, whether or not they exist; env.pass passes only the model key, so a token in your
+#     shell never reaches the agent, and LangSmith tracing (LANGSMITH_*) stays off;
+#   - the model is reached through Tego's forwarder (capture: forwarder): the model host is declared under models: and
+#     is NOT in net.allow, so the agent's chat model client must honour the provider's base-URL variable, which Tego
+#     sets (ANTHROPIC_BASE_URL; langchain-anthropic reads it, and the Anthropic SDK under it). Every call is then
+#     recorded and counted, and limits.tokens ends the run at the budget. Anthropic's Messages API and, for a models: entry
+#     with provider: openai, OpenAI's Chat Completions and Responses APIs are counted; a chat model whose answers state no
+#     usage Tego reads (a streamed ChatOpenAI call whose client did not ask for it, an API of another provider) ends a
+#     run under `tokens` at that answer (exit 125, saying why), so leave `tokens` out of a contract that calls one
+#     (README, "Limits seen");
+#   - the one other host the agent may reach is in net.allow (CHANGE it to the API your tools call); every other
+#     connection is refused and recorded;
+#   - one program besides the interpreter may run, git; any other is refused and recorded (CHANGE the list to the
+#     programs your tools start);
+#   - one MCP server sits behind the relay (docs/user/mcp-tools.md): read_file is allowed and delete_file is denied
+#     by name. CHANGE the server (command) and the tool names to yours, or delete the mcp: entry and the
+#     `mcp relay *` entry of exec.allow when the agent uses no MCP server. The run gives the agent two variables:
+#     TEGO_MCP_CONFIG names a file that holds the command and arguments to start the server with (the relay's shim),
+#     which langchain-mcp-adapters takes as its stdio connection; TEGO_MCP_RELAY is the relay's address, which the
+#     shim reads, so the agent passes it in that connection's env (the MCP SDK starts a server with only a short
+#     list of variables of its own).
+#     At a root tier (sudo ... run) the file is in /run/tego-agent/<run id>/, readable by your account only
+#     (docs/user/mcp-tools.md).
+#
+# Before the first compile (examples/agents/README.md has the commands):
+#   1. create the environment in the project and install your agent's packages into it:
+#        python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+#      (test/workloads/langgraph/requirements.txt pins the versions the example's test agent was checked with);
+#   2. tego reads base/python-dev, which this file extends, from the machine config's profiles: directory
+#      (~/.tego/profiles unless a layer names another): copy examples/profiles/base into it, or point profiles: at
+#      examples/profiles;
+#   3. the MCP server named under mcp: is a file of the project (./mcp_server.py here);
+#   4. CHANGE the path of the tego binary in the exec.allow line `... mcp relay *` to where tego is installed
+#      (`command -v tego`); the relay's shim is that binary.
+# `limits.cost_usd` is left out so that no price table is needed; add it as the other examples do to cap the spend.
+#
+# Run it:  tego run langgraph.yaml                           (the command, or any other after `--`)
+#          sudo "$(command -v tego)" run --tier cgroup langgraph.yaml     (tier cgroup, for the stronger record)
+# Watch a first run without rules:  tego watch -- ./.venv/bin/python agent.py     then `tego learn` for a first draft.
+version: 0
+name: langgraph
+extends: base/python-dev
+command: ["./.venv/bin/python", "agent.py"]
+models:
+  - { provider: anthropic, host: api.anthropic.com, port: 443 }
+capture: forwarder
+fs:
+  write: ["./out/"]           # the only folder the agent may change
+exec:
+  # The virtual environment's interpreter and the scripts in it, git, and the relay's shim (the tego binary with the
+  # arguments the shim is started with; the server it starts needs no entry). Anything else is refused and recorded.
+  allow: ["./.venv/", "git", "/home/USER/.local/bin/tego mcp relay *"]
+net:
+  # The model is NOT here: the forwarder is its only route and the run admits it by itself. This is the one other host
+  # the agent's tools may reach (CHANGE it); a connection to any other host is refused and recorded.
+  allow: ["api.open-meteo.com:443"]
+mcp:
+  - name: files
+    command: ["./.venv/bin/python", "./mcp_server.py"]
+    tools: {allow: [read_file], deny: [delete_file]}
+env:
+  # The model key. TEGO_MCP_RELAY and TEGO_MCP_CONFIG, the relay's two variables, are set by the run itself.
+  pass: ["ANTHROPIC_API_KEY"]
+limits:
+  pids: 256
+  memory: 4GiB
+  wall: 30m
+  tokens: 2000000             # input plus output tokens of every model call through the forwarder
+record: summary
+tier: auto

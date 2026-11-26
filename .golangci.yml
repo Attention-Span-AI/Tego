@@ -396,6 +396,15 @@ linters:
             - github.com/attention-span-ai/tego/internal/platform/sys
             - github.com/attention-span-ai/tego/internal/platform/proc
             - github.com/attention-span-ai/tego/pkg/spec/identity
+        # Where this process is (host, WSL, container), for the words of a refusal; it decides nothing. It reads the
+        # peer package's WSL marks and says the sentences runscope lets a caller replace.
+        platform-whereami-imports:
+          files: ["**/internal/platform/whereami/**", "!$test"]
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/attention-span-ai/tego/internal/platform/peer
+            - github.com/attention-span-ai/tego/internal/runscope
         # Layer 3 (ecosystem): an adapter for a particular agent is a client of the contract. It reads and writes
         # that agent's own files and settings and shares the pkg/spec types, and it never reaches the engine, the
         # ledger, the read side, the CLI or BPF (pkg/spec/**, golang.org/x/sys/unix, the standard library and embed

@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -305,13 +306,73 @@ func removeStaleRelayState(rec relayState) {
 	}
 }
 
-// stopDashboard is `tego dashboard --stop`: it ends this user's relay.
-func stopDashboard() int {
-	rec := readRelayState()
-	if rec == nil || !stopRelayProcess(*rec) {
-		fmt.Println("No dashboard relay is running.")
-		return 0
+// wslOutput runs a system program (wsl.exe) with argv, in the person's session, and returns what it printed on standard
+// output; the program is ended when limit passes. Standard error is dropped: WSL's own warnings are not an answer.
+func wslOutput(argv []string, limit time.Duration) (string, error) {
+	cmd := proc.Command(systemProgram("wsl.exe"), argv...)
+	cmd.Env = append(os.Environ(), "WSL_UTF8=1")
+	var stdout startupLog
+	cmd.Stdout = &stdout
+	if err := startWindowsCommand(cmd); err != nil {
+		return "", err
 	}
-	fmt.Println(dashboardStoppedWords())
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		return string(stdout.data), err
+	case <-time.After(limit):
+		_ = cmd.Process.Kill()
+		<-done //nolint:errcheck // the killed child's status says nothing more
+		return string(stdout.data), errors.New("wsl.exe did not answer in time")
+	}
+}
+
+// linuxRunning reports whether Tego's distribution is running, without starting it. When wsl.exe cannot say, it is
+// taken as running: the command that follows then starts it, which is harmless.
+func linuxRunning() bool {
+	out, err := wslOutput([]string{"--list", "--running", "--quiet"}, 20*time.Second)
+	return err != nil && out == "" || listsDistribution([]byte(out), "tego")
+}
+
+// releaseLinux asks Tego's Linux to stop what the dashboard command started there, unless a run is going
+// (`tego dashboard-relay release`, through the same fixed entry as every command, inside the user scope).
+func releaseLinux() releaseResult {
+	argv, err := wslArguments([]string{"dashboard-relay", "release"})
+	if err != nil {
+		return releaseResult{}
+	}
+	out, _ := wslOutput(argv, 60*time.Second)
+	return parseReleaseLine(out)
+}
+
+// linuxMirrored reports whether WSL's networking is mirrored, asked of the running WSL (`wslinfo --networking-mode`
+// in Tego's Linux), and of .wslconfig only when WSL gave no answer. Tego's Linux is already up here, so this does not
+// depend on how long it took to start.
+func linuxMirrored() bool {
+	out, _ := wslOutput([]string{"--distribution", "tego", "--user", "tego", "--exec", "/usr/bin/wslinfo", "--networking-mode"}, 20*time.Second)
+	cfg := ""
+	if dir := os.Getenv("USERPROFILE"); dir != "" && filepath.IsAbs(dir) {
+		if b, err := os.ReadFile(filepath.Join(dir, ".wslconfig")); err == nil {
+			cfg = string(b)
+		}
+	}
+	return networkingMirrored(out, cfg)
+}
+
+// stopDashboard is `tego dashboard --stop`: it ends this user's relay and then, in Tego's Linux and only when no run is
+// going, the dashboard the command started there, whose connection to the Linux session is what kept Tego's Linux from
+// stopping (dashboardStopWords says what happened).
+func stopDashboard() int {
+	ended := false
+	if rec := readRelayState(); rec != nil {
+		ended = stopRelayProcess(*rec)
+	}
+	up := linuxRunning()
+	var rel releaseResult
+	if up {
+		rel = releaseLinux()
+	}
+	fmt.Println(dashboardStopWords(ended, up, rel))
 	return 0
 }

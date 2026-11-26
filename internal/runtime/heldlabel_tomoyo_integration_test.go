@@ -208,6 +208,12 @@ func tomoyoRunAs(t *testing.T, c *crossOwner, actor, tier, phase, mode string, a
 	}
 	cmd := c.command(t, asUser, "run", name)
 	cmd.Dir = "/"
+	if asUser {
+		// The user's launcher needs the subtree systemd delegates to it (user@<uid>.service), which a KVM guest has no
+		// manager to make and a host without the user's session lacks: the same leaf the other suites' user runs start in
+		// (userLeaf makes the chain where it is missing, and leaves a real one alone), public issue 91.
+		cmd.SysProcAttr.UseCgroupFD, cmd.SysProcAttr.CgroupFD = true, userLeaf(t, c.uid, c.gid)
+	}
 	return cmd, path
 }
 

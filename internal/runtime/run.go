@@ -244,6 +244,18 @@ type Result struct {
 	RecordErr error
 	// StatusErr is a failed final teardown-status write, which the caller reports as exit 125.
 	StatusErr error
+	// Uncounted is set when the run ended because a token or cost budget met a model exchange whose spend capture
+	// could not count (reason error, run_end's detail "capture: N model exchanges spent tokens no budget could
+	// count"): what the caller tells the person in words. Nil for every other end.
+	Uncounted *Uncounted
+}
+
+// Uncounted is the model spend that ended a run under a token or cost budget (captureUnmetered): how many
+// exchanges, and the first one's account of itself as the capture source gave it ("POST /v1/chat/completions: usage
+// unreadable"). The words a person reads are the caller's; the record's run_end detail is unchanged.
+type Uncounted struct {
+	Exchanges int64
+	Why       string
 }
 
 // QueueCapacity is the events channel's depth: producers never block the agent, a
@@ -425,6 +437,9 @@ type runner struct {
 	// runtimeLock is the flocked lock file in runtimeDir, held for the run's life so the next launch's sweep leaves the
 	// directory alone (makeRunRuntimeDir); nil when there is no directory.
 	runtimeLock *os.File
+	// client is a root launcher's directory for the files its sources write for the agent to read (clientdir.go), held
+	// by descriptor with its flocked lock file for the run's life as runtimeLock is; nil when there is none.
+	client *clientDir
 	// codexHome is the run's own CODEX_HOME under runtimeDir, "" when none was written (codexhome.go).
 	codexHome string
 	// codexHomeID is the device and inode of the directory writeCodexHome made, which grantCodexHome requires the
@@ -449,6 +464,11 @@ type runner struct {
 	termMu   sync.Mutex
 	terminal identity.EndReason
 	detail   string
+	// uncounted is the first spend captureUnmetered reported and uncountedDetail the run_end detail it wrote for it;
+	// both are read under termMu, and the spend is told to the person only when that detail is the one the run
+	// ended with (uncountedEnd), so an end another worker decided first never carries it.
+	uncounted       *Uncounted
+	uncountedDetail string
 	// quiesced is set once no process of the run can spend any more: the run's cgroup is empty (awaitEmpty),
 	// or tego's own teardown has begun (the kill awaitExit or awaitEmpty sends when ctx ends, or shutdown).
 	// A report of spend capture could not count that arrives after it no longer decides the run's end
@@ -775,7 +795,7 @@ func (r *runner) prepare(ctx context.Context) error {
 	if err := r.createRuntimeDir(); err != nil {
 		return err
 	}
-	if err := r.tellRuntimeDir(); err != nil {
+	if err := r.tellClientDir(); err != nil {
 		return err
 	}
 	if err := r.provisionHarness(); err != nil {

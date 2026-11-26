@@ -13,6 +13,8 @@
 # counts as failed, and each suite's <suite>.list (its top-level tests, read from source by
 # root-suites.sh) names the tests that never started at all.
 #
+# A suite whose binary the guest could not find (exit 127, no test ran) is result harness-fault, not fail.
+#
 # Usage: summarize.py <results.tsv> <summary.json>
 #   results.tsv rows: suite, package, tags, status (an exit code | build-failed | not-run | vm-<reason>
 #   when the guest itself failed: vm-lost, vm-timeout, vm-no-report, vm-env, vm-usage),
@@ -176,7 +178,14 @@ def summarize_suite(suite, pkg, tags, status, jpath, extra):
         lines = tail(extra, 300)
         why = [l for l in lines if re.search(r"panic|timed out|fatal error|TEGO-VM|kvm-run", l)]
         rec["failures"].append("exit %d with no failing test: %s" % (code, " | ".join((why or lines)[-8:])))
-    if code != 0 or failed_tests:
+    # Exit 127 from the guest's sh with no test run is "the test binary is not there" (its initramfs lost it): a fault of
+    # the harness, said so, never counted as a test failing (public issue 91: 16 jobs read as failures of conformance).
+    not_found = [l for l in tail(extra, 300) if re.search(r"exec: \S+: not found|^\S*sh: .*: not found", l)]
+    if code == 127 and rec["ran"] == 0 and rec["skipped"] == 0 and not_found:
+        rec["result"] = "harness-fault"
+        rec["failures"] = ["HARNESS FAULT, not a test failure: the guest could not find the suite's binary (exit 127): "
+                           + " | ".join(not_found[-3:])]
+    elif code != 0 or failed_tests:
         rec["result"] = "fail"
     elif rec.get("unknown"):
         rec["result"] = "unknown"

@@ -12,6 +12,9 @@ import (
 	"os"
 	"slices"
 
+	"golang.org/x/sys/unix"
+
+	"github.com/attention-span-ai/tego/internal/control/pathcheck"
 	"github.com/attention-span-ai/tego/internal/control/rulesview"
 	"github.com/attention-span-ai/tego/internal/registry"
 	"github.com/attention-span-ai/tego/internal/rulefile"
@@ -130,7 +133,7 @@ func (s *Service) savedChange(ctx context.Context, session, ack, ref, base strin
 	// never calls a proposal builder or regenerates comments, setup, or run output.
 	check := &ChangePlan{}
 	if _, err := s.newlyAllows(ctx, c.context(s), f.Text, p.text, check); err != nil {
-		return nil, nil, fmt.Errorf("%w: %v", ErrRefused, err)
+		return nil, nil, refusedUnlessUnfinished(err)
 	}
 	p.dependencies = check.dependencies
 	if !s.reviewOK(ack, p.reviewed()) {
@@ -145,6 +148,30 @@ func (s *Service) savedChange(ctx context.Context, session, ack, ref, base strin
 	return c, p, nil
 }
 
+// refusedUnlessUnfinished is err refused as the contract's own (ErrRefused, with its words), unless it is a check that
+// did not finish (a busy or unfinished compile, a location that does not answer): that keeps its type, so the page
+// answers it as every unfinished check (503, its cause) and not as a refusal of the contract, and the review is held.
+func refusedUnlessUnfinished(err error) error {
+	if pathcheck.IsNotFinished(err) {
+		return err
+	}
+	return fmt.Errorf("%w: %v", ErrRefused, err)
+}
+
+// directoryOpenFailure is what a Save says when the reviewed folder could not be opened again. A folder that is gone or
+// replaced by a link (ENOENT, ENOTDIR, ELOOP) really differs from the one reviewed: stale. A location that does not
+// answer, or a request that ran out of time, is a check that did not finish and keeps its own words. Anything else is
+// refused in the system's own words: nothing is known to have changed.
+func directoryOpenFailure(err error) error {
+	if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ENOTDIR) || errors.Is(err, unix.ELOOP) {
+		return fmt.Errorf("%w: %v", ErrStale, err)
+	}
+	if mapped := pathcheck.LocationError(err); pathcheck.IsNotFinished(mapped) {
+		return mapped
+	}
+	return fmt.Errorf("%w: %v", ErrRefused, err)
+}
+
 func (s *Service) savedNew(ctx context.Context, req NewReq, ack string) (*NewPlan, *setup.Result, error) {
 	r, err := s.reviewedDraft(req.Session, ack)
 	if err != nil {
@@ -154,7 +181,11 @@ func (s *Service) savedNew(ctx context.Context, req NewReq, ack string) (*NewPla
 	if p == nil || r.Setup == nil {
 		return nil, nil, ErrStale
 	}
-	dir, problem := s.projectDir(ctx, req.Dir)
+	dir, problem, unfinished := s.projectDir(ctx, req.Dir)
+	if unfinished != nil {
+		// The folder was not checked, so it is not known to differ from the one reviewed: say why, never "changed".
+		return nil, nil, unfinished
+	}
 	name, _ := newName(req.Name, dir)
 	if problem != "" || dir != p.Dir || name != p.Name || req.Registry != p.Registry {
 		return nil, nil, ErrStale
@@ -183,7 +214,10 @@ func (s *Service) savedNew(ctx context.Context, req NewReq, ack string) (*NewPla
 	// Restore private publication metadata from the retained setup, not the form.
 	p.writeDirs = slices.Clone(r.Writes)
 	identity, err := directoryIdentityContext(ctx, p.File, false)
-	if err != nil || identity != p.directory {
+	if err != nil {
+		return nil, nil, directoryOpenFailure(err)
+	}
+	if identity != p.directory {
 		return nil, nil, ErrStale
 	}
 	if !p.Registry {
@@ -209,7 +243,7 @@ func (s *Service) savedNew(ctx context.Context, req NewReq, ack string) (*NewPla
 	}
 	digest, err := s.newSnapshot(ctx, p)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %v", ErrRefused, err)
+		return nil, nil, refusedUnlessUnfinished(err)
 	}
 	p.dependencies = digest
 	if !s.reviewOK(ack, p.reviewed()) {

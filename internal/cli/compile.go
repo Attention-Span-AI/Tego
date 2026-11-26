@@ -388,7 +388,7 @@ func runCompileTest(rt *agent.RuleTable, m *config.Machine, path string, tiers [
 	_ = agent.WriteDiagnostics(stderr, ds)
 	if err != nil {
 		if !agent.HasErrors(ds) {
-			message(stderr, path, 0, 0, err.Error(), loadCode(err))
+			message(stderr, path, 0, 0, missingFileWhy(err, path), loadCode(err))
 		}
 		return identity.ExitUsage // §7: a malformed table fails before any row runs
 	}
@@ -762,7 +762,7 @@ func loadFailed(stderr io.Writer, label string, ds []agent.Diagnostic, err error
 		return identity.ExitFinding // R25: compile found an error
 	}
 	code := loadCode(err)
-	message(stderr, label, 0, 0, err.Error(), code)
+	message(stderr, label, 0, 0, missingFileWhy(err, label), code)
 	if code == codeIO {
 		return identity.ExitError // R25: an I/O failure, not a contract finding
 	}

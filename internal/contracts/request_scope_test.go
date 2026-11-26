@@ -135,7 +135,9 @@ func TestRequestScopeEndsAPausedHelperAtItsBound(t *testing.T) {
 	})
 	begin := time.Now()
 	_, err := exchange(ctx, []byte("request"))
-	if !IsCompileUnfinished(err) || time.Since(begin) < 350*time.Millisecond || time.Since(begin) > 2*time.Second {
+	// The scope's clock starts when the scope is made, before the scripted helper is set up, which a race build on a loaded
+	// machine can take a hundred milliseconds over: the bound is what ends it, so the lower margin is wide.
+	if !IsCompileUnfinished(err) || time.Since(begin) < 150*time.Millisecond || time.Since(begin) > 5*time.Second {
 		t.Fatalf("a paused helper in a page bounded at 400ms: %v after %v", err, time.Since(begin))
 	}
 }

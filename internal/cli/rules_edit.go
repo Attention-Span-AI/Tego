@@ -58,7 +58,7 @@ func cmdRulesEdit() Command {
 				text, err = readRulesPath(path)
 			}
 			if err != nil {
-				message(stderr, path, 0, 0, "tego rules edit: "+err.Error(), codeIO)
+				message(stderr, path, 0, 0, "tego rules edit: "+missingFileWhy(err, path), codeIO)
 				return identity.ExitError
 			}
 			edited, code := editCopy(path, text, stderr)

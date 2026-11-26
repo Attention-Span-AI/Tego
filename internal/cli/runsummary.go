@@ -20,6 +20,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/pricetable"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
+	"github.com/attention-span-ai/tego/internal/runtime/derive"
 	"github.com/attention-span-ai/tego/internal/shellword"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
@@ -73,6 +74,9 @@ type endSummary struct {
 	kept []byte
 	// keptWhy is why kept is nil when a copy was asked for and the receipt was built: the binding's own words.
 	keptWhy string
+	// uncounted is the model spend that ended the run under a token or cost budget (Result.Uncounted), whose cause
+	// the closing lines say in words (uncountedLines); nil for any other end.
+	uncounted *tegoruntime.Uncounted
 }
 
 // recordOffClause is what the summary of a run whose record was off says, before its chain clause.
@@ -88,7 +92,7 @@ func summarizeRunKeeping(ctx context.Context, m *config.Machine, anchor string, 
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), summaryBudget)
 	defer cancel()
-	s := &endSummary{run: res.RunID, how: endedHow(res.Reason), recordOff: mode == agent.RecordOff, machine: m}
+	s := &endSummary{run: res.RunID, how: endedHow(res.Reason), recordOff: mode == agent.RecordOff, machine: m, uncounted: res.Uncounted}
 	root, err := ledgerRootOf(m)
 	if err != nil {
 		s.err, s.chain = err, "chain not checked (no ledger root)"
@@ -252,6 +256,7 @@ func (s *endSummary) textWithMore(show string) string {
 	run := record.Printable(s.run)
 	if s.rc == nil {
 		fmt.Fprintf(&b, "tego run: %s ended%s · summary not available (%s) · %s\n", run, s.ended(), record.Printable(errText(s.err)), s.tail())
+		b.WriteString(uncountedLines(s.uncounted))
 	} else {
 		var parts []string
 		if s.rc.Tier != "" {
@@ -259,6 +264,7 @@ func (s *endSummary) textWithMore(show string) string {
 		}
 		parts = append(append(parts, s.counts(false)...), s.tail())
 		fmt.Fprintf(&b, "tego run: %s ended (%s) · %s\n", run, s.rc.Outcome(), strings.Join(parts, " · "))
+		b.WriteString(uncountedLines(s.uncounted))
 		b.WriteString(s.disclosures())
 	}
 	fmt.Fprintf(&b, "  more: %s %s\n", show, run)
@@ -423,6 +429,45 @@ func (s *endSummary) disclosures() string {
 		if g.Field == "record" || g.Field == "refusals" {
 			fmt.Fprintf(&b, "  %s: %s\n", record.Printable(g.Field), record.Printable(g.Why))
 		}
+	}
+	return b.String()
+}
+
+// uncountedLines is what a run that a token or cost budget ended, because a model answer's spend could not be counted,
+// tells the person under its closing line (the record's run_end detail says the same in its own words and is not
+// changed): which request, that its token usage could not be read, that a budget cannot be enforced on answers Tego
+// cannot count, and what to do. "" for any other end. why is the capture source's account of the exchange
+// ("POST /v1/chat/completions: usage unreadable"); an exchange that was not read for another reason (an
+// answer that never came, a price table that prices no model) is named as it was and given the same two ways out.
+func uncountedLines(u *tegoruntime.Uncounted) string {
+	if u == nil {
+		return ""
+	}
+	var b strings.Builder
+	why := record.Printable(u.Why)
+	route, rest, unreadable := strings.Cut(why, derive.UnreadableSuffix)
+	streamed := unreadable && rest == " ("+derive.NoteStreamWithoutUsage+")"
+	cut := unreadable && rest == " ("+derive.NoteAnswerCutOff+")"
+	switch {
+	case cut:
+		fmt.Fprintf(&b, "  why: the model's answer to %s was interrupted before it stated its usage: the client or the agent closed the connection, or the answer was longer than the part of a body Tego keeps. A token or cost budget cannot count an interrupted answer, so the run was ended (a budget is never silently ignored)\n", route)
+	case streamed:
+		fmt.Fprintf(&b, "  why: the model's answer to %s was streamed and stated no token usage: the API puts usage in a stream only when the client asks for it, and Tego never changes a request. A token or cost budget cannot be enforced on answers it cannot count, so the run was ended (a budget is never silently ignored)\n", route)
+	case unreadable && rest == "":
+		fmt.Fprintf(&b, "  why: the model's answer to %s stated no token usage that Tego can read, and a token or cost budget cannot be enforced on answers it cannot count, so the run was ended (a budget is never silently ignored)\n", route)
+	default:
+		fmt.Fprintf(&b, "  why: a model exchange could not be counted (%s), and a token or cost budget cannot be enforced on spend it cannot count, so the run was ended (a budget is never silently ignored)\n", why)
+	}
+	if u.Exchanges > 1 {
+		fmt.Fprintf(&b, "  (%d exchanges were in that state)\n", u.Exchanges)
+	}
+	switch {
+	case cut:
+		fmt.Fprintf(&b, "  fix: let each call finish before the agent stops it, or remove limits.tokens and limits.cost_usd from the contract\n")
+	case streamed:
+		fmt.Fprintf(&b, "  fix: make the client ask the API for usage in the stream (the chat completions option stream_options: {\"include_usage\": true}) or not stream; or remove limits.tokens and limits.cost_usd; or use a model API whose usage Tego reads: %s\n", agent.CountedAPIWords())
+	default:
+		fmt.Fprintf(&b, "  fix: remove limits.tokens and limits.cost_usd from the contract, or use a model API whose usage Tego reads: %s\n", agent.CountedAPIWords())
 	}
 	return b.String()
 }

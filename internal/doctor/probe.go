@@ -16,6 +16,7 @@ import (
 
 	bpfobj "github.com/attention-span-ai/tego/internal/bpf"
 	"github.com/attention-span-ai/tego/internal/platform/sys"
+	"github.com/attention-span-ai/tego/internal/platform/whereami"
 	"github.com/attention-span-ai/tego/internal/runtime/cgroup"
 	"github.com/attention-span-ai/tego/internal/selfbin"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
@@ -192,7 +193,7 @@ func probeBTFWith(needs func() ([]coreNeed, error)) Result {
 }
 
 // delegateFix is D3's answer when nothing more specific is known: the systemd user delegation
-// every unprivileged launcher needs.
+// every unprivileged launcher needs, on a host or on WSL (in a container whereami.CgroupCure says the container's).
 const delegateFix = "enable systemd user delegation: Delegate=cpu memory pids in /etc/systemd/system/user@.service.d/delegate.conf, then systemctl daemon-reload and re-login"
 
 // probeCgroup is D3. It fails when any one of these does not hold, and each can be the sole reason:
@@ -246,7 +247,7 @@ func probeCgroupResolved(fs *cgroup.FS, err error, ceilings []config.Value, thro
 }
 
 func probeDelegatedCgroup(fs *cgroup.FS, ceilings []config.Value) Result {
-	fix := delegateFix
+	fix := whereami.CgroupCure(delegateFix)
 	root := fs.Root()
 	for _, name := range []string{"cgroup.procs", "cgroup.subtree_control"} {
 		if err := unix.Access(filepath.Join(root, name), unix.W_OK); err != nil {
@@ -365,7 +366,7 @@ func detectFailure(err error) (detail, fix string) {
 	if errors.Is(err, cgroup.ErrNotCgroup2) {
 		return err.Error(), "boot with systemd.unified_cgroup_hierarchy=1 (cgroup v2)"
 	}
-	return err.Error(), delegateFix
+	return err.Error(), whereami.CgroupCure(delegateFix)
 }
 
 // probeLandlockABI is D4 with the ABI number the tier derivation needs.
@@ -390,7 +391,7 @@ func probeLandlockABI() (Result, int) {
 // probe did not pass, "; fix: <fix>". A skipped probe is printed as skip rather than FAIL so a person
 // scanning the output can tell a machine that cannot do something from a probe that was not allowed to
 // find out. A failed probe for which off reports true is printed "off" (Report.optionalOff).
-func writeResults(w io.Writer, rs []Result, off func(Result) bool) error {
+func writeResults(w io.Writer, rs []Result, off func(Result) bool, fold *repeatFold) error {
 	for _, r := range rs {
 		state := "FAIL"
 		switch {
@@ -403,13 +404,51 @@ func writeResults(w io.Writer, rs []Result, off func(Result) bool) error {
 		}
 		line := fmt.Sprintf("%s %s: %s", state, r.ID, r.Detail)
 		if !r.OK && r.Fix != "" {
-			line += "; fix: " + r.Fix
+			line += "; fix: " + fold.line(r.Fix)
 		}
 		if _, err := fmt.Fprintln(w, line); err != nil {
 			return fmt.Errorf("doctor: write results: %w", err)
 		}
 	}
 	return nil
+}
+
+// withheldSudo begins the fix text sudoDoctor gives when no command can be named; the reason follows in parentheses
+// (kept free of "sudo " and a space, which internal/selfbin.TestSudoSites reads as a command being written).
+const withheldSudo = "run this tego as root with sudo"
+
+// longReason is the length from which a reason that a report repeats is said once and referred to afterwards: the
+// reason a command is withheld can name a folder, a group and a name-service setting (selfbin.groupRepair), and the
+// report's two skipped probes and its fix: line all carry it.
+const longReason = 80
+
+// repeatFold is one text report's memory of the long reasons already printed, so that a fix line with the same reason
+// refers to the first instead of printing it again. Its zero value, and nil, remember nothing and fold nothing; the
+// JSON report is never folded.
+type repeatFold struct{ seen map[string]bool }
+
+// line is fix as the text report prints it: the same text, except that a withheld sudo command's reason already
+// printed by an earlier line is replaced by "for the reason given above".
+func (f *repeatFold) line(fix string) string {
+	if f == nil {
+		return fix
+	}
+	head, rest, ok := strings.Cut(fix, withheldSudo)
+	if !ok || !strings.HasPrefix(rest, " (") || !strings.HasSuffix(rest, ")") {
+		return fix
+	}
+	reason := strings.TrimSuffix(strings.TrimPrefix(rest, " ("), ")")
+	if len(reason) < longReason {
+		return fix
+	}
+	if f.seen[reason] {
+		return head + withheldSudo + " (no command is shown, for the reason given above)"
+	}
+	if f.seen == nil {
+		f.seen = map[string]bool{}
+	}
+	f.seen[reason] = true
+	return fix
 }
 
 // executable is os.Executable, a variable so a test can name the binary the fix lines print.

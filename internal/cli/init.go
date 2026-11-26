@@ -148,7 +148,17 @@ func runInitLive(dir, name string, force bool, po *setup.Options, live agent.Liv
 		} else if !errors.Is(err, os.ErrNotExist) {
 			what = "cannot be read: " + err.Error()
 		}
-		message(stderr, abs, 0, 0, fmt.Sprintf("tego init: %s %s; init scaffolds an existing project directory", abs, what), codeUsage)
+		why := fmt.Sprintf("tego init: %s %s; init scaffolds an existing project directory", abs, what)
+		if err != nil && errors.Is(err, os.ErrNotExist) {
+			if words := windowsPathWords(dir, true); words != "" {
+				if form, _ := classifyWindowsPath(dir); form == windowsOwn && ownDistribution() {
+					why = fmt.Sprintf("tego init: %s does not exist; %s", dir, words)
+				} else {
+					why = fmt.Sprintf("tego init: %s is not a folder here; %s", dir, words)
+				}
+			}
+		}
+		message(stderr, abs, 0, 0, why, codeUsage)
 		return identity.ExitUsage // R25: usage error
 	}
 	if name == "" {

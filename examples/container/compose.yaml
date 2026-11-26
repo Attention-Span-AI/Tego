@@ -3,30 +3,37 @@
 # An agent under `tego run` in a container, and the dashboard (tego-control serve) on the host's loopback
 # (docs/user/container.md). From this directory:
 #
-#   TEGO_UID=$(id -u) TEGO_GID=$(id -g) docker compose build
+#   export TEGO_UID=$(id -u) TEGO_GID=$(id -g)
+#   docker compose build                             # builds the one image (the agent service does; the dashboard uses it)
 #   docker compose run --rm agent tego doctor        # what this host gives the container
 #   docker compose up agent                          # one run of the example agent (hello.yaml)
 #   docker compose up -d control && docker compose logs control   # the dashboard's link, signed in
 #
+# Build first: `docker compose up -d control` never pulls (tego:local is no registry's name); with no image built it stops
+# at once with an error that names the missing image.
+#
 # Linux hosts with cgroup v2 only. Docker is what CI runs this file with; Podman reads it too, untested.
 name: tego
 
+# The one name both services run. Only the agent service builds it: two services that build one tag make
+# `docker compose build` exit 1 on Docker's containerd image store ("image ... already exists"), and leave a
+# dangling second image on the classic one.
 x-image: &image
   image: ${TEGO_IMAGE:-tego:local}
-  build:
-    context: ../..
-    dockerfile: examples/container/Dockerfile
-    target: runtime
-    args:
-      # The dashboard answers only a browser whose socket the dashboard's own uid owns, so to open it from the host,
-      # build the image with your own uid (the line above). 10001 otherwise.
-      TEGO_UID: ${TEGO_UID:-10001}
-      TEGO_GID: ${TEGO_GID:-10001}
-      EXTRA_PACKAGES: ${EXTRA_PACKAGES:-}
 
 services:
   agent:
     <<: *image
+    build:
+      context: ../..
+      dockerfile: examples/container/Dockerfile
+      target: runtime
+      args:
+        # The dashboard answers only a browser whose socket the dashboard's own uid owns, so to open it from the host,
+        # build the image with your own uid (the line above). 10001 otherwise.
+        TEGO_UID: ${TEGO_UID:-10001}
+        TEGO_GID: ${TEGO_GID:-10001}
+        EXTRA_PACKAGES: ${EXTRA_PACKAGES:-}
     # The contract to run; the image's hello agent by default. Mount your own contract and agent (a volume or a
     # bind) and name it here.
     command: ["tego", "run", "${TEGO_CONTRACT:-/usr/local/share/tego/hello.yaml}"]
@@ -73,6 +80,8 @@ services:
 
   control:
     <<: *image
+    # Never pulled: it runs the image the agent service builds, or the one TEGO_IMAGE names and `docker pull` fetched.
+    pull_policy: never
     # tego-control refuses to run as root; started as the tego user, the entrypoint sets nothing up.
     user: "${TEGO_UID:-10001}:${TEGO_GID:-10001}"
     command: ["tego-control", "serve", "--addr", "${TEGO_DASHBOARD_ADDR:-127.0.0.1:8484}"]

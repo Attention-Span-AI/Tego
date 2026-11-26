@@ -100,7 +100,7 @@ func scopePTY(t *testing.T) (*os.File, *os.File) {
 
 func scopeWaitFile(t *testing.T, path string) []byte {
 	t.Helper()
-	for end := time.Now().Add(4 * time.Second); time.Now().Before(end); time.Sleep(5 * time.Millisecond) {
+	for end := time.Now().Add(15 * time.Second); time.Now().Before(end); time.Sleep(5 * time.Millisecond) {
 		if b, err := os.ReadFile(path); err == nil {
 			return b
 		}

@@ -826,16 +826,25 @@ price it has ("The price table" below; `examples/prices.example.yaml` is one to 
 
 **Limits: set each one above the worst healthy night.** The watcher checks a monotonic clock once a second and the
 model traffic as it arrives, and ends the run with a `limit` event naming the ceiling and the value, `run_end
-reason=limit`, exit 124. The kernel's limits are the run's cgroup, which every run has, root or not (tier `landlock`
+reason=limit`, exit 124. From the limit line to the end of the run the forwarder admits no new model request: it answers
+one itself with `403`, `Tego refused this request: the run reached its limit (limits.repeats) ...`, records it as a refused
+`net` line under rule `limits.<which>` and the limit's reason (`limit-repeats`), and sends nothing to the model (ADR 0037,
+2026-11-25 note); a request held for an approval, a route or a credential when the limit is recorded is refused when it is
+released. What this does not stop: requests already in flight when the limit is recorded finish and are recorded, and so can
+a few exchanges the record had not yet counted (0 to 4 responses after the limit line in the tests on a quiet host; the record trails an agent that does not pause, and one run on a loaded host saw 30); a
+`net.proxy` tunnel (CONNECT or WebSocket) that is already open keeps carrying traffic until the run ends, and such a tunnel is
+refused only under `tokens`, `cost_usd` and `repeats` budgets, so a run with only `wall` or `stall_after` can have one open; a
+model reached other than through the forwarder (a contract that pins `capture: uprobe`, a host the contract lets the agent
+reach directly) is not refused, and its budget still ends the run at the kill. The kernel's limits are the run's cgroup, which every run has, root or not (tier `landlock`
 needs a delegated cgroup; a missing controller refuses the run, naming it).
 
 | Limit | At the limit | Measured here |
 |---|---|---|
 | `wall` | the whole run is killed, 124. A hard cap on elapsed time: the agent working or you typing does not move it; for an interactive session set `stall_after` and leave `wall` off or large | `wall: 12s` ended the run at 12.000 s |
 | `stall_after` | no event for that long: killed, 124. A held ask, a streaming model response, a request Tego itself is holding on its way to the model (its own approval, route, credential, connect and TLS work: Tego's time, not the agent's silence; the clock restarts when the connection is ready, and a model that then goes silent still stalls the run) and, when the agent's stdin is your terminal, your typing count as activity (seen up to 8 s late: the kernel stamps a terminal's read time once per 8 s, so keep `stall_after` at a minute or more; tego reads no key) | a hung agent was ended 5.49 s after its last event with `stall_after: 5s` |
-| `repeats` | the same tool call from the model that many times in a row: killed, 124 | `repeats: 6` ended a runaway loop at its sixth call; a healthy loop's longest streak was 1 |
-| `tokens` | input plus output tokens of the calls so far, cache tokens excluded: killed, 124 | `tokens: 300` ended at 317, the call that crossed it; the value equals the sum of the ledger's own usage |
-| `cost_usd` | the same, priced: killed, 124 | `cost_usd: 0.002` ended at $0.002127, equal to the ledger's tokens priced by the table |
+| `repeats` | the same tool call from the model that many times in a row: killed, 124; new model requests are refused from the limit line on | `repeats: 6` ended a runaway loop at its sixth call; a healthy loop's longest streak was 1 |
+| `tokens` | input plus output tokens of the calls so far, cache tokens excluded: killed, 124. Counted only for the model API styles Tego reads usage from (below); an answer of another style ends the run, 125, saying why | `tokens: 300` ended at 317, the call that crossed it; the value equals the sum of the ledger's own usage |
+| `cost_usd` | the same, priced: killed, 124 (the same styles) | `cost_usd: 0.002` ended at $0.002127, equal to the ledger's tokens priced by the table |
 | `window` | not a limit of its own: with it, `tokens` and `cost_usd` are totals over the last `window` across every run of the agent, restarts included, and the run that crosses them is killed, 124 (below) | a restart after a run that spent 600 of 1000 tokens was ended at the 1000th of the two, `limit tokens 1100 over 1000` (unit proof on real ledgers; no kernel run) |
 | `memory` | the kernel kills inside the cgroup, `run_end reason=oom`, 137 | a hog under `memory: 40MiB` reached the limit 38 times and was killed; peak exactly 40 MiB |
 | `pids` | a refused fork ends the run, `reason=pids`, 137 (it does not wait for the agent to cope) | `pids: 16`: the 16th task's fork was refused and the run ended; peak 16 |
@@ -1455,6 +1464,25 @@ alone imposes is not refused: the run records `gap what=record why=budget-unmete
 For an unattended run, declare the model endpoint under `models:` and install a
 price table before relying on `cost_usd` (next section).
 
+**Which model APIs a token or cost budget counts.** A budget counts the usage an answer states, in the shapes Tego reads, and
+which shape an endpoint speaks is what its `models:` entry's `provider` says, never a guess from the answer: Anthropic's
+Messages API (`provider: anthropic`; also its OpenAI-shaped chat completions endpoint on that host), and OpenAI's Chat
+Completions (`POST /v1/chat/completions`) and Responses (`POST /v1/responses`) APIs (`provider: openai`, on the host the
+entry declares: OpenAI's, a gateway's or a local server's that speaks those paths). For an OpenAI-style answer the tokens
+counted are the prompt tokens minus the cached ones, plus the completion (or output) tokens, reasoning tokens included in
+them; the cached tokens are the cache reads, priced at the table's `cache_read_per_mtok` and not in `tokens`. Tego never
+changes a request, so a streamed chat completion is counted only when the client asked the API to state usage in the stream
+(`stream_options: {"include_usage": true}`); a streamed one without it, a Responses stream without a completed event, an
+answer past the capture cap (8 MiB), an answer cut short (the client or the agent closed the connection: a cancelled or interrupted stream), a Responses answer stopped by `max_output_tokens` (`response.incomplete`), another path of the API (embeddings, a stored response's retrieval) and an API of
+any other provider spend tokens no budget can count, and a budget that cannot be counted is never silently ignored, so the
+run ends at that answer: reason `error`, exit 125, run_end's detail "capture: 1 model exchanges spent tokens no budget could count (POST /v1/chat/completions:
+usage unreadable); a token or cost budget cannot be enforced". `tego run`'s closing lines say it in words (the request, that its
+usage could not be read, and that the fix is to remove `limits.tokens` and `limits.cost_usd` or to use a model API whose usage
+Tego reads; for a stream with no usage it names the client option above), and `tego rules check` warns `[budget-uncounted]`
+for a contract that sets one of the two beside a `models:` entry whose provider is not a counted one. The warning is not a
+refusal, and it names the entry's line. `limits.repeats` does not count the tool calls of an OpenAI-style answer (not derived
+yet). OpenAI-style counting is tested against a stand-in written from the provider's reference; the guest run with a real client is still owed.
+
 Under `record: off` the uprobes place no probe, so an `auto` contract captures with the forwarder at every tier, and
 its run refuses a direct connection to a `models:` host (`rule: models[<host>:<port>]`), as a tier `landlock` run
 does: the agent reaches its model through the forwarder's base URL (`ANTHROPIC_BASE_URL` and its peers). An agent
@@ -1499,9 +1527,9 @@ lockdown/LSM denial also make the check unavailable; no separate blanket lockdow
 a layer names another, and a run whose contract declares `cost_usd` is refused without one (above). No table is
 installed for you. `examples/prices.example.yaml` is one to start from: the Claude API's list prices for every model
 Anthropic serves to all accounts, dated by its `updated:` line. Check them against the provider's pricing page and install
-it where tego reads it, readable and writable by you alone. Only Anthropic responses are priced in this build: a model of
-another provider (OpenAI's, for `codex.yaml`) is unmetered whatever the table says, and a run that calls one under a
-`tokens` or `cost_usd` budget is ended, so leave the budget out of such a contract:
+it where tego reads it, readable and writable by you alone. The table holds only Claude models: an OpenAI-style answer is
+counted in tokens (above), and is priced when you add its model, named exactly as the answer's `model` field reports it, in
+the format below; a model the table does not name is charged at the table's dearest rates and recorded unpriced, never $0:
 
 ```sh
 mkdir -p -m 700 ~/.tego
@@ -2721,7 +2749,7 @@ or a very busy machine)`; a checker that was blocked in this computer's own disk
 blocked thread is `jbd2_*`, `ext4_*`, `xfs_log_force*`, `btrfs_commit_transaction*`, `io_schedule*`, `folio_wait_bit*`,
 `wait_on_page_bit*` or `blk_mq_*`) is given the same extra time as a starved one, to 20 seconds in all, and then says `cannot tell:
 this computer's disk did not finish writing in time (the disk is very busy or nearly full); try again`, and a thread blocked in a network or user-space filesystem, in a name
-Tego does not know, or that cannot be read, still gets the mount words; a checker that did not
+Tego does not know, or that cannot be read, still gets the mount words, unless every location the check declared is on this computer's own storage (read from `/proc/self/mountinfo`, never from the location: ext4, xfs, btrfs, f2fs, bcachefs, zfs, tmpfs and the kernel's own filesystems, vfat, exfat and squashfs on a device node, and an overlay whose layers are all on such a mount): that check, if its helper has a thread in uninterruptible sleep when the five seconds end, is a disk wait whatever the helper's wait function says (it is hidden for an undumpable process); such a helper is given up to 30 seconds (`StartTimeout`; a dashboard request's own 25 seconds end it first) before the disk words; a helper that is only asleep, or whose counters cannot be read, keeps the words above at five seconds, and a thread readably in a network wait still gets the mount words; a request that finds every helper slot held by checks stuck on this computer's disk gets the disk words, and one holder stuck on a mount is enough for the mount words (ADR 0144, "A local location is a busy disk, not a stuck mount"); a checker that did not
 start within 30 seconds on a very busy machine says `cannot tell: Tego's checker did not start in time (the machine
 is very busy); try again`, and nothing was asked of the location; a checker that could not start at all says `cannot tell:
 Tego's checker could not start: <reason>`, which also asked nothing; a caller that gave up says `cannot tell: the check was

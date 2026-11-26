@@ -59,6 +59,10 @@ const (
 	CodeContainerSocketEscape = "container-socket-escape"
 	CodeLedgerReadable        = "ledger-readable"
 	CodeExecMap               = "exec-map"
+	// CodeBudgetUncounted warns that a limits.tokens or limits.cost_usd the contract sets sits beside a models:
+	// entry whose provider declares an API style Tego does not count: the run would end at that model's first
+	// answer, since a budget that cannot be counted is never ignored (ADR 0037, amended 2026-11-26). A warning.
+	CodeBudgetUncounted = "budget-uncounted"
 	// CodeExecRule is an exec command pattern the contract cannot hold (an error: syntax, bounds, shell operators, a
 	// path in a deny or ask command word, a directory with words, an unquoted path with spaces, a deny or ask entry
 	// matching the run's own command), or one it holds with a finding (a warning: $ or a backtick in a word, an

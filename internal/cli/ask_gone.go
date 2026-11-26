@@ -84,7 +84,7 @@ func settleLost(name, runID, dir, id string, cause error) lostWords {
 	case l.ended:
 		return lostWords{fmt.Sprintf("tego %s: %s has ended; nothing waits for an answer", name, runID), codeNotRunning, identity.ExitFinding}
 	case socketAbsent(cause) && id != "" && l.rec.AskSeq != 0 && name == "ask":
-		return lostWords{fmt.Sprintf("tego ask: %s's ask socket is not there now, so %s cannot be shown; the ledger holds no answer to it yet", runID, id),
+		return lostWords{fmt.Sprintf("tego ask: %s's ask socket is not there now, so %s cannot be shown; the ledger holds no answer to it yet; the run has ended or is ending (%s)", runID, id, endedWords(runID)),
 			codeIO, identity.ExitError}
 	case socketAbsent(cause) && id != "" && l.rec.AskSeq != 0:
 		return lostWords{fmt.Sprintf("tego %s: %s's ask socket is not there now, so this answer was not delivered; the ledger holds no answer to %s yet, "+

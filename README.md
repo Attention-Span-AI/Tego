@@ -69,7 +69,7 @@ their own machine, and the kernel programs.
 | <img src="docs/assets/icons/ban.svg" width="20" height="20" alt=""> **Nothing sent home** | No telemetry, no update check, no crash reports. Runtime traffic includes DNS lookups and connections for the agent ([details](docs/OPERATIONS.md#tegos-own-network-traffic)); the setup guide also downloads an agent's installer when you agree, and start/dashboard commands make local dashboard probes. |
 
 [examples/agents/](examples/agents/README.md) has contracts for Claude Code, OpenAI Codex, the Claude Agent SDK, the
-Anthropic Python SDK and an agent of your own.
+Anthropic Python SDK, a LangChain or LangGraph agent and an agent of your own.
 
 ## Quickstart
 
@@ -156,7 +156,7 @@ tego dashboard                # the same session in your browser
 
 `tego help` lists the common commands, `tego help -a` every one, and [docs/user/commands.md](docs/user/commands.md)
 explains each. [examples/agents/](examples/agents/README.md) has rules files for Claude Code, Codex, the Claude Agent
-SDK, the Anthropic Python SDK and an agent of your own. [docs/QUICKSTART.md](docs/QUICKSTART.md) does each step by hand
+SDK, the Anthropic Python SDK, a LangChain or LangGraph agent and an agent of your own. [docs/QUICKSTART.md](docs/QUICKSTART.md) does each step by hand
 and explains the output.
 
 ### If something's off

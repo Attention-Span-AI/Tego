@@ -123,14 +123,21 @@ func Check(ctx context.Context, r Request) (Result, error) {
 	}
 	startCtx, cancelStart := c.startContext()
 	defer cancelStart()
-	admissionDeadline := time.Now().Add(AdmissionWait)
-	timer := time.NewTimer(AdmissionWait)
-	defer timer.Stop()
+	// A governed program's request waits AdmissionWait for a slot and is then refused as busy; a person's own check
+	// waits for one as long as its start-up allowance and its request allow, so a burst of governed requests that
+	// fills the slots costs the person a wait, never the check (admissionWait).
+	wait, admissionDeadline := admissionWait(ctx, startCtx)
+	var admission <-chan time.Time
+	if wait > 0 {
+		timer := time.NewTimer(wait)
+		defer timer.Stop()
+		admission = timer.C
+	}
 	select {
 	case slots <- struct{}{}:
 	case <-startCtx.Done():
 		return Result{}, contracts.CompileNotFinished(startCtx.Err())
-	case <-timer.C:
+	case <-admission:
 		return Result{}, contracts.CompileUnavailable(true, errBusy)
 	}
 	if err := startCtx.Err(); err != nil {

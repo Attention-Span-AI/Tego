@@ -56,6 +56,11 @@ func (r *runner) captureUnmetered(n int64, why string) {
 	}
 	detail := fmt.Sprintf("capture: %d model exchanges spent tokens no budget could count (%s); a token or cost "+
 		"budget cannot be enforced", n, why)
+	r.termMu.Lock()
+	if r.uncounted == nil {
+		r.uncounted, r.uncountedDetail = &Uncounted{Exchanges: n, Why: why}, detail
+	}
+	r.termMu.Unlock()
 	r.endRun(identity.ReasonError, detail, "run: model spend uncounted under a budget; ending the run",
 		"run: kill after uncounted model spend", "exchanges", n, "why", why)
 }

@@ -29,11 +29,22 @@ import (
 const helperLifetimeMargin = 10 * time.Second * raceScale
 
 // helperMaxLifetime is the longest a healthy helper lives, from the constants of its bounds so that it cannot drift
-// from them: the start-up budget, the location cap (locationCapSteps location budgets), the longest a paused helper
-// is waited for (PauseLimit, the compile's allowance) and a fixed margin. It uses the constants, not the variables a
-// test swaps, so a test that shortens a budget does not shorten what counts as stuck.
-func helperMaxLifetime() time.Duration {
-	return StartTimeout + locationCapSteps*CheckTimeout + PauseLimit + helperLifetimeMargin
+// from them: the start-up budget, the location cap (locationCapSteps location budgets, or for a holder made for a local
+// check localCapSteps), the longest a paused helper is waited for (PauseLimit, the compile's allowance) and a fixed
+// margin. It uses the constants, not the variables a test swaps, so a test that shortens a budget does not shorten what
+// counts as stuck.
+//
+// A reservation names no location, so the class of a holder in ANOTHER process is not known. The class asked about is
+// the REQUEST's: a non-local request counts a holder stuck at the age it always has (so it is refused at once exactly when
+// it was before the local wait existed), and a local request, whose own checks may legitimately hold a slot ten
+// seconds longer, counts a holder stuck only past the longer lifetime, and so waits its start-up budget for a holder
+// that is aged between the two. That is the only place a request of any class can wait longer, and it is the local class's.
+func helperMaxLifetime(local bool) time.Duration {
+	steps := locationCapSteps
+	if local {
+		steps = localCapSteps
+	}
+	return StartTimeout + time.Duration(steps)*CheckTimeout + PauseLimit + helperLifetimeMargin
 }
 
 // holderStarts says, for each reservation name, when the process that holds it started, as the time since boot (the
@@ -62,7 +73,7 @@ func monotonicSinceBoot() (time.Duration, error) {
 // holdersStuckForGood reports whether every one of names, the reservation names of slots held by helpers nothing else
 // is known about, is held by a process that is identified and older than helperMaxLifetime. Any holder that is younger
 // (or exactly as old), or whose start time cannot be read, or that cannot be identified, makes it false: the wait stays.
-func holdersStuckForGood(names []string) bool {
+func holdersStuckForGood(names []string, local bool) bool {
 	if len(names) == 0 {
 		return false
 	}
@@ -74,7 +85,7 @@ func holdersStuckForGood(names []string) bool {
 	if err != nil {
 		return false
 	}
-	limit := helperMaxLifetime()
+	limit := helperMaxLifetime(local)
 	for _, name := range names {
 		start, ok := starts[name]
 		if !ok || now-start <= limit {

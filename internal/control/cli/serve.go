@@ -69,7 +69,7 @@ func cmdServe() Command {
 				// A dashboard of its own here prints a 127.0.0.1 link that reaches WSL's forwarding from Windows, which
 				// the peer check refuses. The dashboard on Windows is tego dashboard's, opened through the Windows
 				// command's relay (docs/adr/0123-dashboard-threat-model.md, "A browser on Windows").
-				fmt.Fprintln(stderr, "tego serve: on Windows the dashboard opens with tego dashboard; in Tego's Linux shell, type exit, then run: tego dashboard")
+				fmt.Fprintln(stderr, "tego serve: on Windows the dashboard opens with tego dashboard; in Tego's Linux shell, type exit, then run tego dashboard in Windows")
 				return identity.ExitFinding
 			}
 			listen, err := loopbackAddr(*addr)

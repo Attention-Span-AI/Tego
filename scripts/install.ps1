@@ -112,13 +112,20 @@ try {
             Write-Host '  Windows must restart now. Save your work and restart.'
             Write-Host '  After restarting, open PowerShell from Start and paste this line again:'
             $again = "irm https://github.com/$TegoRepository/releases/latest/download/install.ps1 | iex"
-            if ($env:TEGO_BASE_URL -and $env:TEGO_VERSION) {
+            # A chosen version does not survive the restart (an environment variable set in this window is gone), so the line
+            # carries it and fetches that version's own installer. Get-TegoRelease has not run yet: a value it would refuse
+            # is not built into a URL here, and the person gets the plain line and that refusal after the restart.
+            if ($env:TEGO_VERSION -match '^v?[0-9][0-9A-Za-z.+-]*$') {
                 $settings = @()
                 foreach ($name in @('TEGO_BASE_URL','TEGO_VERSION','TEGO_TEST_HTTP','TEGO_CHECKSUMS_SHA256','TEGO_YES')) {
                     $value = [Environment]::GetEnvironmentVariable($name)
                     if ($value) { $settings += ('$env:' + $name + "='" + $value.Replace("'", "''") + "'") }
                 }
-                $url = $env:TEGO_BASE_URL.TrimEnd('/') + '/' + $env:TEGO_VERSION + '/install.ps1'
+                $base = "https://github.com/$TegoRepository/releases/download"
+                if ($env:TEGO_BASE_URL) { $base = $env:TEGO_BASE_URL.TrimEnd('/') }
+                $tag = $env:TEGO_VERSION
+                if (!$tag.StartsWith('v')) { $tag = 'v' + $tag }
+                $url = $base + '/' + $tag + '/install.ps1'
                 $again = ($settings -join '; ') + "; irm '" + $url.Replace("'", "''") + "' | iex"
             }
             Write-Host ('    ' + $again)

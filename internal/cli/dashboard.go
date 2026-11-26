@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/handoff"
@@ -107,7 +108,7 @@ func cmdDashboard() Command {
 				g.line("%s  %sOpen the link above in your browser.%s", colTop, g.dim, g.offEsc)
 			case host == hostWindows && !windowsNative():
 				// A shell inside Tego's Linux cannot start a Windows browser.
-				g.line("%s  %sTo open it in your browser, type exit, then run: tego dashboard%s", colTop, g.dim, g.offEsc)
+				g.line("%s  %sTo open it in your browser, type exit, then run tego dashboard in Windows%s", colTop, g.dim, g.offEsc)
 			}
 			return identity.ExitOK
 		},
@@ -128,9 +129,55 @@ func restartDashboard(ctx context.Context, home string) string {
 }
 
 func dashboardFailed(g *walk, home string) int {
+	if windowsNative() {
+		// The log is inside Tego's Linux, where a Windows person cannot open ~/.tego/dashboard.log: name the command that
+		// reads it from Windows, and show its last lines (their sign-in links hidden) so the reason is often on screen.
+		g.bad(`The dashboard didn't start. Its log is inside Tego's Linux; to read it, run: tego shell -c "tail -n 40 ~/.tego/dashboard.log"`)
+		for _, l := range dashboardLogTail(home, dashboardLogLines) {
+			g.detail("  " + l)
+		}
+		return identity.ExitError
+	}
 	g.bad("The dashboard didn't start. Its log: " + tildeHome(dashboardLog(home), home))
 	return identity.ExitError
 }
+
+// dashboardLogLines is how many of the log's last lines a Windows person is shown when the dashboard did not start.
+const dashboardLogLines = 6
+
+// dashboardLogTail is the last n non-empty lines of the dashboard's log, each at most 160 characters with control
+// characters removed, and with the dashboard's sign-in token hidden wherever it appears (a link, or any "t=<token>"):
+// the token signs a browser in, so it is never printed. An unreadable or empty log gives none.
+func dashboardLogTail(home string, n int) []string {
+	b, err := readGuideFile(home, ".tego/dashboard.log")
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, l := range strings.Split(string(b), "\n") {
+		l = strings.Map(func(r rune) rune {
+			if r < ' ' || r == 0x7f {
+				return -1 // strings.Map drops the rune: not an exit code (I9)
+			}
+			return r
+		}, l)
+		if l = strings.TrimSpace(logToken.ReplaceAllString(l, "${1}t=(hidden)")); l == "" {
+			continue
+		}
+		if r := []rune(l); len(r) > 160 {
+			l = string(r[:160]) + "…"
+		}
+		out = append(out, l)
+	}
+	if len(out) > n {
+		out = out[len(out)-n:]
+	}
+	return out
+}
+
+// logToken is a sign-in token in a line of the dashboard's log: the value of a t= parameter, in a link (?t=, &t=), at the
+// start of a line, after a space, a comma, a semicolon or in a fragment (#t=).
+var logToken = regexp.MustCompile(`(^|[?&#\s,;])t=[0-9A-Za-z._~-]+`)
 
 // dashboardLink is the sign-in link tego serve prints when it starts.
 var dashboardLink = regexp.MustCompile(`http://(127\.0\.0\.1:[0-9]+)/\?t=[0-9a-f]+`)

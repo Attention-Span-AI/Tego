@@ -88,6 +88,9 @@ func contractsCaller(ctx context.Context) context.Context {
 func runContracts(ctx context.Context, args []string, o contracts.Options, asJSON, verbose bool, stdout, stderr io.Writer) int {
 	ctx, closeSession := contracts.WithHelperSession(contractsCaller(ctx))
 	defer closeSession()
+	// A check of a local disk that is slow to answer is waited for up to 30 seconds: say so once, on stderr, so the wait
+	// is not silent (ADR 0144, "A local location is a busy disk, not a stuck mount").
+	ctx = contracts.WithWaitNote(ctx, func(m string) { message(stderr, "", 0, 0, "note: tego contracts: "+m, codeDiskWait) })
 	ctx, cancel := contractsContext(ctx)
 	defer cancel()
 	if err := ctx.Err(); err != nil {

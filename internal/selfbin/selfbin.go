@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"unicode/utf8"
 
@@ -80,12 +81,22 @@ func noAccessACL(path string) bool {
 	return err == unix.ENODATA || err == unix.EOPNOTSUPP
 }
 
+// groupRefusal is one folder of the chain whose group can write it and whose membership could not be established.
+type groupRefusal struct {
+	folder, group, why string
+	gid                uint32
+}
+
 // chainRefusal walks path's chain. membership is asked for the account evidence only when a folder of the chain is
-// writable by its group, and once: a path with no such folder reads no account file and waits for none.
+// writable by its group, and once: a path with no such folder reads no account file and waits for none. The walk goes
+// to the root even after a folder whose membership cannot be established, so that one message names every such folder
+// and one chmod cures them all (groupRepair); any other refusal ends the walk with Untrusted, since chmod g-w on the
+// named folders would not cure it.
 func chainRefusal(path string, uid int, stat func(string) (os.FileInfo, error), membership func() groupTrust, aclSafe func(string) bool) string {
 	file := true
 	var groups groupTrust
 	loaded := false
+	var open []groupRefusal
 	for {
 		info, err := stat(path)
 		if err != nil {
@@ -126,20 +137,62 @@ func chainRefusal(path string, uid int, stat func(string) (os.FileInfo, error), 
 					if why == "" {
 						why = "complete membership evidence is unavailable"
 					}
-					return fmt.Sprintf("cannot establish membership of group %s (gid %d) for folder %s: %s; no command is shown; run chmod g-w %s, then run this step again.",
-						record.Printable(group), owner.Gid, shellword.Quote(path), record.Printable(why), shellword.Quote(path))
-				}
-				if !groups.allows(owner.Gid) || !aclSafe(path) {
+					open = append(open, groupRefusal{folder: path, group: group, gid: owner.Gid, why: why})
+				} else if !groups.allows(owner.Gid) || !aclSafe(path) {
 					return Untrusted
 				}
 			}
 		}
 		parent := filepath.Dir(path)
 		if parent == path {
-			return ""
+			return groupRepair(open)
 		}
 		path, file = parent, false
 	}
+}
+
+// groupRepair is the one message for every folder of the chain whose membership could not be established: what is
+// missing, that no command is shown, and one chmod g-w for all of them, outermost folder first, so a person pastes it
+// once and runs the step again. open is in the walk's order (innermost first); "" when it is empty. One folder reads
+// as it always did.
+func groupRepair(open []groupRefusal) string {
+	if len(open) == 0 {
+		return ""
+	}
+	folders := make([]string, len(open))
+	subjects := make([]string, len(open))
+	reasons := make([]string, len(open))
+	sameGroup, sameWhy := true, true
+	for i := range open {
+		o := open[len(open)-1-i] // outermost first: the order a person reads and pastes them in
+		folders[i] = shellword.Quote(o.folder)
+		subjects[i] = fmt.Sprintf("group %s (gid %d) for folder %s", record.Printable(o.group), o.gid, folders[i])
+		reasons[i] = folders[i] + ": " + record.Printable(o.why)
+		sameGroup = sameGroup && o.group == open[0].group && o.gid == open[0].gid
+		sameWhy = sameWhy && o.why == open[0].why
+	}
+	subject := subjects[0]
+	if len(open) > 1 {
+		if sameGroup {
+			subject = fmt.Sprintf("group %s (gid %d) for folders %s", record.Printable(open[0].group), open[0].gid, listWords(folders))
+		} else {
+			subject = listWords(subjects)
+		}
+	}
+	why := record.Printable(open[0].why)
+	if !sameWhy {
+		why = strings.Join(reasons, "; and ")
+	}
+	return fmt.Sprintf("cannot establish membership of %s: %s; no command is shown; run chmod g-w %s, then run this step again.",
+		subject, why, strings.Join(folders, " "))
+}
+
+// listWords is words as a sentence lists them: "a", "a and b", "a, b and c".
+func listWords(words []string) string {
+	if len(words) < 2 {
+		return strings.Join(words, "")
+	}
+	return strings.Join(words[:len(words)-1], ", ") + " and " + words[len(words)-1]
 }
 
 // Path is the running binary's resolved absolute path, with the identity, safe-display and execute checks Named

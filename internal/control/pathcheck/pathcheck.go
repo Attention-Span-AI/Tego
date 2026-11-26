@@ -58,6 +58,15 @@ func IsUnanswered(err error) bool {
 		errors.As(err, &remote) && (strings.Contains(remote.Message, Unavailable) || strings.Contains(remote.Message, TooSlow) || strings.Contains(remote.Message, Working) || strings.Contains(remote.Message, Disk) || strings.Contains(remote.Message, Unclear))
 }
 
+// IsNotFinished reports whether err is a check that did not finish and found nothing about what it was asked:
+// IsUnanswered, a draft compile that ran out of time or was refused a slot (contracts.IsCompileUnfinished), or a
+// request that was cancelled or timed out. It is a temporary failure: the caller must neither call it a difference
+// between what a person reviewed and what is there, nor save anything on it.
+func IsNotFinished(err error) bool {
+	return err != nil && (IsUnanswered(err) || contracts.IsCompileUnfinished(err) || contracts.IsCancelledCheck(err) ||
+		errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled))
+}
+
 // UnansweredText is IsUnanswered for text a view carries as a string.
 func UnansweredText(text string) bool {
 	return strings.Contains(text, Unavailable) || strings.Contains(text, Busy) || strings.Contains(text, StartFailed) ||
@@ -151,4 +160,11 @@ func Context(parent context.Context) (context.Context, context.CancelFunc) {
 		return contracts.WithHelperContext(parent)
 	}
 	return contracts.WithHelperDeadline(parent, time.Now().Add(contracts.CheckTimeout))
+}
+
+// WithLocations declares the absolute paths a Call made with the returned context touches, so that a wait for a
+// location on this computer's own storage is told from one for a mount that may not answer (contracts.WithLocations,
+// ADR 0144, "A local location is a busy disk, not a stuck mount"). A Call that declares none is as it always was.
+func WithLocations(ctx context.Context, paths ...string) context.Context {
+	return contracts.WithLocations(ctx, paths...)
 }

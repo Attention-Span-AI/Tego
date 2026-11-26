@@ -36,6 +36,9 @@ type service struct {
 	CapAdd          []string `yaml:"cap_add"`
 	SecurityOpt     []string `yaml:"security_opt"`
 	StopGracePeriod string   `yaml:"stop_grace_period"`
+	Image           string   `yaml:"image"`
+	Build           any      `yaml:"build"`
+	PullPolicy      string   `yaml:"pull_policy"`
 	Volumes         []string `yaml:"volumes"`
 	Environment     map[string]string
 }
@@ -177,6 +180,46 @@ func TestComposeControlSettings(t *testing.T) {
 	}
 	if v := m[ledgerDir]; v.src != a[ledgerDir].src || v.ro {
 		t.Errorf("control's %s: %+v, want the agent's volume %q read-write", ledgerDir, v, a[ledgerDir].src)
+	}
+}
+
+// TestComposeOneServiceBuildsTheImage: two services that each build the same tag made `docker compose build` exit 1 on
+// Docker's containerd image store ("failed to solve: image ... already exists", public issue 85) and leave a dangling
+// second image on the classic one. Exactly one service, the agent's, builds; the other runs the same name and is never
+// pulled, so `docker compose up -d control` before a build fails on the missing local image and does not ask a registry
+// for a name that is none (tego:local).
+func TestComposeOneServiceBuildsTheImage(t *testing.T) {
+	services, _ := readCompose(t)
+	var builders []string
+	images := map[string]bool{}
+	for name, s := range services {
+		if s.Build != nil {
+			builders = append(builders, name)
+		}
+		if s.Image == "" {
+			t.Errorf("service %s has no image name", name)
+		}
+		images[s.Image] = true
+	}
+	if !slices.Equal(builders, []string{"agent"}) {
+		t.Errorf("the services that build are %v, want the agent alone", builders)
+	}
+	if len(images) != 1 {
+		t.Errorf("the services run %d different image names %v, want one", len(images), images)
+	}
+	if got := services["control"].PullPolicy; got != "never" {
+		t.Errorf("control pull_policy %q, want never: its image is the agent's build, never a registry's", got)
+	}
+	if got := services["agent"].PullPolicy; got != "" {
+		t.Errorf("agent pull_policy %q: the service that builds keeps compose's default", got)
+	}
+	// The build arguments the Dockerfile declares and the quick start sets.
+	b, _ := services["agent"].Build.(map[string]any)
+	args, _ := b["args"].(map[string]any)
+	for _, k := range []string{"TEGO_UID", "TEGO_GID", "EXTRA_PACKAGES"} {
+		if _, ok := args[k]; !ok {
+			t.Errorf("agent build args lack %s: %v", k, args)
+		}
 	}
 }
 

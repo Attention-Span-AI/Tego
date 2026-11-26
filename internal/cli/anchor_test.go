@@ -42,6 +42,12 @@ func TestMain(m *testing.M) {
 	if os.Getenv(scopeFDHelperEnv) == "1" {
 		scopeFDHelper()
 	}
+	if os.Getenv(scopeCloexecHelperEnv) == "1" {
+		scopeCloexecHelper()
+	}
+	if os.Getenv(scopeCloexecChildEnv) == "1" {
+		scopeCloexecChild()
+	}
 	if mode := os.Getenv("TEGO_SCOPE_TEST_HELPER"); mode != "" {
 		scopeProcessHelper(mode)
 	}

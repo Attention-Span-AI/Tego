@@ -63,6 +63,8 @@ github.com/attention-span-ai/tego/internal/askclient.WithVia	control-only	intern
 
 # internal/contracts
 github.com/attention-span-ai/tego/internal/contracts.RegisterHelperOperation	control-only	internal/control/pathcheck registers fixed control-image filesystem operations at initialization
+github.com/attention-span-ai/tego/internal/contracts.WithLocations	control-only	internal/control/pathcheck declares the locations a dashboard operation touches with it, for the class of its location
+github.com/attention-span-ai/tego/internal/contracts.Watch.Judge	control-only	internal/control/draftcompile judges a compiler child's window with it; a helper's is judged by JudgeAt, which knows the class of the location
 github.com/attention-span-ai/tego/internal/contracts.HelperExchange	control-only	internal/control/pathcheck sends dashboard operations through the shared own-image transport
 github.com/attention-span-ai/tego/internal/contracts.CompileNotFinishedUnclear	control-only	internal/control/draftcompile words a draft compile that ran out of time with it
 github.com/attention-span-ai/tego/internal/contracts.CompileNotFinishedWorking	control-only	internal/control/draftcompile words a draft compile that was working when time ran out with it
@@ -113,6 +115,8 @@ github.com/attention-span-ai/tego/internal/liveblock.TakesLink	control-only	inte
 # Packages both binaries link, where only tego-control reaches these
 github.com/attention-span-ai/tego/internal/mcptools.SHA256Base	control-only	internal/control/mcpact binds a preview to the file with it
 github.com/attention-span-ai/tego/internal/modelroutes.SHA256Base	control-only	internal/control/routeact binds a preview to the file with it
+github.com/attention-span-ai/tego/internal/runscope.Advice	control-only	internal/control/cli rules_history.go notOutsideWords (tego rules undo) words the refusal with the table's sentences
+github.com/attention-span-ai/tego/internal/runscope.PlainFirst	control-only	internal/control/cli rules_history.go notOutsideWords (tego rules undo) picks the refusal's shape from it
 github.com/attention-span-ai/tego/pkg/policy/modelroute.CountsOf	control-only	internal/control/routeact answers the Model routes page's request counts from the read model's tallies with it
 github.com/attention-span-ai/tego/internal/registry.Directory.Identity	control-only	internal/control/rules binds the reviewed destination identity through the shared descriptor publisher
 github.com/attention-span-ai/tego/internal/rulefile.AppendLive	control-only	internal/control/rules records what "also apply now" did with it

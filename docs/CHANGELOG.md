@@ -106,6 +106,21 @@ no virtual-machine run has shown it. An entry that says neither makes no claim a
 
 ### Added
 
+Model budgets:
+
+- `limits.tokens` and `limits.cost_usd` count OpenAI-style model answers (public issue 99). A `models:` entry with
+  `provider: openai` has its `POST /v1/chat/completions` and `POST /v1/responses` answers counted, whole or streamed, from the
+  usage each states: the prompt (or input) tokens minus the cached ones are the input, the cached ones the cache reads, and the
+  completion (or output) tokens the output. This is unit-tested against a stand-in written from OpenAI's API reference (read
+  2026-11-26) and, for the Responses stream, the provider's SDK type files; no live provider answer was captured, and the guest
+  run of a `ChatOpenAI` agent under a token budget, which would show it stopped at the limit (exit 124), is still owed. Tego never
+  changes the agent's request, so a streamed chat completion is counted only when the client asked the API for usage in the
+  stream; one that did not still ends the run, now saying which client option fixes it. The reference pages the shapes were
+  read from, and the shapes not verified, are in ADR 0037's amendment. The record of an Anthropic run is unchanged; every
+  run's `run_start.parsers` now also names `openai`. No schema field is added: `provider: openai` was already a valid value,
+  and an older build accepts such a contract and ends the run at the first answer. The cost of `cache_write_tokens` is priced at
+  the input rate and was not checked against OpenAI's price list; `cost_usd` could come out low if writes cost more.
+
 First run and everyday commands:
 
 - `tego start` takes a first-time user through four steps: the agent (Claude Code, Codex, a small demonstration agent
@@ -170,6 +185,7 @@ Finding agents and contracts:
 - `tego contracts` finds known contracts, checks today's files offline and lists the newest recorded runs of each,
   without running an agent. See `docs/user/contracts.md`.
 - The setup guide's "Find your agents" step ticks from a fresh scan.
+- `examples/agents/langgraph.yaml`: rules to start from for a LangChain or LangGraph agent in a Python virtual environment (public issue 90). Tego has no adapter for the library; it holds and records what the agent does to files, programs and hosts, the tools of an MCP server behind its relay, and the model calls that go through its forwarder. A tool that is a Python function inside the agent's own process is not seen as a tool: only what it does to a file, a program or a host is. The example's test checks its rules against what a scripted LangGraph agent's tools do, and a run of that agent under it on Ubuntu 24.04 at tiers landlock and cgroup showed each action allowed or refused and recorded as the rules say; the one exception it found, an MCP server at a root tier, is fixed (public issue 98, under Fixed).
 
 Rules, approvals and the record:
 
@@ -271,10 +287,20 @@ Settings and platforms:
   run started before v0.1.3 before you enable it. See `docs/user/local-approvals.md`.
 - A Windows installer: `install.ps1` installs a checksummed native `tego.exe`, which runs Tego in its own `tego` WSL 2
   distribution. `tego dashboard` on Windows opens the dashboard in your browser (PowerShell 5.1, PowerShell 7 and cmd), through a small relay on `[::1]`
-  that admits only your own Windows account's programs. `tego dashboard --stop` ends it. WSL's mirrored networking is
-  not supported for the browser dashboard. `tego start` and `tego dashboard --stop` tell you to keep a `tego` command
-  or a Linux shell open while an agent works, because Windows can stop Tego's Linux when nothing is attached to it and
-  that ends any run still going. The Windows installer is unsigned and not fully qualified; see
+  that admits only your own Windows account's programs. `tego dashboard --stop` ends it and, when no run is going, the
+  dashboard in Tego's Linux too: the dashboard's own connection kept Tego's Linux running after the relay ended, and
+  with no run going Tego's Linux now stops by itself within about 15 seconds of the last command (measured in one
+  Windows 11 guest). With a run going `--stop` leaves the dashboard and Tego's Linux up and says how many runs keep it
+  up. WSL's mirrored networking is not supported for the browser dashboard: `tego dashboard` asks WSL for its
+  networking mode as soon as Tego's Linux is up and says so at once, however long Linux takes to start. When the
+  dashboard does not start, the message names the command that reads its log from Windows and shows the log's last
+  lines (unit-tested, not yet seen on a Windows PC). A rules file or project folder given as a Windows path (`C:\...`, `/mnt/c/...`, `\\wsl$\tego\...`) is refused
+  as before, and in Tego's own distribution the line now says that Tego's Linux does not see Windows drives and where
+  to copy the file (in another WSL distribution it says that a Windows path is no Linux path there). `tego
+  start` tells you to keep a `tego` command or a Linux shell open while an agent works, because Windows can stop
+  Tego's Linux when nothing is attached to it and that ends any run still going. If Windows must restart to finish
+  enabling WSL, the line the installer prints to paste
+  afterwards keeps a version chosen with `TEGO_VERSION`. The Windows installer is unsigned and not fully qualified; see
   `docs/INSTALL.md` for what was tested.
 - The Mac installer checks the VM template and the VM's installer against the selected release before it uses them,
   installs that same version in the VM, opens the dashboard only after a tunnel that belongs to you is confirmed, and
@@ -334,6 +360,16 @@ The dashboard:
 
 ### Changed
 
+- A budget (`limits:`) that has been crossed now closes the door to new model requests before the run is ended. The run is
+  ended with `cgroup.kill`, which lands a moment after the limit is recorded, and an agent that calls the model without
+  pausing was still answered in that moment (200 calls in 0.4 s past a `repeats` limit of 3, in one run). From the limit line
+  on, the forwarder answers each new model request itself with `403` and `X-Should-Retry: false`, records it as refused
+  under the rule `limits.<which>`, and sends nothing to the model; a request held for an approval, a route or a credential
+  when the limit is recorded is refused when it is released. Requests already in flight, and exchanges the record had not
+  yet counted, can still be answered: 0 to 4 responses stood after the limit line in the tests on a quiet host, and 30 in one run on a loaded host, because the record trails an agent that does not pause. A tunnel (`net.proxy`
+  CONNECT or WebSocket) that is already open is not cut and keeps carrying traffic until the run ends; such a tunnel is
+  refused only under `tokens`, `cost_usd` and `repeats` budgets, so a run with only `wall` or `stall_after` can have one open.
+  How a limit is counted, the `limit` line, `run_end reason=limit` and exit 124 are unchanged.
 - A config layer that is present but unreadable, unparsable, or has the wrong owner or mode now stops commands that
   decide what an agent may do, including launch, compile and rule-check commands. Commands that observe or stop keep
   working, and report an UNKNOWN baseline and the cause. The system layer needs a root-owned file without group or
@@ -418,6 +454,59 @@ The dashboard:
 
 ### Fixed
 
+- At a root tier the agent was given no MCP client file (public issue 98). A run started with `sudo "$(command -v tego)" run` (tier cgroup
+  or bpflsm, or tier landlock under sudo) with an MCP server under `mcp:` gave the agent `TEGO_MCP_RELAY` and no
+  `TEGO_MCP_CONFIG` and wrote one line to Tego's own log, so the agent could not reach its MCP servers through the relay at all:
+  no MCP tool was called, allowed or refused, and the record held no `mcp` line. A server the rules declare under `mcp:` could not
+  be started around the relay either: that start is refused (`mcp[<name>].relay`) at every tier. The file is now made in a folder of its own, `/run/tego-agent/<run id>`, which
+  only root can change: the file is mode 0400 and owned by the account the agent runs as, so that account reads it, no other
+  user can, and nobody can add, rename or remove a file beside it. The folder is gone when the run ends. A run whose rules ask
+  for the file and have nowhere to put it is now refused (exit 125, naming the fix) instead of starting without it. That
+  changes what a run does as yourself too: a run whose rules name an MCP server now refuses to start when `XDG_RUNTIME_DIR` is
+  not set, is not an absolute path, does not exist, or is not yours or is writable by others, where it used to start without
+  the client file. Each case has its own message and its own fix. Tego decides nothing from the file, so an agent that rewrites its
+  copy changes only what its own client starts. Shown in an Ubuntu 24.04 guest with a plain MCP server and a client that reads
+  the file, at tier landlock as the user and under sudo and at tier cgroup, and by the root test suite at tier bpflsm, whose guest boot has `bpf` in its security-module list. A LangGraph agent at a root tier has not been run again since.
+- A run that a token or cost budget ended because a model answer's usage could not be read now says why on the terminal.
+  `tego run` printed only "ended (ended: error)" under its closing line and exit 125, and the reason lay in the record
+  (run_end's detail, unchanged). The closing lines now name the request, say that its usage could not be read and that a
+  budget cannot be enforced on such answers, and give the two ways out: remove `limits.tokens` and `limits.cost_usd`, or use a
+  model API whose usage Tego reads. `tego rules check` (and the dashboard's check) warns `[budget-uncounted]`, not a refusal,
+  for a contract that sets `limits.tokens` or `limits.cost_usd` beside a `models:` entry whose provider is not one of the counted
+  styles. The exit code and the record are as before. Public issue 99.
+- One Ctrl-C is one interrupt. When it reached both the `tego run` command and its launcher, the two could in rare
+  orderings count it as two (seen about once in 30 runs on one busy CPU), and the run was then stopped by force, with
+  no graceful stop, and its record said a person had forced it. The two processes now each count the interrupts they
+  received themselves, and the number of interrupts is the larger of the two counts, so no order of delivery matters.
+  The exit codes, the record and the messages are unchanged. Public issue 81.
+- In a plain container (`docker run debian:13`, Docker's defaults, no systemd) Tego no longer gives the host's cure.
+  `tego doctor`, `tego machine check` and `tego run` told a person to enable systemd user delegation (a `Delegate=`
+  drop-in under `user@.service.d`), and `tego start` as an ordinary user said "tego setup: ... on WSL, turn systemd on"
+  although the person had typed `tego start`. A process now knows whether it is on a host, on WSL or in a container
+  from positive marks only (`/.dockerenv`, `/run/.containerenv`, a `container` variable in process 1's environment,
+  and no systemd running as process 1), and in a container the cure says what the example image's entrypoint and
+  `examples/container/compose.yaml` give it: the delegated cgroup subtree, `SYS_ADMIN`, `apparmor=unconfined` where
+  AppArmor runs and the security-module list handed in, with a pointer to `docs/user/container.md`. The cure is printed
+  once in a doctor report. Words only: no check is looser, no tier appears that did not, every exit code stays. A host
+  and WSL print the words they printed before; `tego start` and `tego setup` each name their own command (public
+  issue 84).
+- `docker compose build` of `examples/container/compose.yaml` exits 0 on Docker's containerd image store. The agent and
+  dashboard services both built `tego:local`; on docker.io 29 (Ubuntu 24.04) the second build failed with `image
+  "docker.io/library/tego:local": already exists` after the image had been built, and on the classic store the build
+  left a dangling second image. Only the agent service builds now, and the dashboard service runs the same image with
+  `pull_policy: never`, so `docker compose up -d control` before a build stops with an error about the missing local
+  image instead of asking a registry for it, and leaves nothing to clean up: the network and three empty volumes it made are
+  used by the next `up` (public issue 85).
+- The container guide names the packages that give `docker compose` (Debian 13: `docker-compose`; Ubuntu 24.04:
+  `docker-compose-v2` and `docker-buildx`; or Docker's own repository), puts the build before the dashboard, gives a
+  `tego events <run> --verify` line for the published image (`--user 10001:10001`) and one for an image built as the
+  Quick start says (`--user "$TEGO_UID:$TEGO_GID"`; the single 10001 line failed with permission denied there), says that
+  an image built from a checkout prints `tego=dev commit=none` while the published image prints the release's version, and
+  explains why a second container's `tego doctor` calls the first container's runs "minted on host ..., not this
+  one" (public issues 86 and 89).
+- When Tego withholds a `sudo` line because a folder of its installation path is group-writable and its group's members cannot be established, one message now names every such folder with one `chmod g-w` for all of them (it named one folder at a time). The check is as strict as before. `tego doctor` prints the long reason once and the other lines refer to it (public issue 87).
+- The installer makes the folders it creates on the way to its prefix mode 755 at most (a stricter `umask` is kept), so on Ubuntu `~/.local` and `~/.local/bin` are no longer group-writable and the `sudo` line is shown at once. A folder that already exists is left as it is (public issue 87).
+- The installer no longer tells you over SSH to open `systemd-run --user --scope bash` first: `tego run`, `watch` and `test` enter a user scope themselves. It says something only for a login with no user service manager, and, on Debian and Ubuntu with apt, for a manager with no message bus, where the dashboard cannot start (`sudo apt install dbus-user-session`) (public issue 88).
 - Overview: a waiting request whose sentence does not fit on one line beside its answers now takes the banner's
   full row, with the answers on the row below; a short request stays beside its answers as before. A long sentence
   no longer wraps to a third line at 1280 px with a wider monospace font, or to four or five lines at 768 px.
@@ -606,6 +695,33 @@ The dashboard:
   allow now reach the server first. An approval that came back at once could reach the server before them.
 - Internal file-check helpers always give their worker slots back to the pool they took them from. A slot returned after
   the pool had been replaced could leave a later check waiting for good.
+- A dashboard save or check no longer reads a very busy disk as "a disconnected or stuck mount". The dashboard now tells
+  a location on this computer's own disk (ext4, xfs, btrfs, tmpfs and the like, and an overlay made only of those) from
+  one that can stop answering because something outside the computer went away (a network or user-space filesystem,
+  or a type it does not know), by the filesystem the location is mounted on. A save or check of a local location that
+  has not been answered in five seconds, and whose checker is waiting for the disk, is waited for, up to 30 seconds or
+  the page's own limit, and if the disk is still not done it is refused with "the disk is very busy or nearly full",
+  not the mount's words; reload the contract and its History before trying again, since a submitted save may already
+  have reached the file. A request that finds every checker slot held by checks stuck on the disk gets the same
+  words; one slot held by a stuck mount gives the mount's. A network or user-space mount, a filesystem type Tego does not know and a checker that is
+  merely asleep are bounded and worded as before, and a command on a terminal says once that it is waiting for the
+  disk. Inside a container this helps bind and volume mounts, not the image's own root (an overlay whose layers are
+  the host's). A local filesystem on a network block device (iSCSI, a mapped device over one, a loop file on NFS)
+  counts as local and so gets the longer wait. A disk that is failing rather than busy is still reported as busy
+  (public issue 80).
+- The dashboard's contract builder no longer says "the contract changed since you looked" when nothing changed (issue 92).
+  On a busy machine the check of the project folder could come back busy or not finished, and a Save took that for a
+  changed contract. That answer is now kept for a real difference (another folder, name, saved entry or draft, or a
+  folder that is gone or replaced). A check that did not finish is the page "The contract check could not finish", with
+  its cause; nothing is saved, and the same review can be saved again once the check answers.
+  A person's own check also waits for a free compiler slot, for as long as its page request lasts (25 seconds), instead
+  of being turned away after a tenth of a second; automatic requests keep the short wait. One test, in which a person's
+  Save was turned back while automatic previews ran, failed once on a loaded machine: its cause was found by reading the
+  code and has not been reproduced, so this part is a correction by reasoning, covered by a unit test of the wait.
+- `tego ask` says which run it skipped and why (issue 93). `tego ask <ask_id>`, `tego approve <ask_id>` and
+  `tego deny <ask_id>` skipped a run that was ending without a word, so "no running run holds it" read as "none could":
+  standard error now names each such run. `tego ask <run>` of a run whose ask socket is gone says the run has ended or is
+  ending and points at `tego events <run>`. Exit codes and standard output are unchanged.
 
 ### Removed
 
@@ -624,11 +740,6 @@ What this release does not do, or has not proved, in plain words.
   this release saved about 4 to 5 seconds of it, and elsewhere it changed nothing. Tier landlock runs no BPF probe.
 - `tego rules` on the command line has a floor near 150 ms for a run of 55,000 lines, because it scans the whole record
   each time. The dashboard's Rules page does not pay it: it reuses the dashboard's own copy of the run.
-- On a computer whose own disk is very busy or nearly full, a dashboard save or check that waits more than five seconds
-  for that disk can be refused with "this location does not answer (a disconnected or stuck mount?)" although the
-  location is healthy. The dashboard is meant to say "the disk is busy" there, and on this release it cannot tell the
-  two apart. Reload the contract and its History before trying again, since a submitted save may already have reached
-  the file.
 - A root-tier run's launcher uses memory you should plan for. It peaks near 70 MB (57 to 73 MB resident in our
   measurements), holds about 14 MB of its own memory at rest, and shares about 28 MB of memory with the kernel for
   each run. In a test guest, 32 root-tier runs at once used about 1.05 GB of process memory and 0.9 GB of shared memory; they
@@ -669,21 +780,39 @@ What this release does not do, or has not proved, in plain words.
   shown by changing a row's identity in the map instead), and arm64, which has no run at all.
 - Inside a container or a private cgroup namespace, the cgroup limits above the container cannot be read, so
   `applied_limits` leaves them out and the log says why. Root-run limits cannot tell btrfs subvolumes apart.
-- `tego ask` on a run whose socket is gone exits 1 with `[not-found]`.
+- `tego ask` on a run whose ask socket is gone still exits 1 with `[not-found]` (scripts depend on the code); it now says
+  that the run has ended or is ending. It says the same when a live run's socket was removed by hand.
 - The reason channel (the Claude Code hook) is tested without a real Claude Code session.
 - The CI receipt's signing was not tried with real GitHub permission delegation. The Mac uninstall was tested against
-  stand-ins for Lima and SSH, not on a real Mac or in a real Lima VM. The Windows launcher's request to keep a command
-  open is checked by a unit test, and has not been seen on a Windows console on this release's build. The Windows
-  walk-through used no real keyboard or mouse, no signed executable, no real HTTPS release, no Windows 10 and no ARM64.
+  stand-ins for Lima and SSH, not on a real Mac or in a real Lima VM. The Windows walk-through ran in a Windows 11 guest
+  over SSH on the published v0.2.0-rc.1 files, with the install line fetched over HTTPS from the release; the launcher's
+  request to keep a command open was seen in that output, not in a real console window. The walk used no real keyboard,
+  mouse or desktop session (so no browser was seen opening), no signed executable, no Windows 10 and no ARM64, and the
+  Windows changes made after v0.2.0-rc.1 were checked in a Windows guest once, not walked again in full.
   Windows is unsigned and not fully qualified; the Mac was walked through by hand on Apple silicon only.
+- On Windows, until you type `tego dashboard --stop`, the dashboard started by `tego dashboard` keeps Tego's Linux
+  running (measured for 75 seconds, no longer; `tego start` starts the same unit the same way and was not measured).
+  `--stop` was measured in one guest, with the dashboard and with one detached run. It counts the runs of your own
+  Linux user that `tego session list` shows: a run it does not count (root's, another account's, one with its own
+  `--ledger`, a scheduled agent between two of its runs) no longer keeps Tego's Linux up after `--stop`, so Windows can
+  stop it, which ends such a run; keep a `tego` command or a Linux shell open while such work runs, as the sentence at
+  the start of `tego start` says. `--stop` refuses and leaves everything up when `TEGO_CONFIG` is set in Tego's Linux.
+  The message of a dashboard that did not start, with the log's last lines, is unit-tested and not yet seen on Windows. A rules path given as `/mnt/c/...` was found in the guest to print the bare refusal, because
+  Tego's distribution has an empty `/mnt/c` folder; that is fixed and unit-tested, and its guest check is owed (the
+  other Windows path forms were run in the guest).
 - Root-only local approval (`local_roles: owner_only`) was qualified in one Ubuntu 25.10 guest.
-- The update from v0.1.3 was tried with release files built from this release's code and installed from a local folder,
-  not with the published v0.2.0 files. What the notes say about v0.1.3 reading this release's records comes from
-  running v0.1.3's ledger and record code, not its command line.
+- The update from v0.1.3 was tried with the published v0.2.0-rc.1 files, installed over the network on Ubuntu 24.04 (the
+  old runs still list and verify, a new run records and verifies), and with release files built from this release's code
+  on Ubuntu 24.04 and Debian 13; not yet with the final v0.2.0 files. What the notes say about v0.1.3 reading this
+  release's records comes from running v0.1.3's ledger and record code, not its command line.
 - A baseline in the machine config is read, compiled and recorded, but an enforcing launch with a nonempty baseline is
   refused. A contract that names a business-rule bundle is validated and then refused at run start.
+- A Kubernetes pod under containerd has none of the marks Tego looks for (`/.dockerenv`, `/run/.containerenv`, a
+  `container` variable in process 1's environment), so it is told as a host and keeps the host's words: the systemd
+  cure there does not apply, and the container guide's settings do.
 - `docs/user/container.md` and the install guide's container section describe a Docker flow that was proved on Debian 13
-  at tier landlock only. The words for an unreadable security-module list were also checked on Debian 12.
+  (Docker 26) and Ubuntu 24.04 (Docker 29) at tier landlock only. The words for an unreadable security-module list were
+  also checked on Debian 12. The published image itself was not pulled in those runs: they built it from the repository.
 - Three faults were seen once in test guests and not explained: an exec rule's pin missing on Amazon Linux 2023,
   `tego doctor` killed by SIGKILL on Fedora, and a startup stall under SELinux with an isolated cgroup.
 - A budget over a window (`limits.window`) cannot count spend that no record holds: what a launcher killed with its
@@ -693,11 +822,30 @@ What this release does not do, or has not proved, in plain words.
   agent's window lock or change its mode; that only makes later starts of the agent refuse, and it never lowers the
   count. A restart into a full window ends at its first model response, so a service with `Restart=on-failure` stops
   after its start limit until `systemctl --user reset-failed`.
-- When Ctrl-C reaches both the `tego run` command and its launcher, the same Ctrl-C can in rare orderings be counted as
-  two (seen about once in 30 runs on one busy CPU, not on an idle multi-core machine); the run then ends as it would after
-  a second Ctrl-C. The test that holds this is skipped until it is fixed (public issue 81).
-- A budget (`limits:`) stops a run by ending it. Calls the agent makes in the instant between the limit being recorded and
-  the run ending are still answered and recorded.
+- Two interrupts sent separately to the `tego run` command and to its launcher, rather than from the terminal, count as
+  one; send the second to the same process, or press Ctrl-C again.
+- A budget (`limits:`) stops a run by ending it, and from the moment the limit is recorded Tego's forwarder admits no new
+  model request (403, recorded as refused, nothing sent to the model). Requests already in flight when the limit is
+  recorded still finish and are recorded, and so can a few exchanges the record had not yet counted (0 to 4 responses after
+  the limit line in the tests on a quiet host, 30 in one run on a loaded host). A tunnel (`net.proxy` CONNECT or WebSocket) that is already open keeps carrying traffic until
+  the run ends. A model reached other than through the forwarder (a contract that pins `capture: uprobe`, or a host the
+  contract lets the agent reach directly) is not refused: its budget ends the run, and calls made before the kill lands are
+  still answered.
+- `limits.tokens` and `limits.cost_usd` count the usage of model answers in the API styles Tego reads: Anthropic's Messages
+  API and, for a `models:` entry with `provider: openai`, OpenAI's Chat Completions and Responses APIs. An answer whose usage
+  Tego cannot read ends the run at that answer, exit 125, with the closing lines saying why: a streamed chat completion whose
+  client did not ask the API for usage in the stream (`stream_options: {"include_usage": true}`; Tego never changes a request;
+  LangChain's `ChatOpenAI` with a custom base URL may not ask for it by default, which was not checked); a stream or answer cut
+  short, as a cancelled or interrupted one is; a Responses answer stopped by `max_output_tokens` (`response.incomplete`); a
+  stream longer than the 8 MiB Tego keeps of a body; a path of the API other than those two; and any API of another provider
+  (Gemini, Mistral, Bedrock, Azure OpenAI's prefixed paths). Leave `tokens` and `cost_usd` out for an agent that calls one, as
+  `tego rules check`'s `[budget-uncounted]` warning says. `limits.repeats` does not count the tool calls of an OpenAI-style
+  answer. No OpenAI model is priced in `examples/prices.example.yaml`: add the model you use, or a cost budget charges its
+  answers at the table's dearest rates. OpenAI-style counting has not been run against a live provider answer.
+- The receipt counts a refused action as the kernel and Tego saw it, not as the agent meant it. A Python agent that tries
+  to start a program that is not allowed shows two refusals (the program is tried under `/usr/bin` and under `/bin`), and
+  the agent's Python process makes one bind to `[::1]` port 0 in its first moments, before any tool runs, that a contract
+  with a `net:` section refuses (recorded, unattributed), so a run whose tools were refused four times says "refused 6".
 - Tego's own test suite has a few load-sensitive tests that can fail on a very busy machine.
 
 ### Upgrading from v0.1.3
@@ -736,6 +884,28 @@ What this release does not do, or has not proved, in plain words.
   the wrong owner or mode, which now stops launch and compile commands. `tego rules check` tells you which.
 - Scripts. JSON `fix` and `next` fields name the new commands. Compare them with the new names, or keep calling the old
   commands, which still work.
+
+### Record `v`
+1 (`spec/record/v1`, record minor 41)
+
+### Contract schema
+0 (`spec/agent/v0`; from v0.2.0 fields are only added, `docs/VERSIONING.md` section 3)
+
+### Kernel minimums
+Linux 5.14 with Landlock ABI 2 or newer, which is Linux 5.19 or a backport such as RHEL 9's 5.14; tested from 6.1 and on
+RHEL 9 and 10, as AlmaLinux 9.8 and 10.2, with what ran where in `docs/TIERS.md` (tier 1: ABI 1 is unsupported,
+and features are gated per ABI, see `spec/backend/CAPABILITIES.md`;
+tier 2 needs root and cgroup v2; tier 3 needs root and `bpf` in the LSM list). A unix socket under an `fs.write` path is
+admitted without a `unix:` entry only with the kernel's socket diagnostics for `AF_UNIX` (`CONFIG_UNIX_DIAG`, built in
+or the loadable `unix_diag` module); without them such a socket is refused `unix-origin-unread`, and `tego doctor` says so.
+Syscall outcome hooks require readable tracefs event formats with an eight-byte `ret` at offset 16; unsupported
+or unverified layouts withhold root tiers. The kernel version minimum is unchanged.
+
+## v0.2.0-rc.2 - 2026-11-26
+
+This is the second release candidate for v0.2.0, with the changes listed under v0.2.0 above. It carries the fixes for
+what testing of v0.2.0-rc.1 found: on six Linux distributions, in Docker, in a Windows 11 guest and with a LangGraph
+agent. Use v0.1.3, or wait for v0.2.0, unless you are testing the release itself.
 
 ### Record `v`
 1 (`spec/record/v1`, record minor 41)

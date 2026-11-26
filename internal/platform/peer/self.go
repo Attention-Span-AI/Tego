@@ -145,6 +145,10 @@ func wslMarkCount(release string, releaseRead bool, exists func(string) bool) in
 	return n
 }
 
+// WSLMarks is how many of WSL's marks hold on this machine (the kernel release, WSL's launcher folder, its binfmt_misc
+// entry); a mark that cannot be looked at counts. internal/platform/whereami tells a WSL distribution by any one of them.
+func WSLMarks() int { return machine.wslMarks() }
+
 // WSLGateHolds reports whether the gate holds an outside answer back here because of WSL: any one of WSL's marks holds
 // (the careful side), and the rule's relaxation on WSL does not apply (it needs two marks and this build's
 // switch, wslRuleOn). tego doctor and tego setup withhold WSL readiness for exactly as long (internal/doctor's WSL
