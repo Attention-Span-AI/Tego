@@ -208,11 +208,11 @@ func TestBaselineDecisionGeneratedAsksAndFences(t *testing.T) {
 				machine.LedgerRoot.Value = filepath.Join(world.root, "ledger")
 				machine.Tier.Value = config.TierSetting{Tier: string(backend.TierCgroup)}
 				machine.Tier.Bounded = true
-				table, ds, err := agent.Compile(contract, machine, append(world.owner(),
+				table, err := baselinePropertyCompile(t, contract, machine, append(world.owner(),
 					agent.WithPATH(world.bin), agent.WithMountInfo(world.mountInfo), agent.WithTiers(backend.TierCgroup),
 					agent.WithResolver(baselinePropertyResolver{}), agent.WithEnviron([]string{"PATH=" + world.bin, "HOME=" + world.home}), agent.Offline())...)
 				if err != nil {
-					t.Fatalf("compile generated ask: %v %v", err, ds)
+					t.Fatalf("compile generated ask: %v", err)
 				}
 				baselinePropertyHostInputs(t, world, table)
 				tables = append(tables, table)

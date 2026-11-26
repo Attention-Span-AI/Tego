@@ -603,8 +603,13 @@ func TestATimerAsksForABusyTimerLockOnceMore(t *testing.T) {
 	if err := unix.Flock(int(probe.Fd()), unix.LOCK_EX); err != nil {
 		t.Fatal(err)
 	}
+	// A child that a parallel test forks while the probe is open keeps a copy of its descriptor until its exec; here one
+	// does for the whole test, so the probe's letting go is tested with the copy, not left to when a fork happens.
+	holdInAChild(t, probe)
 	clock := c.clock()
-	clock.retry = func() { _ = probe.Close() } // the probe lets go
+	// The probe lets go as a sweep's own hold does (unlockClose): LOCK_UN first. A close alone drops the flock only
+	// with the last copy of the descriptor, and a child that a parallel test forks holds one until its exec.
+	clock.retry = func() { leaveLock(probe) }
 	if code := runTimer("tr", time.Minute, bpffs, state, clock); code != identity.ExitOK {
 		t.Fatalf("runTimer: exit %d", code)
 	}

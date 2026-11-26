@@ -128,6 +128,16 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+// finalizerCanary is what collectFinalizers waits on. It is 32 bytes so that the allocator gives it a slot of its own:
+// an object of under 16 bytes that holds no pointer (new(int) was one) is packed with its neighbours into one 16-byte
+// block, and the finalizer of an unreachable object in such a block never runs while any neighbour in it is still
+// reachable (the runtime.SetFinalizer documentation says so). Which neighbour came before the canary depends on what
+// else this process allocated, so one run in some number waited the whole 30 seconds for a finalizer that could not
+// come.
+type finalizerCanary [32]byte
+
+func newFinalizerCanary() *finalizerCanary { return new(finalizerCanary) }
+
 // collectFinalizers runs the collector until every finalizer that was already pending when it was
 // called has run.
 //
@@ -142,8 +152,8 @@ func collectFinalizers(t *testing.T) {
 	for range 2 {
 		ran := make(chan struct{})
 		func() {
-			canary := new(int)
-			runtime.SetFinalizer(canary, func(*int) { close(ran) })
+			canary := newFinalizerCanary()
+			runtime.SetFinalizer(canary, func(*finalizerCanary) { close(ran) })
 		}()
 		deadline := time.Now().Add(30 * time.Second)
 		for {

@@ -184,11 +184,11 @@ func TestBaselineRefusalSuperset(t *testing.T) {
 			compiled, have := compilations[cell.tier]
 			if !have {
 				compiled = make([]baselinePropertyCompilation, len(baselines)+1)
-				before, _, compileErr := agent.Compile(contract, machineFor(baselines[0]), opts...)
+				before, compileErr := baselinePropertyCompile(t, contract, machineFor(baselines[0]), opts...)
 				stat.compilerCalls++
 				compiled[0] = baselinePropertyCompilation{before, compileErr}
 				for bi, snapshot := range baselines {
-					after, _, err := agent.Compile(contract, machineFor(snapshot), opts...)
+					after, err := baselinePropertyCompile(t, contract, machineFor(snapshot), opts...)
 					stat.compilerCalls++
 					compiled[bi+1] = baselinePropertyCompilation{after, err}
 				}
@@ -344,6 +344,41 @@ func TestBaselineRefusalSuperset(t *testing.T) {
 		pair := compatibility[key]
 		t.Logf("COMPAT %s success=%d refuse=%d", key, pair[0], pair[1])
 	}
+}
+
+// baselinePropertyCompileTries is how many times one compile may be made again because its built-in .env scan was cut.
+const baselinePropertyCompileTries = 4
+
+// baselinePropertyCompile compiles one source for one machine snapshot, and again when the compiler says its built-in
+// deny_read scan for .env files was cut short. That scan is bounded in wall-clock time (two seconds, the compiler's
+// defence against a project root that is a plant of names or links), so on a machine busy enough to stall one compile
+// for that long the table of that compile lacks the .env rows the files on disk give, while the table of a compile a
+// moment later has them: the two tables differ byte for byte though the source and its hash are the same, and every
+// comparison this file makes between two compiles then fails on a row the stall left out. The world of one source
+// holds six .env files at most and reads in milliseconds, so a cut here is the machine's, never the source's. The
+// compiler says it, in the unenforced warning naming the scan, and that warning, not the difference between two
+// tables, is what makes the compile be made again: a difference between two compiles that said nothing is still the
+// failure. A compile cut every time fails, saying so.
+func baselinePropertyCompile(t *testing.T, contract *agent.Contract, machine *config.Machine, opts ...agent.CompileOption) (*agent.RuleTable, error) {
+	t.Helper()
+	for try := 1; ; try++ {
+		table, ds, err := agent.Compile(contract, machine, opts...)
+		if !baselinePropertyScanCut(ds) {
+			return table, err
+		}
+		if try == baselinePropertyCompileTries {
+			t.Fatalf("the built-in .env scan was cut short in each of %d compiles of one source: this machine stalls the compiler for longer than the scan's time limit", try)
+		}
+		t.Logf("compile %d of the source: the built-in .env scan was cut short (a stalled machine); compiling again", try)
+	}
+}
+
+// baselinePropertyScanCut reports whether the compiler said that its built-in deny_read scan for .env files left files
+// unlisted (a time limit, an entry limit or an unreadable directory), so the table lacks rows the disk gives.
+func baselinePropertyScanCut(ds []agent.Diagnostic) bool {
+	return slices.ContainsFunc(ds, func(d agent.Diagnostic) bool {
+		return d.Code == agent.CodeUnenforced && strings.Contains(d.Message, "the built-in deny_read scan for .env files")
+	})
 }
 
 func baselinePropertyPrint(t *testing.T, table *agent.RuleTable) string {
