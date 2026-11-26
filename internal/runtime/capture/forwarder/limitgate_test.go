@@ -54,6 +54,7 @@ func TestALimitGateAdmitsWhileOpenAndRefusesOnceClosed(t *testing.T) {
 		t.Fatalf("an open gate answered %d with %d upstream requests, want 200 and 1", resp.StatusCode, h.upstream.Load())
 	}
 	h.sink.waitFor(t, record.KindSSLResponse, 1)
+	delivered(h.listener) // an absence is only checked once the queue has handed over what it holds
 	for _, e := range h.sink.of(record.KindNet) {
 		t.Fatalf("an open gate recorded a net line: %+v", e)
 	}
@@ -209,6 +210,10 @@ func TestARequestHeldWhenTheGateClosesIsRefusedOnRelease(t *testing.T) {
 	if n := upstream.Load(); n != 0 {
 		t.Fatalf("%d requests reached the upstream after the gate closed while one was held", n)
 	}
+	// The refusal line was queued before the 403 was written, not handed to the sink: the listener's emit queue does that
+	// on a goroutine of its own (I1), which a client holding its answer can outrun. Reading the sink here without waiting
+	// for the queue failed once in about 250 runs on two CPUs, with the line arriving a millisecond later.
+	delivered(l)
 	refused := 0
 	for _, e := range sink.of(record.KindNet) {
 		if e.Rule == "limits.tokens" && e.Verdict == record.VerdictRefused && e.Reason == record.ReasonLimitTokens {
