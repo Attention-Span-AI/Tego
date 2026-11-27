@@ -98,7 +98,7 @@ func runContracts(ctx context.Context, selector string, o contracts.Options, asJ
 	defer closeSession()
 	// A check of a local disk that is slow to answer is waited for up to 30 seconds: say so once, on stderr, so the wait
 	// is not silent (ADR 0144, "A local location is a busy disk, not a stuck mount").
-	ctx = contracts.WithWaitNote(ctx, func(m string) { message(stderr, "", 0, 0, "note: tego contracts: "+m, codeDiskWait) })
+	ctx = contracts.WithWaitNote(ctx, func(m string) { message(stderr, "", 0, 0, "note: tego rules list: "+m, codeDiskWait) })
 	ctx, cancel := contractsContext(ctx)
 	defer cancel()
 	if err := ctx.Err(); err != nil {

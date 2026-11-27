@@ -113,7 +113,7 @@ func TestBlockRefusalsAreLiveblocks(t *testing.T) {
 		add  bool
 		hint string
 	}{
-		{[]string{"block", id, "exec", "curl"}, true, "; for its next run, make it a rule of the contract (tego rule)"},
+		{[]string{"block", id, "exec", "curl"}, true, "; for its next run, make it a rule in the rules file (tego rule)"},
 		{[]string{"unblock", id, "exec", "curl"}, false, " (tego block --list " + id + " shows what it had)"},
 	} {
 		refused := liveblock.CheckBlock(liveblock.Target{Run: id}, liveblock.KindExec, tc.add, time.Time{})
