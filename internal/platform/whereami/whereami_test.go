@@ -99,11 +99,11 @@ func TestWordsAndCureOnlyChangeInAContainer(t *testing.T) {
 	}
 }
 
-// TestTheContainerWordsSayWhatTheGuideSays: every thing docs/user/container.md names is named, and no systemd, WSL or
+// TestTheContainerWordsSayWhatTheGuideSays: every thing docs/site/containers.md names is named, and no systemd, WSL or
 // privileged advice is.
 func TestTheContainerWordsSayWhatTheGuideSays(t *testing.T) {
 	for _, words := range []string{ContainerCgroupCure, ContainerNotAtTop} {
-		for _, want := range []string{"examples/container/compose.yaml", "docs/user/container.md", "examples/container",
+		for _, want := range []string{"examples/container/compose.yaml", "https://attention-span.ai/docs/containers/", "examples/container",
 			"delegated cgroup subtree", "SYS_ADMIN", "apparmor=unconfined", "/run/tego-lsm/lsm-list"} {
 			if !strings.Contains(words, want) {
 				t.Errorf("%q does not name %q", words, want)

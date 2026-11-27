@@ -29,7 +29,7 @@ The three interactive contracts (`claude-code-interactive.yaml`, `codex.yaml`, `
 Tego has no adapter for LangChain or LangGraph: an agent built on them is a Python process like any other, and
 `langgraph.yaml` is the rules file to start from for one in a virtual environment (`python3 -m venv .venv && .venv/bin/pip
 install -r requirements.txt`). `tego scan` run in the project folder names the agent from its `langgraph` dependency
-(`requirements.txt`) or its `langgraph.json` (`docs/user/scan.md`); it keeps no versions.
+(`requirements.txt`) or its `langgraph.json` (`docs/site/finding-agents.md`); it keeps no versions.
 
 What Tego sees of such an agent, and holds to the rules:
 
@@ -100,7 +100,7 @@ allowed host and a second local server on another port as the refused one:
   cgroup` the agent got `TEGO_MCP_RELAY` and no `TEGO_MCP_CONFIG` (the test agent printed `MCP skipped: TEGO_MCP_CONFIG is not
   set in this run's environment` and the record held no `mcp` line), because a root launcher makes no runtime directory for
   the file. A root launcher now puts the file in a directory of its own, `/run/tego-agent/<run id>`, readable by your account
-  only (docs/user/mcp-tools.md), and a run that has no place for it is refused. That fix was proved in a guest with a plain
+  only (docs/site/mcp-tools.md), and a run that has no place for it is refused. That fix was proved in a guest with a plain
   stdio server and a client that reads the file, at tiers landlock, cgroup and bpflsm; this example's own LangGraph row has
   not been run again at a root tier.
 - **Token and cost budgets and OpenAI-shaped calls.** Before this release candidate, a `ChatOpenAI` agent under

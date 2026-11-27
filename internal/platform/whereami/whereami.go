@@ -82,12 +82,12 @@ func containerMark(f Facts) bool {
 // Here is Detect over the running system. A variable so a test describes the machine it needs.
 var Here = func() Kind { return Detect(Machine) }
 
-// ContainerNeeds is what Tego needs inside a container, in the words of docs/user/container.md: what the example
+// ContainerNeeds is what Tego needs inside a container, in the words of docs/site/containers.md: what the example
 // image's entrypoint and examples/container/compose.yaml give it, in place of systemd's delegation.
 const ContainerNeeds = "what the example image's entrypoint and examples/container/compose.yaml give it: a delegated " +
 	"cgroup subtree that the entrypoint makes for the tego user (cgroup: private, and the SYS_ADMIN capability to remount " +
 	"/sys/fs/cgroup read-write), apparmor=unconfined where AppArmor runs, and the kernel's security-module list handed in " +
-	"(/run/tego-lsm/lsm-list); see docs/user/container.md and examples/container"
+	"(/run/tego-lsm/lsm-list); see https://attention-span.ai/docs/containers/ and examples/container"
 
 // ContainerCgroupCure is the cure of a failed cgroup check in a container.
 const ContainerCgroupCure = "in a container there is no systemd to delegate a cgroup subtree: Tego needs " + ContainerNeeds

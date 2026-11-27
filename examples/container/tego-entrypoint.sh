@@ -23,7 +23,7 @@
 #      from the kernel's own file (or by mounting securityfs read-only for the moment, which needs CAP_SYS_ADMIN and a
 #      profile that allows `mount`) and writes /run/tego-lsm/lsm-list as root, mode 0644, in a root-only directory, with
 #      this boot's id; /etc/tego/config.yaml names it (lsm.list_file) and tego believes it only while root alone can
-#      change it (internal/platform/lsmlist, docs/user/container.md). The directory is /run/tego-lsm, its own: /run/tego
+#      change it (internal/platform/lsmlist, docs/site/containers.md). The directory is /run/tego-lsm, its own: /run/tego
 #      is tego's host state directory, which a root tego opens only as root's, mode 0700, and this step sets its
 #      directory to 0755 at every start. A container that cannot read the list here says
 #      why and starts anyway: held file opens are then refused, as they were.
@@ -271,7 +271,7 @@ hand_in_lsm_list() {
 	if ! read_lsm_list "$kernel_file" "$secfs"; then
 		rm -f -- "$out"
 		say "no security-module list handed in: $LSM_LIST_WHY"
-		say "held file opens are refused until it is: docker run --cap-add SYS_ADMIN with apparmor=unconfined (compose.yaml), or bind the host's /sys/kernel/security/lsm read-only and name it in /etc/tego/config.yaml lsm.list_file (docs/user/container.md)"
+		say "held file opens are refused until it is: docker run --cap-add SYS_ADMIN with apparmor=unconfined (compose.yaml), or bind the host's /sys/kernel/security/lsm read-only and name it in /etc/tego/config.yaml lsm.list_file (https://attention-span.ai/docs/containers/)"
 		[ "$mode" = yes ] && return 1
 		return 0
 	fi
