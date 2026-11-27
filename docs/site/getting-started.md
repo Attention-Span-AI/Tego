@@ -20,8 +20,8 @@ On a Mac or Windows PC, type it in your own terminal; the `tego` command runs it
 
 `tego start` first checks what this machine can enforce, then asks four questions. Press Enter at each one to take the recommended answer:
 
-1. **Agent:** `Which agent do you want to supervise?` Choose **Claude Code**. If Claude Code isn't installed, `tego start` offers to run its installer.
-2. **Login:** choose **Claude subscription** to log in with your Claude account in a browser, or **Anthropic API key** to paste a key. `tego start` asks whether to save the login for later sessions.
+1. **Agent:** `Which agent do you want to supervise?` Choose **Claude Code**. An agent that is installed and signed in is listed first. If Claude Code isn't installed, `tego start` offers to run its installer.
+2. **Login:** choose **Claude subscription** to log in with your Claude account in a browser, or **Anthropic API key** to paste a key. `tego start` asks whether to save the login for later sessions. Press Ctrl-C in an installer or a sign-in to come back to the question.
 3. **Project:** choose **Tego test project**. It creates `~/tego-sample`.
 4. **Rules:** choose **Base development**. Claude Code may edit and test the project, and never reads secrets.
 
@@ -41,7 +41,11 @@ It saves a rules file for the agent `tego-sample`, starts the dashboard, and end
     Edit the rules                tego rules edit tego-sample
 ```
 
-`tego start` never starts the agent. You do that next.
+`tego start` never starts your agent. You do that next.
+
+### No agent account yet
+
+With no agent installed and signed in, the first choice is the **Demonstration agent**: Tego's own short script, which needs no account and no network. `tego start` then uses the test project and fixed rules, with nothing to log in to, and runs the agent once under those rules. It tries one write the rules allow and one they refuse, and `tego session show --last` shows both.
 
 On a Mac or Windows PC, `tego start` leaves you in a shell inside Tego's Linux, with a `Shell` row in the panel. Type the next commands there. `exit` returns you to your own terminal.
 

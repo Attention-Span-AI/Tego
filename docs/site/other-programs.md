@@ -78,7 +78,12 @@ The Tego repository has ready rules files to start from:
 
 - [`examples/agents/claude-agent-sdk.yaml`](https://github.com/Attention-Span-AI/Tego/blob/main/examples/agents/claude-agent-sdk.yaml): a Python agent on the Claude Agent SDK.
 - [`examples/agents/anthropic-sdk-python.yaml`](https://github.com/Attention-Span-AI/Tego/blob/main/examples/agents/anthropic-sdk-python.yaml): a Python agent on the Anthropic Python SDK.
+- [`examples/agents/langgraph.yaml`](https://github.com/Attention-Span-AI/Tego/blob/main/examples/agents/langgraph.yaml): a LangChain or LangGraph agent in a Python virtual environment.
 - [`examples/agents/custom-agent.yaml`](https://github.com/Attention-Span-AI/Tego/blob/main/examples/agents/custom-agent.yaml): a Python agent that writes one folder and asks before writing another.
+
+### LangChain and LangGraph agents
+
+Tego has no adapter for LangChain or LangGraph and sees the agent as any other process. It holds and records what the agent's tools do to files, programs and hosts, the model calls that go through the forwarder, and the tools of an MCP server behind Tego's relay. A tool that is a Python function inside the agent's own process is not seen as a tool; only what it does is.
 
 ## Browser agents
 

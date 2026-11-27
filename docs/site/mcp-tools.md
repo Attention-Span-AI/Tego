@@ -65,7 +65,16 @@ tego run agent.yaml -- sh -c 'my-agent --mcp-config "$TEGO_MCP_CONFIG"'
 
 The agent must start each server through the relay. Tego refuses a direct start of a declared server.
 
-A session started with `sudo` (Plus or Max) gets no `$TEGO_MCP_CONFIG` file and no `--mcp-config` ([why](/docs/refusals/#who-is-told-why)). Set the agent's MCP client to start each `command` server as `tego mcp relay --server <name> -- <command...>`, with `<name>` the server's `name` in the rules file.
+Where the file is:
+
+- **Started as yourself:** `tego-mcp.json` in the session's private folder under `$XDG_RUNTIME_DIR/tego/`. If `XDG_RUNTIME_DIR` is not set, not an absolute path, missing, or not a folder only you can write, a session with an `mcp:` server is refused (exit 125) with the fix.
+- **Started with `sudo` (Plus or Max):** root makes `/run/tego-agent/<run id>/` and writes the file there, readable only by the account that ran `sudo`. Tego removes the folder when the session ends.
+
+At Plus and Max, Claude Code started directly gets no `--mcp-config`. Start it through a wrapper that passes the file: `sh -c 'claude --mcp-config "$TEGO_MCP_CONFIG"'`.
+
+The agent can change its own copy of the file. That changes only what its own client starts: the relay allows only the servers and tools in the rules file.
+
+Don't put a secret in an `mcp:` entry's command arguments or URL. They are copied as written into `$TEGO_MCP_CONFIG`, the rules file and the record. Pass the secret in an environment variable the rules allow (`env.pass`) and have the server read it from there.
 
 ## What the agent sees
 

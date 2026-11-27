@@ -122,7 +122,7 @@ A running session's page has these buttons:
 On **Rules files**, open a rules file and choose **Edit rules file**. Edit it, check the result, then save:
 
 - A saved change applies from the next session.
-- **Apply now to** a running session places the change on that session too, within about a second.
+- **Apply now to** a running session places a stricter change on that session too, within about a second, as a block. Removing a command from `exec.allow`, or adding one to `exec.deny` such as `git push`, becomes a command block. A change that cannot be a block, such as an added ask, a pattern, or a loosening, shows **Next run** with the reason.
 - **Undo**, from the change's History, puts the previous text back.
 
 <figure class="shot">

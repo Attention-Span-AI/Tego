@@ -12,7 +12,7 @@ When Tego refuses an action, the agent's system call fails with an ordinary erro
 
 | What was refused | What the agent sees |
 |---|---|
-| A file open, write or change | `EACCES` (permission denied) at every level. At Plus on a machine where Plus runs without its kernel hooks, Tego's kernel file listener (fanotify) refuses instead, with `EPERM` (operation not permitted). |
+| A file open, write or change | `EACCES` (permission denied) at every level. At Plus on a machine where Plus runs without its kernel hooks, Tego's kernel file listener (fanotify) refuses instead, with `EPERM` (operation not permitted). On Linux before 6.2, a `truncate` gets `EPERM` at every level, with the rule `landlock-no-truncate` in the record. |
 | A program start | `EACCES` at every level. A shell reports exit status 126 for the command. |
 | A network connection | `EACCES` at every level. At Plus and Max, a datagram sent without a connection, to a destination the rules don't allow, fails with `EPERM`. |
 | An MCP tool call | A JSON-RPC error with a readable message. See [MCP tool refusals](#mcp-tool-refusals). |
@@ -20,6 +20,8 @@ When Tego refuses an action, the agent's system call fails with an ordinary erro
 If Tego refuses the agent's own command, the one you gave `tego run`, the agent never starts and `tego run` exits with code 126. [Exit codes](/docs/exit-codes/) lists every code.
 
 Tego never rewrites the agent's action or answers in its place.
+
+A session's refusal count is what the kernel saw, not what the agent meant. A Python agent that starts a program it may not run shows two refusals, one for `/usr/bin` and one for `/bin`. Python also binds to `[::1]` once at start-up, which a rules file with a `net:` section refuses. Expect more refusals than the agent's tools tried.
 
 ## Who is told why
 

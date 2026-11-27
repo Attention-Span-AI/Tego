@@ -23,6 +23,10 @@ Remove the incomplete VM, then run the install line again:
 limactl delete tego
 ```
 
+### No `sudo` line: a folder is group-writable
+
+Tego prints a `sudo "$(command -v tego)" ...` line only when no other user can replace the `tego` binary. When a folder on its path is group-writable and Tego cannot tell who is in that group, it shows no `sudo` line and prints one `chmod g-w` command for every such folder. Run it, then the step again.
+
 ## On a Mac
 
 ### `tego: Tego's VM is missing`
@@ -85,14 +89,10 @@ Run `tego run` as yourself, without `sudo`, from a normal login, which sets `XDG
 
 Basic needs `kernel.yama.ptrace_scope` at 0 or 1. [Servers and CI runners](/docs/servers-and-ci-runners/#process-inspection-setting) shows how to set it.
 
-### pytest fails with `INTERNALERROR`
 
-pytest opens `/dev/null` for writing when it starts. Add it to the rules file's writable paths:
+### File opens refused in a container (`held-label-unavailable`)
 
-```yaml
-fs:
-  write: ["./out/", "/dev/null"]
-```
+The container could not read the kernel's list of security modules, so Tego refuses every file open it would make for the agent. [Containers](/docs/containers/#held-file-opens-and-the-security-module-list) shows how to hand the list in.
 
 ## The dashboard
 
@@ -109,6 +109,24 @@ tego serve --addr 127.0.0.1:8485
 ```
 
 To make that port the default, set `serve.port` ([Machine settings](/docs/machine-settings/)). On a Mac, the `tego` command's tunnel to the VM is set up for port 8484 only, so keep the dashboard on 8484 there. [Dashboard](/docs/dashboard/) covers the rest.
+
+### The dashboard cannot start: no message bus
+
+The dashboard runs in your user service manager, which needs a message bus (D-Bus). Debian and Ubuntu cloud images leave out the package that gives it one. The installer and `tego start` say so. Install it, then log out and log in again:
+
+```sh
+sudo apt install dbus-user-session
+```
+
+### Windows: the dashboard doesn't open in the browser
+
+If WSL uses mirrored networking, `tego dashboard` says so and opens nothing, because that mode reserves the dashboard's port for Tego's Linux. Set `networkingMode=nat` in `%USERPROFILE%\.wslconfig`, then run `wsl --shutdown`. Until then, `tego session list` shows your sessions in the terminal.
+
+For any other failure, the message shows the last lines of the dashboard's log. To read the whole log from Windows:
+
+```powershell
+tego shell -c "tail -n 40 ~/.tego/dashboard.log"
+```
 
 ## Next steps
 

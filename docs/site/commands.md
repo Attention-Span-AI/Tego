@@ -24,9 +24,9 @@ A command that takes `<session>` accepts the session name (such as `claude-code-
 
 | Command | What it does |
 |---|---|
-| `tego start` | Sets up an agent in four steps: Agent, Login, Project, Rules. It starts the dashboard and prints the command that starts a session. Runs only in a terminal; takes no arguments. |
+| `tego start` | Sets up an agent in four steps: Agent, Login, Project, Rules. With no agent installed and signed in, it offers a demonstration agent that needs no account and runs it once. It starts the dashboard and prints the command that starts a session. Runs only in a terminal; takes no arguments. |
 | `tego dashboard` | Starts the dashboard or offers the one already running. On Linux it prints the link; on macOS and Windows it opens your browser. See [Dashboard](/docs/dashboard/). |
-| `tego dashboard --stop` | Windows only: stops the dashboard. |
+| `tego dashboard --stop` | Windows only: stops the relay, and the dashboard when no session is running, so Tego's Linux can stop. See [Windows](/docs/supported-systems/#windows). |
 | `tego shell` | macOS and Windows only: opens a shell inside Tego's Linux. On a Mac it starts in your last project. Takes no arguments. |
 
 ## Run an agent

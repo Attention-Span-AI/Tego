@@ -27,6 +27,10 @@ export PATH="$HOME/.local/bin:$PATH"
 
 Add that line to your shell's profile (`~/.bashrc` or `~/.zshrc`) to keep it.
 
+Folders the installer creates, such as `~/.local/bin` on a new account, get mode 755 at most, whatever your `umask`. Folders that already exist stay as they are.
+
+On Debian and Ubuntu, if your login's service manager has no message bus, the installer says the dashboard cannot start and prints the fix ([Troubleshooting](/docs/troubleshooting/#the-dashboard-cannot-start-no-message-bus)).
+
 </section>
 <section data-os="macos" aria-label="macOS">
 

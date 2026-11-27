@@ -39,6 +39,7 @@ Pause freezes every process of the session where it stands: none runs or handles
 ```
 tego block claude-code-a1b2 net example.com:443
 tego block claude-code-a1b2 exec /usr/bin/curl --for 2h
+tego block claude-code-a1b2 exec "git push"
 tego block claude-code-a1b2 write ./src/ --until 17:00
 ```
 
@@ -46,11 +47,13 @@ The session's launcher puts a block in force within about a second. From then on
 
 | Kind | Value | What it refuses |
 |---|---|---|
-| `exec` | An absolute path, a folder ending in `/`, or a bare name such as `curl` | Starting that program, every program in that folder, or every program of that name |
+| `exec` | An absolute path, a folder ending in `/`, a bare name such as `curl`, or a command such as `"git push"` in one quoted argument | Starting that program, every program in that folder, every program of that name, or that command |
 | `net` | `host[:port]`, `IP[:port]`, a unix socket path, or `@name` for an abstract socket | Connections to it. No port means every port. |
 | `path` | A path | Reads and changes of it and everything beneath it |
 | `read` | A path | Reads only, plus a rename or hard link that would give the file a name outside the block |
 | `write` | A path | Changes only: writes, creates, deletes, renames, links, `mkdir` |
+
+A command block refuses what the same words in `exec.deny` would: `git push` also refuses `git -C . push origin`, while `git status` still runs. Like `exec.deny` words, it is checked on the arguments the program starts with ([Testing rules](/docs/testing-rules/)). For a session started by an older Tego, or one still starting, `tego block` refuses a command (exit 1, `[launcher-too-old]`) and changes nothing.
 
 An `exec` block on a path refuses the program file under every name it has. On Ubuntu 25.10 and 26.04, `/bin/ls` and `/bin/sleep` are names of one coreutils file, so blocking `/bin/ls` refuses `/bin/sleep` too. `tego block` prints some of the other names, and the command that blocks one name alone: a bare name such as `ls`, which is matched by name only.
 
@@ -73,7 +76,7 @@ Remove a block, back to what the rules file allows:
 tego unblock claude-code-a1b2 net example.com:443
 ```
 
-`tego unblock` with `--for` or `--until` removes the block for that long, then it refuses again. What the rules file refuses stays refused.
+`tego unblock` with `--for` or `--until` removes the block for that long, then it refuses again. What the rules file refuses stays refused. At Plus and Max, a file with both a read block and a write block keeps refusing writes while only the write block is lifted for a while: the views say the write block is lifted, but the kernel refuses more, never less.
 
 A block on a `tego watch` session is recorded on each matching line but refuses nothing, since that session enforces no rules.
 

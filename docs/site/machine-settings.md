@@ -68,6 +68,8 @@ Tego ignores these keys in any other layer, with a warning.
 | `bpf.ring_budget` | `256MiB` | The memory every live Plus or Max session's event buffers may use together. A session that would pass it is refused, exit 125. |
 | `bpf.plane` | `auto` | Which kernel hook mechanism Plus and Max use: `auto`, `lsm` (the kernel's security hooks) or `fmod_ret` (hooks that change a kernel function's return value). |
 | `record.ringbuf` | `2MiB` | The size of each Plus or Max session's event buffer. |
+| `lsm.list_file` | none | A file holding the kernel's list of security modules, for a container that cannot read the list itself. Tego reads it only when the kernel's own two sources fail, and uses it only for checking held file opens ([Containers](/docs/containers/)). |
+| `tomoyo.facts_dir` | none | A read-only copy of the host's `/sys/kernel/security/tomoyo`, for a container on a host that runs TOMOYO ([Containers](/docs/containers/)). |
 
 ## Example settings file
 

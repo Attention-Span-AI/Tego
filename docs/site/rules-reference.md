@@ -70,6 +70,8 @@ Rules for files. The [built-in refusals](/docs/built-in-refusals/) apply with or
 | `fs.reads` | `auto`, `held`, `direct` | `held` makes Tego check each read open, so a secret inside a write folder stays refused. `direct` only in the top-level file. | `auto`: held at Basic while a `deny_read` path lies inside a write folder. | All |
 | `fs.apparmor_assume_root_namespace` | bool | For administrators: states that the session sees the root AppArmor policy namespace. Top-level file only. | `false` | All |
 
+Any rules file with an `fs:` section, even `fs: {}`, may write five devices that store nothing: `/dev/null`, `/dev/zero`, `/dev/full`, `/dev/random` and `/dev/urandom`, so `2>/dev/null` works. Records show these opens under the rule `builtin.standard_devices`. The grant is for the device itself: a file or link with the same name elsewhere gets nothing. `/dev/tty` and other terminals are not included; add them to `fs.write` if a tool needs them. An entry of your own that names one of the five decides it instead.
+
 <a id="net"></a>
 
 ## Network (`net`)
@@ -152,6 +154,7 @@ Each limit ends or slows the session. A rules file can lower a [machine settings
 | `limits.repeats` | integer | The same tool call this many times in a row. Needs model traffic metering. | Ends, exit 124 |
 | `limits.tokens` | integer | Model tokens, input plus output. Needs metering, or the session does not start (125, `budget-unmetered`). | Ends, exit 124 |
 | `limits.cost_usd` | number | Model cost from the price table. Needs metering and a price table. | Ends, exit 124 |
+| `limits.window` | duration, 1m to 30d | Makes `tokens` and `cost_usd` totals across every session of the agent in this window ([Budgets](/docs/budgets/#set-a-budget-over-a-window)). | Ends, exit 124 |
 | `limits.memory` | size | Memory cap. | Killed, exit 137 |
 | `limits.memory_high` | size | Memory level where the kernel starts slowing the agent. | Slowed |
 | `limits.pids` | integer | Most processes and threads. | Ends at a refused fork, exit 137 |

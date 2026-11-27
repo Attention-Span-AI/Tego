@@ -28,6 +28,7 @@ Each session has a folder under `~/.tego/runs/`, named by its run ID:
 |---|---|
 | `~/.tego/runs/<run ID>/events.jsonl` | The record: one JSON object per line, one line per event |
 | `~/.tego/runs/<run ID>/blobs/` | Large bodies, such as model requests and responses, stored by their hash |
+| `~/.tego/runs/<run ID>/receipt.json` | A copy of the session's summary, what `tego session show <session> --json` prints, written once when the session ends |
 | `~/.tego/chain.log` | One line per ended session: its run ID and the hash of its last record line |
 
 The folders are readable only by you (`0700`, with files `0600`). The agent runs as you, but every session refuses its reads of `~/.tego`. On a Mac or Windows PC, records live inside Tego's Linux.
@@ -64,6 +65,8 @@ tego events tego-sample-6hbm --verify
 ```
 
 It checks every line's hash, every link to the line before, and the last line against `~/.tego/chain.log`. It prints one line that says how many lines it verified and whether the record matched its `chain.log` entry. A session that is still running has no `chain.log` entry yet, and the line says so. When the record doesn't verify, it names the first problem and exits with code 1 ([Exit codes](/docs/exit-codes/)).
+
+`tego session show <session> --verify` runs the same check, then compares the session's `receipt.json` with the record. It prints `Kept receipt: <path> matches the record.`, or exits 1 with `[receipt-differs]` and what differs. The copy is a convenience, not proof: whoever can write the session's folder can write both. Tego keeps no `receipt.json` for a session that was interrupted or whose record could not be completed, and never replaces a file already there.
 
 ## What a record proves
 

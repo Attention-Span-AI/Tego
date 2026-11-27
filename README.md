@@ -26,8 +26,8 @@ may use. The Linux kernel enforces those rules from outside the agent, so an age
 can't talk its way past them. Every session leaves a record of what the agent did and what Tego refused, and you can
 check that nobody changed it.
 
-Tego works with any agent that runs as a process: Claude Code, Codex, an MCP server, a Python script or your own agent.
-It never calls an AI model itself.
+Tego works with any agent that runs as a process: Claude Code, Codex, a LangChain or LangGraph agent, an MCP server,
+a Python script or your own agent. It never calls an AI model itself.
 
 <p align="center">
   <picture>

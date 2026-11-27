@@ -72,6 +72,10 @@ A session's record grows as long as the session runs. Two machine settings bound
 - `record.max_run_bytes` ends the session as a limit ([Exit codes](/docs/exit-codes/)) when its record reaches that size. The unit then restarts the agent on a new record.
 - `retention` and `gc_interval` remove old ended sessions. On a machine where no session starts for days, enable `tego-gc.timer` from `examples/systemd/`, which runs `tego gc` once a day.
 
+## Plan memory for Plus and Max sessions
+
+Each Plus or Max session's launcher peaks near 70 MB of memory and shares about 28 MB with the kernel. Plan about 3 GB of memory for 32 sessions at once. A cold start at these levels takes 9 to 18 seconds; Tego prints a `[startup-wait]` note after about a second.
+
 ## Questions with nobody watching
 
 In a service nobody answers, so each held action waits for `ask.timeout` and is refused. [Approvals](/docs/approvals/#with-nobody-watching) shows how to make retries fail at once.

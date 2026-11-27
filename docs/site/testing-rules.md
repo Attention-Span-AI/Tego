@@ -129,7 +129,7 @@ A copy with errors is not saved. Your edit is kept beside the file as `agent.yam
 
 ## See and undo changes
 
-The dashboard's Change rules page, `tego rules edit` and `tego rule` record each change they make to a rules file. Once a session on this machine has run the file, list its changes:
+The dashboard's Change rules page, `tego rules edit` and `tego rule` record each change they make to a rules file. A file that is not yours alone, that every user can write, or that sits under Tego's own folders is saved without a history entry, and the output says it cannot be undone. Once a session on this machine has run the file, list its changes:
 
 ```
 tego rules history my-project
@@ -151,7 +151,7 @@ tego rules list
 tego rules list my-project
 ```
 
-`tego rules list` shows the rules files Tego finds for you: the agents in `~/.config/tego/agents/`, the current folder's `agent.yaml` and `.tego/agents/`, and the files your recorded sessions ran. Each row gives the check result for today's file, when a session last started it, at which level, and whether today's file is the same text that session ran. Give a name or a path to see one file's rules with the file and line each rule comes from. It changes no file and starts nothing. `--json` prints the same as JSON.
+`tego rules list` shows the rules files Tego finds for you: the agents in `~/.config/tego/agents/`, the current folder's `agent.yaml` and `.tego/agents/`, and the files your recorded sessions ran. Each row gives the check result for today's file, when a session last started it, at which level, and whether today's file is the same text that session ran. Give a name or a path to see one file's rules with the file and line each rule comes from. It changes no file and starts nothing. `--json` prints the same as JSON. A folder on a disk that is slow to answer can make it wait up to 30 seconds, with a note while it waits; a folder on a network mount that does not answer within 5 seconds is reported as not answering.
 
 ## Next steps
 

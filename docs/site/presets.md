@@ -88,7 +88,7 @@ fs:
   write: ["/dev/null"]
 ```
 
-`/dev/null` is there because many tools open it for writing. Add your project folders to your own `fs.write`, such as `./src/` and `./tests/`. With no folder of your own, every write but `/dev/null` is refused.
+Add your project folders to your own `fs.write`, such as `./src/` and `./tests/`. With no folder of your own, the agent can write only to `/dev/null` and the other [devices that store nothing](/docs/rules-reference/#fs).
 
 ## CI runners (`tego/ci`)
 

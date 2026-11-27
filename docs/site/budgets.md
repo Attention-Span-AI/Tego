@@ -46,7 +46,45 @@ warning: no-models.yaml:6:11: limits.tokens budget never trips where the run lan
 
 A `models:` entry works at every level, so declare the model when the same rules file runs on several machines.
 
-Only Anthropic model responses are counted and priced. With `tokens` or `cost_usd` set, a session whose `models:` entry names another provider, such as OpenAI for Codex, ends with exit 125 at its first model call, because Tego cannot count it. At Plus and Max with no `models:` entry, another provider's calls are not counted, so the limit never trips. For such an agent, leave `tokens` and `cost_usd` out of the rules file.
+## Which model APIs Tego can count
+
+A `models:` entry's `provider` says which API the endpoint speaks, and Tego reads the usage of these answers:
+
+| `provider` | API |
+|---|---|
+| `anthropic` | Anthropic's Messages API |
+| `openai` | OpenAI's Chat Completions (`POST /v1/chat/completions`) and Responses (`POST /v1/responses`) APIs, on the host the entry names: OpenAI's, a gateway's or a local server's |
+
+With `tokens` or `cost_usd` set, an answer Tego cannot read the usage of ends the session at that answer, exit 125, and the closing lines of `tego run` name the request and the fix. That happens for:
+
+- a streamed chat completion whose client did not ask for usage in the stream. Tego never changes a request, so set `stream_options: {"include_usage": true}` in the client.
+- an answer cut short (a cancelled or interrupted stream), or a Responses answer stopped by `max_output_tokens`.
+- an answer larger than 8 MiB.
+- another path of the API, such as embeddings, and the API of any other provider (Gemini, Mistral, Bedrock, Azure OpenAI).
+
+`tego rules check` warns `[budget-uncounted]` for a rules file that sets `tokens` or `cost_usd` beside a `models:` entry of another provider. For such an agent, leave `tokens` and `cost_usd` out. `limits.repeats` does not count the tool calls of an OpenAI answer. At Plus and Max with no `models:` entry, only Anthropic calls are counted.
+
+## What a session does at its limit
+
+From the moment the limit is recorded, Tego's forwarder sends no new model request: it answers the agent `403` itself and records the request as refused. Then the session ends. Requests already in flight finish and are recorded, so a session can end a few answers past its limit. A model the agent reaches directly, not through the forwarder, is not refused; its budget still ends the session.
+
+## Set a budget over a window
+
+`limits.window` makes `tokens` and `cost_usd` totals across every session of the same agent in that window, restarts included:
+
+```yaml
+limits:
+  cost_usd: 5
+  window: 24h
+```
+
+A service that restarts the agent twelve times in a day then spends $5 in that day, not $60. The window is 1 minute to 30 days.
+
+- **The agent is the name you run.** `tego run --agent NAME` counts under that name; `tego run path/agent.yaml` counts under the file's path. The two forms are two budgets, so start the agent the same way every time.
+- **Before each start, Tego counts the agent's earlier sessions** in the window from their records. A record it cannot trust or read, a session of the agent still running, a [`retention`](/docs/machine-settings/) shorter than the window, or more than 512 MiB of the agent's records refuse the start, exit 125, `[budget-window]`, naming the session. To clear a damaged session, move its folder out of the records folder.
+- **Some starts are refused.** A rules file with no name to count under, and a record-only session (`--observe`).
+- **A restart into a full window ends at its first model answer.** A unit with `Restart=on-failure` then stops at its start limit; run `systemctl --user reset-failed` once the window has room.
+- **Counting reads the records**, about 1 second per 10,000 answers. Use `record: summary` for an agent with a window.
 
 ## Install a price table
 
@@ -76,6 +114,7 @@ server_tool_per_request:
 - **A call the table cannot price is charged high, never at $0.** A model the table does not name, or a missing cache price, is charged at the table's highest rate for that counter, and twice that for a premium such as fast mode. The record notes `unpriced-model` once per model.
 - **A mistake makes the whole table unreadable.** An unknown key, or a `version` other than 1, reads as no table at all, so a typo cannot price anything at $0.
 - **The file must be yours alone.** A table that others can write, or that has a second name (a hard link), is not read.
+- **The example table prices only Claude models.** Add any other model you use, named exactly as the answer's `model` field reports it.
 
 With no table, or a table that prices no model, every session of a rules file that sets `cost_usd` is refused, and `tego rules check` warns `[budget-unmetered]`.
 

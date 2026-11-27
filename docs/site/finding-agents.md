@@ -17,7 +17,7 @@ cd ~/my-project
 tego scan
 ```
 
-`tego scan` takes one snapshot of your own processes, installed agent programs, their settings folders, configured MCP servers (the tool servers agents call through the Model Context Protocol), your systemd user services and the current folder's project files (`package.json`, `requirements.txt`). It recognises Claude, Codex, OpenCode and Gemini by default. It starts and changes no process, opens no process's environment, and makes no network request.
+`tego scan` takes one snapshot of your own processes, installed agent programs, their settings folders, configured MCP servers (the tool servers agents call through the Model Context Protocol), your systemd user services and the current folder's project files (`package.json`, `requirements.txt`, `langgraph.json`, `crew.jsonc`, `config/agents.yaml`). For a LangGraph project it reports only that the project declares the library. It recognises Claude, Codex, OpenCode and Gemini by default. It starts and changes no process, opens no process's environment, and makes no network request.
 
 It saves the snapshot to `~/.tego/scan/last.json`, which `tego start` and the dashboard read to tick "Find your agents". Any program running as you can replace that file, so treat it as a note, not proof.
 
