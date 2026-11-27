@@ -24,7 +24,7 @@
 // contract's own command matcher in the supervisor (Set.Words, WordOn), and is written only to a run whose launcher made the
 // words mark (MarkWords, CheckWords). A path, read or write value written
 // through a link is resolved once, when it is added (RealPath, AddReal), and refuses where it led too (Entry.Real).
-// docs/OPERATIONS.md ("Live blocks") lists what that leaves out.
+// docs/development/operations.md ("Live blocks") lists what that leaves out.
 //
 // The overlay also carries the run's pause and resume (OpPause, OpResume, Overlay.Paused), which the launcher applies
 // to the run's cgroup. A block or an unblock may carry a time limit (ADR 0125 decision 4, clock.go): it ends by itself

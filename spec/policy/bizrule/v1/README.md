@@ -3,7 +3,10 @@
 # Business rule specification v1
 
 Frozen 2026-11-12 by [ADR 0151](../../../../docs/adr/0151-business-rules.md).
-This is a specification, not an implemented feature. README, WIRE, ADAPTER and
+A pure Go evaluator of this specification exists, `pkg/spec/bizrule`, and passes
+the vectors. It is not wired into the relay: a rules file that declares
+`business_rules` compiles, and every run of it is refused on every tier (exit
+125, `agent.BusinessRulesUnavailable`). README, WIRE, ADAPTER and
 `schema.json` define v1. Numbered sentences are requirements and coverage units.
 Each cites an authority or an explicit design decision. Fixture expectations
 were authored from these sentences, not obtained from an evaluator.

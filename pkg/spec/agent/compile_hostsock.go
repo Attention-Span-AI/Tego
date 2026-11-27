@@ -248,12 +248,12 @@ func (k *compiler) builtinRefusedAllows(skip map[Pos]bool) {
 			"no contract entry lifts a built-in refusal (ADR 0113), so this entry %s%s",
 			name, resolvedNote(r.UnixPath, at), rule, before, does, what)
 		if rule == BuiltinTegoSurface {
-			d.fix("remove the entry: no run reaches Tego's own sockets (docs/user/built-in-refusals.md)")
+			d.fix("remove the entry: no run reaches Tego's own sockets (https://attention-span.ai/docs/built-in-refusals/)")
 			continue
 		}
 		d.fix("remove the entry; to let the agent cause one operation through that socket, such as restarting one "+
 			"service, run a helper outside the run that does that one operation and nothing else, listening on a socket "+
-			"at a path no built-in refuses (outside %s), and %s that socket instead (docs/user/built-in-refusals.md)", runtimeDir,
+			"at a path no built-in refuses (outside %s), and %s that socket instead (https://attention-span.ai/docs/built-in-refusals/)", runtimeDir,
 			map[Verdict]string{VerdictAllow: "allow", VerdictAsk: "ask about"}[r.Verdict])
 	}
 }

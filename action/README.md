@@ -6,8 +6,8 @@ unsigned callers delegate contents/actions read only.
 Signing requires explicit consent to publishing organisation, repository and workflow names in the public,
 permanent Sigstore log. No hosted acceptance row is closed by the offline tests.
 
-See the [CI job guide](../docs/user/ci-receipt.md) for pins, inputs, permissions, retention, restrictions and
-limits, and the [verifier recipe](../docs/user/ci-verification.md) for exact expected identities and commands.
+See the [CI guide](../docs/site/ci.md) for pins, inputs, permissions, retention, restrictions and
+limits, and for the commands that check a receipt.
 This composite action collects an unsigned report, not evidence; it cannot supply the separate-job signing claim alone.
 
 Trust a reviewed workflow on a protected branch. A receipt on a pull request is only as honest as the workflow file that made it. Root on the agent runner

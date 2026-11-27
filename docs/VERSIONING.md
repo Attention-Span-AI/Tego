@@ -8,7 +8,7 @@
   bump is required to drop a ledger reader or a contract reader.
 - `tego version` prints `tego`, `commit`, `date`, `go`, `contract_schema`, `record_v`, `record_readers`, `bpf_hash`,
   `parsers`, `control_sha256`, one `key=value` per line and `--json`. It is the first line of every bug report and of
-  `tego doctor`. `control_sha256` (*added 2026-10-24*, ADR 0100 (1b)) is the SHA-256 of the `tego-control` the build
+  `tego machine check`. `control_sha256` (*added 2026-10-24*, ADR 0100 (1b)) is the SHA-256 of the `tego-control` the build
   pinned, `none` for an unpinned build. `tego-control version` prints `tego-control`, `commit`, `date`, `go` and
   `sha256`, the hash of the image it runs; a matched pair prints the same version, commit and date, and that hash
   is the pin.
@@ -56,8 +56,8 @@ No historical line is rewritten.
 - `version: 0` on the file. Unknown fields are errors from M0 (yaml.v3 `KnownFields(true)`): a misspelt `write:` must
   never pass silently.
 - Releases before `v0.2.0` (v0.1.0 to v0.1.3) could change the v0 field set without notice. From `v0.2.0` fields are
-  only added; a removed or re-meant field is `version: 1`, `compile` warns on the old field for one MINOR release, and
-  `compile --upgrade` rewrites the file and prints the diff.
+  only added; a removed or re-meant field is `version: 1`, `rules check` warns on the old field for one MINOR release, and
+  `rules check --upgrade` rewrites the file and prints the diff.
 
 ## 4. BPF objects
 - Pinned under `/sys/fs/bpf/tego/<bpf_hash>/`, not `<version>`: two binaries with the same object share one attached
@@ -67,14 +67,15 @@ No historical line is rewritten.
   build needs no clang.
 
 ## 5. Releases
-- Two Linux binaries per target (*added 2026-10-24*, ADR 0100 (1a)): `tego` and `tego-control`, raw, side by side. The
+- Two Linux binaries per target (*added 2026-10-24*, ADR 0100 (1a)): `tego` and `tego-control`, raw, side by side.
+  Windows gets one more, the `tego.exe` command (`cmd/tego-windows`), which runs the Linux `tego` inside WSL. The
   tego build's pre hook (`scripts/control-pin.sh`) builds tego-control with the tego-control build's own flags and
   links its SHA-256 into tego (`internal/handoff.controlSHA256`); release.yml fails the draft unless each tego pins
   the tego-control it ships (`scripts/check-control-pin.sh --static`), its `reproduce` job rebuilds and compares
   both binaries, and CI's `reproducible` job runs the same check. `make build` writes the pair the same way.
 - `.goreleaser.yaml`: `CGO_ENABLED=0`, `-trimpath`, `-tags tegobpf`, `-buildmode=exe` (static and not PIE, a
   release choice for portability: since ADR 0021 (4) tier 2 runs a dynamically linked or PIE build too, and the guest
-  run of a PIE build is that ADR's open condition), `tego` and `tego-control` for `linux` only, `amd64` and
+  run of a PIE build is that ADR's open condition), `tego` and `tego-control` for `linux`, `tego-windows` for `windows`, each `amd64` and
   `arm64`, sha256 checksums, raw binaries, one SPDX SBOM per binary. `make release` stays the snapshot build (no SBOM, nothing
   signed or published); `.github/workflows/release.yml` runs on `v*` tags only.
 - Every release also includes `tego_<version>_licenses.tar.gz`, covered by those checksums and the release
@@ -140,7 +141,7 @@ No historical line is rewritten.
   this checkout's own extra files; CI's `reproducible` job runs the release job's staging step on a full snapshot.
 - `install.sh` is a release asset, and is in the checksums file (`checksum.extra_files` in
   `.goreleaser.yaml`), so the signature and the attestations cover it. That helps someone who downloads, verifies and
-  only then runs it (docs/INSTALL.md). It does nothing for a script piped into `sh`, which runs before anything can
+  only then runs it (docs/site/install.md). It does nothing for a script piped into `sh`, which runs before anything can
   check it (docs/GAPS.md B11); `reproduce` does not compare it, since it is the tag's own file and no build makes it.
 - `scripts/install.sh` downloads one tag (`TEGO_VERSION=v0.y.z` to pin), checks who published it when it can
   (`TEGO_VERIFY`: cosign against the signature bundle, or `gh attestation verify` against the provenance; with
@@ -165,7 +166,7 @@ No historical line is rewritten.
 - Dependencies: `.github/dependabot.yml` proposes Go module and GitHub Actions updates weekly; every action is
   pinned by commit SHA, and CI runs `govulncheck` on every push.
 - A release requires kill tests 1–6 green on the `test/vm` matrix, kill test 7 (docs/FEATURES.md) run by hand on one
-  kernel, and the packet capture of kill test 8 (docs/OPERATIONS.md) run by hand once before beta. "No kill test regressed across two releases" means two consecutive `v0.y` tags.
+  kernel, and the packet capture of kill test 8 run by hand once before beta. "No kill test regressed across two releases" means two consecutive `v0.y` tags.
 - `docs/CHANGELOG.md`, one section per tag: Added / Changed / Removed / Record `v` / Contract schema / Kernel minimums.
 - Built-in presets (*added 2026-10-25*, ADR 0068 D3): every preset revision a tag carries is released and frozen
   from that tag on, so `pkg/spec/presets`' `released` table must list each with the sha256 of its bytes before the
@@ -238,7 +239,7 @@ of this; retraction is deliberately not automated (§7.4).
 Record `v` (`spec/record/v1`, currently `1`) and the contract's `version:` field (`spec/agent/v0`, currently
 `0`) are their own axes, not the binary's semver (§1–§3); tagging `vX.Y.Z` does not itself change either. What
 a release *does* is pin, in `docs/CHANGELOG.md`'s Record `v` / Contract schema lines, which schema versions that
-specific binary speaks, so a reader (or `tego doctor`) can tell compatibility from the tag alone. If either
+specific binary speaks, so a reader (or `tego machine check`) can tell compatibility from the tag alone. If either
 value actually moved since the last tag, §1's MINOR/MAJOR rule decides the version bump — a new reader is
 MINOR, dropping one is MAJOR — the changelog entry does not decide it on its own.
 

@@ -49,7 +49,7 @@
 # shared). TEGO_PRECOMMIT_JOBS=1 runs every step one after another in the order above. Each step's output is kept apart and printed in that fixed order,
 # with its duration, whatever finished first; a step that is killed, or never reported, is a failure.
 #
-# Modes (docs/OPERATIONS.md, "Precommit modes"): with no TEGO_PRECOMMIT_SINCE, the full gate above, which every
+# Modes (docs/development/operations.md, "Precommit modes"): with no TEGO_PRECOMMIT_SINCE, the full gate above, which every
 # merge to main runs. With TEGO_PRECOMMIT_SINCE=<rev> (`make precommit-affected BASE=<rev>`), the change-scoped
 # check for in-between runs: tools/affected compares the tree with the merge base of HEAD and <rev> and prints what
 # it selects and why; a global input (go.mod, the gate's scripts and lists, tools/, internal/testutil/, ...) runs

@@ -1,6 +1,6 @@
 # Contracts view v1
 
-`tego contracts --json` emits `schema: "tego.contracts.v1"`. `tego contracts show <name|path> --json` emits
+`tego rules list --json` emits `schema: "tego.contracts.v1"`. `tego rules list <name|path> --json` emits
 `schema: "tego.contracts.show.v1"`. Both satisfy [contracts.schema.json](contracts.schema.json), a JSON Schema
 2020-12 document. This is a read-only view. It changes no contract, compile rule, merge order or record revision.
 
@@ -36,7 +36,7 @@ compiler prints them. Rule sentences and group defaults reuse the existing rules
 name variables, never their values; the verbose compiler table retains its existing presentation.
 
 `footer` always discloses discovery scope. `context` always states the offline, current-file check and the limits
-of comparing a contract hash. The command reference and [user guide](../../../docs/user/contracts.md) define
+of comparing a contract hash. The command reference and [user guide](../../../docs/site/testing-rules.md) define
 selection, guards, resource bounds and exit codes. Tests validate real outputs with the repository's independent
 JSON Schema validator and reject an unsupported schema version.
 

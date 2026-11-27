@@ -12,10 +12,15 @@ import (
 // A contract's own fs.deny_write list (ADR 0071) refuses writes inside a write grant race-free only where a kernel
 // decision plane decides the run; at tier landlock, the tier a user without root gets, the supervisor refuses on the
 // copied pathname, which a racing agent can pass. A page that says "deny_write blocks writes" without that tells a user
-// a guarantee the no-root tier does not give, so every paragraph of docs/user that names it carries the label
-// (agent.UserDenyWriteLabel, word for word).
+// a guarantee the no-root tier does not give, so every paragraph of docs/site that names it says so: in the user
+// docs' words, the label "best effort at Basic", or a link to the Rules file fields page, whose fs.deny_write row
+// carries that label. (The command line's own words are agent.UserDenyWriteLabel.)
 
-const labelDenyWrite = "blocked for ordinary commands; not race-free at the no-root tier"
+const (
+	labelDenyWrite = "best effort at basic"
+	// denyWriteOwner is the link to the page whose fs.deny_write row carries the label.
+	denyWriteOwner = "](/docs/rules-reference/"
+)
 
 // denyWriteRe matches the words that name the list: deny_write, deny-write, "deny write", in any case, with markup
 // around them.
@@ -27,16 +32,16 @@ func denyWriteFindings(pages map[string]string) []string {
 	for _, p := range userDocPages(pages) {
 		for _, para := range paragraphs(visibleText(pages[p])) {
 			m := denyWriteRe.FindString(para.text)
-			if m == "" || strings.Contains(strings.ToLower(para.text), labelDenyWrite) {
+			if m == "" || strings.Contains(strings.ToLower(para.text), labelDenyWrite) || strings.Contains(para.text, denyWriteOwner) {
 				continue
 			}
-			out = append(out, fmt.Sprintf("%s:%d: names %q without %q in the same paragraph", p, para.line, m, labelDenyWrite))
+			out = append(out, fmt.Sprintf("%s:%d: names %q without %q or a link to the Rules file fields page in the same paragraph", p, para.line, m, labelDenyWrite))
 		}
 	}
 	return out
 }
 
-// TestUserDocsLabelDenyWrite holds docs/user to ADR 0071's sentence.
+// TestUserDocsLabelDenyWrite holds docs/site to ADR 0071's sentence.
 func TestUserDocsLabelDenyWrite(t *testing.T) {
 	for _, f := range denyWriteFindings(loadUserDocs(t)) {
 		t.Error(f)
@@ -46,13 +51,14 @@ func TestUserDocsLabelDenyWrite(t *testing.T) {
 // TestUserDocsDenyWriteCheckFindsPlantedBreakage: a paragraph naming the list in any spelling without the label is
 // found, and one with it, or with the name only in a code block of a labelled paragraph, is not.
 func TestUserDocsDenyWriteCheckFindsPlantedBreakage(t *testing.T) {
-	bad := map[string]string{"docs/user/a.md": "# A\n\nList CI files in `fs.deny_write`.\n\n" +
+	bad := map[string]string{"docs/site/a.md": "# A\n\nList CI files in `fs.deny_write`.\n\n" +
 		"Deny-write keeps them.\n\n" + "The deny write list blocks writes.\n\n"}
 	if got := denyWriteFindings(bad); len(got) != 3 {
 		t.Errorf("want three findings, got %v", got)
 	}
-	good := map[string]string{"docs/user/b.md": "# B\n\nList CI files in `fs.deny_write`: " + labelDenyWrite + ".\n\n" +
-		"Blocked for ordinary commands; not race-free at the no-root tier. Deny-write keeps them.\n\n" +
+	good := map[string]string{"docs/site/b.md": "# B\n\nList CI files in `fs.deny_write`: " + labelDenyWrite + ".\n\n" +
+		"Best effort at Basic. Deny-write keeps them.\n\n" +
+		"Deny-write holds as [Rules file fields](/docs/rules-reference/#fs) says.\n\n" +
 		"The default tier needs no privilege.\n\n"}
 	if got := denyWriteFindings(good); len(got) != 0 {
 		t.Errorf("labelled paragraphs gave %v", got)

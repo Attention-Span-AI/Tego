@@ -54,7 +54,7 @@ func sweepAdoption(ctx context.Context, o sweepOptions, dir runDir, ref record.R
 	}
 	if sweeperUID() == 0 {
 		return true, fmt.Errorf("adoption %s: %w: its scope %s is there with no record to release it from; move its "+
-			"processes out and remove it by hand (docs/OPERATIONS.md)", ref.ID, errOrphanAlive, scope)
+			"processes out and remove it by hand (docs/development/operations.md)", ref.ID, errOrphanAlive, scope)
 	}
 	named := func() (string, string) { return selfbin.Named(os.Executable) }
 	gc, why := selfbin.Sudo("gc", named)

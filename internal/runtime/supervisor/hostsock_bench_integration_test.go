@@ -47,7 +47,7 @@ func targetConnectLoop() (int, int64) {
 // (target-ns/op). "continued" is host_sockets: true, where the supervisor answers CONTINUE and the kernel performs the
 // call, the cost every such run paid before; "relayed" is the default, where the supervisor performs the call on its
 // duplicate of the socket from the copy it decided, so a sibling thread cannot redirect it (ADR 0041 D6).
-// docs/OPERATIONS.md quotes the figures. Like BenchmarkRelayDatagram it needs no privilege, and the timer runs only
+// docs/development/operations.md quotes the figures. Like BenchmarkRelayDatagram it needs no privilege, and the timer runs only
 // across the target's loop.
 func BenchmarkUnixOnlyRelay(b *testing.B) {
 	for _, bc := range []struct {

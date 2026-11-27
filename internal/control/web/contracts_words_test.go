@@ -73,7 +73,7 @@ func saysBlocked(body string) string {
 // preText is a <pre> block and its text.
 var preText = regexp.MustCompile(`(?s)<pre[^>]*>.*?</pre>`)
 
-// TestPagesSayContractAndRefused (docs/DASHBOARD.md, Contract and refused): the nav, the page titles and the pages a newcomer reads say contract
+// TestPagesSayContractAndRefused (docs/development/dashboard.md, Contract and refused): the nav, the page titles and the pages a newcomer reads say contract
 // and refused, the command line's words, never policy, and never Blocked as a verdict.
 func TestPagesSayContractAndRefused(t *testing.T) {
 	f := newRulesFix(t)

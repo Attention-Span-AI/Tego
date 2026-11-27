@@ -33,7 +33,7 @@ fs:
   # run.sh lists only the entries that exist (deny_read refuses a missing path); the CI twin lists its own home's.
 @DENY_READ@
 exec:
-  # A deny list, so the hook is granted (an exec.allow list does not get it yet: docs/user/reason-channel.md §3).
+  # A deny list, so the hook is granted (an exec.allow list does not get it yet: docs/site/refusals.md).
   # A command pattern: `git push` never runs; the git start-up queries Claude Code makes run the harmless stand-in
   # git on PATH and are not refusals.
   deny: ["git push"]

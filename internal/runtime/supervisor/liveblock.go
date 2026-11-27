@@ -27,14 +27,14 @@ import (
 // a walk that failed in this process), the action is refused under that marker, fail closed, as R15c refuses such
 // a modification while a deny_write target exists.
 //
-// What this does not reach is what the run's filter does not notify (docs/OPERATIONS.md, "Live blocks"): a read
+// What this does not reach is what the run's filter does not notify (docs/development/operations.md, "Live blocks"): a read
 // open outside record: full and held reads, I/O on a descriptor already open, a mapping, a chmod outside record:
 // full, and at the root tiers an action the kernel plane decides without a notification. And like every decision
 // this loop makes on a copied pathname, an exec or fs block is decided on this loop's walk of the name: a peer that
 // repoints a symlink between that walk and the kernel's own lookup can reach a blocked file (the race R15c names). A
 // connect on an IP socket is not raced: it is relayed on the duplicate, under every contract while a net block exists
 // (liveRelays), and a unix one that is relayed is matched again where the relay's walk lands. What stays continued is
-// stated in docs/OPERATIONS.md ("Live blocks"): an addressed datagram (R13b), and under host_sockets: true a connect on
+// stated in docs/development/operations.md ("Live blocks"): an addressed datagram (R13b), and under host_sockets: true a connect on
 // a socket of another domain, which keeps the agent's own credentials and Landlock scope.
 
 // blocks is the run's live blocks now; nil when there are none, or the loop was built without them.

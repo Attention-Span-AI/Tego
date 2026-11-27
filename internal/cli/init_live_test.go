@@ -69,7 +69,7 @@ func TestInitLiveModeAdjustableCompiles(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.HasSuffix(string(b), liveAdjustableBlock) || !strings.Contains(string(b), "docs/user/live-modes.md") {
+			if !strings.HasSuffix(string(b), liveAdjustableBlock) || !strings.Contains(string(b), "https://attention-span.ai/docs/live-changes/") {
 				t.Errorf("agent.yaml lacks the live block:\n%s", b)
 			}
 			// tier: auto compiles: a run that lands at tier landlock is the launcher's to refuse (LiveTierCheck).

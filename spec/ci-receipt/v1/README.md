@@ -50,7 +50,9 @@ mandatory checks passing, complete coverage and an ended match. Only
 reproduced. Every result includes residual limits and the statement each check
 supports. `coverage_complete:false` is visibly incomplete.
 
-No production bundle verifier exists in this slice. Every required bundle and
+Bundles are checked by an independently pinned cosign (`cireceipt.CosignVerifier`):
+`tego session show --verify-ci` and `--check --bundle` take `--trusted-root`,
+`--cosign` and `--cosign-sha256`. Without them, every required bundle and
 certificate field is reported as `not-checked` with `not checked: no bundle`.
 Missing checks never become a pass. Full acceptance requires both authenticated
 blobs, all certificate-field checks and both verified integration times within the

@@ -6,7 +6,7 @@
 # Only the packages the two scripts import are pinned; their own dependencies (pydantic, httpx, anthropic, ...) are
 # whatever pip resolves inside those releases' ranges, and no hashes are listed: a hash-checked file lists every
 # dependency too (test/workloads/build/python/requirements.txt does), `tego scan` does not read a requirements.txt
-# that carries hashes ("not read: unsupported", docs/user/scan.md), and a project's own requirements.txt is what the
+# that carries hashes ("not read: unsupported", docs/site/finding-agents.md), and a project's own requirements.txt is what the
 # scan reads to name LangGraph. The guest row records `pip freeze` of what it installed.
 langgraph==1.2.24
 langchain-core==1.8.5

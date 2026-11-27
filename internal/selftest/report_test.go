@@ -66,7 +66,7 @@ func golden(t *testing.T, name string, got []byte) {
 	}
 }
 
-// TestSelftestJSONGolden holds the --json object to its documented shape (docs/user/self-check.md): a change to it is a
+// TestSelftestJSONGolden holds the --json object to its documented shape (docs/site/self-check.md): a change to it is a
 // change of tego.selftest/v1, which only ever adds fields.
 func TestSelftestJSONGolden(t *testing.T) {
 	var b bytes.Buffer

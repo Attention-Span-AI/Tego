@@ -23,7 +23,7 @@
 # Then run it from a project that has work/ and held/, with the contract kept outside the project:
 #   mkdir -p work/tmp held && tego rules check ~/contracts/codex-chatgpt.yaml && tego run ~/contracts/codex-chatgpt.yaml
 #
-# Why it looks like this (docs/OPERATIONS.md, "Interactive Codex under a boundary"):
+# Why it looks like this (docs/site/codex.md):
 #   - capture: off and a net.allow of chatgpt.com and auth.openai.com: with a ChatGPT sign-in Codex talks to chatgpt.com, not
 #     api.openai.com, so tego's forwarder does not carry its model calls: the connections are allowed by host and recorded,
 #     the request bodies are not. (codex.yaml records every model call.)

@@ -61,11 +61,11 @@ func TestEnvRuleStatementsNameItsLimits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	guide, err := os.ReadFile(filepath.Join("..", "..", "..", "docs", "OPERATIONS.md"))
+	guide, err := os.ReadFile(filepath.Join("..", "..", "..", "docs", "development", "operations.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, text := range map[string]string{"envtext.go": flat(code), "docs/OPERATIONS.md": flat(guide)} {
+	for name, text := range map[string]string{"envtext.go": flat(code), "docs/development/operations.md": flat(guide)} {
 		for _, want := range []string{
 			"An inherited PATH is both a pass-through entry and a list of places: the rule table names it only as inherited",
 			"lists its directories",

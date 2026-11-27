@@ -207,7 +207,7 @@ func configLine(t *testing.T, name string) string {
 	return found[0]
 }
 
-// TestExampleRestartHelper holds example-restart-myapp.socket and its service to what docs/user/built-in-refusals.md
+// TestExampleRestartHelper holds example-restart-myapp.socket and its service to what its own header
 // says of them: the socket accepts one connection at a time under a trigger limit, at a path no built-in refuses (not
 // under the runtime directory %t, which builtin.host_ipc refuses, nor ~/.tego), mode 0600; each connection runs one
 // fixed command that reads nothing from it, and the connection's instance name is in no word of it, so the client

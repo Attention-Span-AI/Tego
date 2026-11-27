@@ -127,7 +127,7 @@ func TestWarmBytesIgnoresAllocationFromOutsideTheCall(t *testing.T) {
 	}
 }
 
-// TestLogsWarmBudget holds the Logs page's warm budget (40 ms on the demo ledger of 19,528 lines, 5 runs; docs/DASHBOARD.md,
+// TestLogsWarmBudget holds the Logs page's warm budget (40 ms on the demo ledger of 19,528 lines, 5 runs; docs/development/dashboard.md,
 // "Read model") by what makes it true, counted, on a seeded ledger every runner has. A warm page is built from what a
 // version of each run memoized (the folded rows, the counts, the facets, the haystacks of a text search), so it shows
 // the same hundred rows and the same counts whatever the ledger's size and builds nothing per line: its allocations

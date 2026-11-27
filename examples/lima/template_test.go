@@ -161,11 +161,16 @@ func TestTheDashboardPortIsNotForwardedByTheGuestAgent(t *testing.T) {
 	}
 }
 
-// TestInstallerDocumentsGHAssetAttestations keeps the Linux install instructions
+// TestInstallerDocumentsGHAssetAttestations keeps the install instructions (docs/site/install.md)
 // distinct about cosign signatures and gh's per-asset provenance checks.
 func TestInstallerDocumentsGHAssetAttestations(t *testing.T) {
-	doc := read(t, "../../docs/INSTALL.md")
-	if !strings.Contains(doc, "cosign verifies the checksums file's signature; gh verifies each asset's build provenance attestation") {
-		t.Error("Linux instructions must distinguish the checksums signature from asset provenance attestations")
+	doc := strings.Join(strings.Fields(read(t, "../../docs/site/install.md")), " ")
+	for _, want := range []string{
+		"With [cosign](", "it checks the checksums file's signature",
+		"with a GitHub CLI (`gh`) that is logged in, it checks each binary's build provenance",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("install instructions must distinguish the checksums signature from asset provenance attestations: no %q", want)
+		}
 	}
 }

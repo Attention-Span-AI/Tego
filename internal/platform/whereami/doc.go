@@ -4,7 +4,7 @@
 // container. It changes no decision. A check that fails fails as it did; what changes is the cure the message prints,
 // because "enable systemd user delegation" is true on a host with systemd, "turn systemd on in /etc/wsl.conf" on WSL,
 // and neither inside a container that has no systemd, where the cure is what examples/container gives the container
-// (docs/user/container.md).
+// (docs/site/containers.md).
 //
 // The answer rests on positive facts only. A container is shown by /.dockerenv, by /run/.containerenv, or by a
 // `container` variable in process 1's environment (where that file is readable); a mark that cannot be looked at

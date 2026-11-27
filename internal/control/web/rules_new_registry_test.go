@@ -46,7 +46,7 @@ func fromRunForm(f *rulesFix, id, name, base string, reads bool) url.Values {
 	return v
 }
 
-// TestMakeAContractFromThisRunSavesWhereLearnSaves (docs/DASHBOARD.md, From a run): the run page's Tighten tab links
+// TestMakeAContractFromThisRunSavesWhereLearnSaves (docs/development/dashboard.md, From a run): the run page's Tighten tab links
 // to New contract from that run, which previews at once, saving to the user registry with refused reads recorded,
 // as tego rules learn --save does. Create writes <registry>/agents/<name>.yaml through registry.Save, mode 0600, with
 // reason: reads: on, and the registry then resolves the name from the run's folder to that file, as tego run <name>
@@ -261,7 +261,7 @@ func TestSaveFromARunTakesOnlyTheDashboardsOwnPost(t *testing.T) {
 	}
 }
 
-// TestADraftFromARunSaysBesideEachAddressToWriteTheName (docs/DASHBOARD.md, From a run): each network entry of a draft
+// TestADraftFromARunSaysBesideEachAddressToWriteTheName (docs/development/dashboard.md, From a run): each network entry of a draft
 // from a run that is an address carries the note that Tego saw an address, not a name; an entry the run's record named by
 // its host name, in the same draft, does not.
 func TestADraftFromARunSaysBesideEachAddressToWriteTheName(t *testing.T) {
@@ -389,7 +389,7 @@ func unwritableFolder(t *testing.T, dir string) string {
 	return errno.Error()
 }
 
-// TestPresetsDraftTakesTheRefusedReadsSwitch (docs/DASHBOARD.md, From a run): New contract from presets offers "Show refused reads
+// TestPresetsDraftTakesTheRefusedReadsSwitch (docs/development/dashboard.md, From a run): New contract from presets offers "Show refused reads
 // (slower)" too, off by default as tego rules create writes no reason: block. Ticked, the draft has reason: {reads: on} and
 // Create writes it; the Create form carries the switch back; unticked, there is no reason: block. The switch's
 // accessible name is its label alone and its cost the description, so a screen reader says each once.

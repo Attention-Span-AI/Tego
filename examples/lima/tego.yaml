@@ -15,10 +15,11 @@
 # the selected release, so tego and tego-control land in ~/.local/bin there. Tier 1 (no root) needs Landlock and a cgroup v2 subtree delegated to the
 # user; Ubuntu 24.04's kernel and systemd give both with no setup, so nothing else is installed. `limactl shell`
 # logs in over SSH, which starts outside the user's cgroup: for a run, start a shell in it first
-# (`systemd-run --user --scope bash`, docs/INSTALL.md "Check the machine"). Tiers 2 and 3 need root (`sudo`), and
-# tier 3 also needs `bpf` in the boot LSM list (docs/TIERS.md).
+# (`systemd-run --user --scope bash`, docs/site/servers-and-ci-runners.md, "Over SSH"). Tiers 2 and 3 need root (`sudo`), and
+# tier 3 also needs `bpf` in the boot LSM list (docs/site/supported-systems.md, "Turn on Max").
 #
-# Tested with install_mac_test.sh's stand-ins on Linux. This revision has not been validated by Lima or booted on a Mac.
+# Tested with install_mac_test.sh's stand-ins on Linux, and in CI on macos-15 and macos-15-intel runners with the
+# real installer (.github/workflows/mac-install.yml).
 minimumLimaVersion: 2.0.0
 
 # Ubuntu 24.04 LTS server cloud images, pinned for both Mac architectures. If these images are unavailable,
@@ -37,7 +38,7 @@ memory: "4GiB"
 disk: "20GiB"
 
 # No Mac folders are shared, including the Mac home and /tmp/lima. Projects and Tego's data live in the VM home.
-# To share a folder explicitly, stop the VM and use `limactl edit tego` to add a mounts entry (docs/INSTALL.md).
+# To share a folder explicitly, stop the VM and use `limactl edit tego` to add a mounts entry (docs/site/supported-systems.md, "macOS").
 # An agent can read files in any added mount, including secrets; writable mounts also permit Mac file changes.
 mounts: []
 

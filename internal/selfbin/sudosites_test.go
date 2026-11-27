@@ -187,7 +187,7 @@ func literalCommandText(n ast.Node) (string, bool) {
 func TestDocumentedSudoSites(t *testing.T) {
 	root := filepath.Join("..", "..")
 	err := walkDocumentedCommands(root, func(path string, line int, text string) {
-		t.Errorf("%s:%d: unsupported elevated Tego command %q; use the form in docs/INSTALL.md", path, line, text)
+		t.Errorf("%s:%d: unsupported elevated Tego command %q; use the form in docs/site/install.md", path, line, text)
 	})
 	if err != nil {
 		t.Fatal(err)

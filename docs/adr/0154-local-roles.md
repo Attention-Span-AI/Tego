@@ -178,7 +178,7 @@ Drift after recording instead refuses delivery terminally;
 pending wording is conditional. Drift after selection retains this recovery
 cause whether it is found before or after recording. The immutable-machine
 rule in identity-config I3 concerns merged settings; it does not disable the
-live approval-source check. [The user guide](../user/local-approvals.md) gives exact commands
+live approval-source check. [The user guide](../site/approvals.md) gives exact commands
 with the same ledger selection and a five-method edit outcome table.
 
 All answer decision fields at minor 37 or later use exact case-sensitive names. Duplicate and

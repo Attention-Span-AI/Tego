@@ -97,7 +97,7 @@ func (u *respUsage) record() (record.Usage, error) {
 }
 
 // counts maps an OpenAI-style usage onto the ledger's counters, the way ADR 0037, amended 2026-11-26 states: the budget counts input plus
-// output tokens with cache tokens excluded (docs/OPERATIONS.md), and OpenAI reports its prompt count with the cached
+// output tokens with cache tokens excluded (docs/site/budgets.md), and OpenAI reports its prompt count with the cached
 // tokens inside it, so Input is the prompt minus the cached part, CacheRead the cached part and Output the whole
 // completion count (reasoning tokens are billed as output and are inside it). Both counters must be stated: a usage
 // object missing one is spend no one can read, never zero. A negative count, or more cached tokens than the prompt

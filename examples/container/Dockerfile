@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# The Tego container image (docs/user/container.md): tego and tego-control, static, on a small Debian base with the
+# The Tego container image (docs/site/containers.md): tego and tego-control, static, on a small Debian base with the
 # tools an agent usually needs as an option. Build it from the repository's root:
 #
 #   docker build -f examples/container/Dockerfile -t tego:local .
@@ -89,7 +89,7 @@ COPY examples/container/hello.yaml examples/container/hello-agent.sh examples/co
 RUN chmod 0755 /usr/local/bin/tego-entrypoint /usr/local/share/tego/hello-agent.sh /usr/local/share/tego/smoke.sh \
 	&& chmod 0644 /etc/tego/config.yaml /usr/local/share/tego/hello.yaml
 # tego's whole state, kept out of the container's writable layer: the anchor, then the ledger (compose.yaml mounts a
-# volume on each; docs/user/container.md says why they are two).
+# volume on each; docs/site/containers.md says why they are two).
 VOLUME ["/home/tego/.tego", "/var/lib/tego/runs"]
 WORKDIR /work
 ENTRYPOINT ["/usr/local/bin/tego-entrypoint"]

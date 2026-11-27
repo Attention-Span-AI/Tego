@@ -57,7 +57,7 @@ when it is not, so the harness still produces numbers on a box without hyperfine
 the run the first time the timed command itself fails, rather than averaging in a broken sample.
 
 **Matrix and order.** For each workload: a bare baseline, then every (tier, record mode) pair this
-machine can reach, probed with `tego doctor --json` rather than assumed. A tier this machine
+machine can reach, probed with `tego machine check --json` rather than assumed. A tier this machine
 cannot reach gets a row that says why, never a missing one. Every (workload, tier, record) cell
 across every workload is registered up front and handed to `bench.py run-matrix`, which shuffles
 the whole list independently for each of `--passes` passes (default 2) before timing anything — a
@@ -77,7 +77,7 @@ whether a short workload's percentage would shrink on a longer one.
 ## Machine
 
 Kernel `Linux 6.17.0-41-generic`, CPU `Intel(R) Core(TM) i7-10870H CPU @ 2.20GHz` (16 logical
-cores), 14 GiB RAM, Landlock ABI 7, cgroup v2 delegated. `tego doctor --json` on the test machine:
+cores), 14 GiB RAM, Landlock ABI 7, cgroup v2 delegated. `tego machine check --json` on the test machine:
 `"tiers":{"landlock":true,"cgroup":false,"bpflsm":false}` — **only `landlock` and `observe` were
 reachable here.** `cgroup` needs root plus `CAP_BPF`, `CAP_NET_ADMIN`, `CAP_SYS_ADMIN`, and fanotify
 needs `CAP_SYS_ADMIN` too; this run had neither root nor non-interactive sudo. `bpflsm` needs
@@ -345,17 +345,17 @@ path that kept the workload within 5 % would move the default, not a relaxed tar
 
 When these rows were measured, `internal/cli/run.go`'s `probeTiers` (the function `tego run` used to
 decide what `--tier` may select) only ever populated `backend.TierLandlock` in the availability map it
-built; it never read the doctor probe's `cgroup`/`programs`/`fanotify` results. `tego doctor --json`
+built; it never read the doctor probe's `cgroup`/`programs`/`fanotify` results. `tego machine check --json`
 on the test machine already reported `"tiers":{"landlock":true,"cgroup":false,"bpflsm":false}` with per-tier
 reasons, but `tego run --tier cgroup` could not succeed whatever the privilege, and the comment above
 `probeTiers` deferred the full derivation. That function no longer exists: `tego run` now
-selects from the derivation `tego doctor` reports (`probeMachine`, which calls `doctor.Run` and uses
+selects from the derivation `tego machine check` reports (`probeMachine`, which calls `doctor.Run` and uses
 `Report.Probe`), so a tier doctor offers is a tier `--tier` may select. What tier 2 needs on a machine
 is now what doctor lists: root, a build with the BPF objects (`enforce.Buildable`), and a kernel on
 which D7 loads and attaches every tier-2 program. Earlier on 2026-09-22, in the KVM guest on the test machine's
 6.17 kernel, D7 found the verifier refusing `cgroup/connect6` and `cgroup/sendmsg6`, so doctor, and
 therefore `run`, did not offer tier cgroup there; that was measured before the `cgroup_net` fix to those two
-programs. With the fix in the objects of this tree, `tego doctor` run as root in the same guest loads and attaches
+programs. With the fix in the objects of this tree, `tego machine check` run as root in the same guest loads and attaches
 all 22 hooks (the 16 tier-2 programs, and tier 3's six with a stand-in), reports `tier: cgroup`, and
 `--require cgroup` exits 0.
 

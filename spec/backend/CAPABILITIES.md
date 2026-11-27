@@ -47,7 +47,7 @@ MPTCP approval completion is moot: the socket-family allowlist refuses an MPTCP 
 `net:` section (ADR 0018 (1)), and an approval is scoped to one ordinary TCP or UDP socket, so a connect on a socket
 whose protocol reads otherwise is refused `ask-unavailable` before anyone is asked. A held file read (`fs.ask_read`) is tier 1's alone: its
 supervisor is told of every open and completes the read itself, while the root tiers decide a read in the kernel
-before any notification could hold it, so `compile` and the launcher refuse `fs.ask_read` there. The HTTP row applies
+before any notification could hold it, so `rules check` and the launcher refuse `fs.ask_read` there. The HTTP row applies
 only to compiled `net.http` policy whose declared forwarder listeners actually started. A capture uprobe does not block a request. Kernel destination rows require measured attachments;
 `net.assurance: kernel` additionally requires the strict client socket import/listener filter. The socket-family
 row (ADR 0018) is the run's too: under a `net:` section it is true when every socket the run can make is one the
@@ -120,7 +120,7 @@ not enter the optional attachment fallback for a layout failure.
 tests 1, 2 and 7 passing there); it said 6.1 was the floor of every tier. An upstream kernel below 5.19 has at most Landlock
 ABI 1 and is refused (`internal/doctor` `MinLandlockABI`, the `ubuntu-22.04` matrix row).
 
-*Amended 2026-10-16:* the row called RHEL 9's 5.14 a second "tested floor", which `tego doctor`
+*Amended 2026-10-16:* the row called RHEL 9's 5.14 a second "tested floor", which `tego machine check`
 contradicted on that machine: D1 judges the floor by release version (`internal/doctor` `TestedFloor`, 6.1;
 docs/ARCHITECTURE.md §14's "Tested floor: 6.1") and reports "below the tested floor 6.1.0" there, with a "without:"
 list naming the Landlock ABIs RHEL backports. The upstream floor stays 6.1 and RHEL 9's 5.14 is named as what it is, a
@@ -187,14 +187,14 @@ whether a tier completes a decision the seccomp supervisor takes on copied sysca
 or address it scored (ADR 0041's outcome (A)), or decides it on the copy and continues it, so that a sibling thread can
 change what the kernel then acts on (outcome (D), best effort). They describe the tier, not the contract: a run whose
 contract has no gate or no built-in target still records them. Which (D) cells a run's own contract has is
-`run_start.best_effort`, which compile warns about and `compile --test` names per row. The gate's net row is the
+`run_start.best_effort`, which compile warns about and `rules check --test` names per row. The gate's net row is the
 supervisor's relay, so a run records it true only while a started supervisor answers its notifications; the gate's fs
 open row is conditional on the contract (*amended 2026-10-17*, ADR 0041 Stage B): a run records it true only when its
 contract chose `gate.completion: held` with an fs gate rule that can score to `allow` or above (*amended 2026-10-20*, ADR 0007) and its open deputy started,
 so that every such open is held and none is continued, and false otherwise, the deputy's degrade included; the
 protected-write-targets row is true exactly where a plane mode decides the run (`run_start.decision_plane` `lsm` or
 `fmod_ret`), the reading under which `best_effort` drops `deny_write/default`, for a `tego run` and a boundary
-adoption alike (amended 2026-10-16: an adoption claimed it nowhere), and `doctor` answers tier cgroup's
+adoption alike (amended 2026-10-16: an adoption claimed it nowhere), and `machine check` answers tier cgroup's
 conditional cell from this machine's plane probe. No earlier row moved (R23).
 
 The host-daemon-sockets row (ADR 0070, 2026-10-24) is the run's: `true` when the contract has no `net:` section and
@@ -216,12 +216,12 @@ true at a root tier only where the plane's name check decides the run's slot: a 
 entries, none of whose name-eligible entries (the built-in pair included) a cap or a key collision left out (ADR 0043
 D7; compile warns `unenforced` for each one left out, whose later files are not refused); false on the fallback, for a
 table with an entry left out, and for a contract with none. A boundary adoption reads it as it reads the plane's
-other file rows, and `doctor` answers tier cgroup's conditional cell from the plane probe.
+other file rows, and `machine check` answers tier cgroup's conditional cell from the plane probe.
 
 The unix sockets row's implicit admit — a socket under an `fs.write` path reached with no `unix:` entry — holds at
 every tier only for a socket the run bound (supervisor R11a), and it needs the kernel's socket diagnostics for
 `AF_UNIX` (`CONFIG_UNIX_DIAG`, built in or the loadable `unix_diag` module): without them every such socket is
-refused `unix-origin-unread`, and `tego doctor` adds that to the row on such a machine. At tier landlock the
+refused `unix-origin-unread`, and `tego machine check` adds that to the row on such a machine. At tier landlock the
 unprivileged supervisor cannot record a socket a non-dumpable process binds (`ssh-agent`), which is refused
 `unix-bind-unrecorded` and needs a `unix:` entry; a supervisor with `CAP_SYS_PTRACE` (the root tiers) records it. A
 unix name is decided at every tier on the socket it reaches in the agent's own view, a procfs magic link refused
@@ -265,7 +265,7 @@ when their loaded hooks and recorders cover the action (§2.13, §2.15); exec de
 kernel when both pinned exec-result hooks and the ready recorder provide complete coverage (§2.19). Missing coverage
 retains supervisor enforcement and recording. UDP by destination is tier 2's `cgroup/sendmsg` at tier 3 too: the plane's
 `socket_sendmsg` decides only `AF_UNIX` datagrams. `deny chmod` is no at every tier: `path_chmod` refuses a mode
-change beneath a `deny_write` target only, not under the contract's write rules. The `compile --test` bpflsm
+change beneath a `deny_write` target only, not under the contract's write rules. The `rules check --test` bpflsm
 column reads plane rows for filesystem, exec and exec.map actions, with `decision_plane: lsm`, `fs.link`
 (`path_link`) and `fs.attr` (the attribute hooks) included (amended 2026-10-16, ADR 0017 (b)), composed with the
 Landlock floor every tier keeps (a `#!` script's `EXECUTE`, and from 2026-10-17 a link's and a rename's `REFER`: the
@@ -286,5 +286,5 @@ and ptrace hooks are a second layer: the seccomp filter's root-tier arm already 
 (ADR 0033), and every tier's Landlock domain already scopes ptrace (ARCHITECTURE §11).
 
 Race-free ask needs 5.14 (`ADDFD` + `SEND`) and 5.6 (`pidfd_getfd`); older kernels hold and refuse instead of
-completing. Rows for ABI 8–11 are untested until a 7.2+ kernel joins `test/vm`. `doctor` prints this table with the
+completing. Rows for ABI 8–11 are untested until a 7.2+ kernel joins `test/vm`. `machine check` prints this table with the
 machine's actual values, the highest tier it allows, what the next tier is missing, and the one-line fix.

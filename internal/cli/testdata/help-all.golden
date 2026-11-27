@@ -80,4 +80,4 @@ about Tego
    uninstall        Remove Tego from this machine (keeps your records unless you say so)
 
 See 'tego help <command>' to read about a specific command.
-Manual: https://github.com/Attention-Span-AI/Tego/blob/main/docs/user/commands.md
+Manual: https://attention-span.ai/docs/commands/

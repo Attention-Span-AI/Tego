@@ -122,7 +122,7 @@ a foreign working folder. Collection never reads that folder, and text rows
 say "folder not recorded for other accounts". Recipient process folders retain
 their existing meaning. Process `unit` remains null; configured unit names are
 separate typed unit metadata. The complete retained cross-user field list and
-its purpose are in [the user page](../../../docs/user/scan.md).
+its purpose are in [the user page](../../../docs/site/finding-agents.md).
 
 Optional `account_repair` is printable text of at most 2048 bytes on discovery
 mode refusals with `accounts-unreadable` and a named writable group. It names

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Local-action example for offline lint. The public interface is the reusable job
-# documented in docs/user/ci-receipt.md. Version/digest variables must be pinned.
+# documented in https://attention-span.ai/docs/ci/. Version/digest variables must be pinned.
 name: receipt implementation example
 on:
   workflow_dispatch:

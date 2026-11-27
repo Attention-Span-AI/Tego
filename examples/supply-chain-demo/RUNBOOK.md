@@ -78,7 +78,7 @@ cd examples/supply-chain-demo
 ./demo.sh backup                        # optional, 10 seconds: the dashboard then always has one enforced run to show
 ```
 
-**`bin/tego machine test`** is Tego's own self-check ([docs/user/self-check.md](../../docs/user/self-check.md)), separate
+**`bin/tego machine test`** is Tego's own self-check ([docs/site/self-check.md](../../docs/site/self-check.md)), separate
 from the demo: four harmless actions on decoys in a temporary folder (read a fake SSH key, write outside the project,
 run a program the contract does not list, connect to a local port it does not allow), each first without Tego, then
 under `tego run`. If all four are refused, its first line is `Tego self-check: 4 actions, 4 refused at tier landlock`
@@ -97,7 +97,7 @@ What `check` verifies, and what it says when it fails (each failure names its fi
 - `bin/tego` and `bin/tego-control` match the checkout's git HEAD, else `bin/tego is stale: run make build`;
 - the config `~/tego-demo.yaml` is yours and not group- or other-writable, and so is its folder (a group-writable
   home makes tego skip the config silently and use the default ledger); the stage is not inside the ledger or `~/.tego`;
-- `tego doctor` offers tier landlock or better;
+- `tego machine check` offers tier landlock or better;
 - each side's Codex login is present and `codex login status` accepts it (no model call);
 - `chatgpt.com` and `auth.openai.com` resolve; nothing but the demo's own dashboard listens on the dashboard address
   (`ok    the demo's dashboard is running (reset keeps it; it follows the new ledger)`, or `no dashboard is
@@ -146,10 +146,10 @@ the left terminal's last lines are the run's summary:
 ```
 tego watch: recorded as run r-…: ended (exited with code 0) · wrote 4 files · chain verified
   seen: 4 connections to 2 places (most: 127.0.0.1:8801) · 2 sensitive files read (first: ~/.ssh/id_rsa)
-  more: tego receipt r-…    tego events r-…
+  more: tego session show r-…    tego events r-…
 
 next: make a contract from what it did, and read it before you use it:
-  tego learn <the run id's last 6 characters> --save <the folder's name>
+  tego rules learn <the run id's last 6 characters> --save <the folder's name>
 ```
 
 `left` and `right` first print the exact `env -i ...` command they run (about 1.5 KB, with your user name and desktop
@@ -169,10 +169,10 @@ then one line, `tego run: <run> can hold an operation for your approval; answer 
 <run>, then tego approve <run> <ask_id> (or deny), or on the dashboard's Approvals page`. All are normal, and the
 last is the run id to answer with if you ever answer in a terminal instead of the dashboard. When Codex exits, the
 last lines are the run's summary, for example `tego run: r-… ended (exited with code 0) · tier landlock · refused 9 (not
-allowed by any rule 6, …) · asked 2 (1 approved, 1 denied) · wrote 4 files · chain verified`, then `more: tego receipt r-…`. Nothing else
-is printed: the compile notes stay with `tego compile` (`[mount]` for `/dev/pts/`, `[held-reads]`, and
+allowed by any rule 6, …) · asked 2 (1 approved, 1 denied) · wrote 4 files · chain verified`, then `more: tego session show r-…`. Nothing else
+is printed: the compile notes stay with `tego rules check` (`[mount]` for `/dev/pts/`, `[held-reads]`, and
 `[wall-hard-cap]`: `limits.wall 2h` ends an interactive session at the minute it expires, so a run is never that
-long). To see the notes, compile the filled contract: `cd with/proj && tego compile ../codex-chatgpt.filled.yaml`
+long). To see the notes, compile the filled contract: `cd with/proj && tego rules check ../codex-chatgpt.filled.yaml`
 (or run the printed command with `-v` after `tego run`).
 
 **Terminal 4: the attacker panel.** It uses `watch`, not `tail -f`, because the laptop can run out of file watches. It runs `watch -t`: no header line (user name, host, stage path, clock), only the two sections.
@@ -253,7 +253,7 @@ When you finish, `/quit` both Codex windows. The runs then show **Verified · N 
    tego status --all                         # run ids
    tego events <run-id> --kind refused       # what Tego refused, one row per refusal
    tego events <run-id> --verify             # the record is untampered
-   tego receipt <run-id> --verify            # what the agent did, on one screen, and the chain checked
+   tego session show <run-id> --verify            # what the agent did, on one screen, and the chain checked
    ```
    The RULE column names the contract entry that decided; `unmatched` means no entry allowed it, so the default deny
    refused it. The TIME column is in your own time zone (its header names it, e.g. `TIME (EDT)`); `--json` keeps UTC.

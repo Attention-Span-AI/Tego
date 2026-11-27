@@ -185,12 +185,12 @@ def main(recipe_path):
     check('answered-source-availability', recipe.check_answered, ('compiles',), (recipe.WORDS,))
     check('unavailable-cli-reason', recipe.check_unavailable, (recipe.WORDS,), ('permission denied',))
     # Literal observations keep the name refusal independent of recipe constants.
-    name_refusal = ("tego contracts: discovery is incomplete, so that name cannot be proven "
-                    "unambiguous; give the contract's path [io]\n")
+    name_refusal = ("tego rules list: discovery is incomplete, so that name cannot be proven "
+                    "unambiguous; give the rules file's path [io]\n")
     for wrong in ('permission denied', recipe.WORDS, 'state: compiles',
                   name_refusal.replace('discovery is incomplete', 'discovery is complete'),
                   name_refusal.replace('cannot be proven unambiguous', 'is unambiguous'),
-                  name_refusal.replace("give the contract's path", 'retry')):
+                  name_refusal.replace("give the rules file's path", 'retry')):
         check('unavailable-name-refusal', recipe.check_unavailable,
               (name_refusal, True), (wrong, True))
     check('unavailable-path-rejects-name-refusal', recipe.check_unavailable,

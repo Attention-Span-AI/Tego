@@ -372,7 +372,7 @@ func csvRuleWords(t *testing.T, s *Server, c *http.Cookie, q string) map[string]
 // logsRuleCell reads a Logs row's Rule cell.
 var logsRuleCell = regexp.MustCompile(`data-label="Rule" class="c-rule"><span class="clamp" title="[^"]*"><span>([^<]*)</span>`)
 
-// TestLogsCSVRuleReadsAsTheRow: the CSV, which DASHBOARD.md says is in the page's words, words each line's rule as its
+// TestLogsCSVRuleReadsAsTheRow: the CSV, which docs/development/dashboard.md says is in the page's words, words each line's rule as its
 // Logs row does. A watched run's observed line reads "Watched only, not enforced", never the deny rule it would have
 // matched nor the default deny's "Host not in policy"; the enforced run's refusals keep their rules' words; a live
 // block's refusal reads who blocked it and when, as its row does.

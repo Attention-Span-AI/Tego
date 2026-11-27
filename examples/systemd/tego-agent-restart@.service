@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# tego-agent-restart@.service: a planned restart of tego-agent@<name> (docs/OPERATIONS.md, "Agents that run all the
-# time"), which tego-agent-restart@.timer starts once a day. The agent's unit is stopped as `systemctl --user stop`
+# tego-agent-restart@.service: a planned restart of tego-agent@<name> (docs/site/services.md), which tego-agent-restart@.timer starts once a day. The agent's unit is stopped as `systemctl --user stop`
 # stops it (SIGTERM to tego alone, which forwards it and keeps stop_grace) and started again, so the agent goes on as
 # a new run with its own ledger. try-restart, not restart: an agent that is not running (a `tego session stop --agent`, or a
 # unit that failed) is left as it is. The new run starts from its contract alone: a `tego session pause` is undone, and every

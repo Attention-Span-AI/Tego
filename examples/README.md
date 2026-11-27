@@ -1,22 +1,22 @@
 Copy-paste starting points. `agents/` holds a contract per common agent shape: a Python retriever with one MCP server,
 Claude Code in print mode and, for a person at a terminal, Claude Code and Codex interactive (API key or ChatGPT sign-in; each file's header says how to log in), a Python agent on the Claude Agent SDK and one on the raw Anthropic Python SDK, a LangChain or LangGraph agent in a virtual environment, Codex behind
 the forwarder, and an agent of your own left to run unattended (see `agents/README.md`). `profiles/` holds the base
-profile they extend, and `tests/` a `compile --test` table with the contract it checks. The first run, step by step, is `docs/QUICKSTART.md`. The interactive contracts are the demo kit's
+profile they extend, and `tests/` a `rules check --test` table with the contract it checks. The first run, step by step, is `docs/site/getting-started.md`. The interactive contracts are the demo kit's
 (`demo/contracts/`, proven on a laptop) in copy-paste form, and a test keeps each pair equal; `codex.yaml` also has a
 rule table tested, and test/poc/interactive-codex ran a contract of the same shape offline against a stand-in model.
 
 `prices.example.yaml` is a price table to start from: a contract that declares `limits.cost_usd` is refused without
-one, and its header says how to check and install it (`docs/OPERATIONS.md`, "The price table").
+one, and its header says how to check and install it (`docs/site/budgets.md`).
 
 `container/` holds the container image (a Dockerfile, a compose file running an agent under `tego run` with the
-dashboard on the host's loopback, and the entrypoint that prepares the container): see `docs/user/container.md`.
+dashboard on the host's loopback, and the entrypoint that prepares the container): see `docs/site/containers.md`.
 
 `systemd/` holds the user units for an agent that runs all the time: `tego-agent@.service` runs one agent of your
 registry and restarts it after a crash or a limit, `tego-agent-restart@.timer` restarts it once a day, and
-`tego-gc.timer` runs the retention pass once a day (docs/OPERATIONS.md, "Agents that run all the time").
+`tego-gc.timer` runs the retention pass once a day (docs/site/services.md).
 `example-restart-myapp.socket` and its service are an example to adapt: a one-verb helper through which a governed
-agent restarts one service, since no contract can grant it the user manager's socket (docs/user/built-in-refusals.md).
+agent restarts one service, since no contract can grant it the user manager's socket (docs/site/built-in-refusals.md).
 
 `lima/` holds `tego.yaml`, the Lima template for macOS: an Ubuntu 24.04 VM that installs Tego with the one-line
-install when it first boots (docs/INSTALL.md, "macOS"). `limactl validate` passes on it; it has not been booted on a
-Mac.
+install when it first boots (docs/site/supported-systems.md, "macOS"). `limactl validate` passes on it, and CI tests it on
+`macos-15` and `macos-15-intel` runners with the real installer (`.github/workflows/mac-install.yml`).

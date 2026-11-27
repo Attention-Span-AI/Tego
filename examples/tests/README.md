@@ -1,11 +1,11 @@
 # examples/tests
 
 A contract and the verdict table that tests it, the shipped example of
-`tego compile --test`.
+`tego rules check --test`.
 
 ```sh
 cd examples/tests
-tego compile agent.yaml --test verdicts.yaml    # 21 rows: 21 passed, 0 failed
+tego rules check agent.yaml --test verdicts.yaml    # 21 rows: 21 passed, 0 failed
 ```
 
 Run it from this directory: the contract's `fs` and `exec` entries are

@@ -12,7 +12,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
-// Schema names the --json object's version. A field is only ever added within it (docs/user/self-check.md).
+// Schema names the --json object's version. A field is only ever added within it (docs/site/self-check.md).
 const Schema = "tego.selftest/v1"
 
 // The results an Outcome carries.

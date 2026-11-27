@@ -44,7 +44,16 @@ var bareMDAllowedAt = map[string]struct {
 	"report.md": {"the file tools/deadcodereport writes into its -dir, and the stock example of a file an agent writes " +
 		"in the contract test table", []string{"tools/deadcodereport/main.go", "tools/deadcodereport/main_test.go",
 		"pkg/spec/agent/testtable.go", "pkg/spec/agent/testtable_paths_test.go"}},
+	// The retired guides: docs/site/ replaced them and docs/development/ holds what stayed of the operations and
+	// dashboard guides. ADRs and released changelog notes are dated records and keep the names they cited.
+	"OPERATIONS.md": {retiredGuide, []string{"docs/adr/0034-root-tier-host-state-in-run-tego.md",
+		"docs/adr/0070-host-sockets-refused-by-default.md", "docs/adr/0170-live-ledger-segments-and-a-history-index.md"}},
+	"DASHBOARD.md": {retiredGuide, []string{"docs/adr/0123-dashboard-threat-model.md", "docs/adr/0156-contract-builder.md"}},
+	"INSTALL.md":   {retiredGuide, []string{"docs/CHANGELOG.md"}},
 }
+
+// retiredGuide is why a retired guide's name may stay in a dated record.
+const retiredGuide = "a user guide retired for docs/site/ and docs/development/, cited by a dated record"
 
 // bareMDAllowedIn reports whether name may be absent in the file at path.
 func bareMDAllowedIn(name, path string) bool {

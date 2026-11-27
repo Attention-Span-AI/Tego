@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Codex (the full-screen interface), interactive, under Tego. demo.sh codex fills the @@ words in and writes it
 # next to the project. Derived from examples/agents/codex.yaml and test/poc/interactive-codex/; the long reasons
-# are in docs/OPERATIONS.md, "Interactive Codex under a boundary".
+# are in docs/site/codex.md.
 #
 #  - Codex's own sandbox is off in the config.toml demo.sh writes (sandbox_mode = danger-full-access): Tego enforces the contract.
 #  - `codex --no-daemon`: Codex's shared background server would run commands outside the boundary.

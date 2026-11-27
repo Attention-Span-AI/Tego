@@ -3,7 +3,7 @@
 Design baseline revised 2026-09-21 after the verification pass; current tier summary and implementation boundaries reconciled 2026-10-03. Facts marked (verified) were checked against kernel sources, man
 pages, vendor documentation or this machine; the rest is design to be proven in `test/`.
 
-This document combines implemented behavior and planned capabilities. `tego serve` hands off to `tego-control`, the local dashboard (docs/DASHBOARD.md); `learn` is built (2026-10-06, docs/OPERATIONS.md); additional provider parsers are not. For current implementation status, use `spec/backend/CAPABILITIES.md`; dated verification notes below retain their historical scope.
+This document combines implemented behavior and planned capabilities. `tego serve` hands off to `tego-control`, the local dashboard (docs/development/dashboard.md); `rules learn` is built (2026-10-06, docs/site/learning-rules.md); additional provider parsers are not. For current implementation status, use `spec/backend/CAPABILITIES.md`; dated verification notes below retain their historical scope.
 
 ## 1. A run, in order
 
@@ -25,7 +25,7 @@ This document combines implemented behavior and planned capabilities. `tego serv
    and `$TEGO_REASON` only. *Amended 2026-10-24 (ADR 0061):* the
    `internal/runtime/reason` placeholder is removed; the reason file v1 and its wording are `pkg/spec/reason`, and
    `internal/adapters` reads it through that package (the claude-code provisioner and hook; other harnesses' hooks are not built).
-5. `status`, `drift`, `measure`, `learn`, `events` and `serve` read the ledger and nothing else (`serve` through `tego-control`).
+5. `status`, `drift`, `measure`, `rules learn`, `events` and `serve` read the ledger and nothing else (`serve` through `tego-control`).
 
 Two rules keep it clean: the engine never imports the read side, and the ledger is the only store.
 
@@ -61,7 +61,7 @@ R20.)
 **CPU, memory, pids.** cgroup v2 controllers exposed in the contract's `limits` (`cpu`, `cpu_weight`, `memory`,
 `memory_high`, `pids`) plus the agent-level budgets (`tokens`, `cost_usd`, `wall`, `stall_after`). An OOM kill or a
 pids cap ends the run with `run_end reason=oom|pids`. Machine-wide ceilings and defaults are the machine config
-(spec/config/v0): a contract may lower a ceiling, never raise it, and `compile` shows every effective value with its
+(spec/config/v0): a contract may lower a ceiling, never raise it, and `rules check` shows every effective value with its
 source.
 
 ## 4. Boundaries: daemons, clusters, other hosts
@@ -79,7 +79,8 @@ Work handed to a pre-existing daemon starts outside the run's process lineage. W
    enforce-none, record-by-API: every create/start/exec/build request is a `boundary` event, the dangerous fields are
    refused, and the run gets `gap what=enforce` and `gap what=record` for the container.
 2. **A per-run Docker API proxy; no PATH shims** (the only PATH shim in the product is E70's `tego-priv`).
-   When the contract has a `docker:` section, `tego run` listens on `$XDG_RUNTIME_DIR/tego/<run>/docker.sock`,
+   *Not built:* the proxy is a design. The schema accepts `docker:` and `containers:` (other than `none`), and this
+   build refuses a contract that sets either when it compiles. As designed: when the contract has a `docker:` section, `tego run` listens on `$XDG_RUNTIME_DIR/tego/<run>/docker.sock`,
    sets `DOCKER_HOST` to it and unsets `DOCKER_CONTEXT`, and resolves the real daemon as the Docker CLI does
    (`DOCKER_HOST`, then `DOCKER_CONTEXT`, then `currentContext` in the config file, then the default socket; verified
    in docker/cli). CLI, compose, docker-py and the Go client all take `DOCKER_HOST` first. Only `--context`/`-H` flags
@@ -103,7 +104,7 @@ Work handed to a pre-existing daemon starts outside the run's process lineage. W
    Landlock domain the kernel refuses `mount(2)`, `move_mount`, `umount`, `remount` and `pivot_root` for every
    sandboxed thread (verified in `security/landlock/fs.c` and by `bwrap` under a domain on the test machine), and setuid
    `newuidmap` is neutered by `no_new_privs`. In the unprivileged tier they are refused and recorded as
-   `gap what=enforce why=landlock-topology`; `compile` warns when `exec.allow` names podman, buildah or bwrap. In the
+   `gap what=enforce why=landlock-topology`; `rules check` warns when `exec.allow` names podman, buildah or bwrap. In the
    root tiers a contract may declare `containers: rootless`, which omits filesystem rights from the Landlock ruleset
    (network and scope rights stay) and relies on the BPF path rules; podman's scopes are adopted by lineage (a seccomp
    notification from a pid whose cgroup is not yet in the run set adds it), and identity reaches the container through
@@ -195,7 +196,7 @@ processes are non-dumpable, so only a root supervisor can serve their asks).
   the capture probes are the build's, one directory of pinned links per library,
   `<bpf_hash>/uprobes/<dev>-<ino>-<build id>/`, held `LOCK_SH` by every run using the library through
   `/run/tego/bpf-<bpf_hash>-lib-<...>.lock`; the last run out hands them to `tego __uprobe-detach`, which removes
-  them 2 s later unless a run holds them again (ADR 0026 (7), (9) as amended 2026-09-24). `tego doctor` lists every
+  them 2 s later unless a run holds them again (ADR 0026 (7), (9) as amended 2026-09-24). `tego machine check` lists every
   build with what it holds; `tego gc --builds` removes idle ones now.
 - **Host state (ADR 0034, 2026-09-24).** The build locks and slot tables every launcher of a build shares live in
   `/run/tego` and nowhere else: root 0700 (a root launcher creates it so), opened `O_PATH|O_NOFOLLOW` and
@@ -256,7 +257,7 @@ processes are non-dumpable, so only a root supervisor can serve their asks).
   `ptrace_scope=1`; the subreaper flag keeps daemonized descendants in that set. A non-dumpable target (its own
   `PR_SET_DUMPABLE=0`, or a setuid exec under `privileged: true`) can be served only by a supervisor with
   `CAP_SYS_PTRACE`; an unprivileged supervisor refuses its asks with `ask-unreadable` and records a gap. `tegod` holds
-  `CAP_SYS_PTRACE`; Yama scope 3 disables asks and `doctor` says so. (*Amended 2026-10-05, ADR 0042 (7)(d)(iii):*
+  `CAP_SYS_PTRACE`; Yama scope 3 disables asks and `machine check` says so. (*Amended 2026-10-05, ADR 0042 (7)(d)(iii):*
   tegod reads no agent memory; it holds `CAP_SYS_PTRACE` only to read a peer's or a run member's namespaces and
   `map_files`, and asks stay the client's supervisor's.)
 - **Client timeouts.** `ask.hold: request` holds an HTTP request inside the forwarder. Ceilings are the client's:
@@ -287,6 +288,9 @@ uprobe source names threads by tid; `time` is the step-by-time rule, the fallbac
 Every attributed action is `likely`; `exact` is never written. Views never present `unattributed` as fact.
 
 ## 9. Docker and daemons: the API proxy
+
+*Not built.* This section is the design. This build refuses a contract that sets `docker:` or `containers:` (other
+than `none`) when it compiles, so no proxy runs.
 
 On the first request of a run the proxy reads `GET /info` (`CgroupDriver`, `CgroupVersion`, `SecurityOptions`,
 capability booleans) and caches it. In the root tiers, before the first `create` is forwarded, it pre-creates the
@@ -330,8 +334,8 @@ container's own libssl through `/proc/<pid>/root` or the injected forwarder vari
   (verified). At run start the launcher opens every declared path `O_PATH` and holds the fd until `run_end`, which pins
   the inode; it assigns the inode an object id in a host-wide `BPF_MAP_TYPE_INODE_STORAGE` map keyed by that fd
   (`BPF_NOEXIST`, re-read on `EEXIST`), and the run's access sets live in a hash map keyed `{cgroup id, object id}`.
-  Landlock rules are added from the same fds. `compile` never computes an inode; it only checks that paths exist.
-  The inode-storage map is created only in tier 3 and only after `doctor` has confirmed `bpf` is an active LSM,
+  Landlock rules are added from the same fds. `rules check` never computes an inode; it only checks that paths exist.
+  The inode-storage map is created only in tier 3 and only after `machine check` has confirmed `bpf` is an active LSM,
   in this order: `lsm_list_modules(2)` (6.8+, unprivileged, `LSM_ID_BPF`), then `/sys/kernel/security/lsm`, then the
   kernel log (never the list file `lsm.list_file`, which a container can hand in for held file opens and which decides nothing
   else, ADR 0041's note of 2026-11-25); and a functional probe when root (attach a counting program to `file_open`, open a file, require a
@@ -352,7 +356,7 @@ container's own libssl through `/proc/<pid>/root` or the injected forwarder vari
   on upper or lower directories do not apply to the merged tree (Landlock documents the same), which is why §9 adds
   the merged root explicitly. Hard links and renames cannot move a file out of a rule, but can create a name under a
   less restricted directory, so `path_link` and `path_rename` refuse when the source's nearest entry is more
-  restrictive than the destination's (Landlock's `REFER` rule), so both tiers behave the same. `compile` prints each
+  restrictive than the destination's (Landlock's `REFER` rule), so both tiers behave the same. `rules check` prints each
   entry's mount, filesystem and device, and warns on mount points, overlay layers and btrfs.
 - **Why not strings.** From a BPF LSM program `bpf_d_path` is allowed only when the hook is in the kernel's
   sleepable set (`bpf_d_path_allowed`, verified; the `btf_allowlist_d_path` list next to it governs fentry programs);
@@ -391,7 +395,7 @@ One embedded CO-RE object must load and behave the same from 6.1 onward (verifie
 2. Return 0 or `-errno`, never a positive value; from 6.12 the verifier bounds LSM returns.
 3. `path_truncate` always; `file_truncate` as an optional program attached when its stub is in the kernel BTF.
 4. `path_*` need `CONFIG_SECURITY_PATH`, `socket_*`/`unix_*` need `CONFIG_SECURITY_NETWORK`; presence of
-   `bpf_lsm_<hook>` in `/sys/kernel/btf/vmlinux` is exactly hook availability, and `doctor` resolves every hook (name
+   `bpf_lsm_<hook>` in `/sys/kernel/btf/vmlinux` is exactly hook availability, and `machine check` resolves every hook (name
    and argument count) before promising the tier.
 
 Sleepable: `socket_connect`, `socket_bind`, `socket_sendmsg`; not sleepable: the unix hooks and all `path_*` hooks.
@@ -426,8 +430,8 @@ The engine stays Linux-only. **macOS**: a Lima VM (Lima ≥ 2.0, `vmType: vz` on
 virtiofs, CLI native). The shipped template ([examples/lima/tego.yaml](../examples/lima/tego.yaml)) is Ubuntu 24.04 LTS: its
 kernel has Landlock, BTF and cgroup v2, so tier 1 needs no setup. Ubuntu does not list `bpf` in the boot LSM list, so
 tier 3 needs one GRUB edit and a restart, which the template does not make (doctor prints the line). Lima's own Fedora
-template already lists `bpf` and needs no edit. `compile` and inode resolution run inside the VM against the
-virtiofs mount, never on the macOS side, and `doctor` runs a mount-identity check (stat two directories, drop caches,
+template already lists `bpf` and needs no edit. `rules check` and inode resolution run inside the VM against the
+virtiofs mount, never on the macOS side, and `machine check` runs a mount-identity check (stat two directories, drop caches,
 stat again; refuse enforcement on that mount if the numbers changed or two directories share an inode), because
 virtiofs on Apple's framework has undocumented inode semantics. **Windows**: kernel features alone do not establish WSL availability. A Windows 11 guest with WSL 3.0.5,
 Ubuntu 24.04.5 and kernel 6.18.58.1 measured Landlock ABI 7 and active `bpf`, but its ordinary shell was outside the
@@ -443,7 +447,7 @@ claim follows from the feature list or a diagnostic tier alone.
 
 ## 14. Support matrix (verified 2026-09-21; the runtime probes, never trusts a version)
 
-*Note 2026-09-29 (ADR 0024, accepted; probe and step A built, the MATRIX suites not: T11):* a per-row plane mode column (`tego doctor` D7 has the per-hook rows; the fill, load and probe ran on 6.17, RHEL 9.8's 5.14 and AL2023's 6.1): `lsm` where `bpf` is active (Debian 13, RHEL 9/10, AL2023, Fedora), `fmod_ret` on Ubuntu 24.04/25.10 without a boot change, `fanotify` where neither passes the probe (lockdown=confidentiality below 6.2, unmeasured arm64). The table below is unchanged; the per-mode host-cost table lands with T11's kill tests.
+*Note 2026-09-29 (ADR 0024, accepted; probe and step A built, the MATRIX suites not: T11):* a per-row plane mode column (`tego machine check` D7 has the per-hook rows; the fill, load and probe ran on 6.17, RHEL 9.8's 5.14 and AL2023's 6.1): `lsm` where `bpf` is active (Debian 13, RHEL 9/10, AL2023, Fedora), `fmod_ret` on Ubuntu 24.04/25.10 without a boot change, `fanotify` where neither passes the probe (lockdown=confidentiality below 6.2, unmeasured arm64). The table below is unchanged; the per-mode host-cost table lands with T11's kill tests.
 
 *Note 2026-10-06:* T11's suites are built (TIER3-PLAN §10); the plane mode per row and boot is measured by
 `make vm-matrix` as `cgroup_mode` (TIER3-PLAN §7, test/vm/README.md), and the per-mode costs are enforce-plane §2.18
@@ -460,7 +464,7 @@ link confined to one directory).
 
 | Target | Kernel | `bpf` in LSM list | Landlock ABI | Out of the box |
 |---|---|---|---|---|
-| Ubuntu 22.04 GA | 5.15 | no | 1 | no tier: ABI 1 is unsupported. `tego doctor` says `tier: none` with the fix (boot a kernel >= 5.19) and `tego run` exits 125 `[tier-unavailable]`; test/vm's doctor-only row asserts it |
+| Ubuntu 22.04 GA | 5.15 | no | 1 | no tier: ABI 1 is unsupported. `tego machine check` says `tier: none` with the fix (boot a kernel >= 5.19) and `tego run` exits 125 `[tier-unavailable]`; test/vm's doctor-only row asserts it |
 | Ubuntu 24.04 | 6.8 | no | 4 | tier 1 (fs + TCP port); tier 2 with sudo; tier 3 after the GRUB drop-in + reboot |
 | Ubuntu 25.10 / 26.04 | 6.17 / 7.0 | no | 7 / 8 | same, plus scopes and audit |
 | Debian 13 | 6.12 | yes | 6 | all tiers, no edit |

@@ -218,7 +218,7 @@ func TestRouteSwitchBothWays(t *testing.T) {
 
 // TestRouteCarriesTheAgentsOwnKey: a route moves the whole request, so a key the agent holds itself reaches the backend
 // the endpoint is on, TLS or plaintext, whatever its name: no allow list stands in the way with no key layer. The route
-// pages, the y/N of `tego route set` and docs/user/model-routes.md say so (ADR 0127 §5); a change here changes them.
+// pages, the y/N of `tego route set` and docs/site/model-routes.md say so (ADR 0127 §5); a change here changes them.
 func TestRouteCarriesTheAgentsOwnKey(t *testing.T) {
 	const key = "sk-ant-own-key-of-the-agent"
 	rh := newRouteHarness(t, Options{})

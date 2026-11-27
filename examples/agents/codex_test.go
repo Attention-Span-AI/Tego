@@ -85,7 +85,7 @@ func TestCodexExampleAsksForHeld(t *testing.T) {
 }
 
 // TestCodexExample pins what lets examples/agents/codex.yaml, the full-screen Codex behind tego's forwarder
-// (docs/OPERATIONS.md, "Interactive Codex under a boundary"; test/poc/interactive-codex), run under a contract with
+// (docs/site/codex.md; test/poc/interactive-codex), run under a contract with
 // its model calls recorded:
 //   - capture through the forwarder: Codex ignores OPENAI_BASE_URL, so the run's own CODEX_HOME carries the route, and
 //     a static musl binary has no TLS library for a uprobe;

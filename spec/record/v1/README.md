@@ -411,7 +411,7 @@ carries the action line's `mechanism` and `decision_plane` (a plane's refusal's 
 ledgers that predate it. Fixture: `fixtures/reason-reads.jsonl`.
 
 At `record_minor` 24 (`MinorLiveControl`; 2026-10-27, beside revision 21's live blocks), a person can
-pause and resume a running run (`tego pause`, `tego resume`, the dashboard's Pause and Resume), and a live block may
+pause and resume a running run (`tego session pause`, `tego session resume`, the dashboard's Pause and Resume), and a live block may
 also be of kind `read` or `write`.
 - A pause and a resume are changes in the run's overlay, numbered in one sequence with its live blocks' changes. The
   launcher reads them in serial order and applies each to the run's cgroup in turn (a pause freezes every process of
@@ -610,7 +610,7 @@ accepted; the older-minor valid fixture pins it. The minor-31 valid fixture
 exercises both TCP and UDP history.
 
 Record minors 32 to 35 are reserved. Their fields are declared and validated ahead of any writer (`Event.ValidateAt`) and
-refused in a ledger below their revision; their writers remain absent. No-baseline launches retain revision 31; nonempty baseline snapshots use MinorBaseline (39). Readers refuse reserved revisions 36 through 38 and anything above 39.
+refused in a ledger below their revision; their writers remain absent. Every launch and adoption writes revision 41 (`MinorEveryLaunch`, below). Readers accept revisions 0 through 35, 37, 39, 40 and 41, and refuse the reserved revisions 36 and 38 and anything above 41.
 
 At `record_minor` 11 (2026-10-16), `run_start` also
 carries the optional `runtime_grants`: the rule name of every grant the run makes on its own authority
@@ -781,7 +781,7 @@ are the gate's decision on the file delivered (its `path`), never the requested 
 alternate that fails its checks when it is delivered leaves the requested path's `refused` line, `ask-unavailable`.
 Every reader takes it so: `tego events` writes such an answer as `alternate <path> (not the file asked for) by
 <who>`, `drift` counts the `fs` line in its rule's `alternate` count, never its `allow`, `measure` counts the answer
-lines as `alternates` (neither refusals nor approvals), and `learn` proposes nothing from such an open. At
+lines as `alternates` (neither refusals nor approvals), and `rules learn` proposes nothing from such an open. At
 `record_minor` 9 every alternate answer carries all three fields; below it, a ledger an early build wrote may
 carry `alternate` alone (no revision was taken then, an omission ADR 0057 D5 corrects), and one older still has no
 held read and no alternate. An absent `alternate` means "no alternate" in every ledger.
@@ -1030,7 +1030,7 @@ new reason. The native Unix peer plane emits an ordinary refused net/sendmsg lin
 
 ### Machine baseline evidence (ADR 0144 slice 6)
 
-`MinorBaseline` names the allocated baseline revision in `pkg/spec/record/record.go`. This build understands revisions 0 through 35, `MinorLocalRoles` (37), `MinorBaseline` and `MinorAppliedLimits`. Reserved revisions 36 and 38 are unsupported here, just like a revision above this build’s ceiling: record decoding and validation, receipts, drift, historical replay, rulesview and metadata projection refuse them with an unsupported-revision reason. No writer for the declared revisions 32 through 35 is added.
+`MinorBaseline` names the allocated baseline revision in `pkg/spec/record/record.go`. This build understands revisions 0 through 35, `MinorLocalRoles` (37), `MinorBaseline` (39), `MinorAppliedLimits` (40) and `MinorEveryLaunch` (41), the revision every launch writes. Reserved revisions 36 and 38 are unsupported here, just like a revision above this build’s ceiling: record decoding and validation, receipts, drift, historical replay, rulesview and metadata projection refuse them with an unsupported-revision reason. No writer for the declared revisions 32 through 35 is added.
 
 A nonempty configured snapshot selects `MinorBaseline`; its block and effective hash are mandatory, including with zero rules. Earlier supported revisions refuse these fields (`below-minor`).
 

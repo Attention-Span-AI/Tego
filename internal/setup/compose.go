@@ -392,7 +392,7 @@ func render(name string, ps []presets.Preset, argv []string, demo, reads bool, w
 	}
 	fmt.Fprintf(&b, "%s --preset %s.\n", Marker, strings.Join(names, ","))
 	b.WriteString("# Edit freely: `tego rules check agent.yaml` shows what will be enforced, and `tego rules check --merged agent.yaml`\n")
-	b.WriteString("# prints the one rule file with every preset laid in (docs/user/presets.md).\n#\n")
+	b.WriteString("# prints the one rule file with every preset laid in (https://attention-span.ai/docs/presets/).\n#\n")
 	b.WriteString("# What the presets promise:\n")
 	for _, p := range ps {
 		fmt.Fprintf(&b, "#   %s@%d: %s.\n", p.Ref(), p.Revision, p.Promise)

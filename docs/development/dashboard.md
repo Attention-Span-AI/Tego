@@ -1,9 +1,11 @@
 # The Tego dashboard
 
+User docs: docs/site/. This file holds engine notes for contributors.
+
 `tego-control serve` starts a small, read-only web dashboard over the ledger that `tego run` writes. It shows runs,
 what each agent did, what Tego refused and why, and which approvals are waiting.
 
-Its known gaps are in [GAPS.md](GAPS.md). The footer of every page
+Its known gaps are in [GAPS.md](../GAPS.md). The footer of every page
 names the ledger root; its tooltip says the record is hash-chained and verified.
 
 It checks the ledger's hash chain with the code `tego events <run> --verify` runs, against the same chain anchor
@@ -19,16 +21,9 @@ still being checked, and it updates by itself when they are done. For an audit, 
 
 ## Start it
 
-```sh
-tego dashboard
-```
-
-This is the usual way. It starts the dashboard as a service of your user (`tego-dashboard`), so it keeps running after
-the terminal closes, and prints its sign-in link; on a Mac it also opens the link in your browser. Run again, it reuses
-the running dashboard, and restarts it once after Tego is updated. `tego start` does the same at the end of the guide.
-
-To choose the address, the ledger or the preview pages, start the dashboard yourself instead, with `tego serve` (which
-hands off to `tego-control serve`) and these options:
+docs/site/dashboard.md says how a person starts the dashboard and what each page shows. `tego dashboard` runs
+`tego-control serve` as a service of the user (`tego-dashboard`). `tego serve` hands off to `tego-control serve`,
+which takes these options:
 
 ```
 tego-control serve [--addr 127.0.0.1:8484] [--ledger DIR] [--open] [--preview]
@@ -420,7 +415,7 @@ persistent historical offset index remain unimplemented.
 
 ### What each number covers
 
-The [number inventory](../internal/control/web/inventory/number_inventory.json) names
+The [number inventory](../../internal/control/web/inventory/number_inventory.json) names
 278 quantities, including zero-form sentences, tooltips, spoken labels and the
 waiting count in the document title. There are 26 Overview rows, 10 Runs, 108 Run
 and tab rows, 20 Logs, 9 Detections, 5 Approvals, 9 Contracts, 17 Compare,
@@ -792,7 +787,7 @@ the event page's "Act on this", the one place a rule is made from a line; the ol
 terminal. The form takes the project folder (a full path or `~/...`), an agent name (empty: made from the folder's
 name) and either the presets (`no-secrets`, `no-prod`, `repo-only-writes`, ADR 0068) with optional folders it may
 write, hosts it may reach and its command, or a finished run of this ledger whose least-privilege proposal (`tego
-learn`) becomes the draft; after a preview, what the command's agent needs past a chosen preset's promise (`api.anthropic.com:443` under *Only hosts I list*) stands beside that preset's label; when that run leaked secrets, the draft leaves the destinations out as the Least privilege tab does, and a red notice above the preview says which (the server reads them from the run's verdict; no form field sets them). The Preview form uses a guarded POST to prepare a missing registry destination before review. Read previews show the rules in plain sentences (every preset
+rules learn`) becomes the draft; after a preview, what the command's agent needs past a chosen preset's promise (`api.anthropic.com:443` under *Only hosts I list*) stands beside that preset's label; when that run leaked secrets, the draft leaves the destinations out as the Least privilege tab does, and a red notice above the preview says which (the server reads them from the run's verdict; no form field sets them). The Preview form uses a guarded POST to prepare a missing registry destination before review. Read previews show the rules in plain sentences (every preset
 laid in, no enforcement claim: the run's tier decides that), what `tego rules check --offline` says in that folder, the
 folders Create makes and the YAML (`env.set` values hidden). The folder must exist, be yours, not be writable by every
 user unless sticky, and not be or sit inside the ledger root or `~/.tego`; one that already holds `agent.yaml` is
@@ -1137,7 +1132,7 @@ not known.", with no "try again", as the commands say `[start-unreadable]`.
 ## Model routes
 
 `/routes` (nav "Model routes" with `--preview` only, beside MCP tools) is the model routes page of
-[ADR 0127](adr/0127-model-routes.md), served by `internal/control/routeact`; the page never opens the route overlay
+[ADR 0127](../adr/0127-model-routes.md), served by `internal/control/routeact`; the page never opens the route overlay
 itself. A run picker lists the runs whose contract declares a route, running ones first.
 
 - One card per `models[]` endpoint: its `host:port` and provider, a "Rerouted" badge when it is off `direct`, the line
@@ -1250,9 +1245,7 @@ The run page has no chart: its "What happened when" strip and the Overview's "Re
 purpose when severity came in (2026-11-01), and the table above took the bar's place. Golden SVGs:
 `internal/control/web/testdata/charts/`.
 
-## Not built yet
-
-- Remote access: the dashboard answers on this computer only, for the person at it.
+## Correctness notes
 
 
 Correctness amendment (2026-11-03): automatic watched/enforced comparison requires
@@ -1308,41 +1301,6 @@ they convert. The merged Overview, Run/Event, Logs, Detections/Investigate, Appr
 machine, glossary, recovery and preview interiors use the same row, filter and disclosure primitives.
 The later agent/setup guide and contract builder packages retain their own scope. Scripted and script-free
 browser proofs cover reachability, long data, target sizes, live merges and exact values.
-
-## Logs and decisions on a phone
-
-Logs shows what happened, one outcome and when. Tap a row for its full target,
-rule and process context. Filter contains search, time ranges, outcomes, grouping,
-facets and exports. A grouped row opens Group details with its exact value,
-counts and first/last times. Filter also works as a normal page without scripts.
-
-Approvals starts with the oldest waiting request and lists the queue in order.
-Details shows the exact target, who asked, why the rule asks, its age and what
-happens when it expires. Allow once lets that request through; Deny refuses it.
-Both buttons stay above phone navigation when a long detail scrolls. More choices
-contains answers for the rest of the run and a stand-in file where supported.
-An answered request shows the recorded outcome and person in place of its buttons.
-
-Compare stacks Run A and Run B under each action. Change the runs contains the
-selectors, and Run details and charts retains the supporting context. Investigate shows the full noticed target first; Detection details retains its
-rule, channel and precise times; the other questions retain the process chain
-and related detections. Both themes use the
-same words and state shapes, including explicit severity words.
-
-
-Contracts opens a list of contract files and the agents that used them. Open a contract
-for the rules used by its selected run. Each rule can open its full sentence, exact target,
-source, enforcement limits and matching events. Contract details keeps the full file
-location and other runs; the exact file and compiled rules stay in native disclosures.
-On a phone the list shows an agent, one state and the age of its latest run. Rule rows
-show the sentence, effect and age of the run whose rules they describe.
-
-This machine shows what past runs recorded. It does not probe the machine: start with
-`tego machine check` to check current readiness. Tap a protection check for its meaning and
-next step, or open Full recorded machine details for complete technical values.
-Glossary has a native search and a term index; its links and all detail disclosures work
-with scripts off. Edit confirmations retain their original server forms and safeguards.
-
 
 ## Dashboard consistency
 
@@ -1430,57 +1388,13 @@ Request sentence forms (this supersedes the previous paragraph's rule for banner
 
 The bounds count characters and are decided by the server (request_forms.go): 112 for a phone and 150 for a wide screen, with 40 and 60 for an agent's name. They were measured in headless Chrome by filling the real banners with host, path and command sentences of every length from 60 to 320 characters under two agent names and counting line boxes: at 320 px the phone banner's 16 px sentence stays within four lines up to 112 to 126 characters, and at 1280 px the wide sentence within two lines up to 166 characters on a page's banner and 154 on Overview's. The markup carries both answers and the style sheets pick by width at 600 px (phone-only, desktop-only); when only the phone form is LONG the quick answers carry desktop-only and Review request phone-only. Between 601 and 1279 px the FULL form can take more lines and never hides text. At 320 by 640 px a FULL sentence of four lines with its one action row makes the banner 174 px high, 27% of the screen: the earlier phone ceilings of a quarter of the screen and of 160 px give way there to this four-line limit, and the earlier one-line banner sentence and one-line waiting row give way to the two forms. TestNoQuickActionsBesideLongRequest walks every template branch: each Allow once is either in the request cards' own form or inside the branch of a requestView's Quick with its QuickClass, and the three banners render the answers only where the same width's sentence is FULL. The safe answer does not depend on a style sheet loading. The phone's cut sentence carries the hidden attribute in the markup whenever the phone form is LONG, and phone.css only reveals it at 600 px and under (.banner-ask .ab-summary[hidden] with !important, which outweighs app.css's [hidden] rule by specificity); the quick form is in the markup only where the wide sentence is FULL, and at 600 px and under phone.css hides it when the phone form is LONG. With phone.css missing, or with no style sheet at all, the cut sentence is therefore not shown, and no Allow once form sits beside a cut sentence at any width; the same holds in the accessibility tree. TestFix7SafeAnswerNeedsNoStyleSheetInChrome loads the pages with phone.css blocked and with every style sheet blocked at 320 and 1280 px and checks the DOM and the accessibility tree. The cut itself never splits a letter from its combining mark (a kept tail drops marks it would start with), a port is at most five digits, a rename's half without a slash is cut as plain text, the accessible name is built from the visible text (control and bidi characters as their U+ literals), and FuzzRequestForms holds all of it against arbitrary agent text.
 
-### Optional setup tour
-
-Open Guide beside help on a desktop, or from More on a phone. Guide opens at the
-first step whose fact is neither Done nor Skipped, using the same stored machine
-check, recorded runs and compiled contracts as `tego setup`. When all steps are
-done or skipped it opens Enforce. All steps shows each fact, its source and its
-tour name. Selecting a step never completes it. Pick completes when the first run
-is recorded. With a saved contract it points directly to Enforce for that first
-run. Watch and Recorded share that run's verified ended-record fact; a skipped
-Watch points to Enforce too. An unknown recording opens Watch's diagnostic step.
-
-Check says to run `tego setup` in your terminal, then reload the stored result.
-Run terminal commands yourself; the page starts no process. A command form with
-marked parts to fill in has no Copy button. Replace each part with the value it
-names; for the watch form, use the command you normally use to start your agent.
-Watch says Step 4 is ready when an ended recording verifies. With scripts on it
-announces a move, waits about two seconds, then moves on; it stays put while focus
-is in the guide. With scripts off, use Reload to check for the run and open the
-next step yourself.
-
-Recorded and Review lead with recorded programs (or the starting command), file
-changes and connections. These short rows point to What the run recorded for full
-values and coverage limits. The first record disclosure opens when the list is
-short. Review describes the action shown: Create contract and a learn command
-create a contract from the run; a compile command checks an existing contract that needs
-fixing, while Create contract can make another. A saved, compiling contract
-offers Enforce its rules without a terminal command. The builder keeps Review
-through both mode links, including the selected mode, preview and save. After
-saving, the facts refresh and Enforce its rules opens the next step. Enforce first
-shows the command, then the ended record and each refusal's line. If a request
-waits for you, the tour shows its count and opens Approvals first, including after
-a contract save. Return through Guide after answering; no decision form is
-duplicated in the frame.
-
-Leave the guide opens the same product page without its frame. Guide returns to
-the current fact-based step. Hide for good is a browser preference submitted with
-the normal form protections; it does not alter any machine fact. Show the guide
-again is available in the frame, More and This machine. A blocked or unknown step,
-or an incomplete machine check, keeps the Overview checklist visible even while
-the preference is hidden. A finished machine receives no Start the guide offer.
-On phones the frame shows the current question, instruction and action; All steps
-holds history and sources, and the named product disclosure holds the full page.
-The scanned agent picker arrives separately.
-
 ## Agents evidence
 
 `/agents` reads the saved scan and remembered discoveries, and starts no discovery process. Each recorded row describes one named run, with its id and start time. Checked stage facts and their displayed run fields come from the same checked record; unchecked metadata remains a labelled recorded claim. Unchecked, broken, timed-out or anchor-missing records stop at Recorded and say why and what to do. Contract, Enforced and Verified never transfer from another run. These are facts about that recorded run, not a process running now. `/agents/<identity>` recovers one complete row. `/` uses this view when setup is done; `/overview` always opens Overview. The page is the approved Agents page (`templates/agents.tmpl`): it sits in the main navigation ahead of Overview, each row is one link to its detail, and the guide's Pick step opens it. A row says who (name, and from 601 px up the command identity and folder), how far (the stage word, and for a recorded run the five-stage strip, drawn reached only where that run established the stage) and when. The phone shows those three facts only and puts the list before the scan panel; the other programs, settings and history are folds there. Its three live regions (`r-ag-head`, `r-ag-main`, `r-ag-more`) merge through `live.js`; with scripts off every part is in the page. The detail shows `Recorded run <id> at <time>` or `Seen outside Tego at <time>` with the folder, the command identity and a note that a PATH search, relative path, link or wrapper can spell the same program differently, `Relationship`, the record check and next step always, `RelatedRunIDs` linked, each stage with its fact, source and what cannot be told, and copy buttons for the scan, next and record commands.
 
 Outside scan observations have separate rows with "seen at" time and Record it, and no stage ticks. Matching program path, folder and known uid allow only "may be the same program" words: scans keep no arguments, so they cannot tell. Observations marked inside a Tego run add no row or label and are counted in the footer. Only omission from a usable latest scan means "not seen in the latest scan" with last-seen time. An old, failed or unreadable scan instead explains that state and asks for another scan. Remembered relations use the current recorded-run facts on every load. A busy store lock shows the last committed snapshot without writing and asks for a refresh to retry. The page renders Footer, ScanNotice and DiscoveryNotice visibly outside collapsed details. Discoveries remain for 30 days since last seen; bounded lists state truncation and unsafe remembered state is shown as unreadable without overwriting it. A remembered discovery's detail offers Forget: a fold that is the confirm, then `POST /agents/forget` (the dashboard's session, origin, token and governed-caller checks) drops that one entry through the store's own lock and file checks, refuses a busy or unsafe store, and never changes a run record, a saved scan or a contract. While the latest saved scan still lists the program the next load remembers it again, and the confirmation says so.
 
-Run `tego scan` from the intended project folder, then reload Agents. After five minutes, another boot, unknown freshness or a future time, the scan is historical only. The found list comes from scans. Tego refuses ordinary writes to these files, even with a whole-home grant at tier landlock; this was shown in guest row whole-home-landlock. With the anchor and ledger outside the home, a whole-home grant with direct reads can leave these files readable at landlock; that read case is derived from code and is owed in a guest. The stages shown for a run do not depend on this list. This list never proves that nothing else runs. Same-user programs outside Tego can rewrite both files, too. This is the accepted existing own-state limit in GAPS C52. Modes or links that make either file or the agents directory unreadable show fixed repair steps without changing unsafe state; readable recorded rows remain visible. The record lacks resolved historical own-state write exposure, so this slice has no per-run caution or unconfirmed-after-run state (historical own-state exposure work). Ordinary writes were refused in gproof1 guest5 whole-home-landlock, whole-home-cgroup and whole-home-bpflsm; the external-anchor direct-read case is owed in a guest; see ADR 0145 fix round 2 acceptance and the [Agents user page](user/agents.md). Record it quotes only a safe known folder and leaves your command as a template to fill in. The page never reconstructs a launch command from scan evidence. The footer names unreadable sources and limits. Refused today is an observed local-calendar-day count; incomplete records are labelled as a lower bound.
+Run `tego scan` from the intended project folder, then reload Agents. After five minutes, another boot, unknown freshness or a future time, the scan is historical only. The found list comes from scans. Tego refuses ordinary writes to these files, even with a whole-home grant at tier landlock; this was shown in guest row whole-home-landlock. With the anchor and ledger outside the home, a whole-home grant with direct reads can leave these files readable at landlock; that read case is derived from code and is owed in a guest. The stages shown for a run do not depend on this list. This list never proves that nothing else runs. Same-user programs outside Tego can rewrite both files, too. This is the accepted existing own-state limit in GAPS C52. Modes or links that make either file or the agents directory unreadable show fixed repair steps without changing unsafe state; readable recorded rows remain visible. The record lacks resolved historical own-state write exposure, so this slice has no per-run caution or unconfirmed-after-run state (historical own-state exposure work). Ordinary writes were refused in gproof1 guest5 whole-home-landlock, whole-home-cgroup and whole-home-bpflsm; the external-anchor direct-read case is owed in a guest; see ADR 0145 fix round 2 acceptance and the [Agents user page](../site/finding-agents.md). Record it quotes only a safe known folder and leaves your command as a template to fill in. The page never reconstructs a launch command from scan evidence. The footer names unreadable sources and limits. Refused today is an observed local-calendar-day count; incomplete records are labelled as a lower bound.
 
 ### Simple and Full contract drafts
 

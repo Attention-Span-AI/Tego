@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// dashgen writes a big ledger root for measuring the dashboard (docs/DASHBOARD.md "Read model"): -runs ended runs
+// dashgen writes a big ledger root for measuring the dashboard (docs/development/dashboard.md "Read model"): -runs ended runs
 // of -lines lines each, one run of -big lines, and one live run, every one through the ledger's own Writer and
 // anchored in -anchor, so the chain verifies as a real run's does. It never touches a real ledger: -root and
 // -anchor are required. The live run is listed in <root>/.live with no run_end; the dashboard reads it as running

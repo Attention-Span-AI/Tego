@@ -288,7 +288,7 @@ const routeProbePort = "65535"
 // RouteProbe reports whether a net line is a route probe: UDP to port 65535 of a remote host. Only UDP: a TCP
 // connect to that port is a real attempt, and the port alone would fold an attacker's beacon there as background.
 // The supervisor refuses a probe a contract does not name (a connected UDP socket's later sends are decided at that
-// connect and nowhere else), so this is a display class only; docs/DASHBOARD.md. A datagram the run sent (op send,
+// connect and nowhere else), so this is a display class only; docs/development/dashboard.md. A datagram the run sent (op send,
 // GAPS C172) is no probe whatever its port: a probe only connects. A ledger from before the op has none, and keeps the
 // port as the whole test.
 func RouteProbe(e *Event) bool {

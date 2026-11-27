@@ -13,7 +13,7 @@ import (
 )
 
 // TestCustomAgentExampleMetersEveryBudget pins what makes examples/agents/custom-agent.yaml a contract for a run nobody
-// watches (test/poc/custom-agent, docs/OPERATIONS.md, "Unattended runs"): every budget dimension has a value, the model's traffic
+// watches (test/poc/custom-agent, docs/site/services.md): every budget dimension has a value, the model's traffic
 // goes through the forwarder, so that the budgets that read it (tokens, cost_usd, repeats) have something to count, and
 // no way around the forwarder is left open. A budget with nothing to count is reported [budget-unmetered] at compile
 // and refused at launch, exit 125, but compile reports it as a warning and still exits 0, so a copy that loses its

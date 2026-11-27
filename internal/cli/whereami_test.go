@@ -63,7 +63,7 @@ func TestStartAndSetupRefusalByPlace(t *testing.T) {
 					}
 					return
 				}
-				for _, want := range []string{"this is a container", "examples/container/compose.yaml", "docs/user/container.md",
+				for _, want := range []string{"this is a container", "examples/container/compose.yaml", "https://attention-span.ai/docs/containers/",
 					"SYS_ADMIN", "apparmor=unconfined", "/run/tego-lsm/lsm-list", "tego run",
 					"outside any tego run and any container"} {
 					if !strings.Contains(got, want) {

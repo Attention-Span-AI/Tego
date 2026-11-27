@@ -1015,7 +1015,7 @@ func (a *adoption) releaseKernelState(ctx context.Context, ended bool) {
 	left := a.release != nil && len(a.release.Left) > 0
 	if r.cgm != nil && r.cg.Path != "" {
 		if left {
-			_ = r.cg.Close() // processes stay in it, released: the scope stays until they are gone (docs/OPERATIONS.md)
+			_ = r.cg.Close() // processes stay in it, released: the scope stays until they are gone (docs/development/operations.md)
 		} else {
 			tctx, cancel := teardownCtx(ctx)
 			if err := r.cgm.Remove(tctx, r.cg); err != nil {

@@ -26,7 +26,7 @@
 // looked at (peer.go, /proc/net/tcp{,6}, fails closed). One random token, printed in the URL, is exchanged for an
 // HttpOnly SameSite=Strict cookie; a request without it gets 401 (a browser a page saying how to sign in again; only
 // the favicon is served without it). The Host header must be the loopback address and port (DNS rebinding). GET and HEAD
-// change no engine state; GET /guide reads its stage from facts. Builder reads are read-only (the builder invariant is in docs/DASHBOARD.md). New-contract Preview prepares missing registry
+// change no engine state; GET /guide reads its stage from facts. Builder reads are read-only (the builder invariant is in docs/development/dashboard.md). New-contract Preview prepares missing registry
 // directories only on a guarded POST (ADR 0156). Every preparation or write POST must carry the session's CSRF token (an HMAC of the session) in a
 // form field and come from the dashboard's own origin (Origin, or Referer when no Origin is sent). Every response
 // carries a strict CSP (no inline script or style; the forms need no JavaScript), nosniff, a same-origin referrer

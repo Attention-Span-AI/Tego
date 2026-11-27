@@ -41,7 +41,7 @@ func (k *compiler) compileLive() *liveFence {
 	case "", LiveLocked:
 		if l.Fence.entries() > 0 {
 			k.ds.errorf(k.pos("live.fence"), CodeLiveLockedFence, "live.fence lists what Tego may grant while the run runs, which only live.mode: adjustable does; under locked the kernel enforces the whole contract and nothing loosens while it runs").
-				fix("set live.mode: adjustable (docs/user/live-modes.md weighs the two), or remove live.fence")
+				fix("set live.mode: adjustable (https://attention-span.ai/docs/live-changes/ compares the two), or remove live.fence")
 		}
 		return nil
 	case LiveAdjustable:
@@ -648,7 +648,7 @@ func (k *compiler) markLive(lf *liveFence) {
 	}
 	k.ds.warnf(k.pos("live.mode"), CodeUnenforced, "live.mode: adjustable: the kernel enforces the contract plus the fence (%d entries); Tego's live layer, not the kernel, refuses each fence entry until you lift or grant it (ADR 0125)",
 		len(lf.entries)).
-		fix("weigh Locked against Adjustable in docs/user/live-modes.md").info()
+		fix("compare Locked and Adjustable at https://attention-span.ai/docs/live-changes/").info()
 	if k.rt.Reads.Mode == ReadsHeld && slices.ContainsFunc(lf.entries, func(e LiveEntry) bool { return e.Kind == LiveKindRead }) {
 		k.ds.warnf(k.pos("live.fence.read"), CodeHeldReads, "live.fence has read entries, so every read open of the run is held (fs.reads: held, ADR 0069) and a read fence entry is refused on the object the open deputy pins: %s",
 			HeldReadCost).

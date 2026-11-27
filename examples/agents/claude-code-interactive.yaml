@@ -24,7 +24,7 @@
 #   export CLAUDE_CODE_OAUTH_TOKEN=...      # the token it printed; or export ANTHROPIC_API_KEY=... for an API key
 # Both names are in env.pass, so tego hands whichever your shell has to Claude Code and to nothing else.
 #
-# What makes it work interactively (docs/OPERATIONS.md):
+# What makes it work interactively (docs/site/claude-code.md):
 #   - capture: off, and net.allow names api.anthropic.com:443. With capture: forwarder Claude Code exits 1 on its first
 #     connectivity check, which goes straight to api.anthropic.com whatever the base URL says. The bytes of the model
 #     calls are therefore not recorded; the connection, every file write, program and refusal is (record: full).

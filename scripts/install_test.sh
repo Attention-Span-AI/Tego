@@ -554,7 +554,7 @@ piped "$installer" TEGO_VERSION= TEGO_API_URL="file://$tmp/latest" && code=0 || 
 check "piped into sh with no TEGO_VERSION, the script installs the latest release" 0 "$code"
 installed || { echo "FAIL a piped install installed no tego" >&2; fail=1; }
 expect "a piped install installs the tag the latest lookup names" "installed tego ${version}" "$tmp/out"
-expect "the install names the Quickstart" "Quickstart: https://github.com/" "$tmp/out"
+expect "the install names the Quickstart" "Quickstart: https://attention-span.ai/docs/getting-started/" "$tmp/out"
 # It ends with tego's hint block: "next: " and the one command on the line after it, indented two spaces.
 ending=$(tail -n 2 "$tmp/out")
 # The prefix is not on this shell's PATH, and the installer cannot change that: the command names tego by its full path,

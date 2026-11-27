@@ -222,7 +222,7 @@ func TestBaselineOptionalMetadataRemainsIgnorable(t *testing.T) {
 
 func TestBaselineAbsenceDocumentation(t *testing.T) {
 	const sentence = "A record without the baseline block proves nothing about a baseline, neither that one applied nor that none did."
-	for _, path := range []string{"../../../spec/record/v1/README.md", "../../../docs/user/baseline.md"} {
+	for _, path := range []string{"../../../spec/record/v1/README.md", "../../../docs/development/baseline.md"} {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)

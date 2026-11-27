@@ -489,7 +489,7 @@ func (s *Service) planNew(ctx context.Context, req NewReq) (*NewPlan, *setup.Res
 
 // liveHeader opens the live: section an Adjustable draft gets, as `tego rules create --live-mode adjustable` writes it.
 const liveHeader = `
-# How this agent's rules change while it runs (docs/user/live-modes.md):
+# How this agent's rules change while it runs (https://attention-span.ai/docs/live-changes/):
 #   locked:     file, program and network rules are fixed when the run starts; tighten while it runs, loosen from the next run.
 #   adjustable: the kernel enforces a wider fence; Tego's live layer enforces the rules inside it, so you can
 #               loosen and tighten while it runs. Weaker if Tego fails; needs tier cgroup or bpflsm (root).

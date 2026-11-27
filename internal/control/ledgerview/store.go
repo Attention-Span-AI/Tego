@@ -109,7 +109,7 @@ func (s *Store) state(id string) *runState {
 // decodes them on up to readWorkers goroutines, each owning its runState, and takes the lock again only to publish.
 // A run another request is reading is waited for (its reading channel closes once it is published), never read
 // twice at once. Measured on the r7 perf ledger (22 runs, about 200k lines, 4 cores): a cold Overview went from 5.2 s
-// to under 2 s; docs/DASHBOARD.md, "Cold start", has the numbers.
+// to under 2 s; docs/development/dashboard.md, "Cold start", has the numbers.
 
 // readWorkers is how many goroutines decode n claimed runs: one per run, at most GOMAXPROCS and at most 4.
 func readWorkers(n int) int { return max(1, min(n, runtime.GOMAXPROCS(0), 4)) }

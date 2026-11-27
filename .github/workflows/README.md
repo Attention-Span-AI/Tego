@@ -49,7 +49,7 @@ when it cannot. Whether a hosted runner allows that has not been shown yet, so c
 ## container.yml
 
 On every push and pull request: builds the container image from `examples/container`, then runs `tego doctor`, the image's
-smoke test and the dashboard service inside it. See `docs/user/container.md`.
+smoke test and the dashboard service inside it. See `docs/site/containers.md`.
 
 ## fuzz.yml
 

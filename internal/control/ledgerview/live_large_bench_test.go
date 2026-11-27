@@ -15,7 +15,7 @@ const liveLargeLines = 200_000
 // iteration appends 10 lines to a 200,000-line run that is still live (its lock held, listed in .live), reads the new
 // version, and builds one view of it. A version's views are built from its lines alone, so each costs a full pass: this
 // is the price of one refresh of that page while the agent writes (C66 would make it incremental). The time and B/op of
-// every view are the numbers in docs/DASHBOARD.md, "A live run of 200,000 lines".
+// every view are the numbers in docs/development/dashboard.md, "A live run of 200,000 lines".
 func BenchmarkLiveLargeAppend(b *testing.B) {
 	views := []struct {
 		name string

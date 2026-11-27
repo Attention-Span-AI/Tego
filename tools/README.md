@@ -2,7 +2,7 @@ Developer tooling only, never imported by the binary, and exempt from checkexits
 
 - `dashgen/`: writes a big isolated ledger root for measuring the dashboard (`go run ./tools/dashgen -root DIR -anchor
   FILE`: 300 ended runs of 500 lines, one of 200,000 lines, one live run), every run through the ledger's own Writer
-  with a valid chain; docs/DASHBOARD.md, "Read model, bounds and speed". The live run reads as running only while a
+  with a valid chain; docs/development/dashboard.md, "Read model, bounds and speed". The live run reads as running only while a
   process holds its lock (`flock <root>/<run>/lock sleep 1h`), as lost otherwise.
 - `rulecheck/`: fails on a broken relative Markdown link and on a Markdown file cited by a bare name the repository does
   not hold; where the rule specs are present, also on a duplicate rule ID or a reference to a lettered part or rule the
@@ -12,7 +12,7 @@ Developer tooling only, never imported by the binary, and exempt from checkexits
   alone → the docs gate, else the packages the change reaches per build), plus the source scanners found by scanning
   test code and the suites whose tests build a binary whose closure changed; it prints what it selected and why.
   The scan of test code reads code and string literals, comments blanked out: a comment that names `repoRoot`, a walk or
-  `README` selected a test, and the docs gate, on that word alone. For in-between checks only; merges keep the full gate (docs/OPERATIONS.md, "Precommit modes").
+  `README` selected a test, and the docs gate, on that word alone. For in-between checks only; merges keep the full gate (docs/development/operations.md, "Precommit modes").
 - `checkexits/`: `os.Exit` only in `cmd/`, no bare exit code in `internal/cli` 
   read from the syntax tree; run by `scripts/check-exits.sh`.
 - `rootskips/`: the tests that skip, or may skip, for want of root, read from the syntax tree (`go run ./tools/rootskips

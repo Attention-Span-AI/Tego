@@ -374,7 +374,7 @@ func TestUninstallReportsAUnitItCouldNotStopAndGoesOn(t *testing.T) {
 	}
 }
 
-// The documented install of the example unit (docs/user/run-as-a-service.md) copies the template into the user's
+// The documented install of the example unit (docs/site/services.md) copies the template into the user's
 // folder; the service manager lists it by its template name beside the running instances. Uninstall stops each
 // instance by its full name and never stops the template, which systemd refuses.
 func TestUninstallStopsEveryInstanceOfATemplateItRemovesNotTheTemplate(t *testing.T) {

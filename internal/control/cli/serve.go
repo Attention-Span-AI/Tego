@@ -31,7 +31,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// serve's command: the dashboard (docs/DASHBOARD.md), a web view of a ledger root on loopback that also answers
+// serve's command: the dashboard (docs/development/dashboard.md), a web view of a ledger root on loopback that also answers
 // asks and stops runs, as tego approve, deny and stop do.
 func init() { register(cmdServe) }
 

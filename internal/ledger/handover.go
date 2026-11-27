@@ -20,7 +20,7 @@ import (
 // invoking user, and by default into that user's home: ~/.tego/runs and ~/.tego/chain.log. Everything
 // it creates there would otherwise be root's, 0700 and 0600, and the user could then neither read the run
 // with `tego status`, `events` or `drift`, nor start an unprivileged run of their own: mkdir in a
-// root-owned ~/.tego/runs and the append to a root-owned chain.log both fail (docs/OPERATIONS.md: "the
+// root-owned ~/.tego/runs and the append to a root-owned chain.log both fail (docs/development/operations.md: "the
 // files a root run creates for it are handed to that user").
 //
 // The rule is decided by the filesystem, not by SUDO_UID: what root creates inside a directory some other

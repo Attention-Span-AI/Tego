@@ -23,7 +23,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// The guidance lines (docs/OPERATIONS.md, after `tego learn`; ADR 0142's slice 1): after its own output, a command a newcomer follows says the
+// The guidance lines (docs/development/operations.md, after `tego learn`; ADR 0142's slice 1): after its own output, a command a newcomer follows says the
 // one step that comes next, on stderr and last, in one format:
 //
 //	(an empty line)

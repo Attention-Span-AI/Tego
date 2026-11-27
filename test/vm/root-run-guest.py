@@ -183,7 +183,7 @@ try:
             srv.wait(timeout=10)
         except Exception:
             srv.kill()
-    # control: root can, as docs/OPERATIONS says
+    # control: root can, as docs/site/live-changes.md says
     rc, o, e = user("lift", run_id, "read", vault, "--for", "1m", "--yes", as_root=True)
     check("as root (sudo) the same lift is asked and applied", rc == 0 and ": lifted " in o, "rc %s %s %s" % (rc, o[-120:], e[-160:]))
     check("after root's lift the agent's read goes through", says("read", "ok"), rd("read"))

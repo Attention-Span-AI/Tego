@@ -309,7 +309,7 @@ type LiveFenceEntry struct {
 	Rule string `json:"rule"`
 	// Name is, on an exec entry of source deny only, the bare program name of the exec.deny entry the fence takes
 	// out, which the entry also refuses wherever a program of that name lies. It is part of the fence's digest, so a
-	// reader recomputes sha256 from the entries alone (docs/user/live-modes.md).
+	// reader recomputes sha256 from the entries alone (docs/site/live-changes.md).
 	Name string `json:"name,omitempty"`
 }
 

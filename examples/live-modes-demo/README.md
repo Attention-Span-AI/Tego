@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Adjustable mode demo: loosen a running agent's rules for two minutes, and it ends by itself
 
-A short demo of Tego's Adjustable mode (docs/user/live-modes.md, ADR 0125): an agent is refused a folder,
+A short demo of Tego's Adjustable mode (docs/site/live-changes.md, ADR 0125): an agent is refused a folder,
 you lift that refusal for two minutes while it runs, its next read works, and when the two minutes are up (or you
 Restore) it is refused again. The ledger records every change. It needs root (below).
 
@@ -30,7 +30,7 @@ The demo uses its own machine config, `~/tego-live-demo.yaml`, which names its o
 From this folder, after `make build` at the top of the checkout:
 
 ```sh
-./demo.sh setup        # the fake data, contract.filled.yaml, the demo's config; checks tego compile accepts it
+./demo.sh setup        # the fake data, contract.filled.yaml, the demo's config; checks tego rules check accepts it
 ./demo.sh run          # terminal 1: sudo tego run contract.filled.yaml -- ./agent.sh   (Ctrl-C ends it)
 ./demo.sh lift         # terminal 2: sudo tego lift <run> read <vault-data> --for 2m   (type "lift" to confirm)
 ./demo.sh restore      # terminal 2: sudo tego restore <run> read <vault-data>          (optional: refuse it now)
@@ -55,7 +55,7 @@ out of generated directories. These shell checks do not pin paths against a
 concurrent same-user replacement; [ADR 0129](../../docs/adr/0129-demo-script-state.md)
 states the boundary.
 
-- `tego compile contract.filled.yaml` accepts the contract: Adjustable, one read fence entry refused at start, tier
+- `tego rules check contract.filled.yaml` accepts the contract: Adjustable, one read fence entry refused at start, tier
   cgroup (a build without the tier-2 objects warns `tier-unavailable`; `make build` includes them).
 - The whole loop (refused, lifted with `--for`, `read ok`, restored, refused, every read under
   `live.fence[read:...]`) was rehearsed as a user with a test build that lets Adjustable run at tier landlock, which

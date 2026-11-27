@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # An agent under `tego run` in a container, and the dashboard (tego-control serve) on the host's loopback
-# (docs/user/container.md). From this directory:
+# (docs/site/containers.md). From this directory:
 #
 #   export TEGO_UID=$(id -u) TEGO_GID=$(id -g)
 #   docker compose build                             # builds the one image (the agent service does; the dashboard uses it)
@@ -70,7 +70,7 @@ services:
       TEGO_DELEGATE: ${TEGO_DELEGATE:-auto}
     volumes:
       # The chain anchor (~/.tego/chain.log) and tego's own log: the root of trust the ledger is checked
-      # against, on a volume of its own, never the container's writable layer (docs/user/container.md).
+      # against, on a volume of its own, never the container's writable layer (docs/site/containers.md).
       - tego-state:/home/tego/.tego
       # The ledger: every run's record.
       - tego-ledger:/var/lib/tego/runs

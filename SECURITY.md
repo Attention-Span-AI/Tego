@@ -6,7 +6,7 @@ Report it privately through GitHub: open
 [Report a vulnerability](https://github.com/Attention-Span-AI/Tego/security/advisories/new) on this repository's Security tab.
 Please do not open a public issue, pull request or discussion for it.
 
-A useful report says what you did, what you expected, what happened, the output of `tego version` and `tego doctor`,
+A useful report says what you did, what you expected, what happened, the output of `tego version` and `tego machine check`,
 and the kernel and distribution. A contract that reproduces it, with any secrets removed, helps most.
 
 There is no promised response time. We will answer reports we can reproduce, tell you what we decide, and credit you in
@@ -42,8 +42,8 @@ extended by `docs/adr/0031-tcb-dependency-rule-checked.md`):
   with; no I/O)
 - `internal/bpf` and `bpf/` (the BPF programs and their loader)
 
-The policy compiler, `pkg/spec/agent`, is outside the list: it makes no mutating syscall (`docs/p0/agent-contract.md`
-I6, checked by `TestCompileMakesNoMutatingSyscall`), though under `sudo "$(command -v tego)" run` it runs as root before launch.
+The policy compiler, `pkg/spec/agent`, is outside the list: it makes no mutating syscall (checked by
+`TestCompileMakesNoMutatingSyscall` in `test/sysaudit/compile_test.go`), though under `sudo "$(command -v tego)" run` it runs as root before launch.
 It joins the list when ADR 0031 (proposed) moves its I/O into a new internal/policy/compile package.
 
 **The privileged path** (ADR 0042). Tiers 2 and 3 run from a root launcher: `sudo "$(command -v tego)" run` runs the whole launcher

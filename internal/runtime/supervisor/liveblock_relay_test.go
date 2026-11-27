@@ -132,7 +132,7 @@ func TestLiveBlockRelayNeedsANetBlock(t *testing.T) {
 }
 
 // TestLiveBlockLeavesADatagramBestEffort: an addressed datagram keeps R13b's tier-1 reading under a block, stated in
-// docs/OPERATIONS.md: refused when its copy is blocked, continued best_effort otherwise, since a relay could not
+// docs/development/operations.md: refused when its copy is blocked, continued best_effort otherwise, since a relay could not
 // reproduce QUIC's ancillary data and would refuse it (relayDatagram).
 func TestLiveBlockLeavesADatagramBestEffort(t *testing.T) {
 	blocks := liveSet(t, "net", "127.0.0.1:39511")

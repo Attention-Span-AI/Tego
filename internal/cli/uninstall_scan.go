@@ -48,7 +48,7 @@ var exampleUnits = map[string]string{
 	unitGCTimer:                   "Description=Daily Tego retention pass",
 }
 
-// guideDropIns are the drop-in files Tego's own guide (docs/user/run-as-a-service.md) tells the person to create beside
+// guideDropIns are the drop-in files Tego's own guide (docs/site/services.md) tells the person to create beside
 // a copied example unit, and the exact text it tells them to put in each: <unit>.d/<file>. Only these, byte for byte,
 // are removed; any other file in such a folder is the person's.
 var guideDropIns = map[string]map[string]string{

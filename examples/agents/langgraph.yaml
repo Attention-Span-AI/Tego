@@ -28,7 +28,7 @@
 #     connection is refused and recorded;
 #   - one program besides the interpreter may run, git; any other is refused and recorded (CHANGE the list to the
 #     programs your tools start);
-#   - one MCP server sits behind the relay (docs/user/mcp-tools.md): read_file is allowed and delete_file is denied
+#   - one MCP server sits behind the relay (docs/site/mcp-tools.md): read_file is allowed and delete_file is denied
 #     by name. CHANGE the server (command) and the tool names to yours, or delete the mcp: entry and the
 #     `mcp relay *` entry of exec.allow when the agent uses no MCP server. The run gives the agent two variables:
 #     TEGO_MCP_CONFIG names a file that holds the command and arguments to start the server with (the relay's shim),
@@ -36,7 +36,7 @@
 #     shim reads, so the agent passes it in that connection's env (the MCP SDK starts a server with only a short
 #     list of variables of its own).
 #     At a root tier (sudo ... run) the file is in /run/tego-agent/<run id>/, readable by your account only
-#     (docs/user/mcp-tools.md).
+#     (docs/site/mcp-tools.md).
 #
 # Before the first compile (examples/agents/README.md has the commands):
 #   1. create the environment in the project and install your agent's packages into it:

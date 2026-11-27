@@ -9,12 +9,12 @@ here is undefined and must be added here before it is coded.
 |---|---|
 | no `fs:` | no write entry at all: every write is refused, the five standard data devices included (§2, "The standard data devices": a contract with an `fs:` section grants them, one without adds none); reads allowed; the built-in `deny_read` list and the implicit entries (§2, last paragraph) apply; record per `record:` (amended, below) |
 | `fs: {}` or `fs.write: []` | all writes, deletes, renames, mkdir, symlink, link, truncate (below Landlock ABI 3, kernel 6.2, the supervisor refuses every `truncate(2)` and every `O_TRUNC` open without a write access mode with `EPERM`, a path inside a write entry included, and writes a `refused` line under the rule `landlock-no-truncate`) and mknod (fifo, unix socket, device) refused, except a write to one of the five standard data devices (`/dev/null`, `/dev/zero`, `/dev/full`, `/dev/random`, `/dev/urandom`: §2, "The standard data devices", rule `builtin.standard_devices`); chmod is not refused at any tier (`fs.deny_chmod` is absent at every tier, CAPABILITIES.md; amended 2026-10-19, below), only beneath a `deny_write` target where a decision plane decides; reads allowed |
-| no `net:` | apply the immutable built-in refusals below first; otherwise deny no IP destination, except guarded `models[]` endpoints under `capture: forwarder` (below; amended 2026-10-05: the 2026-10-01 text also refused every undeclared destination on a named model's port here, which no longer holds); every IP destination is allowed, but a unix connect, or a datagram sent to a socket the run did not bind (pathname or abstract), is refused, rule `host-sockets`: the run reaches only the unix sockets a process of it bound and Tego's own endpoints (the DNS broker's socket), the unix-only state (*amended 2026-10-24*, [ADR 0070](../../docs/adr/0070-host-sockets-refused-by-default.md); before, it reached every host socket its uid could open). Top-level `host_sockets: true` restores that reach, and `compile` then warns naming the well-known host daemon sockets that exist (agent-contract R19); a profile cannot set it. A `net:` section decides unix destinations by its own entries and is unchanged |
+| no `net:` | apply the immutable built-in refusals below first; otherwise deny no IP destination, except guarded `models[]` endpoints under `capture: forwarder` (below; amended 2026-10-05: the 2026-10-01 text also refused every undeclared destination on a named model's port here, which no longer holds); every IP destination is allowed, but a unix connect, or a datagram sent to a socket the run did not bind (pathname or abstract), is refused, rule `host-sockets`: the run reaches only the unix sockets a process of it bound and Tego's own endpoints (the DNS broker's socket), the unix-only state (*amended 2026-10-24*, [ADR 0070](../../docs/adr/0070-host-sockets-refused-by-default.md); before, it reached every host socket its uid could open). Top-level `host_sockets: true` restores that reach, and `rules check` then warns naming the well-known host daemon sockets that exist (agent-contract R19); a profile cannot set it. A `net:` section decides unix destinations by its own entries and is unchanged |
 | `net: {}` or `net.allow: []` | all connects refused |
 | no `exec:` | deny nothing |
 | `exec:` with `deny` or `ask` and no `allow` key, even `deny: []` (amended 2026-10-06, ADR 0048 (1)) | deny-list mode: images unrestricted, as no `exec:`; the command rules of §4 apply. The mode is the keys present, never whether a list is empty |
 | `exec: {}` or `exec.allow: []` | all execs refused except the agent command; in the Landlock tier its ELF loader is granted for the kernel's own `PT_INTERP` load, and an `execve` of the loader itself is refused like any other unlisted binary (§4, amended 2026-09-23) |
-| no `deny_read:` | the built-in list applies: `~/.ssh`, `~/.aws`, `~/.netrc`, `~/.gnupg`, `~/.npmrc`, `~/.git-credentials`, `~/.config/gh`, `~/.docker/config.json`, `~/.kube/config`, `~/.config/gcloud` (a file where the credential is the file, a directory where it is one of several files in it), the agents' own token stores `~/.claude/.credentials.json`, `~/.claude.json`, `~/.claude/backups` (Claude Code's copies of `~/.claude.json`), `~/.codex/auth.json`, `~/.gemini/oauth_creds.json`, `~/.gemini/.env`, `~/.gemini/mcp-oauth-tokens.json`, `~/.copilot/config.json`, `~/.copilot/mcp-oauth-config` and `~/.copilot/mcp-secrets`, and the stores of the tools an agent runs beside, `~/.azure`, `~/.config/op`, `~/.password-store`, `~/.pypirc`, `~/.cargo/credentials`, `~/.cargo/credentials.toml`, `~/.terraform.d/credentials.tfrc.json`, `~/.vault-token` and `~/.pgpass` (*amended 2026-10-25*, [ADR 0067](../../docs/adr/0067-agent-token-stores-and-credential-rows.md): the harness's own store is denied too, and a harness gets its credential from a variable its profile passes; a row absent at compile compiles no rule, but the Landlock ruleset, at tier landlock and in the tiers that compose it, enumerates the directory it would appear in, so a file created at it during the run is refused, as is anything else created directly in that directory; [the row list](../../docs/spec/builtin-deny-read.md) cites the vendor document that names each location), the long tail of credential stores, `~/.local/share/keyrings`, `~/.local/share/kwalletd`, `~/.my.cnf`, `~/.mylogin.cnf`, `~/.s3cfg`, `~/.boto`, `~/.config/rclone/rclone.conf`, `~/.rclone.conf`, `~/.gem/credentials`, `~/.local/share/gem/credentials`, `~/.config/composer/auth.json`, `~/.composer/auth.json`, `~/.m2/settings-security.xml`, `~/.config/doctl/config.yaml`, `~/.config/hub`, `~/.config/glab-cli/config.yml`, `~/.fly/config.yml`, `~/.supabase/access-token` and `~/.oci` (*amended 2026-11-02*, under the same rule and in the same row list; `~/.m2/settings.xml` and `~/.gradle/gradle.properties` stay readable, since each configures every build of its tool), browser profile directories (Firefox, Chrome and its beta and unstable channels, Chromium, Brave, Edge and its beta and dev channels, Vivaldi, Opera, at their usual paths under `~/.config`, the snap paths `~/snap/firefox/common/.mozilla` and `~/snap/chromium/common/chromium`, and the flatpak directories `~/.var/app/<id>` of the same browsers; a browser installed elsewhere is not covered, name it in `deny_read:`), and `.env` files under the project root — the contract file's directory — and under the directory the run starts in, resolved at compile time; at tiers `cgroup` and `bpflsm` one created later beneath them is refused as well, by the built-in name entries (amended 2026-10-27, ADR 0043; tier `landlock` keeps the files resolved at compile time unless the run holds its reads, ADR 0069) (amended 2026-09-29: the snap, flatpak and beta/unstable channel browser paths were not in the compiler's list, so a snap Firefox profile stayed readable; the credential rows from `~/.npmrc` to `~/.config/gcloud` were applied by the compiler but not written here; amended 2026-09-24: the scan was rooted at the working directory alone, so a run started in a subdirectory left the project root's `.env` readable); `deny_read: []` disables it and `compile` warns |
+| no `deny_read:` | the built-in list applies: `~/.ssh`, `~/.aws`, `~/.netrc`, `~/.gnupg`, `~/.npmrc`, `~/.git-credentials`, `~/.config/gh`, `~/.docker/config.json`, `~/.kube/config`, `~/.config/gcloud` (a file where the credential is the file, a directory where it is one of several files in it), the agents' own token stores `~/.claude/.credentials.json`, `~/.claude.json`, `~/.claude/backups` (Claude Code's copies of `~/.claude.json`), `~/.codex/auth.json`, `~/.gemini/oauth_creds.json`, `~/.gemini/.env`, `~/.gemini/mcp-oauth-tokens.json`, `~/.copilot/config.json`, `~/.copilot/mcp-oauth-config` and `~/.copilot/mcp-secrets`, and the stores of the tools an agent runs beside, `~/.azure`, `~/.config/op`, `~/.password-store`, `~/.pypirc`, `~/.cargo/credentials`, `~/.cargo/credentials.toml`, `~/.terraform.d/credentials.tfrc.json`, `~/.vault-token` and `~/.pgpass` (*amended 2026-10-25*, [ADR 0067](../../docs/adr/0067-agent-token-stores-and-credential-rows.md): the harness's own store is denied too, and a harness gets its credential from a variable its profile passes; a row absent at compile compiles no rule, but the Landlock ruleset, at tier landlock and in the tiers that compose it, enumerates the directory it would appear in, so a file created at it during the run is refused, as is anything else created directly in that directory; [the row list](../../docs/spec/builtin-deny-read.md) cites the vendor document that names each location), the long tail of credential stores, `~/.local/share/keyrings`, `~/.local/share/kwalletd`, `~/.my.cnf`, `~/.mylogin.cnf`, `~/.s3cfg`, `~/.boto`, `~/.config/rclone/rclone.conf`, `~/.rclone.conf`, `~/.gem/credentials`, `~/.local/share/gem/credentials`, `~/.config/composer/auth.json`, `~/.composer/auth.json`, `~/.m2/settings-security.xml`, `~/.config/doctl/config.yaml`, `~/.config/hub`, `~/.config/glab-cli/config.yml`, `~/.fly/config.yml`, `~/.supabase/access-token` and `~/.oci` (*amended 2026-11-02*, under the same rule and in the same row list; `~/.m2/settings.xml` and `~/.gradle/gradle.properties` stay readable, since each configures every build of its tool), browser profile directories (Firefox, Chrome and its beta and unstable channels, Chromium, Brave, Edge and its beta and dev channels, Vivaldi, Opera, at their usual paths under `~/.config`, the snap paths `~/snap/firefox/common/.mozilla` and `~/snap/chromium/common/chromium`, and the flatpak directories `~/.var/app/<id>` of the same browsers; a browser installed elsewhere is not covered, name it in `deny_read:`), and `.env` files under the project root — the contract file's directory — and under the directory the run starts in, resolved at compile time; at tiers `cgroup` and `bpflsm` one created later beneath them is refused as well, by the built-in name entries (amended 2026-10-27, ADR 0043; tier `landlock` keeps the files resolved at compile time unless the run holds its reads, ADR 0069) (amended 2026-09-29: the snap, flatpak and beta/unstable channel browser paths were not in the compiler's list, so a snap Firefox profile stayed readable; the credential rows from `~/.npmrc` to `~/.config/gcloud` were applied by the compiler but not written here; amended 2026-09-24: the scan was rooted at the working directory alone, so a run started in a subdirectory left the project root's `.env` readable); `deny_read: []` disables it and `rules check` warns |
 | no `fs.deny_write:`, or `fs.deny_write: []` (*added 2026-10-25*, [ADR 0071](../../docs/adr/0071-user-deny-write.md)) | no declared entry: only the built-in `deny_write` set (§2) refuses writes inside a write entry; `[]` adds nothing and never removes the built-in set, across `extends` either (a union) |
 | no `env:` | the launcher's environment plus the identity set; `env.pass` narrows it. Under a root launcher, a `HOME`, `USER` or `LOGNAME` naming root is the invoking user's |
 | no `limits:` | the machine config's ceilings (spec/config/v0). What holds is in the record: a launch's `run_start.applied_limits` is each limit file the launcher wrote, read back from the scope (GAPS C221); for memory, pids and cpu the value is the lowest ceiling along the cgroup chain above the scope, read once at the start, and a member whose ancestors could not be read is left out, as is every one of them when the mount is a private cgroup namespace's root, whose cgroups above are not visible |
@@ -25,11 +25,14 @@ here is undefined and must be added here before it is coded.
 lists concatenate, scalars in the contract win, `deny_read` entries are never removed by an extending contract, and
 `fs.assurance` keeps the stricter value (`kernel` over `best-effort`; amended 2026-10-05, ADR 0041 D1 (a)).
 *Amended 2026-10-25 (ADR 0068):* a name under `tego/` is a built-in profile, never a file (ADR 0066 D2); the presets
-are three, each meaning a row of the table above: `tego/no-secrets` passes only an allow-list of variables
+are four, the first three each meaning a row of the table above: `tego/no-secrets` passes only an allow-list of variables
 (`env.pass`) and keeps the built-in `deny_read` list on as any contract that does not write `deny_read: []` does,
 `tego/no-prod` is `net.allow: []` (all connects refused but the contract's own `net.allow` entries; the resolver
 stays reachable under `net.dns.mode: system`), and `tego/repo-only-writes` is `fs.write: [/dev/null]` (every write
-refused but `/dev/null` and the contract's own `fs.write` entries). `tego/<preset>@<n>` pins revision `n`.
+refused but `/dev/null` and the contract's own `fs.write` entries). The fourth, `tego/ci`, is for CI runners:
+`reason.reads: on`, an `env.deny` list of the runner's token variables (`GITHUB_TOKEN`, `GH_TOKEN`, the `ACTIONS_*`
+token and URL variables, `SIGSTORE_ID_TOKEN`, `INPUT_TOKEN`, `INPUT_GITHUB_TOKEN`) and `fs.deny_write: ["./.github/"]`.
+`tego/<preset>@<n>` pins revision `n`.
 *Amended 2026-10-24 (ADR 0069 D1):* `fs.reads` (`auto` | `held` | `direct`, default `auto`) keeps the stricter value,
 `held` over `auto` over `direct`; `direct` counts only from the top-level contract, and a profile's is ignored with
 `profile-cannot-loosen`. `auto` holds the run's read opens at tier landlock while a `deny_read` target lies at or
@@ -69,7 +72,7 @@ write rights unhandled instead would leave the implicit entries writable from in
 included; enumerating write grants around them the way `deny_read` enumerates reads would refuse creating a file
 at every ancestor level of the run directory and of the contract file, the worktree root among them; and the root
 tiers' walk (§2) already refuses what no entry covers. The fail-closed reading is the one all three components
-implemented (the Landlock ruleset, `compile --test`'s `Evaluate` and the supervisor's advisory verdict), so the
+implemented (the Landlock ruleset, `rules check --test`'s `Evaluate` and the supervisor's advisory verdict), so the
 row now says it. The differences from `fs: {}` are the rule a refusal names (`unmatched` rather than the
 implicit `/` entry) and the five standard data devices (§2): `fs: {}` grants them and no `fs:` section does not (*amended 2026-11-25*, ADR 0158). The unrestricted reading stays expressible in no tier: `fs.write: ["/"]` contains the run
 directory and is a `contradiction` (agent-contract R10). It becomes buildable where a tier can deny beneath an
@@ -79,9 +82,9 @@ tier that does not install a Landlock fs ruleset (`containers: rootless`, §10) 
 *Amended 2026-09-24:* "no `net:`" is the key absent. The key present with no value
 (`net:` with every entry commented out, or `net: ~`) used to parse as absent too, unrestricted, while it reads as an
 empty section; it is now a schema error whose fix is `net: {}` (refuse all) or removing the key, as for `exec:`,
-`fs:`, `env.pass` and `env.deny`, and `compile` names an unrestricted section (`net unrestricted (no net:
+`fs:`, `env.pass` and `env.deny`, and `rules check` names an unrestricted section (`net unrestricted (no net:
 section)`, `net_unrestricted` in `--json`).
-*Amended 2026-10-25 (ADR 0070):* with no `net:` section `compile`'s net line reads `IP unrestricted,
+*Amended 2026-10-25 (ADR 0070):* with no `net:` section `rules check`'s net line reads `IP unrestricted,
 unix sockets the run's own only (no net: section)`, and `--json` adds `host_sockets_refused: true` beside
 `net_unrestricted: true`; under `host_sockets: true` the line reads `net unrestricted (no net: section,
 host_sockets: true)` (`TestCompileSaysUnrestricted`).
@@ -119,7 +122,7 @@ and is no longer handled without one, save in the unix-only state above. One add
 `AF_UNSPEC` address in a send, whose interpretation depends on the socket's domain: IPv4 UDP or raw sockets can use
 the `sockaddr_in` behind the family word, while IPv6 UDP can use its existing peer. That tier cannot place the
 destination or establish the result of a continued attempt. A `NULL` address spells a connected send, or `AF_INET`
-spells an IPv4 destination (`docs/p0/supervisor.md` R4, R7); it refuses a spelling, not a destination. An exec is still a read of the program (§4), so an undeclared binary under a
+spells an IPv4 destination (supervisor R4, R7); it refuses a spelling, not a destination. An exec is still a read of the program (§4), so an undeclared binary under a
 `deny_read` the tier enforces is refused as `read-denied`. Tier 2's fanotify exec check reads the same absent-exec
 policy through `decide.ListenerExec`: an undeclared binary is not refused merely because no `exec:` section
 was declared (`internal/runtime/enforce/cgroup`, `decideExec`).
@@ -131,7 +134,7 @@ only explicit unrelated `net.allow` destinations and the runtime's capture-liste
 divergent DNS/direct-IP bypasses without restricting unrelated ports. *Amended 2026-10-05:* the port
 reservation applied with no `net:` section too, which made a contract that declares no network policy refuse every
 other HTTPS host (`pip`, `npm`, `git` over https) at tier landlock, where `capture: auto` is the forwarder, and
-`compile` only warned (`model-port-restricted`, now removed). With no `net:` section the port is again not reserved,
+`rules check` only warned (`model-port-restricted`, now removed). With no `net:` section the port is again not reserved,
 as before 2026-10-01: the run refuses the model's resolved addresses and local aliases and, until its name has
 resolved, every destination on its port (`rule: unresolved`), and admits another address there `unmatched`;
 `Evaluate`, which never resolves the name, answers `refused`/`unresolved` for every literal on that port and `allow`
@@ -214,10 +217,10 @@ hide a secret's name or its activity, not only its bytes, keeps it outside every
 
 *Note 2026-09-29 (ADR 0024/0025/0028, accepted; steps A to D built, at tier 2 and as tier `bpflsm` (T7, T13, T14; corrected 2026-09-30); enforce-plane R5 to R11, R25):* at tier 2 where a plane mode is selected (and at tier 3, tier `bpflsm`) the nearest-wins walk below is decided in the kernel by the plane on the object the kernel resolved, for opens, execs, renames, links, unlinks and rmdirs (and, from step B, mkdir, mknod, symlink, truncate, chmod, chown and the xattr/ACL protection hooks), and "Identity" below is amended: rows are keyed by the kernel inode pointer in per-run maps pinned by the run's Landlock domain, not by BPF inode storage (ADR 0010, superseded by ADR 0025). Each tier's statement of the rule comes from one core, `internal/policy/decide` (ADR 0028; `decide.CompilePlane`, `PlaneEvaluator`, `TestPlaneRowsMatchEvaluate`). The text below stays as the rule's statement; the plane implements it.
 
-**Identity.** Every `fs` entry names an existing directory or file. `compile` (unprivileged) checks existence and
+**Identity.** Every `fs` entry names an existing directory or file. `rules check` (unprivileged) checks existence and
 prints each entry's mount, filesystem type and device, warning on mount points, overlay layers and btrfs; `run`
 creates declared `write` directories and refuses to start for other missing entries. A `write` entry is a path, never
-a glob: one holding `*`, `?` or `[` that names nothing is `path-missing` at `compile`. Identity is taken by `run`:
+a glob: one holding `*`, `?` or `[` that names nothing is `path-missing` at `rules check`. Identity is taken by `run`:
 each entry is opened `O_PATH` and the fd is held for the run, which pins the inode; the root tiers key the inode in
 BPF inode storage (ADR 0010), the Landlock tier adds rules from the same fds. A `(device, inode)` pair is never used.
 
@@ -245,7 +248,7 @@ this run** decides; ancestors carrying only other runs' entries are skipped. A w
   which every tier keeps under its own decision, also compares the rights its ruleset grants rather than the entries'
   kinds: a file moved or hard-linked into an `exec.allow` directory inside a write entry gains `EXECUTE` there and is
   refused (`EXDEV`), and a hard link needs `REFER` on the source's directory, which a write entry naming a single file
-  does not grant, so such a file gets no second name in another directory. The ledger and `compile --test` say so at
+  does not grant, so such a file gets no second name in another directory. The ledger and `rules check --test` say so at
   every tier. *Amended 2026-10-17:* the comparison is the
   kernel's: a rename or link within one directory compares nothing; across directories the rights at the new name's
   directory are compared with the moved object's own, never with a rule on the name it replaces, so replacing an
@@ -254,7 +257,7 @@ this run** decides; ancestors carrying only other runs' entries are skipped. A w
   unlink act on the name itself, never following a final symlink, so an end that is a symlink fs entry's own name is
   the symlink, decided by its own directory (the entry governs its target, not the link); and a rule is on the inode
   its entry named when the run started, so an `exec.allow` directory renamed inside a write entry keeps its `EXECUTE`
-  under its new name, and a directory made at the old name has none. The ledger follows the inodes; `compile --test`
+  under its new name, and a directory made at the old name has none. The ledger follows the inodes; `rules check --test`
   answers the starting tree. Tier 3 keeps Landlock's directory rights under its hooks: a write entry naming a single
   file is refused a rename or an unlink of itself at every tier.
 - Creating a fifo, socket or device node is a write on the parent directory in both tiers.
@@ -271,21 +274,21 @@ it (union, not nearest-wins). So:
   and cannot be renamed or hard-linked into a readable sibling (`EXDEV` under `REFER`). The record (*amended
   2026-10-25*, [ADR 0067](../../docs/adr/0067-agent-token-stores-and-credential-rows.md) D3): a read at or beneath the
   name the ruleset leaves out for a built-in row absent at compile is recorded refused, `read_denied`, named by the row,
-  at every enforcing tier, and `compile --test` answers the same; a read of any other entry created at an enumerated
+  at every enforcing tier, and `rules check --test` answers the same; a read of any other entry created at an enumerated
   level is recorded with the verdict the contract gives it (allow), though the kernel refused it, since no model knows
   the names an enumerated directory gains after the ruleset was built (enforce-landlock E10).
 - **Stated exception: an exec grant carries read (*added 2026-09-29*).** A declared `exec.allow` entry that lies
   strictly inside an enforced `deny_read` target (a file, or a directory whose whole subtree) stays **readable** at
   tier 1: `file_open` opens the program `O_RDONLY|__FMODE_EXEC`, which sets `FMODE_READ`, so Landlock requires
   `READ_FILE` for an exec and the grant cannot be `EXECUTE` alone (enforce-landlock R5, I11 (1)). The `deny_read`
-  holds for everything else beneath the target. `compile` warns `unenforced` for each such entry, naming both
+  holds for everything else beneath the target. `rules check` warns `unenforced` for each such entry, naming both
   (agent-contract R15), and `Evaluate` and the supervisor's advisory verdict report the read `allow` under the exec
   entry's name. Tier 2 does not share the exception: its fanotify listener decides every open by the nearest-wins
   walk and refuses the read (`read-denied`), though the exec itself still runs. Tier 3 decides on the inode and
   refuses it too. An exec entry at the target is a sealed deny node (E32 (c)) and one above it leaves the target
   unenforced; neither is this exception.
 - A `deny_read` entry is compiled in this tier only when no enumerated level lies at or below a `write` entry or an
-  `fs.ask` entry (the supervisor's `ADDFD` creates files there outside the domain); otherwise `compile` reports it
+  `fs.ask` entry (the supervisor's `ADDFD` creates files there outside the domain); otherwise `rules check` reports it
   `unenforced (landlock: parent writable)` and the run's capability matrix carries it. In particular `.env` inside a
   writable worktree is enforced by the root tiers only. *Amended 2026-10-24 (ADR 0069):* the ruleset still cannot
   enforce such an entry, but under `fs.reads: auto` (the default) such a target makes the run hold its reads at tier
@@ -293,17 +296,18 @@ it (union, not nearest-wins). So:
   read-capable open (`O_RDONLY`, `O_RDWR`, a directory, `O_CREAT` with read access) in the run's own domain, and the
   supervisor refuses it `read-denied` on the object the deputy reached when that object lies at or beneath a
   `deny_read` entry that is the nearest entry deciding a read there, nested or not (a nested target directory itself
-  included), so `.env` inside a writable worktree is enforced at tier landlock too. `compile` warns `held-reads` at
-  each such target, with the cost (about 0.1 ms per read open), and `compile --test` answers its read refused.
-  `O_WRONLY` and `O_PATH` opens are not held. What it does not catch: the target renamed or hard-linked to another
-  name and read there (capability `fs.deny_read.moved`, false at tier landlock until ADR 0069's identity pinning);
-  one written or replaced during the run from outside it and then moved; a device outside the mem and tty classes is
+  included), so `.env` inside a writable worktree is enforced at tier landlock too. `rules check` warns `held-reads` at
+  each such target, with the cost (about 0.1 ms per read open), and `rules check --test` answers its read refused.
+  `O_WRONLY` and `O_PATH` opens are not held. What it does not catch: one written or replaced during the run from outside it and then moved; a device outside the mem and tty classes is
   refused while reads are held. `fs.reads: direct` keeps the entry `unenforced` as before.
+  A target renamed or hard-linked to another name and read there is caught under held reads: the launch pins each
+  target's identity, so the read is refused under any name (capability `fs.deny_read.moved`, true at tier landlock,
+  `pkg/spec/backend/matrix.go`).
 - Globs in `deny_read` are expanded at compile time to existing matches under `$HOME` and the worktree in every tier;
-  files created later are not covered and `compile` says so. *Note 2026-09-30 (ADR 0039, a design, not built):* at
+  files created later are not covered and `rules check` says so. *Note 2026-09-30 (ADR 0039, a design, not built):* at
   tier bpflsm a glob whose last component is an exact name (the built-in `.env` scan's) will also be a name-keyed
   row scoped to the directories it was expanded under, which denies a matching file created later as well: a
-  tier-3 strengthening, shown in `compile --test`'s bpflsm column, never a wider rule. *Note 2026-10-05 (ADR 0043,
+  tier-3 strengthening, shown in `rules check --test`'s bpflsm column, never a wider rule. *Note 2026-10-05 (ADR 0043,
   which amends 0039; decided, the compiler and the decision core built, no tier enforces it yet):* a name entry is
   the built-in `.env` list (exact `.env`, and the prefix `.env.` but `.env.example`, `.sample`, `.template` and
   `.dist`) or a declared glob whose last component is a literal or a literal and one trailing `*`; it matches the
@@ -311,41 +315,41 @@ it (union, not nearest-wins). So:
   built-in, the glob's literal base for a declared one) outside the dependency directories the scan skips, and
   decides a covered file as a `deny_read` entry at its own path would, creation included, at tiers cgroup and
   bpflsm; a directory rename that takes covered files out of coverage is refused there. Tier landlock keeps the
-  compile-time expansion. Until the plane and the fallback enforce it, `compile --test` and the plane's rows answer
+  compile-time expansion. Until the plane and the fallback enforce it, `rules check --test` and the plane's rows answer
   as if no name entry existed, so no column predicts a refusal no tier makes. *Amended 2026-10-24 (ADR 0069 D3
   (c)):* where the run holds its reads (§1, `fs.reads`), a read of a file such a rule covers is refused whenever the
   file was made: a declared `deny_read` glob matched against the object's path and its ancestors, the built-in home
   paths while the built-in list is on, and the built-in `.env` names ASCII-folded beneath the scan's roots outside
   the dependency directories (D3's exemptions kept). That is how tier landlock refuses a `.env.local` made during the
-  run, at `auto` whenever reads are held, and every enforcing tier under `fs.reads: held`; `compile --test` answers
+  run, at `auto` whenever reads are held, and every enforcing tier under `fs.reads: held`; `rules check --test` answers
   the same. *Amended 2026-10-25:* a write entry nearer the object than the ancestor such a rule
   matched reopens its own subtree, as the nearest entry does in the walk above: `fs.write: ["~/.ssh/out/"]` keeps
   its reads while a `.env` elsewhere makes the run hold them, and the rest of `~/.ssh` stays refused. *Amended
-  2026-10-25:* `compile`'s warning at a whole `deny_read` glob, and its `names` heading, say at which
+  2026-10-25:* `rules check`'s warning at a whole `deny_read` glob, and its `names` heading, say at which
   tiers a matching file made during the run is refused because the run holds its reads, and keep "not covered" for
   the tiers that read direct. *Note 2026-10-27 (ADR 0043 enforced, ported):* every build enforces name entries at tiers cgroup and bpflsm, the plane's name check in a plane
   mode and, on tier 2's fanotify fallback, the listener's refusal of an open by name and the supervisor's best-effort
-  refusal of a creation, link or rename onto a covered name; `compile --test` and the plane's rows answer with them.
-  An entry the per-run caps leave out keeps only its expansion, and `compile` warns `unenforced` naming it; for a
-  glob whose entry is kept, `compile`'s glob warning says files created later are covered at tiers cgroup and
+  refusal of a creation, link or rename onto a covered name; `rules check --test` and the plane's rows answer with them.
+  An entry the per-run caps leave out keeps only its expansion, and `rules check` warns `unenforced` naming it; for a
+  glob whose entry is kept, `rules check`'s glob warning says files created later are covered at tiers cgroup and
   bpflsm and not at tier landlock.
 - A landlocked task cannot `mount`, `move_mount`, `umount`, `remount` or `pivot_root` (§10).
 
 **One statement per tier, implemented once** (*amended 2026-09-28*, ADR 0028). The root tiers' walk and the
 Landlock tier's union above, with tier 2's listener between them, are each implemented in one place, the decision
-core `internal/policy/decide`, and every component that decides or predicts a verdict asks it: `compile --test`,
+core `internal/policy/decide`, and every component that decides or predicts a verdict asks it: `rules check --test`,
 the supervisor's advisory verdict, tier 2's fanotify listener and recorder, and tier 3's plane rows. The kernel still
 judges; the core is what the tiers' predictions and records are held to, so they cannot drift apart.
 
 **Implicit entries** compiled into every ruleset, even when `fs:` is absent: the run directory, the contract file,
 `/sys/fs/cgroup`, `/sys/fs/bpf` are never writable from inside the run. The run directory lives outside every declared
-write directory (`compile` reports `contradiction`; `run` exits 125), because Landlock cannot deny beneath an allow.
+write directory (`rules check` reports `contradiction`; `run` exits 125), because Landlock cannot deny beneath an allow.
 *Amended 2026-09-24:* tego's own files are never **readable** from inside the run either: tego's directory
 (`~/.tego`: the chain anchor, the machine config, the price table, the profiles, tego's own log), the ledger root and
 the host state (`/run/tego`) are read-denied whatever `deny_read` says, `deny_read: []` included (agent-contract R6a).
 Before, every run's `events.jsonl` and blobs were readable from inside any run, so a stricter run could read what a
 looser one had recorded. A ledger root that also holds the project (a shared data disk, `/tmp`) cannot be denied
-without denying the agent its own files, and `compile` says so (`ledger-readable`).
+without denying the agent its own files, and `rules check` says so (`ledger-readable`).
 *Amended 2026-10-20:* the user registry's `agents/` and `skills/` (the machine config's `registry:`, agent-contract
 R26) are never writable from a contract: a write entry at, over or inside either is a `contradiction`, since every
 later `tego run <name>` the user registry answers loads what is there. They are not read-denied: an `fs.ask_read`
@@ -373,7 +377,7 @@ no `XDG_RUNTIME_DIR`, and the same user's other runs keep their directories ther
 write grant the run makes itself, on exactly that directory, rule `fs.codex_home[<path>]`, and an `exec.allow` or
 `exec.ask` directory over it refuses the run, since everything the agent wrote there would run (agent-contract R10a).
 Its reads are not denied (an open condition: another run's agent of the same uid can read it where no `deny_read`
-covers it, the `auth.json` of a key typed at Codex's login screen included; docs/OPERATIONS.md gives the interim
+covers it, the `auth.json` of a key typed at Codex's login screen included; docs/site/codex.md gives the interim
 measure, *amended 2026-10-17*). Its writes are closed to enforcing runs only: an `--observe` run enforces no
 file-system rule, so its agent, like any of the user's processes outside tego, can write it (*amended 2026-10-17*).
 
@@ -395,10 +399,10 @@ attached hooks decide their supported actions on held inode identities, with the
 write grant. Where no plane decides the run (tier landlock, tier cgroup on the fanotify listener) the seccomp
 supervisor refuses a modification that reaches a target on its copied pathname (supervisor R15c): best effort, not a
 closure, since a sibling thread or a swapped symlink between its check and the kernel's own lookup, or a hard link
-made before the run, can still reach one. That is the default (`fs.assurance: best-effort`), disclosed: `compile`
+made before the run, can still reach one. That is the default (`fs.assurance: best-effort`), disclosed: `rules check`
 warns `unenforced` once per target, and run_start's `best_effort` lists `deny_write/default`. A contract that says
 `fs.assurance: kernel` is refused before its child starts wherever no plane would decide its targets (exit 125;
-a compile error at a tier landlock the contract pins or the machine config holds). `compile` names the targets
+a compile error at a tier landlock the contract pins or the machine config holds). `rules check` names the targets
 and reports bounded search failures: the repository search's as warnings under either setting, since it finds the
 targets, and the linked-file search's (below) as an error under `fs.assurance: kernel`, since it decides whether the
 plane holds a named target against a hard link. *Amended 2026-10-05 ([ADR 0041](../../docs/adr/0041-race-free-supervisor-decisions.md) D1 (a)):*
@@ -437,7 +441,7 @@ adds at most 256 rows to the plane's 4096 (a table past them runs on the listene
 tier bpflsm, as any table) and is bounded; where a bound cuts it, compile warns at the entry, and under `fs.assurance:
 kernel` the cut is an error, since a file the search did not reach may be written through another name at every tier
 (*amended 2026-10-25*); best effort at
-tier landlock and on the fanotify listener (supervisor R15c, on the copied pathname), where `compile` warns per entry
+tier landlock and on the fanotify listener (supervisor R15c, on the copied pathname), where `rules check` warns per entry
 "best effort at tier landlock", run_start's `best_effort` lists `fs.deny_write`, and `fs.assurance: kernel` refuses
 the run as it does for the built-in set.
 
@@ -489,7 +493,7 @@ Kernel decision first, gate second, gate only escalates.
    *Amended 2026-11-22 (D30):* the tables read are local, main and default and any other table a policy rule the run's
    own traffic can match leads to (`ip rule`: no `fwmark` the mask covers, `iif` absent or `lo`, a `uidrange` holding
    the run's user; an `oif` or `l3mdev` rule counts, since an agent can bind a socket to an interface or a VRF device with
-   `SO_BINDTODEVICE`); a table only a mark leads to is not read, and `tego doctor` names it.
+   `SO_BINDTODEVICE`); a table only a mark leads to is not read, and `tego machine check` names it.
    *Amended 2026-10-06 (ADR 0048 (1)):* exec command rules are lists and decide before the gate, after the image
    floor: any `exec.deny` match refuses, any `exec.ask` match refuses (reserved), and a constrained tool's unlisted
    invocation is refused; specificity never changes the order, and no exception syntax exists.
@@ -497,7 +501,7 @@ Kernel decision first, gate second, gate only escalates.
    more verbose. A child can never do more than its parent.
 4. `authority` on the event records who decided: `rule` (lists), `gate`, `human`, `llm` (a decision event).
 
-The bounded implementation is specified in agent-contract R22a. Scores sum to at most 100 (the sum, not the highest rule), across both fs kinds for an action both score, a read-write open or a rename's or hard link's source (*amended 2026-10-20*, ADR 0007), and across both ends of a rename or hard link, one action whose every matching rule counts once (*amended 2026-10-20*, ADR 0007); an `fs.read matches` pattern holding a `/` is component globs matched one name at a time against a clean path, and compile refuses one no clean path matches (*amended 2026-10-20*, ADR 0007); a score below `allow` allows, `allow` to `ask` asks and above `ask` is refused (defaults 50/80; *amended 2026-10-20, ADR 0007:* a score of exactly `allow` asks, and `allow` is at least 1); a refused floor remains refused. Hostname predicates need an existing declared DNS binding and match every covering current alias. Approved regular-file read/write opens and ordinary TCP connects/first-write holds use safe held objects; separate fs.ask remains write-only, and `fs.ask_read` (added 2026-10-06, tier landlock only) holds regular-file read-opens (§6). A held file open, read or write, also takes a third answer, an alternate file (§6). UDP/Unix/raw, Fast Open, non-open filesystem mutation and exec approval completion are unavailable and explicitly refuse. IP datagram batches return ENOSYS while frozen individual datagrams are supported. Exec matching conservatively checks the requested copied executable name, resolved copied image name and copied argv[0], each with argv[1:], under 128 arguments/4096 bytes; unreadable/truncated relevant facts refuse. Each of those names is a basename, so an `exec matches` pattern's first word cannot hold a `/` and is refused at compile, its fix naming the basename (amended 2026-10-05: `exec matches "/usr/bin/curl *"` was accepted and never fired). This is copied-syscall provenance, not proof of immutable final argv or pathname. *Amended 2026-10-05 ([ADR 0041](../../docs/adr/0041-race-free-supervisor-decisions.md) D6):* a connect, Fast-Open send or addressed datagram a network gate admits on an IP-domain socket is performed by the supervisor on the copy the gate scored, so for those the scored destination is the one used; filesystem and exec gate verdicts stay copied-syscall provenance (ADR 0041 D1). *Amended 2026-10-16 ([ADR 0041](../../docs/adr/0041-race-free-supervisor-decisions.md) Stage B):* under `gate.completion: held`, an open of a filesystem kind the gate can score to allow or above (*amended 2026-10-20*, ADR 0007) is decided on the object the run's open deputy pinned and completed by the deputy on that object, in the run's own Landlock domain, cgroup and credentials, never continued (`gate_facts: held_object`); an `O_PATH` open, a non-open mutation and exec stay copied-syscall provenance. The default, `copied`, changes nothing. Kernel outcome lines retain additive gate metadata and their actual final verdict. `compile --test` remains a pure hypothetical evaluation and cannot approve a live operation. *Amended 2026-10-25 ([ADR 0071](../../docs/adr/0071-user-deny-write.md)):* where a decision plane decides, a held write-open through a hard link made before the run to a `deny_write` file (an `fs.deny_write` file entry, a built-in file target, a linked file beneath a directory entry) meets the plane's EACCES in the deputy, and nothing is written; the open's one line is refused under the rule the plane keys that file at, explained by the opened object's identity (*amended 2026-10-25*: it kept the floor's allow with `syscall_ret` -13 and named no refusal, [GAPS](../../docs/GAPS.md) C38, closed).
+The bounded implementation is specified in agent-contract R22a. Scores sum to at most 100 (the sum, not the highest rule), across both fs kinds for an action both score, a read-write open or a rename's or hard link's source (*amended 2026-10-20*, ADR 0007), and across both ends of a rename or hard link, one action whose every matching rule counts once (*amended 2026-10-20*, ADR 0007); an `fs.read matches` pattern holding a `/` is component globs matched one name at a time against a clean path, and compile refuses one no clean path matches (*amended 2026-10-20*, ADR 0007); a score below `allow` allows, `allow` to `ask` asks and above `ask` is refused (defaults 50/80; *amended 2026-10-20, ADR 0007:* a score of exactly `allow` asks, and `allow` is at least 1); a refused floor remains refused. Hostname predicates need an existing declared DNS binding and match every covering current alias. Approved regular-file read/write opens and ordinary TCP connects/first-write holds use safe held objects; separate fs.ask remains write-only, and `fs.ask_read` (added 2026-10-06, tier landlock only) holds regular-file read-opens (§6). A held file open, read or write, also takes a third answer, an alternate file (§6). UDP/Unix/raw, Fast Open, non-open filesystem mutation and exec approval completion are unavailable and explicitly refuse. IP datagram batches return ENOSYS while frozen individual datagrams are supported. Exec matching conservatively checks the requested copied executable name, resolved copied image name and copied argv[0], each with argv[1:], under 128 arguments/4096 bytes; unreadable/truncated relevant facts refuse. Each of those names is a basename, so an `exec matches` pattern's first word cannot hold a `/` and is refused at compile, its fix naming the basename (amended 2026-10-05: `exec matches "/usr/bin/curl *"` was accepted and never fired). This is copied-syscall provenance, not proof of immutable final argv or pathname. *Amended 2026-10-05 ([ADR 0041](../../docs/adr/0041-race-free-supervisor-decisions.md) D6):* a connect, Fast-Open send or addressed datagram a network gate admits on an IP-domain socket is performed by the supervisor on the copy the gate scored, so for those the scored destination is the one used; filesystem and exec gate verdicts stay copied-syscall provenance (ADR 0041 D1). *Amended 2026-10-16 ([ADR 0041](../../docs/adr/0041-race-free-supervisor-decisions.md) Stage B):* under `gate.completion: held`, an open of a filesystem kind the gate can score to allow or above (*amended 2026-10-20*, ADR 0007) is decided on the object the run's open deputy pinned and completed by the deputy on that object, in the run's own Landlock domain, cgroup and credentials, never continued (`gate_facts: held_object`); an `O_PATH` open, a non-open mutation and exec stay copied-syscall provenance. The default, `copied`, changes nothing. Kernel outcome lines retain additive gate metadata and their actual final verdict. `rules check --test` remains a pure hypothetical evaluation and cannot approve a live operation. *Amended 2026-10-25 ([ADR 0071](../../docs/adr/0071-user-deny-write.md)):* where a decision plane decides, a held write-open through a hard link made before the run to a `deny_write` file (an `fs.deny_write` file entry, a built-in file target, a linked file beneath a directory entry) meets the plane's EACCES in the deputy, and nothing is written; the open's one line is refused under the rule the plane keys that file at, explained by the opened object's identity (*amended 2026-10-25*: it kept the floor's allow with `syscall_ret` -13 and named no refusal, [GAPS](../../docs/GAPS.md) C38, closed).
 
 
 ## 4. Exec
@@ -505,11 +509,11 @@ The bounded implementation is specified in agent-contract R22a. Scores sum to at
 *Note 2026-09-29 (ADR 0024 (4), 0027, accepted; R9 built for step A at tier 2, R26 built at T14 (§4's tiers 2 and 3 note on mapped code)):* below, the tier-3 sentence "allowed when its interpreter is allowed" is withdrawn, because tier 3 also installs Landlock, whose EXECUTE rule refuses an unlisted script; tiers 2 (where a plane mode is selected) and 3 decide exec only in `bprm_check_security`, by inode, parent inode and name (`TestPlaneExecComparesTheWholeName`). ADR 0027's tiers 2 and 3 rule for the dynamic loader and PROT_EXEC mmap follows that paragraph.
 
 `exec.allow` entries are resolved paths or basenames; a basename matches the final component of the file's dentry
-after symlink resolution, and `compile` prints the resolved candidates on `PATH`.
+after symlink resolution, and `rules check` prints the resolved candidates on `PATH`.
 
 An exec entry (the command, an MCP server's command, an `exec.allow` entry or a pattern's command word) that is a
-`/proc` path, or reaches one by its symlinks or its `PATH` directory, is refused by `compile` (`exec-proc`, *added
-2026-10-16*): `/proc/self/exe` names the executable of whichever process opens it, so `compile` resolved it to tego's
+`/proc` path, or reaches one by its symlinks or its `PATH` directory, is refused by `rules check` (`exec-proc`, *added
+2026-10-16*): `/proc/self/exe` names the executable of whichever process opens it, so `rules check` resolved it to tego's
 own binary and the run granted that.
 
 ### Command rules (added 2026-10-06, ADR 0048)
@@ -580,7 +584,7 @@ prove coverage of every target an installed git reaches. Omitted later built-ins
   cgroup and bpflsm, `sudo tego run`) reads every image on a local file system; an NFS export with `root_squash`
   serves it as the export's anonymous user and a FUSE mount without `allow_other` or `allow_root` refuses it, so an
   image there that it cannot read is refused `image-unreadable`, or its exec answered `EACCES` where the walk is
-  refused. `compile` warns at tier landlock.
+  refused. `rules check` warns at tier landlock.
 - **A dynamic loader run as a command** (`ld-linux-x86-64.so.2 /usr/bin/rm -rf tree`) runs its program in-process,
   with no exec of the program's own, so the program is decided as the exec's image, with the argv the loader gives
   it (`command_via: loader`). A loader is known by a loader's name or by the identity of one of the host's loaders,
@@ -608,7 +612,7 @@ prove coverage of every target an installed git reaches. Omitted later built-ins
   The refusal holds a copy linked there only (*amended 2026-10-16*): a deny-list leaves
   images unrestricted, so in every deny-list run a copy in a memfd (with or without a write entry) or in a file the
   agent wrote and then deleted runs as an image with no name, and a program's own file can be mapped into a process
-  and run with no exec. A deny entry refuses a command, not the program's code; `compile` warns
+  and run with no exec. A deny entry refuses a command, not the program's code; `rules check` warns
   `exec-rule-coverage` on every deny-list. `exec.allow` keeps copies from running (a memfd, an image with no name, and at tiers cgroup and bpflsm
   a written file mapped executable, ADR 0027); a program's own file mapped executable where it lies is ADR 0027's
   residual in either mode.
@@ -647,7 +651,7 @@ most six stages). For `./agent.sh` it runs first with the script (`bprm->buf` st
 interpreter. The program passes any stage whose buffer starts with `#!` and keeps the script path for the event; on
 every other stage it matches the file against `exec.allow` and returns `-EPERM` with a reason on a miss. So a script
 matches its interpreter; `#!/usr/bin/env python3` matches `env` and then `python3`, so a contract that allows an
-interpreter must allow `env`, and `compile` warns when a listed script's `#!` names a binary outside the list: one
+interpreter must allow `env`, and `rules check` warns when a listed script's `#!` names a binary outside the list: one
 no entry names as the same file (either spelling, or a directory above it), a same-named binary elsewhere counting
 only where every tier the run can land on matches by name. A
 binfmt_misc target is decided at both stages. An allowed exec is one event per `execve` with `argv` and the script
@@ -657,7 +661,7 @@ the `execve` notification, before any kernel hook runs.
 **Landlock tier.** The kernel opens the program, its ELF `PT_INTERP` loader and a `#!` script's interpreter with
 `O_RDONLY|__FMODE_EXEC`, so Landlock's `file_open` hook requires `READ_FILE|EXECUTE` on each of them (verified in
 `fs/exec.c`, `binfmt_elf.c`, `binfmt_script.c` and `security/landlock/fs.c`); Landlock has no `mmap_file` hook, so
-shared libraries and extension modules need `READ_FILE` only. It cannot match by name. `compile` grants
+shared libraries and extension modules need `READ_FILE` only. It cannot match by name. `rules check` grants
 `EXECUTE|READ_FILE` on: the resolved inode of every `exec.allow` entry (a basename resolves to its `PATH` candidates;
 a same-named binary elsewhere, such as a `uv`- or `pyenv`-managed Python, is a different inode and must be declared by
 path or directory; a venv's `python` symlink is the same inode and needs nothing); the loader named in each binary's
@@ -670,8 +674,8 @@ honours it to check its script with `AT_EXECVE_CHECK` and so to need `EXECUTE` (
 row the conformance suite runs on, `TestExecveCheckDetector` records whether bash, dash, python3 and node honour the bit
 and fails once one does, ADR 0032's condition to revisit; below 6.14 it records `n/a`; `TestChildNeverSetsExecRestrictBits`
 holds the agent's securebits 8-11 clear at tiers 1 and 2. An unlisted script is refused in this tier and in tiers 2 and 3, which install this tier's ruleset too
-(2026-09-30, ADR 0019's note; `compile --test`'s bpflsm column asks it, `decide.ScriptFloor`). A `#!` naming a hardlink of an allowed file under
-another path is refused by `run` even though it is the same inode: `compile --test` cannot see inodes, and the two
+(2026-09-30, ADR 0019's note; `rules check --test`'s bpflsm column asks it, `decide.ScriptFloor`). A `#!` naming a hardlink of an allowed file under
+another path is refused by `run` even though it is the same inode: `rules check --test` cannot see inodes, and the two
 must not disagree. The same holds the other way for a multi-call binary, one file hard-linked under many names
 (Ubuntu 25.10's uutils coreutils, where `/usr/bin/ls` and `/usr/bin/cat` are symlinks to two links of one inode;
 busybox's applets where they are hard links, *qualified 2026-11-11*: where they are symlinks to one file, as busybox
@@ -715,7 +719,7 @@ docs/spec/exec-command-rows.md.
   `box` dispatches on `argv[1]`. On such a build an allowed name, run through `/proc/self/fd/N` with a chosen
   `argv[0]`, would run any utility at every tier, as busybox does. Which build an unmeasured release ships (26.04's
   first image had 0.8.0-0ubuntu3) is not known.
-- **What compile says.** `tego compile` notes every allowed entry whose file has more than one hard link or is named
+- **What compile says.** `tego rules check` notes every allowed entry whose file has more than one hard link or is named
   `busybox`, `toybox` or `coreutils` (`exec-multicall`, once per file, `pkg/spec/agent/compile_multicall.go`).
   Where one of the entries that share a file reaches it by such a name, the note says the file runs the program
   `argv[1]` names at every tier, whatever the entries' order.
@@ -739,7 +743,7 @@ magic link from the pid directory it sits in — and decides on the file that re
 
 `execveat`'s `AT_EMPTY_PATH` names the image by descriptor only when the pathname is empty; a non-empty pathname is
 resolved as usual. A refused exec line is true by construction — the supervisor made the refusal — and a continued
-one is decided by Landlock on the inode the match was made on. `compile --test` resolves a row's existing path
+one is decided by Landlock on the inode the match was made on. `rules check --test` resolves a row's existing path
 through the filesystem as the kernel does before it matches (*amended 2026-09-29, ADR 0019*), so a symlink to a
 granted binary is allowed as the run allows it; it still cannot see inodes, so a hard link under another name is
 refused, as the run refuses it.
@@ -880,11 +884,11 @@ not URLs: paths, queries, user information and transport-specific port 0 are rej
 is preserved through DNS refresh, supervisor evaluation, Landlock port rights and kernel rows. Hosts resolve at compile time and
 re-resolve on TTL in the launcher; the kernel map holds IP:port. A host name never admits a loopback, unspecified,
 link-local (the cloud metadata endpoint `169.254.169.254` among them), other cloud-metadata or multicast address, nor
-one in the machine config's `denied_resolved_addresses`, whatever the resolver answers: `compile` drops such an address
+one in the machine config's `denied_resolved_addresses`, whatever the resolver answers: `rules check` drops such an address
 and warns, and the supervisor refuses one a refresh brings in, `rule: net.denied_resolved[<entry>]` (agent-contract
 R18, added 2026-09-23, multicast added later). Nor does it admit one of this host's own interface
 addresses, which reach every service bound to all interfaces as loopback does: the supervisor refuses such a
-destination from a snapshot of the host's addresses, and `compile`, which does not know them, neither drops nor warns.
+destination from a snapshot of the host's addresses, and `rules check`, which does not know them, neither drops nor warns.
 *Amended 2026-11-02:* the host's own addresses take in every address of a `local` route in the routing tables its
 default rules look up, an AnyIP range's, as a live block, a `net to` rule and the `models[]` guard read this host
 (agent-contract R18).
@@ -897,7 +901,7 @@ admits a destination on its own admits it behind a refused one.
 When several entries cover one destination (a literal address or a host inside a declared CIDR, two nested CIDRs),
 a refusing one decides whatever the declaration order, and otherwise the first declared names it; every tier applies
 this one rule (`Evaluate`, the supervisor's set, and tier 2's rows, which are composed by it).
-`HTTPS_PROXY` in the run's env changes the effective destination and `compile` warns; when any `*_PROXY` variable is
+`HTTPS_PROXY` in the run's env changes the effective destination and `rules check` warns; when any `*_PROXY` variable is
 passed in, the run appends `127.0.0.1,localhost` to `NO_PROXY`.
 
 **TCP.** Root tiers: `socket_connect` (tier 3) or `cgroup/connect4,6` (tier 2) decide host:port in the kernel.
@@ -979,7 +983,7 @@ explicit bind fails on the withheld `BIND_TCP` and, *amended 2026-11-01*, a `lis
 never sees, is refused by the supervisor and recorded. *Amended 2026-11-02, closed 2026-11-23 (D28, ADR 0024 amended):* a ring's `IORING_OP_LISTEN` under
 `io_uring: true` reaches no supervisor, so the decision plane's `socket_listen` refuses a TCP listen of a run with a `net:`
 section and no `net.listen` (`EACCES`, `net-not-allowed`), as the supervisor refuses `listen(2)`; unix listens are
-unchanged (GAPS C44). `compile` no longer warns `io-uring` for it. An explicit empty list refuses new binds/listens,
+unchanged (GAPS C44). `rules check` no longer warns `io-uring` for it. An explicit empty list refuses new binds/listens,
 and a nonempty list grants its declared endpoints subject to the tier's capabilities and requested assurance.
 DNS tunnelling through the allowed resolver is a stated limit shared with every host-based tool.
 
@@ -1045,7 +1049,7 @@ followed, one whose target the run makes later included, and the names that do n
 meets in a link's target applied where the kernel's lookup applies it, after the symlink before it is followed, as
 `realpath -m` does, never by a lexical clean (*amended 2026-10-19*: a dangling link's target was cleaned lexically, so a scope
 at `s -> sub/../x.sock` with `sub` a symlink was placed beside `s`, and an approval connected a socket there) (compile
-resolves it the same way, `compile --test` included). The path written in the contract is cleaned lexically when
+resolves it the same way, `rules check --test` included). The path written in the contract is cleaned lexically when
 compiled, as every contract path is: a `..` written in it removes the name written before it, and the cleaned path is
 what a person is shown (*amended 2026-10-19*). A path the walk cannot place within 1024 names
 and 40 links is its spelling as given, and a connect's name it cannot place so is no scope's and is decided where it
@@ -1108,9 +1112,9 @@ list skipped is within that `best_effort` mark. *Amended 2026-10-17:* the run's 
 socket the list does not show is refused `unix-origin-unread` too, whether it closed meanwhile, a datagram's list
 skipped it, or the list leaves it out because it cannot take the connect: a connected stream or seqpacket socket, and,
 for a stream or seqpacket socket's connect, a datagram socket another socket connected to, where the kernel answers
-`EPROTOTYPE` (it was admitted before the one-pass list, and the kernel refused it). `compile --test` answers such a socket `allow`, the run's own case.
-`/dev/log` is allowed in the base profiles. When the contract has `docker:`, `compile` adds the run's proxy socket to `allow` and the resolved
-real daemon socket to `ask`; neither is written by hand, and `compile` warns when `env.pass` names `DOCKER_HOST` or
+`EPROTOTYPE` (it was admitted before the one-pass list, and the kernel refused it). `rules check --test` answers such a socket `allow`, the run's own case.
+`/dev/log` is allowed in the base profiles. When the contract has `docker:`, `rules check` adds the run's proxy socket to `allow` and the resolved
+real daemon socket to `ask`; neither is written by hand, and `rules check` warns when `env.pass` names `DOCKER_HOST` or
 `DOCKER_CONTEXT`. On Landlock ABI 9+ (7.1) `unix:` entries also compile to `RESOLVE_UNIX` rules.
 
 **HTTP rules (`net.http`).** Rules apply to declared model forwarders and require explicit `capture: forwarder`
@@ -1231,7 +1235,7 @@ key), so the timeouts' refusals have their own bound rather than sharing the per
 asked about 256 paths nobody answered leave every later `tego approve --always` or `tego deny --always` of the run
 refused as full. Rejected: a person's `--always` evicting a timeout's refusal when the table is full (it would lift a
 refusal the contract chose, for a key nobody looked at), and a smaller bound for timeouts (it only brings forward the
-point past which a retry is held for the whole timeout again). `tego compile` prints `ask hold=... timeout=...
+point past which a retry is held for the whole timeout again). `tego rules check` prints `ask hold=... timeout=...
 max_pending=... on_timeout=...`, with what `refuse_always` does.
 
 *Added 2026-10-06 (held reads):* `fs.ask_read` lists up to 256 literal files or directories, each at most 4096
@@ -1248,7 +1252,7 @@ the entry decides (nearest wins), a non-regular file, and a path the pinned walk
 state is refused read-denied and never asked, whatever entry is nearer, and so is every read when the entry's pinned
 scope was replaced (`ask-unavailable`). A read gate can escalate a held read (its refusal refuses, `fs-gate`; its score
 goes with the ask, which is then never remembered). Held reads need tier landlock: the root tiers decide a read in the
-kernel, so `compile` refuses `fs.ask_read` when the table's tier is `cgroup` or `bpflsm` (pinned, or `auto` on a
+kernel, so `rules check` refuses `fs.ask_read` when the table's tier is `cgroup` or `bpflsm` (pinned, or `auto` on a
 machine whose highest tier is one: pin `tier: landlock`), and the launcher refuses such a table at any other tier,
 the observe backend included (observe cannot ask). To find the reads it holds, tier 1's filter notifies every open of
 such a table, as `record: full` does (its cost per open, enforce-landlock R12); under `summary` and `off` a read that is
@@ -1295,10 +1299,10 @@ named.
 *Decided 2026-10-16 ([ADR 0057](../../docs/adr/0057-fs-ask-read-and-alternates.md) D3), an ask beneath a write
 entry.* One rule for both kinds of ask: an ordinary grant takes precedence over an ask (above), so an ask at or
 beneath a write entry is never asked. For an `fs.ask` scope that loses only a question the write grant already
-answered, and nothing is less protected than its author granted: `compile` warns (`redundant-rule`, "the scope never
+answered, and nothing is less protected than its author granted: `rules check` warns (`redundant-rule`, "the scope never
 asks") and the table compiles; the supervisor allows such a write by the write entry, as it always did. For an
 `fs.ask_read` entry it would lose the protection itself, since the entry is also the `deny_read` that keeps a secret
-and Landlock unions grants, so the agent would read the file outright: `compile` refuses it (`unenforced`), as it did.
+and Landlock unions grants, so the agent would read the file outright: `rules check` refuses it (`unenforced`), as it did.
 A write entry nested strictly inside an `fs.ask_read` entry has a meaning, nearest wins: it decides beneath itself
 (its reads and writes are not held) and the rest of the entry is held; the same holds for a write entry nested in an
 `fs.ask` scope. Rejected: one error for both (an `fs.ask` scope beneath a write entry weakens nothing, and refusing it
@@ -1377,7 +1381,7 @@ delivery). The open it completed is its own `fs` line (`authority: human`, `verd
 `alternate_for` the target). Every reader takes it the same way: `tego events` says `alternate <path> (not the file
 asked for) by <who>`, `drift` counts the `fs` line in the rule's own `alternate` count and never as an `allow` of the
 rule that held it, `measure` counts the answer lines as `alternates` (neither refusals nor approvals; the answer line is
-kept under every record mode, the delivered open's line not under `record: off`), and `learn` proposes nothing from it,
+kept under every record mode, the delivered open's line not under `record: off`), and `rules learn` proposes nothing from it,
 for the file asked for or the file given. Rejected: `approved: true` with the alternate beside it (every reader that
 does not know alternates would read a grant of the target, and the ledger would say something other than what
 happened); a fourth verdict, `alternate`, on the `fs` line (the v1 verdict set is closed, and the open the agent made
@@ -1467,7 +1471,7 @@ told of it).
 ## 8. Limits and config precedence
 
 Ceilings (`tier`, `capture`, `limits.*`) come from the machine config (spec/config/v0). Every layer, the contract
-included, may lower a ceiling, never raise it; `compile` prints each effective value with its source.
+included, may lower a ceiling, never raise it; `rules check` prints each effective value with its source.
 
 *Added 2026-10-16:* `limits.stall_after` ends a run that has done nothing the run sees for
 that long: what it records, every notification the supervisor answers under `record: off`, model traffic in flight,
@@ -1486,18 +1490,18 @@ connect that never completes), and a model that answers its headers and then sen
 held in a tunnel (CONNECT, websocket) is not covered: only the model request path is. At tier `landlock` under `record: summary` or `off` a read-open never reaches the
 supervisor (§7), so a read is neither a line nor activity there, and an agent busy only reading is ended as stalled
 (in one test 14 s of reads ended at 6 s of `stall_after: 5s`; under `record: full` the same agent ran to its own end).
-`compile` warns of it (`stall-reads-unseen`) when the contract sets `stall_after`, the record mode is not `full` and the
+`rules check` warns of it (`stall-reads-unseen`) when the contract sets `stall_after`, the record mode is not `full` and the
 run can land at tier `landlock`; the warning holds at that tier alone, so `tego run` prints it again once a run lands
 there, and names the ways out: `record: full`, under which every read is a line, or a root tier under `record:
 summary`, whose recorder counts reads in aggregates flushed at least every 5 s. A `stall_after` a machine ceiling alone sets is not warned: it is not the
 contract author's to fix. *Amended 2026-10-16:* the record mode the warning is
-derived from is the run's: `tego run --record` is handed to `compile` before any finding is derived, so `--record
+derived from is the run's: `tego run --record` is handed to `rules check` before any finding is derived, so `--record
 full` over a `record: summary` contract is not warned and `--record summary` over a `record: full` contract is, naming
 `--record`; it used to be derived from the contract's mode and then printed unchanged. A `tego run --observe` installs
 tier `landlock`'s filter (§7), so the warning holds in an observe run too, whatever tier the contract names. At a root
 tier under `record: summary` a read reaches the record, and so the stall check, only in the aggregate the recorder
 flushes every 5 s, up to 5 s after it happened (under `full` each read is a line): a `stall_after` at or under 5 s ends an agent that only reads between two flushes, and one under 10 s leaves a
-pause shorter than the window enough to end it, so `compile` warns there too (`stall-reads-unseen`, holding at `cgroup`
+pause shorter than the window enough to end it, so `rules check` warns there too (`stall-reads-unseen`, holding at `cgroup`
 and `bpflsm` alone) when `stall_after` is under 10 s, twice the window, and the landlock warning offers a root tier only
 with a `stall_after` of at least 10 s. Rejected for that case: a shorter aggregation window (it multiplies the lines
 `summary` exists to save), and counting each aggregated sample as activity under `summary` as `off` does (the stall
@@ -1512,7 +1516,7 @@ allowed open under `off` (only refusals, execs and the like), so the activity ea
 from a read. The two warnings said the opposite (a root tier "where under `record: off` every read counts as activity
 at once", and `record: off` as the way out of the root tiers' late aggregates), and that combination was never warned;
 in a KVM guest a pure reader under `record: off` and `stall_after: 2s` was ended `limit-stall` at `cgroup` and at
-`bpflsm`. Now `compile` warns it (`stall-reads-unseen`, holding at `cgroup` and `bpflsm` alone, whatever the
+`bpflsm`. Now `rules check` warns it (`stall-reads-unseen`, holding at `cgroup` and `bpflsm` alone, whatever the
 `stall_after`), offering `record: full`, `record: summary` (with a `stall_after` of at least 10 s when it is shorter)
 or a longer `stall_after`; the landlock warning under `off` offers a root tier only together with `record: summary` and
 that floor; and no fix offers `record: off`. A root tier is offered only where pinning one changes the run: one this
@@ -1528,9 +1532,9 @@ file every 50 ms under `record: off` and `stall_after: 2s` was ended `limit-stal
 beside reads, and its fix ends "raise `stall_after` past the longest stretch without an exec, a connect or a refusal"
 (a connect is activity, below). Tier
 `landlock` differs for writes: its filter notifies every write-open, each is activity, and a writer runs to its end
-there under `off`. And `tego run --tier landlock` pins the run in the selection, after `compile`, refusing a contract
+there under `off`. And `tego run --tier landlock` pins the run in the selection, after `rules check`, refusing a contract
 that pins another tier as a conflict, so the landlock warning of such a run offers a root tier "without --tier
-landlock" (`compile` is handed `--tier` as it is `--record` and `--observe`). Rejected: a per-run activity stamp the
+landlock" (`rules check` is handed `--tier` as it is `--record` and `--observe`). Rejected: a per-run activity stamp the
 kernel would write for each allowed open under `off` (a change to every plane object on every matrix row, adding back
 part of the cost `off` exists to save); the gap is warned instead. *Amended 2026-10-16:* under `off` every notification the supervisor answers is activity, at every
 tier, and a root tier installs tier `landlock`'s filter too. So a connect, a send and an exec, which the filter notifies
@@ -1550,7 +1554,7 @@ with an fs gate or ask entry it names reads alone; otherwise it names a read, an
 decision plane decides in the kernel, says that a syscall the supervisor answers (an exec, a connect or a send, and on
 `cgroup`'s fanotify row every write-open and path change) is activity, and its fix ends "raise `stall_after` past the
 longest stretch without an exec, a connect or a refusal". Rejected: naming at compile the `cgroup` row a run lands on
-(fanotify or a plane), which the selection decides on the machine after `compile`; the warning names both. The stall check is not given another source of activity. Rejected: the run's CPU time
+(fanotify or a plane), which the selection decides on the machine after `rules check`; the warning names both. The stall check is not given another source of activity. Rejected: the run's CPU time
 (`cpu.stat`), under which an agent spinning in a loop never stalls; the read counters of `/proc/<pid>/io`, which count
 pipe, socket, eventfd and terminal reads alike, so an idle event loop's periodic wakeups would keep a hung agent alive
 for good, and which a non-dumpable process hides; and notifying read-opens only to count them, which is the cost of
@@ -1558,7 +1562,7 @@ for good, and which a non-dumpable process hides; and notifying read-opens only 
 check. *Amended 2026-10-19:* the rejection above of a per-run activity stamp the kernel writes is reversed, and with
 it the root-tier `off` warning. Under `off` a root tier's kernel recorder writes no sample for an allowed open, path
 change, regular-file create or connect, so before the stamp a pure reader at tier `cgroup` or `bpflsm`, and a pure
-writer where the plane decides writes, was ended as stalled, and `compile` warned it. Each such action of a run with a
+writer where the plane decides writes, was ended as stalled, and `rules check` warned it. Each such action of a run with a
 `stall_after` now stamps the run's slot of the kernel's `tego_activity` map instead, which the stall check reads once a
 second and `tego status` through the run's activity sidecar (`idle_from`), so the two agree. What the rejection
 feared, measured: for a run without a `stall_after` the stamp is one test of a byte the program has already loaded,
@@ -1580,13 +1584,13 @@ moves bytes through the uprobe source's probes, in every record mode.
 *amended 2026-11-03 (ADR 0068)*: the exact `${TEGO_PROJECT_DIR}` token in a set value expands once
 at compile time to the absolute working directory used by relative filesystem rules. Other dollar expressions
 stay literal. The source contract and its hash retain the token;
-`compile` rejects a name present in both `set` and `deny`. Runtime variables are applied last and cannot be
+`rules check` rejects a name present in both `set` and `deny`. Runtime variables are applied last and cannot be
 overridden by the contract: `TEGO_*`, the propagation set, `ANTHROPIC_BASE_URL` and its peers when `capture:
-forwarder`, `DOCKER_HOST` when `docker:` is present. `compile` warns when the contract sets `ANTHROPIC_BASE_URL` or
+forwarder`, `DOCKER_HOST` when `docker:` is present. `rules check` warns when the contract sets `ANTHROPIC_BASE_URL` or
 `HTTPS_PROXY` while `capture: forwarder`.
 
 *Added 2026-10-25 ([ADR 0067](../../docs/adr/0067-agent-token-stores-and-credential-rows.md)):* with no `env.pass` in
-the merged contract the agent inherits the launcher's whole environment, and `compile` (and `tego run`, though not an
+the merged contract the agent inherits the launcher's whole environment, and `rules check` (and `tego run`, though not an
 adoption's compile, whose process has its own environment, nor that of a contract tego generated, `tego watch` with no
 `--boundary`, whose user cannot add `env.pass`; *amended 2026-10-26*) warns once,
 `secret-env`, when that environment holds variables whose names look like credentials: `GITHUB_TOKEN`, `GH_TOKEN`,
@@ -1606,7 +1610,7 @@ rootless podman, buildah, bubblewrap, `unshare -m` and agent-started sandboxes d
 they are refused and recorded as `gap what=enforce why=landlock-topology`. The filter notifies `mount`, `umount2`,
 `pivot_root` and `move_mount`, the four entry points the domain refuses; the supervisor answers each with the
 domain's own `-EPERM` and records a `refused` line with reason `landlock-topology` per refusal and the gap once per
-binary; `compile` warns when the command, an MCP server or `exec.allow` names `bwrap`, `podman`, `buildah`,
+binary; `rules check` warns when the command, an MCP server or `exec.allow` names `bwrap`, `podman`, `buildah`,
 `unshare`, `runc` or `crun`. Tier 2 installs the same domain, so the same holds there. *Amended 2026-09-24
 :* the domain refuses `mount(2)`, not the creation of a mount namespace, and
 `unshare(CLONE_NEWUSER|CLONE_NEWNS)` copied the mount tree into new mounts that carry none of tier 2's `FAN_MARK_MOUNT`
@@ -1671,7 +1675,7 @@ Every enforcing contract first applies `builtin.host_ipc`, `builtin.tego_surface
 lists. The no-`net:` case keeps IP destinations allowed except local Tego control ports and the
 existing model guard. Protected IPC sockets include the session runtime (SSH-only fixed exceptions
 and the run's own runtime excepted), system D-Bus, X11 and listed multiplexer/editor directories.
-Tego sockets and local configured serve.port/default 7433 plus legacy 8484 are refused. Numeric pty
+Tego sockets and the local configured serve.port (built-in 8484) and 8484 itself are refused. Numeric pty
 slaves and consoles other than the inherited terminal and master-relayed own ptys are refused.
 Only an exact explicit container-daemon socket allow removes that socket's default refusal, with
 `container-socket-escape`. Both named and reached paths are checked, multiple-link sockets are
@@ -1683,7 +1687,7 @@ for the full fixed list and implementation note, including fail-closed abstract 
 *Amended 2026-11-05 (release rollback, C55):* write declarations add no built-in scan/name scopes;
 ADR 0043 D10 remains the contract directory and launch cwd. The rejected coverage extension and its
 Landlock directory-move floor are reverted. Root-tier pip moves into an uncovered `target` remain an
-explicit limit; OPERATIONS gives the tested staging/target declarations plus target-cwd arrangement.
+explicit limit; docs/development/operations.md gives the tested staging/target declarations plus target-cwd arrangement.
 Landlock future-name aliases, including declared held patterns moved out of scope, remain GAPS A11.
 
 

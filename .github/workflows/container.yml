@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# The container image (examples/container, docs/user/container.md): built from the commit, then, inside it and with
+# The container image (examples/container, docs/site/containers.md): built from the commit, then, inside it and with
 # compose.yaml's settings, `tego doctor --require landlock`, the image's smoke script (tego test and a short tego run
 # of the hello agent, its chain verified), the compose agent service as `up` runs it, and the dashboard service
 # answering this runner's curl on the host's loopback. Two report-only steps record what the image does on Docker's
-# defaults and as a privileged root container, the rows docs/user/container.md cannot yet fill from a run.
+# defaults and as a privileged root container, the rows docs/site/containers.md cannot yet fill from a run.
 name: container
 on:
   push:

@@ -345,7 +345,7 @@ func TestMakePlan(t *testing.T) {
 		reason:  "nested module",
 	}, {
 		name:      "Markdown alone is the docs gate: only the tests that read Markdown",
-		changed:   []string{"docs/OPERATIONS.md", "spec/policy/SEMANTICS.md"},
+		changed:   []string{"docs/development/operations.md", "spec/policy/SEMANTICS.md"},
 		mode:      "docs",
 		run:       []string{"./internal/check/rule TestDocsCiteRules"},
 		notInUnit: []string{"./internal/cli"},
