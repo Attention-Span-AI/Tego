@@ -41,7 +41,7 @@ func handOffCommand(n handoff.Noun) func() Command {
 			Usage:   "... (" + handoff.Name + " " + n.Name + " -h lists its flags)",
 			Raw: func(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 				if t, ok := treeOf(n.Name); ok && isTreeVerb(t, args) {
-					return runNoun(ctx, t, args, stdout, stderr) // tego rules create|edit|check|learn are the engine's
+					return runNoun(ctx, t, args, stdout, stderr) // tego rules create|edit|check|learn|list are the engine's
 				}
 				pos := 0
 				if n.Name == "rules" {

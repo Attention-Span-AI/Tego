@@ -1058,7 +1058,7 @@ func TestServePortLayeringAndValidation(t *testing.T) {
 		value string
 		want  int
 		bad   bool
-	}{{"1", 1, false}, {"65535", 65535, false}, {"0", 7433, true}, {"65536", 7433, true}, {"abc", 7433, true}} {
+	}{{"1", 1, false}, {"65535", 65535, false}, {"0", 8484, true}, {"65536", 8484, true}, {"abc", 8484, true}} {
 		t.Run(tt.value, func(t *testing.T) {
 			src := layers(t, trustedDir(t), "serve:\n  port: 9000\n", "", "serve:\n  port: "+tt.value+"\n")
 			m, ds, err := fixtureLoad(src, "/home/test", os.Getuid(), TrustAbort)
@@ -1071,7 +1071,7 @@ func TestServePortLayeringAndValidation(t *testing.T) {
 		})
 	}
 	m, _ := mustLoad(t, Sources{}, "/home/test")
-	if m.ServePort.Value != 7433 {
+	if m.ServePort.Value != 8484 {
 		t.Fatalf("builtin serve port %d", m.ServePort.Value)
 	}
 }

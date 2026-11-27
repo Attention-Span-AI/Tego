@@ -111,16 +111,16 @@ func TestSceneContractsCompile(t *testing.T) {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			compile := exec.Command(k.bin, "compile", path)
+			compile := exec.Command(k.bin, "rules", "check", path)
 			compile.Dir, compile.Env = dir, env
 			out, err := compile.CombinedOutput()
 			if err != nil {
-				t.Errorf("scene %q: tego compile %s: %v\n%s", name, rel, err, out)
+				t.Errorf("scene %q: tego rules check %s: %v\n%s", name, rel, err, out)
 				continue
 			}
 			for _, ln := range strings.Split(string(out), "\n") {
 				if strings.HasPrefix(ln, "error") {
-					t.Errorf("scene %q: tego compile %s: %s", name, rel, ln)
+					t.Errorf("scene %q: tego rules check %s: %s", name, rel, ln)
 				}
 			}
 		}

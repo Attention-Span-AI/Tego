@@ -66,7 +66,7 @@ func cmdLearn() Command {
 		},
 		Run: func(ctx context.Context, fs *flag.FlagSet, stdout, stderr io.Writer) int {
 			if fs.NArg() != 1 {
-				message(stderr, "", 0, 0, "tego learn: exactly one run id or run directory", codeUsage)
+				message(stderr, "", 0, 0, "tego rules learn: exactly one run id or run directory", codeUsage)
 				return identity.ExitUsage // R25: usage error
 			}
 			// --save records refused reads by default (docs/OPERATIONS.md, `tego learn`): a newcomer then sees the read the contract refused on every run. The printed proposal and --out keep the
@@ -74,20 +74,20 @@ func cmdLearn() Command {
 			o := learnOptions{out: out, save: save, reads: reads, reasonReads: reads == "on" || (save != "" && reads == "")}
 			switch {
 			case reads != "" && reads != "on" && reads != "off":
-				message(stderr, "", 0, 0, fmt.Sprintf("tego learn: --reads %q: on or off (left out, --save records refused reads and the "+
+				message(stderr, "", 0, 0, fmt.Sprintf("tego rules learn: --reads %q: on or off (left out, --save records refused reads and the "+
 					"printed proposal keeps the contract's default)", reads), codeUsage)
 				return identity.ExitUsage // R25: usage error
 			case len(hosts) > agent.DefaultDNSParallel:
-				message(stderr, "", 0, 0, fmt.Sprintf("tego learn: --allow-host: %d names; at most %d", len(hosts), agent.DefaultDNSParallel), codeUsage)
+				message(stderr, "", 0, 0, fmt.Sprintf("tego rules learn: --allow-host: %d names; at most %d", len(hosts), agent.DefaultDNSParallel), codeUsage)
 				return identity.ExitUsage // R25: usage error
 			case save != "" && out != "":
-				message(stderr, "", 0, 0, "tego learn: --save and --out: give one; --save writes to the user registry, --out to a file you name", codeUsage)
+				message(stderr, "", 0, 0, "tego rules learn: --save and --out: give one; --save writes to the user registry, --out to a file you name", codeUsage)
 				return identity.ExitUsage // R25: usage error
 			case flagGiven(fs, "save") && !registry.IsName(save):
-				message(stderr, "", 0, 0, fmt.Sprintf("tego learn: --save %q is not an agent name: lower-case letters, digits and -, at most 40", save), codeUsage)
+				message(stderr, "", 0, 0, fmt.Sprintf("tego rules learn: --save %q is not an agent name: lower-case letters, digits and -, at most 40", save), codeUsage)
 				return identity.ExitUsage // R25: usage error
 			case flagGiven(fs, "save") && !saveableName(save):
-				message(stderr, "", 0, 0, fmt.Sprintf("tego learn: --save %q starts with -, which tego run reads as a flag: give a name that "+
+				message(stderr, "", 0, 0, fmt.Sprintf("tego rules learn: --save %q starts with -, which tego run reads as a flag: give a name that "+
 					"starts with a letter or a digit", save), codeUsage)
 				return identity.ExitUsage // R25: usage error
 			}
@@ -95,7 +95,7 @@ func cmdLearn() Command {
 			if ws != "" {
 				abs, err := filepath.Abs(ws)
 				if err != nil {
-					message(stderr, "", 0, 0, "tego learn: --workspace: "+err.Error(), codeUsage)
+					message(stderr, "", 0, 0, "tego rules learn: --workspace: "+err.Error(), codeUsage)
 					return identity.ExitUsage // R25: usage error
 				}
 				// The ledger names paths the kernel's way, every link resolved, so the workspace is compared in that
@@ -104,7 +104,7 @@ func cmdLearn() Command {
 					abs = real
 				}
 				if ws = abs; ws == "/" {
-					message(stderr, "", 0, 0, "tego learn: --workspace / is every directory: name the directory the agent works in", codeUsage)
+					message(stderr, "", 0, 0, "tego rules learn: --workspace / is every directory: name the directory the agent works in", codeUsage)
 					return identity.ExitUsage // R25: usage error
 				}
 			}
@@ -112,7 +112,7 @@ func cmdLearn() Command {
 			for _, v := range hosts {
 				h, err := allowHostArg(v)
 				if err != nil {
-					message(stderr, "", 0, 0, "tego learn: --allow-host "+strconv.Quote(v)+": "+err.Error(), codeUsage)
+					message(stderr, "", 0, 0, "tego rules learn: --allow-host "+strconv.Quote(v)+": "+err.Error(), codeUsage)
 					return identity.ExitUsage // R25: usage error
 				}
 				o.hosts = append(o.hosts, h)
@@ -213,7 +213,7 @@ func lookupAllowHosts(ctx context.Context, hosts []learn.HostAnswer, stderr io.W
 	}
 	answers, err := nextrun.LookupHosts(ctx, learnResolver, names, nextrun.HostBudget)
 	if err != nil {
-		message(stderr, "", 0, 0, "tego learn: --allow-host: "+err.Error(), codeIO)
+		message(stderr, "", 0, 0, "tego rules learn: --allow-host: "+err.Error(), codeIO)
 		return nil, nil, identity.ExitError
 	}
 	code := identity.ExitOK
@@ -225,7 +225,7 @@ func lookupAllowHosts(ctx context.Context, hosts []learn.HostAnswer, stderr io.W
 			if strings.HasPrefix(a.Why, "no answer within ") {
 				where = " " + strings.TrimPrefix(a.Why, "no answer ")
 			}
-			msg := "tego learn: " + a.Host + " did not resolve here" + where + "; nothing was written."
+			msg := "tego rules learn: " + a.Host + " did not resolve here" + where + "; nothing was written."
 			if a.Why == "no such host" || a.Why == "no addresses" {
 				msg += " A run under this name would not start either."
 			}
@@ -314,7 +314,7 @@ func refuseSaveForAnother(stderr io.Writer) bool {
 	if uid, _ := config.InvokingUID(); uid == 0 {
 		return false
 	}
-	message(stderr, "", 0, 0, "tego learn: --save as root for another user: the file would be root's, in that user's registry, "+
+	message(stderr, "", 0, 0, "tego rules learn: --save as root for another user: the file would be root's, in that user's registry, "+
 		"where the user's own tego run cannot read it; nothing was written; run tego rules learn without sudo, or write the "+
 		"proposal with --out <file>", codePrivilege)
 	return true
@@ -330,10 +330,10 @@ func runLearn(ctx context.Context, ref string, o learnOptions, stdout, stderr io
 	r, err := ledger.OpenReader(dir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			message(stderr, "", 0, 0, fmt.Sprintf("tego learn: no run record at %s", dir), codeIO)
+			message(stderr, "", 0, 0, fmt.Sprintf("tego rules learn: no run record at %s", dir), codeIO)
 			return identity.ExitError
 		}
-		message(stderr, "", 0, 0, "tego learn: "+err.Error(), codeIO)
+		message(stderr, "", 0, 0, "tego rules learn: "+err.Error(), codeIO)
 		return identity.ExitError
 	}
 	defer func() { _ = r.Close() }()
@@ -347,7 +347,7 @@ func runLearn(ctx context.Context, ref string, o learnOptions, stdout, stderr io
 		}
 	}()
 	if err := needRunRecord(r, dir); err != nil {
-		message(stderr, "", 0, 0, "tego learn: "+err.Error(), readCode(err))
+		message(stderr, "", 0, 0, "tego rules learn: "+err.Error(), readCode(err))
 		return identity.ExitError
 	}
 
@@ -359,7 +359,7 @@ func runLearn(ctx context.Context, ref string, o learnOptions, stdout, stderr io
 		// run refuses.
 		m, err := mc.load()
 		if err != nil {
-			message(stderr, "", 0, 0, "tego learn: --allow-host: machine config: "+err.Error()+"; its denied_resolved_addresses decide "+
+			message(stderr, "", 0, 0, "tego rules learn: --allow-host: machine config: "+err.Error()+"; its denied_resolved_addresses decide "+
 				"which addresses a name may stand for; nothing was written", config.CodeUntrusted)
 			return identity.ExitError
 		}
@@ -392,14 +392,14 @@ func runLearn(ctx context.Context, ref string, o learnOptions, stdout, stderr io
 	var he *learn.HostError
 	if errors.As(err, &he) {
 		for _, why := range he.Problems {
-			message(stderr, "", 0, 0, "tego learn: "+why+"; nothing was written", codeAllowHost)
+			message(stderr, "", 0, 0, "tego rules learn: "+why+"; nothing was written", codeAllowHost)
 		}
 		m, _ := mc.load()
 		hostsRefusedHint(stderr, dir, m, o, he.Refused)
 		return identity.ExitFinding // a finding about the names given, as --out's existing file is
 	}
 	if err != nil {
-		message(stderr, "", 0, 0, "tego learn: "+err.Error(), codeUsage)
+		message(stderr, "", 0, 0, "tego rules learn: "+err.Error(), codeUsage)
 		return identity.ExitUsage // R25: usage error: the workspace the run or the flag names cannot be used
 	}
 	p.ReasonReads = o.reasonReads
@@ -419,7 +419,7 @@ func runLearn(ctx context.Context, ref string, o learnOptions, stdout, stderr io
 			return code
 		}
 		file = path
-		fmt.Fprintf(stderr, "tego learn: saved %s (mode 0600), made only from what run %s was recorded doing.\n", path, record.Printable(p.Run))
+		fmt.Fprintf(stderr, "tego rules learn: saved %s (mode 0600), made only from what run %s was recorded doing.\n", path, record.Printable(p.Run))
 		if n := len(p.AddressEntries()); n > 0 {
 			fmt.Fprintf(stderr, "  addresses: it allows %d %s the run reached, not host names; a site can move to another address.\n",
 				n, pluralWord(n, "address", "addresses"))
@@ -447,7 +447,7 @@ func runLearn(ctx context.Context, ref string, o learnOptions, stdout, stderr io
 		hint, command = "run your agent under it:", "tego run "+shellword.Quote(pathArg(o.out))
 	default:
 		if _, err := io.WriteString(stdout, text); err != nil {
-			message(stderr, "", 0, 0, "tego learn: "+err.Error(), codeIO)
+			message(stderr, "", 0, 0, "tego rules learn: "+err.Error(), codeIO)
 			return identity.ExitError
 		}
 		hint, command = learnSaveHint, "tego rules learn "+learnRunRef(dir, m)+" --save "+proposedName(m, p.Cwd)+o.shapingFlags()
@@ -464,11 +464,11 @@ func runLearn(ctx context.Context, ref string, o learnOptions, stdout, stderr io
 		if k := len(n.Reached) - len(reached); k > 0 {
 			more = fmt.Sprintf(" and %d more", k)
 		}
-		fmt.Fprintf(stderr, "tego learn: %s resolves here now to %d %s; what the run reached at %d of them is now allowed by that name: %s%s.\n",
+		fmt.Fprintf(stderr, "tego rules learn: %s resolves here now to %d %s; what the run reached at %d of them is now allowed by that name: %s%s.\n",
 			n.Host, len(n.Answer), pluralWord(len(n.Answer), "address", "addresses"), reachedAddrs(n), strings.Join(reached, ", "), more)
 	}
 	for _, w := range p.Warnings() {
-		fmt.Fprintf(stderr, "tego learn: warning: %s\n", w)
+		fmt.Fprintf(stderr, "tego rules learn: warning: %s\n", w)
 	}
 	if left := p.AddressEntries(); len(left) > 0 {
 		still := ""
@@ -491,15 +491,15 @@ func runLearn(ctx context.Context, ref string, o learnOptions, stdout, stderr io
 			fix = "A later run can be refused another address of the same service: write the host's name in their place " +
 				"under net.allow yourself (--allow-host refuses a name that also stands for an address learn withheld)."
 		}
-		fmt.Fprintf(stderr, "tego learn: warning: %d %s the run reached %s %sallowed by address, not by name: %s%s. %s\n",
+		fmt.Fprintf(stderr, "tego rules learn: warning: %d %s the run reached %s %sallowed by address, not by name: %s%s. %s\n",
 			len(left), pluralWord(len(left), "address", "addresses"), pluralWord(len(left), "is", "are"), still,
 			strings.Join(shown, ", "), more, fix)
 	}
 	if w := withheldWords(p.Withheld(), file); w != "" {
-		fmt.Fprintf(stderr, "tego learn: warning: %s\n", w)
+		fmt.Fprintf(stderr, "tego rules learn: warning: %s\n", w)
 	}
 	if n := len(p.Left); n > 0 {
-		fmt.Fprintf(stderr, "tego learn: %d kinds of action the run took are left out of the proposal; its header and its \"observed, not allowed\" comments say which and why\n", n)
+		fmt.Fprintf(stderr, "tego rules learn: %d kinds of action the run took are left out of the proposal; its header and its \"observed, not allowed\" comments say which and why\n", n)
 	}
 	warnNewer(stderr, "learn", dir, r.SkippedNewer())
 	warned = true
@@ -610,7 +610,7 @@ func learnRunRef(dir string, m *config.Machine) string {
 func saveProposal(ctx context.Context, name, text string, p *learn.Proposal, mc *machineOnce, stderr io.Writer) (int, string) {
 	m, err := mc.load()
 	if err != nil {
-		message(stderr, "", 0, 0, "tego learn: --save: machine config: "+err.Error(), config.CodeUntrusted)
+		message(stderr, "", 0, 0, "tego rules learn: --save: machine config: "+err.Error(), config.CodeUntrusted)
 		return identity.ExitError, ""
 	}
 	sv := registry.Save{Places: registry.Places{User: m.Registry.Value}, Name: name, Text: []byte(text), Writes: p.WriteDirs()}
@@ -632,44 +632,44 @@ func saveProposal(ctx context.Context, name, text string, p *learn.Proposal, mc 
 	if err == nil {
 		return identity.ExitOK, path
 	} else if !errors.As(err, &se) {
-		message(stderr, path, 0, 0, "tego learn: --save: "+err.Error()+": nothing was written", codeIO)
+		message(stderr, path, 0, 0, "tego rules learn: --save: "+err.Error()+": nothing was written", codeIO)
 		return identity.ExitError, ""
 	}
 	switch se.Step {
 	case registry.SaveName:
-		message(stderr, "", 0, 0, "tego learn: --save "+se.Err.Error(), codeUsage)
+		message(stderr, "", 0, 0, "tego rules learn: --save "+se.Err.Error(), codeUsage)
 		return identity.ExitUsage, ""
 	case registry.SaveNoRegistry:
-		message(stderr, "", 0, 0, fmt.Sprintf("tego learn: --save: the machine config names no user registry directory (registry: %q); "+
+		message(stderr, "", 0, 0, fmt.Sprintf("tego rules learn: --save: the machine config names no user registry directory (registry: %q); "+
 			"nothing was written; use --out <file>", m.Registry.Value), codeIO)
 		return identity.ExitError, ""
 	case registry.SaveTaken:
 		refuseTakenName(stderr, se, name, p.Cwd)
 		return identity.ExitFinding, ""
 	case registry.SaveInsideWrite:
-		message(stderr, path, 0, 0, fmt.Sprintf("tego learn: --save: the file would lie inside its own fs.write entry %q, which "+
+		message(stderr, path, 0, 0, fmt.Sprintf("tego rules learn: --save: the file would lie inside its own fs.write entry %q, which "+
 			"tego refuses to run; nothing was written; use --out <a file outside it>, or --workspace", se.Write), agent.CodeContradiction)
 		return identity.ExitFinding, ""
 	case registry.SaveNoCompile:
-		message(stderr, path, 0, 0, "tego learn: --save: the proposal does not compile here ("+se.Err.Error()+"); nothing was written; "+
+		message(stderr, path, 0, 0, "tego rules learn: --save: the proposal does not compile here ("+se.Err.Error()+"); nothing was written; "+
 			"write it with --out, fix it and run tego rules check on it", agent.CodeSchema)
 		return identity.ExitFinding, ""
 	case registry.SaveExists:
-		message(stderr, path, 0, 0, "tego learn: --save: "+se.Err.Error()+": nothing was written; give another name", codeExists)
+		message(stderr, path, 0, 0, "tego rules learn: --save: "+se.Err.Error()+": nothing was written; give another name", codeExists)
 		return identity.ExitFinding, ""
 	case registry.SaveUnusable:
-		message(stderr, path, 0, 0, "tego learn: --save: tego run "+name+" in "+se.Dir+" would refuse the file: "+se.Err.Error()+
+		message(stderr, path, 0, 0, "tego rules learn: --save: tego run "+name+" in "+se.Dir+" would refuse the file: "+se.Err.Error()+
 			"; nothing was written", codeExists)
 		return identity.ExitFinding, ""
 	case registry.SaveIO:
 		if se.Op == "write" {
-			message(stderr, path, 0, 0, "tego learn: --save: write: "+se.Err.Error(), codeIO)
+			message(stderr, path, 0, 0, "tego rules learn: --save: write: "+se.Err.Error(), codeIO)
 			return identity.ExitError, ""
 		}
-		message(stderr, se.Path, 0, 0, "tego learn: --save: "+se.Err.Error()+": nothing was written", codeIO)
+		message(stderr, se.Path, 0, 0, "tego rules learn: --save: "+se.Err.Error()+": nothing was written", codeIO)
 		return identity.ExitError, ""
 	}
-	message(stderr, path, 0, 0, "tego learn: --save: "+err.Error()+": nothing was written", codeIO)
+	message(stderr, path, 0, 0, "tego rules learn: --save: "+err.Error()+": nothing was written", codeIO)
 	return identity.ExitError, ""
 }
 
@@ -708,16 +708,16 @@ func refuseTakenName(stderr io.Writer, se *registry.SaveError, name, runDir stri
 	var re *registry.Error
 	switch {
 	case se.Entry != nil:
-		message(stderr, se.Entry.Path, 0, 0, fmt.Sprintf("tego learn: --save: the agent name %q is already this contract%s; nothing was "+
+		message(stderr, se.Entry.Path, 0, 0, fmt.Sprintf("tego rules learn: --save: the agent name %q is already this contract%s; nothing was "+
 			"written; give another name", name, where), codeExists)
 	case errors.As(se.Err, &re) && re.Code == registry.CodeAmbiguous:
-		message(stderr, re.Path, 0, 0, fmt.Sprintf("tego learn: --save: the agent name %q is taken%s: %s; nothing was written; "+
+		message(stderr, re.Path, 0, 0, fmt.Sprintf("tego rules learn: --save: the agent name %q is taken%s: %s; nothing was written; "+
 			"give another name", name, where, se.Err.Error()), codeExists)
 	case errors.As(se.Err, &re):
-		message(stderr, re.Path, 0, 0, fmt.Sprintf("tego learn: --save: the registry cannot say whether %q is free%s: %s; nothing "+
+		message(stderr, re.Path, 0, 0, fmt.Sprintf("tego rules learn: --save: the registry cannot say whether %q is free%s: %s; nothing "+
 			"was written", name, where, se.Err.Error()), re.Code)
 	default:
-		message(stderr, "", 0, 0, fmt.Sprintf("tego learn: --save: the registry cannot say whether %q is free%s: %s; nothing "+
+		message(stderr, "", 0, 0, fmt.Sprintf("tego rules learn: --save: the registry cannot say whether %q is free%s: %s; nothing "+
 			"was written", name, where, se.Err.Error()), codeIO)
 	}
 }
@@ -753,7 +753,7 @@ func writeProposal(out, text string, p *learn.Proposal, stderr io.Writer) int {
 		if errors.Is(err, fs.ErrExist) {
 			code, exit = codeExists, identity.ExitFinding // R25: a finding, as init's refusal of a foreign file is
 		}
-		message(stderr, out, 0, 0, "tego learn: "+err.Error()+": nothing was written; give --out a new file", code)
+		message(stderr, out, 0, 0, "tego rules learn: "+err.Error()+": nothing was written; give --out a new file", code)
 		return exit
 	}
 	_, err = io.WriteString(f, text)
@@ -762,13 +762,13 @@ func writeProposal(out, text string, p *learn.Proposal, stderr io.Writer) int {
 	}
 	if err != nil {
 		_ = os.Remove(out)
-		message(stderr, out, 0, 0, "tego learn: write: "+err.Error(), codeIO)
+		message(stderr, out, 0, 0, "tego rules learn: write: "+err.Error(), codeIO)
 		return identity.ExitError
 	}
 	if abs, err := filepath.Abs(out); err == nil {
 		warnWritable(stderr, abs, p)
 	}
-	fmt.Fprintf(stderr, "tego learn: wrote %s (mode 0600): a proposal for you to review; check it with tego rules check %s\n", out, out)
+	fmt.Fprintf(stderr, "tego rules learn: wrote %s (mode 0600): a proposal for you to review; check it with tego rules check %s\n", out, out)
 	return identity.ExitOK
 }
 
@@ -778,7 +778,7 @@ func warnWritable(stderr io.Writer, abs string, p *learn.Proposal) {
 	dir := filepath.Dir(abs)
 	for _, w := range p.WriteDirs() {
 		if w = strings.TrimSuffix(w, "/"); w != "" && (dir == w || strings.HasPrefix(dir, w+"/")) {
-			message(stderr, abs, 0, 0, fmt.Sprintf("tego learn: this file lies inside its own fs.write entry %q, which tego refuses to run: keep the contract outside the workspace", w), agent.CodeContradiction)
+			message(stderr, abs, 0, 0, fmt.Sprintf("tego rules learn: this file lies inside its own fs.write entry %q, which tego refuses to run: keep the contract outside the workspace", w), agent.CodeContradiction)
 			return
 		}
 	}

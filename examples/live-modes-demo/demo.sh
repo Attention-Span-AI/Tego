@@ -11,7 +11,7 @@
 # reading it need sudo too; when the run ends the folder is handed to you and the dashboard reads it.
 #
 #   setup      create vault-data/customer-report.csv (fake), fill the contract for this machine
-#              (contract.filled.yaml), write the demo's machine config (ledger_root) and check tego compile accepts it
+#              (contract.filled.yaml), write the demo's machine config (ledger_root) and check tego rules check accepts it
 #   run        sudo tego run contract.filled.yaml -- ./agent.sh, writing to the demo's ledger
 #   dashboard  tego-control serve for the same ledger, as you (extra arguments go to it: --addr 127.0.0.1:9000)
 #   lift       sudo tego lift <run> read <vault-data> --for 2m: shows what the run will be able to do, asks you to

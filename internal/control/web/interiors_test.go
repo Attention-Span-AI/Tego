@@ -16,19 +16,19 @@ import (
 func TestContractsListAndRuleRecovery(t *testing.T) {
 	f := newRulesFix(t)
 	_, list := f.get(t, "/rules")
-	for _, want := range []string{`class="phone-row contract-row"`, "rules-demo", "other-agent", "2 contracts", `href="/rules?c=`} {
+	for _, want := range []string{`class="phone-row contract-row"`, "rules-demo", "other-agent", "2 rules files", `href="/rules?c=`} {
 		if !strings.Contains(list, want) {
 			t.Errorf("list lacks %q", want)
 		}
 	}
 	_, detail := f.get(t, "/rules?run="+rulesRunA)
-	for _, want := range []string{`class="phone-cell"`, "Contract details and other runs", "exceptions named below", `/rules?run=` + rulesRunA + `&amp;rule=exec%5Bgit%5D`} {
+	for _, want := range []string{`class="phone-cell"`, "Rules file details and other runs", "exceptions named below", `/rules?run=` + rulesRunA + `&amp;rule=exec%5Bgit%5D`} {
 		if !strings.Contains(detail, want) {
 			t.Errorf("contract lacks %q", want)
 		}
 	}
 	code, rule := f.get(t, "/rules?run="+rulesRunA+"&rule=exec%5Bgit%5D")
-	for _, want := range []string{"What does this rule do?", "Can run git", "Exact target", "Rule key", "exec[git]", "Source", "Exact contract text and compiled rules", "matching event"} {
+	for _, want := range []string{"What does this rule do?", "Can run git", "Exact target", "Rule key", "exec[git]", "Source", "Exact rules file text and compiled rules", "matching event"} {
 		if !strings.Contains(rule, want) {
 			t.Errorf("rule lacks %q", want)
 		}

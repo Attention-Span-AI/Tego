@@ -2,7 +2,7 @@
 #
 # OpenAI Codex (the full-screen interface, `codex --no-daemon`) with an OpenAI API key, its model calls going through tego's
 # forwarder so that every request and response is recorded and counted. Copy it OUTSIDE the project, change every path marked
-# CHANGE, compile it (`tego compile codex.yaml`) and read test/poc/interactive-codex/README.md ("With a real key") before the
+# CHANGE, compile it (`tego rules check codex.yaml`) and read test/poc/interactive-codex/README.md ("With a real key") before the
 # first run. It is modelled on test/poc/interactive-codex/codex-real-forwarder.yaml (`models` names api.openai.com), the
 # POC's contract for a real key, which is wider than the one that POC ran offline against a stand-in model (80 checks, tier
 # landlock, no root): this file narrows the write grant back to ./work/ and restores the `fs.ask` for held/ so that it can
@@ -86,7 +86,7 @@ env:
     # CHANGE: a directory of your own holding the config.toml to start from (test/poc/interactive-codex/codex-config.toml
     # with `model` a real model name and the two model_catalog_json lines removed), NOT ~/.codex. The launcher copies that
     # one file into the run's CODEX_HOME after the `openai_base_url` it writes itself; the file must not set openai_base_url.
-    # `tego compile` warns [env-runtime-reserved] for this entry, by design: the run replaces the value with its own.
+    # `tego rules check` warns [env-runtime-reserved] for this entry, by design: the run replaces the value with its own.
     CODEX_HOME: "/home/USER/.config/tego/codex"
     HISTFILE: "/dev/null"
     # Codex's tools write scratch files here, and /tmp is not writable under this contract. It is under the work directory,

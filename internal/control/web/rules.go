@@ -319,7 +319,7 @@ func (s *Server) rules(w http.ResponseWriter, r *http.Request) {
 			}
 			d.Contracts = filtered
 		}
-		s.render(w, http.StatusOK, "rules", s.chromeOf(snap, "Contracts", "rules"), d)
+		s.render(w, http.StatusOK, "rules", s.chromeOf(snap, "Rules files", "rules"), d)
 		return
 	}
 	if ref := q.Get("c"); ref != "" {
@@ -340,10 +340,10 @@ func (s *Server) rules(w http.ResponseWriter, r *http.Request) {
 			}
 			if d.SelectionErr != "" {
 				d.CanChange = false
-				s.render(w, http.StatusOK, "rules", s.chromeOf(snap, "Contracts", "rules"), d)
+				s.render(w, http.StatusOK, "rules", s.chromeOf(snap, "Rules files", "rules"), d)
 				return
 			}
-			s.fail(w, http.StatusNotFound, "No such contract file", "No run used that contract file · pick one on the Contracts page")
+			s.fail(w, http.StatusNotFound, "No such contract file", "No run used that contract file · pick one on the Rules files page")
 			return
 		}
 		if found.Runs == 0 { // set up here, not run yet: its rules as written and the line that starts it
@@ -359,7 +359,7 @@ func (s *Server) rules(w http.ResponseWriter, r *http.Request) {
 			}
 			if d.SelectionErr != "" {
 				d.CanChange = false
-				s.render(w, http.StatusOK, "rules", s.chromeOf(snap, "Contracts", "rules"), d)
+				s.render(w, http.StatusOK, "rules", s.chromeOf(snap, "Rules files", "rules"), d)
 				return
 			}
 			if d.NotRun != nil {
@@ -384,7 +384,7 @@ func (s *Server) rules(w http.ResponseWriter, r *http.Request) {
 	if run == nil && len(snap.Runs) > 0 {
 		run = snap.Runs[0]
 	}
-	c := s.chromeOf(snap, "Contracts", "rules")
+	c := s.chromeOf(snap, "Rules files", "rules")
 	if run == nil {
 		s.render(w, http.StatusOK, "rules", c, d)
 		return

@@ -25,8 +25,8 @@ func init() { register(cmdContracts) }
 func cmdContracts() Command {
 	var asJSON, verbose bool
 	return Command{
-		Name: "contracts", Summary: "find contracts and check today's files without running an agent",
-		Usage: "[show <name|path>] [--json] [-v]",
+		Name: "contracts", Summary: "list the rules files on this machine and check them",
+		Usage: "[<name|path>] [--json] [-v]",
 		Flags: func(fs *flag.FlagSet) {
 			fs.BoolVar(&asJSON, "json", false, "one versioned JSON object (spec/contracts/v1)")
 			fs.BoolVar(&verbose, "v", false, "full hashes, context, compile warnings and the compiled table")
@@ -35,9 +35,17 @@ func cmdContracts() Command {
 		Run: func(ctx context.Context, fs *flag.FlagSet, stdout, stderr io.Writer) int {
 			ctx, cancel := contractsContext(ctx)
 			defer cancel()
-			if fs.NArg() != 0 && (fs.NArg() != 2 || fs.Arg(0) != "show" || fs.Arg(1) == "") {
-				message(stderr, "", 0, 0, "tego contracts: use tego contracts [show <name|path>] [--json] [-v]", codeUsage)
+			args := fs.Args()
+			if len(args) == 2 && args[0] == "show" {
+				args = args[1:] // the older name's form: tego contracts show <name|path>
+			}
+			if len(args) > 1 || len(args) == 1 && (args[0] == "" || args[0] == "show") {
+				message(stderr, "", 0, 0, "tego rules list: use tego rules list [<name|path>] [--json] [-v]", codeUsage)
 				return identity.ExitUsage
+			}
+			selector := ""
+			if len(args) == 1 {
+				selector = args[0]
 			}
 			if err := ctx.Err(); err != nil {
 				return contractsFailure(stdout, stderr, asJSON, "interrupted", "interrupted", err)
@@ -66,7 +74,7 @@ func cmdContracts() Command {
 			general := contractsrc.ReadGeneral(ctx, m, places.UID)
 			opts := contracts.Options{General: &general, Machine: m, Places: places, PATH: os.Getenv("PATH"), Tiers: builtTiers(),
 				CompileContext: contracts.CompileContext{ChainAnchor: anchor, OwnBinary: runningBinary(), RuntimeDirs: config.RuntimeDirBases(), EnvNames: names}}
-			return runContracts(ctx, fs.Args(), opts, asJSON, verbose, stdout, stderr)
+			return runContracts(ctx, selector, opts, asJSON, verbose, stdout, stderr)
 		},
 	}
 }
@@ -85,22 +93,18 @@ func contractsCaller(ctx context.Context) context.Context {
 	})
 }
 
-func runContracts(ctx context.Context, args []string, o contracts.Options, asJSON, verbose bool, stdout, stderr io.Writer) int {
+func runContracts(ctx context.Context, selector string, o contracts.Options, asJSON, verbose bool, stdout, stderr io.Writer) int {
 	ctx, closeSession := contracts.WithHelperSession(contractsCaller(ctx))
 	defer closeSession()
 	// A check of a local disk that is slow to answer is waited for up to 30 seconds: say so once, on stderr, so the wait
 	// is not silent (ADR 0144, "A local location is a busy disk, not a stuck mount").
-	ctx = contracts.WithWaitNote(ctx, func(m string) { message(stderr, "", 0, 0, "note: tego contracts: "+m, codeDiskWait) })
+	ctx = contracts.WithWaitNote(ctx, func(m string) { message(stderr, "", 0, 0, "note: tego rules list: "+m, codeDiskWait) })
 	ctx, cancel := contractsContext(ctx)
 	defer cancel()
 	if err := ctx.Err(); err != nil {
 		return contractsFailure(stdout, stderr, asJSON, "interrupted", "interrupted", err)
 	}
 	var catalog contracts.Catalog
-	selector := ""
-	if len(args) == 2 {
-		selector = args[1]
-	}
 	o.KeepTableFor = selector
 	if selector != "" && !registry.IsName(selector) {
 		path := selector
@@ -130,7 +134,7 @@ func runContracts(ctx context.Context, args []string, o contracts.Options, asJSO
 		}
 	} else {
 		if registry.IsName(selector) && catalog.Incomplete {
-			message(stderr, "", 0, 0, "tego contracts: discovery is incomplete, so that name cannot be proven unambiguous; give the contract's path", codeIO)
+			message(stderr, "", 0, 0, "tego rules list: discovery is incomplete, so that name cannot be proven unambiguous; give the rules file's path", codeIO)
 			return identity.ExitError
 		}
 		e, selErr := catalog.Select(selector)
@@ -139,7 +143,7 @@ func runContracts(ctx context.Context, args []string, o contracts.Options, asJSO
 			if errors.Is(selErr, contracts.ErrAmbiguous) {
 				code = registry.CodeAmbiguous
 			}
-			message(stderr, "", 0, 0, "tego contracts: "+selErr.Error(), code)
+			message(stderr, "", 0, 0, "tego rules list: "+selErr.Error(), code)
 			return identity.ExitFinding
 		}
 		var show contracts.Show
@@ -151,7 +155,7 @@ func runContracts(ctx context.Context, args []string, o contracts.Options, asJSO
 				err = contracts.PrintShow(stdout, show, verbose)
 			}
 		}
-		// Other broken contracts do not fail a selected contract's check.
+		// Other broken rules files do not fail a selected one's check.
 		selected := contracts.Catalog{Contracts: []contracts.Entry{*e}, Incomplete: catalog.Incomplete}
 		if filepath.IsAbs(selector) {
 			selected.Contracts[0].Ambiguous = false
@@ -159,7 +163,7 @@ func runContracts(ctx context.Context, args []string, o contracts.Options, asJSO
 		code = selected.ExitCode()
 	}
 	if err != nil {
-		message(stderr, "", 0, 0, "tego contracts: write output: "+err.Error(), codeIO)
+		message(stderr, "", 0, 0, "tego rules list: write output: "+err.Error(), codeIO)
 		return identity.ExitError
 	}
 	return code
@@ -170,7 +174,7 @@ func contractsConfigFailure(stdout, stderr io.Writer, asJSON bool, err error) in
 }
 
 func contractsFailure(stdout, stderr io.Writer, asJSON bool, code, what string, err error) int {
-	message(stderr, "", 0, 0, "tego contracts: "+what+": "+err.Error(), codeIO)
+	message(stderr, "", 0, 0, "tego rules list: "+what+": "+err.Error(), codeIO)
 	c := contracts.Catalog{Schema: contracts.Schema, Contracts: []contracts.Entry{}, Roots: []contracts.Root{},
 		Issues: []contracts.Diagnostic{{Code: code, Message: err.Error(), Severity: agent.SeverityError}}, Incomplete: true, Context: contracts.ContextNote, Footer: contracts.Footer}
 	if asJSON {

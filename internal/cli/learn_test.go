@@ -432,8 +432,8 @@ func TestLearnWithholdsALeak(t *testing.T) {
 		t.Errorf("the file does not open with the warning:\n%s", out)
 	}
 	for _, want := range []string{
-		"tego learn: warning: this run opened /home/u/.ssh/id_rsa for reading, or tried to, next to a send to " + sink,
-		"tego learn: warning: this proposal leaves env and reads open",
+		"tego rules learn: warning: this run opened /home/u/.ssh/id_rsa for reading, or tried to, next to a send to " + sink,
+		"tego rules learn: warning: this proposal leaves env and reads open",
 	} {
 		if !strings.Contains(errs, want) {
 			t.Errorf("stderr lacks %q:\n%s", want, errs)

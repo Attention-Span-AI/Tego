@@ -10,7 +10,7 @@
 #
 # A user unit needs that user's manager running when nobody is logged in: an administrator turns on linger once
 # (sudo loginctl enable-linger <user>). Without it, an account that never logged in (a nologin shell reached with
-# sudo -u or su -s) has no user manager, and tego starts no run for it; tego setup and tego doctor say so and name
+# sudo -u or su -s) has no user manager, and tego starts no run for it; tego setup and tego machine check say so and name
 # that command (docs/user/run-as-a-service.md). For such an account an administrator, in their own shell: creates it
 # with a name that starts with a letter (systemd starts no user manager for a name of digits only); enables linger;
 # opens a shell as it in its user manager's cgroup with
@@ -21,7 +21,7 @@
 #   - the agent crashes or exits non-zero: the unit restarts it after RestartSec, at most StartLimitBurst
 #     times in StartLimitIntervalSec. A run ends when the agent's main process exits, stop_grace after it
 #     at most, even if the agent left a process running, so a crash is always seen;
-#   - `tego stop --agent retriever` (or `tego stop <run>`): exit 143, which RestartPreventExitStatus keeps
+#   - `tego session stop --agent retriever` (or `tego session stop <run>`): exit 143, which RestartPreventExitStatus keeps
 #     from restarting and SuccessExitStatus counts as success, so the unit is inactive, not failed;
 #   - `systemctl --user stop tego-agent@retriever`: SIGTERM to tego alone (KillMode=mixed), which forwards it
 #     to the agent and starts stop_grace; an agent that dies of it exits 143, a success here;
@@ -34,7 +34,7 @@
 # A planned restart, once a day, is tego-agent-restart@.timer's: the stop `systemctl --user stop` makes, then a new
 # run. Not RuntimeMaxSec= here: systemd stops the unit with SIGTERM at that limit, an agent that dies of it ends the
 # run 143, which RestartPreventExitStatus keeps from restarting, and the unit is left failed (Result=timeout).
-# With --service, an intentional tego stop exits 143 even if the agent ignores SIGTERM and stop_grace
+# With --service, an intentional tego session stop exits 143 even if the agent ignores SIGTERM and stop_grace
 # ends it with SIGKILL. The ledger keeps exit 137 and escalated: true; memory and pids kills still exit 137
 # and restart. A record or anchor failure still exits 125.
 

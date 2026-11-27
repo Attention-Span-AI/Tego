@@ -252,3 +252,12 @@ func TestLiveWordsMatchTegoStatus(t *testing.T) {
 		}
 	}
 }
+
+// TestWatchedTierWords: a watched run's tier reads "Watched only", as every other dashboard page says.
+func TestWatchedTierWords(t *testing.T) {
+	for _, tier := range []string{"observe", "watch"} {
+		if got, ok := Tier(tier); !ok || got != "Watched only: nothing enforced" {
+			t.Errorf("Tier(%q) = %q, %v", tier, got, ok)
+		}
+	}
+}

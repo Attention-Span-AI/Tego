@@ -31,7 +31,7 @@ import (
 // in two lines what the run did and where to read the rest, so nobody scrapes a run id out of the agent's own output:
 //
 //	tego run: <run> ended (<outcome>) · tier <tier> · refused N (top rules) · asked M (a approved, d denied) · wrote K files · chain verified
-//	  more: tego receipt <run>
+//	  more: tego session show <run>
 //
 // The tier is the one run_start recorded, the tier the run was started at; a run_start with none (a ledger older than
 // the field) leaves the clause out. It comes after "ended", so the line still starts "tego run: <run> ended", which

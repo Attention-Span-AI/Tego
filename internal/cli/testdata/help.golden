@@ -9,7 +9,7 @@ get started
 supervise an agent
    run              Run an agent under its rules
    session list     List sessions
-   session show     Show what a session did and what Tego blocked
+   session show     Show what a session did and what Tego refused
    session stop     Stop a running session
 
 write the rules (see also: tego help rules)

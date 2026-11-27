@@ -318,7 +318,7 @@ func TestBuilderMatrixInChrome(t *testing.T) {
 						if tb.eval(t, `(()=>{const d=JSON.parse(`+builderMeasure+`).design;return d.headingFace.includes('Anton')&&d.disclosures.every(e=>e.justify==='flex-start')&&(!d.editor||d.editor.face.includes('monospace')&&d.editor.tab==='2'&&d.editor.ligatures==='none'&&d.editor.wrap==='off'&&d.editor.whiteSpace==='pre');})()`) != "true" {
 							t.Error("heading, disclosure or YAML design contract failed")
 						}
-						if w <= 600 && tb.eval(t, `(()=>{const d=JSON.parse(`+builderMeasure+`).design;return d.phoneBar==='Contracts'&&(!d.choiceWidths||Math.abs(d.choiceWidths[0]-d.choiceWidths[1])<1);})()`) != "true" {
+						if w <= 600 && tb.eval(t, `(()=>{const d=JSON.parse(`+builderMeasure+`).design;return d.phoneBar==='Rules files'&&(!d.choiceWidths||Math.abs(d.choiceWidths[0]-d.choiceWidths[1])<1);})()`) != "true" {
 							t.Error("phone title, equal view choices or reachable primary action failed")
 						}
 						if w <= 600 && (st.name == "new-run" || st.name == "new-presets" || st.name == "new-blank" || st.name == "new-full" || st.name == "change-simple" || st.name == "change-full" || st.name == "new-long-path") && tb.eval(t, `(()=>{const p=JSON.parse(`+builderMeasure+`).design.primary;return p&&p.top>=0&&p.bottom<=716&&p.height>=44;})()`) != "true" {

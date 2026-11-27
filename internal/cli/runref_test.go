@@ -88,7 +88,7 @@ func TestARunAbbreviationNamesOneRun(t *testing.T) {
 		if code != identity.ExitOK || !strings.Contains(out, `"run":"`+a+`"`) || strings.Contains(out, b) || errs != note("events") {
 			t.Errorf("events %s --json: exit %d, want run %s's lines and the note %q\nstdout %s\nstderr %s", ref, code, a, note("events"), out, errs)
 		}
-		if code, out, errs := run(t, "receipt", ref); code != identity.ExitOK || !strings.HasPrefix(out, "Receipt for run "+a+" ") ||
+		if code, out, errs := run(t, "receipt", ref); code != identity.ExitOK || !strings.HasPrefix(out, "Session ") || !strings.Contains(out, " (run "+a+")\n") ||
 			!strings.Contains(errs, note("receipt")) {
 			t.Errorf("receipt %s: exit %d, want run %s's receipt and the note\nstdout %s\nstderr %s", ref, code, a, out, errs)
 		}
@@ -204,7 +204,7 @@ func TestARunIDStartCountsPastTheHost(t *testing.T) {
 	}
 	// Four past the host's start name the one run that has them.
 	for ref, id := range map[string]string{a[:runHostLen+minRunAbbrev]: a, h[:runHostLen+minRunAbbrev]: h} {
-		if code, out, errs := run(t, "receipt", ref); code != identity.ExitOK || !strings.HasPrefix(out, "Receipt for run "+id+" ") {
+		if code, out, errs := run(t, "receipt", ref); code != identity.ExitOK || !strings.HasPrefix(out, "Session ") || !strings.Contains(out, " (run "+id+")\n") {
 			t.Errorf("receipt %s: exit %d, want run %s's receipt\nstdout %s\nstderr %s", ref, code, id, out, errs)
 		}
 	}

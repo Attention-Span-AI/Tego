@@ -70,7 +70,7 @@ func tourPath(g *setupGuide, key string) (string, string) {
 		if id := tourFact(g, guide.StepEnforce).Run; id != "" {
 			return runPage(id) + "/receipt", "Run receipt"
 		}
-		return "/rules", "Contracts"
+		return "/rules", "Rules files"
 	}
 	return "/runs", "Runs"
 }
@@ -316,9 +316,9 @@ func (s *Server) makeTour(r *http.Request, g *setupGuide, key string) *tourFrame
 	// The builder remains the real page while Review supplies its teaching context.
 	if r.URL.Path == "/rules/new" && key == "review" {
 		f.Builder = true
-		f.Page = "New contract"
+		f.Page = "New rules file"
 		f.Title = "Choose and check its rules"
-		f.Instruction = "Review the New contract form below, then preview and save its rules."
+		f.Instruction = "Review the New rules file form below, then preview and save its rules."
 		f.Action, f.Href = "Open the contract form", "#guide-product"
 		f.Command, f.Form = "", ""
 	}

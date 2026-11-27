@@ -98,8 +98,8 @@ func TestPagesSayContractAndRefused(t *testing.T) {
 		if m := saysBlocked(shown); m != "" {
 			t.Errorf("%s says Blocked where a person reads or hears it: %q", p, m)
 		}
-		if !strings.Contains(body, `<span class="lbl">Contracts</span>`) {
-			t.Errorf("%s: the nav does not say Contracts", p)
+		if !strings.Contains(body, `<span class="lbl">Rules files</span>`) {
+			t.Errorf("%s: the nav does not say Rules files", p)
 		}
 	}
 }

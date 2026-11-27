@@ -163,7 +163,7 @@ func TestRulesChangeForm(t *testing.T) {
 			t.Errorf("%s: %d, want 404", target, code)
 		}
 	}
-	if code, body := f.get(t, "/rules/change"); code != http.StatusOK || !strings.Contains(body, "Pick a contract file") {
+	if code, body := f.get(t, "/rules/change"); code != http.StatusOK || !strings.Contains(body, "Pick a rules file") {
 		t.Errorf("the chooser: %d", code)
 	}
 }
@@ -618,7 +618,7 @@ func TestChangeWithoutService(t *testing.T) {
 	s := newServer(t, fixture(t))
 	c := login(t, s)
 	for _, p := range []string{"/rules/change?c=x", "/rules/change/preview?c=x"} {
-		if w := do(s, "GET", p, "127.0.0.1:8484", c); w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "Contract editing is off") {
+		if w := do(s, "GET", p, "127.0.0.1:8484", c); w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "Rules file editing is off") {
 			t.Errorf("GET %s: %d", p, w.Code)
 		}
 	}

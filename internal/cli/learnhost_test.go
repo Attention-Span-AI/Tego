@@ -148,7 +148,7 @@ func TestLearnAllowHostNextRunAllowsTheOtherAddress(t *testing.T) {
 	if code != identity.ExitOK || out != "" {
 		t.Fatalf("--allow-host example.com: exit %d, stdout %q\n%s", code, out, errs)
 	}
-	if want := "tego learn: example.com resolves here now to 4 addresses; what the run reached at 4 of them is now allowed by that name: " +
+	if want := "tego rules learn: example.com resolves here now to 4 addresses; what the run reached at 4 of them is now allowed by that name: " +
 		"tcp 104.20.23.154:443, udp 104.20.23.154:443, udp 172.66.147.243:443, udp [2606:4700:10::6814:179a]:443 and 1 more.\n"; !strings.Contains(errs, want) {
 		t.Errorf("stderr lacks %q:\n%s", want, errs)
 	}
@@ -380,11 +380,11 @@ func TestLearnAllowHostRefusesWritingNothing(t *testing.T) {
 	}{
 		// A run's start gives a name more time than learn does (agent.DefaultDNSTimeout), so a name that did not answer
 		// here in time may still start one: only DNS's own "no such host" or "no addresses" says it would not.
-		{"slow.example", "tego learn: slow.example did not resolve here within 2s; nothing was written. [allow-host]"},
-		{"gone.example", "tego learn: gone.example did not resolve here (no such host); nothing was written. A run under this name would not start either. [allow-host]"},
-		{"empty.example", "tego learn: empty.example did not resolve here (no addresses); nothing was written. A run under this name would not start either. [allow-host]"},
-		{"wrong.example", "tego learn: wrong.example resolves here now to 104.18.6.192, 104.18.7.192; none is an address the run reached, so the name may be wrong, or its addresses changed since the run (it started "},
-		{"split.example", "tego learn: split.example resolves here now to 104.20.23.154, 10.0.0.5, among them the private address 10.0.0.5, which the run did not reach"},
+		{"slow.example", "tego rules learn: slow.example did not resolve here within 2s; nothing was written. [allow-host]"},
+		{"gone.example", "tego rules learn: gone.example did not resolve here (no such host); nothing was written. A run under this name would not start either. [allow-host]"},
+		{"empty.example", "tego rules learn: empty.example did not resolve here (no addresses); nothing was written. A run under this name would not start either. [allow-host]"},
+		{"wrong.example", "tego rules learn: wrong.example resolves here now to 104.18.6.192, 104.18.7.192; none is an address the run reached, so the name may be wrong, or its addresses changed since the run (it started "},
+		{"split.example", "tego rules learn: split.example resolves here now to 104.20.23.154, 10.0.0.5, among them the private address 10.0.0.5, which the run did not reach"},
 	} {
 		before := treeSum(t, reg)
 		for _, mode := range [][]string{{"--save", "x"}, {"--out", out}, nil} {
@@ -440,9 +440,9 @@ func TestLearnAllowHostMachineDeniedRange(t *testing.T) {
 		t.Fatalf("exit %d\n%s", code, errs)
 	}
 	for _, want := range []string{
-		"tego learn: example.com resolves here now to 4 addresses; what the run reached at 3 of them is now allowed by that name: " +
+		"tego rules learn: example.com resolves here now to 4 addresses; what the run reached at 3 of them is now allowed by that name: " +
 			"udp 172.66.147.243:443, udp [2606:4700:10::6814:179a]:443, udp [2606:4700:10::ac42:93f3]:443.\n",
-		"tego learn: warning: 2 addresses the run reached are still allowed by address, not by name: tcp 104.20.23.154:443, udp 104.20.23.154:443.",
+		"tego rules learn: warning: 2 addresses the run reached are still allowed by address, not by name: tcp 104.20.23.154:443, udp 104.20.23.154:443.",
 	} {
 		if !strings.Contains(errs, want) {
 			t.Errorf("stderr lacks %q:\n%s", want, errs)
@@ -464,7 +464,7 @@ func TestLearnAllowHostMachineDeniedRange(t *testing.T) {
 	t.Cleanup(func() { machineGuard = prev })
 	before := treeSum(t, reg)
 	code, stdout, errs := run(t, "learn", filepath.Join(root, id), "--allow-host", "example.com")
-	if code != identity.ExitLauncher || stdout != "" || !strings.Contains(errs, "tego learn: --allow-host: machine config: ") ||
+	if code != identity.ExitLauncher || stdout != "" || !strings.Contains(errs, "tego rules learn: --allow-host: machine config: ") ||
 		!strings.Contains(errs, "nothing was written") {
 		t.Errorf("a machine config that does not load: exit %d, stdout %q\n%s", code, stdout, errs)
 	}
@@ -517,7 +517,7 @@ func TestLearnNamesAllowHostWhereAddressesRemain(t *testing.T) {
 		t.Fatalf("exit %d\n%s", code, errs)
 	}
 	for _, want := range []string{
-		"tego learn: warning: 5 addresses the run reached are allowed by address, not by name: tcp 104.20.23.154:443, udp 104.20.23.154:443, " +
+		"tego rules learn: warning: 5 addresses the run reached are allowed by address, not by name: tcp 104.20.23.154:443, udp 104.20.23.154:443, " +
 			"udp 172.66.147.243:443, udp [2606:4700:10::6814:179a]:443 and 1 more. Name each with --allow-host <host>, or a later run can be refused.\n",
 		"\nnext: " + learnNameHint + "\n  tego rules learn " + short + " --save myagent --allow-host <host>\n",
 	} {
@@ -527,7 +527,7 @@ func TestLearnNamesAllowHostWhereAddressesRemain(t *testing.T) {
 	}
 	// One name that covers one address: the rest are still addresses, and the hint keeps the name given.
 	code, _, errs = run(t, "learn", short, "--allow-host", "one.example:443")
-	if code != identity.ExitOK || !strings.Contains(errs, "tego learn: warning: 3 addresses the run reached are still allowed by address, not by name: "+
+	if code != identity.ExitOK || !strings.Contains(errs, "tego rules learn: warning: 3 addresses the run reached are still allowed by address, not by name: "+
 		"udp 172.66.147.243:443, udp [2606:4700:10::6814:179a]:443, udp [2606:4700:10::ac42:93f3]:443.") ||
 		!strings.HasSuffix(errs, "  tego rules learn "+short+" --save myagent --allow-host one.example:443 --allow-host <host>\n") {
 		t.Errorf("one name of several: exit %d\n%s", code, errs)

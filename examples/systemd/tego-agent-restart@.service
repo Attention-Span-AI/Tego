@@ -3,8 +3,8 @@
 # tego-agent-restart@.service: a planned restart of tego-agent@<name> (docs/OPERATIONS.md, "Agents that run all the
 # time"), which tego-agent-restart@.timer starts once a day. The agent's unit is stopped as `systemctl --user stop`
 # stops it (SIGTERM to tego alone, which forwards it and keeps stop_grace) and started again, so the agent goes on as
-# a new run with its own ledger. try-restart, not restart: an agent that is not running (a `tego stop --agent`, or a
-# unit that failed) is left as it is. The new run starts from its contract alone: a `tego pause` is undone, and every
+# a new run with its own ledger. try-restart, not restart: an agent that is not running (a `tego session stop --agent`, or a
+# unit that failed) is left as it is. The new run starts from its contract alone: a `tego session pause` is undone, and every
 # live block (`tego block`, the dashboard's Block now) is dropped, so what was refused live is allowed again wherever
 # the contract allows it. Put a block that must outlast the day in the contract, or leave this timer off.
 #

@@ -21,7 +21,7 @@
 # CHANGE: every /home/USER/ below to your home directory, and the codex-code-mode-host entry's directory to
 #   dirname "$(readlink -f "$(command -v codex)")"
 # Then run it from a project that has work/ and held/, with the contract kept outside the project:
-#   mkdir -p work/tmp held && tego compile ~/contracts/codex-chatgpt.yaml && tego run ~/contracts/codex-chatgpt.yaml
+#   mkdir -p work/tmp held && tego rules check ~/contracts/codex-chatgpt.yaml && tego run ~/contracts/codex-chatgpt.yaml
 #
 # Why it looks like this (docs/OPERATIONS.md, "Interactive Codex under a boundary"):
 #   - capture: off and a net.allow of chatgpt.com and auth.openai.com: with a ChatGPT sign-in Codex talks to chatgpt.com, not
@@ -33,7 +33,7 @@
 #     `tego approve` in a second terminal.
 #   - stall_after, not wall: typing at the terminal counts as activity, so a working session is not ended, while a wall is a
 #     hard cap that ends it at the minute it expires. It is record: full, so reads count as activity
-#     too (under record: summary, `tego compile` warns [stall-reads-unseen]). No cost_usd: it needs the machine's price
+#     too (under record: summary, `tego rules check` warns [stall-reads-unseen]). No cost_usd: it needs the machine's price
 #     table, and counted model calls.
 version: 0
 name: codex-chatgpt

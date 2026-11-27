@@ -215,7 +215,7 @@ func writeDoctorVerdict(stderr io.Writer, rep *doctor.Report) {
 			command = ""
 		case rep.Require == backend.TierCgroup || rep.Require == backend.TierBPFLSM:
 			var why string
-			if command, why = sudoTego("doctor --require " + string(rep.Require)); why != "" {
+			if command, why = sudoTego("machine check --require " + string(rep.Require)); why != "" {
 				noSudo = why
 			}
 		}

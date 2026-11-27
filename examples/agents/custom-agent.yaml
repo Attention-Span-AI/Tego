@@ -3,7 +3,7 @@
 # Any agent you wrote yourself (or any command that calls a model), left to run unattended overnight: held to what it may
 # touch, run and reach, to what it may spend, and recorded for the morning. It is the contract test/poc/custom-agent/
 # runs in compressed time (seconds standing for hours) and for two hours in its soak, with the values of a real night:
-# change `command`, the writable directory and the model entry; keep the shape. `tego learn` proposes the first draft
+# change `command`, the writable directory and the model entry; keep the shape. `tego rules learn` proposes the first draft
 # of fs.write, exec.allow and the destinations from one watched run; it never proposes models, limits, ask or
 # fs.deny_read, which are the decisions in this file. test/poc/custom-agent/README.md has the checklist.
 #
@@ -19,7 +19,7 @@ command: ["python3", "agent.py"]
 # The model is reached through tego's forwarder, which is how tego can count what the run spends and see what the
 # model asks for: it sets the provider's base-URL variable (ANTHROPIC_BASE_URL, OPENAI_BASE_URL, ...) to the forwarder's
 # loopback address in the agent's environment, and the agent must honour it. tokens, cost_usd and repeats below count
-# NOTHING without this entry: `tego compile` then reports them [budget-unmetered], and every run is refused, exit 125.
+# NOTHING without this entry: `tego rules check` then reports them [budget-unmetered], and every run is refused, exit 125.
 models:
   - { provider: anthropic, host: api.anthropic.com, port: 443 }
 capture: forwarder

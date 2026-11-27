@@ -30,10 +30,10 @@ import (
 const Schema = "tego.contracts.v1"
 
 // Footer states the discovery boundary on every list, including an empty one.
-const Footer = "These are the contracts Tego found in these registries and runs. Files outside them may be missing. Contracts in folders Tego has never seen are not included. Other users' contracts are not included without root. No other homes are searched."
+const Footer = "These are the rules files Tego found in these registries and runs. Files outside them may be missing. Rules files in folders Tego has never seen are not included. Other users' rules files are not included without root. No other homes are searched."
 
 // ContextNote describes the check, without claiming a launch or backend probe.
-const ContextNote = "Checked offline with today's files and machine config. DNS is deferred; the contract's program is not executed and no backend is probed. PATH is the current caller's, not a recorded run's. Hash equality compares merged contract text, not enforcement or comments."
+const ContextNote = "Checked offline with today's files and machine config. DNS is deferred; the rules file's program is not executed and no backend is probed. PATH is the current caller's, not a recorded run's. Hash equality compares merged rules text, not enforcement or comments."
 
 // Root is a discovery source, including one that could not be read.
 type Root struct {
@@ -188,14 +188,14 @@ func discover(ctx context.Context, o Options) Catalog {
 		}
 		if len(c.Contracts) >= registry.MaxCatalogEntries {
 			if !catalogCut {
-				c.issue("", "catalog-bound", fmt.Sprintf("catalog exceeds %d contracts; some contracts are missing", registry.MaxCatalogEntries))
+				c.issue("", "catalog-bound", fmt.Sprintf("catalog exceeds %d rules files; some rules files are missing", registry.MaxCatalogEntries))
 				catalogCut = true
 			}
 			return
 		}
 		if retainedBytes+len(e.data) > registry.MaxCatalogBytes {
 			e.data = nil
-			e.readErr = fmt.Errorf("catalog source bytes exceed %d; this contract was not checked", registry.MaxCatalogBytes)
+			e.readErr = fmt.Errorf("catalog source bytes exceed %d; this rules file was not checked", registry.MaxCatalogBytes)
 			c.issue(e.Path, "catalog-byte-bound", e.readErr.Error())
 		} else {
 			retainedBytes += len(e.data)
@@ -254,7 +254,7 @@ func discover(ctx context.Context, o Options) Catalog {
 	project(o.Places.Dir, true)
 	if snap != nil {
 		if snap.RunsCut || snap.Partial {
-			c.issue(snap.Root, "ledger-incomplete", "the ledger view is bounded or incomplete; some contracts or newer runs may be missing")
+			c.issue(snap.Root, "ledger-incomplete", "the ledger view is bounded or incomplete; some rules files or newer runs may be missing")
 		}
 		// Do not depend on the caller ordering its snapshot.
 		runs := slices.Clone(snap.Runs)

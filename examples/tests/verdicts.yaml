@@ -1,4 +1,4 @@
-# `tego compile agent.yaml --test verdicts.yaml` — one row per hypothetical
+# `tego rules check agent.yaml --test verdicts.yaml` — one row per hypothetical
 # action and the verdict the compiled rule table must give it. Rows without a
 # tier: run in every tier a run of the contract can get and must hold in each
 # (ADR 0019); a row that names a tier

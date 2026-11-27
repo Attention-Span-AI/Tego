@@ -4,7 +4,7 @@
 # may write /work/out and nothing else, start only its own script, sh and date, and reach nothing on the network. The
 # agent writes a greeting, then tries one write the contract refuses, so a run shows an allowed write and a refusal.
 # Swap in your own agent: change `command`, then fs, exec and net to what it needs (examples/agents/ has contracts for
-# Claude Code, Codex and agents of your own; `tego learn` proposes a first draft from a watched run).
+# Claude Code, Codex and agents of your own; `tego rules learn` proposes a first draft from a watched run).
 version: 0
 name: hello
 command: ["/usr/local/share/tego/hello-agent.sh"]

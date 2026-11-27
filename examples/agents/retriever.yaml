@@ -1,7 +1,7 @@
 # A subset of spec/agent/v0/example.retriever.yaml: every field here is
 # consumed by this binary. The schema-only fields (prompt, skills, docker,
 # visibility, env.mask, exec.privileged, containers) are accepted by
-# `tego compile` only when empty; see the spec example for
+# `tego rules check` only when empty; see the spec example for
 # their documented meaning.
 #
 # It is a reference more than a contract to run as it is: mcp-postgres and

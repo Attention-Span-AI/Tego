@@ -175,7 +175,7 @@ func TestRulesPageInForce(t *testing.T) {
 		"Can change", "Can change files in ./out/", "Programs", "Can run git",
 		"Settings it gets", "Gets DEMO_TOKEN, set in its rules", "Gets PATH from your shell",
 		`href="` + html.EscapeString(hits) + `"`, "2 hits", "No hits",
-		"agent.yaml:", "Edit contract",
+		"agent.yaml:", "Edit rules file",
 		"cd " + f.proj + " &amp;&amp; tego rules check " + f.source, "tego block --list " + rulesRunB,
 		`<details class="panel rules-raw">`, "DEMO_TOKEN: " + rulesview.Hidden, "/static/rules.css",
 	} {
@@ -545,7 +545,7 @@ func TestRulesPageEmptyAndRunLink(t *testing.T) {
 	s := newServer(t, t.TempDir())
 	c := login(t, s)
 	const learn = "<code>mkdir -p ~/contracts &amp;&amp; tego rules learn &lt;run&gt; --out ~/contracts/&lt;name&gt;.yaml</code>"
-	if b := do(s, "GET", "/rules", "127.0.0.1:8484", c).Body.String(); !strings.Contains(b, "No contracts yet") || !strings.Contains(b, learn) {
+	if b := do(s, "GET", "/rules", "127.0.0.1:8484", c).Body.String(); !strings.Contains(b, "No rules files yet") || !strings.Contains(b, learn) {
 		t.Errorf("the empty Rules page does not give %s", learn)
 	}
 	f := newRulesFix(t)

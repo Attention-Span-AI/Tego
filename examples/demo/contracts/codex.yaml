@@ -12,7 +12,7 @@
 #    them every command fails with "out of pty devices"); a write under ./held/ pauses Codex until you run `tego approve` from a second terminal.
 #  - stall_after, not wall: typing counts as activity, so a working session is not ended (a wall is a hard cap).
 #  - examples/agents/codex.yaml is the same contract for your own project; a test keeps the two equal.
-#  - `tego compile` warns [env-runtime-reserved] for CODEX_HOME, by design: the run replaces the value with its own.
+#  - `tego rules check` warns [env-runtime-reserved] for CODEX_HOME, by design: the run replaces the value with its own.
 version: 0
 name: codex
 command: ["codex", "--no-daemon"]

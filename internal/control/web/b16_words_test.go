@@ -169,7 +169,7 @@ func TestRunningLeastPrivilegeSaysHowFarItReads(t *testing.T) {
 
 // TestHighlightsSecretLeadsToNeverAllow (C131): a secret the run read, on a run with a contract the dashboard can edit,
 // has a link in Highlights that opens the line that touched it with the block action picked, where the rule is
-// made. A dashboard that edits no contracts, a run with no contract file and a secret that was only refused show none.
+// made. A dashboard that edits no contracts, a run with no rules file and a secret that was only refused show none.
 func TestHighlightsSecretLeadsToNeverAllow(t *testing.T) {
 	root, _, proj := detailFixture(t)
 	secret := filepath.Join(proj, "a", "b", ".env")

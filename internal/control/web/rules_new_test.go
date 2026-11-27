@@ -48,7 +48,7 @@ func TestRulesNewPreviewAndCreate(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("GET /rules/new: %d %s", code, body)
 	}
-	for _, want := range []string{"New contract", `name="preset" value="no-secrets" checked`, `name="preset" value="no-prod" checked`,
+	for _, want := range []string{"New rules file", `name="preset" value="no-secrets" checked`, `name="preset" value="no-prod" checked`,
 		`name="preset" value="repo-only-writes">`, "From a run", `name="dir"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the form lacks %q", want)

@@ -93,7 +93,7 @@ func listSessions(ctx context.Context, stdout, stderr io.Writer) int {
 	pauses := runPauses(root, snaps)
 	now := time.Now()
 	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tAGENT\tSTATUS\tSTARTED\tBLOCKED")
+	fmt.Fprintln(tw, "NAME\tAGENT\tSTATUS\tSTARTED\tREFUSED")
 	for _, s := range snaps {
 		state := "ended"
 		switch {

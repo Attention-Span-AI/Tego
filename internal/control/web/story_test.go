@@ -334,7 +334,7 @@ func TestWatchedRunWithoutReference(t *testing.T) {
 	if api := item("127.0.0.1:59465"); strings.Contains(api, "Got through") || !strings.Contains(api, "Not on a list") {
 		t.Errorf("the other destination is marked like the attacker's: %s", api)
 	}
-	if !strings.Contains(out, "No contract to check against") {
+	if !strings.Contains(out, "No rules file to check against") {
 		t.Error("the card does not say a watched run had no contract to check against")
 	}
 }

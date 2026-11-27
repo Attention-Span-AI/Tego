@@ -298,7 +298,7 @@ func TestUnavailableCanonicalBookmarkKeepsCatalogue(t *testing.T) {
 		if response.Code != http.StatusOK || !strings.Contains(body, pathcheck.Unavailable) || !strings.Contains(body, "linked-project") {
 			t.Errorf("%s: lost unavailable catalogue: status=%d body=%s", route, response.Code, body)
 		}
-		if strings.Contains(body, "No contracts yet") || strings.Contains(body, `method="post"`) || strings.Contains(body, "Contract · other-agent") {
+		if strings.Contains(body, "No rules files yet") || strings.Contains(body, `method="post"`) || strings.Contains(body, "Contract · other-agent") {
 			t.Errorf("%s: rendered a false empty state, write or unrelated selection", route)
 		}
 	}
@@ -431,7 +431,7 @@ func TestUnavailableNotRunContractDoesNotOfferStart(t *testing.T) {
 					t.Fatalf("description never reached the blocked helper read: %v", err)
 				}
 			}
-			for _, unsafe := range []string{"Start it", "Contract · other-agent", `href="/rules/change?c=`, "No contracts yet"} {
+			for _, unsafe := range []string{"Start it", "Contract · other-agent", `href="/rules/change?c=`, "No rules files yet"} {
 				if strings.Contains(body, unsafe) {
 					t.Errorf("unavailable not-run contract offered %q", unsafe)
 				}

@@ -4,8 +4,8 @@
 # smoke.sh: the image's own check, run inside the container as the tego user (the CI container job runs it through
 # compose.yaml's agent service, so with that file's settings):
 #   1. tego and tego-control print one version and tego-control is the binary tego pins;
-#   2. tego doctor finds tier landlock usable here (--require landlock: exit 211 otherwise);
-#   3. tego test: four harmless actions on decoys, each refused and recorded;
+#   2. tego machine check finds tier landlock usable here (--require landlock: exit 211 otherwise);
+#   3. tego machine test: four harmless actions on decoys, each refused and recorded;
 #   4. a short tego run of the example agent (hello.yaml): exit 0, its one allowed write made, its one disallowed
 #      write refused and recorded, and its chain verified against the anchor in ~/.tego.
 # Exit 0 when all hold; the first that does not ends the script with its own message.

@@ -32,22 +32,23 @@ type noun struct {
 func trees() []noun {
 	return []noun{
 		{"rules", []verb{
-			{"create", "Create a rules file in a project", "init", nil, "[--name <agent>] [--agent <program>] [--preset <list>] [--write <dir>]... [<dir>]"},
+			{"create", "Create a rules file in a project", "init", nil, "[--name <agent>] [--agent claude-code|codex] [--preset <list>] [--write <dir>]... [<dir>]"},
 			{"edit", "Edit a rules file, then check it", "", cmdRulesEdit, "<agent | file>"},
 			{"check", "Check a rules file and show what it enforces", "compile", nil, "<agent | file> [--json]"},
-			{"learn", "Create a rules file from what a session did", "learn", nil, "<session> [--save <name> | --out <file>]"},
+			{"learn", "Create a rules file from what a session did", "learn", nil, "<session> [--save <name> | --out <file>] [--allow-host <host>[:<port>]]... [--reads on|off] [--workspace <dir>]"},
+			{"list", "List the rules files on this machine and check them", "contracts", nil, "[<name|path>] [--json] [-v]"},
 			{"history", "Show the changes made to a rules file", "", cmdRulesHistory, "<agent | file> [--json]"},
 			{"undo", "Undo the newest change to a rules file", "", cmdRulesUndo, "<agent | file> [<id>] [--yes]"},
 		}},
 		{"session", []verb{
 			{"list", "List sessions", "", cmdSessionList, "[--json]"},
-			{"show", "Show what a session did and what Tego blocked", "receipt", nil, "<session> | --last [--json]"},
-			{"stop", "Stop a running session", "stop", nil, "<session>"},
+			{"show", "Show what a session did and what Tego refused", "receipt", nil, "<session> | --last [--json]"},
+			{"stop", "Stop a running session", "stop", nil, "<session> | --agent <name> [--grace <d>]"},
 			{"pause", "Pause a running session", "pause", nil, "<session>"},
 			{"resume", "Resume a paused session", "resume", nil, "<session>"},
 		}},
 		{"machine", []verb{
-			{"check", "Check what this machine can enforce", "doctor", nil, "[--json]"},
+			{"check", "Check what this machine can enforce", "doctor", nil, "[--json] [--no-scope] [--require <tier>]"},
 			{"test", "Run Tego's self-check", "test", nil, "[--json]"},
 		}},
 	}

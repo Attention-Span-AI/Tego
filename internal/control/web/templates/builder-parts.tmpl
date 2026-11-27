@@ -1,5 +1,5 @@
 {{/* SPDX-License-Identifier: Apache-2.0 */}}
 {{/* HTML consumes the first LF after textarea; protect an intentional leading LF. */}}
 {{define "buildertextarea"}}{{if and . (eq (slice . 0 1) "\n")}}{{"\n"}}{{end}}{{.}}{{end}}
-{{define "builderglossary"}}<details class="panel builder-glossary"><summary class="panel-head">Every contract field</summary><dl class="panel-body">{{range .}}<div><dt><code data-number-exclude="editor.field-key">{{.Key}}</code></dt><dd data-number-exclude="editor.field-meaning">{{.Meaning}}</dd></div>{{end}}</dl></details>{{end}}
+{{define "builderglossary"}}<details class="panel builder-glossary"><summary class="panel-head">Every rules file field</summary><dl class="panel-body">{{range .}}<div><dt><code data-number-exclude="editor.field-key">{{.Key}}</code></dt><dd data-number-exclude="editor.field-meaning">{{.Meaning}}</dd></div>{{end}}</dl></details>{{end}}
 {{define "builderproblems"}}{{if .}}<section class="banner banner-danger banner-problems" role="alert" id="builder-problems" tabindex="-1"><div class="grow"><h2>Fix these before saving</h2><ul>{{range .}}<li><a class="link" href="#{{.Field}}">{{.Message}}</a></li>{{end}}</ul></div></section>{{end}}{{end}}

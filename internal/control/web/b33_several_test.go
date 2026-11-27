@@ -47,7 +47,7 @@ func TestEditsOf(t *testing.T) {
 		{"no values", url.Values{}, 0, "Add, remove, or turn an ask into Never allow"},
 		{"blank rows are skipped", good([3]string{"add", "fs.write", "./a/"}, [3]string{"add", "fs.write", ""}, [3]string{"remove", "exec.allow", "git"}), 2, ""},
 		{"all rows blank", good([3]string{"add", "fs.write", ""}), 0, "Type the entry of at least one change"},
-		{"a row names its number", good([3]string{"add", "fs.write", ""}, [3]string{"add", "limits.pids", "9"}), 0, "Change 2: Change one of the lists on Edit contract"},
+		{"a row names its number", good([3]string{"add", "fs.write", ""}, [3]string{"add", "limits.pids", "9"}), 0, "Change 2: Change one of the lists on Edit rules file"},
 		{"twice the same", good([3]string{"add", "fs.write", "./a/"}, [3]string{"add", "fs.write", "./a/"}), 0, "Change 2 is the same as an earlier one"},
 		{"arrays out of step", url.Values{"op": {"add", "add"}, "key": {"fs.write"}, "v": {"./a/", "./b/"}}, 0, "Each change needs its action, its list and its entry"},
 		{"the most the service takes", good(many[:rules.MaxEdits]...), rules.MaxEdits, ""},

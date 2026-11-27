@@ -2,7 +2,7 @@
 {{/* severity: a person's own severity rules (severity.go), above the built-in ones; first match wins. Severity only
      sorts and colours: the policy decides what is blocked. */}}
 {{define "content"}}{{with .Data}}{{$csrf := $.CSRF}}
-<nav class="crumbs" aria-label="Breadcrumb"><a href="/rules">Contracts</a></nav>
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/rules">Rules files</a></nav>
 <div class="head"><div>{{if $.Tour}}<h2>{{else}}<h1>{{end}}Severity{{if $.Tour}}</h2>{{else}}</h1>{{end}}<p class="lede" title="Severity sorts and colours; your contract decides what is refused"><span data-number="shared.policy">Sorting only · never changes what is refused</span></p></div></div>
 {{if .Off}}<section class="panel"><div class="empty"><h2>Not available here</h2></div></section>{{else}}
 <section class="panel" aria-labelledby="h-own"><div class="panel-head"><h2 id="h-own">Your rules</h2><span class="soft" title="{{.File}}">First match wins</span></div>

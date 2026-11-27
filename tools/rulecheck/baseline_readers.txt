@@ -620,7 +620,7 @@ internal/check/receipt/render.go:Receipt.StallText:carrier-reference	1	internal/
 internal/check/receipt/render.go:Receipt.StallText:evidence-call	5	internal/check/receipt/baseline_test.go:TestBaselineReceiptWordsAndBinding
 internal/check/receipt/render.go:Receipt.StallText:untyped-context	1	internal/check/receipt/baseline_test.go:TestBaselineReceiptWordsAndBinding
 internal/check/receipt/render.go:Receipt.Text:carrier-reference	1	internal/check/receipt/baseline_test.go:TestBaselineReceiptWordsAndBinding
-internal/check/receipt/render.go:Receipt.Text:evidence-call	150	internal/check/receipt/baseline_test.go:TestBaselineReceiptWordsAndBinding
+internal/check/receipt/render.go:Receipt.Text:evidence-call	152	internal/check/receipt/baseline_test.go:TestBaselineReceiptWordsAndBinding
 internal/check/receipt/render.go:Receipt.Text:untyped-context	1	internal/check/receipt/baseline_test.go:TestBaselineReceiptWordsAndBinding
 internal/check/receipt/render.go:Receipt.TimeText:carrier-reference	1	internal/check/receipt/baseline_test.go:TestBaselineReceiptWordsAndBinding
 internal/check/receipt/render.go:Receipt.TimeText:evidence-call	1	internal/check/receipt/baseline_test.go:TestBaselineReceiptWordsAndBinding
@@ -801,7 +801,7 @@ internal/cli/contractref.go:contractRef.load:untyped-context	1	tools/rulecheck/b
 internal/cli/contracts.go:contractsFailure:carrier-reference	2	internal/cli/receipt_test.go:TestReceiptAgreesWithMeasure
 internal/cli/contracts.go:contractsFailure:evidence-call	5	internal/cli/receipt_test.go:TestReceiptAgreesWithMeasure
 internal/cli/contracts.go:runContracts:carrier-reference	6	internal/cli/receipt_test.go:TestReceiptAgreesWithMeasure
-internal/cli/contracts.go:runContracts:evidence-call	35	internal/cli/receipt_test.go:TestReceiptAgreesWithMeasure
+internal/cli/contracts.go:runContracts:evidence-call	34	internal/cli/receipt_test.go:TestReceiptAgreesWithMeasure
 internal/cli/dashboard_relay.go:relayRelease:evidence-call	26	internal/cli/receipt_test.go:TestReceiptAgreesWithMeasure
 internal/cli/dashboard_relay.go:relayRelease:untyped-context	1	tools/rulecheck/baseline_readers_test.go:TestBaselineAliasFunctionValueNegativeControl
 internal/cli/dashboard_relay.go:relayServer.carry:evidence-call	16	internal/cli/receipt_test.go:TestReceiptAgreesWithMeasure

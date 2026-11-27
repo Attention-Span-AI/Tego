@@ -36,7 +36,7 @@ func TestGeneralSourceInChrome(t *testing.T) {
 			shown.Hash = ""
 			shown.Note = "General contract " + state + ": source needs review"
 		}
-		s.render(w, http.StatusOK, "rules", s.chromeOf(&ledgerview.Snapshot{}, "Contracts", "rules"), rulesData{General: &shown, BaselineState: "Configured entries are NOT YET APPLIED to runs."})
+		s.render(w, http.StatusOK, "rules", s.chromeOf(&ledgerview.Snapshot{}, "Rules files", "rules"), rulesData{General: &shown, BaselineState: "Configured entries are NOT YET APPLIED to runs."})
 	}))
 	t.Cleanup(srv.Close)
 	c := placeChrome(t)

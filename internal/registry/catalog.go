@@ -77,7 +77,7 @@ func (p Places) catalogContext(ctx context.Context, place func(Places) (Places, 
 	appendEntry := func(e CatalogEntry) {
 		if bytes+len(e.Data) > MaxCatalogBytes {
 			e.Data = nil
-			e.Err = fmt.Errorf("%w: registry sources exceed %d bytes; this contract was not checked", ErrCatalogBound, MaxCatalogBytes)
+			e.Err = fmt.Errorf("%w: registry sources exceed %d bytes; this rules file was not checked", ErrCatalogBound, MaxCatalogBytes)
 		} else {
 			bytes += len(e.Data)
 		}
@@ -103,7 +103,7 @@ func (p Places) catalogContext(ctx context.Context, place func(Places) (Places, 
 		}
 		names, err := p.catalogNames(ctx, loc.root, path)
 		if len(names) > MaxCatalogEntries {
-			err = fmt.Errorf("%w: registry listing exceeds %d entries; some contracts are missing", ErrCatalogBound, MaxCatalogEntries)
+			err = fmt.Errorf("%w: registry listing exceeds %d entries; some rules files are missing", ErrCatalogBound, MaxCatalogEntries)
 			names = names[:MaxCatalogEntries]
 		}
 		// A missing directory is ordinary for a registry not used yet.

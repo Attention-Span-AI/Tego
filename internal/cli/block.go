@@ -356,7 +356,7 @@ func blockRefused(name, run string, add bool, value string, err error, stderr io
 	}
 	switch {
 	case errors.Is(err, liveblock.ErrNotRunning) && add:
-		hint = "; for its next run, make it a rule of the contract (tego rule)"
+		hint = "; for its next run, make it a rule in the rules file (tego rule)"
 	case errors.Is(err, liveblock.ErrNotRunning):
 		hint = fmt.Sprintf(" (tego block --list %s shows what it had)", run)
 	case errors.Is(err, liveblock.ErrOldLauncher):
@@ -366,7 +366,7 @@ func blockRefused(name, run string, add bool, value string, err error, stderr io
 	case errors.Is(err, liveblock.ErrReadsUnseen):
 		hint = "; " + path + ", which refuses changes to it"
 	case errors.Is(err, liveblock.ErrNoWords):
-		hint = "; for its next run, make it a rule of the contract (tego rule)"
+		hint = "; for its next run, make it a rule in the rules file (tego rule)"
 	}
 	message(stderr, "", 0, 0, "tego "+name+": "+liveblock.RunWords(err)+hint, liveCode(err))
 	return identity.ExitFinding

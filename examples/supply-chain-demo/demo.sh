@@ -516,15 +516,15 @@ EOF
     fi
   fi
 
-  # doctor: landlock or better, and no config complaint
+  # machine check: landlock or better, and no config complaint
   if [ -n "$TEGO_BIN" ]; then
-    doc=$(env "TEGO_CONFIG=$DEMO_CONFIG" "$TEGO_BIN" doctor --require landlock 2>&1) && doc_rc=0 || doc_rc=$?
+    doc=$(env "TEGO_CONFIG=$DEMO_CONFIG" "$TEGO_BIN" machine check --require landlock 2>&1) && doc_rc=0 || doc_rc=$?
     if printf '%s' "$doc" | grep -q 'config-untrusted'; then
-      bad "tego doctor refuses the machine config: $(printf '%s' "$doc" | grep 'config-untrusted' | head -n 1 | cut -c1-200)" "fix the config's owner and mode as above"
+      bad "tego machine check refuses the machine config: $(printf '%s' "$doc" | grep 'config-untrusted' | head -n 1 | cut -c1-200)" "fix the config's owner and mode as above"
     elif [ "$doc_rc" -ne 0 ]; then
-      bad "tego doctor: this machine offers no tier landlock or better" "$(printf '%s' "$doc" | grep -E 'FAIL|missing|fix' | head -n 3 | cut -c1-200 | tr '\n' ' ')"
+      bad "tego machine check: this machine offers no tier landlock or better" "$(printf '%s' "$doc" | grep -E 'FAIL|missing|fix' | head -n 3 | cut -c1-200 | tr '\n' ' ')"
     else
-      ok "tego doctor: tier landlock or better is available"
+      ok "tego machine check: tier landlock or better is available"
     fi
   fi
 
@@ -588,15 +588,15 @@ EOF
 
   # the contract: it compiles, and it is the one the template makes
   if [ -f "$FILLED" ] && [ -n "$TEGO_BIN" ] && command -v "$DEMO_AGENT" >/dev/null 2>&1; then
-    # An untrusted config makes compile fail for the config, not the contract: say so once, above.
+    # An untrusted config makes rules check fail for the config, not the contract: say so once, above.
     if [ "$cfg_ok" != 1 ]; then
       echo "      (the filled contract was not compiled: fix the config above first)"
-    elif cout=$(cd "$RIGHT_DIR/proj" && env "TEGO_CONFIG=$DEMO_CONFIG" "PATH=$PATH" "$TEGO_BIN" compile ${OFFLINE:+"$OFFLINE"} "$FILLED" 2>&1 >/dev/null); then
+    elif cout=$(cd "$RIGHT_DIR/proj" && env "TEGO_CONFIG=$DEMO_CONFIG" "PATH=$PATH" "$TEGO_BIN" rules check ${OFFLINE:+"$OFFLINE"} "$FILLED" 2>&1 >/dev/null); then
       ok "the filled contract compiles"
     else
       why=$(printf '%s\n' "$cout" | grep -E 'error' | head -n 2 | cut -c1-300 | tr '\n' ' ' | sed 's/ *$//')
       [ -n "$why" ] || why=$(printf '%s\n' "$cout" | grep -v '^[[:space:]]*$' | head -n 2 | cut -c1-300 | tr '\n' ' ' | sed 's/ *$//')
-      [ -n "$why" ] || why="tego compile failed and printed nothing"
+      [ -n "$why" ] || why="tego rules check failed and printed nothing"
       bad "the filled contract does not compile: $why" "run: ./demo.sh reset (it fills the contract again from the template)"
     fi
     fresh=$(fill_contract 2>/dev/null | sha256sum | cut -d' ' -f1)
